@@ -128,8 +128,16 @@ function registerKeybindings() {
  * which ready pass owns which side effect.
  */
 Hooks.once("ready", () => {
+  const version = game.modules?.get?.(MODULE_ID)?.version ?? "?";
+  const foundryGen = globalThis.foundry?.utils?.foundryVersion?.generation;
+  const foundryVersion = globalThis.game?.release?.version ?? "?";
   console.log(
-    `${MODULE_ID} | ready (game.system: ${game.system?.id}@${game.system?.version})`,
+    `%c${MODULE_ID} %cready · module v${version} · Foundry v${foundryVersion} (gen ${foundryGen ?? "?"}) · system ${game.system?.id}@${game.system?.version}`,
+    "color: #ffb15d; font-weight: bold",
+    "color: inherit",
+  );
+  console.log(
+    `${MODULE_ID} | dashboard access: left-toolbar d20 icon, Token Controls fallback, or Shift+I keybind. Macros: game.modules.get("${MODULE_ID}").api.openDashboard()`,
   );
   const mod = game.modules?.get?.(MODULE_ID);
   if (mod) {
@@ -167,57 +175,76 @@ Hooks.on("getSceneControlButtons", (controls) => {
     icon: "fa-solid fa-dice-d20",
     button: true,
     visible: true,
+    toggle: false,
     onClick: () => InfinityDashboardApp.open(),
     onChange: () => InfinityDashboardApp.open(),
   };
 
-  /* ---------- V12 shape: controls is an Array ---------- */
-  if (Array.isArray(controls)) {
-    // 1. Top-level category at the end of the left column.
-    controls.push({
-      name: "infinity-dnd5e",
-      title: "Infinity D&D5e",
-      icon: "fa-solid fa-dice-d20",
-      visible: true,
-      activeTool: launcherToolName,
-      tools: [{ ...baseTool, name: launcherToolName }],
-    });
-    // 2. Fallback tool under Token Controls.
-    const tokenControl =
-      controls.find((c) => c?.name === "token") ?? controls[0];
-    if (tokenControl && Array.isArray(tokenControl.tools)) {
-      tokenControl.tools.push({
-        ...baseTool,
-        name: dashboardToolName,
-        title: "Infinity D&D5e",
-      });
-    }
-    return;
-  }
+  // Diagnostic: log what shape we got so a missing launcher can be
+  // traced from the console rather than guessed at.
+  const shape = Array.isArray(controls)
+    ? `Array(${controls.length})`
+    : controls && typeof controls === "object"
+      ? `Record(${Object.keys(controls).length})`
+      : typeof controls;
+  console.log(`${MODULE_ID} | scene-controls hook fired, shape=${shape}`);
 
-  /* ---------- V13+ shape: controls is a Record ---------- */
-  if (controls && typeof controls === "object") {
-    // 1. Top-level category.
-    controls["infinity-dnd5e"] = {
-      name: "infinity-dnd5e",
-      title: "Infinity D&D5e",
-      icon: "fa-solid fa-dice-d20",
-      visible: true,
-      activeTool: launcherToolName,
-      tools: {
-        [launcherToolName]: { ...baseTool, name: launcherToolName },
-      },
-    };
-    // 2. Fallback tool under Token Controls.
-    const tokenControl =
-      controls.tokens ?? controls.token ?? Object.values(controls)[0];
-    if (tokenControl && typeof tokenControl.tools === "object") {
-      tokenControl.tools[dashboardToolName] = {
-        ...baseTool,
-        name: dashboardToolName,
+  try {
+    if (Array.isArray(controls)) {
+      /* ---------- V12 shape: controls is an Array ---------- */
+      controls.push({
+        name: "infinity-dnd5e",
         title: "Infinity D&D5e",
+        icon: "fa-solid fa-dice-d20",
+        visible: true,
+        activeTool: launcherToolName,
+        order: 99,
+        tools: [{ ...baseTool, name: launcherToolName }],
+      });
+      const tokenControl =
+        controls.find((c) => c?.name === "token") ?? controls[0];
+      if (tokenControl && Array.isArray(tokenControl.tools)) {
+        tokenControl.tools.push({
+          ...baseTool,
+          name: dashboardToolName,
+          title: "Infinity D&D5e",
+        });
+      }
+      console.log(
+        `${MODULE_ID} | registered V12 controls (category + tools fallback)`,
+      );
+    } else if (controls && typeof controls === "object") {
+      /* ---------- V13+ shape: controls is a Record ---------- */
+      controls["infinity-dnd5e"] = {
+        name: "infinity-dnd5e",
+        title: "Infinity D&D5e",
+        icon: "fa-solid fa-dice-d20",
+        visible: true,
+        activeTool: launcherToolName,
+        order: 99,
+        tools: {
+          [launcherToolName]: { ...baseTool, name: launcherToolName },
+        },
       };
+      const tokenControl =
+        controls.tokens ?? controls.token ?? Object.values(controls)[0];
+      if (tokenControl && typeof tokenControl.tools === "object") {
+        tokenControl.tools[dashboardToolName] = {
+          ...baseTool,
+          name: dashboardToolName,
+          title: "Infinity D&D5e",
+        };
+      }
+      console.log(
+        `${MODULE_ID} | registered V13 controls (category + tools fallback)`,
+      );
+    } else {
+      console.warn(
+        `${MODULE_ID} | scene-controls payload was neither Array nor Object (got ${typeof controls}); skipping launcher registration`,
+      );
     }
+  } catch (error) {
+    console.error(`${MODULE_ID} | scene-controls registration failed`, error);
   }
 });
 
