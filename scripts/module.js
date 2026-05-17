@@ -10,7 +10,7 @@
 
 import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
-import { HordeLootApp } from "./horde-loot.js";
+import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
@@ -63,14 +63,14 @@ function registerBuiltinTools() {
   });
 
   registerTool({
-    id: "horde-loot",
-    title: "Horde Loot",
+    id: "hoard-loot",
+    title: "Hoard Loot",
     description:
-      "Treasure for a defeated mob — mob size sets the budget, Pile Bias trades coin for items.",
+      "A treasure cache — tier × scale sets the budget, Pile Bias trades raw coin for items.",
     icon: "fa-solid fa-sack-dollar",
     category: "loot",
     status: "available",
-    open: () => HordeLootApp.open(),
+    open: () => HoardLootApp.open(),
   });
 
   registerTool({
@@ -136,7 +136,7 @@ Hooks.once("ready", () => {
     mod.api = {
       openDashboard: () => InfinityDashboardApp.open(),
       openPerEncounterLoot: () => PerEncounterLootApp.open(),
-      openHordeLoot: () => HordeLootApp.open(),
+      openHoardLoot: () => HoardLootApp.open(),
       openPerCreatureLoot: () => PerCreatureLootApp.open(),
     };
   }

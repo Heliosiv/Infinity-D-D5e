@@ -1,23 +1,23 @@
 {{!--
-  Infinity D&D5e — Horde Loot window template.
-  Mob-size driven budget; a Pile Bias slider splits it between the
-  coin pile and items. Result presentation is a coin-pile card +
-  item list.
+  Infinity D&D5e — Hoard Loot window template.
+  Tier × Hoard Scale drives the budget; the Pile Bias slider trades
+  raw coin for items. Item count is a soft ceiling, demoted from the
+  main controls. Rarity + loot-type chips default to all-selected.
 --}}
 <div class="hl-shell">
-  <form class="hl-form" data-form="horde-loot" autocomplete="off">
+  <form class="hl-form" data-form="hoard-loot" autocomplete="off">
     <header class="hl-form__head">
       <div>
-        <h2 class="hl-form__title">Horde Loot</h2>
+        <h2 class="hl-form__title">Hoard Loot</h2>
         <p class="hl-form__hint">
-          Treasure for a defeated mob. Mob size sets the gp budget; the Pile Bias slider trades raw coin for items.
+          Roll a treasure cache. Pick a tier and a scale; the Pile Bias slider trades coin for items.
         </p>
       </div>
       <div class="hl-form__budget" aria-live="polite">
         <span class="hl-form__budget-label">Total Budget</span>
         <strong data-total-budget>{{totalBudgetLabel}}</strong>
         <div class="hl-form__budget-split">
-          <span><i class="fa-solid fa-coins" aria-hidden="true"></i> <span data-coin-pile-projected>{{coinPileLabel}}</span> coin pile</span>
+          <span><i class="fa-solid fa-coins" aria-hidden="true"></i> <span data-coin-pile-projected>{{coinPileLabel}}</span> coin</span>
           <span><i class="fa-solid fa-gem" aria-hidden="true"></i> <span data-item-budget>{{itemBudgetLabel}}</span> items</span>
         </div>
         <span class="hl-form__budget-sub" data-candidates>{{candidateLabel}}</span>
@@ -44,18 +44,35 @@
       </div>
     </fieldset>
 
-    {{!-- Sliders --}}
+    {{!-- Hoard scale --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Hoard Scale</legend>
+      <div class="lf-segment lf-segment--scale" role="group" aria-label="Hoard scale">
+        {{#each scaleOptions}}
+        <button
+          type="button"
+          class="lf-segment__btn {{#if selected}}is-active{{/if}}"
+          data-action="scaleSelect"
+          data-value="{{value}}"
+          title="{{label}} hoard — ×{{multiplier}} of tier base"
+        >
+          <span class="lf-segment__short">{{label}}</span>
+          <span class="lf-segment__long">×{{multiplier}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    {{!-- Two-slider row: Pile Bias is the main dial; Magic Bias is secondary --}}
     <div class="lf-form__sliders">
-      {{> hordeSlider mobSize}}
-      {{> hordeSlider count}}
-      {{> hordeSlider pileBias}}
-      {{> hordeSlider magicBias}}
+      {{> hoardSlider pileBias}}
+      {{> hoardSlider magicBias}}
     </div>
 
-    {{!-- Rarity chips --}}
+    {{!-- Rarity chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Rarity Filter
+        Rarity
         <span class="lf-chiprow__bulk">
           <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
           <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
@@ -71,10 +88,10 @@
       </div>
     </fieldset>
 
-    {{!-- Loot type chips --}}
+    {{!-- Loot type chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Loot Types <small>(empty = all)</small>
+        Loot Types
         <span class="lf-chiprow__bulk">
           <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
           <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
@@ -90,10 +107,27 @@
       </div>
     </fieldset>
 
+    {{!-- Advanced: a small max-items input. Soft ceiling on the
+         item count; defaults to the per-scale recommendation. --}}
+    <div class="hl-advanced">
+      <label class="hl-advanced__field">
+        <span>Max items <small>(soft ceiling)</small></span>
+        <input
+          class="lf-input hl-advanced__input"
+          type="number"
+          name="maxItems"
+          min="{{maxItemsMin}}"
+          max="{{maxItemsMax}}"
+          step="1"
+          value="{{maxItems}}"
+        />
+      </label>
+    </div>
+
     <div class="lf-form__actions">
       <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
         <i class="fa-solid fa-sack-dollar" aria-hidden="true"></i>
-        <span>Roll the Horde</span>
+        <span>Roll the Hoard</span>
       </button>
       <button type="button" class="lf-btn lf-btn--ghost" data-action="reset" title="Restore form defaults">
         <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
@@ -122,7 +156,7 @@
         Total — {{result.totalGpLabel}}
       </h3>
       <div class="lf-result__actions">
-        <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this haul to chat">
+        <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this hoard to chat">
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
           <span>Send to Chat</span>
         </button>
@@ -166,14 +200,14 @@
     {{/if}}
     {{else}}
     <p class="lf-result__placeholder">
-      Set your tier, mob size, and pile bias, then click <strong>Roll the Horde</strong>.
+      Click <strong>Roll the Hoard</strong> to generate a treasure cache.
     </p>
     {{/if}}
   </section>
 </div>
 
-{{!-- Reusable slider block (locally inlined to keep the partial scoped) --}}
-{{#*inline "hordeSlider"}}
+{{!-- Reusable slider partial --}}
+{{#*inline "hoardSlider"}}
 <div class="lf-slider">
   <div class="lf-slider__head">
     <label class="lf-slider__label" for="hl-slider-{{name}}">{{label}}</label>

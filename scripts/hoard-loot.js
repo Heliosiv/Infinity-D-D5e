@@ -1,28 +1,32 @@
 /**
- * Infinity D&D5e — HordeLootApp
+ * Infinity D&D5e — HoardLootApp
  *
- * GM-only window for rolling treasure for a defeated mob:
- *  - Mob Size slider drives the gp budget (scales linearly per
- *    creature based on the threat tier)
- *  - Pile Bias slider splits the budget between a raw coin pile and
- *    the item bundle (the unique horde control)
- *  - Magic Bias + standard tier / rarity / loot-type filters mirror
- *    Per-Encounter so the visual language stays consistent
+ * GM-only window for rolling a treasure cache. A "hoard" is a single
+ * pile (a chest, a dragon's stash, a defeated boss's stockpile), so
+ * the gp budget is driven by *tier × scale*, not by a creature count.
  *
- * Shares the underlying roller, budget multipliers, and pack stats
- * with Per-Encounter Loot. The horde-specific gp math lives in
- * loot/horde-budget.js and is fully unit tested.
+ *   tier         — segmented row, T1..T5
+ *   hoard scale  — segmented row, Small / Standard / Large / Massive
+ *   pile bias    — slider, splits the budget between a raw coin pile
+ *                  and the item bundle (the unique hoard control)
+ *   magic bias   — same dial as the other windows
+ *   rarity       — chips, default all selected
+ *   loot types   — chips, default all selected
+ *   max items    — small numeric input, soft ceiling on the item count
+ *
+ * Reuses the shared roller, pack stats, and settings reads.
  */
 
 import {
-  MOB_SIZE_RANGE,
+  HOARD_DEFAULT_ITEM_CEILING,
+  HOARD_SCALE_PRESETS,
   PILE_BIAS_PRESETS,
   PILE_BIAS_RANGE,
   coinDenominationBreakdown,
-  computeHordeBudget,
+  computeHoardBudget,
   formatCoinBreakdown,
   splitCoinPile,
-} from "./loot/horde-budget.js";
+} from "./loot/hoard-budget.js";
 import { nearestPreset } from "./loot/budget.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
@@ -36,17 +40,16 @@ import { SETTING_KEYS, getSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
-const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/horde-loot.hbs`;
+const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/hoard-loot.hbs`;
 
-const COUNT_RANGE = Object.freeze({ min: 1, max: 24, step: 1 });
+const MAX_ITEMS_RANGE = Object.freeze({ min: 1, max: 30 });
 
-/** Slider labels — central so the template stays mute. */
 const SLIDER_LABELS = Object.freeze({
-  mobSize: "Mob Size",
-  count: "Item Count",
   pileBias: "Pile Bias",
   magicBias: "Magic Bias",
 });
+
+const SCALE_ORDER = Object.freeze(["small", "standard", "large", "massive"]);
 
 /* ------------------------------------------------------------------ *
  * Application V2 host
@@ -54,30 +57,31 @@ const SLIDER_LABELS = Object.freeze({
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
-export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
+export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static _instance = null;
   static _persistedState = null;
 
   static DEFAULT_OPTIONS = {
-    id: "infinity-dnd5e-horde-loot",
+    id: "infinity-dnd5e-hoard-loot",
     tag: "section",
-    classes: ["infinity-dnd5e", "horde-loot"],
+    classes: ["infinity-dnd5e", "hoard-loot"],
     window: {
-      title: "Infinity D&D5e — Horde Loot",
+      title: "Infinity D&D5e — Hoard Loot",
       icon: "fa-solid fa-sack-dollar",
       resizable: true,
     },
-    position: { width: 760, height: 760 },
+    position: { width: 760, height: 720 },
     actions: {
-      generate: HordeLootApp._onGenerate,
-      reset: HordeLootApp._onReset,
-      clear: HordeLootApp._onClear,
-      openItem: HordeLootApp._onOpenItem,
-      sendToChat: HordeLootApp._onSendToChat,
-      snap: HordeLootApp._onSnap,
-      tierSelect: HordeLootApp._onTierSelect,
-      chipAll: HordeLootApp._onChipAll,
-      chipNone: HordeLootApp._onChipNone,
+      generate: HoardLootApp._onGenerate,
+      reset: HoardLootApp._onReset,
+      clear: HoardLootApp._onClear,
+      openItem: HoardLootApp._onOpenItem,
+      sendToChat: HoardLootApp._onSendToChat,
+      snap: HoardLootApp._onSnap,
+      tierSelect: HoardLootApp._onTierSelect,
+      scaleSelect: HoardLootApp._onScaleSelect,
+      chipAll: HoardLootApp._onChipAll,
+      chipNone: HoardLootApp._onChipNone,
     },
     form: {
       handler: undefined,
@@ -92,33 +96,34 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Open (or focus) the singleton instance. */
   static open() {
-    if (!HordeLootApp._instance) HordeLootApp._instance = new HordeLootApp();
-    if (HordeLootApp._instance.rendered) HordeLootApp._instance.bringToFront();
-    else HordeLootApp._instance.render(true);
-    return HordeLootApp._instance;
+    if (!HoardLootApp._instance) HoardLootApp._instance = new HoardLootApp();
+    if (HoardLootApp._instance.rendered) HoardLootApp._instance.bringToFront();
+    else HoardLootApp._instance.render(true);
+    return HoardLootApp._instance;
   }
 
   /* ------------------- state ------------------- */
 
   static buildDefaultForm() {
+    const scale = "standard";
     return {
       tier: getSetting(SETTING_KEYS.DEFAULT_TIER) ?? "t2",
-      mobSize: 8,
-      count: 6,
+      scale,
       pileBias: 0,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
-      // Horde rolls tend to read better with the lower-rarity bulk —
-      // common + uncommon by default. GM can widen via the chips.
-      rarities: ["common", "uncommon"],
-      lootTypes: [], // empty = all
+      maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
+      // Hoard tools default chips to all-selected so the GM doesn't
+      // have to remember to pick a rarity — feedback from first use.
+      rarities: [...RARITIES],
+      lootTypes: [...LOOT_TYPES],
     };
   }
 
   constructor(options = {}) {
     super(options);
     const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
-    const persisted = persistEnabled ? HordeLootApp._persistedState : null;
-    const defaults = HordeLootApp.buildDefaultForm();
+    const persisted = persistEnabled ? HoardLootApp._persistedState : null;
+    const defaults = HoardLootApp.buildDefaultForm();
     this._form = persisted?.form
       ? { ...defaults, ...persisted.form }
       : defaults;
@@ -132,7 +137,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* ------------------- context ------------------- */
 
   async _prepareContext() {
-    const totalBudget = computeHordeBudget(this._formForBudget());
+    const totalBudget = computeHoardBudget(this._formForBudget());
     const { coinPileGp, itemBudget } = splitCoinPile(
       totalBudget,
       this._form.pileBias,
@@ -145,9 +150,6 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       totalBudgetLabel: formatGp(totalBudget),
       coinPileLabel: formatGp(coinPileGp),
       itemBudgetLabel: formatGp(itemBudget),
-      coinPileBreakdown: formatCoinBreakdown(
-        coinDenominationBreakdown(coinPileGp),
-      ),
       candidateLabel: this._candidateLabel(candidates, stats.totalItems),
       loadingItems: this._loadingItems,
 
@@ -159,20 +161,17 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         count: stats.byTier?.[tier] ?? 0,
       })),
 
-      mobSize: this._sliderContext({
-        name: "mobSize",
-        value: this._form.mobSize,
-        range: MOB_SIZE_RANGE,
-        presets: null,
-        valueLabel: `${this._form.mobSize} mob${this._form.mobSize === 1 ? "" : "s"}`,
-      }),
-      count: this._sliderContext({
-        name: "count",
-        value: this._form.count,
-        range: COUNT_RANGE,
-        presets: null,
-        valueLabel: `${this._form.count} item${this._form.count === 1 ? "" : "s"}`,
-      }),
+      scaleOptions: SCALE_ORDER.map((key) => ({
+        value: key,
+        label: humanizeKey(key),
+        multiplier: HOARD_SCALE_PRESETS[key],
+        selected: key === this._form.scale,
+      })),
+
+      maxItems: this._form.maxItems,
+      maxItemsMin: MAX_ITEMS_RANGE.min,
+      maxItemsMax: MAX_ITEMS_RANGE.max,
+
       pileBias: this._sliderContext({
         name: "pileBias",
         value: this._form.pileBias,
@@ -223,7 +222,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       getSetting(SETTING_KEYS.RARITY_GLOW) === false,
     );
 
-    const form = root.querySelector("[data-form='horde-loot']");
+    const form = root.querySelector("[data-form='hoard-loot']");
     if (form) {
       form.addEventListener("input", (event) => this._onFormInput(event));
       form.addEventListener("change", (event) => this._onFormInput(event));
@@ -237,36 +236,36 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _onClose(options) {
     super._onClose?.(options);
     if (getSetting(SETTING_KEYS.PERSIST_STATE) !== false) {
-      HordeLootApp._persistedState = {
+      HoardLootApp._persistedState = {
         form: { ...this._form },
         lastResult: this._lastResult,
       };
     } else {
-      HordeLootApp._persistedState = null;
+      HoardLootApp._persistedState = null;
     }
-    HordeLootApp._instance = null;
+    HoardLootApp._instance = null;
   }
 
   /* ------------------- actions ------------------- */
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onGenerate(_event, _target) {
     await this._generate();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onReset(_event, _target) {
-    this._form = HordeLootApp.buildDefaultForm();
+    this._form = HoardLootApp.buildDefaultForm();
     await this.render();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onClear(_event, _target) {
     this._lastResult = null;
     await this.render();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onOpenItem(event, target) {
     const uuid = target?.dataset?.uuid;
     if (!uuid) return;
@@ -278,16 +277,16 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onSendToChat(_event, _target) {
     if (!this._lastResult) {
-      ui.notifications?.info("Nothing to send — generate a roll first.");
+      ui.notifications?.info("Nothing to send — roll a hoard first.");
       return;
     }
-    const html = buildHordeChatHtml(this._lastResult);
+    const html = buildHoardChatHtml(this._lastResult);
     const messageData = {
       content: html,
-      speaker: ChatMessage.getSpeaker({ alias: "Horde Loot" }),
+      speaker: ChatMessage.getSpeaker({ alias: "Hoard Loot" }),
     };
     const whispers = resolveChatRecipients(
       getSetting(SETTING_KEYS.CHAT_MODE) ?? "public",
@@ -296,12 +295,12 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       await ChatMessage.create(messageData);
     } catch (error) {
-      console.error(`${MODULE_ID} | failed to send horde to chat`, error);
+      console.error(`${MODULE_ID} | failed to send hoard to chat`, error);
       ui.notifications?.error("Failed to send loot to chat. See console.");
     }
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onSnap(_event, target) {
     const name = target?.dataset?.target;
     const raw = Number(target?.dataset?.value);
@@ -310,7 +309,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.render();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onTierSelect(_event, target) {
     const tier = target?.dataset?.value;
     if (!tier) return;
@@ -318,7 +317,26 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.render();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
+  static async _onScaleSelect(_event, target) {
+    const scale = target?.dataset?.value;
+    if (!scale) return;
+    // Bump the max-items ceiling to the scale's default unless the
+    // user has already nudged it away from the previous default.
+    const previousDefault = HOARD_DEFAULT_ITEM_CEILING[this._form.scale];
+    const sameAsDefault = this._form.maxItems === previousDefault;
+    const next = {
+      ...this._form,
+      scale,
+      maxItems: sameAsDefault
+        ? (HOARD_DEFAULT_ITEM_CEILING[scale] ?? this._form.maxItems)
+        : this._form.maxItems,
+    };
+    this._form = next;
+    await this.render();
+  }
+
+  /** @this {HoardLootApp} */
   static async _onChipAll(_event, target) {
     const group = target?.dataset?.group;
     if (group === "rarity") {
@@ -331,7 +349,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.render();
   }
 
-  /** @this {HordeLootApp} */
+  /** @this {HoardLootApp} */
   static async _onChipNone(_event, target) {
     const group = target?.dataset?.group;
     if (group === "rarity") {
@@ -351,22 +369,6 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!target?.name) return;
     const next = { ...this._form };
     switch (target.name) {
-      case "mobSize":
-        next.mobSize = clampInt(
-          target.value,
-          MOB_SIZE_RANGE.min,
-          MOB_SIZE_RANGE.max,
-          8,
-        );
-        break;
-      case "count":
-        next.count = clampInt(
-          target.value,
-          COUNT_RANGE.min,
-          COUNT_RANGE.max,
-          6,
-        );
-        break;
       case "pileBias":
         next.pileBias = clampFloat(
           target.value,
@@ -381,6 +383,14 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
           MAGIC_BIAS_RANGE.min,
           MAGIC_BIAS_RANGE.max,
           0,
+        );
+        break;
+      case "maxItems":
+        next.maxItems = clampInt(
+          target.value,
+          MAX_ITEMS_RANGE.min,
+          MAX_ITEMS_RANGE.max,
+          HOARD_DEFAULT_ITEM_CEILING[this._form.scale] ?? 8,
         );
         break;
       case "rarity":
@@ -399,7 +409,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _patchLiveReadouts() {
     if (!this.element) return;
     const root = this.element;
-    const totalBudget = computeHordeBudget(this._formForBudget());
+    const totalBudget = computeHoardBudget(this._formForBudget());
     const { coinPileGp, itemBudget } = splitCoinPile(
       totalBudget,
       this._form.pileBias,
@@ -408,22 +418,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     setText(root, "[data-total-budget]", formatGp(totalBudget));
     setText(root, "[data-coin-pile-projected]", formatGp(coinPileGp));
     setText(root, "[data-item-budget]", formatGp(itemBudget));
-    setText(
-      root,
-      "[data-coin-breakdown-projected]",
-      formatCoinBreakdown(coinDenominationBreakdown(coinPileGp)),
-    );
 
-    setText(
-      root,
-      "[data-readout='mobSize']",
-      `${this._form.mobSize} mob${this._form.mobSize === 1 ? "" : "s"}`,
-    );
-    setText(
-      root,
-      "[data-readout='count']",
-      `${this._form.count} item${this._form.count === 1 ? "" : "s"}`,
-    );
     setText(
       root,
       "[data-readout='pileBias']",
@@ -460,11 +455,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _formForBudget() {
-    return {
-      tier: this._form.tier,
-      mobSize: this._form.mobSize,
-      generosityMultiplier: 1,
-    };
+    return { tier: this._form.tier, scale: this._form.scale };
   }
 
   _filterSpec() {
@@ -490,7 +481,9 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _sliderContext({ name, value, range, presets, valueLabel }) {
-    const presetLabel = presets ? titleCase(nearestPreset(value, presets)) : "";
+    const presetLabel = presets
+      ? humanizeKey(nearestPreset(value, presets))
+      : "";
     return {
       name,
       label: SLIDER_LABELS[name] ?? name,
@@ -499,11 +492,12 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       max: range.max,
       step: range.step,
       valueLabel,
+      // Avoid echoing the primary label as a secondary tag.
       presetLabel: presetLabel === valueLabel ? "" : presetLabel,
       snaps: presets
         ? Object.entries(presets).map(([key, target]) => ({
             key,
-            label: titleCase(key),
+            label: humanizeKey(key),
             value: target,
             active: Math.abs(value - target) < 0.01,
           }))
@@ -521,7 +515,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       await this.render();
     }
     try {
-      const totalBudget = computeHordeBudget(this._formForBudget());
+      const totalBudget = computeHoardBudget(this._formForBudget());
       const { coinPileGp, itemBudget } = splitCoinPile(
         totalBudget,
         this._form.pileBias,
@@ -531,7 +525,7 @@ export class HordeLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const raw =
         itemBudget > 0
           ? rollLoot(candidates, {
-              count: this._form.count,
+              count: this._form.maxItems,
               budgetGp: itemBudget,
               magicBias: this._form.magicBias,
             })
@@ -634,6 +628,19 @@ function titleCase(value) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+/**
+ * Convert a key like "coinHeavy" or "very-rare" into a human label
+ * with spaces: "Coin Heavy", "Very Rare". Empty input → "".
+ */
+function humanizeKey(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function prettyLootType(value) {
   return String(value ?? "")
     .replace(/^loot\./, "")
@@ -647,7 +654,6 @@ function formatGp(value) {
   return `${Math.round(num).toLocaleString()} gp`;
 }
 
-/** Pile-bias label is unique to Horde Loot. */
 function formatPileBias(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Mixed";
@@ -662,7 +668,7 @@ function formatMagicBias(value) {
   return num > 0 ? `+${pct}% Magic` : `+${pct}% Mundane`;
 }
 
-function buildHordeChatHtml(result) {
+function buildHoardChatHtml(result) {
   const lines = result.items
     .map((entry) => {
       const link = entry.item?.uuid
@@ -678,7 +684,7 @@ function buildHordeChatHtml(result) {
     : "";
   return `
 <div class="infinity-loot-chat">
-  <h3 style="margin: 0 0 4px;">Horde Loot</h3>
+  <h3 style="margin: 0 0 4px;">Hoard Loot</h3>
   <p style="margin: 0 0 6px; opacity: 0.85;">
     Total: ${formatGp(result.totalGp)}
   </p>

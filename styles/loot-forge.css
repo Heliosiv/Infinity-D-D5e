@@ -680,7 +680,15 @@ select.lf-input {
 }
 
 .lf-slider__snap {
-  padding: 2px 8px;
+  /* Foundry's generic button defaults try to force buttons to
+     block-width 100%; pin the snap pill to its content size so the
+     row stays horizontal. */
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: auto;
+  line-height: 1.2;
+  padding: 2px 10px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-pill);
   background: var(--lf-bg);
@@ -688,6 +696,7 @@ select.lf-input {
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background 120ms ease,
@@ -802,7 +811,12 @@ select.lf-input {
 }
 
 .lf-bulk {
-  padding: 1px 8px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: auto;
+  line-height: 1.2;
+  padding: 1px 10px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-pill);
   background: var(--lf-bg);
@@ -812,6 +826,7 @@ select.lf-input {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background 120ms ease,
