@@ -92,8 +92,35 @@ function registerBuiltinTools() {
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | init`);
   registerSettings();
+  registerKeybindings();
   registerBuiltinTools();
 });
+
+/* ------------------------------------------------------------------ *
+ * Keybindings
+ *
+ * Registers Shift+I (default — user-rebindable from Configure Controls)
+ * to open the dashboard from anywhere in the game. GM-only.
+ * ------------------------------------------------------------------ */
+
+function registerKeybindings() {
+  if (!game?.keybindings?.register) return;
+  try {
+    game.keybindings.register(MODULE_ID, "openDashboard", {
+      name: "Open Infinity D&D5e Dashboard",
+      hint: "Toggle the GM tool hub from anywhere in the game.",
+      editable: [{ key: "KeyI", modifiers: ["Shift"] }],
+      onDown: () => {
+        InfinityDashboardApp.open();
+        return true; // consume the event
+      },
+      restricted: true, // GM-only
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | failed to register keybindings`, error);
+  }
+}
 
 /**
  * Foundry ready — log the boot line and expose the module API.
@@ -116,18 +143,27 @@ Hooks.once("ready", () => {
 });
 
 /**
- * Add a GM-only scene-control button under the "tokens" toolbar.
- * Clicking it opens the dashboard, which is the single entry point
- * for every tool. Foundry V12 uses `getSceneControlButtons`; V13+
- * keeps the same hook but the controls object shape differs — the
- * normalization below tolerates both.
+ * Add GM-only entry points to the scene-controls toolbar.
+ *
+ * Strategy: we register the dashboard *twice* so the user can't miss it.
+ *  1. A new top-level category at the bottom of the left scene-controls
+ *     column ("Infinity D&D5e", d20 icon). Clicking it opens the
+ *     dashboard. This is the primary, most-discoverable launcher.
+ *  2. A secondary tool button inside Token Controls — the conventional
+ *     spot for module utilities and a familiar pattern for GMs who've
+ *     used party-operations.
+ *
+ * Foundry V12 hands us an Array<{ name, tools: Array }>; V13+ hands us
+ * a Record<name, { tools: Record }>. We handle both shapes.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user?.isGM) return;
 
-  const tools = {
-    name: "infinity-dnd5e-dashboard",
-    title: "Infinity D&D5e",
+  const launcherToolName = "infinity-dnd5e-launcher";
+  const dashboardToolName = "infinity-dnd5e-dashboard";
+
+  const baseTool = {
+    title: "Open Infinity D&D5e Dashboard",
     icon: "fa-solid fa-dice-d20",
     button: true,
     visible: true,
@@ -135,22 +171,71 @@ Hooks.on("getSceneControlButtons", (controls) => {
     onChange: () => InfinityDashboardApp.open(),
   };
 
-  // V12 shape: controls is an Array<{ name, tools: Array<...> }>
+  /* ---------- V12 shape: controls is an Array ---------- */
   if (Array.isArray(controls)) {
+    // 1. Top-level category at the end of the left column.
+    controls.push({
+      name: "infinity-dnd5e",
+      title: "Infinity D&D5e",
+      icon: "fa-solid fa-dice-d20",
+      visible: true,
+      activeTool: launcherToolName,
+      tools: [{ ...baseTool, name: launcherToolName }],
+    });
+    // 2. Fallback tool under Token Controls.
     const tokenControl =
       controls.find((c) => c?.name === "token") ?? controls[0];
     if (tokenControl && Array.isArray(tokenControl.tools)) {
-      tokenControl.tools.push(tools);
+      tokenControl.tools.push({
+        ...baseTool,
+        name: dashboardToolName,
+        title: "Infinity D&D5e",
+      });
     }
     return;
   }
 
-  // V13+ shape: controls is a Record<name, { tools: Record<name, ...> }>
+  /* ---------- V13+ shape: controls is a Record ---------- */
   if (controls && typeof controls === "object") {
+    // 1. Top-level category.
+    controls["infinity-dnd5e"] = {
+      name: "infinity-dnd5e",
+      title: "Infinity D&D5e",
+      icon: "fa-solid fa-dice-d20",
+      visible: true,
+      activeTool: launcherToolName,
+      tools: {
+        [launcherToolName]: { ...baseTool, name: launcherToolName },
+      },
+    };
+    // 2. Fallback tool under Token Controls.
     const tokenControl =
       controls.tokens ?? controls.token ?? Object.values(controls)[0];
     if (tokenControl && typeof tokenControl.tools === "object") {
-      tokenControl.tools[tools.name] = tools;
+      tokenControl.tools[dashboardToolName] = {
+        ...baseTool,
+        name: dashboardToolName,
+        title: "Infinity D&D5e",
+      };
     }
   }
+});
+
+/**
+ * One-time welcome notification on the first ready after install /
+ * enable, telling the GM where to find the launcher. Suppressed once
+ * acknowledged via the world-scoped "welcomeSeen" flag.
+ */
+Hooks.once("ready", () => {
+  if (!game.user?.isGM) return;
+  const mod = game.modules?.get?.(MODULE_ID);
+  if (!mod) return;
+  const seen = mod.flags?.welcomeSeen === true;
+  if (seen) return;
+  ui.notifications?.info(
+    "Infinity D&D5e is ready. Open the dashboard from the d20 icon in the left toolbar, or press Shift+I.",
+    { permanent: false },
+  );
+  // Mark the flag in-memory so we don't double-fire if ready runs twice.
+  if (mod.flags) mod.flags.welcomeSeen = true;
 });

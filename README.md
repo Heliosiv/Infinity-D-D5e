@@ -6,7 +6,13 @@ Tag-driven GM tools for D&D 5e on Foundry VTT, surfaced through a single dashboa
 
 A focused, ground-up rewrite of the GM tooling formerly bundled inside `party-operations`. Ships a curated 1,456-item compendium (every item pre-tagged with rarity, tier, value band, magic-type, and folder taxonomy under the `po-loot-v3` schema) plus a GM dashboard that launches each tool in its own window.
 
-A single scene-control button (the d20 icon under Token Controls) opens the dashboard; tiles inside it open individual tools. New tools become available by calling `registerTool(...)` — the dashboard re-renders without any UI plumbing.
+Three ways to open the dashboard, listed roughly in the order GMs find them:
+
+1. **Left scene-controls toolbar** — the d20 icon labeled **Infinity D&D5e** at the bottom of the left column (the same column where Tokens / Walls / Lighting live). Click it; the dashboard window opens.
+2. **Token Controls fallback** — inside the Token Controls toolbar there's a second d20 icon for GMs who instinctively look there.
+3. **Keyboard shortcut** — `Shift + I` opens the dashboard from anywhere in the game. Rebindable in _Configure Controls → Module: Infinity D&D5e_.
+
+From the dashboard, click any tile to open the matching tool. New tools become available by calling `registerTool(...)` — the dashboard re-renders without any UI plumbing.
 
 ## Status
 
