@@ -1,0 +1,471 @@
+/* =========================================================
+   Infinity D&D5e — Loot Forge styles
+   ---------------------------------------------------------
+   Self-contained. No global selectors outside `.infinity-dnd5e`
+   so we never bleed into core Foundry chrome or other modules.
+
+   Design tokens are inlined here for v0.1; a separate tokens.css
+   becomes worthwhile once a second window exists. Keep the
+   number of distinct color values small and named.
+   ========================================================= */
+
+.infinity-dnd5e.loot-forge {
+  /* -- tokens --------------------------------------------- */
+  --lf-bg: #1d2330;
+  --lf-bg-alt: #242b3b;
+  --lf-surface: #2c3548;
+  --lf-surface-elev: #364159;
+  --lf-border: #475070;
+  --lf-border-strong: #6473a0;
+  --lf-text: #e7ecf6;
+  --lf-text-strong: #ffffff;
+  --lf-muted: #97a3c1;
+  --lf-accent: #ffb15d;
+  --lf-accent-contrast: #1a1208;
+  --lf-warn: #f0a154;
+  --lf-success: #6dd5a2;
+  --lf-danger: #ef6f74;
+
+  --lf-radius: 10px;
+  --lf-radius-sm: 6px;
+  --lf-radius-pill: 999px;
+
+  --lf-rarity-common: #b3bfd8;
+  --lf-rarity-uncommon: #6dd5a2;
+  --lf-rarity-rare: #6aa7ff;
+  --lf-rarity-very-rare: #c98cff;
+  --lf-rarity-legendary: #ffb15d;
+  --lf-rarity-artifact: #f47272;
+
+  /* Reset Foundry V2 frame padding so we control the layout. */
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+/* The .window-content wrapper Foundry injects. */
+.infinity-dnd5e.loot-forge .window-content,
+.infinity-dnd5e.loot-forge {
+  padding: 0;
+}
+
+.lf-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+/* =========================================================
+   Form
+   ========================================================= */
+.lf-form {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+}
+
+.lf-form__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lf-form__title {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--lf-text-strong);
+  letter-spacing: 0.01em;
+}
+
+.lf-form__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--lf-muted);
+  max-width: 56ch;
+}
+
+.lf-form__budget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.lf-form__budget-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+
+.lf-form__budget strong {
+  font-size: 1.05rem;
+  color: var(--lf-accent);
+}
+
+/* Field grid */
+.lf-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 12px;
+}
+
+.lf-field {
+  display: grid;
+  gap: 4px;
+}
+
+.lf-field__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+
+.lf-field__label small {
+  font-size: 0.85em;
+  color: var(--lf-muted);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+
+.lf-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-text);
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.lf-input:hover {
+  border-color: var(--lf-border-strong);
+}
+
+.lf-input:focus {
+  outline: none;
+  border-color: var(--lf-accent);
+  background: var(--lf-surface-elev);
+}
+
+select.lf-input {
+  appearance: none;
+  padding-right: 24px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--lf-muted) 50%),
+    linear-gradient(135deg, var(--lf-muted) 50%, transparent 50%);
+  background-position:
+    right 12px top 14px,
+    right 8px top 14px;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+}
+
+/* Fieldsets */
+.lf-fieldset {
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  padding: 10px 12px 12px;
+  margin: 0;
+  background: var(--lf-surface);
+}
+
+.lf-fieldset__legend {
+  padding: 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+
+.lf-fieldset__legend small {
+  font-size: 0.95em;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--lf-muted);
+}
+
+/* Chip rows (rarity, loot types) */
+.lf-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.lf-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  user-select: none;
+}
+
+.lf-chip:hover {
+  border-color: var(--lf-border-strong);
+  color: var(--lf-text);
+}
+
+.lf-chip input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.lf-chip.is-checked {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
+}
+
+/* Rarity-tinted chips when checked */
+.lf-chip.lf-chip--rarity-common.is-checked {
+  border-color: var(--lf-rarity-common);
+}
+.lf-chip.lf-chip--rarity-uncommon.is-checked {
+  border-color: var(--lf-rarity-uncommon);
+}
+.lf-chip.lf-chip--rarity-rare.is-checked {
+  border-color: var(--lf-rarity-rare);
+}
+.lf-chip.lf-chip--rarity-very-rare.is-checked {
+  border-color: var(--lf-rarity-very-rare);
+}
+.lf-chip.lf-chip--rarity-legendary.is-checked {
+  border-color: var(--lf-rarity-legendary);
+}
+.lf-chip.lf-chip--rarity-artifact.is-checked {
+  border-color: var(--lf-rarity-artifact);
+}
+
+/* Actions */
+.lf-form__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.lf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-text);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.lf-btn:hover {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-border-strong);
+}
+
+.lf-btn:active {
+  transform: translateY(1px);
+}
+
+.lf-btn--primary {
+  background: var(--lf-accent);
+  color: var(--lf-accent-contrast);
+  border-color: transparent;
+}
+
+.lf-btn--primary:hover {
+  background: color-mix(in srgb, var(--lf-accent) 88%, white 12%);
+  color: var(--lf-accent-contrast);
+}
+
+.lf-btn--ghost {
+  background: transparent;
+  color: var(--lf-muted);
+}
+
+.lf-btn--ghost:hover {
+  color: var(--lf-text);
+}
+
+/* =========================================================
+   Result list
+   ========================================================= */
+.lf-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+  min-height: 200px;
+}
+
+.lf-result__placeholder {
+  margin: auto;
+  color: var(--lf-muted);
+  font-size: 0.92rem;
+}
+
+.lf-result__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lf-result__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--lf-text-strong);
+}
+
+.lf-result__warning {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--lf-warn);
+}
+
+.lf-result__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.lf-result__item {
+  display: block;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.lf-result__item:hover {
+  border-color: var(--lf-border-strong);
+  transform: translateY(-1px);
+}
+
+.lf-result__open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lf-result__icon {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: var(--lf-radius-sm);
+  border: 1px solid var(--lf-border);
+  background: var(--lf-bg);
+  flex-shrink: 0;
+}
+
+.lf-result__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lf-result__name {
+  font-size: 0.95rem;
+  color: var(--lf-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lf-result__meta {
+  font-size: 0.78rem;
+  color: var(--lf-muted);
+  text-transform: capitalize;
+}
+
+/* Rarity stripe on the left edge */
+.lf-result__item--common {
+  border-left: 3px solid var(--lf-rarity-common);
+}
+.lf-result__item--uncommon {
+  border-left: 3px solid var(--lf-rarity-uncommon);
+}
+.lf-result__item--rare {
+  border-left: 3px solid var(--lf-rarity-rare);
+}
+.lf-result__item--very-rare {
+  border-left: 3px solid var(--lf-rarity-very-rare);
+}
+.lf-result__item--legendary {
+  border-left: 3px solid var(--lf-rarity-legendary);
+}
+.lf-result__item--artifact {
+  border-left: 3px solid var(--lf-rarity-artifact);
+}
+
+.lf-result__warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.8rem;
+  color: var(--lf-warn);
+}

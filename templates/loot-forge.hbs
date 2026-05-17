@@ -1,0 +1,140 @@
+{{!--
+  Infinity D&D5e — Loot Forge window template.
+  Rendered inside ApplicationV2's frame; no outer .application
+  wrapper needed.
+--}}
+<div class="lf-shell">
+  <form class="lf-form" data-form="loot-forge" autocomplete="off">
+    <header class="lf-form__head">
+      <div>
+        <h2 class="lf-form__title">Loot Forge</h2>
+        <p class="lf-form__hint">
+          Roll a treasure bundle from the curated {{moduleId}} compendium. Tags drive every filter — no manual table
+          lookups.
+        </p>
+      </div>
+      <div class="lf-form__budget" aria-live="polite">
+        <span class="lf-form__budget-label">Projected Budget</span>
+        <strong data-projected-budget>{{projectedBudget}} gp</strong>
+      </div>
+    </header>
+
+    <div class="lf-form__grid">
+      <label class="lf-field">
+        <span class="lf-field__label">Tier</span>
+        <select class="lf-input" name="tier">
+          {{#each tierOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <label class="lf-field">
+        <span class="lf-field__label">Encounter Scale</span>
+        <select class="lf-input" name="scale">
+          {{#each scaleOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <label class="lf-field">
+        <span class="lf-field__label">Generosity</span>
+        <select class="lf-input" name="generosity">
+          {{#each generosityOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <label class="lf-field">
+        <span class="lf-field__label">Party Size</span>
+        <input class="lf-input" type="number" name="partySize" min="1" max="10" step="1" value="{{form.partySize}}" />
+      </label>
+
+      <label class="lf-field">
+        <span class="lf-field__label">Item Count</span>
+        <input class="lf-input" type="number" name="count" min="1" max="30" step="1" value="{{form.count}}" />
+      </label>
+
+      <label class="lf-field">
+        <span class="lf-field__label">Budget Override <small>(0 = use curve)</small></span>
+        <input class="lf-input" type="number" name="budgetOverride" min="0" step="50" value="{{form.budgetOverride}}" />
+      </label>
+    </div>
+
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Rarity Filter</legend>
+      <div class="lf-chiprow">
+        {{#each rarityOptions}}
+        <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Loot Types <small>(leave empty for all)</small></legend>
+      <div class="lf-chiprow">
+        {{#each lootTypeOptions}}
+        <label class="lf-chip {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    <div class="lf-form__actions">
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
+        <i class="fa-solid fa-dice" aria-hidden="true"></i>
+        <span>Generate Loot</span>
+      </button>
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="reset">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+        <span>Reset</span>
+      </button>
+    </div>
+  </form>
+
+  <section class="lf-result" aria-live="polite">
+    {{#if loadingItems}}
+    <p class="lf-result__placeholder">Loading compendium…</p>
+    {{else if hasResult}}
+    <header class="lf-result__head">
+      <h3 class="lf-result__title">
+        {{result.items.length}} item(s) — {{result.totalGp}} gp{{#if result.budgetGp}} / {{result.budgetGp}} gp budget{{/if}}
+      </h3>
+      {{#if result.droppedForBudget}}
+      <p class="lf-result__warning">Dropped {{result.droppedForBudget}} item(s) to fit budget.</p>
+      {{/if}}
+    </header>
+
+    <ul class="lf-result__list">
+      {{#each result.items}}
+      <li class="lf-result__item lf-result__item--{{rarity}}">
+        <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
+          <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
+          <div class="lf-result__copy">
+            <strong class="lf-result__name">{{item.name}}</strong>
+            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotal}} gp</span>
+          </div>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+
+    {{#if result.warnings.length}}
+    <ul class="lf-result__warnings">
+      {{#each result.warnings}}
+      <li>{{this}}</li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{else}}
+    <p class="lf-result__placeholder">Set your filters and click <strong>Generate Loot</strong>.</p>
+    {{/if}}
+  </section>
+</div>

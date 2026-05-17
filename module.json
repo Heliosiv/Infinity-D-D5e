@@ -1,0 +1,36 @@
+{
+  "id": "infinity-dnd5e",
+  "title": "Infinity D&D5e",
+  "description": "Tag-driven loot generator for D&D 5e on Foundry VTT. Pulls from a curated 1,456-item compendium and rolls scoped loot tables by rarity, tier, and value band.",
+  "version": "0.1.0",
+  "authors": [{ "name": "Heliosiv" }],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "14"
+  },
+  "esmodules": ["scripts/module.js"],
+  "styles": ["styles/loot-forge.css"],
+  "templates": ["templates/loot-forge.hbs"],
+  "packs": [
+    {
+      "name": "infinity-dnd5e-items",
+      "label": "Infinity D&D5e — Curated Items",
+      "path": "packs/infinity-dnd5e-items.db",
+      "type": "Item",
+      "system": "dnd5e",
+      "private": false
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": { "verified": "4.4.4" }
+      }
+    ]
+  },
+  "url": "",
+  "manifest": "",
+  "download": ""
+}
