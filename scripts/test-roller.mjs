@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { filterCandidates, rollLoot } from "./loot/roller.js";
+import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 
 import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
 import { mulberry32, seqRng } from "./test-utils/rng.mjs";
@@ -210,6 +210,118 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     typeof aIds === "string" && typeof cIds === "string",
     "both seeds produced strings",
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Magic Bias — exposed slider range
+ * ------------------------------------------------------------------ */
+{
+  assert.equal(MAGIC_BIAS_RANGE.min, -1, "bias min is -1");
+  assert.equal(MAGIC_BIAS_RANGE.max, 1, "bias max is +1");
+  assert.ok(MAGIC_BIAS_RANGE.step > 0, "bias step is positive");
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — magicBias=+1 excludes mundane items from the pool
+ * ------------------------------------------------------------------ */
+{
+  const pool = smallPool();
+  // 100 rolls with maximum positive bias — every pick should be a
+  // magic-natured item (Magic Greatsword, Wand of Magic Missile,
+  // Crown of Stars). Healing Potion is loot.consumable (magic);
+  // Dagger is mundane.
+  const rng = mulberry32(1);
+  let mundaneCount = 0;
+  for (let i = 0; i < 100; i += 1) {
+    const result = rollLoot(pool, { count: 1, rng, magicBias: 1 });
+    if (result.items[0]?.item._id === "a") mundaneCount += 1; // Dagger
+  }
+  assert.equal(
+    mundaneCount,
+    0,
+    "magicBias=+1 zeroes out mundane weights — no Daggers should be picked",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — magicBias=-1 excludes magic items
+ * ------------------------------------------------------------------ */
+{
+  const pool = smallPool();
+  const rng = mulberry32(7);
+  let magicCount = 0;
+  for (let i = 0; i < 100; i += 1) {
+    const result = rollLoot(pool, { count: 1, rng, magicBias: -1 });
+    const id = result.items[0]?.item._id;
+    // c=Magic Greatsword, d=Wand, e=Crown of Stars, b=Potion(consumable=magic)
+    if (id === "c" || id === "d" || id === "e" || id === "b") magicCount += 1;
+  }
+  assert.equal(
+    magicCount,
+    0,
+    "magicBias=-1 zeroes out magic weights — no magic items should be picked",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — magicBias=0 behaves identically to no bias
+ * ------------------------------------------------------------------ */
+{
+  const pool = smallPool();
+  const withBias = rollLoot(pool, {
+    count: 3,
+    rng: mulberry32(42),
+    magicBias: 0,
+  });
+  const withoutBias = rollLoot(pool, { count: 3, rng: mulberry32(42) });
+  assert.deepEqual(
+    withBias.items.map((i) => i.item._id),
+    withoutBias.items.map((i) => i.item._id),
+    "bias=0 is a no-op",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — bias clamps out-of-range input
+ * ------------------------------------------------------------------ */
+{
+  const pool = smallPool();
+  // bias=5 should clamp to 1; result should match bias=1.
+  const clamped = rollLoot(pool, {
+    count: 3,
+    rng: mulberry32(99),
+    magicBias: 5,
+  });
+  const explicit = rollLoot(pool, {
+    count: 3,
+    rng: mulberry32(99),
+    magicBias: 1,
+  });
+  assert.deepEqual(
+    clamped.items.map((i) => i.item._id),
+    explicit.items.map((i) => i.item._id),
+    "out-of-range bias is clamped",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — all-mundane pool + bias=+1 falls back to uniform
+ * ------------------------------------------------------------------ */
+{
+  // Every item is mundane; bias=+1 would zero them all out. The
+  // roller falls back to uniform so the bundle is still produced
+  // rather than silently returning empty.
+  const pool = [
+    fakeItem({ _id: "m1", lootType: "loot.weapon.mundane" }),
+    fakeItem({ _id: "m2", lootType: "loot.armor.mundane" }),
+    fakeItem({ _id: "m3", lootType: "loot.gem" }),
+  ];
+  const result = rollLoot(pool, {
+    count: 2,
+    rng: mulberry32(3),
+    magicBias: 1,
+  });
+  assert.equal(result.items.length, 2, "uniform fallback still produces picks");
 }
 
 /* ------------------------------------------------------------------ *

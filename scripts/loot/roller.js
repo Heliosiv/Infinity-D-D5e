@@ -25,6 +25,7 @@ import {
   getItemKeywords,
   getItemLootType,
   getItemLootWeight,
+  getItemMagicNature,
   getItemMaxQty,
   getItemRarity,
   getItemTier,
@@ -32,6 +33,13 @@ import {
   isLootEligible,
   normalizeRarity,
 } from "./tag-vocabulary.js";
+
+/** Magic Bias slider bounds — exported so the UI and tests share one source. */
+export const MAGIC_BIAS_RANGE = Object.freeze({
+  min: -1,
+  max: 1,
+  step: 0.05,
+});
 
 /**
  * Filter a candidate item pool down to the rollable set.
@@ -119,6 +127,9 @@ export function filterCandidates(items, filter = {}) {
  * @param {object} opts
  * @param {number} opts.count   - target number of distinct items (>= 1)
  * @param {number} [opts.budgetGp] - if > 0, total bundle gp may not exceed this
+ * @param {number} [opts.magicBias] - in [-1, 1]. >0 favors magic items, <0 favors mundane.
+ *                                    Applied as a per-item weight multiplier; ±1 zeroes
+ *                                    out the opposite side entirely.
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 200
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
  * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number }>,
@@ -132,6 +143,7 @@ export function rollLoot(candidates, opts = {}) {
   const count = Math.max(0, Math.floor(Number(opts.count ?? 0)));
   const budgetGp = Number(opts.budgetGp ?? 0);
   const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
+  const magicBias = clampBias(opts.magicBias);
   const maxAttempts = Math.max(
     count * 4,
     Math.floor(Number(opts.maxAttempts ?? 200)),
@@ -152,7 +164,7 @@ export function rollLoot(candidates, opts = {}) {
   let attempts = 0;
   while (picked.size < count && attempts < maxAttempts) {
     attempts += 1;
-    const item = weightedPick(pool, rng);
+    const item = weightedPick(pool, rng, magicBias);
     if (!item) break;
     const id = String(item._id ?? item.id ?? attempts);
     if (!picked.has(id)) {
@@ -237,27 +249,53 @@ function toSet(values) {
 }
 
 /**
- * Pick one item from `pool` weighted by its lootWeight tag.
- * Uses the standard inverse-CDF method.
+ * Pick one item from `pool` weighted by its lootWeight tag, optionally
+ * skewed by the Magic Bias dial. Uses the standard inverse-CDF method.
+ *
+ * @param {Array<object>} pool
+ * @param {() => number} rng
+ * @param {number} magicBias - clamped to [-1, 1]
  */
-function weightedPick(pool, rng) {
+function weightedPick(pool, rng, magicBias = 0) {
   if (pool.length === 0) return null;
+  const weights = pool.map((item) => effectiveWeight(item, magicBias));
   let totalWeight = 0;
-  for (const item of pool) {
-    totalWeight += getItemLootWeight(item);
-  }
+  for (const weight of weights) totalWeight += weight;
   if (totalWeight <= 0) {
-    // Fallback to uniform if every weight is zero/negative.
+    // Bias zeroed out everything (e.g. bias=+1 against an all-mundane pool).
+    // Fall back to uniform so the roller still produces something.
     const index = Math.floor(rng() * pool.length);
     return pool[Math.min(pool.length - 1, Math.max(0, index))];
   }
   const target = rng() * totalWeight;
   let cursor = 0;
-  for (const item of pool) {
-    cursor += getItemLootWeight(item);
-    if (cursor >= target) return item;
+  for (let i = 0; i < pool.length; i += 1) {
+    cursor += weights[i];
+    if (cursor >= target) return pool[i];
   }
   return pool[pool.length - 1];
+}
+
+/**
+ * Apply the Magic Bias multiplier to an item's base loot weight.
+ * - bias > 0: magic items scaled by (1 + bias), mundane by (1 - bias)
+ * - bias < 0: mirror — mundane up, magic down
+ * - neutral items always unchanged
+ * - clamped at 0 so we never produce negative weights
+ */
+function effectiveWeight(item, magicBias) {
+  const base = getItemLootWeight(item);
+  if (!magicBias) return base;
+  const nature = getItemMagicNature(item);
+  if (nature === "magic") return Math.max(0, base * (1 + magicBias));
+  if (nature === "mundane") return Math.max(0, base * (1 - magicBias));
+  return base;
+}
+
+function clampBias(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-1, Math.min(1, value));
 }
 
 /** Re-export for convenience so the UI layer doesn't have to import two files. */
