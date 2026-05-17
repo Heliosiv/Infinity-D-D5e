@@ -16,7 +16,7 @@ From the dashboard, click any tile to open the matching tool. New tools become a
 
 ## Status
 
-**v0.2.0 (in progress)** — Dashboard + Per-Encounter Loot.
+**v0.2.0** — Dashboard + the full loot suite (Per-Encounter, Horde, Per-Creature) + settings panel + obvious launcher.
 
 - GM-only dashboard with a tile grid of tools
 - **Per-Encounter Loot** (available) — slider-driven controls (encounter scale, generosity, party size, item count, magic bias), tier segmented buttons, multi-select rarity + loot-type chips with live per-bucket pack counts, and a live "X items match" candidate readout. Snap-buttons under each slider lock to canonical values (Trivial / Standard / Hard / Deadly / Hoard, Stingy / Balanced / Generous). Quick-fight macros (Easy / Standard / Hard / Hoard) stamp three sliders in one click. **Use Party** auto-fills party size from the live player list. **All / None** affordances on each chip row. Lock individual results to preserve them through **Re-roll Unlocked**. **Send to Chat** posts the bundle as a clickable chat card. Form + last result persist across window close until page reload.

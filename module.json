@@ -1,8 +1,8 @@
 {
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
-  "description": "Tag-driven loot generator for D&D 5e on Foundry VTT. Pulls from a curated 1,456-item compendium and rolls scoped loot tables by rarity, tier, and value band.",
-  "version": "0.1.0",
+  "description": "Tag-driven GM toolkit for D&D 5e on Foundry VTT. GM-only dashboard launches three loot tools — Per-Encounter, Horde, and Per-Creature — rolled from a curated 1,456-item compendium with slider-driven controls, magic-bias dial, and live pack-grounded readouts.",
+  "version": "0.2.0",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "12",
