@@ -12,12 +12,14 @@
   "styles": [
     "styles/dashboard.css",
     "styles/loot-forge.css",
-    "styles/horde-loot.css"
+    "styles/horde-loot.css",
+    "styles/per-creature-loot.css"
   ],
   "templates": [
     "templates/dashboard.hbs",
     "templates/loot-forge.hbs",
-    "templates/horde-loot.hbs"
+    "templates/horde-loot.hbs",
+    "templates/per-creature-loot.hbs"
   ],
   "packs": [
     {

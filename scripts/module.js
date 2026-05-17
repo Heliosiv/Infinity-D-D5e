@@ -11,6 +11,7 @@
 import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
 import { HordeLootApp } from "./horde-loot.js";
+import { PerCreatureLootApp } from "./per-creature-loot.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
 
@@ -76,11 +77,11 @@ function registerBuiltinTools() {
     id: "per-creature-loot",
     title: "Per-Creature Loot",
     description:
-      "Generate individual drops per creature in an encounter, summed into one bundle.",
+      "Build a roster of defeated creatures; each rolls its own small bundle, totals stack at the bottom.",
     icon: "fa-solid fa-skull",
     category: "loot",
-    status: "coming-soon",
-    open: () => {},
+    status: "available",
+    open: () => PerCreatureLootApp.open(),
   });
 }
 
@@ -109,6 +110,7 @@ Hooks.once("ready", () => {
       openDashboard: () => InfinityDashboardApp.open(),
       openPerEncounterLoot: () => PerEncounterLootApp.open(),
       openHordeLoot: () => HordeLootApp.open(),
+      openPerCreatureLoot: () => PerCreatureLootApp.open(),
     };
   }
 });

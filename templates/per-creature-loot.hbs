@@ -1,0 +1,240 @@
+{{!--
+  Infinity D&D5e — Per-Creature Loot window template.
+  A roster of creatures (name + tier each); the Generate button rolls
+  a small bundle per creature. Result is grouped per-creature with
+  per-card reroll buttons.
+--}}
+<div class="pc-shell">
+  <form class="pc-form" data-form="per-creature-loot" autocomplete="off">
+    <header class="pc-form__head">
+      <div>
+        <h2 class="pc-form__title">Per-Creature Loot</h2>
+        <p class="pc-form__hint">
+          Add a creature per body in the fight. Each rolls its own small bundle, scaled by its tier.
+        </p>
+      </div>
+      <div class="pc-form__budget" aria-live="polite">
+        <span class="pc-form__budget-label">Roster Budget</span>
+        <strong data-roster-budget>{{rosterTotalBudgetLabel}}</strong>
+        <span class="pc-form__budget-sub" data-candidates>{{candidateLabel}}</span>
+      </div>
+    </header>
+
+    {{!-- Roster --}}
+    <fieldset class="lf-fieldset pc-roster">
+      <legend class="lf-fieldset__legend">
+        Roster
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="addCreature" {{#if rosterFull}}disabled{{/if}}>+ Creature</button>
+          <button type="button" class="lf-bulk" data-action="addFive" {{#if rosterFull}}disabled{{/if}}>+ 5</button>
+          <button type="button" class="lf-bulk" data-action="clearRoster">Clear</button>
+        </span>
+      </legend>
+      {{#if rosterRows.length}}
+      <ul class="pc-roster__list">
+        {{#each rosterRows}}
+        <li class="pc-roster__row">
+          <input
+            class="lf-input pc-roster__name"
+            type="text"
+            name="creatureName"
+            data-creature-id="{{id}}"
+            value="{{name}}"
+            maxlength="40"
+            aria-label="Creature name"
+          />
+          <div class="pc-roster__tiers" role="group" aria-label="Tier">
+            {{#each tierOptions}}
+            <button
+              type="button"
+              class="pc-roster__tier {{#if selected}}is-active{{/if}}"
+              data-action="setCreatureTier"
+              data-creature-id="{{../id}}"
+              data-value="{{value}}"
+              title="Set tier to {{label}}"
+            >{{label}}</button>
+            {{/each}}
+          </div>
+          <span class="pc-roster__budget" title="Per-creature gp budget">{{budgetLabel}}</span>
+          <button
+            type="button"
+            class="pc-roster__remove"
+            data-action="removeCreature"
+            data-creature-id="{{id}}"
+            title="Remove this creature"
+            aria-label="Remove this creature"
+          ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </li>
+        {{/each}}
+      </ul>
+      {{else}}
+      <p class="pc-roster__empty">Roster is empty. Click <strong>+ Creature</strong> to add one.</p>
+      {{/if}}
+    </fieldset>
+
+    {{!-- Sliders --}}
+    <div class="lf-form__sliders">
+      {{> pcSlider itemsPerCreature}}
+      {{> pcSlider magicBias}}
+    </div>
+
+    {{!-- Rarity chips --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">
+        Rarity Filter
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
+        </span>
+      </legend>
+      <div class="lf-chiprow">
+        {{#each rarityOptions}}
+        <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    {{!-- Loot type chips --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">
+        Loot Types <small>(empty = all)</small>
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
+        </span>
+      </legend>
+      <div class="lf-chiprow">
+        {{#each lootTypeOptions}}
+        <label class="lf-chip {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    <div class="lf-form__actions">
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
+        <i class="fa-solid fa-dice" aria-hidden="true"></i>
+        <span>Roll All</span>
+      </button>
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="reset" title="Restore form defaults">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+        <span>Reset Settings</span>
+      </button>
+      {{#if hasResult}}
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="clear" title="Clear results, keep settings">
+        <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+        <span>Clear Results</span>
+      </button>
+      {{/if}}
+    </div>
+  </form>
+
+  <section class="pc-result" aria-live="polite">
+    {{#if loadingItems}}
+    <div class="lf-result__loading" role="status" aria-live="polite">
+      <span class="lf-skeleton lf-skeleton--lg"></span>
+      <span class="lf-skeleton"></span>
+      <span class="lf-skeleton lf-skeleton--sm"></span>
+      <p class="lf-result__placeholder">Loading compendium…</p>
+    </div>
+    {{else if hasResult}}
+    <header class="lf-result__head">
+      <h3 class="lf-result__title">
+        Grand total — {{result.grandTotalLabel}} across {{result.creatures.length}} creature(s)
+      </h3>
+      <div class="lf-result__actions">
+        <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this haul to chat">
+          <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
+          <span>Send to Chat</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="pc-result__creatures">
+      {{#each result.creatures}}
+      <article class="pc-creature" style="--lf-stagger: {{@index}}">
+        <header class="pc-creature__head">
+          <div class="pc-creature__title">
+            <strong>{{name}}</strong>
+            <span class="pc-creature__tier">{{tierLabel}}</span>
+          </div>
+          <div class="pc-creature__right">
+            <span class="pc-creature__total">{{totalGpLabel}}</span>
+            <button
+              type="button"
+              class="pc-creature__reroll"
+              data-action="rerollCreature"
+              data-creature-id="{{id}}"
+              title="Re-roll this creature's drops"
+              aria-label="Re-roll this creature"
+            ><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+          </div>
+        </header>
+        {{#if items.length}}
+        <ul class="pc-creature__items">
+          {{#each items}}
+          <li class="lf-result__item lf-result__item--{{rarity}}" style="--lf-stagger: {{@index}}">
+            <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
+              <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
+              <div class="lf-result__copy">
+                <strong class="lf-result__name">{{item.name}}</strong>
+                <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}</span>
+              </div>
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+        {{else}}
+        <p class="pc-creature__empty">No drops for this creature.</p>
+        {{/if}}
+      </article>
+      {{/each}}
+    </div>
+    {{else}}
+    <p class="lf-result__placeholder">
+      Build a roster and click <strong>Roll All</strong>.
+    </p>
+    {{/if}}
+  </section>
+</div>
+
+{{!-- Reusable slider partial --}}
+{{#*inline "pcSlider"}}
+<div class="lf-slider">
+  <div class="lf-slider__head">
+    <label class="lf-slider__label" for="pc-slider-{{name}}">{{label}}</label>
+    <span class="lf-slider__value">
+      <strong data-readout="{{name}}">{{valueLabel}}</strong>
+      {{#if presetLabel}}<em data-preset="{{name}}">{{presetLabel}}</em>{{/if}}
+    </span>
+  </div>
+  <input
+    class="lf-slider__input"
+    id="pc-slider-{{name}}"
+    type="range"
+    name="{{name}}"
+    min="{{min}}"
+    max="{{max}}"
+    step="{{step}}"
+    value="{{value}}"
+  />
+  {{#if snaps}}
+  <div class="lf-slider__snaps">
+    {{#each snaps}}
+    <button
+      type="button"
+      class="lf-slider__snap {{#if active}}is-active{{/if}}"
+      data-action="snap"
+      data-target="{{../name}}"
+      data-value="{{value}}"
+    >{{label}}</button>
+    {{/each}}
+  </div>
+  {{/if}}
+</div>
+{{/inline}}

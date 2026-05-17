@@ -15,7 +15,7 @@ A single scene-control button (the d20 icon under Token Controls) opens the dash
 - GM-only dashboard with a tile grid of tools
 - **Per-Encounter Loot** (available) — slider-driven controls (encounter scale, generosity, party size, item count, magic bias), tier segmented buttons, multi-select rarity + loot-type chips with live per-bucket pack counts, and a live "X items match" candidate readout. Snap-buttons under each slider lock to canonical values (Trivial / Standard / Hard / Deadly / Hoard, Stingy / Balanced / Generous). Quick-fight macros (Easy / Standard / Hard / Hoard) stamp three sliders in one click. **Use Party** auto-fills party size from the live player list. **All / None** affordances on each chip row. Lock individual results to preserve them through **Re-roll Unlocked**. **Send to Chat** posts the bundle as a clickable chat card. Form + last result persist across window close until page reload.
 - **Horde Loot** (available) — treasure for a defeated mob. Mob Size scales the gp budget linearly off the threat tier; a **Pile Bias** slider (Coin Heavy / Mixed / Item Heavy) trades raw coin for items. Result presents as a coin-pile card (with `pp / gp / sp / cp` breakdown) plus the item list. Same rarity / loot-type chips, same Magic Bias dial, same Send-to-Chat path.
-- **Per-Creature Loot** (coming soon) — individual drops per creature, summed
+- **Per-Creature Loot** (available) — build a roster of defeated creatures (each with a name + tier), click **Roll All**, and each creature gets its own small bundle. Per-creature reroll button regenerates one creature's drops without disturbing the rest. Result is grouped per creature with a grand total at the top. Send to Chat groups drops by creature.
 - No claim board, no player UI, no merchant flow (yet)
 
 ### Magic Bias
@@ -93,6 +93,7 @@ infinity-dnd5e/
 │   ├── tool-registry.js   # registerTool/getTools — used by dashboard
 │   ├── app.js             # PerEncounterLootApp (ApplicationV2)
 │   ├── horde-loot.js      # HordeLootApp (ApplicationV2)
+│   ├── per-creature-loot.js  # PerCreatureLootApp (ApplicationV2)
 │   ├── loot/
 │   │   ├── tag-vocabulary.js   # tag enums + magic-nature classifier
 │   │   ├── budget.js           # control values → numeric budget (numeric multipliers + named presets)
@@ -106,11 +107,13 @@ infinity-dnd5e/
 ├── templates/
 │   ├── dashboard.hbs
 │   ├── loot-forge.hbs
-│   └── horde-loot.hbs
+│   ├── horde-loot.hbs
+│   └── per-creature-loot.hbs
 ├── styles/
 │   ├── dashboard.css
 │   ├── loot-forge.css
-│   └── horde-loot.css
+│   ├── horde-loot.css
+│   └── per-creature-loot.css
 └── packs/
     └── infinity-dnd5e-items.db   # bundled 1,456-item compendium
 ```

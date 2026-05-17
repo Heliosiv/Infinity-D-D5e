@@ -1,0 +1,340 @@
+/* =========================================================
+   Infinity D&D5e — Per-Creature Loot styles
+   ---------------------------------------------------------
+   Reuses the .lf-* primitive language. Only roster + per-creature
+   cards are unique to this window.
+   ========================================================= */
+
+.infinity-dnd5e.per-creature-loot {
+  --lf-bg: #1d2330;
+  --lf-bg-alt: #242b3b;
+  --lf-surface: #2c3548;
+  --lf-surface-elev: #364159;
+  --lf-border: #475070;
+  --lf-border-strong: #6473a0;
+  --lf-text: #e7ecf6;
+  --lf-text-strong: #ffffff;
+  --lf-muted: #97a3c1;
+  --lf-accent: #ffb15d;
+  --lf-accent-contrast: #1a1208;
+  --lf-warn: #f0a154;
+  --lf-radius: 10px;
+  --lf-radius-sm: 6px;
+  --lf-radius-pill: 999px;
+
+  --lf-rarity-common: #b3bfd8;
+  --lf-rarity-uncommon: #6dd5a2;
+  --lf-rarity-rare: #6aa7ff;
+  --lf-rarity-very-rare: #c98cff;
+  --lf-rarity-legendary: #ffb15d;
+  --lf-rarity-artifact: #f47272;
+
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+.infinity-dnd5e.per-creature-loot .window-content,
+.infinity-dnd5e.per-creature-loot {
+  padding: 0;
+}
+
+.pc-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+/* =========================================================
+   Form chrome
+   ========================================================= */
+.pc-form {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+}
+
+.pc-form__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pc-form__title {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--lf-text-strong);
+}
+
+.pc-form__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--lf-muted);
+  max-width: 56ch;
+}
+
+.pc-form__budget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.pc-form__budget-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+
+.pc-form__budget strong {
+  font-size: 1.05rem;
+  color: var(--lf-accent);
+  font-feature-settings: "tnum";
+}
+
+.pc-form__budget-sub {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--lf-muted);
+  font-weight: 500;
+}
+
+/* =========================================================
+   Roster
+   ========================================================= */
+.pc-roster__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.pc-roster__row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.5fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+}
+
+.pc-roster__name {
+  font-size: 0.92rem;
+  padding: 4px 8px;
+}
+
+.pc-roster__tiers {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.pc-roster__tier {
+  padding: 4px 8px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  font-feature-settings: "tnum";
+}
+
+.pc-roster__tier:hover {
+  color: var(--lf-text);
+  border-color: var(--lf-border-strong);
+}
+
+.pc-roster__tier.is-active {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
+}
+
+.pc-roster__budget {
+  font-size: 0.78rem;
+  color: var(--lf-muted);
+  font-feature-settings: "tnum";
+  min-width: 60px;
+  text-align: right;
+}
+
+.pc-roster__remove {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-muted);
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.pc-roster__remove:hover {
+  color: var(--lf-danger, #ef6f74);
+  border-color: var(--lf-danger, #ef6f74);
+}
+
+.pc-roster__empty {
+  margin: 6px 0 0;
+  padding: 12px;
+  border: 1px dashed var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  text-align: center;
+  color: var(--lf-muted);
+  font-size: 0.88rem;
+}
+
+.lf-bulk[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   Result — per-creature cards
+   ========================================================= */
+.pc-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+  min-height: 220px;
+}
+
+.pc-result__creatures {
+  display: grid;
+  gap: 10px;
+}
+
+.pc-creature {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-surface);
+  animation: lf-cascade-in 240ms cubic-bezier(0.25, 0.8, 0.4, 1) both;
+  animation-delay: calc(var(--lf-stagger, 0) * 50ms);
+}
+
+.infinity-dnd5e.per-creature-loot.lf-no-anim .pc-creature {
+  animation: none;
+}
+
+.pc-creature__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pc-creature__title strong {
+  font-size: 0.98rem;
+  color: var(--lf-text-strong);
+  margin-right: 8px;
+}
+
+.pc-creature__tier {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--lf-radius-pill);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-feature-settings: "tnum";
+}
+
+.pc-creature__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pc-creature__total {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--lf-accent);
+  font-feature-settings: "tnum";
+}
+
+.pc-creature__reroll {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.pc-creature__reroll:hover {
+  color: var(--lf-accent);
+  border-color: var(--lf-accent);
+  background: var(--lf-surface-elev);
+}
+
+.pc-creature__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px;
+}
+
+.pc-creature__empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--lf-muted);
+  font-size: 0.82rem;
+  font-style: italic;
+  border: 1px dashed var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+}
