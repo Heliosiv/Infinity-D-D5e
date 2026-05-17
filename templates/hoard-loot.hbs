@@ -46,7 +46,9 @@
 
     {{!-- Hoard scale --}}
     <fieldset class="lf-fieldset">
-      <legend class="lf-fieldset__legend">Hoard Scale</legend>
+      <legend class="lf-fieldset__legend">
+        Hoard Scale <small>(rarity defaults follow the scale)</small>
+      </legend>
       <div class="lf-segment lf-segment--scale" role="group" aria-label="Hoard scale">
         {{#each scaleOptions}}
         <button
@@ -54,7 +56,7 @@
           class="lf-segment__btn {{#if selected}}is-active{{/if}}"
           data-action="scaleSelect"
           data-value="{{value}}"
-          title="{{label}} hoard — ×{{multiplier}} of tier base"
+          title="{{label}} — ×{{multiplier}} of tier base. {{flavor}}"
         >
           <span class="lf-segment__short">{{label}}</span>
           <span class="lf-segment__long">×{{multiplier}}</span>

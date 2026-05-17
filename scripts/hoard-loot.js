@@ -25,6 +25,8 @@ import {
   coinDenominationBreakdown,
   computeHoardBudget,
   formatCoinBreakdown,
+  getDefaultRarities,
+  getScaleFlavor,
   splitCoinPile,
 } from "./loot/hoard-budget.js";
 import { nearestPreset } from "./loot/budget.js";
@@ -105,16 +107,19 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* ------------------- state ------------------- */
 
   static buildDefaultForm() {
+    const tier = getSetting(SETTING_KEYS.DEFAULT_TIER) ?? "t2";
     const scale = "standard";
     return {
-      tier: getSetting(SETTING_KEYS.DEFAULT_TIER) ?? "t2",
+      tier,
       scale,
       pileBias: 0,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
-      // Hoard tools default chips to all-selected so the GM doesn't
-      // have to remember to pick a rarity — feedback from first use.
-      rarities: [...RARITIES],
+      // Rarity narrows with the scale's narrative shape; the chips
+      // remain editable and stay sticky across tier/scale clicks
+      // until the GM customizes them away from the table default.
+      rarities: getDefaultRarities(tier, scale),
+      // Loot types stay all-selected by default — orthogonal to scale.
       lootTypes: [...LOOT_TYPES],
     };
   }
@@ -165,6 +170,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         value: key,
         label: humanizeKey(key),
         multiplier: HOARD_SCALE_PRESETS[key],
+        flavor: getScaleFlavor(key),
         selected: key === this._form.scale,
       })),
 
@@ -311,28 +317,49 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {HoardLootApp} */
   static async _onTierSelect(_event, target) {
-    const tier = target?.dataset?.value;
-    if (!tier) return;
-    this._form = { ...this._form, tier };
+    const newTier = target?.dataset?.value;
+    if (!newTier || newTier === this._form.tier) return;
+    // Sticky rarity update: if the GM hasn't customized rarities
+    // away from the (prev tier, scale) default, slide them to the
+    // (new tier, scale) default. Otherwise leave their tweaks alone.
+    const prevDefaults = getDefaultRarities(this._form.tier, this._form.scale);
+    const customizedRarities = !sameSet(this._form.rarities, prevDefaults);
+    const nextRarities = customizedRarities
+      ? this._form.rarities
+      : getDefaultRarities(newTier, this._form.scale);
+    this._form = { ...this._form, tier: newTier, rarities: nextRarities };
     await this.render();
   }
 
   /** @this {HoardLootApp} */
   static async _onScaleSelect(_event, target) {
-    const scale = target?.dataset?.value;
-    if (!scale) return;
-    // Bump the max-items ceiling to the scale's default unless the
-    // user has already nudged it away from the previous default.
-    const previousDefault = HOARD_DEFAULT_ITEM_CEILING[this._form.scale];
-    const sameAsDefault = this._form.maxItems === previousDefault;
-    const next = {
+    const newScale = target?.dataset?.value;
+    if (!newScale || newScale === this._form.scale) return;
+    const prevScale = this._form.scale;
+
+    // Sticky max-items update.
+    const prevCeilingDefault = HOARD_DEFAULT_ITEM_CEILING[prevScale];
+    const customizedMaxItems = this._form.maxItems !== prevCeilingDefault;
+    const nextMaxItems = customizedMaxItems
+      ? this._form.maxItems
+      : (HOARD_DEFAULT_ITEM_CEILING[newScale] ?? this._form.maxItems);
+
+    // Sticky rarity update.
+    const prevRarityDefaults = getDefaultRarities(this._form.tier, prevScale);
+    const customizedRarities = !sameSet(
+      this._form.rarities,
+      prevRarityDefaults,
+    );
+    const nextRarities = customizedRarities
+      ? this._form.rarities
+      : getDefaultRarities(this._form.tier, newScale);
+
+    this._form = {
       ...this._form,
-      scale,
-      maxItems: sameAsDefault
-        ? (HOARD_DEFAULT_ITEM_CEILING[scale] ?? this._form.maxItems)
-        : this._form.maxItems,
+      scale: newScale,
+      maxItems: nextMaxItems,
+      rarities: nextRarities,
     };
-    this._form = next;
     await this.render();
   }
 
@@ -714,6 +741,18 @@ function resolveChatRecipients(mode) {
     if (mode === "whisper-players" && !isGM) out.push(user.id);
   }
   return out;
+}
+
+/**
+ * Treat two arrays as unordered sets — order doesn't matter, duplicates
+ * collapse. Used by the sticky-defaults logic in tier/scale handlers.
+ */
+function sameSet(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  const setA = new Set(a);
+  if (setA.size !== new Set(b).size) return false;
+  for (const item of b) if (!setA.has(item)) return false;
+  return true;
 }
 
 function clampInt(raw, min, max, fallback) {

@@ -8,9 +8,21 @@ import {
   coinDenominationBreakdown,
   computeHoardBudget,
   formatCoinBreakdown,
+  getDefaultRarities,
   getHoardCurve,
+  getScaleFlavor,
   splitCoinPile,
 } from "./loot/hoard-budget.js";
+
+const RARITY_ORDER = [
+  "common",
+  "uncommon",
+  "rare",
+  "very-rare",
+  "legendary",
+  "artifact",
+];
+const rarityRank = (r) => RARITY_ORDER.indexOf(r);
 
 /* ------------------------------------------------------------------ *
  * Curve + presets sanity
@@ -164,6 +176,104 @@ import {
   );
   assert.equal(formatCoinBreakdown({ pp: 0, gp: 0, sp: 0, cp: 0 }), "");
   assert.equal(formatCoinBreakdown(null), "");
+}
+
+/* ------------------------------------------------------------------ *
+ * getDefaultRarities — exists for every (tier, scale) pair and slides
+ * higher as either axis grows
+ * ------------------------------------------------------------------ */
+{
+  // Every cell is non-empty.
+  for (const tier of ["t1", "t2", "t3", "t4", "t5"]) {
+    for (const scale of ["small", "standard", "large", "massive"]) {
+      const defaults = getDefaultRarities(tier, scale);
+      assert.ok(
+        defaults.length > 0,
+        `${tier}/${scale} should ship a default rarity set`,
+      );
+      // Returns a fresh array (mutable).
+      defaults.push("temp");
+      const second = getDefaultRarities(tier, scale);
+      assert.ok(
+        !second.includes("temp"),
+        `${tier}/${scale} should return a fresh array each call`,
+      );
+    }
+  }
+
+  // Sanity: t1/small is just common; t5/massive includes artifact.
+  assert.deepEqual(getDefaultRarities("t1", "small"), ["common"]);
+  assert.ok(getDefaultRarities("t5", "massive").includes("artifact"));
+  assert.ok(getDefaultRarities("t4", "massive").includes("artifact"));
+
+  // Lower-tier hoards should never include artifact in default rolls.
+  for (const tier of ["t1", "t2", "t3"]) {
+    for (const scale of ["small", "standard", "large", "massive"]) {
+      assert.ok(
+        !getDefaultRarities(tier, scale).includes("artifact"),
+        `${tier}/${scale} default should not include artifact (campaign-defining)`,
+      );
+    }
+  }
+
+  // Within a tier, the minimum rarity is non-decreasing as scale grows
+  // (small ≤ standard ≤ large ≤ massive). We let "ceiling" wobble because
+  // some t1 cells stay narrower than expected.
+  for (const tier of ["t1", "t2", "t3", "t4", "t5"]) {
+    const scales = ["small", "standard", "large", "massive"];
+    const mins = scales.map((s) =>
+      Math.min(...getDefaultRarities(tier, s).map(rarityRank)),
+    );
+    for (let i = 1; i < mins.length; i += 1) {
+      assert.ok(
+        mins[i] >= mins[i - 1],
+        `${tier}: floor rarity should not decrease from ${scales[i - 1]} to ${scales[i]} (got ${mins[i - 1]} → ${mins[i]})`,
+      );
+    }
+  }
+
+  // Across tiers at the same scale, the floor only goes up.
+  for (const scale of ["small", "standard", "large", "massive"]) {
+    const tiers = ["t1", "t2", "t3", "t4", "t5"];
+    const mins = tiers.map((t) =>
+      Math.min(...getDefaultRarities(t, scale).map(rarityRank)),
+    );
+    for (let i = 1; i < mins.length; i += 1) {
+      assert.ok(
+        mins[i] >= mins[i - 1],
+        `${scale}: floor rarity should not decrease from ${tiers[i - 1]} to ${tiers[i]} (got ${mins[i - 1]} → ${mins[i]})`,
+      );
+    }
+  }
+
+  // Unknown inputs degrade gracefully — empty array, not a throw.
+  assert.deepEqual(getDefaultRarities("garbage", "standard"), []);
+  assert.deepEqual(getDefaultRarities(null, null), []);
+  // Unknown scale falls back to the tier's standard.
+  assert.deepEqual(
+    getDefaultRarities("t2", "weird"),
+    getDefaultRarities("t2", "standard"),
+    "unknown scale falls back to standard within the tier",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * getScaleFlavor — narrative blurb for each named scale
+ * ------------------------------------------------------------------ */
+{
+  for (const scale of ["small", "standard", "large", "massive"]) {
+    const flavor = getScaleFlavor(scale);
+    assert.ok(
+      typeof flavor === "string" && flavor.length > 0,
+      `${scale} has a flavor blurb`,
+    );
+  }
+  assert.equal(
+    getScaleFlavor("garbage"),
+    "",
+    "unknown scale returns empty string",
+  );
+  assert.equal(getScaleFlavor(null), "", "null-safe");
 }
 
 process.stdout.write("hoard-budget validation passed\n");
