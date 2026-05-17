@@ -1,0 +1,209 @@
+{{!--
+  Infinity D&D5e — Horde Loot window template.
+  Mob-size driven budget; a Pile Bias slider splits it between the
+  coin pile and items. Result presentation is a coin-pile card +
+  item list.
+--}}
+<div class="hl-shell">
+  <form class="hl-form" data-form="horde-loot" autocomplete="off">
+    <header class="hl-form__head">
+      <div>
+        <h2 class="hl-form__title">Horde Loot</h2>
+        <p class="hl-form__hint">
+          Treasure for a defeated mob. Mob size sets the gp budget; the Pile Bias slider trades raw coin for items.
+        </p>
+      </div>
+      <div class="hl-form__budget" aria-live="polite">
+        <span class="hl-form__budget-label">Total Budget</span>
+        <strong data-total-budget>{{totalBudgetLabel}}</strong>
+        <div class="hl-form__budget-split">
+          <span><i class="fa-solid fa-coins" aria-hidden="true"></i> <span data-coin-pile-projected>{{coinPileLabel}}</span> coin pile</span>
+          <span><i class="fa-solid fa-gem" aria-hidden="true"></i> <span data-item-budget>{{itemBudgetLabel}}</span> items</span>
+        </div>
+        <span class="hl-form__budget-sub" data-candidates>{{candidateLabel}}</span>
+      </div>
+    </header>
+
+    {{!-- Tier --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Threat Tier</legend>
+      <div class="lf-segment" role="group" aria-label="Tier">
+        {{#each tierOptions}}
+        <button
+          type="button"
+          class="lf-segment__btn {{#if selected}}is-active{{/if}}"
+          data-action="tierSelect"
+          data-value="{{value}}"
+          title="{{label}}"
+        >
+          <span class="lf-segment__short">{{shortLabel}}</span>
+          <span class="lf-segment__long">{{label}}</span>
+          {{#if count}}<span class="lf-segment__count">{{count}}</span>{{/if}}
+        </button>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    {{!-- Sliders --}}
+    <div class="lf-form__sliders">
+      {{> hordeSlider mobSize}}
+      {{> hordeSlider count}}
+      {{> hordeSlider pileBias}}
+      {{> hordeSlider magicBias}}
+    </div>
+
+    {{!-- Rarity chips --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">
+        Rarity Filter
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
+        </span>
+      </legend>
+      <div class="lf-chiprow">
+        {{#each rarityOptions}}
+        <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    {{!-- Loot type chips --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">
+        Loot Types <small>(empty = all)</small>
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
+        </span>
+      </legend>
+      <div class="lf-chiprow">
+        {{#each lootTypeOptions}}
+        <label class="lf-chip {{#if selected}}is-checked{{/if}}">
+          <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        </label>
+        {{/each}}
+      </div>
+    </fieldset>
+
+    <div class="lf-form__actions">
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
+        <i class="fa-solid fa-sack-dollar" aria-hidden="true"></i>
+        <span>Roll the Horde</span>
+      </button>
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="reset" title="Restore form defaults">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+        <span>Reset Settings</span>
+      </button>
+      {{#if hasResult}}
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="clear" title="Clear the haul, keep settings">
+        <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+        <span>Clear Haul</span>
+      </button>
+      {{/if}}
+    </div>
+  </form>
+
+  <section class="hl-result" aria-live="polite">
+    {{#if loadingItems}}
+    <div class="lf-result__loading" role="status" aria-live="polite">
+      <span class="lf-skeleton lf-skeleton--lg"></span>
+      <span class="lf-skeleton"></span>
+      <span class="lf-skeleton lf-skeleton--sm"></span>
+      <p class="lf-result__placeholder">Loading compendium…</p>
+    </div>
+    {{else if hasResult}}
+    <header class="lf-result__head">
+      <h3 class="lf-result__title">
+        Total — {{result.totalGpLabel}}
+      </h3>
+      <div class="lf-result__actions">
+        <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this haul to chat">
+          <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
+          <span>Send to Chat</span>
+        </button>
+      </div>
+    </header>
+
+    {{#if hasCoinPile}}
+    <article class="hl-coinpile" aria-label="Coin pile">
+      <div class="hl-coinpile__icon"><i class="fa-solid fa-coins"></i></div>
+      <div class="hl-coinpile__body">
+        <strong class="hl-coinpile__total">{{result.coinPileLabel}}</strong>
+        {{#if result.coinBreakdownLabel}}
+        <span class="hl-coinpile__breakdown" data-coin-breakdown>{{result.coinBreakdownLabel}}</span>
+        {{/if}}
+      </div>
+    </article>
+    {{/if}}
+
+    {{#if result.items.length}}
+    <ul class="lf-result__list">
+      {{#each result.items}}
+      <li class="lf-result__item lf-result__item--{{rarity}}" style="--lf-stagger: {{@index}}">
+        <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
+          <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
+          <div class="lf-result__copy">
+            <strong class="lf-result__name">{{item.name}}</strong>
+            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}</span>
+          </div>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+    {{/if}}
+
+    {{#if result.warnings.length}}
+    <ul class="lf-result__warnings">
+      {{#each result.warnings}}
+      <li>{{this}}</li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{else}}
+    <p class="lf-result__placeholder">
+      Set your tier, mob size, and pile bias, then click <strong>Roll the Horde</strong>.
+    </p>
+    {{/if}}
+  </section>
+</div>
+
+{{!-- Reusable slider block (locally inlined to keep the partial scoped) --}}
+{{#*inline "hordeSlider"}}
+<div class="lf-slider">
+  <div class="lf-slider__head">
+    <label class="lf-slider__label" for="hl-slider-{{name}}">{{label}}</label>
+    <span class="lf-slider__value">
+      <strong data-readout="{{name}}">{{valueLabel}}</strong>
+      {{#if presetLabel}}<em data-preset="{{name}}">{{presetLabel}}</em>{{/if}}
+    </span>
+  </div>
+  <input
+    class="lf-slider__input"
+    id="hl-slider-{{name}}"
+    type="range"
+    name="{{name}}"
+    min="{{min}}"
+    max="{{max}}"
+    step="{{step}}"
+    value="{{value}}"
+  />
+  {{#if snaps}}
+  <div class="lf-slider__snaps">
+    {{#each snaps}}
+    <button
+      type="button"
+      class="lf-slider__snap {{#if active}}is-active{{/if}}"
+      data-action="snap"
+      data-target="{{../name}}"
+      data-value="{{value}}"
+    >{{label}}</button>
+    {{/each}}
+  </div>
+  {{/if}}
+</div>
+{{/inline}}

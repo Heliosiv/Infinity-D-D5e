@@ -9,8 +9,16 @@
     "verified": "14"
   },
   "esmodules": ["scripts/module.js"],
-  "styles": ["styles/dashboard.css", "styles/loot-forge.css"],
-  "templates": ["templates/dashboard.hbs", "templates/loot-forge.hbs"],
+  "styles": [
+    "styles/dashboard.css",
+    "styles/loot-forge.css",
+    "styles/horde-loot.css"
+  ],
+  "templates": [
+    "templates/dashboard.hbs",
+    "templates/loot-forge.hbs",
+    "templates/horde-loot.hbs"
+  ],
   "packs": [
     {
       "name": "infinity-dnd5e-items",

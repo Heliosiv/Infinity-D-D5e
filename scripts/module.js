@@ -10,6 +10,7 @@
 
 import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
+import { HordeLootApp } from "./horde-loot.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
 
@@ -64,11 +65,11 @@ function registerBuiltinTools() {
     id: "horde-loot",
     title: "Horde Loot",
     description:
-      "Generate a pile of treasure for a defeated mob — weighted toward spread and consumables.",
+      "Treasure for a defeated mob — mob size sets the budget, Pile Bias trades coin for items.",
     icon: "fa-solid fa-sack-dollar",
     category: "loot",
-    status: "coming-soon",
-    open: () => {},
+    status: "available",
+    open: () => HordeLootApp.open(),
   });
 
   registerTool({
@@ -107,6 +108,7 @@ Hooks.once("ready", () => {
     mod.api = {
       openDashboard: () => InfinityDashboardApp.open(),
       openPerEncounterLoot: () => PerEncounterLootApp.open(),
+      openHordeLoot: () => HordeLootApp.open(),
     };
   }
 });
