@@ -13,6 +13,8 @@
     "check:budget": "node scripts/test-budget.mjs",
     "check:tag-vocabulary": "node scripts/test-tag-vocabulary.mjs",
     "check:pack-shape": "node scripts/test-pack-shape.mjs",
+    "release": "node scripts/run-checks.mjs && node scripts/build-release.mjs",
+    "release:nocheck": "node scripts/build-release.mjs",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\"",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\""
   },
