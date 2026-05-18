@@ -1,63 +1,73 @@
 {{!--
-  Infinity D&D5e — Loot Forge window template.
-  Rendered inside ApplicationV2's frame; no outer .application
-  wrapper needed.
+  Infinity D&D5e — Per-Encounter Loot window template.
+  Slider-driven controls. Numbers under chips and the candidate
+  count are pulled live from the loaded compendium, so the UI never
+  asks for something the pack can't fulfil.
 --}}
 <div class="lf-shell">
   <form class="lf-form" data-form="loot-forge" autocomplete="off">
     <header class="lf-form__head">
       <div>
-        <h2 class="lf-form__title">Loot Forge</h2>
+        <h2 class="lf-form__title">Per-Encounter Loot</h2>
         <p class="lf-form__hint">
-          Roll a treasure bundle from the curated {{moduleId}} compendium. Tags drive every filter — no manual table
-          lookups.
+          Roll a treasure bundle for one encounter from the curated {{moduleId}} compendium. Sliders tune the budget,
+          chips narrow the pool, and the magic-bias dial skews toward (or away from) magical items.
         </p>
       </div>
       <div class="lf-form__budget" aria-live="polite">
         <span class="lf-form__budget-label">Projected Budget</span>
-        <strong data-projected-budget>{{projectedBudget}} gp</strong>
+        <strong data-projected-budget>{{projectedBudgetLabel}}</strong>
+        <span class="lf-form__budget-sub" data-candidates>{{candidateLabel}}</span>
       </div>
     </header>
 
-    <div class="lf-form__grid">
-      <label class="lf-field">
-        <span class="lf-field__label">Tier</span>
-        <select class="lf-input" name="tier">
-          {{#each tierOptions}}
-          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-          {{/each}}
-        </select>
-      </label>
+    {{!-- Quick-fight macros — one click for a common "shape of a roll" --}}
+    <fieldset class="lf-fieldset lf-fieldset--quick">
+      <legend class="lf-fieldset__legend">Quick Fight <small>(stamps scale + generosity + count)</small></legend>
+      <div class="lf-quick">
+        {{#each quickPresets}}
+        <button
+          type="button"
+          class="lf-quick__btn {{#if active}}is-active{{/if}}"
+          data-action="quickPreset"
+          data-preset="{{key}}"
+        >
+          <i class="{{icon}}" aria-hidden="true"></i>
+          <span>{{label}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </fieldset>
 
-      <label class="lf-field">
-        <span class="lf-field__label">Encounter Scale</span>
-        <select class="lf-input" name="scale">
-          {{#each scaleOptions}}
-          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-          {{/each}}
-        </select>
-      </label>
+    {{!-- Tier — segmented button row --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Tier</legend>
+      <div class="lf-segment" role="group" aria-label="Tier">
+        {{#each tierOptions}}
+        <button
+          type="button"
+          class="lf-segment__btn {{#if selected}}is-active{{/if}}"
+          data-action="tierSelect"
+          data-value="{{value}}"
+          title="{{label}}"
+        >
+          <span class="lf-segment__short">{{shortLabel}}</span>
+          <span class="lf-segment__long">{{label}}</span>
+          {{#if count}}<span class="lf-segment__count">{{count}}</span>{{/if}}
+        </button>
+        {{/each}}
+      </div>
+    </fieldset>
 
-      <label class="lf-field">
-        <span class="lf-field__label">Generosity</span>
-        <select class="lf-input" name="generosity">
-          {{#each generosityOptions}}
-          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-          {{/each}}
-        </select>
-      </label>
+    {{!-- Sliders --}}
+    <div class="lf-form__sliders">
+      {{> slider scale}}
+      {{> slider generosity}}
+      {{> slider partySize}}
+      {{> slider count}}
+      {{> slider magicBias}}
 
-      <label class="lf-field">
-        <span class="lf-field__label">Party Size</span>
-        <input class="lf-input" type="number" name="partySize" min="1" max="10" step="1" value="{{form.partySize}}" />
-      </label>
-
-      <label class="lf-field">
-        <span class="lf-field__label">Item Count</span>
-        <input class="lf-input" type="number" name="count" min="1" max="30" step="1" value="{{form.count}}" />
-      </label>
-
-      <label class="lf-field">
+      <label class="lf-field lf-field--inline">
         <span class="lf-field__label">Budget Override <small>(0 = use curve)</small></span>
         <input class="lf-input" type="number" name="budgetOverride" min="0" step="50" value="{{form.budgetOverride}}" />
       </label>
@@ -71,50 +81,85 @@
       </label>
     </div>
 
+    {{!-- Rarity chips --}}
     <fieldset class="lf-fieldset">
-      <legend class="lf-fieldset__legend">Rarity Filter</legend>
+      <legend class="lf-fieldset__legend">
+        Rarity Filter
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
+        </span>
+      </legend>
       <div class="lf-chiprow">
         {{#each rarityOptions}}
         <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
           <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
-          <span>{{label}}</span>
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>
         {{/each}}
       </div>
     </fieldset>
 
+    {{!-- Loot type chips --}}
     <fieldset class="lf-fieldset">
-      <legend class="lf-fieldset__legend">Loot Types <small>(leave empty for all)</small></legend>
+      <legend class="lf-fieldset__legend">
+        Loot Types <small>(empty = all)</small>
+        <span class="lf-chiprow__bulk">
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
+        </span>
+      </legend>
       <div class="lf-chiprow">
         {{#each lootTypeOptions}}
         <label class="lf-chip {{#if selected}}is-checked{{/if}}">
           <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
-          <span>{{label}}</span>
+          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>
         {{/each}}
       </div>
     </fieldset>
 
     <div class="lf-form__actions">
-      <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Generate (Enter or R)">
         <i class="fa-solid fa-dice" aria-hidden="true"></i>
         <span>Generate Loot</span>
       </button>
-      <button type="button" class="lf-btn lf-btn--ghost" data-action="reset">
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="reset" title="Restore form defaults">
         <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-        <span>Reset</span>
+        <span>Reset Settings</span>
       </button>
+      {{#if hasResult}}
+      <button type="button" class="lf-btn lf-btn--ghost" data-action="clear" title="Clear results, keep settings">
+        <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+        <span>Clear Results</span>
+      </button>
+      {{/if}}
     </div>
   </form>
 
   <section class="lf-result" aria-live="polite">
     {{#if loadingItems}}
-    <p class="lf-result__placeholder">Loading compendium…</p>
+    <div class="lf-result__loading" role="status" aria-live="polite">
+      <span class="lf-skeleton lf-skeleton--lg"></span>
+      <span class="lf-skeleton"></span>
+      <span class="lf-skeleton lf-skeleton--sm"></span>
+      <p class="lf-result__placeholder">Loading compendium…</p>
+    </div>
     {{else if hasResult}}
     <header class="lf-result__head">
       <h3 class="lf-result__title">
-        {{result.items.length}} item(s) — {{result.totalGp}} gp{{#if result.budgetGp}} / {{result.budgetGp}} gp budget{{/if}}
+        {{result.items.length}} item(s) — {{result.totalGpLabel}}{{#if result.budgetGp}} / {{result.budgetGpLabel}} budget{{/if}}
       </h3>
+      <div class="lf-result__actions">
+        <button type="button" class="lf-btn lf-btn--small" data-action="rerollUnlocked" title="Re-roll only unlocked items">
+          <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+          <span>Re-roll Unlocked</span>
+        </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this loot to chat">
+          <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
+          <span>Send to Chat</span>
+        </button>
+      </div>
       {{#if result.droppedForBudget}}
       <p class="lf-result__warning">Dropped {{result.droppedForBudget}} item(s) to fit budget.</p>
       {{/if}}
@@ -122,7 +167,16 @@
 
     <ul class="lf-result__list">
       {{#each result.items}}
-      <li class="lf-result__item lf-result__item--{{rarity}}">
+      <li class="lf-result__item lf-result__item--{{rarity}} {{#if locked}}is-locked{{/if}}" style="--lf-stagger: {{@index}}">
+        <button
+          type="button"
+          class="lf-result__lock"
+          data-action="toggleLock"
+          data-item-id="{{resultId}}"
+          title="{{#if locked}}Locked — won't be re-rolled{{else}}Lock this item{{/if}}"
+        >
+          <i class="fa-solid {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}" aria-hidden="true"></i>
+        </button>
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
           <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
           <div class="lf-result__copy">
@@ -133,7 +187,7 @@
             {{#if sourceLabel}}
             <span class="lf-result__source">{{sourceLabel}}</span>
             {{/if}}
-            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotal}} gp{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
+            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
           </div>
         </button>
       </li>
@@ -152,3 +206,50 @@
     {{/if}}
   </section>
 </div>
+
+{{!-- Reusable slider block --}}
+{{#*inline "slider"}}
+<div class="lf-slider">
+  <div class="lf-slider__head">
+    <label class="lf-slider__label" for="lf-slider-{{name}}">{{label}}</label>
+    <span class="lf-slider__value">
+      <strong data-readout="{{name}}">{{valueLabel}}</strong>
+      {{#if presetLabel}}<em data-preset="{{name}}">{{presetLabel}}</em>{{/if}}
+      {{#if extra}}
+      <button
+        type="button"
+        class="lf-slider__extra"
+        data-action="{{extra.action}}"
+        title="{{extra.title}}"
+      >
+        <i class="{{extra.icon}}" aria-hidden="true"></i>
+        <span>{{extra.label}}</span>
+      </button>
+      {{/if}}
+    </span>
+  </div>
+  <input
+    class="lf-slider__input"
+    id="lf-slider-{{name}}"
+    type="range"
+    name="{{name}}"
+    min="{{min}}"
+    max="{{max}}"
+    step="{{step}}"
+    value="{{value}}"
+  />
+  {{#if snaps}}
+  <div class="lf-slider__snaps">
+    {{#each snaps}}
+    <button
+      type="button"
+      class="lf-slider__snap {{#if active}}is-active{{/if}}"
+      data-action="snap"
+      data-target="{{../name}}"
+      data-value="{{value}}"
+    >{{label}}</button>
+    {{/each}}
+  </div>
+  {{/if}}
+</div>
+{{/inline}}

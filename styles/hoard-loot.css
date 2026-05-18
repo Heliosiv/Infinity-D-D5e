@@ -1,0 +1,238 @@
+/* =========================================================
+   Infinity D&D5e — Hoard Loot styles
+   ---------------------------------------------------------
+   Reuses the Loot-Forge .lf-* primitives (fieldset, segment,
+   slider, chip, btn). Only hoard-specific chrome lives here:
+   the shell, header, coin-pile card, hoard-scale segmented
+   row, and the small Max-Items advanced field.
+   ========================================================= */
+
+.infinity-dnd5e.hoard-loot {
+  --lf-bg: #1d2330;
+  --lf-bg-alt: #242b3b;
+  --lf-surface: #2c3548;
+  --lf-surface-elev: #364159;
+  --lf-border: #475070;
+  --lf-border-strong: #6473a0;
+  --lf-text: #e7ecf6;
+  --lf-text-strong: #ffffff;
+  --lf-muted: #97a3c1;
+  --lf-accent: #ffb15d;
+  --lf-accent-contrast: #1a1208;
+  --lf-warn: #f0a154;
+  --lf-radius: 10px;
+  --lf-radius-sm: 6px;
+  --lf-radius-pill: 999px;
+
+  --lf-rarity-common: #b3bfd8;
+  --lf-rarity-uncommon: #6dd5a2;
+  --lf-rarity-rare: #6aa7ff;
+  --lf-rarity-very-rare: #c98cff;
+  --lf-rarity-legendary: #ffb15d;
+  --lf-rarity-artifact: #f47272;
+
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+.infinity-dnd5e.hoard-loot .window-content,
+.infinity-dnd5e.hoard-loot {
+  padding: 0;
+}
+
+.hl-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+/* =========================================================
+   Form chrome (header + budget block)
+   ========================================================= */
+.hl-form {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+}
+
+.hl-form__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.hl-form__title {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--lf-text-strong);
+  letter-spacing: 0.01em;
+}
+
+.hl-form__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--lf-muted);
+  max-width: 56ch;
+}
+
+.hl-form__budget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.hl-form__budget-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+
+.hl-form__budget strong {
+  font-size: 1.1rem;
+  color: var(--lf-accent);
+  font-feature-settings: "tnum";
+}
+
+.hl-form__budget-split {
+  display: flex;
+  gap: 12px;
+  font-size: 0.74rem;
+  color: var(--lf-muted);
+}
+
+.hl-form__budget-split i {
+  margin-right: 4px;
+  color: var(--lf-accent);
+  opacity: 0.85;
+}
+
+.hl-form__budget-sub {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--lf-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* =========================================================
+   Hoard Scale row — looks like the tier segment but slightly
+   compressed; the "long" label shows the multiplier (×0.5, ×4).
+   ========================================================= */
+.lf-segment.lf-segment--scale .lf-segment__short {
+  letter-spacing: 0.02em;
+}
+
+.lf-segment.lf-segment--scale .lf-segment__long {
+  font-feature-settings: "tnum";
+}
+
+/* =========================================================
+   Advanced: Max-Items number field
+   ========================================================= */
+.hl-advanced {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hl-advanced__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.hl-advanced__field small {
+  opacity: 0.7;
+  font-size: 0.92em;
+}
+
+.hl-advanced__input {
+  width: 70px;
+  text-align: right;
+  font-feature-settings: "tnum";
+}
+
+/* =========================================================
+   Result section + coin-pile card
+   ========================================================= */
+.hl-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+  min-height: 220px;
+}
+
+.hl-coinpile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: linear-gradient(
+    135deg,
+    var(--lf-surface) 0%,
+    color-mix(in srgb, var(--lf-surface) 80%, var(--lf-accent) 20%) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--lf-accent) 18%, transparent),
+    0 4px 18px -10px color-mix(in srgb, var(--lf-accent) 40%, transparent);
+}
+
+.hl-coinpile__icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--lf-bg);
+  border: 1px solid color-mix(in srgb, var(--lf-accent) 35%, var(--lf-border));
+  color: var(--lf-accent);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.hl-coinpile__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hl-coinpile__total {
+  font-size: 1.1rem;
+  color: var(--lf-text-strong);
+  font-feature-settings: "tnum";
+}
+
+.hl-coinpile__breakdown {
+  font-size: 0.84rem;
+  color: var(--lf-muted);
+  font-feature-settings: "tnum";
+}

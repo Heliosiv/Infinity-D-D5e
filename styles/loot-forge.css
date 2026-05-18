@@ -276,29 +276,38 @@ select.lf-input {
   cursor: pointer;
 }
 
-.lf-chip.is-checked {
+.lf-chip.is-checked,
+.lf-chip:has(input[type="checkbox"]:checked) {
   background: var(--lf-surface-elev);
   border-color: var(--lf-accent);
   color: var(--lf-text-strong);
 }
 
-/* Rarity-tinted chips when checked */
-.lf-chip.lf-chip--rarity-common.is-checked {
+/* Rarity-tinted chips when checked.
+   Each rarity duplicates the .is-checked and :has(input:checked)
+   selectors so a click flips the border without waiting on a render. */
+.lf-chip.lf-chip--rarity-common.is-checked,
+.lf-chip.lf-chip--rarity-common:has(input:checked) {
   border-color: var(--lf-rarity-common);
 }
-.lf-chip.lf-chip--rarity-uncommon.is-checked {
+.lf-chip.lf-chip--rarity-uncommon.is-checked,
+.lf-chip.lf-chip--rarity-uncommon:has(input:checked) {
   border-color: var(--lf-rarity-uncommon);
 }
-.lf-chip.lf-chip--rarity-rare.is-checked {
+.lf-chip.lf-chip--rarity-rare.is-checked,
+.lf-chip.lf-chip--rarity-rare:has(input:checked) {
   border-color: var(--lf-rarity-rare);
 }
-.lf-chip.lf-chip--rarity-very-rare.is-checked {
+.lf-chip.lf-chip--rarity-very-rare.is-checked,
+.lf-chip.lf-chip--rarity-very-rare:has(input:checked) {
   border-color: var(--lf-rarity-very-rare);
 }
-.lf-chip.lf-chip--rarity-legendary.is-checked {
+.lf-chip.lf-chip--rarity-legendary.is-checked,
+.lf-chip.lf-chip--rarity-legendary:has(input:checked) {
   border-color: var(--lf-rarity-legendary);
 }
-.lf-chip.lf-chip--rarity-artifact.is-checked {
+.lf-chip.lf-chip--rarity-artifact.is-checked,
+.lf-chip.lf-chip--rarity-artifact:has(input:checked) {
   border-color: var(--lf-rarity-artifact);
 }
 
@@ -509,4 +518,592 @@ select.lf-input {
   padding-left: 18px;
   font-size: 0.8rem;
   color: var(--lf-warn);
+}
+
+/* =========================================================
+   Projected budget sub-label
+   ========================================================= */
+.lf-form__budget-sub {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: var(--lf-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* =========================================================
+   Segmented tier control
+   ========================================================= */
+.lf-segment {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.lf-segment__btn {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.lf-segment__btn:hover {
+  border-color: var(--lf-border-strong);
+  color: var(--lf-text);
+}
+
+.lf-segment__btn.is-active {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
+}
+
+.lf-segment__short {
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
+.lf-segment__long {
+  font-size: 0.7rem;
+  color: var(--lf-muted);
+  letter-spacing: 0.02em;
+}
+
+.lf-segment__btn.is-active .lf-segment__long {
+  color: var(--lf-text);
+}
+
+.lf-segment__count {
+  margin-top: 3px;
+  font-size: 0.66rem;
+  color: var(--lf-muted);
+  font-feature-settings: "tnum";
+  letter-spacing: 0.05em;
+}
+
+/* =========================================================
+   Slider grid + slider block
+   ========================================================= */
+.lf-form__sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px 14px;
+}
+
+.lf-slider {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.lf-slider__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lf-slider__label {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+  font-weight: 600;
+}
+
+.lf-slider__value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-feature-settings: "tnum";
+}
+
+.lf-slider__value strong {
+  font-size: 0.92rem;
+  color: var(--lf-accent);
+}
+
+.lf-slider__value em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--lf-muted);
+}
+
+/* Range input — reset across browsers, then re-skin. */
+.lf-slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lf-slider__input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--lf-border-strong) 0%,
+    var(--lf-border) 100%
+  );
+}
+
+.lf-slider__input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--lf-border-strong) 0%,
+    var(--lf-border) 100%
+  );
+}
+
+.lf-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--lf-accent);
+  border: 2px solid var(--lf-bg);
+  box-shadow: 0 0 0 1px var(--lf-accent);
+  transition: transform 80ms ease;
+}
+
+.lf-slider__input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--lf-accent);
+  border: 2px solid var(--lf-bg);
+  box-shadow: 0 0 0 1px var(--lf-accent);
+}
+
+.lf-slider__input:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+.lf-slider__input:focus {
+  outline: none;
+}
+
+.lf-slider__input:focus::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 1px var(--lf-accent),
+    0 0 0 4px color-mix(in srgb, var(--lf-accent) 30%, transparent);
+}
+
+/* Snap-button strip under sliders that have named presets */
+.lf-slider__snaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.lf-slider__snap {
+  /* Foundry's generic button defaults try to force buttons to
+     block-width 100%; pin the snap pill to its content size so the
+     row stays horizontal. */
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: auto;
+  line-height: 1.2;
+  padding: 2px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.lf-slider__snap:hover {
+  color: var(--lf-text);
+  border-color: var(--lf-border-strong);
+}
+
+.lf-slider__snap.is-active {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
+}
+
+/* Inline-style field (for budget override sitting in the slider grid) */
+.lf-field--inline {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  gap: 6px;
+}
+
+/* Count badge inside chips */
+.lf-chip__count {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-feature-settings: "tnum";
+}
+
+.lf-chip.is-checked .lf-chip__count,
+.lf-chip:has(input:checked) .lf-chip__count {
+  background: var(--lf-surface);
+  color: var(--lf-text);
+}
+
+/* =========================================================
+   Quick-fight macro row
+   ========================================================= */
+.lf-fieldset--quick {
+  background: linear-gradient(
+    180deg,
+    var(--lf-surface) 0%,
+    color-mix(in srgb, var(--lf-surface) 86%, var(--lf-accent) 14%) 100%
+  );
+}
+
+.lf-quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.lf-quick__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
+}
+
+.lf-quick__btn i {
+  color: var(--lf-accent);
+}
+
+.lf-quick__btn:hover {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-border-strong);
+}
+
+.lf-quick__btn:active {
+  transform: translateY(1px);
+}
+
+.lf-quick__btn.is-active {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  box-shadow: 0 0 0 1px var(--lf-accent);
+}
+
+/* =========================================================
+   Chip-row bulk affordances (All / None)
+   ========================================================= */
+.lf-chiprow__bulk {
+  margin-left: 8px;
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.lf-bulk {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: auto;
+  line-height: 1.2;
+  padding: 1px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.lf-bulk:hover {
+  color: var(--lf-text);
+  border-color: var(--lf-border-strong);
+}
+
+/* =========================================================
+   Slider header extras (Use Party, etc.)
+   ========================================================= */
+.lf-slider__extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.lf-slider__extra:hover {
+  color: var(--lf-text-strong);
+  border-color: var(--lf-accent);
+  background: var(--lf-surface-elev);
+}
+
+.lf-slider__extra i {
+  font-size: 0.85em;
+}
+
+/* =========================================================
+   Result cascade + rarity glow
+   ========================================================= */
+@keyframes lf-cascade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.lf-result__item {
+  /* Staggered entrance — each item is offset by 50ms based on its
+     index, set inline via style="--lf-stagger: N" on the <li>. */
+  animation: lf-cascade-in 240ms cubic-bezier(0.25, 0.8, 0.4, 1) both;
+  animation-delay: calc(var(--lf-stagger, 0) * 50ms);
+}
+
+/* Rarity glow — colour pulled from the rarity stripe; muted so the
+   high-rarity cards feel premium without dominating the layout. */
+.lf-result__item--rare {
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--lf-rarity-rare) 25%, transparent);
+}
+.lf-result__item--very-rare {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--lf-rarity-very-rare) 35%, transparent),
+    0 4px 16px -8px
+      color-mix(in srgb, var(--lf-rarity-very-rare) 50%, transparent);
+}
+.lf-result__item--legendary {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--lf-rarity-legendary) 45%, transparent),
+    0 6px 22px -8px
+      color-mix(in srgb, var(--lf-rarity-legendary) 60%, transparent);
+}
+.lf-result__item--artifact {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--lf-rarity-artifact) 55%, transparent),
+    0 8px 26px -10px
+      color-mix(in srgb, var(--lf-rarity-artifact) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-result__item {
+    animation: none;
+  }
+}
+
+/* =========================================================
+   Loading skeleton (Compendium prime / first generate)
+   ========================================================= */
+.lf-result__loading {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.lf-skeleton {
+  display: block;
+  height: 14px;
+  border-radius: var(--lf-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--lf-surface) 0%,
+    var(--lf-surface-elev) 50%,
+    var(--lf-surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: lf-shimmer 1400ms ease-in-out infinite;
+}
+
+.lf-skeleton--lg {
+  height: 22px;
+  width: 60%;
+}
+
+.lf-skeleton--sm {
+  height: 12px;
+  width: 35%;
+}
+
+@keyframes lf-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-skeleton {
+    animation: none;
+  }
+}
+
+.lf-result__loading .lf-result__placeholder {
+  margin: 6px 0 0;
+}
+
+/* =========================================================
+   Lock toggle on result cards + result-header actions
+   ========================================================= */
+.lf-result__item {
+  position: relative;
+}
+
+.lf-result__lock {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  z-index: 1;
+}
+
+.lf-result__item:hover .lf-result__lock,
+.lf-result__item.is-locked .lf-result__lock {
+  opacity: 1;
+}
+
+.lf-result__lock:hover {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-border-strong);
+  color: var(--lf-text);
+}
+
+.lf-result__item.is-locked .lf-result__lock {
+  background: var(--lf-accent);
+  border-color: var(--lf-accent);
+  color: var(--lf-accent-contrast);
+}
+
+.lf-result__item.is-locked {
+  border-color: var(--lf-accent);
+}
+
+.lf-result__item.is-locked .lf-result__name {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--lf-accent) 30%, transparent);
+}
+
+/* Result-header actions (Re-roll Unlocked, Send to Chat) */
+.lf-result__actions {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lf-btn--small {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
+
+/* =========================================================
+   Visual-preference opt-outs
+   ---------------------------------------------------------
+   Classes are toggled on the window root in `_onRender` based
+   on the Module Settings. They cascade over the default rules
+   above so users can disable individual flourishes without
+   losing the rest of the styling.
+   ========================================================= */
+.infinity-dnd5e.loot-forge.lf-no-anim .lf-result__item {
+  animation: none;
+}
+
+.infinity-dnd5e.loot-forge.lf-no-glow .lf-result__item--rare,
+.infinity-dnd5e.loot-forge.lf-no-glow .lf-result__item--very-rare,
+.infinity-dnd5e.loot-forge.lf-no-glow .lf-result__item--legendary,
+.infinity-dnd5e.loot-forge.lf-no-glow .lf-result__item--artifact {
+  box-shadow: none;
+}
+
+.infinity-dnd5e.loot-forge.lf-no-skel .lf-skeleton {
+  display: none;
 }

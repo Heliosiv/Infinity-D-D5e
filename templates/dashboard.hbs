@@ -1,0 +1,51 @@
+{{!--
+  Infinity D&D5e — Dashboard window template.
+  Renders one section per tool category; each tile defers to the
+  tool's own open() callback via the [data-action="launch"] hook.
+--}}
+<div class="id-shell">
+  <header class="id-head">
+    <div class="id-head__title">
+      <h2>Infinity D&amp;D5e</h2>
+      <p class="id-head__hint">Pick a tool to launch. New entries appear automatically as they're built.</p>
+    </div>
+    <span class="id-head__version">v{{moduleVersion}}</span>
+  </header>
+
+  {{#if hasTools}}
+  {{#each categories}}
+  <section class="id-section">
+    <h3 class="id-section__title">{{label}}</h3>
+    <ul class="id-grid">
+      {{#each tools}}
+      <li class="id-tile {{#if isComingSoon}}is-disabled{{/if}}">
+        <button
+          type="button"
+          class="id-tile__btn"
+          data-action="launch"
+          data-tool-id="{{id}}"
+          {{#if isComingSoon}}aria-disabled="true"{{/if}}
+        >
+          <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+          <span class="id-tile__copy">
+            <strong class="id-tile__title">{{title}}</strong>
+            <span class="id-tile__desc">{{description}}</span>
+            {{#if statusLabel}}<span class="id-tile__badge">{{statusLabel}}</span>{{/if}}
+          </span>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/each}}
+  {{else}}
+  <p class="id-empty">No tools registered yet.</p>
+  {{/if}}
+
+  <footer class="id-foot">
+    <button type="button" class="id-foot__btn" data-action="openSettings" title="Edit module defaults">
+      <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+      <span>Configure Defaults</span>
+    </button>
+  </footer>
+</div>

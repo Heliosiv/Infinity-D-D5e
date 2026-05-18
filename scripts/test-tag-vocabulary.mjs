@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   ELEVATED_RARITIES,
   LOOT_TYPES,
+  MAGIC_LOOT_TYPES,
+  MUNDANE_LOOT_TYPES,
   RARITIES,
   TIERS,
   VALUE_BANDS,
@@ -10,6 +12,7 @@ import {
   getItemKeywords,
   getItemLootType,
   getItemLootWeight,
+  getItemMagicNature,
   getItemMaxQty,
   getItemRarity,
   getItemTier,
@@ -116,6 +119,36 @@ assert.equal(normalizeRarity("nonexistent"), "");
 {
   const item = fakeItem({ lootEligible: false });
   assert.equal(isLootEligible(item), false);
+}
+
+/* magic-nature classifier */
+{
+  // Sanity: magic and mundane sets must not overlap.
+  for (const lootType of MAGIC_LOOT_TYPES) {
+    assert.ok(
+      !MUNDANE_LOOT_TYPES.has(lootType),
+      `loot type "${lootType}" must not appear in both magic and mundane sets`,
+    );
+  }
+
+  const magicItem = fakeItem({ lootType: "loot.weapon.magic" });
+  const mundaneItem = fakeItem({ lootType: "loot.weapon.mundane" });
+  const neutralItem = fakeItem({ lootType: "loot.equipment" });
+  assert.equal(getItemMagicNature(magicItem), "magic");
+  assert.equal(getItemMagicNature(mundaneItem), "mundane");
+  assert.equal(
+    getItemMagicNature(neutralItem),
+    "neutral",
+    "loot types outside both sets fall through to neutral",
+  );
+
+  // Items with no lootType at all are treated as neutral so the
+  // magic bias slider can't accidentally exclude them.
+  assert.equal(
+    getItemMagicNature({ flags: {} }),
+    "neutral",
+    "missing lootType → neutral",
+  );
 }
 
 /* future-proofing: infinity-dnd5e flag namespace works alongside legacy */

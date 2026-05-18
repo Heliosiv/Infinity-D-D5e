@@ -1,82 +1,120 @@
 # Infinity D&D5e
 
-Tag-driven loot generator for D&D 5e on Foundry VTT.
+Tag-driven GM tools for D&D 5e on Foundry VTT, surfaced through a single dashboard.
 
-## What this module is
+## What This Module Is
 
-A focused, ground-up rewrite of the loot generation tooling formerly bundled inside `party-operations`. Ships a curated 1,424-item compendium (every item pre-tagged with rarity, tier, value band, magic-type, and folder taxonomy under the `po-loot-v3` schema) plus a small GM window that rolls loot tables against those tags.
+A focused, ground-up rewrite of the GM tooling formerly bundled inside `party-operations`. It ships a curated 1,424-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches each tool in its own window and new tools can be registered with `registerTool(...)`.
+
+Three ways to open the dashboard:
+
+1. Left scene-controls toolbar: the d20 icon labeled **Infinity D&D5e**.
+2. Token Controls fallback: a second d20 icon for GMs who look there first.
+3. Keyboard shortcut: `Shift + I`, rebindable in Foundry's Configure Controls.
 
 ## Status
 
-**v0.1.0** — Generate + Display only.
+**v0.2.4** - Dashboard, Per-Encounter Loot, Hoard Loot, Per-Creature Loot, settings, obvious launchers, and art-object variant rolls.
 
-- GM-only window
-- Budget, rarity, tier, count controls
-- Roll a single loot table at a time
-- Results show name, image, rarity, gp value, source
-- Reusable art-object bases can roll unique names and appraised values
-- No claim board, no player UI, no merchant flow (yet)
+- GM-only dashboard with a tile grid of tools.
+- **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, item count, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat.
+- **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, and scale-shaped rarity defaults.
+- **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action.
+- **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
+- No claim board, player UI, or merchant flow yet.
 
-Later milestones (claim board, distribute-to-actor, player hub, merchant integration) will be cut as separate releases once the v0.1 surface stabilizes.
+### Magic Bias
+
+The Per-Encounter window includes a single -100% mundane to +100% magic slider. Each item is classified by its `lootType` as `magic`, `mundane`, or `neutral`; the slider applies a per-item weight multiplier and can fully exclude the opposite side at either extreme. The classifier lives in [scripts/loot/tag-vocabulary.js](scripts/loot/tag-vocabulary.js).
+
+### Keyboard
+
+Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Toggleable in settings.
+
+### Settings
+
+Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
+
+Registered settings live in [scripts/settings.js](scripts/settings.js).
 
 ## Install
 
-This module is in active development. There is no public release manifest yet — install from a local zip or symlink the folder into your Foundry `Data/modules/infinity-dnd5e/` while developing.
+This module is in active development. There is no public release manifest yet.
 
-## Tag schema
+- **Local zip**: `npm run release` builds `release/module.zip` with `module.json` at the zip root, ready for Foundry's Install Module file picker or Forge Bazaar upload. The script also writes `release/module.json`, `release/module.zip.sha256.txt`, and short release notes.
+- **Dev symlink**: link or copy this folder into your Foundry user data as `Data/modules/infinity-dnd5e/`. Foundry will pick up file changes on reload.
 
-Items carry `flags["infinity-dnd5e"]` (and legacy `flags["party-operations"]` for back-compat with the source compendium) with:
+## Tag Schema
 
-- `keywords`: array of dotted-path tags. The roller filters by these.
-  - `loot.<family>.<subtype>` — e.g. `loot.weapon.magic`, `loot.armor.magic`, `loot.gem`, `loot.art`
-  - `rarity.<bucket>` — `common`, `uncommon`, `rare`, `very-rare`, `legendary`, `artifact`
-  - `tier.t1` .. `tier.t5` — APL-style power tier
-  - `value.v1` .. `value.v5` — gp-value band
-  - `merchant.<cat>` — secondary merchant routing tags
-  - `folder.path.<...>` — full taxonomy path
-- `lootType`: canonical loot bucket string (matches one of the `loot.*` keywords)
-- `tier`, `rarityNormalized`, `gpValue`, `valueBand` — fast-access derived fields
-- `lootWeight`: probability weight for the roller (`0.0–1.0` typically)
-- `maxRecommendedQty`: max copies to drop in one bundle
-- `tagSchema`: `"po-loot-v3"` — bumped when the vocabulary changes
+Items carry `flags["infinity-dnd5e"]` and legacy `flags["party-operations"]` for back-compat with the source compendium.
 
-The roller never inspects raw item fields; everything routes through this tag layer so the same logic works regardless of upstream system changes.
+- `keywords`: dotted-path tags used by the roller.
+- `lootType`: canonical loot bucket string.
+- `tier`, `rarityNormalized`, `gpValue`, `valueBand`: fast-access derived fields.
+- `lootWeight`: probability weight for the roller.
+- `maxRecommendedQty`: max copies to drop in one bundle.
+- `tagSchema`: `"po-loot-v3"`.
 
-## Folder layout
+The roller routes through this tag layer instead of inspecting raw upstream fields directly.
 
-```
+## Folder Layout
+
+```text
 infinity-dnd5e/
-├── module.json
-├── README.md
-├── package.json           # dev/test only — not shipped
-├── .gitignore
-├── packs/
-│   └── infinity-dnd5e-items.db
-├── scripts/
-│   ├── module.js          # Foundry entry point
-│   ├── app.js             # LootForgeApp (ApplicationV2)
-│   ├── loot/
-│   │   ├── tag-vocabulary.js   # tag enums + helpers
-│   │   ├── budget.js           # control values → numeric budget
-│   │   ├── roller.js           # weighted random selection
-│   │   └── art-variants.js     # unique art-object appraisals
-│   └── test-utils/        # test helpers (jsdom-style)
-├── templates/
-│   └── loot-forge.hbs
-├── styles/
-│   └── loot-forge.css
-└── scripts/test-*.mjs     # unit tests (run with npm test)
+  module.json
+  README.md
+  package.json
+  assets/
+    item-art-plan.*
+  scripts/
+    module.js
+    dashboard.js
+    tool-registry.js
+    app.js
+    hoard-loot.js
+    per-creature-loot.js
+    settings.js
+    loot/
+      tag-vocabulary.js
+      budget.js
+      roller.js
+      art-variants.js
+      pack-stats.js
+      hoard-budget.js
+    test-*.mjs
+    run-checks.mjs
+    build-release.mjs
+  templates/
+    dashboard.hbs
+    loot-forge.hbs
+    hoard-loot.hbs
+    per-creature-loot.hbs
+  styles/
+    dashboard.css
+    loot-forge.css
+    hoard-loot.css
+    per-creature-loot.css
+  packs/
+    infinity-dnd5e-items.db
 ```
+
+## Adding a Tool
+
+1. Build the tool's `ApplicationV2` subclass in `scripts/<your-tool>.js`.
+2. In `module.js`'s `init` hook, add a `registerTool({ id, title, description, icon, category, status, open })` call.
+3. Ship templates under `templates/` and styles under `styles/`, then add both paths to `module.json`.
 
 ## Development
 
 ```powershell
-npm install        # devDeps only (handlebars, prettier)
-npm run check      # run all *.mjs tests
-npm run lint       # not configured yet in v0.1
-npm run format     # prettier
+npm install
+npm run check
+npm run format
+npm run format:check
+npm run release
+npm run release:nocheck
 ```
 
 ## Provenance
 
-This module reuses the curated item compendium from [party-operations](../party-operations/) (1,424 items, `po-loot-v3` tag schema, ~3 years of curation). No code from the previous module's UI / runtime layer was carried forward; the v0.1.0 build is a clean rewrite.
+This module reuses the curated item compendium from [party-operations](../party-operations/) with the `po-loot-v3` tag schema and several years of curation. The v0.x runtime and UI are a clean rewrite.

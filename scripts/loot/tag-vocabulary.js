@@ -63,6 +63,37 @@ export const ELEVATED_RARITIES = Object.freeze([
   "artifact",
 ]);
 
+/**
+ * Loot types that are inherently magic in the curated pack.
+ * Used by `getItemMagicNature()` and the Magic Bias slider in the
+ * Per-Encounter Loot window.
+ */
+export const MAGIC_LOOT_TYPES = Object.freeze(
+  new Set([
+    "loot.weapon.magic",
+    "loot.armor.magic",
+    "loot.scroll",
+    "loot.wand",
+    "loot.rod",
+    "loot.staff",
+    "loot.ring",
+    "loot.wondrous",
+    "loot.consumable", // potions / elixirs / consumed magic items
+  ]),
+);
+
+/** Loot types that are inherently mundane in the curated pack. */
+export const MUNDANE_LOOT_TYPES = Object.freeze(
+  new Set([
+    "loot.weapon.mundane",
+    "loot.armor.mundane",
+    "loot.gem",
+    "loot.art",
+    "loot.tool",
+    "loot.trade-good",
+  ]),
+);
+
 /* ------------------------------------------------------------------ *
  * Token helpers
  * ------------------------------------------------------------------ */
@@ -187,6 +218,20 @@ export function getItemMaxQty(item) {
       1,
   );
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
+}
+
+/**
+ * Classify an item as inherently magic / mundane / neutral based on
+ * its loot type. Equipment with no clear bucket falls through to
+ * "neutral" so the Magic Bias dial leaves it alone.
+ *
+ * @returns {"magic"|"mundane"|"neutral"}
+ */
+export function getItemMagicNature(item) {
+  const lootType = getItemLootType(item);
+  if (MAGIC_LOOT_TYPES.has(lootType)) return "magic";
+  if (MUNDANE_LOOT_TYPES.has(lootType)) return "mundane";
+  return "neutral";
 }
 
 /** Is the item eligible to appear in a loot roll at all? */
