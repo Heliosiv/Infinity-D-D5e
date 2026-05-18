@@ -95,6 +95,115 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * filterCandidates - virtual art/gem loot type filters
+ * ------------------------------------------------------------------ */
+{
+  const art = fakeItem({
+    _id: "art",
+    name: "Court Tapestry",
+    type: "loot",
+    lootType: "loot.loot",
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.wall-art",
+    ],
+  });
+  const gem = fakeItem({
+    _id: "gem",
+    name: "Star Sapphire",
+    type: "loot",
+    lootType: "loot.loot",
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.gem",
+      "treasure.gem",
+    ],
+  });
+  const gear = fakeItem({
+    _id: "gear",
+    name: "Silk Rope",
+    type: "loot",
+    lootType: "loot.equipment",
+    keywords: ["loot", "loot.equipment"],
+  });
+
+  const byArt = filterCandidates([art, gem, gear], {
+    lootTypes: ["loot.art"],
+  });
+  assert.deepEqual(
+    byArt.map((item) => item._id),
+    ["art"],
+    "loot.art matches variable art objects even when lootType is loot.loot",
+  );
+
+  const byGem = filterCandidates([art, gem, gear], {
+    lootTypes: ["loot.gem"],
+  });
+  assert.deepEqual(
+    byGem.map((item) => item._id),
+    ["gem"],
+    "loot.gem matches variable gem treasure even when lootType is loot.loot",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * filterCandidates - variable treasure uses value band as roll rarity
+ * ------------------------------------------------------------------ */
+{
+  const rareArt = fakeItem({
+    _id: "rare-art",
+    name: "Silver Reliquary",
+    type: "loot",
+    rarity: "",
+    valueBand: "v4",
+    lootType: "loot.loot",
+    gpValue: 1000,
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "value.v4",
+      "folder.path.sundries.art-objects.decorative-finery",
+    ],
+  });
+  const commonArt = fakeItem({
+    _id: "common-art",
+    name: "Carved Cup",
+    type: "loot",
+    rarity: "",
+    valueBand: "v2",
+    lootType: "loot.loot",
+    gpValue: 50,
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "value.v2",
+      "folder.path.sundries.art-objects.decorative-finery",
+    ],
+  });
+  const rare = filterCandidates([rareArt, commonArt], {
+    lootTypes: ["loot.art"],
+    rarities: ["rare"],
+  });
+  assert.deepEqual(
+    rare.map((item) => item._id),
+    ["rare-art"],
+    "rarity.none art can still pass rarity filters via value band",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot — deterministic with seqRng
  * ------------------------------------------------------------------ */
 {
@@ -115,6 +224,159 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     "deterministic picks match seqRng plan",
   );
   assert.equal(result.warnings.length, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - unique art variants and adjusted appraisals
+ * ------------------------------------------------------------------ */
+{
+  const art = fakeItem({
+    _id: "art",
+    name: "Court Tapestry",
+    type: "loot",
+    lootType: "loot.loot",
+    gpValue: 1000,
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.wall-art",
+    ],
+  });
+  const result = rollLoot([art], {
+    count: 1,
+    rng: seqRng([0.5, 0.99, 0.99, 0.99, 0.99]),
+    artVariants: true,
+  });
+
+  assert.equal(result.items.length, 1);
+  const entry = result.items[0];
+  assert.equal(entry.item.name, "Court Tapestry");
+  assert.notEqual(entry.displayName, "Court Tapestry");
+  assert.ok(entry.displayName.includes("Court Tapestry"));
+  assert.equal(entry.variant.kind, "art");
+  assert.notEqual(entry.gpValue, 1000);
+  assert.equal(entry.gpTotal, entry.gpValue);
+  assert.equal(result.totalGp, entry.gpValue);
+  assert.ok(entry.valueLabel.includes("base value"));
+  assert.ok(entry.variant.summary.includes(";"));
+  assert.equal(entry.itemData.name, entry.displayName);
+  assert.equal(entry.itemData.system.price.value, entry.gpValue);
+  assert.equal(entry.itemData.system.quantity, 1);
+  assert.equal(
+    entry.itemData.flags["infinity-dnd5e"].generatedTreasure.variantId,
+    entry.variant.id,
+  );
+  assert.equal(entry.itemData.flags["party-operations"].gpValue, entry.gpValue);
+  assert.ok(
+    entry.itemData.system.description.value.includes("Generated appraisal"),
+  );
+  assert.equal(
+    art.system.price.value,
+    1000,
+    "base fixture price is not mutated when itemData is generated",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - art variant values are used by budget trimming
+ * ------------------------------------------------------------------ */
+{
+  const art = fakeItem({
+    _id: "art",
+    name: "Court Tapestry",
+    type: "loot",
+    lootType: "loot.loot",
+    gpValue: 1000,
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.wall-art",
+    ],
+  });
+  const cheap = fakeItem({
+    _id: "cheap",
+    name: "Silver Pin",
+    type: "loot",
+    lootType: "loot.equipment",
+    gpValue: 10,
+  });
+  const result = rollLoot([art, cheap], {
+    count: 2,
+    budgetGp: 2800,
+    rng: seqRng([0.25, 0.75, 0.99, 0.99, 0.99, 0.99]),
+    artVariants: true,
+  });
+
+  assert.equal(
+    result.droppedForBudget,
+    1,
+    "budget trimming saw the generated art value, not only the base value",
+  );
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].item._id, "art");
+  assert.equal(result.totalGp, result.items[0].gpValue);
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - stacked art bases split into unique entries
+ * ------------------------------------------------------------------ */
+{
+  const art = fakeItem({
+    _id: "art-stack",
+    name: "Bronze Shrine Idol",
+    type: "loot",
+    lootType: "loot.loot",
+    gpValue: 500,
+    maxRecommendedQty: 2,
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.sculptures-idols",
+    ],
+  });
+  const result = rollLoot([art], {
+    count: 2,
+    maxAttempts: 3,
+    rng: seqRng([0.5, 0.5, 0.5, 0, 0, 0, 0, 0.99, 0.99, 0.99, 0.99]),
+    artVariants: true,
+  });
+
+  assert.equal(result.items.length, 2);
+  assert.ok(
+    result.items.every((entry) => entry.quantity === 1),
+    "stacked art bases are split into one unique result per item",
+  );
+  assert.notEqual(result.items[0].variant.id, result.items[1].variant.id);
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - non-art items are not variantized
+ * ------------------------------------------------------------------ */
+{
+  const item = fakeItem({
+    _id: "plain",
+    name: "Plain Dagger",
+    gpValue: 25,
+    lootType: "loot.weapon.mundane",
+  });
+  const result = rollLoot([item], {
+    count: 1,
+    rng: () => 0.5,
+    artVariants: true,
+  });
+
+  assert.equal(result.items[0].displayName, "Plain Dagger");
+  assert.equal(result.items[0].variant, null);
+  assert.equal(result.items[0].gpValue, 25);
 }
 
 /* ------------------------------------------------------------------ *

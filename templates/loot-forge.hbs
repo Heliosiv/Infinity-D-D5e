@@ -61,6 +61,14 @@
         <span class="lf-field__label">Budget Override <small>(0 = use curve)</small></span>
         <input class="lf-input" type="number" name="budgetOverride" min="0" step="50" value="{{form.budgetOverride}}" />
       </label>
+
+      <label class="lf-field lf-field--toggle">
+        <span class="lf-field__label">Art Rolls</span>
+        <span class="lf-toggle">
+          <input type="checkbox" name="artVariants" {{#if form.artVariants}}checked{{/if}} />
+          <span>Unique Art Values</span>
+        </span>
+      </label>
     </div>
 
     <fieldset class="lf-fieldset">
@@ -118,8 +126,14 @@
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
           <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
           <div class="lf-result__copy">
-            <strong class="lf-result__name">{{item.name}}</strong>
-            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotal}} gp</span>
+            <strong class="lf-result__name">{{displayName}}</strong>
+            {{#if variantSummary}}
+            <span class="lf-result__variant">{{variantSummary}}</span>
+            {{/if}}
+            {{#if sourceLabel}}
+            <span class="lf-result__source">{{sourceLabel}}</span>
+            {{/if}}
+            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotal}} gp{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
           </div>
         </button>
       </li>

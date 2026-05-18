@@ -4,7 +4,7 @@ Tag-driven loot generator for D&D 5e on Foundry VTT.
 
 ## What this module is
 
-A focused, ground-up rewrite of the loot generation tooling formerly bundled inside `party-operations`. Ships a curated 1,456-item compendium (every item pre-tagged with rarity, tier, value band, magic-type, and folder taxonomy under the `po-loot-v3` schema) plus a small GM window that rolls loot tables against those tags.
+A focused, ground-up rewrite of the loot generation tooling formerly bundled inside `party-operations`. Ships a curated 1,424-item compendium (every item pre-tagged with rarity, tier, value band, magic-type, and folder taxonomy under the `po-loot-v3` schema) plus a small GM window that rolls loot tables against those tags.
 
 ## Status
 
@@ -14,6 +14,7 @@ A focused, ground-up rewrite of the loot generation tooling formerly bundled ins
 - Budget, rarity, tier, count controls
 - Roll a single loot table at a time
 - Results show name, image, rarity, gp value, source
+- Reusable art-object bases can roll unique names and appraised values
 - No claim board, no player UI, no merchant flow (yet)
 
 Later milestones (claim board, distribute-to-actor, player hub, merchant integration) will be cut as separate releases once the v0.1 surface stabilizes.
@@ -57,7 +58,8 @@ infinity-dnd5e/
 │   ├── loot/
 │   │   ├── tag-vocabulary.js   # tag enums + helpers
 │   │   ├── budget.js           # control values → numeric budget
-│   │   └── roller.js           # weighted random selection
+│   │   ├── roller.js           # weighted random selection
+│   │   └── art-variants.js     # unique art-object appraisals
 │   └── test-utils/        # test helpers (jsdom-style)
 ├── templates/
 │   └── loot-forge.hbs
@@ -77,4 +79,4 @@ npm run format     # prettier
 
 ## Provenance
 
-This module reuses the curated item compendium from [party-operations](../party-operations/) (1,456 items, `po-loot-v3` tag schema, ~3 years of curation). No code from the previous module's UI / runtime layer was carried forward; the v0.1.0 build is a clean rewrite.
+This module reuses the curated item compendium from [party-operations](../party-operations/) (1,424 items, `po-loot-v3` tag schema, ~3 years of curation). No code from the previous module's UI / runtime layer was carried forward; the v0.1.0 build is a clean rewrite.

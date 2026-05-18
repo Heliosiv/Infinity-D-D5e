@@ -1,0 +1,82 @@
+/**
+ * Validate the generated item-art production plan covers the full pack.
+ */
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const PACK_PATH = "packs/infinity-dnd5e-items.db";
+const PLAN_PATH = "assets/item-art-plan.json";
+
+const packItems = readFileSync(PACK_PATH, "utf8")
+  .split(/\r?\n/)
+  .filter((line) => line.trim().length > 0)
+  .map((line) => JSON.parse(line));
+
+const plan = JSON.parse(readFileSync(PLAN_PATH, "utf8"));
+const itemIds = new Set(packItems.map((item) => item._id));
+const assignments = plan.assignments ?? [];
+const sharedAssets = plan.sharedAssets ?? [];
+const uniqueAssets = plan.uniqueAssets ?? [];
+const assets = [...sharedAssets, ...uniqueAssets];
+const assetIds = new Set(assets.map((asset) => asset.id));
+const assetPaths = new Set(assets.map((asset) => asset.path));
+
+assert.equal(
+  plan.schema,
+  "infinity-dnd5e-item-art-plan-v1",
+  "unexpected image-plan schema",
+);
+assert.equal(assignments.length, packItems.length, "one assignment per item");
+assert.equal(
+  new Set(assignments.map((entry) => entry.itemId)).size,
+  packItems.length,
+  "item assignments must be unique",
+);
+assert.equal(assetIds.size, assets.length, "asset ids must be unique");
+assert.equal(assetPaths.size, assets.length, "asset paths must be unique");
+
+for (const assignment of assignments) {
+  assert.ok(
+    itemIds.has(assignment.itemId),
+    `unknown item ${assignment.itemId}`,
+  );
+  assert.ok(
+    assignment.mode === "reusable" || assignment.mode === "bespoke",
+    `invalid assignment mode for ${assignment.itemId}`,
+  );
+  assert.ok(
+    assetIds.has(assignment.assetId),
+    `missing asset ${assignment.assetId}`,
+  );
+  assert.ok(
+    assignment.path.startsWith("assets/item-art/"),
+    `invalid asset path ${assignment.path}`,
+  );
+}
+
+for (const asset of assets) {
+  assert.ok(asset.id, "asset missing id");
+  assert.ok(asset.path.startsWith("assets/item-art/"), asset.path);
+  assert.ok(asset.prompt.includes("Foundry VTT item icon"), asset.id);
+}
+
+assert.equal(
+  plan.counts.items,
+  packItems.length,
+  "plan item count should match pack",
+);
+assert.equal(
+  plan.counts.reusableAssignments + plan.counts.bespokeAssignments,
+  packItems.length,
+  "assignment counts should match pack",
+);
+assert.equal(
+  plan.counts.sharedAssets + plan.counts.uniqueAssets,
+  assets.length,
+  "asset counts should match asset lists",
+);
+
+process.stdout.write(
+  `image plan validation passed (${assets.length} assets for ${packItems.length} items)\n`,
+);

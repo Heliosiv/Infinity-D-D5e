@@ -1,7 +1,7 @@
 {
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
-  "description": "Tag-driven loot generator for D&D 5e on Foundry VTT. Pulls from a curated 1,456-item compendium and rolls scoped loot tables by rarity, tier, and value band.",
+  "description": "Tag-driven loot generator for D&D 5e on Foundry VTT. Pulls from a curated 1,424-item compendium and rolls scoped loot tables by rarity, tier, and value band.",
   "version": "0.1.0",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {

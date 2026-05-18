@@ -14,7 +14,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -42,7 +50,7 @@ const TOP_LEVEL_FILES = ["module.json"];
  * build script itself) so only runtime code ships. The same filter
  * also drops test-utils.
  */
-const TOP_LEVEL_DIRS = ["scripts", "styles", "templates", "packs"];
+const TOP_LEVEL_DIRS = ["assets", "scripts", "styles", "templates", "packs"];
 
 /**
  * Predicate that returns false when a file should NOT be staged.
@@ -65,7 +73,8 @@ function shouldStage(sourcePath) {
 
   // Drop OS junk / editor backups.
   if (base === ".ds_store" || base === "thumbs.db") return false;
-  if (base.endsWith(".bak") || base.endsWith(".tmp") || base.endsWith(".log")) return false;
+  if (base.endsWith(".bak") || base.endsWith(".tmp") || base.endsWith(".log"))
+    return false;
   if (ext === ".bak") return false;
 
   return true;
@@ -112,7 +121,7 @@ async function stageFiles() {
         // Always allow directories so we recurse into them; per-file
         // checks happen below.
         return shouldStage(sourcePath);
-      }
+      },
     });
   }
 }
@@ -120,13 +129,23 @@ async function stageFiles() {
 /** Sanity check the staged tree before zipping. */
 async function verifyStage(manifest) {
   const expectStyles = Array.isArray(manifest?.styles) ? manifest.styles : [];
-  const expectTemplates = Array.isArray(manifest?.templates) ? manifest.templates : [];
-  const expectModules = Array.isArray(manifest?.esmodules) ? manifest.esmodules : [];
+  const expectTemplates = Array.isArray(manifest?.templates)
+    ? manifest.templates
+    : [];
+  const expectModules = Array.isArray(manifest?.esmodules)
+    ? manifest.esmodules
+    : [];
 
-  for (const relativePath of [...expectStyles, ...expectTemplates, ...expectModules]) {
+  for (const relativePath of [
+    ...expectStyles,
+    ...expectTemplates,
+    ...expectModules,
+  ]) {
     const staged = path.join(stagingDir, relativePath);
     if (!(await pathExists(staged))) {
-      throw new Error(`Manifest references missing path in staging: ${relativePath}`);
+      throw new Error(
+        `Manifest references missing path in staging: ${relativePath}`,
+      );
     }
   }
 
@@ -142,15 +161,24 @@ async function verifyStage(manifest) {
 }
 
 async function writeManifestCopy(manifest) {
-  await writeFile(manifestStagedPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(
+    manifestStagedPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function writeNotes(manifest) {
   const version = String(manifest?.version ?? "0.0.0");
   await writeFile(
     notesPath,
-    [`# Infinity D&D5e — v${version}`, "", "Local build. See README.md for install instructions.", ""].join("\n"),
-    "utf8"
+    [
+      `# Infinity D&D5e — v${version}`,
+      "",
+      "Local build. See README.md for install instructions.",
+      "",
+    ].join("\n"),
+    "utf8",
   );
   await writeFile(
     readmePath,
@@ -173,9 +201,9 @@ async function writeNotes(manifest) {
       "",
       "After installing, enable the module in your world and look for the **coin icon**",
       "under Token Controls. GM-only. Click it to open the Loot Forge.",
-      ""
+      "",
     ].join("\n"),
-    "utf8"
+    "utf8",
   );
 }
 
@@ -187,14 +215,20 @@ function runZip() {
   const command = [
     "$ErrorActionPreference = 'Stop'",
     `if (Test-Path '${escapedZip}') { Remove-Item '${escapedZip}' -Force }`,
-    `Compress-Archive -Path (Join-Path '${escapedStaging}' '*') -DestinationPath '${escapedZip}' -CompressionLevel Optimal`
+    `Compress-Archive -Path (Join-Path '${escapedStaging}' '*') -DestinationPath '${escapedZip}' -CompressionLevel Optimal`,
   ].join("; ");
-  const result = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
-    cwd: repoRoot,
-    stdio: "inherit"
-  });
+  const result = spawnSync(
+    "powershell",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    },
+  );
   if (result.status !== 0) {
-    throw new Error(`Compress-Archive failed with exit code ${result.status ?? 1}`);
+    throw new Error(
+      `Compress-Archive failed with exit code ${result.status ?? 1}`,
+    );
   }
 }
 
@@ -241,7 +275,9 @@ async function main() {
   await writeManifestCopy(manifest);
   await writeNotes(manifest);
   const { files, totalBytes } = await countStaged();
-  console.log(`Staged ${files} files (${(totalBytes / 1024 / 1024).toFixed(2)} MB)`);
+  console.log(
+    `Staged ${files} files (${(totalBytes / 1024 / 1024).toFixed(2)} MB)`,
+  );
 
   runZip();
   const sha = await writeSha();
@@ -255,7 +291,9 @@ async function main() {
   console.log(`  manifest : ${path.relative(repoRoot, manifestStagedPath)}`);
   console.log(`  notes    : ${path.relative(repoRoot, notesPath)}`);
   console.log("");
-  console.log("Upload module.zip to Foundry Setup → Install Module, or to Forge Bazaar.");
+  console.log(
+    "Upload module.zip to Foundry Setup → Install Module, or to Forge Bazaar.",
+  );
 }
 
 main().catch((error) => {

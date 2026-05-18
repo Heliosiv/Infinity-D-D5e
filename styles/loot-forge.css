@@ -146,6 +146,32 @@
   font-weight: 400;
 }
 
+.lf-field--toggle {
+  align-self: end;
+}
+
+.lf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lf-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--lf-accent);
+}
+
 .lf-input {
   width: 100%;
   padding: 6px 9px;
@@ -441,6 +467,21 @@ select.lf-input {
   font-size: 0.78rem;
   color: var(--lf-muted);
   text-transform: capitalize;
+}
+
+.lf-result__variant {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--lf-muted) 82%, var(--lf-text) 18%);
+}
+
+.lf-result__source {
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--lf-muted) 72%, var(--lf-text) 28%);
 }
 
 /* Rarity stripe on the left edge */

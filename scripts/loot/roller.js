@@ -32,6 +32,20 @@ import {
   isLootEligible,
   normalizeRarity,
 } from "./tag-vocabulary.js";
+import {
+  createArtVariant,
+  createArtVariantItemData,
+  getVariableTreasureKind,
+  isVariableArtItem,
+} from "./art-variants.js";
+
+const VARIABLE_TREASURE_RARITY_BY_VALUE_BAND = Object.freeze({
+  v1: "common",
+  v2: "common",
+  v3: "uncommon",
+  v4: "rare",
+  v5: "very-rare",
+});
 
 /**
  * Filter a candidate item pool down to the rollable set.
@@ -75,9 +89,9 @@ export function filterCandidates(items, filter = {}) {
     if (!item) continue;
     if (requireEligible && !isLootEligible(item)) continue;
 
-    if (lootTypes.size > 0 && !lootTypes.has(getItemLootType(item))) continue;
+    if (lootTypes.size > 0 && !matchesLootTypes(item, lootTypes)) continue;
     if (tiers.size > 0 && !tiers.has(getItemTier(item))) continue;
-    if (rarities.size > 0 && !rarities.has(getItemRarity(item))) continue;
+    if (rarities.size > 0 && !matchesRarities(item, rarities)) continue;
     if (valueBands.size > 0 && !valueBands.has(getItemValueBand(item)))
       continue;
 
@@ -120,8 +134,9 @@ export function filterCandidates(items, filter = {}) {
  * @param {number} opts.count   - target number of distinct items (>= 1)
  * @param {number} [opts.budgetGp] - if > 0, total bundle gp may not exceed this
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 200
+ * @param {boolean} [opts.artVariants] - generate specific art-object names and values
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
- * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number }>,
+ * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number, displayName?: string, valueLabel?: string, variant?: object|null, itemData?: object|null }>,
  *             totalGp: number,
  *             budgetGp: number,
  *             droppedForBudget: number,
@@ -137,6 +152,7 @@ export function rollLoot(candidates, opts = {}) {
     Math.floor(Number(opts.maxAttempts ?? 200)),
   );
   const rng = typeof opts.rng === "function" ? opts.rng : Math.random;
+  const artVariants = opts.artVariants === true;
 
   const warnings = [];
   if (pool.length === 0) {
@@ -175,15 +191,9 @@ export function rollLoot(candidates, opts = {}) {
   }
 
   // Materialize the picks with gp totals.
-  let materialized = [...picked.values()].map(({ item, quantity }) => {
-    const gpValue = getItemGpValue(item);
-    return {
-      item,
-      quantity,
-      gpValue,
-      gpTotal: gpValue * quantity,
-    };
-  });
+  let materialized = [...picked.values()].flatMap(({ item, quantity }) =>
+    materializeLootEntry(item, quantity, { artVariants, rng }),
+  );
 
   let totalGp = materialized.reduce((acc, entry) => acc + entry.gpTotal, 0);
   let droppedForBudget = 0;
@@ -234,6 +244,79 @@ function toSet(values) {
     if (trimmed) out.add(trimmed);
   }
   return out;
+}
+
+function matchesLootTypes(item, lootTypes) {
+  const directType = getItemLootType(item);
+  if (directType && lootTypes.has(directType)) return true;
+
+  const keywords = new Set(getItemKeywords(item));
+  for (const lootType of lootTypes) {
+    if (keywords.has(lootType)) return true;
+  }
+
+  if (lootTypes.has("loot.art") && isVariableArtItem(item)) return true;
+  if (lootTypes.has("loot.gem") && isVariableGemItem(item)) return true;
+  return false;
+}
+
+function matchesRarities(item, rarities) {
+  const directRarity = getItemRarity(item);
+  if (directRarity) return rarities.has(directRarity);
+
+  if (!isVariableArtItem(item) && !isVariableGemItem(item)) return false;
+
+  const fallbackRarity =
+    VARIABLE_TREASURE_RARITY_BY_VALUE_BAND[getItemValueBand(item)] ?? "";
+  return Boolean(fallbackRarity && rarities.has(fallbackRarity));
+}
+
+function isVariableGemItem(item) {
+  const kind = getVariableTreasureKind(item);
+  if (kind === "gem") return true;
+  if (kind && kind !== "gem") return false;
+
+  const keywords = new Set(getItemKeywords(item));
+  return (
+    keywords.has("treasure.gem") ||
+    keywords.has("loot.variable.gem") ||
+    keywords.has("merchant.gem")
+  );
+}
+
+function materializeLootEntry(item, quantity, { artVariants, rng }) {
+  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (artVariants && isVariableArtItem(item)) {
+    const entries = [];
+    for (let index = 0; index < safeQuantity; index += 1) {
+      const variant = createArtVariant(item, { rng });
+      entries.push({
+        item,
+        quantity: 1,
+        gpValue: variant.gpValue,
+        gpTotal: variant.gpValue,
+        displayName: variant.displayName,
+        valueLabel: variant.valueLabel,
+        variant,
+        itemData: createArtVariantItemData(item, variant, { quantity: 1 }),
+      });
+    }
+    return entries;
+  }
+
+  const gpValue = getItemGpValue(item);
+  return [
+    {
+      item,
+      quantity: safeQuantity,
+      gpValue,
+      gpTotal: gpValue * safeQuantity,
+      displayName: item?.name ?? "",
+      valueLabel: "",
+      variant: null,
+      itemData: null,
+    },
+  ];
 }
 
 /**

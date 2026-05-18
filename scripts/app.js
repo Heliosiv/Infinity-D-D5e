@@ -79,6 +79,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     partySize: 4,
     count: 6,
     budgetOverride: 0,
+    artVariants: true,
     rarities: ["uncommon", "rare"],
     lootTypes: [], // empty = all types
   });
@@ -198,6 +199,9 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "budgetOverride":
         next[name] = Math.max(0, Math.floor(Number(target.value) || 0));
         break;
+      case "artVariants":
+        next.artVariants = Boolean(target.checked);
+        break;
       case "rarity":
         next.rarities = readMultiCheckGroup(this.element, "rarity");
         break;
@@ -241,6 +245,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const raw = rollLoot(candidates, {
       count: this._form.count,
       budgetGp: budget,
+      artVariants: this._form.artVariants,
     });
     // Decorate each entry with template-ready fields so the .hbs
     // stays free of Handlebars helpers / data-shape gymnastics.
@@ -248,6 +253,10 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ...raw,
       items: raw.items.map((entry) => ({
         ...entry,
+        displayName: entry.displayName || entry.item.name,
+        variantSummary: entry.variant?.summary ?? "",
+        sourceLabel: entry.variant ? `Base: ${entry.variant.baseName}` : "",
+        valueLabel: entry.valueLabel ?? "",
         rarity: getItemRarity(entry.item) || "common",
         quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
       })),
