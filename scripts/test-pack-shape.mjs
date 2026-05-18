@@ -120,9 +120,7 @@ for (const [index, line] of lines.entries()) {
       );
     }
 
-    for (const [partIndex, part] of (
-      activity?.damage?.parts ?? []
-    ).entries()) {
+    for (const [partIndex, part] of (activity?.damage?.parts ?? []).entries()) {
       const formula = String(part?.custom?.formula ?? "");
       if (/\)\s*d\d+/i.test(formula)) {
         invalidDnd5eFormulaItems.push(

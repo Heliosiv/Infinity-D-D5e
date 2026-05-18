@@ -20,6 +20,10 @@ import {
   computeLootBudget,
   nearestPreset,
 } from "./loot/budget.js";
+import {
+  beginDragFromResult,
+  promptDistributeItems,
+} from "./loot/distribute.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
@@ -114,6 +118,8 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       reset: PerEncounterLootApp._onReset,
       clear: PerEncounterLootApp._onClear,
       openItem: PerEncounterLootApp._onOpenItem,
+      distributeOne: PerEncounterLootApp._onDistributeOne,
+      distributeBundle: PerEncounterLootApp._onDistributeBundle,
       toggleLock: PerEncounterLootApp._onToggleLock,
       sendToChat: PerEncounterLootApp._onSendToChat,
       snap: PerEncounterLootApp._onSnap,
@@ -329,6 +335,15 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       root.addEventListener("keydown", (event) => this._onKeyDown(event));
     }
 
+    // Wire drag-and-drop on result tiles so they can be dropped onto
+    // character sheets while preserving generated art item data.
+    for (const tile of root.querySelectorAll("[data-draggable-result-id]")) {
+      tile.addEventListener("dragstart", (event) => {
+        const entry = this._findResultEntry(tile.dataset.resultId);
+        beginDragFromResult(event, entry);
+      });
+    }
+
     // Background-load the pack on first render so the candidate
     // count and per-rarity numbers are populated before the user
     // touches anything.
@@ -514,6 +529,40 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
     }
+  }
+
+  /** @this {PerEncounterLootApp} */
+  _findResultEntry(resultId) {
+    if (!resultId || !this._lastResult) return null;
+    return this._lastResult.items.find(
+      (entry) =>
+        String(
+          entry.resultId ??
+            entry.item?._id ??
+            entry.item?.id ??
+            entry.item?.uuid ??
+            "",
+        ) === String(resultId),
+    );
+  }
+
+  /** @this {PerEncounterLootApp} */
+  static async _onDistributeOne(_event, target) {
+    const entry = this._findResultEntry(target?.dataset?.resultId);
+    if (!entry) return;
+    await promptDistributeItems([toDistributableItem(entry)]);
+  }
+
+  /** @this {PerEncounterLootApp} */
+  static async _onDistributeBundle(_event, _target) {
+    const items = (this._lastResult?.items ?? [])
+      .map(toDistributableItem)
+      .filter(Boolean);
+    if (items.length === 0) return;
+    await promptDistributeItems(items, {
+      title: `Distribute Bundle (${items.length} items)`,
+      hint: "Choose one character to receive the entire bundle.",
+    });
   }
 
   /** @this {PerEncounterLootApp} */
@@ -931,6 +980,17 @@ function formatMultiplier(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "1.00";
   return num.toFixed(2);
+}
+
+function toDistributableItem(entry) {
+  if (!entry) return null;
+  if (entry.itemData) {
+    return {
+      itemData: entry.itemData,
+      name: entry.displayName ?? entry.itemData.name ?? entry.item?.name ?? "",
+    };
+  }
+  return entry.item?.uuid ?? null;
 }
 
 /**

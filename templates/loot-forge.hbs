@@ -159,6 +159,10 @@
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
           <span>Send to Chat</span>
         </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="distributeBundle" title="Send every item to one actor">
+          <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
+          <span>Distribute Bundle</span>
+        </button>
       </div>
       {{#if result.droppedForBudget}}
       <p class="lf-result__warning">Dropped {{result.droppedForBudget}} item(s) to fit budget.</p>
@@ -167,7 +171,7 @@
 
     <ul class="lf-result__list">
       {{#each result.items}}
-      <li class="lf-result__item lf-result__item--{{rarity}} {{#if locked}}is-locked{{/if}}" style="--lf-stagger: {{@index}}">
+      <li class="lf-result__item lf-result__item--{{rarity}} {{#if locked}}is-locked{{/if}}" style="--lf-stagger: {{@index}}" draggable="true" data-draggable-result-id data-result-id="{{resultId}}" data-uuid="{{item.uuid}}">
         <button
           type="button"
           class="lf-result__lock"
@@ -189,6 +193,10 @@
             {{/if}}
             <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
           </div>
+        </button>
+        <button type="button" class="lf-result__send" data-action="distributeOne" data-result-id="{{resultId}}" title="Send to actor">
+          <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+          <span class="lf-sr-only">Send to actor</span>
         </button>
       </li>
       {{/each}}
