@@ -89,6 +89,65 @@ async function readManifest() {
   return JSON.parse(raw);
 }
 
+/**
+ * Mutates the published manifest's `url` / `manifest` / `download` fields
+ * based on env vars. Source `module.json` is never modified; only the
+ * staged + side-by-side copy gets the injection.
+ *
+ * Recognized env vars (all optional):
+ *   INFINITY_RELEASE_REPO          - "owner/repo"; when set, derives all
+ *                                    three URLs using GitHub Releases
+ *                                    conventions (stable `manifest`,
+ *                                    versioned `download`).
+ *   INFINITY_RELEASE_URL           - overrides `url`.
+ *   INFINITY_RELEASE_MANIFEST_URL  - overrides `manifest`.
+ *   INFINITY_RELEASE_DOWNLOAD_URL  - overrides `download`. `{version}`
+ *                                    placeholder is substituted.
+ *
+ * Per-field overrides win over the `REPO` shortcut. Returns the list of
+ * fields actually touched so we can log them.
+ */
+function injectReleaseUrls(manifest) {
+  const version = String(manifest?.version ?? "0.0.0");
+  const repo = (process.env.INFINITY_RELEASE_REPO ?? "").trim();
+  const explicit = {
+    url: (process.env.INFINITY_RELEASE_URL ?? "").trim(),
+    manifest: (process.env.INFINITY_RELEASE_MANIFEST_URL ?? "").trim(),
+    download: (process.env.INFINITY_RELEASE_DOWNLOAD_URL ?? "").trim(),
+  };
+
+  let derived = { url: "", manifest: "", download: "" };
+  if (repo) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+      throw new Error(
+        `INFINITY_RELEASE_REPO must be "owner/repo" (got: ${repo})`,
+      );
+    }
+    derived = {
+      url: `https://github.com/${repo}`,
+      manifest: `https://github.com/${repo}/releases/latest/download/module.json`,
+      download: `https://github.com/${repo}/releases/download/v${version}/module.zip`,
+    };
+  }
+
+  const final = {
+    url: explicit.url || derived.url,
+    manifest: explicit.manifest || derived.manifest,
+    download: explicit.download || derived.download,
+  };
+  // Allow `{version}` substitution in explicit overrides.
+  final.download = final.download.replace(/\{version\}/g, version);
+
+  const touched = [];
+  for (const key of ["url", "manifest", "download"]) {
+    if (final[key] && manifest[key] !== final[key]) {
+      manifest[key] = final[key];
+      touched.push(key);
+    }
+  }
+  return touched;
+}
+
 async function clean() {
   if (await pathExists(releaseDir)) {
     await rm(releaseDir, { recursive: true, force: true });
@@ -238,6 +297,22 @@ async function main() {
   await clean();
   await stageFiles();
   await verifyStage(manifest);
+
+  const injected = injectReleaseUrls(manifest);
+  if (injected.length > 0) {
+    console.log(`Injected release URLs: ${injected.join(", ")}`);
+    // Re-stage the manifest so the zip carries the injected URLs.
+    await writeFile(
+      path.join(stagingDir, "module.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    );
+  } else {
+    console.log(
+      "No release URL env vars set — module.json shipped without manifest/download URLs.",
+    );
+  }
+
   await writeManifestCopy(manifest);
   await writeNotes(manifest);
   const { files, totalBytes } = await countStaged();

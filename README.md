@@ -22,6 +22,32 @@ Later milestones (claim board, distribute-to-actor, player hub, merchant integra
 
 This module is in active development. There is no public release manifest yet — install from a local zip or symlink the folder into your Foundry `Data/modules/infinity-dnd5e/` while developing.
 
+### Publishing a release
+
+`npm run release` produces `release/module.zip` from the current tree. To publish a build that Foundry / Forge can auto-update from, set one of the URL env vars before running release:
+
+```powershell
+# Shortcut: GitHub Releases convention.
+# Derives `manifest` (stable) + `download` (versioned) + `url` (homepage).
+$env:INFINITY_RELEASE_REPO = "OWNER/infinity-dnd5e"
+npm run release
+
+# Fine-grained overrides (any combination):
+$env:INFINITY_RELEASE_URL          = "https://example.com/infinity-dnd5e"
+$env:INFINITY_RELEASE_MANIFEST_URL = "https://example.com/.../module.json"
+$env:INFINITY_RELEASE_DOWNLOAD_URL = "https://example.com/.../v{version}/module.zip"
+npm run release
+```
+
+`{version}` in `INFINITY_RELEASE_DOWNLOAD_URL` is substituted at build time. The source `module.json` is never modified; injection happens only on the staged copy that goes into `release/module.zip` and `release/module.json`.
+
+For a GitHub-Releases workflow:
+
+1. Tag the commit (`git tag v0.2.0 && git push --tags`).
+2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
+3. Create a GitHub Release named `v0.2.0` and upload both `release/module.zip` and `release/module.json` as assets.
+4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
+
 ## Tag schema
 
 Items carry `flags["infinity-dnd5e"]` (and legacy `flags["party-operations"]` for back-compat with the source compendium) with:
