@@ -107,6 +107,12 @@
       <h3 class="lf-result__title">
         {{result.items.length}} item(s) — {{result.totalGp}} gp{{#if result.budgetGp}} / {{result.budgetGp}} gp budget{{/if}}
       </h3>
+      <div class="lf-result__head-actions">
+        <button type="button" class="lf-btn lf-btn--ghost lf-btn--sm" data-action="distributeBundle" title="Send every item to one actor">
+          <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
+          <span>Distribute Bundle</span>
+        </button>
+      </div>
       {{#if result.droppedForBudget}}
       <p class="lf-result__warning">Dropped {{result.droppedForBudget}} item(s) to fit budget.</p>
       {{/if}}
@@ -114,13 +120,17 @@
 
     <ul class="lf-result__list">
       {{#each result.items}}
-      <li class="lf-result__item lf-result__item--{{rarity}}">
+      <li class="lf-result__item lf-result__item--{{rarity}}" draggable="true" data-draggable-uuid data-uuid="{{item.uuid}}">
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
           <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
           <div class="lf-result__copy">
             <strong class="lf-result__name">{{item.name}}</strong>
             <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotal}} gp</span>
           </div>
+        </button>
+        <button type="button" class="lf-result__send" data-action="distributeOne" data-uuid="{{item.uuid}}" title="Send to actor">
+          <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+          <span class="lf-sr-only">Send to actor</span>
         </button>
       </li>
       {{/each}}

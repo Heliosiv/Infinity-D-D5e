@@ -13,6 +13,10 @@
  */
 
 import { computeLootBudget, getBudgetCurves } from "./loot/budget.js";
+import {
+  beginDragFromResult,
+  promptDistributeItems,
+} from "./loot/distribute.js";
 import { filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
@@ -24,6 +28,7 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-forge.hbs`;
+const SETTING_FORM_STATE = "lootForgeFormState";
 
 /* ------------------------------------------------------------------ *
  * Application V2 host
@@ -49,6 +54,8 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       generate: LootForgeApp._onGenerate,
       reset: LootForgeApp._onReset,
       openItem: LootForgeApp._onOpenItem,
+      distributeOne: LootForgeApp._onDistributeOne,
+      distributeBundle: LootForgeApp._onDistributeBundle,
     },
     form: {
       handler: undefined,
@@ -85,11 +92,47 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   constructor(options = {}) {
     super(options);
-    this._form = { ...LootForgeApp.DEFAULT_FORM };
+    this._form = LootForgeApp._restoreForm();
     this._lastResult = null;
     this._loadingItems = false;
     this._cachedItems = null;
     this._cachedItemsAt = 0;
+  }
+
+  /**
+   * Merge the persisted form state (if any) over the defaults so a
+   * stale persisted shape can't pollute the live form when keys are
+   * added in later versions.
+   */
+  static _restoreForm() {
+    const fallback = { ...LootForgeApp.DEFAULT_FORM };
+    try {
+      const stored = game.settings?.get(MODULE_ID, SETTING_FORM_STATE);
+      if (!stored || typeof stored !== "object") return fallback;
+      const merged = { ...fallback };
+      for (const key of Object.keys(fallback)) {
+        if (stored[key] === undefined) continue;
+        if (Array.isArray(fallback[key])) {
+          merged[key] = Array.isArray(stored[key])
+            ? [...stored[key]]
+            : fallback[key];
+        } else {
+          merged[key] = stored[key];
+        }
+      }
+      return merged;
+    } catch (error) {
+      console.warn(`${MODULE_ID} | could not restore form state`, error);
+      return fallback;
+    }
+  }
+
+  _persistForm() {
+    try {
+      game.settings?.set(MODULE_ID, SETTING_FORM_STATE, { ...this._form });
+    } catch (error) {
+      console.warn(`${MODULE_ID} | could not persist form state`, error);
+    }
   }
 
   /* ------------------- context ------------------- */
@@ -146,6 +189,13 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       form.addEventListener("input", (event) => this._onFormInput(event));
       form.addEventListener("change", (event) => this._onFormInput(event));
     }
+
+    // Wire drag-and-drop on result tiles so they can be dropped onto
+    // a sheet or canvas the way native Foundry items can. The result
+    // section is re-rendered each generate, so re-wire on every render.
+    for (const tile of root.querySelectorAll("[data-draggable-uuid]")) {
+      tile.addEventListener("dragstart", beginDragFromResult);
+    }
   }
 
   _onClose(options) {
@@ -164,6 +214,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static async _onReset(_event, _target) {
     this._form = { ...LootForgeApp.DEFAULT_FORM };
     this._lastResult = null;
+    this._persistForm();
     await this.render();
   }
 
@@ -177,6 +228,25 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
     }
+  }
+
+  /** @this {LootForgeApp} */
+  static async _onDistributeOne(_event, target) {
+    const uuid = target?.dataset?.uuid;
+    if (!uuid) return;
+    await promptDistributeItems([uuid]);
+  }
+
+  /** @this {LootForgeApp} */
+  static async _onDistributeBundle(_event, _target) {
+    const uuids = (this._lastResult?.items ?? [])
+      .map((entry) => entry?.item?.uuid)
+      .filter(Boolean);
+    if (uuids.length === 0) return;
+    await promptDistributeItems(uuids, {
+      title: `Distribute Bundle (${uuids.length} items)`,
+      hint: "Choose one character to receive the entire bundle.",
+    });
   }
 
   /* ------------------- form handling ------------------- */
@@ -209,6 +279,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     this._form = next;
     this._updateProjectedBudgetLabel();
+    this._persistForm();
   }
 
   _updateProjectedBudgetLabel() {

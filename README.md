@@ -8,15 +8,17 @@ A focused, ground-up rewrite of the loot generation tooling formerly bundled ins
 
 ## Status
 
-**v0.1.0** — Generate + Display only.
+**v0.2.0** — Generate + Display + Distribute.
 
 - GM-only window
-- Budget, rarity, tier, count controls
+- Budget, rarity, tier, count controls — filter state persists across reopen
 - Roll a single loot table at a time
 - Results show name, image, rarity, gp value, source
+- **Distribute:** drag a result tile onto a character sheet, click the per-row "Send" button, or use the "Distribute Bundle" header button to push the whole roll onto one actor
+- **Publishable release pipeline:** `npm run release` with `INFINITY_RELEASE_REPO=owner/repo` (or per-field URL overrides) produces a manifest Foundry / Forge can auto-update from
 - No claim board, no player UI, no merchant flow (yet)
 
-Later milestones (claim board, distribute-to-actor, player hub, merchant integration) will be cut as separate releases once the v0.1 surface stabilizes.
+Later milestones (claim board, player hub, chat output, merchant integration) will be cut as separate releases once the v0.2 surface stabilizes.
 
 ## Install
 

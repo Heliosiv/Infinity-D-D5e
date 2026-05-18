@@ -333,6 +333,11 @@ select.lf-input {
   color: var(--lf-text);
 }
 
+.lf-btn--sm {
+  padding: 4px 9px;
+  font-size: 0.82rem;
+}
+
 /* =========================================================
    Result list
    ========================================================= */
@@ -355,10 +360,16 @@ select.lf-input {
 
 .lf-result__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.lf-result__head-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .lf-result__title {
@@ -384,13 +395,15 @@ select.lf-input {
 }
 
 .lf-result__item {
-  display: block;
+  display: flex;
+  align-items: stretch;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-sm);
   background: var(--lf-surface);
   transition:
     border-color 120ms ease,
-    transform 120ms ease;
+    transform 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .lf-result__item:hover {
@@ -398,11 +411,20 @@ select.lf-input {
   transform: translateY(-1px);
 }
 
+.lf-result__item[draggable="true"] {
+  cursor: grab;
+}
+
+.lf-result__item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .lf-result__open {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 8px 10px;
   border: 0;
   background: transparent;
@@ -410,6 +432,40 @@ select.lf-input {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.lf-result__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  flex-shrink: 0;
+  border: 0;
+  border-left: 1px solid var(--lf-border);
+  background: transparent;
+  color: var(--lf-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.lf-result__send:hover {
+  background: var(--lf-surface-elev);
+  color: var(--lf-accent);
+}
+
+.lf-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .lf-result__icon {

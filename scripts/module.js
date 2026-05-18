@@ -10,9 +10,20 @@ import { LootForgeApp } from "./app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
+/** Client setting: serialized form state, restored on window open. */
+const SETTING_FORM_STATE = "lootForgeFormState";
+
 /** Foundry init — register settings + the scene control. */
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | init`);
+  game.settings?.register(MODULE_ID, SETTING_FORM_STATE, {
+    name: "Loot Forge form state",
+    hint: "Saved filter values so the Loot Forge reopens to your last setup.",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {},
+  });
 });
 
 /** Foundry ready — instances are now safe to construct. */
