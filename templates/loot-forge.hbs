@@ -147,6 +147,16 @@
       {{/each}}
     </ul>
     {{/if}}
+    {{else if hasWarnings}}
+    <header class="lf-result__head">
+      <h3 class="lf-result__title">No items generated</h3>
+    </header>
+    <ul class="lf-result__warnings">
+      {{#each result.warnings}}
+      <li>{{this}}</li>
+      {{/each}}
+    </ul>
+    <p class="lf-result__placeholder">Loosen filters (drop tier or expand rarity) and try again.</p>
     {{else}}
     <p class="lf-result__placeholder">Set your filters and click <strong>Generate Loot</strong>.</p>
     {{/if}}

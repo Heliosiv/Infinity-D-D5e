@@ -171,6 +171,11 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       })),
       projectedBudget,
       hasResult: Boolean(this._lastResult && this._lastResult.items.length > 0),
+      hasWarnings: Boolean(
+        this._lastResult &&
+          Array.isArray(this._lastResult.warnings) &&
+          this._lastResult.warnings.length > 0,
+      ),
       result: this._lastResult,
       loadingItems: this._loadingItems,
       moduleId: MODULE_ID,

@@ -11,33 +11,28 @@
  * on Forge) the next call after the TTL picks up the new state.
  */
 
-const DEFAULT_FIELDS = Object.freeze([
-  "name",
-  "img",
-  "type",
-  "system.rarity",
-  "system.price",
-  "flags.party-operations",
-  "flags.infinity-dnd5e",
-]);
-
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 const cache = new Map(); // packId → { items, fetchedAt }
 
 /**
- * Load the index entries for a compendium pack as plain JS objects,
- * decorated with a `uuid` field so callers can hand them off to
- * `fromUuid` without rebuilding the address.
+ * Load the bundled item compendium as plain JS objects, decorated
+ * with `uuid` so callers can hand them off to `fromUuid` / drag-drop
+ * payloads without rebuilding the address.
+ *
+ * Uses `getDocuments()` (not `getIndex`) because Foundry's index
+ * loader strips data under namespaced flag keys like
+ * `flags.party-operations` on some versions — the roller depends on
+ * those flags for tier/rarity/value-band/weight, and stripped flags
+ * collapse the candidate pool to empty. The shipped pack is small
+ * (~1500 small documents, ~few MB once parsed) so the full fetch is
+ * cheap and cached for 5 minutes thereafter.
  *
  * @param {object} [opts]
  * @param {string} [opts.packId]  - "<moduleId>.<packName>". Defaults
  *                                  to this module's curated items pack.
- * @param {string[]} [opts.fields] - index fields to materialize.
- *                                   Defaults cover everything the
- *                                   roller and the result UI read.
  * @param {boolean} [opts.refresh] - bypass the cache.
- * @returns {Promise<Array<object>>} item-shaped POJOs (frozen list).
+ * @returns {Promise<Array<object>>} item-shaped POJOs (uuid + .toObject()).
  */
 export async function loadCompendiumItems(opts = {}) {
   if (typeof globalThis.game === "undefined") {
@@ -45,10 +40,6 @@ export async function loadCompendiumItems(opts = {}) {
   }
   const packId =
     String(opts.packId ?? "").trim() || "infinity-dnd5e.infinity-dnd5e-items";
-  const fields =
-    Array.isArray(opts.fields) && opts.fields.length > 0
-      ? opts.fields.slice()
-      : DEFAULT_FIELDS.slice();
   const refresh = Boolean(opts.refresh);
 
   const cached = cache.get(packId);
@@ -66,12 +57,18 @@ export async function loadCompendiumItems(opts = {}) {
     return [];
   }
 
-  const index = await pack.getIndex({ fields });
-  const items = [...index.values()].map((entry) => ({
-    ...entry,
-    uuid: entry.uuid ?? `Compendium.${packId}.${entry._id}`,
-  }));
+  const documents = await pack.getDocuments();
+  const items = documents.map((doc) => {
+    const data = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+    return {
+      ...data,
+      uuid: doc.uuid ?? `Compendium.${packId}.${data._id ?? doc.id}`,
+    };
+  });
   cache.set(packId, { items, fetchedAt: now });
+  console.log(
+    `infinity-dnd5e | loaded ${items.length} items from ${packId} (tagged: ${items.filter((it) => it?.flags?.["party-operations"]?.tier || it?.flags?.["infinity-dnd5e"]?.tier).length})`,
+  );
   return items;
 }
 
