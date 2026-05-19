@@ -324,9 +324,65 @@ Hooks.once("ready", () => {
   const seen = mod.flags?.welcomeSeen === true;
   if (seen) return;
   ui.notifications?.info(
-    "Infinity D&D5e is ready. Open the dashboard from the d20 icon in the left toolbar, or press Shift+I.",
-    { permanent: false },
+    "Infinity D&D5e is ready. Launch from the d20 button at the top of the Items sidebar, the left scene-controls toolbar, or Shift+I.",
+    { permanent: true },
   );
   // Mark the flag in-memory so we don't double-fire if ready runs twice.
   if (mod.flags) mod.flags.welcomeSeen = true;
 });
+
+/* ------------------------------------------------------------------ *
+ * Sidebar launcher — bulletproof against UI-overhaul modules.
+ *
+ * Scene-control registration sometimes gets filtered by UI overhauls
+ * (Minimal UI, Tidy, etc.). The Foundry sidebar, on the other hand,
+ * is rendered by the core code and almost always survives those
+ * overrides. We inject a small button at the top of any directory
+ * tab the GM might open — Items, Compendium, Actors — so at least
+ * one entry point is visible no matter what skin is loaded.
+ * ------------------------------------------------------------------ */
+
+const SIDEBAR_LAUNCHER_FLAG = "data-infinity-dnd5e-launcher";
+
+function injectSidebarLauncher(rendered) {
+  if (!game.user?.isGM) return;
+  // Foundry V12 hooks pass jQuery as `html`; V13+ pass a raw HTMLElement.
+  const root =
+    rendered instanceof HTMLElement
+      ? rendered
+      : (rendered?.[0] ?? rendered?.element?.[0] ?? rendered?.element);
+  if (!root || typeof root.querySelector !== "function") return;
+  if (root.querySelector(`[${SIDEBAR_LAUNCHER_FLAG}]`)) return;
+
+  const header =
+    root.querySelector(".directory-header") ??
+    root.querySelector("header") ??
+    root.firstElementChild;
+  if (!header) return;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.setAttribute(SIDEBAR_LAUNCHER_FLAG, "true");
+  btn.className = "infinity-dnd5e-sidebar-launcher";
+  btn.title = "Open Infinity D&D5e Dashboard (Shift+I)";
+  btn.innerHTML =
+    '<i class="fa-solid fa-dice-d20" aria-hidden="true"></i><span>Infinity D&D5e</span>';
+  btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    InfinityDashboardApp.open();
+  });
+
+  // Insert above the rest of the header so it can't be hidden behind
+  // a search box. `prepend` falls back gracefully if header is empty.
+  header.prepend(btn);
+}
+
+for (const hookName of [
+  "renderItemDirectory",
+  "renderCompendiumDirectory",
+  "renderActorDirectory",
+  "renderSidebarTab",
+]) {
+  Hooks.on(hookName, (_app, html) => injectSidebarLauncher(html));
+}
