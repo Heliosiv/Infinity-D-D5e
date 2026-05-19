@@ -6,8 +6,8 @@
     "uniqueRoot": "assets/item-art/unique"
   },
   "counts": {
-    "items": 1424,
-    "reusableAssignments": 1130,
+    "items": 1422,
+    "reusableAssignments": 1128,
     "bespokeAssignments": 294,
     "sharedAssets": 273,
     "uniqueAssets": 294,
@@ -15951,14 +15951,6 @@
       "currentImg": "icons/consumables/potions/bottle-bulb-corked-green.webp"
     },
     {
-      "itemId": "9TYjE2i7fh2CYFt6",
-      "name": "(ROSS) Guiding Bolt Lv.3",
-      "mode": "reusable",
-      "assetId": "shared/spell-evo-level-3",
-      "path": "assets/item-art/shared/spell-evo-level-3.webp",
-      "currentImg": "icons/magic/fire/projectile-fireball-smoke-large-blue.webp"
-    },
-    {
       "itemId": "BhfuI7UoZntTMH9a",
       "name": "Angels Trumpet",
       "mode": "reusable",
@@ -16069,14 +16061,6 @@
       "assetId": "shared/potion-death-cap",
       "path": "assets/item-art/shared/potion-death-cap.webp",
       "currentImg": "icons/consumables/potions/potion-bottle-skull-label-poison-teal.webp"
-    },
-    {
-      "itemId": "qvgJ0LYNclkqYr3r",
-      "name": "(ROSS) - Magic Missile Lv.2",
-      "mode": "reusable",
-      "assetId": "shared/spell-evo-level-2",
-      "path": "assets/item-art/shared/spell-evo-level-2.webp",
-      "currentImg": "icons/magic/fire/projectile-meteor-salvo-light-pink.webp"
     },
     {
       "itemId": "shBSik5AOR8MbP4M",
