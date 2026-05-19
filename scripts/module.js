@@ -344,21 +344,42 @@ Hooks.once("ready", () => {
 
 const SIDEBAR_LAUNCHER_FLAG = "data-infinity-dnd5e-launcher";
 
-function injectSidebarLauncher(rendered) {
+function injectSidebarLauncher(rendered, hookName = "?") {
   if (!game.user?.isGM) return;
-  // Foundry V12 hooks pass jQuery as `html`; V13+ pass a raw HTMLElement.
+  // Foundry V12 hooks pass jQuery as `html`; V13+ pass a raw HTMLElement
+  // or an ApplicationV2 instance that has `.element`.
   const root =
     rendered instanceof HTMLElement
       ? rendered
-      : (rendered?.[0] ?? rendered?.element?.[0] ?? rendered?.element);
-  if (!root || typeof root.querySelector !== "function") return;
+      : (rendered?.[0] ??
+        rendered?.element?.[0] ??
+        rendered?.element ??
+        (rendered?.querySelector ? rendered : null));
+  if (!root || typeof root.querySelector !== "function") {
+    console.debug(
+      `${MODULE_ID} | sidebar launcher (${hookName}): no root element to inject into`,
+    );
+    return;
+  }
   if (root.querySelector(`[${SIDEBAR_LAUNCHER_FLAG}]`)) return;
 
-  const header =
-    root.querySelector(".directory-header") ??
-    root.querySelector("header") ??
-    root.firstElementChild;
-  if (!header) return;
+  // V11/V12/V13 have all used slightly different sidebar headers. Try
+  // every plausible target in order, fall back to the root itself so
+  // the button always lands somewhere visible.
+  const HEADER_SELECTORS = [
+    ".directory-header",
+    "header.directory-header",
+    "section > header",
+    ".action-buttons",
+    "header",
+    ".window-header",
+  ];
+  let target = null;
+  for (const sel of HEADER_SELECTORS) {
+    target = root.querySelector(sel);
+    if (target) break;
+  }
+  target = target ?? root;
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -374,15 +395,29 @@ function injectSidebarLauncher(rendered) {
   });
 
   // Insert above the rest of the header so it can't be hidden behind
-  // a search box. `prepend` falls back gracefully if header is empty.
-  header.prepend(btn);
+  // a search box.
+  target.prepend(btn);
+  console.log(
+    `${MODULE_ID} | sidebar launcher injected via ${hookName} into <${target.tagName.toLowerCase()}${target.className ? "." + target.className.split(" ").join(".") : ""}>`,
+  );
 }
 
+// Cover every hook Foundry has ever fired for directory rendering.
+// `renderApplicationV2` catches the V13 generic pass for sidebar tabs
+// that don't have their own named hook.
 for (const hookName of [
   "renderItemDirectory",
   "renderCompendiumDirectory",
+  "renderCompendiumSidebar",
   "renderActorDirectory",
   "renderSidebarTab",
+  "renderSidebar",
 ]) {
-  Hooks.on(hookName, (_app, html) => injectSidebarLauncher(html));
+  Hooks.on(hookName, (app, html) => injectSidebarLauncher(html, hookName));
 }
+Hooks.on("renderApplicationV2", (app, html) => {
+  const name = app?.constructor?.name ?? "";
+  if (/Directory|Sidebar/i.test(name)) {
+    injectSidebarLauncher(html, `renderApplicationV2/${name}`);
+  }
+});
