@@ -13,11 +13,11 @@
  *  - Lock + reroll is *per creature*; the GM can iterate one creature
  *    without disturbing the rest of the roster.
  *
- * Reuses the existing roller + horde-budget per-creature curve.
+ * Reuses the existing roller + computeLootBudget (trivial scale) for
+ * each creature's share.
  */
 
-import { computeHordeBudget } from "./loot/horde-budget.js";
-import { nearestPreset } from "./loot/budget.js";
+import { computeLootBudget, nearestPreset } from "./loot/budget.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
@@ -157,7 +157,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
         id: c.id,
         name: c.name,
         tier: c.tier,
-        budgetLabel: formatGp(computeHordeBudget({ tier: c.tier, mobSize: 1 })),
+        budgetLabel: formatGp(computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 })),
         tierOptions: TIERS.map((tier) => ({
           value: tier,
           label: tier.toUpperCase(),
@@ -525,7 +525,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   _rosterTotalBudget() {
     return this._form.roster.reduce(
-      (sum, c) => sum + computeHordeBudget({ tier: c.tier, mobSize: 1 }),
+      (sum, c) => sum + computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
       0,
     );
   }
@@ -588,7 +588,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   _rollForCreature(creature, items) {
     const filter = { ...this._filterSpec(), tiers: [creature.tier] };
     const candidates = filterCandidates(items, filter);
-    const budget = computeHordeBudget({ tier: creature.tier, mobSize: 1 });
+    const budget = computeLootBudget({ tier: creature.tier, scale: "trivial", partySize: 4 });
     const raw = rollLoot(candidates, {
       count: this._form.itemsPerCreature,
       budgetGp: budget,
