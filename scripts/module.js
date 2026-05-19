@@ -26,6 +26,84 @@ import { getItemRarity } from "./loot/tag-vocabulary.js";
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 
+// Very first thing we do — log that the ESM was evaluated at all. If
+// this line never appears in the console, the import chain failed
+// before our code ran (usually a top-level evaluation error in one of
+// the imported files).
+console.log(`${MODULE_ID} | module.js evaluating…`);
+
+/* ------------------------------------------------------------------ *
+ * Eager API assignment
+ *
+ * Foundry exposes a per-module API object via game.modules.get(id).api.
+ * The traditional pattern is to set it inside `ready`, but if anything
+ * else in `ready` throws first, the API never gets set — and macros,
+ * Shift+I, and console probing all silently fail.
+ *
+ * Assigning here, at top-level evaluation, gives us a stable API as
+ * long as the ESM loads at all, independent of any hook outcome.
+ * ------------------------------------------------------------------ */
+
+function buildApi() {
+  return {
+    openDashboard: () => InfinityDashboardApp.open(),
+    openPerEncounterLoot: () => PerEncounterLootApp.open(),
+    openHoardLoot: () => HoardLootApp.open(),
+    openPerCreatureLoot: () => PerCreatureLootApp.open(),
+
+    rollLootBundle: async (opts = {}) => {
+      const budget = computeLootBudget({
+        tier: opts.tier ?? "t2",
+        scale: opts.scale ?? "standard",
+        generosity: opts.generosity ?? "balanced",
+        partySize: opts.partySize ?? 4,
+        override: opts.budgetOverride ?? 0,
+      });
+      const items = await loadCompendiumItems({
+        packId: opts.packId ?? PACK_ID,
+      });
+      const candidates = filterCandidates(items, {
+        tiers: [opts.tier ?? "t2"],
+        rarities: opts.rarities ?? ["uncommon", "rare"],
+        lootTypes: opts.lootTypes ?? [],
+        requireEligible: true,
+      });
+      const raw = rollLoot(candidates, {
+        count: opts.count ?? 0,
+        budgetGp: budget,
+      });
+      return {
+        ...raw,
+        items: raw.items.map((entry) => ({
+          ...entry,
+          uuid: entry.item?.uuid ?? null,
+          rarity: getItemRarity(entry.item) || "common",
+        })),
+      };
+    },
+
+    distributeBundle: (actorId, uuids) =>
+      distributeItemsToActor(actorId, uuids),
+
+    promptDistribute: (uuids, options) =>
+      promptDistributeItems(uuids, options),
+  };
+}
+
+try {
+  const eagerMod = globalThis.game?.modules?.get?.(MODULE_ID);
+  if (eagerMod) {
+    eagerMod.api = buildApi();
+    console.log(`${MODULE_ID} | api set eagerly at module-load time`);
+  } else {
+    console.log(
+      `${MODULE_ID} | game.modules not ready at load — will retry at init/ready`,
+    );
+  }
+} catch (error) {
+  console.warn(`${MODULE_ID} | eager api assignment failed`, error);
+}
+
 /* ------------------------------------------------------------------ *
  * Settings registration
  * ------------------------------------------------------------------ */
@@ -99,10 +177,34 @@ function registerBuiltinTools() {
  * ------------------------------------------------------------------ */
 
 Hooks.once("init", () => {
-  console.log(`${MODULE_ID} | init`);
-  registerSettings();
-  registerKeybindings();
-  registerBuiltinTools();
+  console.log(`${MODULE_ID} | init hook firing`);
+  // Re-set the api here too in case eager assignment ran before
+  // game.modules existed.
+  try {
+    const mod = game.modules?.get?.(MODULE_ID);
+    if (mod && !mod.api) {
+      mod.api = buildApi();
+      console.log(`${MODULE_ID} | api set during init`);
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID} | init api assignment failed`, error);
+  }
+  try {
+    registerSettings();
+  } catch (error) {
+    console.error(`${MODULE_ID} | registerSettings failed`, error);
+  }
+  try {
+    registerKeybindings();
+  } catch (error) {
+    console.error(`${MODULE_ID} | registerKeybindings failed`, error);
+  }
+  try {
+    registerBuiltinTools();
+  } catch (error) {
+    console.error(`${MODULE_ID} | registerBuiltinTools failed`, error);
+  }
+  console.log(`${MODULE_ID} | init hook complete`);
 });
 
 /* ------------------------------------------------------------------ *
@@ -137,80 +239,23 @@ function registerKeybindings() {
  * which ready pass owns which side effect.
  */
 Hooks.once("ready", () => {
-  const version = game.modules?.get?.(MODULE_ID)?.version ?? "?";
-  const foundryGen = globalThis.foundry?.utils?.foundryVersion?.generation;
-  const foundryVersion = globalThis.game?.release?.version ?? "?";
-  console.log(
-    `%c${MODULE_ID} %cready · module v${version} · Foundry v${foundryVersion} (gen ${foundryGen ?? "?"}) · system ${game.system?.id}@${game.system?.version}`,
-    "color: #ffb15d; font-weight: bold",
-    "color: inherit",
-  );
-  console.log(
-    `${MODULE_ID} | dashboard access: left-toolbar d20 icon, Token Controls fallback, or Shift+I keybind. Macros: game.modules.get("${MODULE_ID}").api.openDashboard()`,
-  );
-  const mod = game.modules?.get?.(MODULE_ID);
-  if (mod) {
-    mod.api = {
-      openDashboard: () => InfinityDashboardApp.open(),
-      openPerEncounterLoot: () => PerEncounterLootApp.open(),
-      openHoardLoot: () => HoardLootApp.open(),
-      openPerCreatureLoot: () => PerCreatureLootApp.open(),
-
-      /**
-       * Roll a loot bundle without opening a window. Returns the same
-       * shape the apps produce, with each entry decorated with `uuid`
-       * and `rarity` for downstream distribute calls.
-       *
-       * @param {object} [opts]
-       * @param {string} [opts.tier="t2"]
-       * @param {string} [opts.scale="standard"]
-       * @param {string} [opts.generosity="balanced"]
-       * @param {number} [opts.partySize=4]
-       * @param {number} [opts.count=0]            0 = fill budget, N>0 = item cap
-       * @param {string[]} [opts.rarities=["uncommon","rare"]]
-       * @param {string[]} [opts.lootTypes=[]]     empty = all
-       * @param {number} [opts.budgetOverride=0]   >0 skips the curve
-       * @param {string} [opts.packId]
-       */
-      rollLootBundle: async (opts = {}) => {
-        const budget = computeLootBudget({
-          tier: opts.tier ?? "t2",
-          scale: opts.scale ?? "standard",
-          generosity: opts.generosity ?? "balanced",
-          partySize: opts.partySize ?? 4,
-          override: opts.budgetOverride ?? 0,
-        });
-        const items = await loadCompendiumItems({
-          packId: opts.packId ?? PACK_ID,
-        });
-        const candidates = filterCandidates(items, {
-          tiers: [opts.tier ?? "t2"],
-          rarities: opts.rarities ?? ["uncommon", "rare"],
-          lootTypes: opts.lootTypes ?? [],
-          requireEligible: true,
-        });
-        const raw = rollLoot(candidates, {
-          count: opts.count ?? 0,
-          budgetGp: budget,
-        });
-        return {
-          ...raw,
-          items: raw.items.map((entry) => ({
-            ...entry,
-            uuid: entry.item?.uuid ?? null,
-            rarity: getItemRarity(entry.item) || "common",
-          })),
-        };
-      },
-
-      /** Send pre-resolved UUIDs to a specific actor. Skips the picker. */
-      distributeBundle: (actorId, uuids) =>
-        distributeItemsToActor(actorId, uuids),
-
-      /** Open the actor picker for the supplied UUIDs. */
-      promptDistribute: (uuids, options) =>
-        promptDistributeItems(uuids, options),
-    };
+  try {
+    const version = game.modules?.get?.(MODULE_ID)?.version ?? "?";
+    const foundryGen = globalThis.foundry?.utils?.foundryVersion?.generation;
+    const foundryVersion = globalThis.game?.release?.version ?? "?";
+    console.log(
+      `%c${MODULE_ID} %cready · module v${version} · Foundry v${foundryVersion} (gen ${foundryGen ?? "?"}) · system ${game.system?.id}@${game.system?.version}`,
+      "color: #ffb15d; font-weight: bold",
+      "color: inherit",
+    );
+    console.log(
+      `${MODULE_ID} | dashboard access: sidebar Items tab d20 button, left scene-controls, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openDashboard()`,
+    );
+    // Final api set — always safe, idempotent.
+    const mod = game.modules?.get?.(MODULE_ID);
+    if (mod && !mod.api) mod.api = buildApi();
+  } catch (error) {
+    console.error(`${MODULE_ID} | ready hook failed`, error);
   }
 });
 
