@@ -22,7 +22,7 @@ const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 /** Client setting: serialized form state, restored on window open. */
 const SETTING_FORM_STATE = "lootForgeFormState";
 
-/** Foundry init — register settings + the scene control. */
+/** Foundry init — register settings, keybindings, and the scene control. */
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | init`);
   game.settings?.register(MODULE_ID, SETTING_FORM_STATE, {
@@ -32,6 +32,19 @@ Hooks.once("init", () => {
     config: false,
     type: Object,
     default: {},
+  });
+
+  // Global keybinding — ALWAYS works, even when a UI overhaul
+  // module hides our scene-control button.
+  game.keybindings?.register(MODULE_ID, "openLootForge", {
+    name: "Open Loot Forge",
+    hint: "Toggle the GM-only Loot Forge window.",
+    editable: [{ key: "KeyL", modifiers: ["Control", "Shift"] }],
+    restricted: true, // GM-only
+    onDown: () => {
+      LootForgeApp.open();
+      return true;
+    },
   });
 });
 
@@ -43,40 +56,58 @@ Hooks.once("ready", () => {
 });
 
 /**
- * Add a GM-only scene-control button under the "tokens" toolbar.
- * Foundry V12 uses `getSceneControlButtons`; V13+ keeps the same hook
- * but the structure of the controls object differs slightly. The
- * normalization below tolerates both shapes.
+ * Add a GM-only scene-control button under the tokens toolbar.
+ *
+ * Two Foundry control shapes in the wild:
+ *  - V12: controls is `Array<{ name: "token", tools: Array<...> }>`.
+ *    Each tool needs `onClick`.
+ *  - V13: controls is `Record<name, { tools: Record<name, ...> }>`.
+ *    Each tool needs `order` (for sort), `onChange`, and a string
+ *    `name` matching its record key — anything missing those gets
+ *    silently dropped by the renderer.
+ *
+ * UI-overhaul modules (Minimal UI, Tidy etc.) may filter unknown
+ * tools regardless; the global keybinding registered in `init` is
+ * the reliable fallback.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user?.isGM) return;
 
-  const tools = {
-    name: "infinity-dnd5e-loot-forge",
+  const toolName = "infinity-dnd5e-loot-forge";
+  const tool = {
+    name: toolName,
     title: "Infinity D&D5e — Loot Forge",
     icon: "fa-solid fa-coins",
     button: true,
     visible: true,
+    toggle: false,
+    order: 999,
     onClick: () => LootForgeApp.open(),
-    onChange: () => LootForgeApp.open(),
+    onChange: (_event, _active) => LootForgeApp.open(),
   };
 
-  // V12 shape: controls is an Array<{ name, tools: Array<...> }>
+  // V12 shape: top-level array.
   if (Array.isArray(controls)) {
     const tokenControl =
       controls.find((c) => c?.name === "token") ?? controls[0];
     if (tokenControl && Array.isArray(tokenControl.tools)) {
-      tokenControl.tools.push(tools);
+      tokenControl.tools.push(tool);
     }
     return;
   }
 
-  // V13+ shape: controls is a Record<name, { tools: Record<name, ...> }>
+  // V13 shape: record keyed by category name.
   if (controls && typeof controls === "object") {
     const tokenControl =
       controls.tokens ?? controls.token ?? Object.values(controls)[0];
-    if (tokenControl && typeof tokenControl.tools === "object") {
-      tokenControl.tools[tools.name] = tools;
+    if (!tokenControl) return;
+
+    if (Array.isArray(tokenControl.tools)) {
+      tokenControl.tools.push(tool);
+      return;
+    }
+    if (tokenControl.tools && typeof tokenControl.tools === "object") {
+      tokenControl.tools[toolName] = tool;
     }
   }
 });

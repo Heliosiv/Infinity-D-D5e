@@ -10,7 +10,7 @@ A focused, ground-up rewrite of the loot generation tooling formerly bundled ins
 
 **v0.2.0** — Generate + Display + Distribute + Announce.
 
-- GM-only window
+- GM-only window — opens via the coin button in the Tokens toolbar, the global keybinding `Ctrl+Shift+L`, or `game.modules.get("infinity-dnd5e").api.openLootForge()`
 - Budget, rarity, tier, count controls — filter state persists across reopen
 - Roll a single loot table at a time
 - Results show name, image, rarity, gp value, source
