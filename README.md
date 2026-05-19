@@ -8,17 +8,32 @@ A focused, ground-up rewrite of the loot generation tooling formerly bundled ins
 
 ## Status
 
-**v0.2.0** — Generate + Display + Distribute.
+**v0.2.0** — Generate + Display + Distribute + Announce.
 
 - GM-only window
 - Budget, rarity, tier, count controls — filter state persists across reopen
 - Roll a single loot table at a time
 - Results show name, image, rarity, gp value, source
 - **Distribute:** drag a result tile onto a character sheet, click the per-row "Send" button, or use the "Distribute Bundle" header button to push the whole roll onto one actor
+- **Announce in chat:** toggle on the form posts each bundle as a styled chat card with clickable `@UUID[]` item links
+- **Macro API:** `game.modules.get("infinity-dnd5e").api` exposes `openLootForge()`, `rollLootBundle({...})`, `distributeBundle(actorId, uuids)`, `promptDistribute(uuids, opts)`
 - **Publishable release pipeline:** `npm run release` with `INFINITY_RELEASE_REPO=owner/repo` (or per-field URL overrides) produces a manifest Foundry / Forge can auto-update from
 - No claim board, no player UI, no merchant flow (yet)
 
-Later milestones (claim board, player hub, chat output, merchant integration) will be cut as separate releases once the v0.2 surface stabilizes.
+Later milestones (claim board, player hub, merchant integration) will be cut as separate releases once the v0.2 surface stabilizes.
+
+### Macro examples
+
+```js
+// One-liner roll + post to chat
+const api = game.modules.get("infinity-dnd5e").api;
+const bundle = await api.rollLootBundle({ tier: "t3", count: 8, rarities: ["rare", "very-rare"] });
+ChatMessage.create({ content: `Rolled ${bundle.items.length} items — ${bundle.totalGp} gp` });
+
+// Roll, then ask which PC gets the loot
+const bundle = await api.rollLootBundle({ tier: "t2" });
+await api.promptDistribute(bundle.items.map(e => e.uuid));
+```
 
 ## Install
 

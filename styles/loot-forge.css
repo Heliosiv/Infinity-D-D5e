@@ -338,6 +338,74 @@ select.lf-input {
   font-size: 0.82rem;
 }
 
+.lf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--lf-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.lf-toggle input {
+  accent-color: var(--lf-accent);
+}
+
+/* =========================================================
+   Chat card (rendered inside Foundry's chat log, NOT inside
+   the LootForge window — uses a flat selector, not nested.)
+   ========================================================= */
+.infinity-dnd5e-loot-card {
+  display: grid;
+  gap: 4px;
+}
+
+.infinity-dnd5e-loot-card .lc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.infinity-dnd5e-loot-card .lc-total {
+  font-variant-numeric: tabular-nums;
+  color: #b58a3a;
+}
+
+.infinity-dnd5e-loot-card .lc-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.infinity-dnd5e-loot-card .loot-row {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  padding-left: 8px;
+  border-left: 2px solid #b3bfd8;
+}
+
+.infinity-dnd5e-loot-card .loot-row .qty {
+  font-weight: 700;
+}
+
+.infinity-dnd5e-loot-card .loot-row .meta {
+  font-size: 0.78rem;
+  color: #555;
+  text-transform: capitalize;
+}
+
+.infinity-dnd5e-loot-card .loot-row--uncommon { border-left-color: #2f9d68; }
+.infinity-dnd5e-loot-card .loot-row--rare { border-left-color: #2c6ee0; }
+.infinity-dnd5e-loot-card .loot-row--very-rare { border-left-color: #8a4dd9; }
+.infinity-dnd5e-loot-card .loot-row--legendary { border-left-color: #c4892f; }
+.infinity-dnd5e-loot-card .loot-row--artifact { border-left-color: #c64545; }
+
 /* =========================================================
    Result list
    ========================================================= */

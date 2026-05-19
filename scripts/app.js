@@ -17,6 +17,7 @@ import {
   beginDragFromResult,
   promptDistributeItems,
 } from "./loot/distribute.js";
+import { loadCompendiumItems } from "./loot/pack.js";
 import { filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
@@ -88,6 +89,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     budgetOverride: 0,
     rarities: ["uncommon", "rare"],
     lootTypes: [], // empty = all types
+    postToChat: false,
   });
 
   constructor(options = {}) {
@@ -274,6 +276,9 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "lootType":
         next.lootTypes = readMultiCheckGroup(this.element, "lootType");
         break;
+      case "postToChat":
+        next.postToChat = Boolean(target.checked);
+        break;
       default:
         return;
     }
@@ -301,70 +306,87 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* ------------------- generation pipeline ------------------- */
 
   async _generate() {
-    const budget = computeLootBudget(this._formForBudget());
-    const items = await this._loadItems();
-    const candidates = filterCandidates(items, {
-      tiers: [this._form.tier],
-      rarities: this._form.rarities,
-      lootTypes: this._form.lootTypes,
-      requireEligible: true,
-    });
-    const raw = rollLoot(candidates, {
-      count: this._form.count,
-      budgetGp: budget,
-    });
-    // Decorate each entry with template-ready fields so the .hbs
-    // stays free of Handlebars helpers / data-shape gymnastics.
-    this._lastResult = {
-      ...raw,
-      items: raw.items.map((entry) => ({
-        ...entry,
-        rarity: getItemRarity(entry.item) || "common",
-        quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
-      })),
-    };
+    this._loadingItems = true;
+    try {
+      const budget = computeLootBudget(this._formForBudget());
+      const items = await loadCompendiumItems({ packId: PACK_ID });
+      const candidates = filterCandidates(items, {
+        tiers: [this._form.tier],
+        rarities: this._form.rarities,
+        lootTypes: this._form.lootTypes,
+        requireEligible: true,
+      });
+      const raw = rollLoot(candidates, {
+        count: this._form.count,
+        budgetGp: budget,
+      });
+      // Decorate each entry with template-ready fields so the .hbs
+      // stays free of Handlebars helpers / data-shape gymnastics.
+      this._lastResult = {
+        ...raw,
+        items: raw.items.map((entry) => ({
+          ...entry,
+          rarity: getItemRarity(entry.item) || "common",
+          quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
+        })),
+      };
+
+      if (this._form.postToChat && this._lastResult.items.length > 0) {
+        await this._postBundleToChat(this._lastResult);
+      }
+    } finally {
+      this._loadingItems = false;
+    }
     await this.render();
   }
 
   /**
-   * Load the bundled compendium index once and cache it per session.
-   * `getIndex` is cheaper than `getDocuments` — we only need the
-   * fields the roller and the result card actually read.
+   * Post the bundle to chat as a styled card. Item names are wrapped
+   * in `@UUID[...]{name}` so Foundry's enricher turns them into
+   * clickable links that open the item sheet on click.
    */
-  async _loadItems() {
-    const now = Date.now();
-    const ttlMs = 5 * 60 * 1000;
-    if (this._cachedItems && now - this._cachedItemsAt < ttlMs) {
-      return this._cachedItems;
-    }
-    this._loadingItems = true;
+  async _postBundleToChat(result) {
+    if (typeof ChatMessage === "undefined") return;
+    const items = Array.isArray(result?.items) ? result.items : [];
+    if (items.length === 0) return;
+
+    const rows = items
+      .map((entry) => {
+        const uuid = entry?.item?.uuid ?? "";
+        const name = String(entry?.item?.name ?? "Item");
+        const qty =
+          entry?.quantity > 1 ? `<span class="qty">×${entry.quantity}</span> ` : "";
+        const gpTotal = Number(entry?.gpTotal ?? 0);
+        const rarity = entry?.rarity ?? "common";
+        const link = uuid
+          ? `@UUID[${uuid}]{${escapeHtml(name)}}`
+          : escapeHtml(name);
+        return `<li class="loot-row loot-row--${rarity}">${qty}${link} <span class="meta">${rarity} · ${gpTotal} gp</span></li>`;
+      })
+      .join("");
+
+    const budgetTag = result.budgetGp
+      ? ` / ${result.budgetGp} gp budget`
+      : "";
+    const content = `
+      <div class="infinity-dnd5e-loot-card">
+        <header class="lc-head">
+          <strong>Loot Bundle</strong>
+          <span class="lc-total">${result.totalGp} gp${budgetTag}</span>
+        </header>
+        <ul class="lc-list">${rows}</ul>
+      </div>
+    `.trim();
+
     try {
-      const pack = game.packs?.get(PACK_ID);
-      if (!pack) {
-        ui.notifications?.warn(
-          `${MODULE_ID}: compendium ${PACK_ID} not found.`,
-        );
-        return [];
-      }
-      const index = await pack.getIndex({
-        fields: [
-          "name",
-          "img",
-          "type",
-          "system.rarity",
-          "system.price",
-          "flags.party-operations",
-          "flags.infinity-dnd5e",
-        ],
+      await ChatMessage.create({
+        content,
+        speaker: ChatMessage.getSpeaker
+          ? ChatMessage.getSpeaker({ alias: "Loot Forge" })
+          : { alias: "Loot Forge" },
       });
-      this._cachedItems = [...index.values()].map((entry) => ({
-        ...entry,
-        uuid: entry.uuid ?? `Compendium.${PACK_ID}.${entry._id}`,
-      }));
-      this._cachedItemsAt = now;
-      return this._cachedItems;
-    } finally {
-      this._loadingItems = false;
+    } catch (error) {
+      console.warn(`${MODULE_ID} | could not post bundle to chat`, error);
     }
   }
 }
@@ -402,4 +424,12 @@ function readMultiCheckGroup(root, group) {
   return [
     ...root.querySelectorAll(`input[type='checkbox'][name='${group}']:checked`),
   ].map((el) => el.value);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
