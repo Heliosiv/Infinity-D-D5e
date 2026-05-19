@@ -115,83 +115,126 @@ export function filterCandidates(items, filter = {}) {
 /**
  * Roll a loot bundle from the supplied candidate pool.
  *
+ * Two modes governed by `opts.count`:
+ *  - **auto (count = 0)**: keep drawing items until total gp lands in
+ *    the budget window (default 85%–110% of budgetGp), hard-stopped
+ *    by `maxCap` so a pathological pool can't spin forever.
+ *  - **bounded (count > 0)**: cap at `count` distinct items, then
+ *    trim the cheapest if we busted budget.
+ *
+ * Budget without count is the common case: the GM sets a target gp
+ * value and the roller picks an organic mix of items to land near it.
+ *
  * @param {Array<object>} candidates - output of filterCandidates
  * @param {object} opts
- * @param {number} opts.count   - target number of distinct items (>= 1)
- * @param {number} [opts.budgetGp] - if > 0, total bundle gp may not exceed this
- * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 200
- * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
- * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number }>,
- *             totalGp: number,
- *             budgetGp: number,
- *             droppedForBudget: number,
- *             warnings: string[] }}
+ * @param {number} [opts.count=0] - 0 = fill the budget, N>0 = hard item cap
+ * @param {number} [opts.budgetGp] - target total gp; > 0 enables the fill loop
+ * @param {number} [opts.maxCap=40] - safety ceiling on items in auto mode
+ * @param {number} [opts.budgetLowFrac=0.85] - lower edge of the budget window
+ * @param {number} [opts.budgetHighFrac=1.10] - upper edge (overshoot ok up to here)
+ * @param {number} [opts.maxAttempts] - safety cap on draws; default 600
+ * @param {() => number} [opts.rng] - injectable RNG. Default Math.random.
+ * @returns {{ items, totalGp, budgetGp, droppedForBudget, warnings }}
  */
 export function rollLoot(candidates, opts = {}) {
   const pool = Array.isArray(candidates) ? candidates.slice() : [];
-  const count = Math.max(0, Math.floor(Number(opts.count ?? 0)));
+  const requestedCount = Math.max(0, Math.floor(Number(opts.count ?? 0)));
   const budgetGp = Number(opts.budgetGp ?? 0);
   const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
+  const maxCap = Math.max(1, Math.floor(Number(opts.maxCap ?? 40)));
+  const budgetLowFrac = clampFraction(opts.budgetLowFrac, 0.85);
+  const budgetHighFrac = Math.max(
+    budgetLowFrac,
+    clampFraction(opts.budgetHighFrac, 1.1),
+  );
   const maxAttempts = Math.max(
-    count * 4,
-    Math.floor(Number(opts.maxAttempts ?? 200)),
+    200,
+    Math.floor(Number(opts.maxAttempts ?? 600)),
   );
   const rng = typeof opts.rng === "function" ? opts.rng : Math.random;
 
   const warnings = [];
   if (pool.length === 0) {
-    if (count > 0) warnings.push("Candidate pool is empty.");
-    return emptyResult(budgetEnforced ? budgetGp : 0, warnings);
-  }
-  if (count === 0) {
+    warnings.push("Candidate pool is empty — no items match the current filter.");
     return emptyResult(budgetEnforced ? budgetGp : 0, warnings);
   }
 
-  // Pass 1: weighted random draw without replacement at the item level.
-  const picked = new Map(); // _id → { item, quantity }
+  // count=0 + no budget is the legacy "no-op" case — return empty.
+  // We need either a count or a budget to know when to stop.
+  if (requestedCount === 0 && !budgetEnforced) {
+    return emptyResult(0, warnings);
+  }
+
+  // Effective cap on distinct items. Auto mode uses maxCap; bounded
+  // mode uses the user's requested count.
+  const hardCap = requestedCount > 0 ? requestedCount : maxCap;
+  const fillBudget = requestedCount === 0 && budgetEnforced;
+  const budgetTargetLow = fillBudget ? budgetGp * budgetLowFrac : 0;
+  const budgetTargetHigh = fillBudget ? budgetGp * budgetHighFrac : Infinity;
+
+  // Pass 1: weighted random draw, capped by hardCap. In fill mode we
+  // also stop early as soon as the running total enters the budget
+  // window — that's the "good enough" exit.
+  const picked = new Map(); // _id → { item, quantity, gpValue }
+  let runningTotal = 0;
   let attempts = 0;
-  while (picked.size < count && attempts < maxAttempts) {
+  while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
     const item = weightedPick(pool, rng);
     if (!item) break;
-    const id = String(item._id ?? item.id ?? attempts);
-    if (!picked.has(id)) {
-      picked.set(id, { item, quantity: 1 });
+    const id = String(item._id ?? item.id ?? `anon-${attempts}`);
+    const gpValue = getItemGpValue(item);
+    const existing = picked.get(id);
+
+    // In fill mode, skip picks that would blow past the high edge —
+    // but only if we already have at least one item. (Otherwise a
+    // huge budget on an expensive-only pool produces nothing.)
+    if (
+      fillBudget &&
+      picked.size > 0 &&
+      runningTotal + gpValue > budgetTargetHigh
+    ) {
       continue;
     }
-    const existing = picked.get(id);
-    const maxQty = getItemMaxQty(item);
-    if (existing.quantity < maxQty) {
-      existing.quantity += 1;
-      // Treat a stack-up as "filling out" rather than a new pick; do
-      // not advance picked.size, but do reduce remaining draws.
+
+    if (!existing) {
+      picked.set(id, { item, quantity: 1, gpValue });
+      runningTotal += gpValue;
+    } else {
+      const maxQty = getItemMaxQty(item);
+      if (existing.quantity < maxQty) {
+        existing.quantity += 1;
+        runningTotal += gpValue;
+      }
     }
+
+    if (fillBudget && runningTotal >= budgetTargetLow) break;
   }
 
-  if (picked.size < count) {
+  if (picked.size === 0) {
     warnings.push(
-      `Requested ${count} item(s) but the pool only produced ${picked.size} after ${attempts} attempts.`,
+      `No items picked after ${attempts} attempts — pool size ${pool.length}, budget ${budgetEnforced ? budgetGp : "unbounded"}.`,
+    );
+  } else if (requestedCount > 0 && picked.size < requestedCount) {
+    warnings.push(
+      `Requested ${requestedCount} item(s) but the pool only produced ${picked.size} after ${attempts} attempts.`,
     );
   }
 
-  // Materialize the picks with gp totals.
-  let materialized = [...picked.values()].map(({ item, quantity }) => {
-    const gpValue = getItemGpValue(item);
-    return {
-      item,
-      quantity,
-      gpValue,
-      gpTotal: gpValue * quantity,
-    };
-  });
+  let materialized = [...picked.values()].map(({ item, quantity, gpValue }) => ({
+    item,
+    quantity,
+    gpValue,
+    gpTotal: gpValue * quantity,
+  }));
 
   let totalGp = materialized.reduce((acc, entry) => acc + entry.gpTotal, 0);
   let droppedForBudget = 0;
 
-  // Pass 2: budget enforcement — drop cheapest entries until within budget.
-  // (Cheapest first because a $50,000 legendary should not be sacrificed
-  // for two $5 daggers; tone-of-bundle matters more than count.)
-  if (budgetEnforced && totalGp > budgetGp) {
+  // Pass 2: when count is bound (user set a number), trim if we busted
+  // the budget. In auto mode the fill loop already kept us under the
+  // high edge, so this rarely fires.
+  if (budgetEnforced && totalGp > budgetGp && requestedCount > 0) {
     materialized.sort((a, b) => a.gpTotal - b.gpTotal);
     while (totalGp > budgetGp && materialized.length > 0) {
       const dropped = materialized.shift();
@@ -205,8 +248,17 @@ export function rollLoot(candidates, opts = {}) {
     }
   }
 
-  // Re-sort the final list by gp descending so the marquee items
-  // surface first in the UI.
+  if (
+    fillBudget &&
+    totalGp > 0 &&
+    totalGp < budgetTargetLow &&
+    attempts >= maxAttempts
+  ) {
+    warnings.push(
+      `Budget undershot: ${totalGp} gp / ${budgetGp} gp target after ${attempts} attempts. Try widening the rarity filter or raising the item cap.`,
+    );
+  }
+
   materialized.sort((a, b) => b.gpTotal - a.gpTotal);
 
   return {
@@ -216,6 +268,12 @@ export function rollLoot(candidates, opts = {}) {
     droppedForBudget,
     warnings,
   };
+}
+
+function clampFraction(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
 }
 
 /* ------------------------------------------------------------------ *

@@ -9,15 +9,27 @@
       <div>
         <h2 class="lf-form__title">Loot Forge</h2>
         <p class="lf-form__hint">
-          Roll a treasure bundle from the curated {{moduleId}} compendium. Tags drive every filter — no manual table
-          lookups.
+          Pick a mode for a one-click roll, or tune the filters below and click <strong>Generate Loot</strong>.
         </p>
       </div>
       <div class="lf-form__budget" aria-live="polite">
-        <span class="lf-form__budget-label">Projected Budget</span>
+        <span class="lf-form__budget-label">Target Budget</span>
         <strong data-projected-budget>{{projectedBudget}} gp</strong>
+        {{#if poolSize}}
+        <small class="lf-form__pool">{{poolSize}} matching items</small>
+        {{/if}}
       </div>
     </header>
+
+    <div class="lf-modes">
+      {{#each modeOptions}}
+      <button type="button" class="lf-mode" data-action="mode" data-mode="{{value}}" title="{{hint}}">
+        <i class="{{icon}}" aria-hidden="true"></i>
+        <span class="lf-mode__label">{{label}}</span>
+        <span class="lf-mode__hint">{{hint}}</span>
+      </button>
+      {{/each}}
+    </div>
 
     <div class="lf-form__grid">
       <label class="lf-field">
@@ -53,8 +65,8 @@
       </label>
 
       <label class="lf-field">
-        <span class="lf-field__label">Item Count</span>
-        <input class="lf-input" type="number" name="count" min="1" max="30" step="1" value="{{form.count}}" />
+        <span class="lf-field__label">Item Cap <small>(0 = fill budget)</small></span>
+        <input class="lf-input" type="number" name="count" min="0" max="40" step="1" value="{{form.count}}" />
       </label>
 
       <label class="lf-field">

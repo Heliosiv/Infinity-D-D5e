@@ -119,6 +119,69 @@
   color: var(--lf-accent);
 }
 
+.lf-form__pool {
+  font-size: 0.72rem;
+  color: var(--lf-muted);
+  margin-top: 2px;
+}
+
+/* Mode preset row (Individual / Encounter / Hoard) */
+.lf-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.lf-mode {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 1px;
+  align-items: center;
+  padding: 9px 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
+}
+
+.lf-mode i {
+  grid-row: 1 / span 2;
+  font-size: 1.4rem;
+  color: var(--lf-accent);
+  align-self: center;
+}
+
+.lf-mode__label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--lf-text-strong);
+}
+
+.lf-mode__hint {
+  font-size: 0.75rem;
+  color: var(--lf-muted);
+  line-height: 1.25;
+}
+
+.lf-mode:hover {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  transform: translateY(-1px);
+}
+
+.lf-mode:active {
+  transform: translateY(0);
+}
+
 /* Field grid */
 .lf-form__grid {
   display: grid;

@@ -57,6 +57,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       openItem: LootForgeApp._onOpenItem,
       distributeOne: LootForgeApp._onDistributeOne,
       distributeBundle: LootForgeApp._onDistributeBundle,
+      mode: LootForgeApp._onMode,
     },
     form: {
       handler: undefined,
@@ -85,17 +86,49 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     scale: "standard",
     generosity: "balanced",
     partySize: 4,
-    count: 6,
+    count: 0, // 0 = auto-fill the budget; the budget is the target.
     budgetOverride: 0,
     rarities: ["uncommon", "rare"],
     lootTypes: [], // empty = all types
     postToChat: false,
   });
 
+  /**
+   * One-click loot-mode presets. Clicking a mode button applies its
+   * overrides to the live form and immediately rolls.
+   */
+  static MODE_PRESETS = Object.freeze({
+    individual: {
+      scale: "trivial",
+      count: 0,
+      rarities: ["common", "uncommon"],
+      label: "Individual",
+      icon: "fa-solid fa-user",
+      hint: "One creature's share — common to uncommon.",
+    },
+    encounter: {
+      scale: "standard",
+      count: 0,
+      rarities: ["uncommon", "rare"],
+      label: "Encounter",
+      icon: "fa-solid fa-swords",
+      hint: "Reward for a standard fight — uncommon to rare.",
+    },
+    hoard: {
+      scale: "hoard",
+      count: 0,
+      rarities: ["uncommon", "rare", "very-rare"],
+      label: "Hoard",
+      icon: "fa-solid fa-dragon",
+      hint: "Boss-tier cache — wide rarity, lots of items.",
+    },
+  });
+
   constructor(options = {}) {
     super(options);
     this._form = LootForgeApp._restoreForm();
     this._lastResult = null;
+    this._lastPoolSize = null;
     this._loadingItems = false;
     this._cachedItems = null;
     this._cachedItemsAt = 0;
@@ -144,6 +177,14 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const projectedBudget = computeLootBudget(this._formForBudget());
     return {
       form: this._form,
+      modeOptions: Object.entries(LootForgeApp.MODE_PRESETS).map(
+        ([key, preset]) => ({
+          value: key,
+          label: preset.label,
+          icon: preset.icon,
+          hint: preset.hint,
+        }),
+      ),
       tierOptions: TIERS.map((tier) => ({
         value: tier,
         label: tierLabel(tier),
@@ -170,6 +211,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
         selected: this._form.lootTypes.includes(lootType),
       })),
       projectedBudget,
+      poolSize: this._lastPoolSize,
       hasResult: Boolean(this._lastResult && this._lastResult.items.length > 0),
       hasWarnings: Boolean(
         this._lastResult &&
@@ -221,6 +263,7 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static async _onReset(_event, _target) {
     this._form = { ...LootForgeApp.DEFAULT_FORM };
     this._lastResult = null;
+    this._lastPoolSize = null;
     this._persistForm();
     await this.render();
   }
@@ -254,6 +297,26 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
       title: `Distribute Bundle (${uuids.length} items)`,
       hint: "Choose one character to receive the entire bundle.",
     });
+  }
+
+  /**
+   * One-click loot-mode preset. Reads the mode name from
+   * `data-mode` on the clicked button, applies the preset to the
+   * live form, and rolls immediately.
+   * @this {LootForgeApp}
+   */
+  static async _onMode(_event, target) {
+    const modeName = target?.dataset?.mode;
+    const preset = modeName && LootForgeApp.MODE_PRESETS[modeName];
+    if (!preset) return;
+    this._form = {
+      ...this._form,
+      scale: preset.scale ?? this._form.scale,
+      count: preset.count ?? 0,
+      rarities: preset.rarities ? [...preset.rarities] : this._form.rarities,
+    };
+    this._persistForm();
+    await this._generate();
   }
 
   /* ------------------- form handling ------------------- */
@@ -321,6 +384,10 @@ export class LootForgeApp extends HandlebarsApplicationMixin(ApplicationV2) {
         lootTypes: this._form.lootTypes,
         requireEligible: true,
       });
+      this._lastPoolSize = candidates.length;
+      console.log(
+        `${MODULE_ID} | filter pool: ${candidates.length} candidates (tier=${this._form.tier}, rarities=[${this._form.rarities.join(",")}], lootTypes=[${this._form.lootTypes.join(",")}])`,
+      );
       const raw = rollLoot(candidates, {
         count: this._form.count,
         budgetGp: budget,
