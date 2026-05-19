@@ -14,8 +14,17 @@ import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
+import { computeLootBudget } from "./loot/budget.js";
+import {
+  distributeItemsToActor,
+  promptDistributeItems,
+} from "./loot/distribute.js";
+import { loadCompendiumItems } from "./loot/pack.js";
+import { filterCandidates, rollLoot } from "./loot/roller.js";
+import { getItemRarity } from "./loot/tag-vocabulary.js";
 
 const MODULE_ID = "infinity-dnd5e";
+const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 
 /* ------------------------------------------------------------------ *
  * Settings registration
@@ -146,6 +155,61 @@ Hooks.once("ready", () => {
       openPerEncounterLoot: () => PerEncounterLootApp.open(),
       openHoardLoot: () => HoardLootApp.open(),
       openPerCreatureLoot: () => PerCreatureLootApp.open(),
+
+      /**
+       * Roll a loot bundle without opening a window. Returns the same
+       * shape the apps produce, with each entry decorated with `uuid`
+       * and `rarity` for downstream distribute calls.
+       *
+       * @param {object} [opts]
+       * @param {string} [opts.tier="t2"]
+       * @param {string} [opts.scale="standard"]
+       * @param {string} [opts.generosity="balanced"]
+       * @param {number} [opts.partySize=4]
+       * @param {number} [opts.count=0]            0 = fill budget, N>0 = item cap
+       * @param {string[]} [opts.rarities=["uncommon","rare"]]
+       * @param {string[]} [opts.lootTypes=[]]     empty = all
+       * @param {number} [opts.budgetOverride=0]   >0 skips the curve
+       * @param {string} [opts.packId]
+       */
+      rollLootBundle: async (opts = {}) => {
+        const budget = computeLootBudget({
+          tier: opts.tier ?? "t2",
+          scale: opts.scale ?? "standard",
+          generosity: opts.generosity ?? "balanced",
+          partySize: opts.partySize ?? 4,
+          override: opts.budgetOverride ?? 0,
+        });
+        const items = await loadCompendiumItems({
+          packId: opts.packId ?? PACK_ID,
+        });
+        const candidates = filterCandidates(items, {
+          tiers: [opts.tier ?? "t2"],
+          rarities: opts.rarities ?? ["uncommon", "rare"],
+          lootTypes: opts.lootTypes ?? [],
+          requireEligible: true,
+        });
+        const raw = rollLoot(candidates, {
+          count: opts.count ?? 0,
+          budgetGp: budget,
+        });
+        return {
+          ...raw,
+          items: raw.items.map((entry) => ({
+            ...entry,
+            uuid: entry.item?.uuid ?? null,
+            rarity: getItemRarity(entry.item) || "common",
+          })),
+        };
+      },
+
+      /** Send pre-resolved UUIDs to a specific actor. Skips the picker. */
+      distributeBundle: (actorId, uuids) =>
+        distributeItemsToActor(actorId, uuids),
+
+      /** Open the actor picker for the supplied UUIDs. */
+      promptDistribute: (uuids, options) =>
+        promptDistributeItems(uuids, options),
     };
   }
 });

@@ -24,6 +24,7 @@ import {
   beginDragFromResult,
   promptDistributeItems,
 } from "./loot/distribute.js";
+import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
@@ -909,32 +910,17 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   }
 
   /**
-   * Load the bundled compendium index once and cache it per session.
-   * `getIndex` is cheaper than `getDocuments` — we only need the
-   * fields the roller and the result card actually read.
+   * Load the bundled compendium and cache it per session.
+   *
+   * Uses {@link loadCompendiumItems} which calls `getDocuments()` —
+   * the older `getIndex({fields:["flags.party-operations"]})` path
+   * silently strips the namespaced flag subtree on some Foundry
+   * versions, leaving items without tier/lootType/gpValue and
+   * collapsing the candidate pool to empty.
    */
   async _loadItems() {
     if (this._isItemCacheFresh()) return this._cachedItems;
-    const pack = game.packs?.get(PACK_ID);
-    if (!pack) {
-      ui.notifications?.warn(`${MODULE_ID}: compendium ${PACK_ID} not found.`);
-      return [];
-    }
-    const index = await pack.getIndex({
-      fields: [
-        "name",
-        "img",
-        "type",
-        "system.rarity",
-        "system.price",
-        "flags.party-operations",
-        "flags.infinity-dnd5e",
-      ],
-    });
-    this._cachedItems = [...index.values()].map((entry) => ({
-      ...entry,
-      uuid: entry.uuid ?? `Compendium.${PACK_ID}.${entry._id}`,
-    }));
+    this._cachedItems = await loadCompendiumItems({ packId: PACK_ID });
     this._cachedItemsAt = Date.now();
     this._packStats = computePackStats(this._cachedItems);
     return this._cachedItems;

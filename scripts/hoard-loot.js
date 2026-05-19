@@ -30,6 +30,7 @@ import {
   splitCoinPile,
 } from "./loot/hoard-budget.js";
 import { nearestPreset } from "./loot/budget.js";
+import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
@@ -609,26 +610,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _loadItems() {
     if (this._isItemCacheFresh()) return this._cachedItems;
-    const pack = game.packs?.get(PACK_ID);
-    if (!pack) {
-      ui.notifications?.warn(`${MODULE_ID}: compendium ${PACK_ID} not found.`);
-      return [];
-    }
-    const index = await pack.getIndex({
-      fields: [
-        "name",
-        "img",
-        "type",
-        "system.rarity",
-        "system.price",
-        "flags.party-operations",
-        "flags.infinity-dnd5e",
-      ],
-    });
-    this._cachedItems = [...index.values()].map((entry) => ({
-      ...entry,
-      uuid: entry.uuid ?? `Compendium.${PACK_ID}.${entry._id}`,
-    }));
+    this._cachedItems = await loadCompendiumItems({ packId: PACK_ID });
     this._cachedItemsAt = Date.now();
     this._packStats = computePackStats(this._cachedItems);
     return this._cachedItems;
