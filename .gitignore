@@ -1,5 +1,6 @@
 node_modules/
 .cache/
+tmp/
 .DS_Store
 *.log
 release/

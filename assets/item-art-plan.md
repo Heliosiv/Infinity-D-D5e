@@ -4,8 +4,8 @@ Hybrid generation plan for replacing core-icon placeholders with project-owned r
 
 ## Counts
 
-- Items covered: 1424
-- Reusable assignments: 1130
+- Items covered: 1422
+- Reusable assignments: 1128
 - Bespoke assignments: 294
 - Shared assets to generate: 273
 - Unique assets to generate: 294

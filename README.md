@@ -4,7 +4,7 @@ Tag-driven GM tools for D&D 5e on Foundry VTT, surfaced through a single dashboa
 
 ## What This Module Is
 
-A focused, ground-up rewrite of the GM tooling formerly bundled inside `party-operations`. It ships a curated 1,424-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches each tool in its own window and new tools can be registered with `registerTool(...)`.
+A focused, ground-up rewrite of the GM tooling formerly bundled inside `party-operations`. It ships a curated 1,422-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches each tool in its own window and new tools can be registered with `registerTool(...)`.
 
 Three ways to open the dashboard:
 
@@ -14,7 +14,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.4** - Dashboard, Per-Encounter Loot, Hoard Loot, Per-Creature Loot, settings, obvious launchers, and art-object variant rolls.
+**v0.2.6** - Dashboard, Per-Encounter Loot, Hoard Loot, Per-Creature Loot, settings, obvious launchers, and art-object variant rolls.
 
 - GM-only dashboard with a tile grid of tools.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, item count, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
@@ -37,6 +37,23 @@ Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts
 Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
+
+### Custom Item Art
+
+The generated-art queue lives in [assets/item-art-plan.json](assets/item-art-plan.json). It currently plans 567 opaque WebP inventory icons: 273 shared assets under `assets/item-art/shared/` and 294 unique assets under `assets/item-art/unique/`.
+
+```powershell
+npm run art:jobs
+npm run art:generate:shared:dry
+npm run art:generate:unique:dry
+npm run art:generate:shared
+npm run art:generate:unique
+npm run art:validate
+npm run art:apply
+npm run check
+```
+
+Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
 ## Install
 
