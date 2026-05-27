@@ -450,6 +450,22 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * rollLoot - count=0 budget fill mode
+ * ------------------------------------------------------------------ */
+{
+  const rng = seqRng([0.05, 0.25, 0.45]);
+  const result = rollLoot(smallPool(), { count: 0, budgetGp: 600, rng });
+
+  assert.deepEqual(
+    result.items.map((entry) => entry.item._id),
+    ["c", "b", "a"],
+    "count 0 fills toward the budget using weighted picks",
+  );
+  assert.equal(result.totalGp, 555);
+  assert.equal(result.budgetGp, 600);
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot — stable with Mulberry32 seed
  * ------------------------------------------------------------------ */
 {

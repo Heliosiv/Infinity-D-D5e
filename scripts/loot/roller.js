@@ -137,14 +137,22 @@ export function filterCandidates(items, filter = {}) {
 /**
  * Roll a loot bundle from the supplied candidate pool.
  *
+ * Two modes governed by `opts.count`:
+ * - auto (`count = 0`): keep drawing items until total gp lands in the budget
+ *   window, capped by `maxCap` and `maxAttempts`.
+ * - bounded (`count > 0`): cap at that many distinct items, then trim to budget.
+ *
  * @param {Array<object>} candidates - output of filterCandidates
  * @param {object} opts
- * @param {number} opts.count   - target number of distinct items (>= 1)
- * @param {number} [opts.budgetGp] - if > 0, total bundle gp may not exceed this
+ * @param {number} [opts.count=0] - 0 = fill budget, N>0 = hard distinct-item cap
+ * @param {number} [opts.budgetGp] - if > 0, enables budget targeting/enforcement
+ * @param {number} [opts.maxCap=40] - safety ceiling on distinct items in auto mode
+ * @param {number} [opts.budgetLowFrac=0.85] - lower edge of the budget window
+ * @param {number} [opts.budgetHighFrac=1.10] - upper edge of the budget window
  * @param {number} [opts.magicBias] - in [-1, 1]. >0 favors magic items, <0 favors mundane.
  *                                    Applied as a per-item weight multiplier; ±1 zeroes
  *                                    out the opposite side entirely.
- * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 200
+ * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 600
  * @param {boolean} [opts.artVariants] - generate specific art-object names and values
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
  * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number, displayName?: string, valueLabel?: string, variant?: object|null, itemData?: object|null }>,
@@ -155,50 +163,84 @@ export function filterCandidates(items, filter = {}) {
  */
 export function rollLoot(candidates, opts = {}) {
   const pool = Array.isArray(candidates) ? candidates.slice() : [];
-  const count = Math.max(0, Math.floor(Number(opts.count ?? 0)));
+  const requestedCount = Math.max(0, Math.floor(Number(opts.count ?? 0)));
   const budgetGp = Number(opts.budgetGp ?? 0);
   const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
   const magicBias = clampBias(opts.magicBias);
+  const maxCap = Math.max(1, Math.floor(Number(opts.maxCap ?? 40)));
+  const budgetLowFrac = clampFraction(opts.budgetLowFrac, 0.85);
+  const budgetHighFrac = Math.max(
+    budgetLowFrac,
+    clampFraction(opts.budgetHighFrac, 1.1),
+  );
   const maxAttempts = Math.max(
-    count * 4,
-    Math.floor(Number(opts.maxAttempts ?? 200)),
+    200,
+    Math.floor(Number(opts.maxAttempts ?? 600)),
   );
   const rng = typeof opts.rng === "function" ? opts.rng : Math.random;
   const artVariants = opts.artVariants === true;
 
   const warnings = [];
   if (pool.length === 0) {
-    if (count > 0) warnings.push("Candidate pool is empty.");
+    warnings.push(
+      "Candidate pool is empty - no items match the current filter.",
+    );
     return emptyResult(budgetEnforced ? budgetGp : 0, warnings);
   }
-  if (count === 0) {
-    return emptyResult(budgetEnforced ? budgetGp : 0, warnings);
+  if (requestedCount === 0 && !budgetEnforced) {
+    return emptyResult(0, warnings);
   }
+
+  const hardCap = requestedCount > 0 ? requestedCount : maxCap;
+  const fillBudget = requestedCount === 0 && budgetEnforced;
+  const budgetTargetLow = fillBudget ? budgetGp * budgetLowFrac : 0;
+  const budgetTargetHigh = fillBudget ? budgetGp * budgetHighFrac : Infinity;
 
   // Pass 1: weighted random draw without replacement at the item level.
   const picked = new Map(); // _id → { item, quantity }
+  let runningTotal = 0;
   let attempts = 0;
-  while (picked.size < count && attempts < maxAttempts) {
+  while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
     const item = weightedPick(pool, rng, magicBias);
     if (!item) break;
-    const id = String(item._id ?? item.id ?? attempts);
+    const id = String(item._id ?? item.id ?? `anon-${attempts}`);
+    const gpValue = getItemGpValue(item);
+    if (
+      fillBudget &&
+      picked.size > 0 &&
+      runningTotal + gpValue > budgetTargetHigh
+    ) {
+      continue;
+    }
+
     if (!picked.has(id)) {
       picked.set(id, { item, quantity: 1 });
+      runningTotal += gpValue;
+      if (fillBudget && runningTotal >= budgetTargetLow) break;
       continue;
     }
     const existing = picked.get(id);
     const maxQty = getItemMaxQty(item);
     if (existing.quantity < maxQty) {
       existing.quantity += 1;
-      // Treat a stack-up as "filling out" rather than a new pick; do
-      // not advance picked.size, but do reduce remaining draws.
+      runningTotal += gpValue;
     }
+
+    if (fillBudget && runningTotal >= budgetTargetLow) break;
   }
 
-  if (picked.size < count) {
+  if (picked.size === 0) {
     warnings.push(
-      `Requested ${count} item(s) but the pool only produced ${picked.size} after ${attempts} attempts.`,
+      `No items picked after ${attempts} attempts - pool size ${pool.length}, budget ${budgetEnforced ? budgetGp : "unbounded"}.`,
+    );
+  } else if (requestedCount > 0 && picked.size < requestedCount) {
+    warnings.push(
+      `Requested ${requestedCount} item(s) but the pool only produced ${picked.size} after ${attempts} attempts.`,
+    );
+  } else if (fillBudget && runningTotal < budgetTargetLow) {
+    warnings.push(
+      `Budget undershot: ${runningTotal} gp / ${budgetGp} gp target after ${attempts} attempts. Try widening the rarity filter or raising the item cap.`,
     );
   }
 
@@ -238,6 +280,12 @@ export function rollLoot(candidates, opts = {}) {
     droppedForBudget,
     warnings,
   };
+}
+
+function clampFraction(raw, fallback) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(0.01, value);
 }
 
 /* ------------------------------------------------------------------ *
