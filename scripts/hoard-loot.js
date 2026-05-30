@@ -42,6 +42,7 @@ import {
   RARITIES,
   TIERS,
   getItemRarity,
+  isAmmunitionItem,
   tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
@@ -631,7 +632,10 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         displayName: entry.displayName || entry.item?.name || "",
         variantSummary: entry.variant?.summary ?? "",
         valueLabel: entry.valueLabel ?? "",
-        quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
+        quantityLabel:
+          entry.quantity > 1 || isAmmunitionItem(entry.item)
+            ? `×${entry.quantity} · `
+            : "",
         gpTotalLabel: formatGp(entry.gpTotal),
       }));
 
@@ -751,7 +755,10 @@ function buildHoardChatHtml(result) {
       const link = entry.item?.uuid
         ? `@UUID[${entry.item.uuid}]{${escapeHtml(displayName)}}`
         : escapeHtml(displayName);
-      const qty = entry.quantity > 1 ? `${entry.quantity}× ` : "";
+      const qty =
+        entry.quantity > 1 || isAmmunitionItem(entry.item)
+          ? `${entry.quantity}× `
+          : "";
       const rarity = escapeHtml(entry.rarity ?? "");
       const valueLabel = entry.valueLabel
         ? ` · ${escapeHtml(entry.valueLabel)}`

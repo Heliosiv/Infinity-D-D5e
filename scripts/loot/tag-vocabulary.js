@@ -115,6 +115,16 @@ export const MUNDANE_LOOT_TYPES = Object.freeze(
   ]),
 );
 
+/** Keywords used by the curated pack to identify consumable ammunition. */
+const AMMUNITION_KEYWORDS = Object.freeze(
+  new Set([
+    "subtype.ammo",
+    "subtype.ammunition",
+    "folder.section.ammunition",
+    "folder.path.weapons.ammunition",
+  ]),
+);
+
 /* ------------------------------------------------------------------ *
  * Token helpers
  * ------------------------------------------------------------------ */
@@ -239,6 +249,25 @@ export function getItemMaxQty(item) {
       1,
   );
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
+}
+
+/** Is the item a consumable ammunition entry such as arrows or bolts? */
+export function isAmmunitionItem(item) {
+  const systemType = String(
+    item?.system?.type?.value ?? item?.system?.type?.subtype ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (systemType === "ammo" || systemType === "ammunition") return true;
+
+  const keywords = getItemKeywords(item);
+  return keywords.some((keyword) =>
+    AMMUNITION_KEYWORDS.has(
+      String(keyword ?? "")
+        .trim()
+        .toLowerCase(),
+    ),
+  );
 }
 
 /**

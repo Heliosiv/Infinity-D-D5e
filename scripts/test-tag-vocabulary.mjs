@@ -17,6 +17,7 @@ import {
   getItemRarity,
   getItemTier,
   getItemValueBand,
+  isAmmunitionItem,
   isLootEligible,
   normalizeRarity,
   rarityKeyword,
@@ -106,7 +107,40 @@ assert.equal(normalizeRarity("nonexistent"), "");
   );
 }
 
-/* item accessors — rarity falls back through layers */
+/* item accessors - ammunition classifier */
+{
+  const bySystemType = {
+    _id: "ammo-system",
+    system: { type: { value: "ammo" } },
+    flags: {},
+  };
+  assert.equal(
+    isAmmunitionItem(bySystemType),
+    true,
+    "system.type.value=ammo marks ammunition",
+  );
+
+  const byKeyword = fakeItem({
+    keywords: ["subtype.ammo", "folder.section.ammunition"],
+  });
+  assert.equal(
+    isAmmunitionItem(byKeyword),
+    true,
+    "curated subtype/folder tags mark ammunition",
+  );
+
+  const stackableNonAmmo = fakeItem({
+    lootType: "loot.consumable",
+    maxRecommendedQty: 4,
+  });
+  assert.equal(
+    isAmmunitionItem(stackableNonAmmo),
+    false,
+    "stackable non-ammunition is not treated as ammo",
+  );
+}
+
+/* item accessors - rarity falls back through layers */
 {
   const item = { _id: "y", flags: {}, system: { rarity: "very-rare" } };
   assert.equal(

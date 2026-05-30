@@ -371,7 +371,8 @@ async function commandApply() {
   );
   const validPaths = new Set(validation.records.keys());
   const errors = [];
-  let updated = 0;
+  let imageUpdates = 0;
+  let metadataUpdates = 0;
 
   for (const item of packItems) {
     const assignment = assignmentByItem.get(item._id);
@@ -388,9 +389,10 @@ async function commandApply() {
       continue;
     }
     assertPlannedPathMatchesFlags(item, assignment, errors);
+    if (markArtGenerated(item, assignment)) metadataUpdates += 1;
     if (item.img !== assignment.path) {
       item.img = assignment.path;
-      updated += 1;
+      imageUpdates += 1;
     }
   }
 
@@ -398,14 +400,37 @@ async function commandApply() {
     throw new Error(`Cannot apply item art:\n${errors.join("\n")}`);
   }
 
-  if (updated === 0) {
+  if (imageUpdates === 0 && metadataUpdates === 0) {
     console.log("item-art apply: pack already points at validated local art");
     return;
   }
 
   const body = packItems.map((item) => JSON.stringify(item)).join("\n");
   await writeFile(PACK_PATH, `${body}\n`, "utf8");
-  console.log(`item-art apply: updated ${updated} pack item image path(s)`);
+  console.log(
+    `item-art apply: updated ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s)`,
+  );
+}
+
+function markArtGenerated(item, assignment) {
+  let updated = false;
+  for (const scope of ["infinity-dnd5e", "party-operations"]) {
+    const flags = item.flags?.[scope];
+    if (!flags?.art) continue;
+    if (flags.art.generated !== true) {
+      flags.art.generated = true;
+      updated = true;
+    }
+    if (flags.art.assetId !== assignment.assetId) {
+      flags.art.assetId = assignment.assetId;
+      updated = true;
+    }
+    if (flags.art.plannedPath !== assignment.path) {
+      flags.art.plannedPath = assignment.path;
+      updated = true;
+    }
+  }
+  return updated;
 }
 
 function assertPlannedPathMatchesFlags(item, assignment, errors) {

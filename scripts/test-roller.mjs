@@ -380,6 +380,95 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * rollLoot - ammunition rolls an initial stack quantity
+ * ------------------------------------------------------------------ */
+{
+  const ammo = fakeItem({
+    _id: "bolt",
+    name: "Crossbow Bolt",
+    type: "consumable",
+    lootType: "loot.consumable",
+    gpValue: 0.02,
+    maxRecommendedQty: 8,
+    keywords: [
+      "rarity.common",
+      "tier.t1",
+      "value.v1",
+      "loot.consumable",
+      "subtype.ammo",
+      "folder.section.ammunition",
+    ],
+  });
+
+  const stack = rollLoot([ammo], { count: 1, rng: seqRng([0.5, 0.49]) });
+  assert.equal(stack.items.length, 1);
+  assert.equal(
+    stack.items[0].quantity,
+    4,
+    "ammunition can land as a small group on a single item roll",
+  );
+  assert.ok(Math.abs(stack.items[0].gpTotal - 0.08) < 0.000001);
+
+  const single = rollLoot([ammo], { count: 1, rng: seqRng([0.5, 0]) });
+  assert.equal(
+    single.items[0].quantity,
+    1,
+    "ammunition still has a chance to roll as one unit",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - ammunition stack quantity respects the budget ceiling
+ * ------------------------------------------------------------------ */
+{
+  const magicAmmo = fakeItem({
+    _id: "arrow-plus-one",
+    name: "Arrow +1",
+    type: "consumable",
+    lootType: "loot.consumable",
+    gpValue: 25,
+    maxRecommendedQty: 4,
+    keywords: [
+      "rarity.uncommon",
+      "tier.t2",
+      "value.v2",
+      "loot.consumable",
+      "subtype.ammo",
+    ],
+  });
+
+  const result = rollLoot([magicAmmo], {
+    count: 1,
+    budgetGp: 50,
+    rng: seqRng([0.5, 0.99]),
+  });
+  assert.equal(
+    result.items[0].quantity,
+    2,
+    "rolled stack is capped to what the budget can carry",
+  );
+  assert.equal(result.totalGp, 50);
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot - non-ammunition stackables still start as one item
+ * ------------------------------------------------------------------ */
+{
+  const potion = fakeItem({
+    _id: "potion-stackable",
+    name: "Healing Potion",
+    lootType: "loot.consumable",
+    maxRecommendedQty: 4,
+  });
+  const result = rollLoot([potion], { count: 1, rng: seqRng([0.5, 0.99]) });
+  assert.equal(
+    result.items[0].quantity,
+    1,
+    "non-ammo maxRecommendedQty still requires duplicate picks to stack",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot — stacking up to maxRecommendedQty
  * ------------------------------------------------------------------ */
 {

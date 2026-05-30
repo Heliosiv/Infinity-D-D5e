@@ -35,6 +35,7 @@ import {
   RARITIES,
   TIERS,
   getItemRarity,
+  isAmmunitionItem,
   tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting, parseRaritiesSetting } from "./settings.js";
@@ -1055,7 +1056,10 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         valueLabel: entry.valueLabel ?? "",
         locked: false,
         rarity: getItemRarity(entry.item) || "common",
-        quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
+        quantityLabel:
+          entry.quantity > 1 || isAmmunitionItem(entry.item)
+            ? `×${entry.quantity} · `
+            : "",
         gpTotalLabel: formatGp(entry.gpTotal),
       });
 
@@ -1198,7 +1202,10 @@ function buildLootChatHtml(result) {
       const link = entry.item?.uuid
         ? `@UUID[${entry.item.uuid}]{${escapeHtml(displayName)}}`
         : escapeHtml(displayName);
-      const qty = entry.quantity > 1 ? `${entry.quantity}× ` : "";
+      const qty =
+        entry.quantity > 1 || isAmmunitionItem(entry.item)
+          ? `${entry.quantity}× `
+          : "";
       const rarity = escapeHtml(entry.rarity ?? "");
       const valueLabel = entry.valueLabel
         ? ` · ${escapeHtml(entry.valueLabel)}`

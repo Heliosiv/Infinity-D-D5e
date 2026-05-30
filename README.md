@@ -51,9 +51,12 @@ npm run art:generate:unique
 npm run art:validate
 npm run art:apply
 npm run check
+npm run ui:audit
 ```
 
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
+
+`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` renders the dashboard, Per-Encounter, Hoard, and Per-Creature windows at desktop, tablet, and narrow widths, then clicks every rendered `data-action` button and checks for horizontal overflow.
 
 ## Install
 

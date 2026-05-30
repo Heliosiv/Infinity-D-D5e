@@ -292,6 +292,10 @@ Hooks.on("getSceneControlButtons", (controls) => {
     onChange: () => InfinityDashboardApp.open(),
   };
 
+  const onCategoryChange = (_event, active) => {
+    if (active) InfinityDashboardApp.open();
+  };
+
   const buildTool = (name, title, order) => ({
     ...baseTool,
     name,
@@ -318,6 +322,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
         visible: true,
         activeTool: launcherToolName,
         order: 99,
+        onChange: onCategoryChange,
         tools: [buildTool(launcherToolName, baseTool.title, 0)],
       });
       const tokenControl =
@@ -343,6 +348,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
         visible: true,
         activeTool: launcherToolName,
         order: 99,
+        onChange: onCategoryChange,
         tools: {
           [launcherToolName]: buildTool(launcherToolName, baseTool.title, 0),
         },

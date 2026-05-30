@@ -4,40 +4,11 @@
    Self-contained. No global selectors outside `.infinity-dnd5e`
    so we never bleed into core Foundry chrome or other modules.
 
-   Design tokens are inlined here for v0.1; a separate tokens.css
-   becomes worthwhile once a second window exists. Keep the
-   number of distinct color values small and named.
+   Shared design tokens live in tokens.css; this file only
+   defines Loot-Forge-specific chrome.
    ========================================================= */
 
 .infinity-dnd5e.loot-forge {
-  /* -- tokens --------------------------------------------- */
-  --lf-bg: #1d2330;
-  --lf-bg-alt: #242b3b;
-  --lf-surface: #2c3548;
-  --lf-surface-elev: #364159;
-  --lf-border: #475070;
-  --lf-border-strong: #6473a0;
-  --lf-text: #e7ecf6;
-  --lf-text-strong: #ffffff;
-  --lf-muted: #97a3c1;
-  --lf-accent: #ffb15d;
-  --lf-accent-contrast: #1a1208;
-  --lf-warn: #f0a154;
-  --lf-success: #6dd5a2;
-  --lf-danger: #ef6f74;
-
-  --lf-radius: 10px;
-  --lf-radius-sm: 6px;
-  --lf-radius-pill: 999px;
-
-  --lf-rarity-common: #b3bfd8;
-  --lf-rarity-uncommon: #6dd5a2;
-  --lf-rarity-rare: #6aa7ff;
-  --lf-rarity-very-rare: #c98cff;
-  --lf-rarity-legendary: #ffb15d;
-  --lf-rarity-artifact: #f47272;
-
-  /* Reset Foundry V2 frame padding so we control the layout. */
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -1047,6 +1018,11 @@ select.lf-input {
 .lf-bulk:hover {
   color: var(--lf-text);
   border-color: var(--lf-border-strong);
+}
+
+.lf-bulk[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* =========================================================

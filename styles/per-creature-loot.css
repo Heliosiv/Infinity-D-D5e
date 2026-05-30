@@ -6,29 +6,6 @@
    ========================================================= */
 
 .infinity-dnd5e.per-creature-loot {
-  --lf-bg: #1d2330;
-  --lf-bg-alt: #242b3b;
-  --lf-surface: #2c3548;
-  --lf-surface-elev: #364159;
-  --lf-border: #475070;
-  --lf-border-strong: #6473a0;
-  --lf-text: #e7ecf6;
-  --lf-text-strong: #ffffff;
-  --lf-muted: #97a3c1;
-  --lf-accent: #ffb15d;
-  --lf-accent-contrast: #1a1208;
-  --lf-warn: #f0a154;
-  --lf-radius: 10px;
-  --lf-radius-sm: 6px;
-  --lf-radius-pill: 999px;
-
-  --lf-rarity-common: #b3bfd8;
-  --lf-rarity-uncommon: #6dd5a2;
-  --lf-rarity-rare: #6aa7ff;
-  --lf-rarity-very-rare: #c98cff;
-  --lf-rarity-legendary: #ffb15d;
-  --lf-rarity-artifact: #f47272;
-
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -207,8 +184,8 @@
 }
 
 .pc-roster__remove:hover {
-  color: var(--lf-danger, #ef6f74);
-  border-color: var(--lf-danger, #ef6f74);
+  color: var(--lf-danger);
+  border-color: var(--lf-danger);
 }
 
 .pc-roster__empty {
@@ -219,11 +196,6 @@
   text-align: center;
   color: var(--lf-muted);
   font-size: 0.88rem;
-}
-
-.lf-bulk[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* =========================================================
@@ -341,4 +313,61 @@
   border: 1px dashed var(--lf-border);
   border-radius: var(--lf-radius-sm);
   background: var(--lf-bg);
+}
+
+@media (max-width: 620px) {
+  .pc-shell {
+    padding: 12px;
+  }
+
+  .pc-form__head,
+  .pc-creature__head {
+    align-items: stretch;
+  }
+
+  .pc-form__budget {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .pc-roster__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .pc-roster__name {
+    min-width: 0;
+  }
+
+  .pc-roster__tiers {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .pc-roster__tier {
+    min-width: 0;
+    padding-inline: 3px;
+    overflow-wrap: anywhere;
+  }
+
+  .pc-roster__budget {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .pc-roster__remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .pc-creature__right {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .pc-creature__items {
+    grid-template-columns: 1fr;
+  }
 }

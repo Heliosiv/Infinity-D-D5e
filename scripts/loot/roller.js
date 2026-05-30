@@ -30,6 +30,7 @@ import {
   getItemRarity,
   getItemTier,
   getItemValueBand,
+  isAmmunitionItem,
   isLootEligible,
   normalizeRarity,
 } from "./tag-vocabulary.js";
@@ -241,14 +242,21 @@ export function rollLoot(candidates, opts = {}) {
     if (!item) break;
     const id = String(item._id ?? item.id ?? `anon-${attempts}`);
     const gpValue = getItemGpValue(item);
-    if (picked.size > 0 && runningTotal + gpValue > budgetCeil) {
-      skippedForBudget += 1;
-      continue;
-    }
 
     if (!picked.has(id)) {
-      picked.set(id, { item, quantity: 1 });
-      runningTotal += gpValue;
+      const initialQuantity = rollInitialQuantity(item, {
+        budgetCeil,
+        gpValue,
+        rng,
+        runningTotal,
+      });
+      const initialGpTotal = gpValue * initialQuantity;
+      if (picked.size > 0 && runningTotal + initialGpTotal > budgetCeil) {
+        skippedForBudget += 1;
+        continue;
+      }
+      picked.set(id, { item, quantity: initialQuantity });
+      runningTotal += initialGpTotal;
       if (fillBudget && runningTotal >= budgetTargetLow) break;
       continue;
     }
@@ -448,6 +456,22 @@ function weightedPick(pool, rng, magicBias = 0) {
     if (cursor >= target) return pool[i];
   }
   return pool[pool.length - 1];
+}
+
+function rollInitialQuantity(item, { budgetCeil, gpValue, rng, runningTotal }) {
+  const maxQty = getItemMaxQty(item);
+  if (maxQty <= 1 || !isAmmunitionItem(item)) return 1;
+
+  let cappedMax = maxQty;
+  if (Number.isFinite(budgetCeil) && gpValue > 0) {
+    const remainingBudget = Math.max(0, budgetCeil - runningTotal);
+    const affordableQty = Math.floor(remainingBudget / gpValue);
+    cappedMax = Math.min(cappedMax, Math.max(1, affordableQty));
+  }
+
+  if (cappedMax <= 1) return 1;
+  const roll = Math.floor(rng() * cappedMax) + 1;
+  return Math.max(1, Math.min(cappedMax, roll));
 }
 
 /**

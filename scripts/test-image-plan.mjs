@@ -3,7 +3,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const PLAN_PATH = "assets/item-art-plan.json";
@@ -21,6 +21,9 @@ const uniqueAssets = plan.uniqueAssets ?? [];
 const assets = [...sharedAssets, ...uniqueAssets];
 const assetIds = new Set(assets.map((asset) => asset.id));
 const assetPaths = new Set(assets.map((asset) => asset.path));
+const assignmentByItem = new Map(
+  assignments.map((assignment) => [assignment.itemId, assignment]),
+);
 
 assert.equal(
   plan.schema,
@@ -58,7 +61,32 @@ for (const assignment of assignments) {
 for (const asset of assets) {
   assert.ok(asset.id, "asset missing id");
   assert.ok(asset.path.startsWith("assets/item-art/"), asset.path);
+  assert.ok(existsSync(asset.path), `missing generated asset ${asset.path}`);
   assert.ok(asset.prompt.includes("Foundry VTT item icon"), asset.id);
+}
+
+for (const item of packItems) {
+  const assignment = assignmentByItem.get(item._id);
+  assert.ok(assignment, `pack item missing art assignment ${item._id}`);
+  assert.equal(
+    item.img,
+    assignment.path,
+    `${item.name} should point at generated item art`,
+  );
+
+  for (const scope of ["infinity-dnd5e", "party-operations"]) {
+    const art = item.flags?.[scope]?.art;
+    assert.equal(
+      art?.generated,
+      true,
+      `${item.name} ${scope} art should be marked generated`,
+    );
+    assert.equal(
+      art?.plannedPath,
+      assignment.path,
+      `${item.name} ${scope} planned path should match assignment`,
+    );
+  }
 }
 
 assert.equal(

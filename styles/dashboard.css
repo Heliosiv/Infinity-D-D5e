@@ -1,29 +1,13 @@
 /* =========================================================
    Infinity D&D5e — Dashboard styles
    ---------------------------------------------------------
-   Self-contained. Duplicates a small token set from
-   loot-forge.css for now; once a third stylesheet exists it
-   becomes worth extracting tokens.css.
+   Shared design tokens live in tokens.css; this file only
+   defines dashboard-specific chrome.
    ========================================================= */
 
 .infinity-dnd5e.infinity-dashboard {
-  --id-bg: #1d2330;
-  --id-bg-alt: #242b3b;
-  --id-surface: #2c3548;
-  --id-surface-elev: #364159;
-  --id-border: #475070;
-  --id-border-strong: #6473a0;
-  --id-text: #e7ecf6;
-  --id-text-strong: #ffffff;
-  --id-muted: #97a3c1;
-  --id-accent: #ffb15d;
-  --id-accent-contrast: #1a1208;
-
-  --id-radius: 10px;
-  --id-radius-sm: 6px;
-
-  background: var(--id-bg);
-  color: var(--id-text);
+  background: var(--lf-bg);
+  color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   min-width: min(680px, calc(100vw - 56px));
   min-height: min(460px, calc(100vh - 72px));
@@ -52,9 +36,9 @@
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border: 1px solid var(--id-border);
-  border-radius: var(--id-radius);
-  background: var(--id-bg-alt);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
 }
 
 .id-head__title {
@@ -65,24 +49,24 @@
   margin: 0 0 4px;
   font-size: 1.2rem;
   font-weight: 700;
-  color: var(--id-text-strong);
+  color: var(--lf-text-strong);
 }
 
 .id-head__hint {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.4;
-  color: var(--id-muted);
+  color: var(--lf-muted);
   max-width: 56ch;
 }
 
 .id-head__version {
   flex: 0 0 auto;
   padding: 4px 10px;
-  border-radius: var(--id-radius-sm);
-  background: var(--id-surface);
-  border: 1px solid var(--id-border);
-  color: var(--id-muted);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  color: var(--lf-muted);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   font-feature-settings: "tnum";
@@ -99,7 +83,7 @@
   font-size: 0.78rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--id-muted);
+  color: var(--lf-muted);
 }
 
 /* Tile grid */
@@ -126,10 +110,10 @@
   min-height: 108px;
   padding: 12px 14px;
   box-sizing: border-box;
-  border: 1px solid var(--id-border);
-  border-radius: var(--id-radius);
-  background: var(--id-surface);
-  color: var(--id-text);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-surface);
+  color: var(--lf-text);
   font: inherit;
   text-align: left;
   white-space: normal;
@@ -141,8 +125,8 @@
 }
 
 .id-tile__btn:hover {
-  background: var(--id-surface-elev);
-  border-color: var(--id-border-strong);
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-border-strong);
   transform: translateY(-1px);
 }
 
@@ -156,8 +140,8 @@
 }
 
 .id-tile.is-disabled .id-tile__btn:hover {
-  background: var(--id-surface);
-  border-color: var(--id-border);
+  background: var(--lf-surface);
+  border-color: var(--lf-border);
   transform: none;
 }
 
@@ -167,10 +151,10 @@
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: var(--id-radius-sm);
-  background: var(--id-bg);
-  border: 1px solid var(--id-border);
-  color: var(--id-accent);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  border: 1px solid var(--lf-border);
+  color: var(--lf-accent);
   font-size: 1.1rem;
   flex-shrink: 0;
 }
@@ -187,14 +171,14 @@
   display: block;
   font-size: 0.98rem;
   line-height: 1.25;
-  color: var(--id-text-strong);
+  color: var(--lf-text-strong);
   overflow-wrap: anywhere;
 }
 
 .id-tile__desc {
   display: block;
   font-size: 0.82rem;
-  color: var(--id-muted);
+  color: var(--lf-muted);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -207,15 +191,15 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 700;
-  color: var(--id-accent-contrast);
-  background: var(--id-accent);
+  color: var(--lf-accent-contrast);
+  background: var(--lf-accent);
   border-radius: 999px;
   align-self: flex-start;
 }
 
 .id-empty {
   margin: auto;
-  color: var(--id-muted);
+  color: var(--lf-muted);
   font-size: 0.92rem;
 }
 
@@ -226,7 +210,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--id-border);
+  border-top: 1px solid var(--lf-border);
 }
 
 .id-foot__btn {
@@ -236,10 +220,10 @@
   height: auto;
   min-height: 0;
   padding: 6px 12px;
-  border: 1px solid var(--id-border);
-  border-radius: var(--id-radius-sm);
-  background: var(--id-surface);
-  color: var(--id-muted);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-muted);
   font: inherit;
   font-size: 0.84rem;
   font-weight: 600;
@@ -251,7 +235,7 @@
 }
 
 .id-foot__btn:hover {
-  background: var(--id-surface-elev);
-  border-color: var(--id-accent);
-  color: var(--id-text-strong);
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
 }
