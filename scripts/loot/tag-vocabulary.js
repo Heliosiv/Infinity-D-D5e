@@ -24,6 +24,27 @@ export const RARITIES = Object.freeze([
 /** Power-tier bucket. Maps to APL bands; t1 = lvl 1–4, t2 = 5–10, t3 = 11–16, t4 = 17+, t5 = epic. */
 export const TIERS = Object.freeze(["t1", "t2", "t3", "t4", "t5"]);
 
+/**
+ * Build the inclusive tier window for a roll at `tier`: the tier itself
+ * plus the one directly below. Used by every loot tool so a T2 roll can
+ * also pick up T1 commons (arrows, daggers, torches) — the curated pack
+ * tags real common gear at T1 only, so a strict single-tier filter at T2
+ * surfaces zero commons even when the user has the common rarity chip
+ * checked. T1 stays alone (no tier below). Unknown tiers fall back to
+ * themselves so malformed inputs don't silently empty the pool.
+ *
+ * Returns a fresh array each call; safe for callers to mutate.
+ */
+export function tierWindow(tier) {
+  const key = String(tier ?? "")
+    .trim()
+    .toLowerCase();
+  const idx = TIERS.indexOf(key);
+  if (idx < 0) return [tier];
+  if (idx === 0) return [TIERS[0]];
+  return [TIERS[idx - 1], TIERS[idx]];
+}
+
 /** GP-value band. v1 = trivial, v5 = legendary-tier price. */
 export const VALUE_BANDS = Object.freeze(["v1", "v2", "v3", "v4", "v5"]);
 

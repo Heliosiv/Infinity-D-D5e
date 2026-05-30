@@ -21,6 +21,7 @@ import {
   normalizeRarity,
   rarityKeyword,
   tierKeyword,
+  tierWindow,
   valueKeyword,
 } from "./loot/tag-vocabulary.js";
 
@@ -174,6 +175,23 @@ assert.equal(normalizeRarity("nonexistent"), "");
   assert.equal(getItemValueBand(item), "v3");
   assert.equal(getItemRarity(item), "uncommon");
   assert.equal(getItemGpValue(item), 700);
+}
+
+/* tierWindow — inclusive window of `tier` + one tier below */
+{
+  assert.deepEqual(tierWindow("t1"), ["t1"], "T1 stays alone");
+  assert.deepEqual(tierWindow("t2"), ["t1", "t2"]);
+  assert.deepEqual(tierWindow("t3"), ["t2", "t3"]);
+  assert.deepEqual(tierWindow("t4"), ["t3", "t4"]);
+  assert.deepEqual(tierWindow("t5"), ["t4", "t5"]);
+  // Case-insensitive
+  assert.deepEqual(tierWindow("T2"), ["t1", "t2"]);
+  // Unknown tier falls back to itself (won't match anything, but doesn't crash)
+  assert.deepEqual(tierWindow("garbage"), ["garbage"]);
+  // Fresh array each call — safe for callers to mutate
+  const arr = tierWindow("t2");
+  arr.push("extra");
+  assert.deepEqual(tierWindow("t2"), ["t1", "t2"]);
 }
 
 process.stdout.write("tag-vocabulary validation passed\n");

@@ -27,6 +27,7 @@ import {
   RARITIES,
   TIERS,
   getItemRarity,
+  tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import {
@@ -706,23 +707,6 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
-
-/**
- * Build the tier window for a per-creature roll: the creature's tier
- * plus the tier directly below, so a T2 enemy can also drop T1 commons.
- * T1 stays alone (no tier below). Unknown tiers fall back to themselves
- * so unusual data doesn't silently empty the pool.
- */
-const TIER_ORDER = ["t1", "t2", "t3", "t4", "t5"];
-function tierWindow(tier) {
-  const key = String(tier ?? "")
-    .trim()
-    .toLowerCase();
-  const idx = TIER_ORDER.indexOf(key);
-  if (idx < 0) return [tier];
-  if (idx === 0) return ["t1"];
-  return [TIER_ORDER[idx - 1], TIER_ORDER[idx]];
-}
 
 /**
  * Map a per-creature result entry to the distribute helper's accepted

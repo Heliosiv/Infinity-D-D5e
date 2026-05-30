@@ -82,6 +82,46 @@ export function computePackStats(items) {
 }
 
 /**
+ * Count items by rarity and loot type, scoped to a tier window.
+ *
+ * Used by the loot UIs to populate rarity / loot-type chip counts that
+ * reflect the current tier choice instead of the pack as a whole — so
+ * checking "common" at T2 shows the actual count of commons available
+ * (T1 commons reach T2 via the tier window in `_filterSpec`), not the
+ * misleading pack-wide total. A null / empty `tiers` window returns
+ * the same counts as a pack-wide scan.
+ *
+ * Only honors eligibility (loot-eligible flag); rarity normalization
+ * matches `filterCandidates`. Output is in the same shape as the
+ * `byRarity` / `byLootType` properties of `computePackStats`.
+ *
+ * @param {Array<object>} items
+ * @param {string[]} [tiers] - inclusive tier window; empty/missing = all tiers
+ * @returns {{ byRarity: Record<string, number>, byLootType: Record<string, number>, total: number }}
+ */
+export function computeTierFilteredStats(items, tiers = null) {
+  const pool = Array.isArray(items) ? items : [];
+  const tierSet =
+    Array.isArray(tiers) && tiers.length > 0
+      ? new Set(tiers.map((t) => String(t)))
+      : null;
+  const byRarity = {};
+  const byLootType = {};
+  let total = 0;
+  for (const item of pool) {
+    if (!item) continue;
+    if (tierSet && !tierSet.has(getItemTier(item))) continue;
+    if (!isLootEligible(item)) continue;
+    total += 1;
+    const rarity = getItemRarity(item);
+    if (rarity) byRarity[rarity] = (byRarity[rarity] ?? 0) + 1;
+    const lootType = getItemLootType(item);
+    if (lootType) byLootType[lootType] = (byLootType[lootType] ?? 0) + 1;
+  }
+  return { byRarity, byLootType, total };
+}
+
+/**
  * Count items in a pool by a single axis. Convenience over reading
  * `stats.byTier[tier]` when you have the live pool but no snapshot
  * yet — used for tests where computing the full stats is overkill.

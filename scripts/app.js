@@ -25,13 +25,17 @@ import {
   promptDistributeItems,
 } from "./loot/distribute.js";
 import { loadCompendiumItems } from "./loot/pack.js";
-import { computePackStats } from "./loot/pack-stats.js";
+import {
+  computePackStats,
+  computeTierFilteredStats,
+} from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
   RARITIES,
   TIERS,
   getItemRarity,
+  tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting, parseRaritiesSetting } from "./settings.js";
 import {
@@ -213,6 +217,13 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const projectedBudget = computeLootBudget(this._formForBudget());
     const stats = this._packStats ?? computePackStats([]);
     const candidates = this._countCandidates();
+    // Tier-aware chip counts: when items are loaded, count rarities and
+    // loot types ONLY within the current tier window — so the chip the
+    // user sees reflects what they'll actually roll, not the pack-wide
+    // total. Falls back to pack-wide stats before the compendium loads.
+    const tierStats = this._cachedItems
+      ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
+      : null;
     return {
       form: this._form,
       moduleId: MODULE_ID,
@@ -293,13 +304,16 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       rarityOptions: RARITIES.map((rarity) => ({
         value: rarity,
         label: titleCase(rarity),
-        count: stats.byRarity?.[rarity] ?? 0,
+        count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),
       lootTypeOptions: LOOT_TYPES.map((lootType) => ({
         value: lootType,
         label: prettyLootType(lootType),
-        count: stats.byLootType?.[lootType] ?? 0,
+        count:
+          tierStats?.byLootType?.[lootType] ??
+          stats.byLootType?.[lootType] ??
+          0,
         selected: this._form.lootTypes.includes(lootType),
       })),
 
@@ -775,8 +789,13 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   }
 
   _filterSpec() {
+    // Tier window — chosen tier plus one tier below, so the rarity chips
+    // the user checks actually have items behind them. The curated pack
+    // tags all real common gear at T1, so without this a T2 encounter
+    // with "common" checked would silently produce zero commons. Matches
+    // Hoard and Per-Creature behavior.
     return {
-      tiers: [this._form.tier],
+      tiers: tierWindow(this._form.tier),
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,

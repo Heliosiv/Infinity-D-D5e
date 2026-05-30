@@ -32,13 +32,17 @@ import {
 import { nearestPreset } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
 import { loadCompendiumItems } from "./loot/pack.js";
-import { computePackStats } from "./loot/pack-stats.js";
+import {
+  computePackStats,
+  computeTierFilteredStats,
+} from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
   RARITIES,
   TIERS,
   getItemRarity,
+  tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import {
@@ -165,6 +169,13 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
     const stats = this._packStats ?? computePackStats([]);
     const candidates = this._countCandidates();
+    // Tier-aware chip counts: when items are loaded, count rarities and
+    // loot types ONLY within the current tier window — so the chip the
+    // user sees reflects what they'll actually roll, not the pack-wide
+    // total. Falls back to pack-wide stats before the compendium loads.
+    const tierStats = this._cachedItems
+      ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
+      : null;
     return {
       form: this._form,
       moduleId: MODULE_ID,
@@ -212,13 +223,16 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       rarityOptions: RARITIES.map((rarity) => ({
         value: rarity,
         label: titleCase(rarity),
-        count: stats.byRarity?.[rarity] ?? 0,
+        count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),
       lootTypeOptions: LOOT_TYPES.map((lootType) => ({
         value: lootType,
         label: prettyLootType(lootType),
-        count: stats.byLootType?.[lootType] ?? 0,
+        count:
+          tierStats?.byLootType?.[lootType] ??
+          stats.byLootType?.[lootType] ??
+          0,
         selected: this._form.lootTypes.includes(lootType),
       })),
 
@@ -529,8 +543,14 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _filterSpec() {
+    // Tier window — pull from the chosen tier AND one tier below so a T2
+    // hoard can include T1 commons (arrows, daggers, torches, gold). The
+    // curated pack tags all real common gear at T1, so a strict single-
+    // tier filter at T2 surfaces zero commons even when the user has the
+    // common rarity chip selected. Matches the Per-Creature/Per-Encounter
+    // behavior.
     return {
-      tiers: [this._form.tier],
+      tiers: tierWindow(this._form.tier),
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,

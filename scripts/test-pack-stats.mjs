@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { computePackStats, countBy } from "./loot/pack-stats.js";
+import {
+  computePackStats,
+  computeTierFilteredStats,
+  countBy,
+} from "./loot/pack-stats.js";
 
 import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
 
@@ -79,6 +83,45 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
     /key must be a function/,
     "non-function key is rejected",
   );
+}
+
+/* computeTierFilteredStats — tier window narrows the counts */
+{
+  const pool = smallPool();
+  // smallPool tiers: a=t1, b=t1, c=t2, d=t2, e=t4
+  const t1Only = computeTierFilteredStats(pool, ["t1"]);
+  assert.equal(t1Only.total, 2, "two t1 items");
+  assert.equal(t1Only.byRarity.common, 2);
+  assert.equal(t1Only.byRarity.uncommon, undefined);
+
+  const t1t2 = computeTierFilteredStats(pool, ["t1", "t2"]);
+  assert.equal(t1t2.total, 4, "T1+T2 covers four items");
+  assert.equal(t1t2.byRarity.common, 2);
+  assert.equal(t1t2.byRarity.uncommon, 2);
+  assert.equal(
+    t1t2.byRarity.legendary,
+    undefined,
+    "legendary T4 item is outside the window",
+  );
+
+  // null / empty window returns pack-wide counts
+  const wide = computeTierFilteredStats(pool, null);
+  assert.equal(wide.total, 5);
+  assert.equal(wide.byRarity.legendary, 1, "legendary surfaces when unscoped");
+
+  // Loot types are counted too
+  const t2 = computeTierFilteredStats(pool, ["t2"]);
+  assert.equal(t2.byLootType["loot.weapon.magic"], 1);
+  assert.equal(t2.byLootType["loot.wand"], 1);
+
+  // Ineligible items are excluded
+  const mixedPool = [
+    fakeItem({ _id: "ok", tier: "t1", lootEligible: true, rarity: "common" }),
+    fakeItem({ _id: "no", tier: "t1", lootEligible: false, rarity: "common" }),
+  ];
+  const eligibleOnly = computeTierFilteredStats(mixedPool, ["t1"]);
+  assert.equal(eligibleOnly.total, 1, "ineligible items not counted");
+  assert.equal(eligibleOnly.byRarity.common, 1);
 }
 
 process.stdout.write("pack-stats validation passed\n");
