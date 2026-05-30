@@ -127,6 +127,10 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       pileBias: 0,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
+      // Art variants on by default — a treasure hoard is the most
+      // thematic place for rolled appraisals ("Signed Marble Bust @ 1.9×
+      // base value"). Toggleable via the form input.
+      artVariants: true,
       // Rarity narrows with the scale's narrative shape; the chips
       // remain editable and stay sticky across tier/scale clicks
       // until the GM customizes them away from the table default.
@@ -448,6 +452,9 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
           0,
         );
         break;
+      case "artVariants":
+        next.artVariants = Boolean(target.checked);
+        break;
       case "maxItems":
         next.maxItems = clampInt(
           target.value,
@@ -591,12 +598,19 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
               count: this._form.maxItems,
               budgetGp: itemBudget,
               magicBias: this._form.magicBias,
+              artVariants: this._form.artVariants,
             })
           : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
 
+      // Decorate with displayName / valueLabel so rolled art appraisals
+      // ("Signed Marble Bust", "1.9× base value") render in the result
+      // list. Non-art entries fall back to the source item name.
       const decoratedItems = raw.items.map((entry) => ({
         ...entry,
         rarity: getItemRarity(entry.item) || "common",
+        displayName: entry.displayName || entry.item?.name || "",
+        variantSummary: entry.variant?.summary ?? "",
+        valueLabel: entry.valueLabel ?? "",
         quantityLabel: entry.quantity > 1 ? `×${entry.quantity} · ` : "",
         gpTotalLabel: formatGp(entry.gpTotal),
       }));
@@ -709,12 +723,20 @@ function formatPileBias(value) {
 function buildHoardChatHtml(result) {
   const lines = result.items
     .map((entry) => {
+      // Art variants display their rolled name ("Signed Marble Bust");
+      // chat link still points at the base compendium item via uuid so
+      // clicking opens the source sheet.
+      const displayName =
+        entry.displayName ?? entry.item?.name ?? "?";
       const link = entry.item?.uuid
-        ? `@UUID[${entry.item.uuid}]{${escapeHtml(entry.item.name)}}`
-        : escapeHtml(entry.item?.name ?? "?");
+        ? `@UUID[${entry.item.uuid}]{${escapeHtml(displayName)}}`
+        : escapeHtml(displayName);
       const qty = entry.quantity > 1 ? `${entry.quantity}× ` : "";
       const rarity = escapeHtml(entry.rarity ?? "");
-      return `<li><strong>${qty}${link}</strong> <span style="opacity:0.7">— ${rarity} · ${formatGp(entry.gpTotal)}</span></li>`;
+      const valueLabel = entry.valueLabel
+        ? ` · ${escapeHtml(entry.valueLabel)}`
+        : "";
+      return `<li><strong>${qty}${link}</strong> <span style="opacity:0.7">— ${rarity} · ${formatGp(entry.gpTotal)}${valueLabel}</span></li>`;
     })
     .join("");
   const coinLine = result.coinPileGp

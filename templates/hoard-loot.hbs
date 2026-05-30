@@ -109,8 +109,9 @@
       </div>
     </fieldset>
 
-    {{!-- Advanced: a small max-items input. Soft ceiling on the
-         item count; defaults to the per-scale recommendation. --}}
+    {{!-- Advanced: max-items + art variants. Soft ceiling on the
+         item count; art variants generate rolled appraisals for
+         variable-art base items in the pack. --}}
     <div class="hl-advanced">
       <label class="hl-advanced__field">
         <span>Max items <small>(soft ceiling)</small></span>
@@ -123,6 +124,14 @@
           step="1"
           value="{{maxItems}}"
         />
+      </label>
+      <label class="hl-advanced__field hl-advanced__field--checkbox">
+        <input
+          type="checkbox"
+          name="artVariants"
+          {{#if form.artVariants}}checked{{/if}}
+        />
+        <span>Art variants <small>(rolled appraisals for art objects)</small></span>
       </label>
     </div>
 
@@ -188,8 +197,8 @@
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
           <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
           <div class="lf-result__copy">
-            <strong class="lf-result__name">{{item.name}}</strong>
-            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}</span>
+            <strong class="lf-result__name">{{displayName}}</strong>
+            <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
           </div>
         </button>
       </li>

@@ -557,10 +557,11 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   }
 
   _rosterTotalBudget() {
+    const partySize = livePartySize() || 4;
     return this._form.roster.reduce(
       (sum, c) =>
         sum +
-        computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
+        computeLootBudget({ tier: c.tier, scale: "trivial", partySize }),
       0,
     );
   }
@@ -630,10 +631,15 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       tiers: tierWindow(creature.tier),
     };
     const candidates = filterCandidates(items, filter);
+    // Auto-detect party size from the live player count so a 6-PC party
+    // gets proportionally bigger per-corpse drops than a 2-PC party.
+    // Falls back to 4 (the canonical baseline) when no live count is
+    // available — e.g. during initial load or in tests.
+    const partySize = livePartySize() || 4;
     const budget = computeLootBudget({
       tier: creature.tier,
       scale: "trivial",
-      partySize: 4,
+      partySize,
     });
     const raw = rollLoot(candidates, {
       count: this._form.itemsPerCreature,
@@ -736,6 +742,22 @@ function toDistributableEntry(entry) {
   }
   const uuid = entry.item?.uuid;
   return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
+}
+
+/**
+ * Read the live player-character count from Foundry. Returns 0 when the
+ * game isn't initialized (tests) so callers can fall back gracefully.
+ * Mirrors the same helper in app.js — kept module-local to avoid coupling
+ * pure ui-util.js to Foundry globals.
+ */
+function livePartySize() {
+  const users = globalThis.game?.users;
+  if (!users) return 0;
+  let count = 0;
+  for (const user of users.values?.() ?? users) {
+    if (user?.character && user?.active !== false) count += 1;
+  }
+  return count;
 }
 
 function makeCreature({ name, tier }) {
