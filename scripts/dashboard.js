@@ -32,7 +32,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       icon: "fa-solid fa-dice-d20",
       resizable: true,
     },
-    position: { width: 640, height: 520 },
+    position: { width: 720, height: 540 },
     actions: {
       launch: InfinityDashboardApp._onLaunch,
       openSettings: InfinityDashboardApp._onOpenSettings,

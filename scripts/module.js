@@ -12,6 +12,7 @@ import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
 import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
+import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
 import { computeLootBudget } from "./loot/budget.js";
@@ -85,8 +86,7 @@ function buildApi() {
     distributeBundle: (actorId, uuids) =>
       distributeItemsToActor(actorId, uuids),
 
-    promptDistribute: (uuids, options) =>
-      promptDistributeItems(uuids, options),
+    promptDistribute: (uuids, options) => promptDistributeItems(uuids, options),
   };
 }
 
@@ -254,6 +254,9 @@ Hooks.once("ready", () => {
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
     if (mod && !mod.api) mod.api = buildApi();
+    void registerMonksTokenbarCompat().catch((error) => {
+      console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
+    });
   } catch (error) {
     console.error(`${MODULE_ID} | ready hook failed`, error);
   }
@@ -289,6 +292,13 @@ Hooks.on("getSceneControlButtons", (controls) => {
     onChange: () => InfinityDashboardApp.open(),
   };
 
+  const buildTool = (name, title, order) => ({
+    ...baseTool,
+    name,
+    title,
+    order,
+  });
+
   // Diagnostic: log what shape we got so a missing launcher can be
   // traced from the console rather than guessed at.
   const shape = Array.isArray(controls)
@@ -308,16 +318,18 @@ Hooks.on("getSceneControlButtons", (controls) => {
         visible: true,
         activeTool: launcherToolName,
         order: 99,
-        tools: [{ ...baseTool, name: launcherToolName }],
+        tools: [buildTool(launcherToolName, baseTool.title, 0)],
       });
       const tokenControl =
         controls.find((c) => c?.name === "token") ?? controls[0];
       if (tokenControl && Array.isArray(tokenControl.tools)) {
-        tokenControl.tools.push({
-          ...baseTool,
-          name: dashboardToolName,
-          title: "Infinity D&D5e",
-        });
+        tokenControl.tools.push(
+          buildTool(
+            dashboardToolName,
+            "Infinity D&D5e",
+            tokenControl.tools.length,
+          ),
+        );
       }
       console.log(
         `${MODULE_ID} | registered V12 controls (category + tools fallback)`,
@@ -332,17 +344,17 @@ Hooks.on("getSceneControlButtons", (controls) => {
         activeTool: launcherToolName,
         order: 99,
         tools: {
-          [launcherToolName]: { ...baseTool, name: launcherToolName },
+          [launcherToolName]: buildTool(launcherToolName, baseTool.title, 0),
         },
       };
       const tokenControl =
         controls.tokens ?? controls.token ?? Object.values(controls)[0];
       if (tokenControl && typeof tokenControl.tools === "object") {
-        tokenControl.tools[dashboardToolName] = {
-          ...baseTool,
-          name: dashboardToolName,
-          title: "Infinity D&D5e",
-        };
+        tokenControl.tools[dashboardToolName] = buildTool(
+          dashboardToolName,
+          "Infinity D&D5e",
+          nextToolOrder(tokenControl.tools),
+        );
       }
       console.log(
         `${MODULE_ID} | registered V13 controls (category + tools fallback)`,
@@ -356,3 +368,14 @@ Hooks.on("getSceneControlButtons", (controls) => {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
   }
 });
+
+function nextToolOrder(tools) {
+  if (!tools || typeof tools !== "object") return 0;
+  const values = Array.isArray(tools) ? tools : Object.values(tools);
+  return (
+    values.reduce((max, tool) => {
+      const order = Number(tool?.order);
+      return Number.isFinite(order) ? Math.max(max, order) : max;
+    }, -1) + 1
+  );
+}

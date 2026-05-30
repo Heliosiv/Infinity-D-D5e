@@ -1,7 +1,7 @@
 {{!--
   Infinity D&D5e — Per-Encounter Loot window template.
   Slider-driven controls. Numbers under chips and the candidate
-  count are pulled live from the loaded compendium, so the UI never
+  counts are pulled live from the loaded compendium, so the UI never
   asks for something the pack can't fulfil.
 --}}
 <div class="lf-shell">
@@ -23,7 +23,7 @@
 
     {{!-- Quick-fight macros — one click for a common "shape of a roll" --}}
     <fieldset class="lf-fieldset lf-fieldset--quick">
-      <legend class="lf-fieldset__legend">Quick Fight <small>(stamps scale + generosity + count)</small></legend>
+      <legend class="lf-fieldset__legend">Quick Fight <small>(stamps scale + generosity)</small></legend>
       <div class="lf-quick">
         {{#each quickPresets}}
         <button
@@ -64,7 +64,16 @@
       {{> slider scale}}
       {{> slider generosity}}
       {{> slider partySize}}
-      {{> slider count}}
+      <label class="lf-field lf-field--toggle lf-field--cap">
+        <span class="lf-field__label">Item Limit</span>
+        <span class="lf-toggle">
+          <input type="checkbox" name="itemLimitEnabled" {{#if form.itemLimitEnabled}}checked{{/if}} />
+          <span data-item-limit-label>{{itemLimitLabel}}</span>
+        </span>
+      </label>
+      {{#if form.itemLimitEnabled}}
+      {{> slider itemLimit}}
+      {{/if}}
       {{> slider magicBias}}
 
       <label class="lf-field lf-field--inline">
@@ -182,7 +191,7 @@
           <i class="fa-solid {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}" aria-hidden="true"></i>
         </button>
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
-          <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
+          <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
           <div class="lf-result__copy">
             <strong class="lf-result__name">{{displayName}}</strong>
             {{#if variantSummary}}

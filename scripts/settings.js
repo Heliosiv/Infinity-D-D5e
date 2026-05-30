@@ -71,13 +71,13 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.DEFAULT_COUNT,
-    name: "Default Item Count",
-    hint: "1–20. Target number of items in a fresh bundle.",
+    name: "Default Item Limit",
+    hint: "0 = automatic budget fill. 1-20 caps the number of items in a fresh bundle.",
     scope: "world",
     config: true,
     type: Number,
-    default: 6,
-    range: { min: 1, max: 20, step: 1 },
+    default: 0,
+    range: { min: 0, max: 20, step: 1 },
   },
   {
     key: SETTING_KEYS.DEFAULT_RARITIES,

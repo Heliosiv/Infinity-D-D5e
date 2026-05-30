@@ -2,11 +2,11 @@
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
   "description": "Tag-driven GM toolkit for D&D 5e on Foundry VTT. GM-only dashboard launches three loot tools - Per-Encounter, Hoard, and Per-Creature - rolled from a curated 1,422-item compendium with slider-driven controls, art variants, magic-bias dial, and live pack-grounded readouts.",
-  "version": "0.2.12",
+  "version": "0.2.15",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "12",
-    "verified": "14"
+    "verified": "13.351"
   },
   "esmodules": ["scripts/module.js"],
   "styles": [
@@ -21,6 +21,7 @@
     "templates/hoard-loot.hbs",
     "templates/per-creature-loot.hbs"
   ],
+  "system": ["dnd5e"],
   "packs": [
     {
       "name": "infinity-dnd5e-items",
@@ -36,7 +37,7 @@
       {
         "id": "dnd5e",
         "type": "system",
-        "compatibility": { "verified": "4.4.4" }
+        "compatibility": { "verified": "5.3.3" }
       }
     ]
   },

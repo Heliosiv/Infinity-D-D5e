@@ -2,7 +2,7 @@
  * Infinity D&D5e — PerEncounterLootApp
  *
  * Single GM-only window:
- * - Slider-driven controls (scale, generosity, party, count, magic bias)
+ * - Slider-driven controls (scale, generosity, party, optional item cap, magic bias)
  * - Segmented tier button row + multi-select chips for rarity / loot type
  * - Live pack-grounded readouts (candidate count, per-rarity item counts)
  * - "Generate" rolls a bundle against the bundled compendium
@@ -52,6 +52,11 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-forge.hbs`;
+const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
+const SCROLL_TARGETS = Object.freeze([
+  { key: "shell", selector: ".lf-shell" },
+  { key: "windowContent", selector: ".window-content" },
+]);
 
 const COUNT_RANGE = Object.freeze({ min: 1, max: 20, step: 1 });
 const PARTY_RANGE = Object.freeze({ min: 1, max: 10, step: 1 });
@@ -61,7 +66,7 @@ const SLIDER_LABELS = Object.freeze({
   scaleMultiplier: "Encounter Scale",
   generosityMultiplier: "Generosity",
   partySize: "Party Size",
-  count: "Item Count",
+  count: "Item Limit",
   magicBias: "Magic Bias",
 });
 
@@ -69,31 +74,30 @@ const SLIDER_LABELS = Object.freeze({
 const MAGIC_BIAS_PRESETS = Object.freeze({ neutral: 0 });
 
 /**
- * One-click "shape of a roll" macros. Each preset stamps multiple
- * slider values at once so the GM doesn't have to dial in three
- * controls for a routine encounter. Tier and chips are NOT touched
- * — those stay the user's deliberate choice.
+ * One-click "shape of a roll" macros. Each preset stamps the budget shape
+ * without constraining how many items the roller uses to fill that budget.
+ * Tier, chips, and optional item limits stay the user's deliberate choice.
  */
 const QUICK_PRESETS = Object.freeze({
   easy: {
     label: "Easy",
     icon: "fa-solid fa-leaf",
-    values: { scaleMultiplier: 0.4, generosityMultiplier: 0.8, count: 3 },
+    values: { scaleMultiplier: 0.4, generosityMultiplier: 0.8 },
   },
   standard: {
     label: "Standard",
     icon: "fa-solid fa-shield",
-    values: { scaleMultiplier: 1.0, generosityMultiplier: 1.0, count: 6 },
+    values: { scaleMultiplier: 1.0, generosityMultiplier: 1.0 },
   },
   hard: {
     label: "Hard",
     icon: "fa-solid fa-fire",
-    values: { scaleMultiplier: 1.5, generosityMultiplier: 1.0, count: 8 },
+    values: { scaleMultiplier: 1.5, generosityMultiplier: 1.0 },
   },
   hoard: {
     label: "Hoard",
     icon: "fa-solid fa-treasure-chest",
-    values: { scaleMultiplier: 6.0, generosityMultiplier: 1.2, count: 12 },
+    values: { scaleMultiplier: 6.0, generosityMultiplier: 1.2 },
   },
 });
 
@@ -126,7 +130,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       icon: "fa-solid fa-coins",
       resizable: true,
     },
-    position: { width: 760, height: 760 },
+    position: { width: 860, height: 760 },
     actions: {
       generate: PerEncounterLootApp._onGenerate,
       rerollUnlocked: PerEncounterLootApp._onRerollUnlocked,
@@ -174,6 +178,12 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
    * in tests where `game.settings` isn't available.
    */
   static buildDefaultForm() {
+    const defaultLimit = clampInt(
+      getSetting(SETTING_KEYS.DEFAULT_COUNT),
+      0,
+      COUNT_RANGE.max,
+      0,
+    );
     return {
       tier: getSetting(SETTING_KEYS.DEFAULT_TIER) ?? "t2",
       scaleMultiplier:
@@ -182,7 +192,8 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         getSetting(SETTING_KEYS.DEFAULT_GENEROSITY) ??
         GENEROSITY_PRESETS.balanced,
       partySize: getSetting(SETTING_KEYS.DEFAULT_PARTY_SIZE) ?? 4,
-      count: getSetting(SETTING_KEYS.DEFAULT_COUNT) ?? 6,
+      itemLimitEnabled: defaultLimit > 0,
+      count: defaultLimit > 0 ? defaultLimit : 6,
       budgetOverride: 0,
       artVariants: true,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
@@ -204,11 +215,20 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     this._form = persisted?.form
       ? { ...defaults, ...persisted.form }
       : defaults;
+    this._form.itemLimitEnabled = this._form.itemLimitEnabled === true;
+    this._form.count = clampInt(
+      this._form.count,
+      COUNT_RANGE.min,
+      COUNT_RANGE.max,
+      6,
+    );
     this._lastResult = persisted?.lastResult ?? null;
     this._loadingItems = false;
     this._cachedItems = null;
     this._cachedItemsAt = 0;
     this._packStats = null;
+    this._pendingScrollState = null;
+    this._lastScrollState = null;
   }
 
   /* ------------------- context ------------------- */
@@ -217,6 +237,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const projectedBudget = computeLootBudget(this._formForBudget());
     const stats = this._packStats ?? computePackStats([]);
     const candidates = this._countCandidates();
+    const result = prepareResultForDisplay(this._lastResult);
     // Tier-aware chip counts: when items are loaded, count rarities and
     // loot types ONLY within the current tier window — so the chip the
     // user sees reflects what they'll actually roll, not the pack-wide
@@ -243,8 +264,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
           Math.abs(
             this._form.generosityMultiplier -
               preset.values.generosityMultiplier,
-          ) < 0.01 &&
-          this._form.count === preset.values.count,
+          ) < 0.01,
       })),
 
       tierOptions: TIERS.map((tier) => ({
@@ -286,13 +306,16 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
           icon: "fa-solid fa-users",
         },
       },
-      count: this._sliderContext({
+      itemLimit: this._sliderContext({
         name: "count",
         value: this._form.count,
         range: COUNT_RANGE,
         presets: null,
-        valueLabel: `${this._form.count} item${this._form.count === 1 ? "" : "s"}`,
+        valueLabel: itemLimitValueLabel(this._form.count),
       }),
+      itemLimitLabel: this._form.itemLimitEnabled
+        ? itemLimitValueLabel(this._form.count)
+        : "Auto",
       magicBias: this._sliderContext({
         name: "magicBias",
         value: this._form.magicBias,
@@ -318,8 +341,8 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       })),
 
       packStatsLoaded: Boolean(this._packStats),
-      hasResult: Boolean(this._lastResult && this._lastResult.items.length > 0),
-      result: this._lastResult,
+      hasResult: Boolean(result && result.items.length > 0),
+      result,
     };
   }
 
@@ -359,6 +382,16 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) !== false) {
       root.addEventListener("keydown", (event) => this._onKeyDown(event));
     }
+    if (root.dataset.infinityDnd5eScrollPointerTracked !== "true") {
+      root.dataset.infinityDnd5eScrollPointerTracked = "true";
+      root.addEventListener(
+        "pointerdown",
+        () => {
+          this._lastScrollState = this._captureScrollState();
+        },
+        { capture: true, passive: true },
+      );
+    }
 
     // Wire drag-and-drop on result tiles so they can be dropped onto
     // character sheets while preserving generated art item data.
@@ -369,12 +402,93 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       });
     }
 
+    for (const image of root.querySelectorAll("[data-result-image]")) {
+      image.addEventListener("error", onResultImageError, { once: true });
+      if (image.complete && image.naturalWidth === 0) {
+        onResultImageError({ currentTarget: image });
+      }
+    }
+    this._bindScrollTracking(root);
+
     // Background-load the pack on first render so the candidate
     // count and per-rarity numbers are populated before the user
     // touches anything.
     if (!this._packStats && !this._loadingItems) {
       this._primePackStats();
     }
+    this._restoreScrollState();
+  }
+
+  _captureScrollState() {
+    const entries = this._scrollEntries(this.element).map(
+      ({ key, element }) => ({
+        key,
+        left: element.scrollLeft,
+        top: element.scrollTop,
+      }),
+    );
+    if (entries.length === 0) return this._lastScrollState;
+    return { entries };
+  }
+
+  _restoreScrollState() {
+    const state = this._pendingScrollState ?? this._lastScrollState;
+    this._pendingScrollState = null;
+    if (!state) return;
+
+    const restore = () => {
+      for (const entry of state.entries ?? []) {
+        const element = this._scrollElement(entry.key);
+        if (!element) continue;
+        const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
+        const maxLeft = Math.max(0, element.scrollWidth - element.clientWidth);
+        element.scrollTop = Math.min(entry.top, maxTop);
+        element.scrollLeft = Math.min(entry.left, maxLeft);
+      }
+    };
+    restore();
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(restore);
+      globalThis.requestAnimationFrame(() =>
+        globalThis.requestAnimationFrame(restore),
+      );
+    } else {
+      restore();
+    }
+    globalThis.setTimeout?.(restore, 50);
+  }
+
+  async _renderPreservingScroll(options) {
+    this._pendingScrollState = this._captureScrollState();
+    await this.render(options);
+  }
+
+  _bindScrollTracking(root) {
+    for (const { element } of this._scrollEntries(root)) {
+      if (element.dataset.infinityDnd5eScrollTracked === "true") continue;
+      element.dataset.infinityDnd5eScrollTracked = "true";
+      element.addEventListener(
+        "scroll",
+        () => {
+          this._lastScrollState = this._captureScrollState();
+        },
+        { passive: true },
+      );
+    }
+  }
+
+  _scrollEntries(root) {
+    if (!root) return [];
+    return SCROLL_TARGETS.map(({ key, selector }) => ({
+      key,
+      element: root.querySelector(selector),
+    })).filter(({ element }) => Boolean(element));
+  }
+
+  _scrollElement(key) {
+    const target = SCROLL_TARGETS.find((entry) => entry.key === key);
+    if (!target) return null;
+    return this.element?.querySelector(target.selector) ?? null;
   }
 
   _onKeyDown(event) {
@@ -487,13 +601,13 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   /** @this {PerEncounterLootApp} */
   static async _onReset(_event, _target) {
     this._form = PerEncounterLootApp.buildDefaultForm();
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
   static async _onClear(_event, _target) {
     this._lastResult = null;
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -502,7 +616,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const preset = QUICK_PRESETS[key];
     if (!preset) return;
     this._form = { ...this._form, ...preset.values };
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -515,7 +629,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       return;
     }
     this._form = { ...this._form, partySize: live };
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -528,7 +642,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     } else {
       return;
     }
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -541,7 +655,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     } else {
       return;
     }
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -596,7 +710,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const raw = Number(target?.dataset?.value);
     if (!name || !Number.isFinite(raw)) return;
     this._form = { ...this._form, [name]: raw };
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
@@ -604,7 +718,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const tier = target?.dataset?.value;
     if (!tier) return;
     this._form = { ...this._form, tier };
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /* ------------------- form handling ------------------- */
@@ -613,6 +727,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const target = event.target;
     if (!target?.name) return;
     const name = target.name;
+    if (name === "itemLimitEnabled" && event.type === "input") return;
     const next = { ...this._form };
 
     switch (name) {
@@ -648,9 +763,15 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
           target.value,
           COUNT_RANGE.min,
           COUNT_RANGE.max,
-          1,
+          6,
         );
         break;
+      case "itemLimitEnabled":
+        next.itemLimitEnabled = Boolean(target.checked);
+        next.count = clampInt(next.count, COUNT_RANGE.min, COUNT_RANGE.max, 6);
+        this._form = next;
+        void this._renderPreservingScroll();
+        return;
       case "budgetOverride":
         next.budgetOverride = clampInt(
           target.value,
@@ -723,7 +844,14 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     setText(
       root,
       "[data-readout='count']",
-      `${this._form.count} item${this._form.count === 1 ? "" : "s"}`,
+      itemLimitValueLabel(this._form.count),
+    );
+    setText(
+      root,
+      "[data-item-limit-label]",
+      this._form.itemLimitEnabled
+        ? itemLimitValueLabel(this._form.count)
+        : "Auto",
     );
     setText(
       root,
@@ -852,7 +980,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {
       this._loadingItems = true;
-      await this.render(); // surfaces the "Loading compendium…" placeholder
+      await this._renderPreservingScroll(); // surfaces the "Loading compendium…" placeholder
     }
 
     try {
@@ -875,10 +1003,12 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         );
       }
 
-      const remainingCount = Math.max(
-        0,
-        this._form.count - lockedEntries.length,
-      );
+      const itemLimit = this._form.itemLimitEnabled
+        ? clampInt(this._form.count, COUNT_RANGE.min, COUNT_RANGE.max, 6)
+        : 0;
+      const remainingCount =
+        itemLimit > 0 ? Math.max(0, itemLimit - lockedEntries.length) : 0;
+      const shouldRollMore = itemLimit > 0 ? remainingCount > 0 : true;
       const remainingBudget = Math.max(0, totalBudget - lockedGp);
 
       // When locks have already met or exceeded the total budget, do NOT
@@ -891,7 +1021,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         lockedEntries.length > 0 &&
         totalBudget > 0 &&
         remainingBudget <= 0 &&
-        remainingCount > 0;
+        shouldRollMore;
 
       let raw;
       if (locksFilledBudget) {
@@ -903,9 +1033,9 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
             `Locked items (${formatGp(lockedGp)}) already fill the ${formatGp(totalBudget)} budget. Unlock an item or raise the budget to add more.`,
           ],
         };
-      } else if (remainingCount > 0) {
+      } else if (shouldRollMore) {
         raw = rollLoot(candidates, {
-          count: remainingCount,
+          count: itemLimit > 0 ? remainingCount : 0,
           budgetGp: remainingBudget > 0 ? remainingBudget : 0,
           magicBias: this._form.magicBias,
           artVariants: this._form.artVariants,
@@ -919,6 +1049,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         resultId:
           entry.variant?.id ?? String(entry.item._id ?? entry.item.id ?? ""),
         displayName: entry.displayName || entry.item.name,
+        imageSrc: resultImageForEntry(entry),
         variantSummary: entry.variant?.summary ?? "",
         sourceLabel: entry.variant ? `Base: ${entry.variant.baseName}` : "",
         valueLabel: entry.valueLabel ?? "",
@@ -948,7 +1079,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       };
     } finally {
       this._loadingItems = false;
-      await this.render();
+      await this._renderPreservingScroll();
     }
   }
 
@@ -959,7 +1090,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       await this._loadItems();
     } finally {
       this._loadingItems = false;
-      if (this.rendered) await this.render();
+      if (this.rendered) await this._renderPreservingScroll();
     }
   }
 
@@ -1005,6 +1136,11 @@ function tierLabel(tier) {
   return map[tier] ?? tier;
 }
 
+function itemLimitValueLabel(count) {
+  const value = clampInt(count, COUNT_RANGE.min, COUNT_RANGE.max, 6);
+  return `Max ${value} item${value === 1 ? "" : "s"}`;
+}
+
 function toDistributableItem(entry) {
   if (!entry) return null;
   const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
@@ -1019,6 +1155,33 @@ function toDistributableItem(entry) {
   return uuid
     ? { uuid, name: entry.displayName ?? entry.item?.name ?? "", quantity }
     : null;
+}
+
+function prepareResultForDisplay(result) {
+  if (!result) return null;
+  return {
+    ...result,
+    items: (result.items ?? []).map((entry) => ({
+      ...entry,
+      imageSrc: resultImageForEntry(entry),
+    })),
+  };
+}
+
+function resultImageForEntry(entry) {
+  const image = String(
+    entry?.imageSrc ?? entry?.itemData?.img ?? entry?.item?.img ?? "",
+  ).trim();
+  return image || FALLBACK_ITEM_IMAGE;
+}
+
+function onResultImageError(event) {
+  const image = event.currentTarget;
+  if (!image || image.dataset.fallbackApplied === "true") return;
+  const fallbackSrc = image.dataset.fallbackSrc || FALLBACK_ITEM_IMAGE;
+  image.dataset.fallbackApplied = "true";
+  image.classList.add("is-fallback");
+  if (image.getAttribute("src") !== fallbackSrc) image.src = fallbackSrc;
 }
 
 /**

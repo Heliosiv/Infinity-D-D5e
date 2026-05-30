@@ -41,12 +41,37 @@
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  min-width: min(820px, calc(100vw - 56px));
+  min-height: min(640px, calc(100vh - 72px));
+}
+
+.infinity-dnd5e :where(button, input, select, textarea, fieldset) {
+  box-sizing: border-box;
+}
+
+.infinity-dnd5e :where(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+.infinity-dnd5e :where(button) {
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  line-height: normal;
+}
+
+.infinity-dnd5e :where(fieldset) {
+  min-inline-size: 0;
 }
 
 /* The .window-content wrapper Foundry injects. */
 .infinity-dnd5e.loot-forge .window-content,
 .infinity-dnd5e.loot-forge {
   padding: 0;
+}
+
+.infinity-dnd5e.loot-forge .window-content {
+  overflow: hidden;
 }
 
 .lf-shell {
@@ -57,7 +82,9 @@
   min-height: 0;
   height: 100%;
   box-sizing: border-box;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* =========================================================
@@ -150,6 +177,14 @@
   align-self: end;
 }
 
+.lf-field--cap {
+  align-self: stretch;
+}
+
+.lf-field--cap .lf-toggle {
+  min-height: 44px;
+}
+
 .lf-toggle {
   display: inline-flex;
   align-items: center;
@@ -218,6 +253,8 @@ select.lf-input {
   border-radius: var(--lf-radius-sm);
   padding: 10px 12px 12px;
   margin: 0;
+  min-inline-size: 0;
+  overflow: visible;
   background: var(--lf-surface);
 }
 
@@ -379,12 +416,13 @@ select.lf-input {
 .lf-result {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: 14px;
+  padding: 16px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius);
   background: var(--lf-bg-alt);
   min-height: 200px;
+  container-type: inline-size;
 }
 
 .lf-result__placeholder {
@@ -394,11 +432,11 @@ select.lf-input {
 }
 
 .lf-result__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 10px 14px;
+  padding-bottom: 2px;
 }
 
 .lf-result__head-actions {
@@ -409,13 +447,17 @@ select.lf-input {
 
 .lf-result__title {
   margin: 0;
+  min-width: 0;
   font-size: 1rem;
+  line-height: 1.25;
   font-weight: 700;
   color: var(--lf-text-strong);
+  overflow-wrap: anywhere;
 }
 
 .lf-result__warning {
   margin: 0;
+  grid-column: 1 / -1;
   font-size: 0.82rem;
   color: var(--lf-warn);
 }
@@ -425,13 +467,17 @@ select.lf-input {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .lf-result__item {
   display: flex;
   align-items: stretch;
+  min-width: 0;
+  min-height: 104px;
+  height: auto;
+  overflow: hidden;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-sm);
   background: var(--lf-surface);
@@ -439,6 +485,10 @@ select.lf-input {
     border-color 120ms ease,
     transform 120ms ease,
     box-shadow 120ms ease;
+}
+
+.lf-result__item:has(.lf-result__variant) {
+  min-height: 116px;
 }
 
 .lf-result__item:hover {
@@ -455,12 +505,16 @@ select.lf-input {
 }
 
 .lf-result__open {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 102px;
+  height: auto;
+  padding: 14px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -473,7 +527,10 @@ select.lf-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
+  width: 42px;
+  min-height: 102px;
+  height: auto;
+  align-self: stretch;
   flex-shrink: 0;
   border: 0;
   border-left: 1px solid var(--lf-border);
@@ -504,49 +561,84 @@ select.lf-input {
 }
 
 .lf-result__icon {
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
+  box-sizing: border-box;
   object-fit: cover;
   border-radius: var(--lf-radius-sm);
   border: 1px solid var(--lf-border);
-  background: var(--lf-bg);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--lf-bg) 82%, white 18%),
+    var(--lf-bg)
+  );
   flex-shrink: 0;
+  align-self: start;
+}
+
+.lf-result__icon.is-fallback {
+  object-fit: contain;
+  padding: 8px;
 }
 
 .lf-result__copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  gap: 4px;
   min-width: 0;
+  min-height: 64px;
+  overflow: visible;
+}
+
+.lf-result__copy:has(.lf-result__variant),
+.lf-result__copy:has(.lf-result__source) {
+  justify-content: flex-start;
 }
 
 .lf-result__name {
-  font-size: 0.95rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-width: 100%;
+  font-size: 0.98rem;
+  line-height: 1.25;
   color: var(--lf-text-strong);
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .lf-result__meta {
+  display: block;
   font-size: 0.78rem;
+  line-height: 1.35;
   color: var(--lf-muted);
   text-transform: capitalize;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .lf-result__variant {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 0.74rem;
   line-height: 1.3;
+  max-height: calc(0.74rem * 1.3 * 3);
   color: color-mix(in srgb, var(--lf-muted) 82%, var(--lf-text) 18%);
 }
 
 .lf-result__source {
+  display: block;
   font-size: 0.72rem;
+  line-height: 1.2;
   color: color-mix(in srgb, var(--lf-muted) 72%, var(--lf-text) 28%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Rarity stripe on the left edge */
@@ -570,9 +662,15 @@ select.lf-input {
 }
 
 .lf-result__warnings {
-  margin: 0;
-  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 10px 12px 10px 26px;
+  border: 1px solid color-mix(in srgb, var(--lf-warn) 38%, var(--lf-border));
+  border-radius: var(--lf-radius-sm);
+  background: color-mix(in srgb, var(--lf-warn) 10%, transparent);
   font-size: 0.8rem;
+  line-height: 1.35;
   color: var(--lf-warn);
 }
 
@@ -593,22 +691,29 @@ select.lf-input {
 .lf-segment {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  align-items: stretch;
   gap: 6px;
   margin-top: 4px;
 }
 
 .lf-segment__btn {
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   align-items: center;
+  align-content: center;
   justify-items: center;
   gap: 2px;
+  min-height: 58px;
+  height: auto;
   padding: 8px 10px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-sm);
   background: var(--lf-bg);
   color: var(--lf-muted);
   font: inherit;
+  line-height: 1.15;
+  white-space: normal;
+  overflow: visible;
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -635,8 +740,11 @@ select.lf-input {
 
 .lf-segment__long {
   font-size: 0.7rem;
+  line-height: 1.15;
+  text-align: center;
   color: var(--lf-muted);
   letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
 .lf-segment__btn.is-active .lf-segment__long {
@@ -644,8 +752,9 @@ select.lf-input {
 }
 
 .lf-segment__count {
-  margin-top: 3px;
+  margin-top: 1px;
   font-size: 0.66rem;
+  line-height: 1;
   color: var(--lf-muted);
   font-feature-settings: "tnum";
   letter-spacing: 0.05em;
@@ -784,6 +893,7 @@ select.lf-input {
   align-items: center;
   flex: 0 0 auto;
   width: auto;
+  height: auto;
   line-height: 1.2;
   padding: 2px 10px;
   border: 1px solid var(--lf-border);
@@ -863,6 +973,8 @@ select.lf-input {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-height: 30px;
+  height: auto;
   padding: 8px 10px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-sm);
@@ -912,6 +1024,7 @@ select.lf-input {
   align-items: center;
   flex: 0 0 auto;
   width: auto;
+  height: auto;
   line-height: 1.2;
   padding: 1px 10px;
   border: 1px solid var(--lf-border);
@@ -943,6 +1056,7 @@ select.lf-input {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  height: auto;
   margin-left: 6px;
   padding: 2px 8px;
   border: 1px solid var(--lf-border);
@@ -1081,21 +1195,23 @@ select.lf-input {
 }
 
 .lf-result__lock {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
+  position: static;
+  width: 34px;
+  min-height: 102px;
+  height: auto;
+  align-self: stretch;
+  flex: 0 0 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--lf-border);
-  border-radius: var(--lf-radius-sm);
-  background: var(--lf-bg);
+  border: 0;
+  border-right: 1px solid var(--lf-border);
+  border-radius: 0;
+  background: transparent;
   color: var(--lf-muted);
   font-size: 0.78rem;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.65;
   transition:
     opacity 120ms ease,
     background 120ms ease,
@@ -1134,11 +1250,29 @@ select.lf-input {
   display: inline-flex;
   gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.lf-result__actions .lf-btn {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .lf-btn--small {
   padding: 5px 10px;
   font-size: 0.82rem;
+}
+
+@container (min-width: 760px) {
+  .lf-result__head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .lf-result__actions {
+    justify-content: flex-end;
+  }
 }
 
 /* =========================================================

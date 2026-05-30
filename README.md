@@ -17,7 +17,7 @@ Three ways to open the dashboard:
 **v0.2.6** - Dashboard, Per-Encounter Loot, Hoard Loot, Per-Creature Loot, settings, obvious launchers, and art-object variant rolls.
 
 - GM-only dashboard with a tile grid of tools.
-- **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, item count, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
+- **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, and scale-shaped rarity defaults.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.

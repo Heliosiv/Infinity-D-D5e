@@ -149,6 +149,8 @@
 }
 
 .pc-roster__tier {
+  height: auto;
+  min-height: 26px;
   padding: 4px 8px;
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius-sm);
@@ -188,6 +190,7 @@
 .pc-roster__remove {
   width: 26px;
   height: 26px;
+  min-height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -299,6 +302,7 @@
 .pc-creature__reroll {
   width: 28px;
   height: 28px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

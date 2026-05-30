@@ -110,7 +110,7 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
     assert.equal(getSetting(SETTING_KEYS.DEFAULT_TIER), "t4");
     assert.equal(getSetting(SETTING_KEYS.ANIMATIONS), false);
     // Keys the mock returns `undefined` for still fall back.
-    assert.equal(getSetting(SETTING_KEYS.DEFAULT_COUNT), 6);
+    assert.equal(getSetting(SETTING_KEYS.DEFAULT_COUNT), 0);
   } finally {
     if (original === undefined) delete globalThis.game;
     else globalThis.game = original;
