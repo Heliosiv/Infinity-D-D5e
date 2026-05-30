@@ -621,7 +621,14 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   /** Roll a single creature's bundle and return a decorated entry. */
   _rollForCreature(creature, items) {
-    const filter = { ...this._filterSpec(), tiers: [creature.tier] };
+    // Per-Creature uses a tier window — the creature's tier AND one tier
+    // below — so a T2 mook can also drop T1 commons (arrows, daggers,
+    // torches). Without this, the candidate pool is restricted to that
+    // tier's curated magic items and corpses never carry mundane junk.
+    const filter = {
+      ...this._filterSpec(),
+      tiers: tierWindow(creature.tier),
+    };
     const candidates = filterCandidates(items, filter);
     const budget = computeLootBudget({
       tier: creature.tier,
@@ -693,6 +700,23 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+/**
+ * Build the tier window for a per-creature roll: the creature's tier
+ * plus the tier directly below, so a T2 enemy can also drop T1 commons.
+ * T1 stays alone (no tier below). Unknown tiers fall back to themselves
+ * so unusual data doesn't silently empty the pool.
+ */
+const TIER_ORDER = ["t1", "t2", "t3", "t4", "t5"];
+function tierWindow(tier) {
+  const key = String(tier ?? "")
+    .trim()
+    .toLowerCase();
+  const idx = TIER_ORDER.indexOf(key);
+  if (idx < 0) return [tier];
+  if (idx === 0) return ["t1"];
+  return [TIER_ORDER[idx - 1], TIER_ORDER[idx]];
+}
 
 /**
  * Map a per-creature result entry to the distribute helper's accepted

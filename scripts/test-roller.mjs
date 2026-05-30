@@ -474,9 +474,15 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 
 /* ------------------------------------------------------------------ *
  * rollLoot - count=0 budget fill mode
+ *
+ * smallPool gp values: a=5, b=50, c=500, d=800, e=50000. With budget 600
+ * and budgetHighFrac=1.10 (ceil=660), only a/b/c are affordable so the
+ * draw pool has totalWeight=3. RNG values are tuned to land on each
+ * index in turn: 0.1→a (idx 0), 0.5→b (idx 1), 0.9→c (idx 2). After
+ * the third pick runningTotal=555 ≥ budgetTargetLow=510 → loop breaks.
  * ------------------------------------------------------------------ */
 {
-  const rng = seqRng([0.05, 0.25, 0.45]);
+  const rng = seqRng([0.1, 0.5, 0.9]);
   const result = rollLoot(smallPool(), { count: 0, budgetGp: 600, rng });
 
   assert.deepEqual(
@@ -486,6 +492,78 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   );
   assert.equal(result.totalGp, 555);
   assert.equal(result.budgetGp, 600);
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — budget pre-filter excludes way-over-budget items
+ *
+ * Regression: at a small Per-Creature T2 budget (~160 gp) against a
+ * pool dominated by 1,000+ gp uncommons, Pass 1's "first pick always
+ * allowed" rule produced single-item bundles 10× over budget. The
+ * pre-filter restricts picks to items that fit individually.
+ * ------------------------------------------------------------------ */
+{
+  const pool = [
+    fakeItem({ _id: "cheap", name: "Arrow", gpValue: 1 }),
+    fakeItem({ _id: "fits", name: "Healing Potion", gpValue: 50 }),
+    fakeItem({ _id: "huge1", name: "Wand of Web", gpValue: 2000 }),
+    fakeItem({ _id: "huge2", name: "Gem of Brightness", gpValue: 2000 }),
+    fakeItem({ _id: "huge3", name: "Sickle +1", gpValue: 1000 }),
+  ];
+  // Budget 160 gp → ceil 176 gp → only cheap and fits are affordable.
+  // 100 rolls; verify NO huge item ever lands as the first pick.
+  let overBudgetPicks = 0;
+  for (let i = 0; i < 100; i += 1) {
+    const result = rollLoot(pool, {
+      count: 2,
+      budgetGp: 160,
+      rng: mulberry32(i + 1),
+    });
+    for (const entry of result.items) {
+      if (entry.item._id.startsWith("huge")) overBudgetPicks += 1;
+      assert.ok(
+        entry.gpValue <= 176,
+        `entry ${entry.item._id} (${entry.gpValue} gp) exceeds budget ceiling`,
+      );
+    }
+    assert.ok(
+      result.totalGp <= 160,
+      `roll ${i} total ${result.totalGp} gp blew past 160 gp budget`,
+    );
+  }
+  assert.equal(
+    overBudgetPicks,
+    0,
+    "no huge-gp items should appear when affordable picks exist",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * rollLoot — fallback when nothing fits the budget
+ *
+ * Pool is entirely above budget. Pre-filter would empty the draw pool;
+ * the fallback to the full pool preserves the "kept one item over
+ * budget" safety so a tiny budget still produces something.
+ * ------------------------------------------------------------------ */
+{
+  const pool = [
+    fakeItem({ _id: "p1", gpValue: 500 }),
+    fakeItem({ _id: "p2", gpValue: 800 }),
+    fakeItem({ _id: "p3", gpValue: 1200 }),
+  ];
+  const result = rollLoot(pool, {
+    count: 3,
+    budgetGp: 50,
+    rng: mulberry32(11),
+  });
+  assert.ok(
+    result.items.length >= 1,
+    "fallback keeps at least one item when nothing is affordable",
+  );
+  assert.ok(
+    result.warnings.length >= 1,
+    "warns that the budget could not be met",
+  );
 }
 
 /* ------------------------------------------------------------------ *

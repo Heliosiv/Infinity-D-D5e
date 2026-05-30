@@ -202,6 +202,18 @@ export function rollLoot(candidates, opts = {}) {
   // Pass 2 then trimmed the cheapest picks down to near-empty.)
   const budgetCeil = budgetEnforced ? budgetGp * budgetHighFrac : Infinity;
 
+  // Restrict picks to items that individually fit within the budget ceiling.
+  // Without this, the first pick is always accepted (so it doesn't return
+  // empty) but a 160 gp Per-Creature budget against a pool dominated by
+  // 1,000+ gp uncommons reliably picks one massive item and rejects every
+  // follow-up — producing single-item bundles 10× over budget. Pre-filtering
+  // here keeps picks honest in the common case; the fallback below preserves
+  // the one-item-over-budget safety when nothing affordable exists.
+  const affordablePool = budgetEnforced
+    ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
+    : pool;
+  const drawPool = affordablePool.length > 0 ? affordablePool : pool;
+
   // Pass 1: weighted random draw without replacement at the item level.
   const picked = new Map(); // _id → { item, quantity }
   let runningTotal = 0;
@@ -209,7 +221,7 @@ export function rollLoot(candidates, opts = {}) {
   let skippedForBudget = 0;
   while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
-    const item = weightedPick(pool, rng, magicBias);
+    const item = weightedPick(drawPool, rng, magicBias);
     if (!item) break;
     const id = String(item._id ?? item.id ?? `anon-${attempts}`);
     const gpValue = getItemGpValue(item);
