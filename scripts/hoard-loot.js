@@ -40,6 +40,15 @@ import {
   getItemRarity,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import {
+  clampFloat,
+  clampInt,
+  escapeHtml,
+  formatGp,
+  formatMagicBias,
+  prettyLootType,
+  titleCase,
+} from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -632,11 +641,6 @@ function tierLabel(tier) {
   return map[tier] ?? tier;
 }
 
-function titleCase(value) {
-  const raw = String(value ?? "");
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
-
 /**
  * Convert a key like "coinHeavy" or "very-rare" into a human label
  * with spaces: "Coin Heavy", "Very Rare". Empty input → "".
@@ -650,31 +654,11 @@ function humanizeKey(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function prettyLootType(value) {
-  return String(value ?? "")
-    .replace(/^loot\./, "")
-    .replace(/\./g, " · ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatGp(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return "0 gp";
-  return `${Math.round(num).toLocaleString()} gp`;
-}
-
 function formatPileBias(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Mixed";
   const pct = Math.round(Math.abs(num) * 100);
   return num > 0 ? `+${pct}% Items` : `+${pct}% Coins`;
-}
-
-function formatMagicBias(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Neutral";
-  const pct = Math.round(Math.abs(num) * 100);
-  return num > 0 ? `+${pct}% Magic` : `+${pct}% Mundane`;
 }
 
 function buildHoardChatHtml(result) {
@@ -702,14 +686,6 @@ function buildHoardChatHtml(result) {
 </div>`;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function resolveChatRecipients(mode) {
   if (mode === "public") return null;
   const users = globalThis.game?.users;
@@ -735,18 +711,6 @@ function sameSet(a, b) {
   if (setA.size !== new Set(b).size) return false;
   for (const item of b) if (!setA.has(item)) return false;
   return true;
-}
-
-function clampInt(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
-function clampFloat(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, value));
 }
 
 function setText(root, selector, text) {

@@ -194,23 +194,27 @@ export function rollLoot(candidates, opts = {}) {
   const hardCap = requestedCount > 0 ? requestedCount : maxCap;
   const fillBudget = requestedCount === 0 && budgetEnforced;
   const budgetTargetLow = fillBudget ? budgetGp * budgetLowFrac : 0;
-  const budgetTargetHigh = fillBudget ? budgetGp * budgetHighFrac : Infinity;
+  // Per-pick budget ceiling. Applies in BOTH bounded-count and fill modes
+  // whenever a budget is set: never add an item that pushes the running total
+  // past the budget window. The very first pick is always allowed, so even a
+  // tiny budget yields one item rather than an empty bundle.
+  // (Regression guard: a bounded `count` used to ignore the budget here, and
+  // Pass 2 then trimmed the cheapest picks down to near-empty.)
+  const budgetCeil = budgetEnforced ? budgetGp * budgetHighFrac : Infinity;
 
   // Pass 1: weighted random draw without replacement at the item level.
   const picked = new Map(); // _id → { item, quantity }
   let runningTotal = 0;
   let attempts = 0;
+  let skippedForBudget = 0;
   while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
     const item = weightedPick(pool, rng, magicBias);
     if (!item) break;
     const id = String(item._id ?? item.id ?? `anon-${attempts}`);
     const gpValue = getItemGpValue(item);
-    if (
-      fillBudget &&
-      picked.size > 0 &&
-      runningTotal + gpValue > budgetTargetHigh
-    ) {
+    if (picked.size > 0 && runningTotal + gpValue > budgetCeil) {
+      skippedForBudget += 1;
       continue;
     }
 
@@ -222,7 +226,7 @@ export function rollLoot(candidates, opts = {}) {
     }
     const existing = picked.get(id);
     const maxQty = getItemMaxQty(item);
-    if (existing.quantity < maxQty) {
+    if (existing.quantity < maxQty && runningTotal + gpValue <= budgetCeil) {
       existing.quantity += 1;
       runningTotal += gpValue;
     }
@@ -235,8 +239,12 @@ export function rollLoot(candidates, opts = {}) {
       `No items picked after ${attempts} attempts - pool size ${pool.length}, budget ${budgetEnforced ? budgetGp : "unbounded"}.`,
     );
   } else if (requestedCount > 0 && picked.size < requestedCount) {
+    const reason =
+      skippedForBudget > 0
+        ? `the ${budgetGp} gp budget had room for only ${picked.size}`
+        : `the pool only produced ${picked.size} after ${attempts} attempts`;
     warnings.push(
-      `Requested ${requestedCount} item(s) but the pool only produced ${picked.size} after ${attempts} attempts.`,
+      `Requested ${requestedCount} item(s) but ${reason}. Widen the rarity filter, raise the budget, or lower the item count.`,
     );
   } else if (fillBudget && runningTotal < budgetTargetLow) {
     warnings.push(
@@ -257,7 +265,9 @@ export function rollLoot(candidates, opts = {}) {
   // for two $5 daggers; tone-of-bundle matters more than count.)
   if (budgetEnforced && totalGp > budgetGp) {
     materialized.sort((a, b) => a.gpTotal - b.gpTotal);
-    while (totalGp > budgetGp && materialized.length > 0) {
+    // Keep at least one item — an empty haul is useless. If even the single
+    // cheapest match exceeds the budget we keep it and warn instead.
+    while (totalGp > budgetGp && materialized.length > 1) {
       const dropped = materialized.shift();
       totalGp -= dropped.gpTotal;
       droppedForBudget += 1;
@@ -265,6 +275,11 @@ export function rollLoot(candidates, opts = {}) {
     if (droppedForBudget > 0) {
       warnings.push(
         `Dropped ${droppedForBudget} item(s) to fit gp budget of ${budgetGp}. Final total: ${totalGp} gp.`,
+      );
+    }
+    if (totalGp > budgetGp) {
+      warnings.push(
+        `Kept one item at ${totalGp} gp over the ${budgetGp} gp budget — no cheaper match was available. Widen the rarity filter or raise the budget.`,
       );
     }
   }

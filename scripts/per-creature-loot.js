@@ -28,6 +28,15 @@ import {
   getItemRarity,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import {
+  clampFloat,
+  clampInt,
+  escapeHtml,
+  formatGp,
+  formatMagicBias,
+  prettyLootType,
+  titleCase,
+} from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -157,7 +166,9 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
         id: c.id,
         name: c.name,
         tier: c.tier,
-        budgetLabel: formatGp(computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 })),
+        budgetLabel: formatGp(
+          computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
+        ),
         tierOptions: TIERS.map((tier) => ({
           value: tier,
           label: tier.toUpperCase(),
@@ -525,7 +536,9 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   _rosterTotalBudget() {
     return this._form.roster.reduce(
-      (sum, c) => sum + computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
+      (sum, c) =>
+        sum +
+        computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
       0,
     );
   }
@@ -588,7 +601,11 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   _rollForCreature(creature, items) {
     const filter = { ...this._filterSpec(), tiers: [creature.tier] };
     const candidates = filterCandidates(items, filter);
-    const budget = computeLootBudget({ tier: creature.tier, scale: "trivial", partySize: 4 });
+    const budget = computeLootBudget({
+      tier: creature.tier,
+      scale: "trivial",
+      partySize: 4,
+    });
     const raw = rollLoot(candidates, {
       count: this._form.itemsPerCreature,
       budgetGp: budget,
@@ -665,31 +682,6 @@ function makeCreature({ name, tier }) {
   };
 }
 
-function titleCase(value) {
-  const raw = String(value ?? "");
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
-
-function prettyLootType(value) {
-  return String(value ?? "")
-    .replace(/^loot\./, "")
-    .replace(/\./g, " · ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatGp(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return "0 gp";
-  return `${Math.round(num).toLocaleString()} gp`;
-}
-
-function formatMagicBias(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Neutral";
-  const pct = Math.round(Math.abs(num) * 100);
-  return num > 0 ? `+${pct}% Magic` : `+${pct}% Mundane`;
-}
-
 function buildPerCreatureChatHtml(result) {
   const sections = result.creatures
     .map((c) => {
@@ -720,14 +712,6 @@ function buildPerCreatureChatHtml(result) {
 </div>`;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function resolveChatRecipients(mode) {
   if (mode === "public") return null;
   const users = globalThis.game?.users;
@@ -741,18 +725,6 @@ function resolveChatRecipients(mode) {
     if (mode === "whisper-players" && !isGM) out.push(user.id);
   }
   return out;
-}
-
-function clampInt(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
-function clampFloat(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, value));
 }
 
 function setText(root, selector, text) {

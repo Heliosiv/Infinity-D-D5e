@@ -36,7 +36,9 @@ const cache = new Map(); // packId → { items, fetchedAt }
  */
 export async function loadCompendiumItems(opts = {}) {
   if (typeof globalThis.game === "undefined") {
-    throw new Error("NotInFoundry: loadCompendiumItems requires Foundry runtime");
+    throw new Error(
+      "NotInFoundry: loadCompendiumItems requires Foundry runtime",
+    );
   }
   const packId =
     String(opts.packId ?? "").trim() || "infinity-dnd5e.infinity-dnd5e-items";
@@ -50,16 +52,29 @@ export async function loadCompendiumItems(opts = {}) {
 
   const pack = game.packs?.get(packId);
   if (!pack) {
-    ui.notifications?.warn(
-      `infinity-dnd5e: compendium ${packId} not found.`,
-    );
+    ui.notifications?.warn(`infinity-dnd5e: compendium ${packId} not found.`);
     cache.set(packId, { items: [], fetchedAt: now });
     return [];
   }
 
-  const documents = await pack.getDocuments();
+  let documents;
+  try {
+    documents = await pack.getDocuments();
+  } catch (err) {
+    console.error(`infinity-dnd5e | failed to load compendium ${packId}`, err);
+    ui.notifications?.error(
+      `infinity-dnd5e: could not load compendium ${packId}. See the console (F12) for details.`,
+    );
+    // Cache an empty sentinel so callers degrade to an empty pool (a clear
+    // "no items match" warning) instead of a rejected promise that leaves the
+    // loading UI stuck — and so the first-render prime guard doesn't re-fire
+    // on every subsequent render.
+    cache.set(packId, { items: [], fetchedAt: now });
+    return [];
+  }
   const items = documents.map((doc) => {
-    const data = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+    const data =
+      typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
     return {
       ...data,
       uuid: doc.uuid ?? `Compendium.${packId}.${data._id ?? doc.id}`,

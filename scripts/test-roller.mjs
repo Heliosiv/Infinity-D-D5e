@@ -437,6 +437,29 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * rollLoot — tiny budget vs a high-value-only pool keeps >=1 item
+ * (regression: a bounded count used to ignore the budget in Pass 1 and
+ *  Pass 2 then trimmed every item, returning an empty bundle)
+ * ------------------------------------------------------------------ */
+{
+  const pool = [
+    fakeItem({ _id: "x", name: "Pricey", gpValue: 500 }),
+    fakeItem({ _id: "y", name: "Pricier", gpValue: 800 }),
+    fakeItem({ _id: "z", name: "Priciest", gpValue: 1200 }),
+  ];
+  const result = rollLoot(pool, { count: 6, budgetGp: 50, rng: mulberry32(3) });
+  assert.ok(
+    result.items.length >= 1 && result.items.length <= 2,
+    "tiny budget keeps at least one item and never empties the bundle",
+  );
+  assert.ok(result.totalGp > 0, "the kept item carries its value");
+  assert.ok(
+    result.warnings.length >= 1,
+    "warns that the budget could not be met",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot — empty / zero-count guards
  * ------------------------------------------------------------------ */
 {

@@ -34,6 +34,16 @@ import {
   getItemRarity,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting, parseRaritiesSetting } from "./settings.js";
+import {
+  clampFloat,
+  clampInt,
+  escapeHtml,
+  formatGp,
+  formatMagicBias,
+  formatMultiplier,
+  prettyLootType,
+  titleCase,
+} from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -656,6 +666,17 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         return;
     }
     this._form = next;
+    // Keep a chip's visual state in sync with its checkbox. We deliberately
+    // don't re-render on input (sliders fire continuously), so the
+    // server-rendered `is-checked` class would otherwise go stale: a chip
+    // could stay highlighted after being unchecked — making the user think a
+    // rarity is still selected when the filter (which reads the real checkbox
+    // state) has already dropped it.
+    if (target.type === "checkbox") {
+      target
+        .closest(".lf-chip")
+        ?.classList.toggle("is-checked", target.checked);
+    }
     this._patchLiveReadouts();
   }
 
@@ -942,32 +963,6 @@ function tierLabel(tier) {
   return map[tier] ?? tier;
 }
 
-function titleCase(value) {
-  const raw = String(value ?? "");
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
-
-function prettyLootType(value) {
-  return String(value ?? "")
-    .replace(/^loot\./, "")
-    .replace(/\./g, " · ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/** Format an integer gp value with thousands separators and a "gp" suffix. */
-function formatGp(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return "0 gp";
-  return `${Math.round(num).toLocaleString()} gp`;
-}
-
-/** Render a multiplier as a short fixed-width string ("1.50", "0.65"). */
-function formatMultiplier(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "1.00";
-  return num.toFixed(2);
-}
-
 function toDistributableItem(entry) {
   if (!entry) return null;
   if (entry.itemData) {
@@ -1037,15 +1032,6 @@ function resolveChatRecipients(mode) {
   return out;
 }
 
-/** Minimal HTML-escape for names we splice into chat HTML. */
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /**
  * Read the live player-character count from Foundry. Returns 0 when
  * the game isn't initialized (e.g. in tests) so the caller can fall
@@ -1059,34 +1045,6 @@ function livePartySize() {
     if (user?.character && user?.active !== false) count += 1;
   }
   return count;
-}
-
-/**
- * Map the magic-bias slider to a human label.
- * 0 → "Neutral"; otherwise the percentage toward magic / mundane.
- */
-function formatMagicBias(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Neutral";
-  const pct = Math.round(Math.abs(num) * 100);
-  return num > 0 ? `+${pct}% Magic` : `+${pct}% Mundane`;
-}
-
-/**
- * Coerce a form value into a float in [min, max], with a fallback when
- * the user clears the field or types non-numeric input.
- */
-function clampFloat(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, value));
-}
-
-/** Integer variant of clampFloat. */
-function clampInt(raw, min, max, fallback) {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
 /** Set element.textContent if the element exists; no-op otherwise. */
