@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Build, validate, and apply the Infinity D&D5e generated item-art plan.
+ * Build, validate, restore, and apply the Infinity D&D5e generated item-art plan.
  *
  * This script intentionally does not call the Image API. It prepares
- * deterministic batch inputs, validates generated WebP assets, and only
- * rewrites pack item.img paths after the planned local files exist.
+ * deterministic batch inputs, validates generated WebP assets, protects
+ * existing compendium icons, and only rewrites pack item.img paths for items
+ * whose original artwork is absent.
  */
 
 import { existsSync } from "node:fs";
@@ -18,6 +19,15 @@ const repoRoot = path.resolve(here, "..");
 const PLAN_PATH = path.join(repoRoot, "assets", "item-art-plan.json");
 const PACK_PATH = path.join(repoRoot, "packs", "infinity-dnd5e-items.db");
 const TMP_IMAGEGEN_DIR = path.join(repoRoot, "tmp", "imagegen");
+const PLAN_SCHEMA = "infinity-dnd5e-item-art-plan-v2";
+
+const ABSENT_ART_PATHS = new Set(["icons/svg/item-bag.svg"]);
+
+const ABSENT_ART_PATTERNS = Object.freeze([
+  /^$/,
+  /^icons\/svg\/item-bag\.svg$/i,
+  /^icons\/commodities\/treasure\/token-/i,
+]);
 
 export const ART_CONFIG = Object.freeze({
   model: "gpt-image-2",
@@ -54,6 +64,46 @@ function fromRepoRelative(relativePath) {
   return resolved;
 }
 
+function normalizeArtPath(value) {
+  return String(value ?? "").trim().replaceAll("\\", "/");
+}
+
+export function isGeneratedItemArtPath(value) {
+  return normalizeArtPath(value).startsWith("assets/item-art/");
+}
+
+export function existingCompendiumArtPath(item) {
+  const nativeFallback = normalizeArtPath(
+    item?.flags?.["infinity-dnd5e"]?.art?.fallbackIcon,
+  );
+  if (nativeFallback) return nativeFallback;
+
+  const legacyFallback = normalizeArtPath(
+    item?.flags?.["party-operations"]?.art?.fallbackIcon,
+  );
+  if (legacyFallback) return legacyFallback;
+
+  const current = normalizeArtPath(item?.img);
+  return isGeneratedItemArtPath(current) ? "" : current;
+}
+
+export function artworkAbsenceReason(item) {
+  const source = existingCompendiumArtPath(item);
+  if (!source) return "missing source image path";
+  if (ABSENT_ART_PATHS.has(source)) return `default placeholder: ${source}`;
+  if (/^icons\/commodities\/treasure\/token-/i.test(source)) {
+    return `generic treasure token placeholder: ${source}`;
+  }
+  if (ABSENT_ART_PATTERNS.some((pattern) => pattern.test(source))) {
+    return `default placeholder: ${source}`;
+  }
+  return "";
+}
+
+export function isArtworkAbsent(item) {
+  return artworkAbsenceReason(item).length > 0;
+}
+
 export async function loadArtPlan() {
   return JSON.parse(await readFile(PLAN_PATH, "utf8"));
 }
@@ -68,7 +118,7 @@ async function loadPackItems() {
 
 export function validatePlanShape(plan) {
   const errors = [];
-  if (plan?.schema !== "infinity-dnd5e-item-art-plan-v1") {
+  if (plan?.schema !== PLAN_SCHEMA) {
     errors.push(`Unexpected art-plan schema: ${plan?.schema ?? "(missing)"}`);
   }
 
@@ -210,7 +260,7 @@ function assertJobCount(kind, actual, expected) {
   }
 }
 
-export async function validateGeneratedAssets(plan) {
+export async function validateGeneratedAssets(plan, { presentOnly = false } = {}) {
   validatePlanShape(plan);
   const errors = [];
   const records = new Map();
@@ -225,6 +275,11 @@ export async function validateGeneratedAssets(plan) {
       }
       if (path.extname(asset.path).toLowerCase() !== ".webp") {
         errors.push(`${prefix}: expected .webp extension`);
+        continue;
+      }
+      if (!existsSync(absolutePath)) {
+        if (presentOnly) continue;
+        errors.push(`${prefix}: missing generated asset ${asset.path}`);
         continue;
       }
       const info = await stat(absolutePath);
@@ -342,7 +397,9 @@ function readUInt24LE(buffer, offset) {
 
 async function commandValidate() {
   const plan = await loadArtPlan();
-  const result = await validateGeneratedAssets(plan);
+  const result = await validateGeneratedAssets(plan, {
+    presentOnly: new Set(process.argv.slice(2)).has("--present-only"),
+  });
   if (result.errors.length > 0) {
     throw new Error(
       `Item-art validation failed (${result.errors.length} issue(s)):\n${result.errors.join("\n")}`,
@@ -353,9 +410,9 @@ async function commandValidate() {
   );
 }
 
-async function commandApply() {
+async function commandApply({ presentOnly = false } = {}) {
   const plan = await loadArtPlan();
-  const validation = await validateGeneratedAssets(plan);
+  const validation = await validateGeneratedAssets(plan, { presentOnly });
   if (validation.errors.length > 0) {
     throw new Error(
       `Refusing to apply item art until validation passes:\n${validation.errors.join("\n")}`,
@@ -373,26 +430,56 @@ async function commandApply() {
   const errors = [];
   let imageUpdates = 0;
   let metadataUpdates = 0;
+  let restoredExisting = 0;
+  let appliedMissing = 0;
 
   for (const item of packItems) {
+    const existingArt = existingCompendiumArtPath(item);
+    const absenceReason = artworkAbsenceReason(item);
     const assignment = assignmentByItem.get(item._id);
+
+    if (!absenceReason) {
+      if (assignment) {
+        errors.push(
+          `${item._id} ${item.name ?? ""}: plan tries to replace existing artwork ${existingArt}`,
+        );
+        continue;
+      }
+      if (markArtRestored(item)) metadataUpdates += 1;
+      if (existingArt && item.img !== existingArt) {
+        item.img = existingArt;
+        imageUpdates += 1;
+        restoredExisting += 1;
+      }
+      continue;
+    }
+
     if (!assignment) {
       errors.push(
-        `${item._id ?? "(missing)"} ${item.name ?? ""}: no art assignment`,
+        `${item._id ?? "(missing)"} ${item.name ?? ""}: no art assignment for absent artwork (${absenceReason})`,
       );
       continue;
     }
     if (!validPaths.has(assignment.path)) {
+      if (presentOnly) {
+        if (existingArt && item.img !== existingArt) {
+          item.img = existingArt;
+          imageUpdates += 1;
+          restoredExisting += 1;
+        }
+        if (markArtAssignment(item, assignment, false)) metadataUpdates += 1;
+        continue;
+      }
       errors.push(
         `${item._id} ${item.name ?? ""}: planned asset did not validate (${assignment.path})`,
       );
       continue;
     }
-    assertPlannedPathMatchesFlags(item, assignment, errors);
     if (markArtGenerated(item, assignment)) metadataUpdates += 1;
     if (item.img !== assignment.path) {
       item.img = assignment.path;
       imageUpdates += 1;
+      appliedMissing += 1;
     }
   }
 
@@ -401,24 +488,87 @@ async function commandApply() {
   }
 
   if (imageUpdates === 0 && metadataUpdates === 0) {
-    console.log("item-art apply: pack already points at validated local art");
+    console.log("item-art apply: pack already matches the absent-art policy");
     return;
   }
 
   const body = packItems.map((item) => JSON.stringify(item)).join("\n");
   await writeFile(PACK_PATH, `${body}\n`, "utf8");
   console.log(
-    `item-art apply: updated ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s)`,
+    `item-art apply: updated ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s), restored ${restoredExisting} existing icon(s), applied ${appliedMissing} absent-art icon(s)`,
   );
 }
 
+async function commandRestore() {
+  const packItems = await loadPackItems();
+  let imageUpdates = 0;
+  let metadataUpdates = 0;
+  const unresolved = [];
+
+  for (const item of packItems) {
+    const existingArt = existingCompendiumArtPath(item);
+    if (!existingArt) {
+      unresolved.push(`${item._id ?? "(missing)"} ${item.name ?? ""}`);
+      continue;
+    }
+    if (item.img !== existingArt) {
+      item.img = existingArt;
+      imageUpdates += 1;
+    }
+    if (markArtRestored(item)) metadataUpdates += 1;
+  }
+
+  if (unresolved.length > 0) {
+    throw new Error(
+      `Cannot restore ${unresolved.length} item(s) without a source icon:\n${unresolved.join("\n")}`,
+    );
+  }
+
+  if (imageUpdates > 0 || metadataUpdates > 0) {
+    const body = packItems.map((item) => JSON.stringify(item)).join("\n");
+    await writeFile(PACK_PATH, `${body}\n`, "utf8");
+  }
+
+  console.log(
+    `item-art restore: restored ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s)`,
+  );
+}
+
+async function commandAbsent() {
+  const packItems = await loadPackItems();
+  const absent = packItems
+    .map((item) => ({
+      id: item._id,
+      name: item.name,
+      type: item.type,
+      img: existingCompendiumArtPath(item),
+      reason: artworkAbsenceReason(item),
+    }))
+    .filter((entry) => entry.reason);
+
+  if (absent.length === 0) {
+    console.log("No compendium items are missing source artwork.");
+    return;
+  }
+
+  for (const item of absent) {
+    console.log(
+      `${item.id}\t${item.name}\t${item.type ?? ""}\t${item.reason}`,
+    );
+  }
+}
+
 function markArtGenerated(item, assignment) {
+  return markArtAssignment(item, assignment, true);
+}
+
+function markArtAssignment(item, assignment, generated) {
   let updated = false;
   for (const scope of ["infinity-dnd5e", "party-operations"]) {
     const flags = item.flags?.[scope];
     if (!flags?.art) continue;
-    if (flags.art.generated !== true) {
-      flags.art.generated = true;
+    if (flags.art.generated !== generated) {
+      flags.art.generated = generated;
       updated = true;
     }
     if (flags.art.assetId !== assignment.assetId) {
@@ -433,20 +583,17 @@ function markArtGenerated(item, assignment) {
   return updated;
 }
 
-function assertPlannedPathMatchesFlags(item, assignment, errors) {
-  const nativeArt = item?.flags?.["infinity-dnd5e"]?.art;
-  const legacyArt = item?.flags?.["party-operations"]?.art;
-  for (const [label, art] of [
-    ["flags.infinity-dnd5e.art", nativeArt],
-    ["flags.party-operations.art", legacyArt],
-  ]) {
-    if (!art?.plannedPath) continue;
-    if (art.plannedPath !== assignment.path) {
-      errors.push(
-        `${item._id} ${item.name ?? ""}: ${label}.plannedPath is ${art.plannedPath}, expected ${assignment.path}`,
-      );
+function markArtRestored(item) {
+  let updated = false;
+  for (const scope of ["infinity-dnd5e", "party-operations"]) {
+    const flags = item.flags?.[scope];
+    if (!flags?.art) continue;
+    if (flags.art.generated !== false) {
+      flags.art.generated = false;
+      updated = true;
     }
   }
+  return updated;
 }
 
 async function main() {
@@ -461,7 +608,15 @@ async function main() {
     return;
   }
   if (command === "apply") {
-    await commandApply();
+    await commandApply({ presentOnly: flags.has("--present-only") });
+    return;
+  }
+  if (command === "restore") {
+    await commandRestore();
+    return;
+  }
+  if (command === "absent") {
+    await commandAbsent();
     return;
   }
   if (command === "check") {
@@ -471,7 +626,7 @@ async function main() {
   }
 
   console.error(
-    "Usage: node scripts/art-pipeline.mjs <jobs|validate|apply|check> [--missing-only]",
+    "Usage: node scripts/art-pipeline.mjs <jobs|validate|apply|restore|absent|check> [--missing-only] [--present-only]",
   );
   process.exitCode = 1;
 }

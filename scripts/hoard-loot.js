@@ -31,6 +31,7 @@ import {
 } from "./loot/hoard-budget.js";
 import { nearestPreset } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
+import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
   computePackStats,
@@ -115,6 +116,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Open (or focus) the singleton instance. */
   static open() {
+    playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!HoardLootApp._instance) HoardLootApp._instance = new HoardLootApp();
     if (HoardLootApp._instance.rendered) HoardLootApp._instance.bringToFront();
     else HoardLootApp._instance.render(true);
@@ -287,18 +289,22 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {HoardLootApp} */
   static async _onGenerate(_event, _target) {
+    if (this._loadingItems) return;
+    playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate();
   }
 
   /** @this {HoardLootApp} */
   static async _onReset(_event, _target) {
     this._form = HoardLootApp.buildDefaultForm();
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this.render();
   }
 
   /** @this {HoardLootApp} */
   static async _onClear(_event, _target) {
     this._lastResult = null;
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this.render();
   }
 
@@ -308,7 +314,10 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!uuid) return;
     try {
       const doc = await fromUuid(uuid);
-      if (doc?.sheet) doc.sheet.render(true);
+      if (doc?.sheet) {
+        doc.sheet.render(true);
+        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
+      }
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
     }
@@ -317,6 +326,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** @this {HoardLootApp} */
   static async _onSendToChat(_event, _target) {
     if (!this._lastResult) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("Nothing to send — roll a hoard first.");
       return;
     }
@@ -331,7 +341,9 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (whispers !== null) messageData.whisper = whispers;
     try {
       await ChatMessage.create(messageData);
+      playModuleSound(SOUND_EVENTS.CHAT_SEND);
     } catch (error) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.error(`${MODULE_ID} | failed to send hoard to chat`, error);
       ui.notifications?.error("Failed to send loot to chat. See console.");
     }
@@ -340,6 +352,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** @this {HoardLootApp} */
   static async _onDepositHaul(_event, _target) {
     if (!this._lastResult) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("Nothing to deposit — roll a hoard first.");
       return;
     }
@@ -350,15 +363,17 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ? this._lastResult.coinBreakdown
       : null;
     if (items.length === 0 && !currency) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("This hoard has no items or coins to deposit.");
       return;
     }
-    await promptDistributeItems(items, {
+    const result = await promptDistributeItems(items, {
       title: "Deposit Hoard to Actor",
       hint: `Choose a character to receive the hoard's ${items.length} item(s).`,
       currency,
       coinLabel: this._lastResult.coinBreakdownLabel,
     });
+    if (result) playModuleSound(SOUND_EVENTS.DEPOSIT);
   }
 
   /** @this {HoardLootApp} */
@@ -600,9 +615,11 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _generate() {
     if (this._loadingItems) return;
+    let generatedResult = null;
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {
       this._loadingItems = true;
+      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
       await this.render();
     }
     try {
@@ -656,14 +673,17 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         droppedForBudget: raw.droppedForBudget ?? 0,
         warnings: raw.warnings ?? [],
       };
+      generatedResult = this._lastResult;
     } finally {
       this._loadingItems = false;
       await this.render();
+      if (generatedResult) playResultSound(generatedResult, { kind: "hoard" });
     }
   }
 
   async _primePackStats() {
     this._loadingItems = true;
+    playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
     } finally {
@@ -750,8 +770,7 @@ function buildHoardChatHtml(result) {
       // Art variants display their rolled name ("Signed Marble Bust");
       // chat link still points at the base compendium item via uuid so
       // clicking opens the source sheet.
-      const displayName =
-        entry.displayName ?? entry.item?.name ?? "?";
+      const displayName = entry.displayName ?? entry.item?.name ?? "?";
       const link = entry.item?.uuid
         ? `@UUID[${entry.item.uuid}]{${escapeHtml(displayName)}}`
         : escapeHtml(displayName);

@@ -1,12 +1,16 @@
 const MONKS_TOKENBAR_ID = "monks-tokenbar";
-const PATCH_MARKER = "__infinityDnd5ePlayerActorPatch";
+const PATCH_MARKER = "__infinityDnd5ePlayerActorPatchV2";
 
-export async function registerMonksTokenbarCompat() {
+let tokenEntryBuilder = null;
+
+export async function registerMonksTokenbarCompat({
+  importModule = (path) => import(path),
+} = {}) {
   if (!globalThis.game?.modules?.get?.(MONKS_TOKENBAR_ID)?.active) return;
 
   let module;
   try {
-    module = await import("/modules/monks-tokenbar/apps/savingthrow.js");
+    module = await importModule("/modules/monks-tokenbar/apps/savingthrow.js");
   } catch (error) {
     console.warn(
       "infinity-dnd5e | failed to load Monk's TokenBar request-roll compat",
@@ -18,37 +22,84 @@ export async function registerMonksTokenbarCompat() {
   const SavingThrowApp = module?.SavingThrowApp;
   if (!SavingThrowApp || SavingThrowApp[PATCH_MARKER]) return;
 
+  try {
+    const tokenbarModule = await importModule(
+      "/modules/monks-tokenbar/monks-tokenbar.js",
+    );
+    tokenEntryBuilder = tokenbarModule?.MonksTokenBar?.getTokenEntries ?? null;
+  } catch {
+    tokenEntryBuilder = globalThis.game?.MonksTokenBar?.getTokenEntries ?? null;
+  }
+
   const originalPrepareBodyContext =
     SavingThrowApp.prototype._prepareBodyContext;
   const originalDoRequestRoll = SavingThrowApp.prototype.doRequestRoll;
+  const originalGetData = SavingThrowApp.prototype.getData;
+  const originalRequestRoll = SavingThrowApp.prototype.requestRoll;
+  const originalChangeTokens = SavingThrowApp.prototype.changeTokens;
+
+  if (typeof originalPrepareBodyContext === "function") {
+    SavingThrowApp.prototype._prepareBodyContext = function (context, options) {
+      ensurePlayerActorEntries(this);
+      return originalPrepareBodyContext.call(this, context, options);
+    };
+  }
+
+  if (typeof originalDoRequestRoll === "function") {
+    SavingThrowApp.prototype.doRequestRoll = function (event, roll) {
+      ensurePlayerActorEntries(this);
+      return originalDoRequestRoll.call(this, event, roll);
+    };
+  }
+
+  if (typeof originalGetData === "function") {
+    SavingThrowApp.prototype.getData = function (options) {
+      ensurePlayerActorEntries(this);
+      return originalGetData.call(this, options);
+    };
+  }
+
+  if (typeof originalRequestRoll === "function") {
+    SavingThrowApp.prototype.requestRoll = function (...args) {
+      ensurePlayerActorEntries(this);
+      return originalRequestRoll.apply(this, args);
+    };
+  }
+
+  if (typeof originalChangeTokens === "function") {
+    SavingThrowApp.prototype.changeTokens = function (event) {
+      if (event?.target?.dataset?.type === "player") {
+        const applied = ensurePlayerActorEntries(this, { force: true });
+        if (applied) {
+          this.render?.(true);
+          globalThis.window?.setTimeout?.(() => {
+            this.setPosition?.({ height: "auto" });
+          }, 100);
+          return undefined;
+        }
+      }
+      return originalChangeTokens.call(this, event);
+    };
+  }
+
   const originalAddPlayers = SavingThrowApp.addPlayers;
+  if (typeof originalAddPlayers === "function") {
+    const patchedAddPlayers = function (...args) {
+      const applied = ensurePlayerActorEntries(this, { force: true });
+      if (applied) {
+        this.render?.(true);
+        globalThis.window?.setTimeout?.(() => {
+          this.setPosition?.({ height: "auto" });
+        }, 100);
+        return undefined;
+      }
+      return originalAddPlayers.apply(this, args);
+    };
 
-  SavingThrowApp.prototype._prepareBodyContext = function (context, options) {
-    ensurePlayerActorEntries(this);
-    return originalPrepareBodyContext.call(this, context, options);
-  };
-
-  SavingThrowApp.prototype.doRequestRoll = function (event, roll) {
-    ensurePlayerActorEntries(this);
-    return originalDoRequestRoll.call(this, event, roll);
-  };
-
-  const patchedAddPlayers = function (...args) {
-    const entries = buildPlayerActorEntries();
-    if (entries.length > 0) {
-      this.entries = entries;
-      this.render(true);
-      globalThis.window?.setTimeout?.(() => {
-        this.setPosition?.({ height: "auto" });
-      }, 100);
-      return undefined;
+    SavingThrowApp.addPlayers = patchedAddPlayers;
+    if (SavingThrowApp.DEFAULT_OPTIONS?.actions?.addPlayers) {
+      SavingThrowApp.DEFAULT_OPTIONS.actions.addPlayers = patchedAddPlayers;
     }
-    return originalAddPlayers.apply(this, args);
-  };
-
-  SavingThrowApp.addPlayers = patchedAddPlayers;
-  if (SavingThrowApp.DEFAULT_OPTIONS?.actions?.addPlayers) {
-    SavingThrowApp.DEFAULT_OPTIONS.actions.addPlayers = patchedAddPlayers;
   }
 
   Object.defineProperty(SavingThrowApp, PATCH_MARKER, {
@@ -57,26 +108,40 @@ export async function registerMonksTokenbarCompat() {
   });
 }
 
-function ensurePlayerActorEntries(app) {
-  if (!app || (Array.isArray(app.entries) && app.entries.length > 0)) return;
+function ensurePlayerActorEntries(app, { force = false } = {}) {
+  if (!app) return false;
   const entries = buildPlayerActorEntries();
-  if (entries.length > 0) app.entries = entries;
+  if (entries.length === 0) return false;
+  if (
+    force ||
+    !Array.isArray(app.entries) ||
+    app.entries.length === 0 ||
+    isDefaultScenePlayerEntryList(app.entries)
+  ) {
+    app.entries = entries;
+    return true;
+  }
+  return false;
 }
 
 function buildPlayerActorEntries() {
   const targets = collectPlayerRequestTargets();
-  const monksApi = globalThis.game?.MonksTokenBar;
   const tokenTargets = targets.filter((target) => !isActorDocument(target));
   const actorTargets = targets.filter(isActorDocument);
-  const tokenEntries =
-    tokenTargets.length > 0 && monksApi?.getTokenEntries
-      ? monksApi.getTokenEntries(tokenTargets)
-      : [];
+  const tokenEntries = getTokenEntries(tokenTargets);
 
   return [
     ...tokenEntries,
     ...actorTargets.map((actor) => createActorRequestEntry(actor)),
   ];
+}
+
+function getTokenEntries(tokens) {
+  if (tokens.length === 0) return [];
+  if (typeof tokenEntryBuilder === "function") {
+    return tokenEntryBuilder(tokens);
+  }
+  return tokens.map((token) => createTokenRequestEntry(token));
 }
 
 export function collectPlayerRequestTargets({
@@ -120,6 +185,34 @@ function uniqueByActor(tokens) {
     result.push(token);
   }
   return result;
+}
+
+function isDefaultScenePlayerEntryList(entries) {
+  if (Array.from(globalThis.canvas?.tokens?.controlled ?? []).length > 0) {
+    return false;
+  }
+  const defaultActorIds = uniqueByActor(
+    Array.from(globalThis.canvas?.tokens?.placeables ?? []).filter((token) =>
+      isDefaultPlayerToken(token),
+    ),
+  ).map((token) => token?.actor?.id);
+  if (
+    defaultActorIds.length === 0 ||
+    defaultActorIds.length !== entries.length
+  ) {
+    return false;
+  }
+  const currentActorIds = entries.map((entry) => getEntryActorId(entry));
+  return defaultActorIds.every(
+    (actorId) => actorId && currentActorIds.includes(actorId),
+  );
+}
+
+function getEntryActorId(entry) {
+  if (entry?.token?.actor?.id) return entry.token.actor.id;
+  if (isActorDocument(entry?.token)) return entry.token.id;
+  if (entry?.actor?.id) return entry.actor.id;
+  return null;
 }
 
 function isDefaultPlayerToken(token) {
@@ -182,6 +275,21 @@ function createActorRequestEntry(actor) {
     name: actor.name,
     uuid: actor.uuid,
   };
+  const entry = {
+    fastForward: undefined,
+    keys: {},
+    request: undefined,
+    token,
+  };
+  Object.defineProperty(entry, "id", {
+    get() {
+      return this.token.id;
+    },
+  });
+  return entry;
+}
+
+function createTokenRequestEntry(token) {
   const entry = {
     fastForward: undefined,
     keys: {},

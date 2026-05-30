@@ -19,6 +19,7 @@
 
 import { computeLootBudget, nearestPreset } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
+import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
@@ -105,6 +106,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   /** Open (or focus) the singleton instance. */
   static open() {
+    playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!PerCreatureLootApp._instance)
       PerCreatureLootApp._instance = new PerCreatureLootApp();
     if (PerCreatureLootApp._instance.rendered)
@@ -257,36 +259,49 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   /** @this {PerCreatureLootApp} */
   static async _onGenerate(_event, _target) {
+    if (this._loadingItems) return;
+    if (this._form.roster.length > 0) {
+      playModuleSound(SOUND_EVENTS.ROLL_START);
+    }
     await this._generateAll();
   }
 
   /** @this {PerCreatureLootApp} */
   static async _onReset(_event, _target) {
     this._form = PerCreatureLootApp.buildDefaultForm();
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this.render();
   }
 
   /** @this {PerCreatureLootApp} */
   static async _onClear(_event, _target) {
     this._lastResult = null;
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this.render();
   }
 
   /** @this {PerCreatureLootApp} */
   static async _onAddCreature(_event, _target) {
-    if (this._form.roster.length >= ROSTER_LIMIT) return;
+    if (this._form.roster.length >= ROSTER_LIMIT) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
     const next = makeCreature({
       name: `Creature ${this._form.roster.length + 1}`,
       tier: this._form.defaultTier,
     });
     this._form = { ...this._form, roster: [...this._form.roster, next] };
+    playModuleSound(SOUND_EVENTS.ROSTER_ADD);
     await this.render();
   }
 
   /** @this {PerCreatureLootApp} */
   static async _onAddFive(_event, _target) {
     const remaining = ROSTER_LIMIT - this._form.roster.length;
-    if (remaining <= 0) return;
+    if (remaining <= 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
     const adds = [];
     for (let i = 0; i < Math.min(5, remaining); i += 1) {
       adds.push(
@@ -297,6 +312,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       );
     }
     this._form = { ...this._form, roster: [...this._form.roster, ...adds] };
+    playModuleSound(SOUND_EVENTS.ROSTER_ADD);
     await this.render();
   }
 
@@ -308,6 +324,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       ...this._form,
       roster: this._form.roster.filter((c) => c.id !== id),
     };
+    playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
     // Also drop any result for this creature so the UI stays consistent.
     if (this._lastResult?.creatures) {
       this._lastResult = {
@@ -323,6 +340,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   static async _onClearRoster(_event, _target) {
     this._form = { ...this._form, roster: [] };
     this._lastResult = null;
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this.render();
   }
 
@@ -343,9 +361,13 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     const id = target?.dataset?.creatureId;
     if (!id) return;
     const creature = this._form.roster.find((c) => c.id === id);
-    if (!creature) return;
+    if (!creature) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
     if (this._loadingItems) return;
 
+    playModuleSound(SOUND_EVENTS.ROLL_START);
     const items = await this._loadItems();
     const rolled = this._rollForCreature(creature, items);
     this._lastResult = {
@@ -360,6 +382,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     };
     this._recomputeGrandTotal();
     await this.render();
+    playResultSound({ items: rolled.items }, { kind: "per-creature" });
   }
 
   /** @this {PerCreatureLootApp} */
@@ -368,7 +391,10 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     if (!uuid) return;
     try {
       const doc = await fromUuid(uuid);
-      if (doc?.sheet) doc.sheet.render(true);
+      if (doc?.sheet) {
+        doc.sheet.render(true);
+        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
+      }
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
     }
@@ -377,6 +403,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   /** @this {PerCreatureLootApp} */
   static async _onSendToChat(_event, _target) {
     if (!this._lastResult?.creatures?.length) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("Nothing to send — roll the roster first.");
       return;
     }
@@ -391,7 +418,9 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     if (whispers !== null) messageData.whisper = whispers;
     try {
       await ChatMessage.create(messageData);
+      playModuleSound(SOUND_EVENTS.CHAT_SEND);
     } catch (error) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.error(`${MODULE_ID} | failed to send loot to chat`, error);
       ui.notifications?.error("Failed to send loot to chat. See console.");
     }
@@ -400,6 +429,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   /** @this {PerCreatureLootApp} */
   static async _onDepositHaul(_event, _target) {
     if (!this._lastResult?.creatures?.length) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("Nothing to deposit — roll the roster first.");
       return;
     }
@@ -408,13 +438,15 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       .map(toDistributableEntry)
       .filter(Boolean);
     if (items.length === 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("No drops to deposit.");
       return;
     }
-    await promptDistributeItems(items, {
+    const result = await promptDistributeItems(items, {
       title: `Deposit All Drops (${items.length} items)`,
       hint: "Choose one character to receive every creature's drops.",
     });
+    if (result) playModuleSound(SOUND_EVENTS.DEPOSIT);
   }
 
   /** @this {PerCreatureLootApp} */
@@ -562,8 +594,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     const partySize = livePartySize() || 4;
     return this._form.roster.reduce(
       (sum, c) =>
-        sum +
-        computeLootBudget({ tier: c.tier, scale: "trivial", partySize }),
+        sum + computeLootBudget({ tier: c.tier, scale: "trivial", partySize }),
       0,
     );
   }
@@ -594,7 +625,9 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   async _generateAll() {
     if (this._loadingItems) return;
+    let generatedResult = null;
     if (!this._form.roster.length) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info(
         "Add at least one creature to the roster before rolling.",
       );
@@ -603,6 +636,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {
       this._loadingItems = true;
+      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
       await this.render();
     }
     try {
@@ -616,9 +650,13 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
         grandTotal,
         grandTotalLabel: formatGp(grandTotal),
       };
+      generatedResult = this._lastResult;
     } finally {
       this._loadingItems = false;
       await this.render();
+      if (generatedResult) {
+        playResultSound(generatedResult, { kind: "per-creature" });
+      }
     }
   }
 
@@ -682,6 +720,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 
   async _primePackStats() {
     this._loadingItems = true;
+    playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
     } finally {

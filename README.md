@@ -40,16 +40,21 @@ Registered settings live in [scripts/settings.js](scripts/settings.js).
 
 ### Custom Item Art
 
-The generated-art queue lives in [assets/item-art-plan.json](assets/item-art-plan.json). It currently plans 567 opaque WebP inventory icons: 273 shared assets under `assets/item-art/shared/` and 294 unique assets under `assets/item-art/unique/`.
+The generated-art queue lives in [assets/item-art-plan.json](assets/item-art-plan.json). It is absent-art-only: existing compendium icons are protected and `art:apply` refuses to replace them with generated assets. Use `art:restore` to put pack item images back on their source compendium icons, and `art:absent` to list the items that actually need new art.
 
 ```powershell
+npm run art:restore
+npm run art:absent
+npm run plan:images
 npm run art:jobs
 npm run art:generate:shared:dry
 npm run art:generate:unique:dry
 npm run art:generate:shared
 npm run art:generate:unique
 npm run art:validate
+npm run art:validate:present
 npm run art:apply
+npm run art:apply:present
 npm run check
 npm run ui:audit
 ```

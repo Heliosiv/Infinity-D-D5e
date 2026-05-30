@@ -10,6 +10,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  artworkAbsenceReason,
+  existingCompendiumArtPath,
+  isArtworkAbsent,
+} from "./art-pipeline.mjs";
+
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const PLAN_PATH = "assets/item-art-plan.json";
 const SUMMARY_PATH = "assets/item-art-plan.md";
@@ -245,6 +251,7 @@ function reusableKey(item) {
 }
 
 function isBespokeCandidate(item) {
+  if (isArtworkAbsent(item)) return true;
   const reusableFolder = BASIC_FOLDER_PATTERNS.some((pattern) =>
     pattern.test(folderPath(item)),
   );
@@ -291,12 +298,16 @@ async function main() {
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line));
 
+  const absentItems = items.filter(isArtworkAbsent);
+  const existingArtItems = items.length - absentItems.length;
   const sharedMap = new Map();
   const uniqueAssets = [];
   const assignments = [];
 
-  for (const item of items) {
+  for (const item of absentItems) {
     const mode = isBespokeCandidate(item) ? "bespoke" : "reusable";
+    const absenceReason = artworkAbsenceReason(item);
+    const currentImg = existingCompendiumArtPath(item);
 
     if (mode === "bespoke") {
       const assetId = `unique/${slugify(item.name)}-${item._id}`;
@@ -314,7 +325,8 @@ async function main() {
         mode,
         assetId,
         path: assetPath,
-        currentImg: item.img,
+        currentImg,
+        absenceReason,
       });
       continue;
     }
@@ -338,7 +350,8 @@ async function main() {
       mode,
       assetId,
       path: assetPath,
-      currentImg: item.img,
+      currentImg,
+      absenceReason,
     });
   }
 
@@ -348,7 +361,7 @@ async function main() {
   uniqueAssets.sort((a, b) => a.id.localeCompare(b.id));
 
   const plan = {
-    schema: "infinity-dnd5e-item-art-plan-v1",
+    schema: "infinity-dnd5e-item-art-plan-v2",
     styleGuide:
       "Square hand-painted fantasy inventory icons, single readable object, no text, no watermark, dark neutral background.",
     paths: {
@@ -356,7 +369,10 @@ async function main() {
       uniqueRoot: UNIQUE_ROOT,
     },
     counts: {
-      items: items.length,
+      packItems: items.length,
+      existingArtworkItems: existingArtItems,
+      absentArtworkItems: absentItems.length,
+      items: absentItems.length,
       reusableAssignments: assignments.filter(
         (entry) => entry.mode === "reusable",
       ).length,
@@ -377,8 +393,10 @@ async function main() {
   await writeFile(SUMMARY_PATH, `${buildSummary(plan)}\n`, "utf8");
 
   console.log(
-    `Planned ${plan.counts.totalAssetsToGenerate} generated art assets for ${items.length} items.`,
+    `Planned ${plan.counts.totalAssetsToGenerate} generated art assets for ${absentItems.length} absent-art item(s).`,
   );
+  console.log(`  scanned: ${items.length} pack items`);
+  console.log(`  preserved: ${existingArtItems} existing artwork items`);
   console.log(
     `  shared: ${plan.counts.sharedAssets} assets for ${plan.counts.reusableAssignments} items`,
   );
@@ -394,11 +412,13 @@ function buildSummary(plan) {
   return [
     "# Infinity D&D5e Item Art Plan",
     "",
-    "Hybrid generation plan for replacing core-icon placeholders with project-owned raster item art.",
+    "Absent-art-only generation plan. Existing compendium icons are preserved and are not overwritten by generated assets.",
     "",
     "## Counts",
     "",
-    `- Items covered: ${plan.counts.items}`,
+    `- Pack items scanned: ${plan.counts.packItems}`,
+    `- Existing artwork preserved: ${plan.counts.existingArtworkItems}`,
+    `- Items missing source artwork: ${plan.counts.absentArtworkItems}`,
     `- Reusable assignments: ${plan.counts.reusableAssignments}`,
     `- Bespoke assignments: ${plan.counts.bespokeAssignments}`,
     `- Shared assets to generate: ${plan.counts.sharedAssets}`,
@@ -407,10 +427,21 @@ function buildSummary(plan) {
     "",
     "## Shared Assets With Most Assignments",
     "",
-    ...topShared.map(
-      (asset) =>
-        `- ${asset.id}: ${asset.assignedItemIds.length} items -> ${asset.path}`,
-    ),
+    ...(topShared.length > 0
+      ? topShared.map(
+          (asset) =>
+            `- ${asset.id}: ${asset.assignedItemIds.length} items -> ${asset.path}`,
+        )
+      : ["- None"]),
+    "",
+    "## Absent Items",
+    "",
+    ...(plan.assignments.length > 0
+      ? plan.assignments.map(
+          (assignment) =>
+            `- ${assignment.name} (${assignment.itemId}): ${assignment.absenceReason}`,
+        )
+      : ["- None"]),
     "",
     "## Generation Style",
     "",

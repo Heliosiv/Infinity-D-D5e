@@ -11,6 +11,7 @@
  * so the next session starts fresh.
  */
 
+import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { getTool, getTools } from "./tool-registry.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -45,6 +46,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   /** Open (or focus) the singleton dashboard instance. */
   static open() {
+    playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!InfinityDashboardApp._instance) {
       InfinityDashboardApp._instance = new InfinityDashboardApp();
     }
@@ -92,9 +94,11 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
         globalThis.SettingsConfig;
       if (typeof SC === "function") {
         new SC().render(true);
+        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
         return;
       }
     } catch (error) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.warn(`${MODULE_ID} | could not open SettingsConfig`, error);
     }
     ui.notifications?.info(
@@ -108,10 +112,12 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     if (!id) return;
     const tool = getTool(id);
     if (!tool) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(`${MODULE_ID}: tool "${id}" is not registered.`);
       return;
     }
     if (tool.status !== "available") {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info(`${tool.title} — coming in a later release.`);
       return;
     }

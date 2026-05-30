@@ -24,6 +24,7 @@ import {
   beginDragFromResult,
   promptDistributeItems,
 } from "./loot/distribute.js";
+import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
   computePackStats,
@@ -162,6 +163,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
 
   /** Opens (or focuses) the singleton instance. */
   static open() {
+    playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!PerEncounterLootApp._instance)
       PerEncounterLootApp._instance = new PerEncounterLootApp();
     if (PerEncounterLootApp._instance.rendered)
@@ -545,11 +547,15 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   /** @this {PerEncounterLootApp} */
   static async _onGenerate(_event, _target) {
     // Fresh generate clears any prior locks — it's a new bundle.
+    if (this._loadingItems) return;
+    playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate({ preserveLocked: false });
   }
 
   /** @this {PerEncounterLootApp} */
   static async _onRerollUnlocked(_event, _target) {
+    if (this._loadingItems) return;
+    playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate({ preserveLocked: true });
   }
 
@@ -562,6 +568,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     );
     if (!entry) return;
     entry.locked = !entry.locked;
+    playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
     // Patch the DOM directly so we don't lose scroll / focus.
     const li = target.closest("li");
     li?.classList.toggle("is-locked", entry.locked);
@@ -579,6 +586,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   /** @this {PerEncounterLootApp} */
   static async _onSendToChat(_event, _target) {
     if (!this._lastResult || this._lastResult.items.length === 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info("Nothing to send — generate a roll first.");
       return;
     }
@@ -593,7 +601,9 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     if (whispers !== null) messageData.whisper = whispers;
     try {
       await ChatMessage.create(messageData);
+      playModuleSound(SOUND_EVENTS.CHAT_SEND);
     } catch (error) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.error(`${MODULE_ID} | failed to send loot to chat`, error);
       ui.notifications?.error("Failed to send loot to chat. See console.");
     }
@@ -602,12 +612,14 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   /** @this {PerEncounterLootApp} */
   static async _onReset(_event, _target) {
     this._form = PerEncounterLootApp.buildDefaultForm();
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this._renderPreservingScroll();
   }
 
   /** @this {PerEncounterLootApp} */
   static async _onClear(_event, _target) {
     this._lastResult = null;
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this._renderPreservingScroll();
   }
 
@@ -617,6 +629,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const preset = QUICK_PRESETS[key];
     if (!preset) return;
     this._form = { ...this._form, ...preset.values };
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
   }
 
@@ -624,12 +637,14 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   static async _onUseParty(_event, _target) {
     const live = livePartySize();
     if (live <= 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.info(
         "No active player characters detected. Set the party size manually.",
       );
       return;
     }
     this._form = { ...this._form, partySize: live };
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
   }
 
@@ -665,7 +680,10 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     if (!uuid) return;
     try {
       const doc = await fromUuid(uuid);
-      if (doc?.sheet) doc.sheet.render(true);
+      if (doc?.sheet) {
+        doc.sheet.render(true);
+        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
+      }
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
     }
@@ -689,8 +707,12 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   /** @this {PerEncounterLootApp} */
   static async _onDistributeOne(_event, target) {
     const entry = this._findResultEntry(target?.dataset?.resultId);
-    if (!entry) return;
-    await promptDistributeItems([toDistributableItem(entry)]);
+    if (!entry) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
+    const result = await promptDistributeItems([toDistributableItem(entry)]);
+    if (result) playModuleSound(SOUND_EVENTS.DEPOSIT);
   }
 
   /** @this {PerEncounterLootApp} */
@@ -698,11 +720,15 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const items = (this._lastResult?.items ?? [])
       .map(toDistributableItem)
       .filter(Boolean);
-    if (items.length === 0) return;
-    await promptDistributeItems(items, {
+    if (items.length === 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
+    const result = await promptDistributeItems(items, {
       title: `Distribute Bundle (${items.length} items)`,
       hint: "Choose one character to receive the entire bundle.",
     });
+    if (result) playModuleSound(SOUND_EVENTS.DEPOSIT);
   }
 
   /** @this {PerEncounterLootApp} */
@@ -972,6 +998,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
 
   async _generate({ preserveLocked = false } = {}) {
     if (this._loadingItems) return; // re-entrant click guard
+    let generatedResult = null;
 
     const lockedEntries =
       preserveLocked && this._lastResult
@@ -981,6 +1008,7 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {
       this._loadingItems = true;
+      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
       await this._renderPreservingScroll(); // surfaces the "Loading compendium…" placeholder
     }
 
@@ -1081,15 +1109,18 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
         warnings: raw.warnings ?? [],
         lockedCount: lockedEntries.length,
       };
+      generatedResult = this._lastResult;
     } finally {
       this._loadingItems = false;
       await this._renderPreservingScroll();
+      if (generatedResult) playResultSound(generatedResult);
     }
   }
 
   /** Background-load the pack the first time the window renders. */
   async _primePackStats() {
     this._loadingItems = true;
+    playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
     } finally {

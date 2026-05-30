@@ -12,6 +12,7 @@ import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
 import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
+import { preloadModuleSounds } from "./audio.js";
 import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
@@ -257,6 +258,7 @@ Hooks.once("ready", () => {
     void registerMonksTokenbarCompat().catch((error) => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });
+    void preloadModuleSounds();
   } catch (error) {
     console.error(`${MODULE_ID} | ready hook failed`, error);
   }

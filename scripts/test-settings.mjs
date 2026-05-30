@@ -89,6 +89,8 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
   }
   // Unknown keys return undefined cleanly, not throw.
   assert.equal(getSetting("not-a-real-key"), undefined);
+  assert.equal(getSetting(SETTING_KEYS.SOUNDS_ENABLED), true);
+  assert.equal(getSetting(SETTING_KEYS.SOUND_VOLUME), 0.35);
 }
 
 /* ------------------------------------------------------------------ *
@@ -102,6 +104,7 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
         if (moduleId !== "infinity-dnd5e") return undefined;
         if (key === SETTING_KEYS.DEFAULT_TIER) return "t4";
         if (key === SETTING_KEYS.ANIMATIONS) return false;
+        if (key === SETTING_KEYS.SOUND_VOLUME) return 0.65;
         return undefined;
       },
     },
@@ -109,6 +112,7 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
   try {
     assert.equal(getSetting(SETTING_KEYS.DEFAULT_TIER), "t4");
     assert.equal(getSetting(SETTING_KEYS.ANIMATIONS), false);
+    assert.equal(getSetting(SETTING_KEYS.SOUND_VOLUME), 0.65);
     // Keys the mock returns `undefined` for still fall back.
     assert.equal(getSetting(SETTING_KEYS.DEFAULT_COUNT), 0);
   } finally {
