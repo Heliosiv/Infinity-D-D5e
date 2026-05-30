@@ -68,8 +68,19 @@ export async function registerMonksTokenbarCompat({
 
   if (typeof originalChangeTokens === "function") {
     SavingThrowApp.prototype.changeTokens = function (event) {
-      if (event?.target?.dataset?.type === "player") {
+      const type = event?.target?.dataset?.type;
+      if (type === "player") {
         const applied = ensurePlayerActorEntries(this, { force: true });
+        if (applied) {
+          this.render?.(true);
+          globalThis.window?.setTimeout?.(() => {
+            this.setPosition?.({ height: "auto" });
+          }, 100);
+          return undefined;
+        }
+      }
+      if (type === "tokenbar") {
+        const applied = appendTokenbarEntries(this);
         if (applied) {
           this.render?.(true);
           globalThis.window?.setTimeout?.(() => {
@@ -126,6 +137,10 @@ function ensurePlayerActorEntries(app, { force = false } = {}) {
 
 function buildPlayerActorEntries() {
   const targets = collectPlayerRequestTargets();
+  return buildRequestEntries(targets);
+}
+
+function buildRequestEntries(targets) {
   const tokenTargets = targets.filter((target) => !isActorDocument(target));
   const actorTargets = targets.filter(isActorDocument);
   const tokenEntries = getTokenEntries(tokenTargets);
@@ -134,6 +149,33 @@ function buildPlayerActorEntries() {
     ...tokenEntries,
     ...actorTargets.map((actor) => createActorRequestEntry(actor)),
   ];
+}
+
+function appendTokenbarEntries(app) {
+  const entries = buildTokenbarEntries();
+  if (entries.length === 0) return false;
+
+  const existingEntries = Array.isArray(app.entries) ? app.entries : [];
+  const existingActorIds = new Set(
+    existingEntries.map((entry) => getEntryActorId(entry)).filter(Boolean),
+  );
+  const nextEntries = [...existingEntries];
+
+  for (const entry of entries) {
+    const actorId = getEntryActorId(entry);
+    if (actorId && existingActorIds.has(actorId)) continue;
+    nextEntries.push(entry);
+    if (actorId) existingActorIds.add(actorId);
+  }
+
+  if (nextEntries.length === existingEntries.length) return false;
+  app.entries = nextEntries;
+  return true;
+}
+
+function buildTokenbarEntries() {
+  const targets = collectTokenbarRequestTargets();
+  return buildRequestEntries(targets);
 }
 
 function getTokenEntries(tokens) {
@@ -175,6 +217,36 @@ export function collectPlayerRequestTargets({
   return [...includedTokens, ...actorFallbacks];
 }
 
+function collectTokenbarRequestTargets({
+  gameRef = globalThis.game,
+  ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3,
+} = {}) {
+  const tokenbarEntries = getMonksTokenbarEntries(gameRef);
+  return uniqueTargetsByActor(
+    tokenbarEntries
+      .map((entry) => resolveTokenbarTarget(entry, gameRef, ownerLevel))
+      .filter(Boolean),
+  );
+}
+
+function getMonksTokenbarEntries(gameRef) {
+  const tokenbar =
+    gameRef?.MonksTokenBar?.TokenBar?.() ??
+    gameRef?.MonksTokenBar?.tokenbar ??
+    globalThis.MonksTokenBar?.tokenbar;
+  return Array.from(tokenbar?.entries ?? []);
+}
+
+function resolveTokenbarTarget(entry, gameRef, ownerLevel) {
+  const tokenObject = entry?.token?._object;
+  if (isDisplayableToken(tokenObject)) return tokenObject;
+
+  const actor = entry?.actor ?? entry?.token?.actor ?? tokenObject?.actor;
+  if (isPlayerOwnedCharacter(actor, gameRef, ownerLevel)) return actor;
+
+  return null;
+}
+
 function uniqueByActor(tokens) {
   const seen = new Set();
   const result = [];
@@ -187,24 +259,36 @@ function uniqueByActor(tokens) {
   return result;
 }
 
+function uniqueTargetsByActor(targets) {
+  const seen = new Set();
+  const result = [];
+  for (const target of targets) {
+    const actorId = isActorDocument(target) ? target.id : target?.actor?.id;
+    if (!actorId || seen.has(actorId)) continue;
+    seen.add(actorId);
+    result.push(target);
+  }
+  return result;
+}
+
 function isDefaultScenePlayerEntryList(entries) {
   if (Array.from(globalThis.canvas?.tokens?.controlled ?? []).length > 0) {
     return false;
   }
-  const defaultActorIds = uniqueByActor(
+  const monkDefaultActorIds = uniqueByActor(
     Array.from(globalThis.canvas?.tokens?.placeables ?? []).filter((token) =>
-      isDefaultPlayerToken(token),
+      isMonksDefaultPlayerToken(token),
     ),
   ).map((token) => token?.actor?.id);
   if (
-    defaultActorIds.length === 0 ||
-    defaultActorIds.length !== entries.length
+    monkDefaultActorIds.length === 0 ||
+    monkDefaultActorIds.length !== entries.length
   ) {
     return false;
   }
   const currentActorIds = entries.map((entry) => getEntryActorId(entry));
-  return defaultActorIds.every(
-    (actorId) => actorId && currentActorIds.includes(actorId),
+  return currentActorIds.every(
+    (actorId) => actorId && monkDefaultActorIds.includes(actorId),
   );
 }
 
@@ -216,6 +300,10 @@ function getEntryActorId(entry) {
 }
 
 function isDefaultPlayerToken(token) {
+  return isMonksDefaultPlayerToken(token) && isDisplayableToken(token);
+}
+
+function isMonksDefaultPlayerToken(token) {
   const include = normalizeIncludeFlag(getTokenIncludeFlag(token));
   return (
     token?.actor &&
@@ -223,6 +311,14 @@ function isDefaultPlayerToken(token) {
       token.document?.disposition === 1 &&
       include !== "exclude") ||
       include === "include")
+  );
+}
+
+function isDisplayableToken(token) {
+  return (
+    token?.actor &&
+    isRequestableCharacterActor(token.actor) &&
+    hasDisplayName(token.name)
   );
 }
 
@@ -245,21 +341,61 @@ function getActorCollection(gameRef) {
 }
 
 function isPlayerOwnedCharacter(actor, gameRef, ownerLevel) {
-  if (!actor || actor.type !== "character") return false;
-  if (actor.hasPlayerOwner) return true;
+  if (!isRequestableCharacterActor(actor)) return false;
+
+  const users = getUserCollection(gameRef);
+  if (
+    users.some(
+      (user) => !user?.isGM && getUserCharacterId(user) === actor.id,
+    )
+  ) {
+    return true;
+  }
+
   if (
     Object.entries(actor.ownership ?? {}).some(
       ([userId, level]) =>
         userId !== "default" &&
         Number(level) >= ownerLevel &&
-        gameRef?.users?.get?.(userId)?.isGM === false,
+        isNonGmUserId(userId, users, gameRef),
     )
   ) {
     return true;
   }
-  return Array.from(gameRef?.users ?? []).some(
-    (user) => !user?.isGM && user?.character?.id === actor.id,
+
+  return users.length === 0 && actor.hasPlayerOwner === true;
+}
+
+function isRequestableCharacterActor(actor) {
+  return (
+    actor?.type === "character" &&
+    hasDisplayName(actor.name) &&
+    hasDisplayName(actor.id)
   );
+}
+
+function hasDisplayName(value) {
+  return String(value ?? "").trim().length > 0;
+}
+
+function getUserCollection(gameRef) {
+  const users = gameRef?.users;
+  if (Array.isArray(users)) return users;
+  if (Array.isArray(users?.contents)) return users.contents;
+  if (typeof users?.filter === "function") return users.filter(() => true);
+  return Array.from(users ?? []);
+}
+
+function getUserCharacterId(user) {
+  if (typeof user?.character === "string") return user.character;
+  return user?.character?.id ?? null;
+}
+
+function isNonGmUserId(userId, users, gameRef) {
+  const user =
+    users.find((candidate) => candidate?.id === userId) ??
+    gameRef?.users?.get?.(userId);
+  return user?.isGM === false;
 }
 
 function createActorRequestEntry(actor) {
@@ -308,6 +444,8 @@ function isActorDocument(target) {
   const ActorClass = globalThis.Actor;
   if (ActorClass && target instanceof ActorClass) return true;
   return (
-    target?.documentName === "Actor" || target?.constructor?.name === "Actor"
+    target?.documentName === "Actor" ||
+    target?.constructor?.name === "Actor" ||
+    (target?.type === "character" && !target?.actor)
   );
 }

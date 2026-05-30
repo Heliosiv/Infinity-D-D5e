@@ -38,10 +38,19 @@ function makeTokenEntry(token) {
   return entry;
 }
 
-function installFoundryGlobals({ actors, users, tokens, controlled = [] }) {
+function installFoundryGlobals({
+  actors,
+  users,
+  tokens,
+  controlled = [],
+  tokenbarEntries = [],
+}) {
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
   globalThis.game = {
     actors,
+    MonksTokenBar: {
+      TokenBar: () => ({ entries: tokenbarEntries }),
+    },
     modules: {
       get: (id) => (id === "monks-tokenbar" ? { active: true } : undefined),
     },
@@ -76,7 +85,13 @@ async function registerTestCompat(SavingThrowApp) {
 
 {
   const actors = [
-    { id: "b", name: "Beta", type: "character", hasPlayerOwner: true },
+    {
+      id: "b",
+      name: "Beta",
+      type: "character",
+      hasPlayerOwner: true,
+      ownership: { u2: 3 },
+    },
     {
       id: "a",
       name: "Alpha",
@@ -89,7 +104,10 @@ async function registerTestCompat(SavingThrowApp) {
   const targets = collectPlayerRequestTargets({
     gameRef: {
       actors,
-      users: makeUsers([{ id: "u1", isGM: false }]),
+      users: makeUsers([
+        { id: "u1", isGM: false },
+        { id: "u2", isGM: false },
+      ]),
     },
     canvasRef: { tokens: { placeables: [] } },
     ownerLevel: 3,
@@ -99,6 +117,46 @@ async function registerTestCompat(SavingThrowApp) {
     targets.map((target) => target.id),
     ["a", "b"],
     "player-owned character actors fill the request list when no scene tokens are available",
+  );
+}
+
+{
+  const actors = [
+    {
+      id: "a",
+      name: "Alpha",
+      type: "character",
+      hasPlayerOwner: true,
+      ownership: { u1: 3 },
+    },
+    {
+      id: "blank",
+      name: "",
+      type: "character",
+      hasPlayerOwner: true,
+      ownership: { u1: 3 },
+    },
+    {
+      id: "default-owner-only",
+      name: "Default Owner Only",
+      type: "character",
+      hasPlayerOwner: true,
+      ownership: { default: 3 },
+    },
+  ];
+  const targets = collectPlayerRequestTargets({
+    gameRef: {
+      actors,
+      users: makeUsers([{ id: "u1", isGM: false }]),
+    },
+    canvasRef: { tokens: { placeables: [] } },
+    ownerLevel: 3,
+  });
+
+  assert.deepEqual(
+    targets.map((target) => target.id),
+    ["a"],
+    "blank placeholder actors and default-owner-only actors are not request targets",
   );
 }
 
@@ -222,15 +280,27 @@ async function registerTestCompat(SavingThrowApp) {
     hasPlayerOwner: true,
     uuid: "Actor.b",
   };
+  const blank = {
+    id: "blank",
+    img: "",
+    name: "",
+    type: "character",
+    hasPlayerOwner: true,
+    uuid: "Actor.blank",
+  };
   const betaToken = makeToken(beta);
+  const blankToken = makeToken(blank, { id: "token-blank", name: "" });
   installFoundryGlobals({
-    actors: [alpha, beta],
+    actors: [alpha, beta, blank],
     users: makeUsers([]),
-    tokens: [betaToken],
+    tokens: [betaToken, blankToken],
   });
   await registerTestCompat(SavingThrowApp);
 
-  const app = new SavingThrowApp([makeTokenEntry(betaToken)]);
+  const app = new SavingThrowApp([
+    makeTokenEntry(betaToken),
+    makeTokenEntry(blankToken),
+  ]);
   app.getData();
 
   assert.deepEqual(
@@ -331,6 +401,77 @@ async function registerTestCompat(SavingThrowApp) {
     app.entries.map((entry) => entry.id),
     ["a"],
     "the V12 Players button uses actor fallback entries",
+  );
+  assert.equal(app.rendered, true);
+  assert.deepEqual(app.position, { height: "auto" });
+}
+
+{
+  class SavingThrowApp {
+    constructor(entries = []) {
+      this.entries = entries;
+      this.rendered = false;
+      this.position = null;
+    }
+
+    changeTokens() {
+      throw new Error("original tokenbar handler should be bypassed");
+    }
+
+    render() {
+      this.rendered = true;
+    }
+
+    setPosition(position) {
+      this.position = position;
+    }
+  }
+
+  const alpha = {
+    id: "a",
+    img: "alpha.webp",
+    name: "Alpha",
+    type: "character",
+    hasPlayerOwner: true,
+    uuid: "Actor.a",
+  };
+  const gamma = {
+    id: "g",
+    img: "gamma.webp",
+    name: "Gamma",
+    type: "character",
+    hasPlayerOwner: true,
+    uuid: "Actor.g",
+  };
+  const blank = {
+    id: "blank",
+    img: "",
+    name: "",
+    type: "character",
+    hasPlayerOwner: true,
+    uuid: "Actor.blank",
+  };
+  const alphaToken = makeToken(alpha);
+  const blankToken = makeToken(blank, { id: "token-blank", name: "" });
+  installFoundryGlobals({
+    actors: [alpha, gamma, blank],
+    users: makeUsers([]),
+    tokens: [],
+    tokenbarEntries: [
+      { token: { _object: alphaToken }, actor: alpha },
+      { token: { _object: blankToken }, actor: blank },
+      { token: null, actor: gamma },
+    ],
+  });
+  await registerTestCompat(SavingThrowApp);
+
+  const app = new SavingThrowApp([]);
+  app.changeTokens({ target: { dataset: { type: "tokenbar" } } });
+
+  assert.deepEqual(
+    app.entries.map((entry) => entry.id),
+    ["token-a", "g"],
+    "the V12 Tokenbar button skips blank rows and keeps actor-only player entries",
   );
   assert.equal(app.rendered, true);
   assert.deepEqual(app.position, { height: "auto" });
