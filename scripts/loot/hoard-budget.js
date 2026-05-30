@@ -207,6 +207,29 @@ export function formatCoinBreakdown(breakdown) {
   return parts.join(" · ");
 }
 
+/**
+ * Normalize a coin breakdown into an all-five-denomination integer map
+ * suitable for adding to a dnd5e actor's `system.currency`.
+ *
+ * Electrum (`ep`) is defaulted to 0 — the hoard generator never emits it,
+ * so depositing always adds 0 ep and leaves any existing electrum intact.
+ * Missing, fractional, NaN, and negative columns clamp to a non-negative
+ * integer. Every denomination key is always present in the result.
+ */
+export function currencyAddFromBreakdown(breakdown = {}) {
+  const toInt = (value) => {
+    const n = Math.floor(Number(value) || 0);
+    return n > 0 ? n : 0;
+  };
+  return {
+    pp: toInt(breakdown?.pp),
+    gp: toInt(breakdown?.gp),
+    ep: toInt(breakdown?.ep),
+    sp: toInt(breakdown?.sp),
+    cp: toInt(breakdown?.cp),
+  };
+}
+
 /** Read-only view of the per-tier hoard base values. Useful for UI hints. */
 export function getHoardCurve() {
   return { ...HOARD_BASE_BUDGET };

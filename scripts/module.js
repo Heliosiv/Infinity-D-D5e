@@ -249,7 +249,7 @@ Hooks.once("ready", () => {
       "color: inherit",
     );
     console.log(
-      `${MODULE_ID} | dashboard access: sidebar Items tab d20 button, left scene-controls, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openDashboard()`,
+      `${MODULE_ID} | dashboard access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openDashboard()`,
     );
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
@@ -354,115 +354,5 @@ Hooks.on("getSceneControlButtons", (controls) => {
     }
   } catch (error) {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
-  }
-});
-
-/**
- * One-time welcome notification on the first ready after install /
- * enable, telling the GM where to find the launcher. Suppressed once
- * acknowledged via the world-scoped "welcomeSeen" flag.
- */
-Hooks.once("ready", () => {
-  if (!game.user?.isGM) return;
-  const mod = game.modules?.get?.(MODULE_ID);
-  if (!mod) return;
-  const seen = mod.flags?.welcomeSeen === true;
-  if (seen) return;
-  ui.notifications?.info(
-    "Infinity D&D5e is ready. Launch from the d20 button at the top of the Items sidebar, the left scene-controls toolbar, or Shift+I.",
-    { permanent: true },
-  );
-  // Mark the flag in-memory so we don't double-fire if ready runs twice.
-  if (mod.flags) mod.flags.welcomeSeen = true;
-});
-
-/* ------------------------------------------------------------------ *
- * Sidebar launcher — bulletproof against UI-overhaul modules.
- *
- * Scene-control registration sometimes gets filtered by UI overhauls
- * (Minimal UI, Tidy, etc.). The Foundry sidebar, on the other hand,
- * is rendered by the core code and almost always survives those
- * overrides. We inject a small button at the top of any directory
- * tab the GM might open — Items, Compendium, Actors — so at least
- * one entry point is visible no matter what skin is loaded.
- * ------------------------------------------------------------------ */
-
-const SIDEBAR_LAUNCHER_FLAG = "data-infinity-dnd5e-launcher";
-
-function injectSidebarLauncher(rendered, hookName = "?") {
-  if (!game.user?.isGM) return;
-  // Foundry V12 hooks pass jQuery as `html`; V13+ pass a raw HTMLElement
-  // or an ApplicationV2 instance that has `.element`.
-  const root =
-    rendered instanceof HTMLElement
-      ? rendered
-      : (rendered?.[0] ??
-        rendered?.element?.[0] ??
-        rendered?.element ??
-        (rendered?.querySelector ? rendered : null));
-  if (!root || typeof root.querySelector !== "function") {
-    console.debug(
-      `${MODULE_ID} | sidebar launcher (${hookName}): no root element to inject into`,
-    );
-    return;
-  }
-  if (root.querySelector(`[${SIDEBAR_LAUNCHER_FLAG}]`)) return;
-
-  // V11/V12/V13 have all used slightly different sidebar headers. Try
-  // every plausible target in order, fall back to the root itself so
-  // the button always lands somewhere visible.
-  const HEADER_SELECTORS = [
-    ".directory-header",
-    "header.directory-header",
-    "section > header",
-    ".action-buttons",
-    "header",
-    ".window-header",
-  ];
-  let target = null;
-  for (const sel of HEADER_SELECTORS) {
-    target = root.querySelector(sel);
-    if (target) break;
-  }
-  target = target ?? root;
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.setAttribute(SIDEBAR_LAUNCHER_FLAG, "true");
-  btn.className = "infinity-dnd5e-sidebar-launcher";
-  btn.title = "Open Infinity D&D5e Dashboard (Shift+I)";
-  btn.innerHTML =
-    '<i class="fa-solid fa-dice-d20" aria-hidden="true"></i><span>Infinity D&D5e</span>';
-  btn.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    InfinityDashboardApp.open();
-  });
-
-  // Insert above the rest of the header so it can't be hidden behind
-  // a search box.
-  target.prepend(btn);
-  console.log(
-    `${MODULE_ID} | sidebar launcher injected via ${hookName} into <${target.tagName.toLowerCase()}${target.className ? "." + target.className.split(" ").join(".") : ""}>`,
-  );
-}
-
-// Cover every hook Foundry has ever fired for directory rendering.
-// `renderApplicationV2` catches the V13 generic pass for sidebar tabs
-// that don't have their own named hook.
-for (const hookName of [
-  "renderItemDirectory",
-  "renderCompendiumDirectory",
-  "renderCompendiumSidebar",
-  "renderActorDirectory",
-  "renderSidebarTab",
-  "renderSidebar",
-]) {
-  Hooks.on(hookName, (app, html) => injectSidebarLauncher(html, hookName));
-}
-Hooks.on("renderApplicationV2", (app, html) => {
-  const name = app?.constructor?.name ?? "";
-  if (/Directory|Sidebar/i.test(name)) {
-    injectSidebarLauncher(html, `renderApplicationV2/${name}`);
   }
 });

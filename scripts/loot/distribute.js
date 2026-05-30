@@ -4,21 +4,29 @@
  * Helpers for moving rolled loot from the Loot Forge result list onto
  * player-character actors.
  *
- * Three entry points:
+ * Entry points:
  * - {@link beginDragFromResult} wires a `dragstart` payload that
  *   Foundry's stock drop handlers (character sheet, sidebar actor,
  *   canvas token) all understand. Drag-drop is the lowest-friction
  *   path; everything else is a fallback.
- * - {@link promptDistributeItems} opens a small actor-picker dialog
- *   and copies the chosen items onto the chosen actor. Used by both
- *   the per-row "Send" button and the bundle-level "Distribute" one.
- * - {@link distributeItemsToActor} is the pure pipeline step in case
- *   a macro / API caller already knows the actor + uuids.
+ * - {@link promptDistributeItems} opens a small actor-picker dialog and
+ *   deposits the chosen items — plus an optional coin pile — onto one
+ *   character. Used by every loot tool's Deposit / Send button.
+ * - {@link depositToActor} is the centralized pipeline: items (with
+ *   quantities) and/or currency onto one actor, surfacing a single
+ *   combined notification. Macro / API callers that already know the
+ *   actor can call it — or the thinner {@link distributeItemsToActor},
+ *   which returns just the created-item count — directly.
  *
  * All Foundry globals are referenced lazily so this file can be
  * imported in node tests without crashing — the helpers throw
  * `NotInFoundry` if called outside a Foundry runtime.
  */
+
+import {
+  currencyAddFromBreakdown,
+  formatCoinBreakdown,
+} from "./hoard-budget.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -73,8 +81,15 @@ export function beginDragFromResult(event, entry = null) {
 export async function promptDistributeItems(items, opts = {}) {
   ensureFoundry();
   const cleaned = normalizeDistributableItems(items);
-  if (cleaned.length === 0) {
-    ui.notifications?.warn(`${MODULE_ID}: no items to distribute.`);
+  const currency = opts.currency
+    ? currencyAddFromBreakdown(opts.currency)
+    : null;
+  const hasCurrency = Boolean(
+    currency &&
+      (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
+  );
+  if (cleaned.length === 0 && !hasCurrency) {
+    ui.notifications?.warn(`${MODULE_ID}: nothing to distribute.`);
     return null;
   }
 
@@ -84,14 +99,16 @@ export async function promptDistributeItems(items, opts = {}) {
     return null;
   }
 
+  const coinLabel =
+    opts.coinLabel || (currency ? formatCoinBreakdown(currency) : "");
   const title =
     opts.title ??
-    (cleaned.length === 1
-      ? "Send Item to Actor"
-      : `Send ${cleaned.length} Items to Actor`);
-  const hint =
-    opts.hint ??
-    `Choose a character. ${cleaned.length} item(s) will be added to their inventory.`;
+    (cleaned.length === 0
+      ? "Deposit Coins to Actor"
+      : cleaned.length === 1 && !hasCurrency
+        ? "Send Item to Actor"
+        : `Send ${cleaned.length} Items to Actor`);
+  const hint = opts.hint ?? defaultDistributeHint(cleaned.length, coinLabel);
 
   const options = candidates
     .map(
@@ -100,9 +117,15 @@ export async function promptDistributeItems(items, opts = {}) {
     )
     .join("");
 
+  const coinNote =
+    hasCurrency && coinLabel
+      ? `<p style="opacity:0.8;">Plus the coin pile: <strong>${escapeText(coinLabel)}</strong>.</p>`
+      : "";
+
   const content = `
     <div class="infinity-dnd5e-distribute">
       <p>${escapeText(hint)}</p>
+      ${coinNote}
       <label style="display:grid;gap:4px;">
         <span>Actor</span>
         <select name="actorId">${options}</select>
@@ -138,13 +161,23 @@ export async function promptDistributeItems(items, opts = {}) {
   }
 
   if (!chosenActorId) return null;
-  const created = await distributeItemsToActor(chosenActorId, cleaned);
-  return { actorId: chosenActorId, created };
+  const res = await depositToActor(chosenActorId, {
+    items: cleaned,
+    currency: opts.currency ?? null,
+  });
+  return {
+    actorId: chosenActorId,
+    created: res.created,
+    currencyAdded: res.currencyAdded,
+  };
 }
 
 /**
- * Copy each `uuid` (resolved via `fromUuid`) onto the actor.
- * Surfaces a single notification with the result.
+ * Copy each item (UUID resolved via `fromUuid`, or an inline generated
+ * `itemData` snapshot) onto the actor. Thin wrapper over
+ * {@link depositItemsCore} that preserves the original
+ * "returns the created count" contract for existing callers — the module
+ * API `distributeBundle` alias and the drag-drop fallbacks.
  *
  * @param {string} actorId
  * @param {Array<string|object>} items
@@ -157,7 +190,83 @@ export async function distributeItemsToActor(actorId, items) {
     ui.notifications?.error(`${MODULE_ID}: actor ${actorId} not found.`);
     return 0;
   }
+  const { created, failures } = await depositItemsCore(actor, items);
+  if (created === 0) {
+    ui.notifications?.warn(
+      `${MODULE_ID}: none of the item(s) could be added to ${actor.name}.`,
+    );
+    return 0;
+  }
+  notifyDeposit(actor, created, failures, null);
+  return created;
+}
 
+/**
+ * Deposit a full haul — items and/or a coin pile — onto a single actor.
+ *
+ * Items ({@link depositItemsCore}) and currency (a read-and-add update of
+ * `system.currency`) are two independent writes with no shared
+ * transaction; each is guarded so a failure in one still reports what the
+ * other landed. A single combined notification summarizes the result.
+ *
+ * @param {string} actorId
+ * @param {object} [haul]
+ * @param {Array<string|object>} [haul.items]  items to create (quantities honored)
+ * @param {object} [haul.currency]   a {pp,gp,ep,sp,cp}-ish coin breakdown
+ * @param {boolean} [haul.notify=true]  surface the result toast
+ * @returns {Promise<{created:number, failures:string[], currencyAdded:object|null}>}
+ */
+export async function depositToActor(
+  actorId,
+  { items = [], currency = null, notify = true } = {},
+) {
+  ensureFoundry();
+  const actor = game.actors?.get?.(actorId);
+  if (!actor) {
+    ui.notifications?.error(`${MODULE_ID}: actor ${actorId} not found.`);
+    return { created: 0, failures: [], currencyAdded: null };
+  }
+
+  const { created, failures } = await depositItemsCore(actor, items);
+
+  let currencyAdded = null;
+  const add = currency ? currencyAddFromBreakdown(currency) : null;
+  if (add && (add.pp || add.gp || add.ep || add.sp || add.cp)) {
+    // Read current values and ADD — dotted keys so we never clobber a
+    // denomination we aren't touching (electrum in particular).
+    const cur = actor.system?.currency ?? {};
+    try {
+      await actor.update({
+        "system.currency.pp": (cur.pp ?? 0) + add.pp,
+        "system.currency.gp": (cur.gp ?? 0) + add.gp,
+        "system.currency.ep": (cur.ep ?? 0) + add.ep,
+        "system.currency.sp": (cur.sp ?? 0) + add.sp,
+        "system.currency.cp": (cur.cp ?? 0) + add.cp,
+      });
+      currencyAdded = add;
+    } catch (error) {
+      console.error(`${MODULE_ID} | currency update failed`, error);
+      ui.notifications?.error(
+        `${MODULE_ID}: could not add coins to ${actor.name}. See console.`,
+      );
+    }
+  }
+
+  if (notify) notifyDeposit(actor, created, failures, currencyAdded);
+  return { created, failures, currencyAdded };
+}
+
+/**
+ * Resolve refs and create the embedded items on an actor. Returns the
+ * real created-document count plus a by-name list of refs that could not
+ * be resolved. Does NOT notify — callers compose the message so a
+ * combined items+currency toast reads as one action.
+ *
+ * @param {Actor} actor
+ * @param {Array<string|object>} items
+ * @returns {Promise<{created:number, failures:string[]}>}
+ */
+async function depositItemsCore(actor, items) {
   const refs = normalizeDistributableItems(items);
   const itemData = [];
   const failures = [];
@@ -166,48 +275,44 @@ export async function distributeItemsToActor(actorId, items) {
       if (ref.itemData) {
         const obj = cloneItemData(ref.itemData);
         delete obj._id;
+        setItemQuantity(obj, ref.quantity);
         itemData.push(obj);
         continue;
       }
       const doc = await fromUuid(ref.uuid);
       if (!doc) {
-        failures.push(ref.uuid);
+        failures.push(ref.name ?? ref.uuid);
         continue;
       }
       const obj = doc.toObject();
       // Strip the source `_id` so Foundry assigns a fresh one and we
       // never collide with an existing embedded item.
       delete obj._id;
+      setItemQuantity(obj, ref.quantity);
       itemData.push(obj);
     } catch (error) {
       console.warn(`${MODULE_ID} | failed to resolve`, { ref, error });
-      failures.push(ref.uuid ?? ref.name ?? "generated item");
+      failures.push(ref.name ?? ref.uuid ?? "generated item");
     }
   }
 
-  if (itemData.length === 0) {
-    ui.notifications?.warn(
-      `${MODULE_ID}: none of the ${refs.length} item(s) resolved.`,
-    );
-    return 0;
-  }
+  if (itemData.length === 0) return { created: 0, failures };
 
+  let createdDocs = [];
   try {
-    await actor.createEmbeddedDocuments("Item", itemData);
+    createdDocs = await actor.createEmbeddedDocuments("Item", itemData);
   } catch (error) {
     console.error(`${MODULE_ID} | createEmbeddedDocuments failed`, error);
     ui.notifications?.error(
       `${MODULE_ID}: could not add items to ${actor.name}. See console.`,
     );
-    return 0;
+    return { created: 0, failures };
   }
 
-  const failNote =
-    failures.length > 0 ? ` (${failures.length} could not be resolved)` : "";
-  ui.notifications?.info(
-    `${MODULE_ID}: sent ${itemData.length} item(s) to ${actor.name}${failNote}.`,
-  );
-  return itemData.length;
+  const created = Array.isArray(createdDocs)
+    ? createdDocs.length
+    : itemData.length;
+  return { created, failures };
 }
 
 /* ------------------------------------------------------------------ *
@@ -240,20 +345,110 @@ function ensureFoundry() {
   }
 }
 
-function normalizeDistributableItems(items) {
+/**
+ * Normalize a mixed list of distributable refs into one uniform shape:
+ * `{ uuid?, itemData?, name?, quantity }`. Accepts bare UUID strings,
+ * `{uuid}` / `{item:{uuid}}` wrappers, or `{itemData}` / `{data}`
+ * generated snapshots. Every entry carries a `quantity` (floored, ≥ 1) so
+ * the rolled stack size survives the trip to the actor. Pure — no Foundry
+ * globals — so it is exported for unit testing.
+ */
+export function normalizeDistributableItems(items) {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
       if (typeof item === "string") {
         const uuid = item.trim();
-        return uuid ? { uuid } : null;
+        return uuid ? { uuid, quantity: 1 } : null;
       }
       if (!item || typeof item !== "object") return null;
+      const quantity = normalizeQty(item.quantity);
       const itemData = cloneItemData(item.itemData ?? item.data);
-      if (itemData) return { itemData, name: item.name ?? itemData.name };
+      if (itemData) {
+        return { itemData, name: item.name ?? itemData.name, quantity };
+      }
       const uuid = String(item.uuid ?? item.item?.uuid ?? "").trim();
-      return uuid ? { uuid, name: item.name ?? item.item?.name } : null;
+      return uuid
+        ? { uuid, name: item.name ?? item.item?.name, quantity }
+        : null;
     })
     .filter(Boolean);
+}
+
+/** Coerce any quantity input to a positive integer; default 1. */
+function normalizeQty(raw) {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * Stamp a rolled stack size onto a Foundry item snapshot. Only overrides
+ * when the rolled quantity is > 1, so single-unit rolls leave the source
+ * item's own quantity intact (e.g. a curated "20 arrows" item). Guarded
+ * to physical item types (or any schema that already exposes a
+ * `system.quantity`) so we never write a stray field onto, say, a spell.
+ */
+function setItemQuantity(obj, quantity) {
+  const qty = Math.floor(Number(quantity) || 0);
+  if (qty <= 1 || !obj) return;
+  obj.system = obj.system ?? {};
+  const PHYSICAL_TYPES = [
+    "weapon",
+    "equipment",
+    "consumable",
+    "tool",
+    "loot",
+    "container",
+    "backpack",
+  ];
+  const hasQuantityField = Object.prototype.hasOwnProperty.call(
+    obj.system,
+    "quantity",
+  );
+  if (hasQuantityField || PHYSICAL_TYPES.includes(obj.type)) {
+    obj.system.quantity = qty;
+  }
+}
+
+/**
+ * Compose and surface the single post-deposit notification. Reports only
+ * what actually landed — items created and/or coins added — plus a named
+ * count of any refs that failed to resolve.
+ */
+function notifyDeposit(actor, created, failures, currencyAdded) {
+  const who = actor?.name ?? "the actor";
+  const parts = [];
+  if (created > 0) parts.push(`${created} item${created === 1 ? "" : "s"}`);
+  if (currencyAdded) {
+    const coinLabel = formatCoinBreakdown(currencyAdded);
+    if (coinLabel) parts.push(coinLabel);
+  }
+  const failList = (failures ?? []).map((f) => String(f));
+  const failNote =
+    failList.length > 0
+      ? ` (${failList.length} could not be resolved: ${failList
+          .slice(0, 3)
+          .join(", ")}${failList.length > 3 ? "…" : ""})`
+      : "";
+  if (parts.length === 0) {
+    ui.notifications?.warn(
+      `${MODULE_ID}: nothing was deposited to ${who}${failNote}.`,
+    );
+    return;
+  }
+  ui.notifications?.info(
+    `${MODULE_ID}: sent ${parts.join(" + ")} to ${who}${failNote}.`,
+  );
+}
+
+/** Default dialog hint based on what the haul contains. */
+function defaultDistributeHint(itemCount, coinLabel) {
+  if (itemCount > 0 && coinLabel) {
+    return `Choose a character. ${itemCount} item(s) and the coin pile will be added to their sheet.`;
+  }
+  if (itemCount > 0) {
+    return `Choose a character. ${itemCount} item(s) will be added to their inventory.`;
+  }
+  return "Choose a character. The coin pile will be added to their currency.";
 }
 
 function cloneItemData(itemData) {

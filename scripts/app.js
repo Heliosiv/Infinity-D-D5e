@@ -965,13 +965,18 @@ function tierLabel(tier) {
 
 function toDistributableItem(entry) {
   if (!entry) return null;
+  const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
   if (entry.itemData) {
     return {
       itemData: entry.itemData,
       name: entry.displayName ?? entry.itemData.name ?? entry.item?.name ?? "",
+      quantity,
     };
   }
-  return entry.item?.uuid ?? null;
+  const uuid = entry.item?.uuid;
+  return uuid
+    ? { uuid, name: entry.displayName ?? entry.item?.name ?? "", quantity }
+    : null;
 }
 
 /**

@@ -18,6 +18,7 @@
  */
 
 import { computeLootBudget, nearestPreset } from "./loot/budget.js";
+import { promptDistributeItems } from "./loot/distribute.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
@@ -84,6 +85,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       rerollCreature: PerCreatureLootApp._onRerollCreature,
       openItem: PerCreatureLootApp._onOpenItem,
       sendToChat: PerCreatureLootApp._onSendToChat,
+      depositHaul: PerCreatureLootApp._onDepositHaul,
       snap: PerCreatureLootApp._onSnap,
       chipAll: PerCreatureLootApp._onChipAll,
       chipNone: PerCreatureLootApp._onChipNone,
@@ -394,6 +396,26 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {PerCreatureLootApp} */
+  static async _onDepositHaul(_event, _target) {
+    if (!this._lastResult?.creatures?.length) {
+      ui.notifications?.info("Nothing to deposit — roll the roster first.");
+      return;
+    }
+    const items = this._lastResult.creatures
+      .flatMap((creature) => creature.items ?? [])
+      .map(toDistributableEntry)
+      .filter(Boolean);
+    if (items.length === 0) {
+      ui.notifications?.info("No drops to deposit.");
+      return;
+    }
+    await promptDistributeItems(items, {
+      title: `Deposit All Drops (${items.length} items)`,
+      hint: "Choose one character to receive every creature's drops.",
+    });
+  }
+
+  /** @this {PerCreatureLootApp} */
   static async _onSnap(_event, target) {
     const name = target?.dataset?.target;
     const raw = Number(target?.dataset?.value);
@@ -671,6 +693,26 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+/**
+ * Map a per-creature result entry to the distribute helper's accepted
+ * shape, preserving the rolled stack quantity. Per-creature rolls never
+ * use art variants, so entries are plain UUID-bearing compendium items;
+ * the `itemData` branch is kept for symmetry with the other tools.
+ */
+function toDistributableEntry(entry) {
+  if (!entry) return null;
+  const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
+  if (entry.itemData) {
+    return {
+      itemData: entry.itemData,
+      name: entry.itemData.name ?? entry.item?.name ?? "",
+      quantity,
+    };
+  }
+  const uuid = entry.item?.uuid;
+  return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
+}
 
 function makeCreature({ name, tier }) {
   return {

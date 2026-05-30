@@ -30,6 +30,7 @@ import {
   splitCoinPile,
 } from "./loot/hoard-budget.js";
 import { nearestPreset } from "./loot/budget.js";
+import { promptDistributeItems } from "./loot/distribute.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
@@ -89,6 +90,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       clear: HoardLootApp._onClear,
       openItem: HoardLootApp._onOpenItem,
       sendToChat: HoardLootApp._onSendToChat,
+      depositHaul: HoardLootApp._onDepositHaul,
       snap: HoardLootApp._onSnap,
       tierSelect: HoardLootApp._onTierSelect,
       scaleSelect: HoardLootApp._onScaleSelect,
@@ -314,6 +316,30 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error(`${MODULE_ID} | failed to send hoard to chat`, error);
       ui.notifications?.error("Failed to send loot to chat. See console.");
     }
+  }
+
+  /** @this {HoardLootApp} */
+  static async _onDepositHaul(_event, _target) {
+    if (!this._lastResult) {
+      ui.notifications?.info("Nothing to deposit — roll a hoard first.");
+      return;
+    }
+    const items = (this._lastResult.items ?? [])
+      .map(toDistributableEntry)
+      .filter(Boolean);
+    const currency = this._lastResult.coinPileGp
+      ? this._lastResult.coinBreakdown
+      : null;
+    if (items.length === 0 && !currency) {
+      ui.notifications?.info("This hoard has no items or coins to deposit.");
+      return;
+    }
+    await promptDistributeItems(items, {
+      title: "Deposit Hoard to Actor",
+      hint: `Choose a character to receive the hoard's ${items.length} item(s).`,
+      currency,
+      coinLabel: this._lastResult.coinBreakdownLabel,
+    });
   }
 
   /** @this {HoardLootApp} */
@@ -629,6 +655,25 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+/**
+ * Map a hoard result entry to the distribute helper's accepted shape,
+ * preserving the rolled stack quantity. Handles generated `itemData`
+ * (art / gem variants) and plain UUID-bearing compendium entries.
+ */
+function toDistributableEntry(entry) {
+  if (!entry) return null;
+  const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
+  if (entry.itemData) {
+    return {
+      itemData: entry.itemData,
+      name: entry.itemData.name ?? entry.item?.name ?? "",
+      quantity,
+    };
+  }
+  const uuid = entry.item?.uuid;
+  return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
+}
 
 function tierLabel(tier) {
   const map = {
