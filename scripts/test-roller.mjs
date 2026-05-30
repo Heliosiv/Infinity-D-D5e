@@ -539,6 +539,91 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * rollLoot — art-aware pre-filter
+ *
+ * Variable-art items roll their realized gp in [base × 0.35, base × 2.75].
+ * The pre-filter must let an art base into the pool if any roll could fit
+ * the budget; otherwise a high-base art item is silently dropped even
+ * when 35 %+ of its rolls would have been affordable. Mundane items still
+ * obey the strict ceiling.
+ * ------------------------------------------------------------------ */
+{
+  const art = fakeItem({
+    _id: "expensive-art",
+    name: "Gilded Reliquary",
+    type: "loot",
+    gpValue: 1000, // could realize as low as 350 gp (1000 × 0.35)
+    lootType: "loot.loot",
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.decorative-finery",
+    ],
+  });
+  const overpricedMundane = fakeItem({
+    _id: "overpriced-mundane",
+    name: "Wand of Web",
+    gpValue: 2000, // never below 2000 gp; must be filtered
+    lootType: "loot.wand",
+  });
+  const affordable = fakeItem({
+    _id: "affordable",
+    name: "Healing Potion",
+    gpValue: 50,
+    lootType: "loot.consumable",
+  });
+
+  // Budget 500 gp → ceil 550 gp → art base 1000 still allowed (1000 × 0.35
+  // = 350 fits), but the mundane 2000 gp wand must be excluded.
+  const pool = [art, overpricedMundane, affordable];
+  let artPicked = 0;
+  let wandPicked = 0;
+  for (let i = 0; i < 50; i += 1) {
+    const result = rollLoot(pool, {
+      count: 1,
+      budgetGp: 500,
+      artVariants: true,
+      rng: mulberry32(i + 200),
+    });
+    for (const entry of result.items) {
+      if (entry.item._id === "expensive-art") artPicked += 1;
+      if (entry.item._id === "overpriced-mundane") wandPicked += 1;
+    }
+  }
+  assert.ok(
+    artPicked > 0,
+    "art items with high base gp still reach the draw pool",
+  );
+  assert.equal(
+    wandPicked,
+    0,
+    "mundane items above budget ceiling are excluded",
+  );
+
+  // Without artVariants, the art base obeys the strict ceiling too.
+  let strictArtPicked = 0;
+  for (let i = 0; i < 50; i += 1) {
+    const result = rollLoot(pool, {
+      count: 1,
+      budgetGp: 500,
+      artVariants: false,
+      rng: mulberry32(i + 300),
+    });
+    for (const entry of result.items) {
+      if (entry.item._id === "expensive-art") strictArtPicked += 1;
+    }
+  }
+  assert.equal(
+    strictArtPicked,
+    0,
+    "without art variants, the 1000 gp base is filtered like any other item",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot — fallback when nothing fits the budget
  *
  * Pool is entirely above budget. Pre-filter would empty the draw pool;

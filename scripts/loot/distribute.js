@@ -47,7 +47,30 @@ const MODULE_ID = "infinity-dnd5e";
 export function beginDragFromResult(event, entry = null) {
   const sourceEl = event?.currentTarget ?? event?.target;
   const uuid = entry?.item?.uuid ?? sourceEl?.dataset?.uuid;
-  const itemData = cloneItemData(entry?.itemData);
+  const quantity = Math.max(1, Math.floor(Number(entry?.quantity) || 1));
+
+  // Generated art variants always ship their own snapshot — the rolled
+  // appraisal, condition, and provenance only exist in `entry.itemData`.
+  let itemData = cloneItemData(entry?.itemData);
+
+  // Multi-quantity normal items need a snapshot too. Foundry's stock drop
+  // handler resolves a bare `uuid` payload by fetching the compendium
+  // document and copying it AS-IS — with the source's quantity, which is
+  // almost always 1. Without baking the rolled quantity into a snapshot,
+  // dragging a "Healing Potion ×4" tile lands as one potion. Builds the
+  // snapshot from `entry.item` (already a plain object loaded by pack.js)
+  // synchronously — no `fromUuid` round-trip during dragstart.
+  if (!itemData && quantity > 1 && entry?.item) {
+    const snapshot = cloneItemData(entry.item);
+    if (snapshot) {
+      delete snapshot._id;
+      delete snapshot.id;
+      delete snapshot.uuid;
+      setItemQuantity(snapshot, quantity);
+      itemData = snapshot;
+    }
+  }
+
   if (!uuid && !itemData) return false;
   const payload = JSON.stringify(
     itemData ? { type: "Item", data: itemData } : { type: "Item", uuid },

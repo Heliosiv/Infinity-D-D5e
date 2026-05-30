@@ -34,6 +34,7 @@ import {
   normalizeRarity,
 } from "./tag-vocabulary.js";
 import {
+  MIN_ART_MULTIPLIER,
   createArtVariant,
   createArtVariantItemData,
   getVariableTreasureKind,
@@ -209,8 +210,23 @@ export function rollLoot(candidates, opts = {}) {
   // follow-up — producing single-item bundles 10× over budget. Pre-filtering
   // here keeps picks honest in the common case; the fallback below preserves
   // the one-item-over-budget safety when nothing affordable exists.
+  //
+  // Variable art items are a special case: their realized gp is drawn at
+  // materialization time and can land anywhere in
+  // [base × MIN_ART_MULTIPLIER, base × MAX_ART_MULTIPLIER]. When art
+  // variants are enabled, let an art base into the pool if any roll could
+  // fit the budget — otherwise a high-base art item would be silently
+  // dropped even when 35% of its rolls would have been affordable. Pass 2
+  // still trims the bundle if a particular roll lands above budget.
   const affordablePool = budgetEnforced
-    ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
+    ? pool.filter((item) => {
+        const gp = getItemGpValue(item);
+        if (gp <= budgetCeil) return true;
+        if (artVariants && isVariableArtItem(item)) {
+          return gp * MIN_ART_MULTIPLIER <= budgetCeil;
+        }
+        return false;
+      })
     : pool;
   const drawPool = affordablePool.length > 0 ? affordablePool : pool;
 

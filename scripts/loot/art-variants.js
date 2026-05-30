@@ -458,8 +458,17 @@ function pick(values, rng) {
   return values[index];
 }
 
+/**
+ * The lowest and highest realized-value multipliers any art variant can
+ * produce, after condition × provenance × detail × market. Exported so
+ * the roller can reason about the realized-gp range without duplicating
+ * the clamp constants.
+ */
+export const MIN_ART_MULTIPLIER = 0.35;
+export const MAX_ART_MULTIPLIER = 2.75;
+
 function clampMultiplier(value) {
-  return Math.min(2.75, Math.max(0.35, value));
+  return Math.min(MAX_ART_MULTIPLIER, Math.max(MIN_ART_MULTIPLIER, value));
 }
 
 function roundArtGp(value) {

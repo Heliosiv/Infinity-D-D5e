@@ -862,15 +862,38 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
       );
       const remainingBudget = Math.max(0, totalBudget - lockedGp);
 
-      const raw =
-        remainingCount > 0
-          ? rollLoot(candidates, {
-              count: remainingCount,
-              budgetGp: remainingBudget > 0 ? remainingBudget : 0,
-              magicBias: this._form.magicBias,
-              artVariants: this._form.artVariants,
-            })
-          : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
+      // When locks have already met or exceeded the total budget, do NOT
+      // call rollLoot with budgetGp:0 — that disables budget enforcement
+      // entirely and the additional picks come out unbounded. Skip the
+      // roll and surface a warning so the GM understands why no items
+      // were added. (totalBudget=0 is the "no budget set" case and isn't
+      // a problem; only locks-exceed-budget is.)
+      const locksFilledBudget =
+        lockedEntries.length > 0 &&
+        totalBudget > 0 &&
+        remainingBudget <= 0 &&
+        remainingCount > 0;
+
+      let raw;
+      if (locksFilledBudget) {
+        raw = {
+          items: [],
+          totalGp: 0,
+          droppedForBudget: 0,
+          warnings: [
+            `Locked items (${formatGp(lockedGp)}) already fill the ${formatGp(totalBudget)} budget. Unlock an item or raise the budget to add more.`,
+          ],
+        };
+      } else if (remainingCount > 0) {
+        raw = rollLoot(candidates, {
+          count: remainingCount,
+          budgetGp: remainingBudget > 0 ? remainingBudget : 0,
+          magicBias: this._form.magicBias,
+          artVariants: this._form.artVariants,
+        });
+      } else {
+        raw = { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
+      }
 
       const decorate = (entry) => ({
         ...entry,
