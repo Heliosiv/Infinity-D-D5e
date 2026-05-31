@@ -1,0 +1,120 @@
+{{!--
+  Infinity D&D5e — Merchant Session template.
+  Pushed to a player's client when the GM opens a session. Player
+  browses, bargains, buys, sells.
+--}}
+<div class="ms-shell">
+  <header class="ms-head">
+    <span class="ms-head__art" style="background-image:url('{{merchant.art}}');" aria-hidden="true"></span>
+    <div class="ms-head__title">
+      <h2>{{merchant.name}}</h2>
+      {{#if merchant.description}}
+      <p class="ms-head__desc">{{merchant.description}}</p>
+      {{/if}}
+    </div>
+    <div class="ms-head__purse">
+      <span class="ms-head__purse-label">Purse</span>
+      <strong class="ms-head__purse-value">{{walletLabel}}</strong>
+    </div>
+  </header>
+
+  <nav class="ms-tabs" role="tablist">
+    <button type="button" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="tab" data-tab="buy" role="tab">
+      <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Buy
+    </button>
+    <button type="button" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="tab" data-tab="sell" role="tab">
+      <i class="fa-solid fa-coins" aria-hidden="true"></i> Sell
+    </button>
+  </nav>
+
+  {{#if buyActive}}
+  <section class="ms-rows" aria-label="Goods for sale">
+    {{#if buyRows.length}}
+      {{#each buyRows}}
+      <article class="ms-row {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}">
+        <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+        <div class="ms-row__copy">
+          <strong class="ms-row__name">{{name}}</strong>
+          <span class="ms-row__meta">
+            {{stockLabel}}
+            {{#if sealLabel}}<span class="ms-seal" title="Bargained price">{{sealLabel}}</span>{{/if}}
+          </span>
+        </div>
+        <div class="ms-row__price">
+          {{#if priceDeltaLabel}}
+          <span class="ms-row__base">{{baseLabel}}</span>
+          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <span class="ms-row__delta {{deltaClass}}">{{priceDeltaLabel}}</span>
+          {{else}}
+          <strong class="ms-row__final">{{finalLabel}}</strong>
+          {{/if}}
+        </div>
+        <div class="ms-row__actions">
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainBuy" data-uuid="{{uuid}}" {{#if bargainLocked}}disabled{{/if}} title="Bargain (one attempt per item)">
+            <i class="fa-solid fa-comments-dollar" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="mw-btn" data-action="buyOne" data-uuid="{{uuid}}" {{#if cannotBuy}}disabled{{/if}}>
+            Buy 1
+          </button>
+          <input class="mw-input mw-input--num" type="number" data-role="buyQty" data-uuid="{{uuid}}" min="1" max="{{maxQty}}" value="1" {{#if cannotBuy}}disabled{{/if}} title="Quantity to buy" />
+          <button type="button" class="mw-btn mw-btn--primary" data-action="buyN" data-uuid="{{uuid}}" {{#if cannotBuy}}disabled{{/if}}>
+            Buy
+          </button>
+        </div>
+      </article>
+      {{/each}}
+    {{else}}
+      <p class="mw-empty">This merchant has nothing on display.</p>
+    {{/if}}
+  </section>
+  {{/if}}
+
+  {{#if sellActive}}
+  <section class="ms-rows" aria-label="Your sellable items">
+    {{#if sellRows.length}}
+      {{#each sellRows}}
+      <article class="ms-row" data-item-id="{{itemId}}">
+        <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+        <div class="ms-row__copy">
+          <strong class="ms-row__name">{{name}}</strong>
+          <span class="ms-row__meta">
+            You have {{ownedQty}}
+            {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
+          </span>
+        </div>
+        <div class="ms-row__price">
+          {{#if priceDeltaLabel}}
+          <span class="ms-row__base">{{baseLabel}}</span>
+          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <span class="ms-row__delta {{deltaClass}}">{{priceDeltaLabel}}</span>
+          {{else}}
+          <strong class="ms-row__final">{{finalLabel}}</strong>
+          {{/if}}
+        </div>
+        <div class="ms-row__actions">
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainSell" data-item-id="{{itemId}}" {{#if bargainLocked}}disabled{{/if}} title="Bargain">
+            <i class="fa-solid fa-comments-dollar" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="mw-btn" data-action="sellOne" data-item-id="{{itemId}}">Sell 1</button>
+          <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{ownedQty}}" value="1" title="Quantity to sell" />
+          <button type="button" class="mw-btn mw-btn--primary" data-action="sellN" data-item-id="{{itemId}}">Sell</button>
+        </div>
+      </article>
+      {{/each}}
+    {{else}}
+      <p class="mw-empty">No sellable items on your sheet.</p>
+    {{/if}}
+  </section>
+  {{/if}}
+
+  {{#if log.length}}
+  <footer class="ms-log" aria-label="Transaction log">
+    <h4>This session</h4>
+    <ul>
+      {{#each log}}
+      <li class="{{kind}}">{{text}}</li>
+      {{/each}}
+    </ul>
+  </footer>
+  {{/if}}
+</div>

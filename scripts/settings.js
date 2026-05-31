@@ -34,6 +34,12 @@ export const SETTING_KEYS = Object.freeze({
   PERSIST_STATE: "persistState",
   PACK_TTL_MINUTES: "packTtlMinutes",
   CHAT_MODE: "chatMode",
+  MERCHANTS: "merchants",
+  MERCHANT_DEFAULT_MARKUP: "merchantDefaultMarkup",
+  MERCHANT_DEFAULT_SELL_RATIO: "merchantDefaultSellRatio",
+  MERCHANT_DEFAULT_BARGAIN_DC: "merchantDefaultBargainDC",
+  MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
+  MERCHANT_CHAT_MODE: "merchantChatMode",
 });
 
 /* ------------------------------------------------------------------ *
@@ -227,6 +233,85 @@ export const SETTINGS = Object.freeze([
       public: "Public — visible to everyone",
       "whisper-gm": "Whisper to GMs only",
       "whisper-players": "Whisper to active players (no GMs)",
+    },
+  },
+  {
+    key: SETTING_KEYS.MERCHANTS,
+    name: "Merchant Records",
+    hint:
+      "Persistent merchant data. Managed by the Merchant Workspace; " +
+      "edit through that window rather than this field.",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_DEFAULT_MARKUP,
+    name: "Default Merchant Markup",
+    hint:
+      "Multiplier applied to item base price when a merchant doesn't set " +
+      "a custom markup. 1.0 = at cost, 1.2 = +20%, 2.0 = double.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 1.0,
+    range: { min: 0.1, max: 5.0, step: 0.05 },
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_DEFAULT_SELL_RATIO,
+    name: "Default Sell-Back Ratio",
+    hint:
+      "Multiplier applied to item base price when a player sells to a " +
+      "merchant. 0.5 = half-price (standard 5e), 1.0 = full value.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 0.5,
+    range: { min: 0, max: 1.5, step: 0.05 },
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_DEFAULT_BARGAIN_DC,
+    name: "Default Bargain DC",
+    hint:
+      "Skill-check DC used when a merchant doesn't set its own. " +
+      "10 = trivial, 15 = medium, 20 = hard.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 15,
+    range: { min: 5, max: 30, step: 1 },
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_BARGAIN_TIERS,
+    name: "Bargain Tier Schedule",
+    hint:
+      "Roll-margin tiers that decide bargain price deltas. Managed in code " +
+      "(see merchant/bargain.js) — editable via macro for fine-tuning.",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [
+      { id: "crit-success", minMargin: 10, deltaPct: -20 },
+      { id: "success", minMargin: 0, deltaPct: -10 },
+      { id: "failure", minMargin: -9, deltaPct: 10 },
+      { id: "crit-failure", minMargin: -999, deltaPct: 20 },
+    ],
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_CHAT_MODE,
+    name: "Merchant Receipt Mode",
+    hint:
+      "Who sees the chat receipt after a buy/sell/bargain. Whisper keeps " +
+      "deals between the GM and the involved player.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "whisper-gm-buyer",
+    choices: {
+      "whisper-gm-buyer": "Whisper to GM and buyer (recommended)",
+      public: "Public — visible to everyone",
+      "whisper-gm": "Whisper to GMs only",
     },
   },
 ]);

@@ -1,0 +1,248 @@
+/* =========================================================
+   Infinity D&D5e — Merchant Session styles (player buy/sell)
+   --------------------------------------------------------- */
+
+.infinity-dnd5e.infinity-merchant-session {
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  min-width: min(640px, calc(100vw - 56px));
+  min-height: min(520px, calc(100vh - 72px));
+}
+
+.infinity-dnd5e.infinity-merchant-session .window-content,
+.infinity-dnd5e.infinity-merchant-session {
+  padding: 0;
+}
+
+.ms-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Header */
+.ms-head {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+}
+.ms-head__art {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg) center/cover no-repeat;
+  border: 1px solid var(--lf-border);
+}
+.ms-head__title h2 {
+  margin: 0 0 2px;
+  font-size: 1.18rem;
+  color: var(--lf-text-strong);
+}
+.ms-head__desc {
+  margin: 0;
+  color: var(--lf-muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.ms-head__purse {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  min-width: 130px;
+}
+.ms-head__purse-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+.ms-head__purse-value {
+  font-size: 0.96rem;
+  color: var(--lf-text-strong);
+  font-feature-settings: "tnum";
+}
+
+/* Tabs */
+.ms-tabs {
+  display: inline-flex;
+  border: 1px solid var(--lf-border);
+  border-radius: 999px;
+  background: var(--lf-surface);
+  padding: 3px;
+  align-self: flex-start;
+}
+.ms-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--lf-text);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.ms-tab.is-active {
+  background: var(--lf-accent);
+  color: var(--lf-accent-contrast);
+}
+
+/* Rows */
+.ms-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding-right: 4px;
+}
+.ms-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+.ms-row.is-out {
+  opacity: 0.6;
+}
+.ms-row.is-missing {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.ms-row__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg) center/cover no-repeat;
+  border: 1px solid var(--lf-border);
+}
+.ms-row__copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.ms-row__name {
+  font-size: 0.96rem;
+  color: var(--lf-text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ms-row__meta {
+  font-size: 0.78rem;
+  color: var(--lf-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ms-row__price {
+  display: grid;
+  gap: 0;
+  text-align: right;
+  min-width: 110px;
+}
+.ms-row__base {
+  font-size: 0.74rem;
+  color: var(--lf-muted);
+  text-decoration: line-through;
+}
+.ms-row__final {
+  font-size: 1.02rem;
+  color: var(--lf-text-strong);
+  font-feature-settings: "tnum";
+}
+.ms-row__delta {
+  font-size: 0.74rem;
+}
+.ms-row__delta.up {
+  color: #d28a8a;
+}
+.ms-row__delta.down {
+  color: #8acaa1;
+}
+.ms-row__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ms-row__actions .mw-input--num {
+  width: 56px;
+}
+
+/* Seal pill */
+.ms-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--lf-surface-elev);
+  color: var(--lf-text-strong);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid var(--lf-border);
+}
+
+/* Transaction log */
+.ms-log {
+  flex: 0 0 auto;
+  max-height: 96px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg-alt);
+}
+.ms-log h4 {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lf-muted);
+}
+.ms-log ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.ms-log li {
+  font-size: 0.82rem;
+  color: var(--lf-text);
+}
+.ms-log li.buy {
+  color: var(--lf-text-strong);
+}
+.ms-log li.sell {
+  color: #8acaa1;
+}
+.ms-log li.bargain {
+  color: var(--lf-accent);
+}
+.ms-log li.fail {
+  color: #d28a8a;
+}

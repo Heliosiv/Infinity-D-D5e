@@ -8,6 +8,8 @@ const CSS_FILES = [
   "styles/loot-forge.css",
   "styles/hoard-loot.css",
   "styles/per-creature-loot.css",
+  "styles/merchant-workspace.css",
+  "styles/merchant-session.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -79,6 +81,22 @@ export function buildHarnessViews() {
       "templates/per-creature-loot.hbs",
       perCreatureContext(),
       { width: 820, height: 760 },
+    ),
+    view(
+      "merchant-workspace",
+      "Merchant Workspace",
+      "infinity-merchant-workspace",
+      "templates/merchant-workspace.hbs",
+      merchantWorkspaceContext(),
+      { width: 1000, height: 720 },
+    ),
+    view(
+      "merchant-session",
+      "Merchant Session",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionContext(),
+      { width: 720, height: 600 },
     ),
   ];
 }
@@ -462,6 +480,166 @@ function perCreatureContext() {
         items: resultItems().slice(index, index + 2),
       })),
     },
+  };
+}
+
+function merchantWorkspaceContext() {
+  const selected = {
+    id: "m-curios",
+    name: "Yannick's Curios",
+    art: "icons/svg/shop.svg",
+    description: "A cramped stall of oddments and salvaged gear.",
+    defaultMarkup: 1.2,
+    sellRatio: 0.5,
+    bargainDC: 15,
+    bargainAdvantage: false,
+    items: [{}, {}, {}],
+    itemCountIsOne: false,
+  };
+  return {
+    moduleId: "infinity-dnd5e",
+    hasMerchants: true,
+    merchants: [
+      {
+        id: "m-curios",
+        name: "Yannick's Curios",
+        art: "icons/svg/shop.svg",
+        itemCount: 3,
+        itemCountIsOne: false,
+        allowedCount: 2,
+        allowedCountIsOne: false,
+        selected: true,
+      },
+      {
+        id: "m-smith",
+        name: "The Iron Rest",
+        art: "icons/svg/anvil.svg",
+        itemCount: 1,
+        itemCountIsOne: true,
+        allowedCount: 1,
+        allowedCountIsOne: true,
+        selected: false,
+      },
+    ],
+    selected,
+    hasPlayers: true,
+    playerOptions: [
+      { id: "u-alice", name: "Alice", checked: true },
+      { id: "u-bob", name: "Bob", checked: false },
+    ],
+    skillOptions: [
+      { id: "prf", label: "Persuasion", checked: true },
+      { id: "dec", label: "Deception", checked: true },
+      { id: "itm", label: "Intimidation", checked: false },
+    ],
+    inventoryRows: [
+      {
+        uuid: "Compendium.infinity-dnd5e-items.Item.potion",
+        name: "Potion of Healing",
+        img: iconDataUri("#7a2f2f", "PO"),
+        basePriceLabel: "60.00 gp",
+        qtyDisplay: 5,
+        startingQty: 5,
+        priceOverrideDisplay: "",
+        unlimited: false,
+        missing: false,
+        outOfStock: false,
+      },
+      {
+        uuid: "Compendium.infinity-dnd5e-items.Item.rope",
+        name: "Silk Rope",
+        img: iconDataUri("#6b5a2f", "RO"),
+        basePriceLabel: "12.00 gp",
+        qtyDisplay: "∞",
+        startingQty: 1,
+        priceOverrideDisplay: 10,
+        unlimited: true,
+        missing: false,
+        outOfStock: false,
+      },
+      {
+        uuid: "Compendium.infinity-dnd5e-items.Item.gone",
+        name: "(unknown item)",
+        img: "icons/svg/item-bag.svg",
+        basePriceLabel: "—",
+        qtyDisplay: 0,
+        startingQty: 2,
+        priceOverrideDisplay: "",
+        unlimited: false,
+        missing: true,
+        outOfStock: true,
+      },
+    ],
+    activeSessions: [{ sessionId: "s-1", userLabel: "Alice" }],
+    canOpenSession: true,
+  };
+}
+
+function merchantSessionContext() {
+  return {
+    merchant: {
+      id: "m-curios",
+      name: "Yannick's Curios",
+      art: "icons/svg/shop.svg",
+      description: "A cramped stall of oddments and salvaged gear.",
+    },
+    walletLabel: "42 gp · 5 sp",
+    buyActive: true,
+    sellActive: true,
+    buyRows: [
+      {
+        uuid: "Compendium.infinity-dnd5e-items.Item.potion",
+        name: "Potion of Healing",
+        img: iconDataUri("#7a2f2f", "PO"),
+        stockLabel: "Stock: 5",
+        baseLabel: "60.00 gp",
+        finalLabel: "48.00 gp",
+        priceDeltaLabel: "-20%",
+        deltaClass: "down",
+        // Harness shows the sealed-price markup but keeps the bargain
+        // button enabled so the layout audit can exercise every control.
+        bargainLocked: false,
+        sealLabel: "crit-success -20%",
+        cannotBuy: false,
+        maxQty: 5,
+        outOfStock: false,
+        missing: false,
+      },
+      {
+        uuid: "Compendium.infinity-dnd5e-items.Item.rope",
+        name: "Silk Rope",
+        img: iconDataUri("#6b5a2f", "RO"),
+        stockLabel: "Unlimited stock",
+        baseLabel: "12.00 gp",
+        finalLabel: "12.00 gp",
+        priceDeltaLabel: "",
+        deltaClass: "up",
+        bargainLocked: false,
+        sealLabel: "",
+        cannotBuy: false,
+        maxQty: 99,
+        outOfStock: false,
+        missing: false,
+      },
+    ],
+    sellRows: [
+      {
+        itemId: "Item.longsword",
+        name: "Longsword",
+        img: iconDataUri("#54616b", "LO"),
+        ownedQty: 1,
+        baseLabel: "7.50 gp",
+        finalLabel: "9.00 gp",
+        priceDeltaLabel: "+20%",
+        deltaClass: "down",
+        bargainLocked: false,
+        sealLabel: "crit-success +20%",
+      },
+    ],
+    log: [
+      { kind: "buy", text: "Bought 1× Potion of Healing for 48.00 gp" },
+      { kind: "bargain", text: "Bargain crit-success · -20%" },
+    ],
   };
 }
 

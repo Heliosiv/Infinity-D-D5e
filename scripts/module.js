@@ -12,6 +12,12 @@ import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
 import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
+import { MerchantWorkspaceApp } from "./merchant-workspace.js";
+import {
+  MerchantSessionApp,
+  registerMerchantSessionAutoOpen,
+} from "./merchant-session.js";
+import { registerMerchantSocket } from "./merchant/socket.js";
 import {
   SOUND_EVENTS,
   SOUND_REGISTRY,
@@ -59,6 +65,8 @@ function buildApi() {
     openPerEncounterLoot: () => PerEncounterLootApp.open(),
     openHoardLoot: () => HoardLootApp.open(),
     openPerCreatureLoot: () => PerCreatureLootApp.open(),
+    openMerchantWorkspace: () => MerchantWorkspaceApp.open(),
+    MerchantSessionApp,
     SOUND_EVENTS,
     SOUND_REGISTRY,
     playSoundEvent,
@@ -181,6 +189,17 @@ function registerBuiltinTools() {
     status: "available",
     open: () => PerCreatureLootApp.open(),
   });
+
+  registerTool({
+    id: "merchant-workspace",
+    title: "Merchant Workspace",
+    description:
+      "Curate merchants — inventory, markup, bargain DC, allowed players — then open shopping sessions on demand.",
+    icon: "fa-solid fa-store",
+    category: "merchants",
+    status: "available",
+    open: () => MerchantWorkspaceApp.open(),
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -267,6 +286,8 @@ Hooks.once("ready", () => {
     if (mod && !mod.api) mod.api = buildApi();
     registerSoundSocket();
     registerSoundAutomation();
+    registerMerchantSocket();
+    registerMerchantSessionAutoOpen();
     void registerMonksTokenbarCompat().catch((error) => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });

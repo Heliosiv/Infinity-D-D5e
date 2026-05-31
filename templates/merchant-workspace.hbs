@@ -1,0 +1,200 @@
+{{!--
+  Infinity D&D5e — Merchant Workspace template.
+  GM curation UI: list of merchants on the left, selected merchant
+  editor + inventory grid + session-launch controls on the right.
+--}}
+<div class="mw-shell">
+  <header class="mw-head">
+    <div class="mw-head__title">
+      <h2>Merchant Workspace</h2>
+      <p class="mw-head__hint">
+        Curate merchants once. Open a session for a specific player when they're ready to shop —
+        their client pops a buy/sell window automatically.
+      </p>
+    </div>
+    <div class="mw-head__actions">
+      <button type="button" class="mw-btn mw-btn--primary" data-action="newMerchant" title="Create a new merchant">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> New Merchant
+      </button>
+    </div>
+  </header>
+
+  <div class="mw-body">
+    {{!-- Left rail: merchant list --}}
+    <aside class="mw-list" aria-label="Merchants">
+      {{#if hasMerchants}}
+        <ul class="mw-list__items">
+          {{#each merchants}}
+          <li class="mw-list__row {{#if selected}}is-selected{{/if}}">
+            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}">
+              <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
+              <span class="mw-list__copy">
+                <strong class="mw-list__name">{{name}}</strong>
+                <span class="mw-list__meta">{{itemCount}} item{{#unless itemCountIsOne}}s{{/unless}} · {{allowedCount}} player{{#unless allowedCountIsOne}}s{{/unless}}</span>
+              </span>
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p class="mw-empty">No merchants yet. Click <strong>New Merchant</strong> to start.</p>
+      {{/if}}
+    </aside>
+
+    {{!-- Right pane: editor --}}
+    <section class="mw-edit" aria-label="Merchant editor">
+      {{#if selected}}
+      <form class="mw-form" data-form="merchant-edit" autocomplete="off">
+        <div class="mw-form__head">
+          <span class="mw-form__art" style="background-image:url('{{selected.art}}');" aria-hidden="true"></span>
+          <div class="mw-form__head-fields">
+            <label class="mw-field">
+              <span class="mw-field__label">Name</span>
+              <input class="mw-input" type="text" name="name" value="{{selected.name}}" />
+            </label>
+            <label class="mw-field">
+              <span class="mw-field__label">Art URL</span>
+              <input class="mw-input" type="text" name="art" value="{{selected.art}}" placeholder="icons/svg/shop.svg" />
+            </label>
+          </div>
+        </div>
+
+        <label class="mw-field">
+          <span class="mw-field__label">Description / Flavor</span>
+          <textarea class="mw-textarea" name="description" rows="2" placeholder="Optional flavor text shown to players.">{{selected.description}}</textarea>
+        </label>
+
+        <div class="mw-form__grid">
+          <label class="mw-field">
+            <span class="mw-field__label">Markup ×</span>
+            <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Sell Ratio ×</span>
+            <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Bargain DC</span>
+            <input class="mw-input" type="number" name="bargainDC" min="5" max="30" step="1" value="{{selected.bargainDC}}" />
+          </label>
+          <label class="mw-field mw-field--toggle">
+            <span class="mw-field__label">Advantage on Bargain</span>
+            <input type="checkbox" name="bargainAdvantage" {{#if selected.bargainAdvantage}}checked{{/if}} />
+          </label>
+        </div>
+
+        <fieldset class="mw-fieldset">
+          <legend>Allowed Skills</legend>
+          <div class="mw-chiprow">
+            {{#each skillOptions}}
+            <label class="mw-chip {{#if checked}}is-active{{/if}}">
+              <input type="checkbox" name="allowedSkills" value="{{id}}" {{#if checked}}checked{{/if}} />
+              <span>{{label}}</span>
+            </label>
+            {{/each}}
+          </div>
+        </fieldset>
+
+        <fieldset class="mw-fieldset">
+          <legend>Allowed Players</legend>
+          {{#if hasPlayers}}
+          <div class="mw-chiprow">
+            {{#each playerOptions}}
+            <label class="mw-chip {{#if checked}}is-active{{/if}}">
+              <input type="checkbox" name="allowedUserIds" value="{{id}}" {{#if checked}}checked{{/if}} />
+              <span>{{name}}</span>
+            </label>
+            {{/each}}
+          </div>
+          {{else}}
+          <p class="mw-empty">No active player users.</p>
+          {{/if}}
+        </fieldset>
+
+        <fieldset class="mw-fieldset mw-fieldset--inv">
+          <legend>Inventory <small>({{selected.items.length}} {{#if selected.itemCountIsOne}}row{{else}}rows{{/if}})</small></legend>
+          <div class="mw-inv__head">
+            <span>Item</span>
+            <span>Qty</span>
+            <span>Start</span>
+            <span>Override gp</span>
+            <span class="mw-inv__head-flag">∞</span>
+            <span></span>
+          </div>
+          <div class="mw-inv__drop" data-drop-zone="inventory">
+            {{#if inventoryRows.length}}
+              {{#each inventoryRows}}
+              <div class="mw-inv__row {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}">
+                <div class="mw-inv__name">
+                  <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+                  <div class="mw-inv__copy">
+                    <strong>{{name}}</strong>
+                    <span class="mw-inv__meta">{{basePriceLabel}}{{#if missing}} · <em>missing</em>{{/if}}</span>
+                  </div>
+                </div>
+                <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} />
+                <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" />
+                <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" />
+                <label class="mw-toggle">
+                  <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
+                </label>
+                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="invRemove" data-uuid="{{uuid}}" title="Remove from inventory">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+              {{/each}}
+            {{else}}
+              <p class="mw-empty">Drag items from the sidebar / compendium here, or click <strong>Add From Pack</strong>.</p>
+            {{/if}}
+          </div>
+          <div class="mw-inv__actions">
+            <button type="button" class="mw-btn" data-action="addFromPack">
+              <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Pack
+            </button>
+            <button type="button" class="mw-btn" data-action="restock">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All
+            </button>
+          </div>
+        </fieldset>
+
+        <div class="mw-form__foot">
+          <div class="mw-form__foot-left">
+            <button type="button" class="mw-btn mw-btn--danger" data-action="deleteMerchant">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Merchant
+            </button>
+          </div>
+          <div class="mw-form__foot-right">
+            <button type="button" class="mw-btn" data-action="save">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save
+            </button>
+            <button type="button" class="mw-btn mw-btn--primary" data-action="openSession" {{#unless canOpenSession}}disabled{{/unless}}>
+              <i class="fa-solid fa-store" aria-hidden="true"></i> Open Session
+            </button>
+          </div>
+        </div>
+
+        {{#if activeSessions.length}}
+        <div class="mw-sessions">
+          <h4>Active Sessions</h4>
+          <ul>
+            {{#each activeSessions}}
+            <li>
+              <span>{{userLabel}}</span>
+              <button type="button" class="mw-btn mw-btn--ghost" data-action="closeSession" data-session-id="{{sessionId}}">
+                <i class="fa-solid fa-power-off" aria-hidden="true"></i> Close
+              </button>
+            </li>
+            {{/each}}
+          </ul>
+        </div>
+        {{/if}}
+      </form>
+      {{else}}
+      <div class="mw-edit__empty">
+        <i class="fa-solid fa-shop-lock" aria-hidden="true"></i>
+        <p>Select a merchant from the list, or create one to get started.</p>
+      </div>
+      {{/if}}
+    </section>
+  </div>
+</div>

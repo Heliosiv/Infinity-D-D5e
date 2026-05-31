@@ -59,6 +59,27 @@ const SOUND_SPECS = Object.freeze({
   deposit: { duration: 0.6, peak: 0.66, render: renderDeposit },
   "clear-reset": { duration: 0.38, peak: 0.52, render: renderClearReset },
   "warning-muted": { duration: 0.34, peak: 0.45, render: renderWarningMuted },
+  "merchant-session-open": {
+    duration: 0.42,
+    peak: 0.58,
+    render: renderMerchantSessionOpen,
+  },
+  "merchant-purchase": {
+    duration: 0.6,
+    peak: 0.64,
+    render: renderMerchantPurchase,
+  },
+  "merchant-sale": { duration: 0.58, peak: 0.6, render: renderMerchantSale },
+  "merchant-bargain-win": {
+    duration: 0.78,
+    peak: 0.66,
+    render: renderMerchantBargainWin,
+  },
+  "merchant-bargain-fail": {
+    duration: 0.5,
+    peak: 0.5,
+    render: renderMerchantBargainFail,
+  },
 });
 
 if (isMainModule()) {
@@ -595,6 +616,134 @@ function renderWarningMuted(buffer, rng) {
     pan: -0.04,
   });
   addRoomTail(buffer, { amount: 0.035, delayMs: 27, feedback: 0.05 });
+}
+
+function renderMerchantSessionOpen(buffer, rng) {
+  addWoodClick(buffer, rng, {
+    start: 0.005,
+    duration: 0.06,
+    freq: 280,
+    amp: 0.18,
+    pan: -0.18,
+  });
+  addBell(buffer, {
+    start: 0.06,
+    duration: 0.22,
+    freq: 540,
+    amp: 0.09,
+    pan: -0.1,
+  });
+  addBell(buffer, {
+    start: 0.14,
+    duration: 0.22,
+    freq: 810,
+    amp: 0.062,
+    pan: 0.22,
+  });
+  addRoomTail(buffer, { amount: 0.07, delayMs: 34, feedback: 0.12 });
+}
+
+function renderMerchantPurchase(buffer, rng) {
+  addImpact(buffer, rng, {
+    start: 0.0,
+    duration: 0.18,
+    freq: 132,
+    amp: 0.16,
+    pan: -0.1,
+    color: "cloth",
+  });
+  for (const start of [0.08, 0.16, 0.27, 0.38]) {
+    addCoinClick(buffer, rng, {
+      start: start + rng() * 0.012,
+      amp: 0.16 + rng() * 0.06,
+      freq: 680 + rng() * 320,
+      pan: -0.4 + rng() * 0.8,
+    });
+  }
+  addBell(buffer, {
+    start: 0.45,
+    duration: 0.12,
+    freq: 720,
+    amp: 0.04,
+    pan: 0.1,
+  });
+  addRoomTail(buffer, { amount: 0.08, delayMs: 36, feedback: 0.13 });
+}
+
+function renderMerchantSale(buffer, rng) {
+  for (const start of [0.02, 0.1, 0.19, 0.3]) {
+    addCoinClick(buffer, rng, {
+      start: start + rng() * 0.01,
+      amp: 0.13 + rng() * 0.05,
+      freq: 540 + rng() * 280,
+      pan: -0.35 + rng() * 0.7,
+    });
+  }
+  addPitchSweep(buffer, {
+    start: 0.34,
+    duration: 0.2,
+    fromFreq: 360,
+    toFreq: 520,
+    amp: 0.06,
+    pan: 0.08,
+    attack: 0.012,
+    release: 1.4,
+  });
+  addRoomTail(buffer, { amount: 0.06, delayMs: 30, feedback: 0.1 });
+}
+
+function renderMerchantBargainWin(buffer, rng) {
+  addBell(buffer, {
+    start: 0.0,
+    duration: 0.55,
+    freq: 660,
+    amp: 0.11,
+    pan: -0.18,
+  });
+  addBell(buffer, {
+    start: 0.06,
+    duration: 0.5,
+    freq: 990,
+    amp: 0.072,
+    pan: 0.24,
+  });
+  addBell(buffer, {
+    start: 0.18,
+    duration: 0.4,
+    freq: 1320,
+    amp: 0.045,
+    pan: 0.0,
+  });
+  addGlints(buffer, rng, {
+    count: 4,
+    start: 0.12,
+    spread: 0.45,
+    baseFreq: 1500,
+    amp: 0.02,
+  });
+  addRoomTail(buffer, { amount: 0.12, delayMs: 45, feedback: 0.2 });
+}
+
+function renderMerchantBargainFail(buffer, rng) {
+  addImpact(buffer, rng, {
+    start: 0.0,
+    duration: 0.24,
+    freq: 96,
+    amp: 0.2,
+    pan: 0.04,
+    color: "wood",
+  });
+  addPitchSweep(buffer, {
+    start: 0.05,
+    duration: 0.28,
+    fromFreq: 280,
+    toFreq: 160,
+    amp: 0.055,
+    pan: -0.06,
+    attack: 0.018,
+    release: 1.3,
+  });
+  addRoomTail(buffer, { amount: 0.04, delayMs: 26, feedback: 0.07 });
 }
 
 function createBuffer(duration) {

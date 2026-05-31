@@ -23,6 +23,16 @@ const CHECKS = [
     template: "templates/per-creature-loot.hbs",
     script: "scripts/per-creature-loot.js",
   },
+  {
+    name: "merchant workspace",
+    template: "templates/merchant-workspace.hbs",
+    script: "scripts/merchant-workspace.js",
+  },
+  {
+    name: "merchant session",
+    template: "templates/merchant-session.hbs",
+    script: "scripts/merchant-session.js",
+  },
 ];
 
 for (const check of CHECKS) {

@@ -28,8 +28,8 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
       `${entry.key} scope must be world or client`,
     );
     assert.ok(
-      [Boolean, Number, String].includes(entry.type),
-      `${entry.key} type must be one of the supported primitives`,
+      [Boolean, Number, String, Array, Object].includes(entry.type),
+      `${entry.key} type must be one of the supported types`,
     );
     assert.notEqual(entry.default, undefined, `${entry.key} missing default`);
 
