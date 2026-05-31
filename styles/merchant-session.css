@@ -3,6 +3,18 @@
    --------------------------------------------------------- */
 
 .infinity-dnd5e.infinity-merchant-session {
+  /* Fantasy-shop theme layer — scoped to merchant windows, layered over
+     --lf-* (never overrides them globally, so loot/dashboard stay flat). */
+  --ms-parchment: #e9dcc0;
+  --ms-parchment-ink: #3a2c1a;
+  --ms-wood: #4a2f1c;
+  --ms-wood-dark: #2e1d10;
+  --ms-brass: #c8a24a;
+  --ms-brass-soft: color-mix(in srgb, var(--ms-brass) 55%, transparent);
+  --ms-ledger-line: color-mix(in srgb, var(--ms-wood) 20%, transparent);
+  --ms-frame: 0 0 0 1px var(--ms-wood-dark), 0 0 0 3px var(--ms-brass-soft);
+  --ms-font-display: "Modesto Condensed", "Signika", "Inter", serif;
+
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -26,55 +38,94 @@
   overflow: hidden;
 }
 
-/* Header */
+/* Header — a carved wooden signboard with a hanging parchment nameplate.
+   The wood grain lives in the element background (behind DOM children);
+   the brass trim is the --ms-frame box-shadow. */
 .ms-head {
   display: grid;
-  grid-template-columns: 72px 1fr auto;
-  gap: 12px;
+  grid-template-columns: 84px 1fr auto;
+  gap: 14px;
   align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--lf-border);
+  padding: 14px 16px;
   border-radius: var(--lf-radius);
-  background: var(--lf-bg-alt);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 22px,
+      color-mix(in srgb, var(--ms-wood-dark) 30%, transparent) 22px 23px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ms-wood) 86%, black) 0%,
+      var(--ms-wood) 45%,
+      var(--ms-wood-dark) 100%
+    );
+  box-shadow:
+    var(--ms-frame),
+    inset 0 1px 0 color-mix(in srgb, var(--ms-brass) 30%, transparent);
 }
 .ms-head__art {
-  width: 72px;
-  height: 72px;
+  width: 84px;
+  height: 84px;
   border-radius: var(--lf-radius-sm);
   background: var(--lf-bg) center/cover no-repeat;
-  border: 1px solid var(--lf-border);
+  box-shadow: var(--ms-frame);
+}
+.ms-head__title {
+  align-self: center;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: radial-gradient(
+    130% 130% at 50% 0%,
+    color-mix(in srgb, var(--ms-parchment) 92%, white) 0%,
+    var(--ms-parchment) 72%
+  );
+  color: var(--ms-parchment-ink);
+  box-shadow:
+    0 0 0 2px var(--ms-wood-dark),
+    0 6px 10px -6px rgba(0, 0, 0, 0.6);
 }
 .ms-head__title h2 {
-  margin: 0 0 2px;
-  font-size: 1.18rem;
-  color: var(--lf-text-strong);
+  margin: 0;
+  font-family: var(--ms-font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ms-parchment-ink);
 }
 .ms-head__desc {
-  margin: 0;
-  color: var(--lf-muted);
-  font-size: 0.86rem;
+  margin: 3px 0 0;
+  color: color-mix(in srgb, var(--ms-parchment-ink) 78%, transparent);
+  font-size: 0.84rem;
   line-height: 1.35;
 }
 .ms-head__purse {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
-  padding: 8px 12px;
-  border-radius: var(--lf-radius-sm);
-  background: var(--lf-surface);
-  border: 1px solid var(--lf-border);
-  min-width: 130px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--ms-parchment);
+  color: var(--ms-parchment-ink);
+  box-shadow:
+    0 0 0 2px var(--ms-wood-dark),
+    0 4px 8px -4px rgba(0, 0, 0, 0.5);
+  min-width: 128px;
 }
 .ms-head__purse-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--lf-muted);
+  color: color-mix(in srgb, var(--ms-parchment-ink) 68%, transparent);
 }
 .ms-head__purse-value {
-  font-size: 0.96rem;
-  color: var(--lf-text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ms-parchment-ink);
   font-feature-settings: "tnum";
 }
 
@@ -131,6 +182,49 @@
   opacity: 0.55;
   border-style: dashed;
 }
+
+/* Rarity color-coding — left stripe + tinted badge, reusing --lf-rarity-*.
+   Glow on rare+ is gated by the mw-no-glow root toggle. */
+.ms-row--common { border-left: 3px solid var(--lf-rarity-common); }
+.ms-row--uncommon { border-left: 3px solid var(--lf-rarity-uncommon); }
+.ms-row--rare { border-left: 3px solid var(--lf-rarity-rare); }
+.ms-row--very-rare { border-left: 3px solid var(--lf-rarity-very-rare); }
+.ms-row--legendary { border-left: 3px solid var(--lf-rarity-legendary); }
+.ms-row--artifact { border-left: 3px solid var(--lf-rarity-artifact); }
+
+.infinity-merchant-session:not(.mw-no-glow) .ms-row--rare {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lf-rarity-rare) 30%, transparent);
+}
+.infinity-merchant-session:not(.mw-no-glow) .ms-row--very-rare {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lf-rarity-very-rare) 35%, transparent),
+    0 4px 16px -8px color-mix(in srgb, var(--lf-rarity-very-rare) 55%, transparent);
+}
+.infinity-merchant-session:not(.mw-no-glow) .ms-row--legendary {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lf-rarity-legendary) 45%, transparent),
+    0 6px 22px -8px color-mix(in srgb, var(--lf-rarity-legendary) 55%, transparent);
+}
+.infinity-merchant-session:not(.mw-no-glow) .ms-row--artifact {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lf-rarity-artifact) 55%, transparent),
+    0 8px 26px -10px color-mix(in srgb, var(--lf-rarity-artifact) 60%, transparent);
+}
+
+.ms-rarity {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+.ms-rarity--common { color: var(--lf-rarity-common); }
+.ms-rarity--uncommon { color: var(--lf-rarity-uncommon); }
+.ms-rarity--rare { color: var(--lf-rarity-rare); }
+.ms-rarity--very-rare { color: var(--lf-rarity-very-rare); }
+.ms-rarity--legendary { color: var(--lf-rarity-legendary); }
+.ms-rarity--artifact { color: var(--lf-rarity-artifact); }
 .ms-row__icon {
   width: 44px;
   height: 44px;
@@ -169,18 +263,39 @@
   text-decoration: line-through;
 }
 .ms-row__final {
-  font-size: 1.02rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: end;
+  font-size: 1.06rem;
+  font-weight: 700;
   color: var(--lf-text-strong);
   font-feature-settings: "tnum";
 }
+.ms-coin {
+  color: var(--ms-brass);
+  font-size: 0.82em;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.45));
+}
+/* Bargain delta as a tinted pill. pointer-events:none so it can never
+   intercept a click meant for an adjacent action button. */
 .ms-row__delta {
-  font-size: 0.74rem;
+  justify-self: end;
+  margin-top: 3px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  pointer-events: none;
 }
 .ms-row__delta.up {
-  color: #d28a8a;
+  color: color-mix(in srgb, var(--lf-danger) 80%, white);
+  background: color-mix(in srgb, var(--lf-danger) 16%, transparent);
 }
 .ms-row__delta.down {
-  color: #8acaa1;
+  color: color-mix(in srgb, var(--lf-success) 80%, white);
+  background: color-mix(in srgb, var(--lf-success) 16%, transparent);
 }
 .ms-row__actions {
   display: flex;
@@ -218,10 +333,11 @@
 }
 .ms-log h4 {
   margin: 0 0 4px;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  font-family: var(--ms-font-display);
+  font-size: 0.84rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--lf-muted);
+  color: var(--ms-brass);
 }
 .ms-log ul {
   list-style: none;
@@ -245,4 +361,59 @@
 }
 .ms-log li.fail {
   color: #d28a8a;
+}
+
+/* Bargain celebration — one-shot flash on the bargained row.
+   Gated by mw-no-anim and prefers-reduced-motion. The animation runs on
+   the row itself (not an overlay), so it never covers a button. */
+@keyframes ms-bargain-win {
+  0% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  30% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--lf-success) 70%, transparent),
+      0 0 22px -2px color-mix(in srgb, var(--lf-rarity-legendary) 70%, transparent);
+    transform: translateY(-1px) scale(1.01);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    transform: none;
+  }
+}
+@keyframes ms-bargain-fail {
+  0%,
+  100% {
+    transform: translateX(0);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  20% {
+    transform: translateX(-3px);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--lf-danger) 60%, transparent);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+.ms-row--bargain-win {
+  animation: ms-bargain-win 1s ease-out;
+}
+.ms-row--bargain-fail {
+  animation: ms-bargain-fail 0.5s ease-in-out;
+}
+.infinity-merchant-session.mw-no-anim .ms-row--bargain-win,
+.infinity-merchant-session.mw-no-anim .ms-row--bargain-fail {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-row--bargain-win,
+  .ms-row--bargain-fail {
+    animation: none;
+  }
 }

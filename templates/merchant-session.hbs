@@ -31,11 +31,12 @@
   <section class="ms-rows" aria-label="Goods for sale">
     {{#if buyRows.length}}
       {{#each buyRows}}
-      <article class="ms-row {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}">
+      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}">
         <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
         <div class="ms-row__copy">
           <strong class="ms-row__name">{{name}}</strong>
           <span class="ms-row__meta">
+            {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             {{stockLabel}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained price">{{sealLabel}}</span>{{/if}}
           </span>
@@ -43,10 +44,10 @@
         <div class="ms-row__price">
           {{#if priceDeltaLabel}}
           <span class="ms-row__base">{{baseLabel}}</span>
-          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <strong class="ms-row__final"><i class="fa-solid fa-coins ms-coin" aria-hidden="true"></i>{{finalLabel}}</strong>
           <span class="ms-row__delta {{deltaClass}}">{{priceDeltaLabel}}</span>
           {{else}}
-          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <strong class="ms-row__final"><i class="fa-solid fa-coins ms-coin" aria-hidden="true"></i>{{finalLabel}}</strong>
           {{/if}}
         </div>
         <div class="ms-row__actions">
@@ -73,11 +74,12 @@
   <section class="ms-rows" aria-label="Your sellable items">
     {{#if sellRows.length}}
       {{#each sellRows}}
-      <article class="ms-row" data-item-id="{{itemId}}">
+      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}">
         <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
         <div class="ms-row__copy">
           <strong class="ms-row__name">{{name}}</strong>
           <span class="ms-row__meta">
+            {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             You have {{ownedQty}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
           </span>
@@ -85,10 +87,10 @@
         <div class="ms-row__price">
           {{#if priceDeltaLabel}}
           <span class="ms-row__base">{{baseLabel}}</span>
-          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <strong class="ms-row__final"><i class="fa-solid fa-coins ms-coin" aria-hidden="true"></i>{{finalLabel}}</strong>
           <span class="ms-row__delta {{deltaClass}}">{{priceDeltaLabel}}</span>
           {{else}}
-          <strong class="ms-row__final">{{finalLabel}}</strong>
+          <strong class="ms-row__final"><i class="fa-solid fa-coins ms-coin" aria-hidden="true"></i>{{finalLabel}}</strong>
           {{/if}}
         </div>
         <div class="ms-row__actions">

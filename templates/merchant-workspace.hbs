@@ -162,12 +162,12 @@
           <div class="mw-inv__drop" data-drop-zone="inventory">
             {{#if inventoryRows.length}}
               {{#each inventoryRows}}
-              <div class="mw-inv__row {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}">
+              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}">
                 <div class="mw-inv__name">
                   <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
                   <div class="mw-inv__copy">
                     <strong>{{name}}</strong>
-                    <span class="mw-inv__meta">{{basePriceLabel}}{{#if missing}} · <em>missing</em>{{/if}}</span>
+                    <span class="mw-inv__meta">{{#unless missing}}<i class="fa-solid fa-coins mw-coin" aria-hidden="true"></i> {{/unless}}{{basePriceLabel}}{{#if rarityLabel}} · <span class="mw-rarity mw-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}{{#if missing}} · <em>missing</em>{{/if}}</span>
                   </div>
                 </div>
                 <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} />

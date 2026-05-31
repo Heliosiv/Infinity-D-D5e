@@ -3,6 +3,18 @@
    --------------------------------------------------------- */
 
 .infinity-dnd5e.infinity-merchant-workspace {
+  /* Fantasy-shop theme layer — scoped to merchant windows, layered over
+     --lf-* (never overrides them globally, so loot/dashboard stay flat). */
+  --ms-parchment: #e9dcc0;
+  --ms-parchment-ink: #3a2c1a;
+  --ms-wood: #4a2f1c;
+  --ms-wood-dark: #2e1d10;
+  --ms-brass: #c8a24a;
+  --ms-brass-soft: color-mix(in srgb, var(--ms-brass) 55%, transparent);
+  --ms-ledger-line: color-mix(in srgb, var(--ms-wood) 20%, transparent);
+  --ms-frame: 0 0 0 1px var(--ms-wood-dark), 0 0 0 3px var(--ms-brass-soft);
+  --ms-font-display: "Modesto Condensed", "Signika", "Inter", serif;
+
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -26,29 +38,38 @@
   overflow: hidden;
 }
 
-/* Header */
+/* Header — wood signboard, matching the player shop sign. */
 .mw-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--lf-border);
+  padding: 13px 16px;
   border-radius: var(--lf-radius);
-  background: var(--lf-bg-alt);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ms-wood) 86%, black) 0%,
+    var(--ms-wood) 50%,
+    var(--ms-wood-dark) 100%
+  );
+  box-shadow:
+    var(--ms-frame),
+    inset 0 1px 0 color-mix(in srgb, var(--ms-brass) 30%, transparent);
   flex: 0 0 auto;
 }
 .mw-head__title h2 {
   margin: 0 0 4px;
-  font-size: 1.18rem;
+  font-family: var(--ms-font-display);
+  font-size: 1.5rem;
   font-weight: 700;
-  color: var(--lf-text-strong);
+  letter-spacing: 0.01em;
+  color: var(--ms-parchment);
 }
 .mw-head__hint {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.4;
-  color: var(--lf-muted);
+  color: color-mix(in srgb, var(--ms-parchment) 72%, transparent);
   max-width: 60ch;
 }
 .mw-head__actions {
@@ -104,7 +125,8 @@
 }
 .mw-list__row.is-selected .mw-list__btn {
   background: var(--lf-surface-elev);
-  border-color: var(--lf-accent);
+  border-color: var(--ms-brass);
+  box-shadow: inset 3px 0 0 var(--ms-brass);
 }
 .mw-list__art {
   flex: 0 0 auto;
@@ -250,11 +272,19 @@
   background: var(--lf-bg);
 }
 .mw-fieldset legend {
-  color: var(--lf-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
+  color: var(--ms-brass);
+  font-family: var(--ms-font-display);
+  font-size: 0.98rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 0 6px;
+}
+.mw-fieldset legend small {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  color: var(--lf-muted);
 }
 
 /* Chips */
@@ -380,6 +410,31 @@
 .mw-inv__row.is-out {
   opacity: 0.7;
 }
+
+/* Rarity color-coding — left stripe + tinted badge, reusing --lf-rarity-*. */
+.mw-inv__row--common { border-left: 3px solid var(--lf-rarity-common); }
+.mw-inv__row--uncommon { border-left: 3px solid var(--lf-rarity-uncommon); }
+.mw-inv__row--rare { border-left: 3px solid var(--lf-rarity-rare); }
+.mw-inv__row--very-rare { border-left: 3px solid var(--lf-rarity-very-rare); }
+.mw-inv__row--legendary { border-left: 3px solid var(--lf-rarity-legendary); }
+.mw-inv__row--artifact { border-left: 3px solid var(--lf-rarity-artifact); }
+
+.mw-rarity {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.68rem;
+}
+.mw-coin {
+  color: var(--ms-brass);
+  font-size: 0.85em;
+}
+.mw-rarity--common { color: var(--lf-rarity-common); }
+.mw-rarity--uncommon { color: var(--lf-rarity-uncommon); }
+.mw-rarity--rare { color: var(--lf-rarity-rare); }
+.mw-rarity--very-rare { color: var(--lf-rarity-very-rare); }
+.mw-rarity--legendary { color: var(--lf-rarity-legendary); }
+.mw-rarity--artifact { color: var(--lf-rarity-artifact); }
 .mw-inv__name {
   display: flex;
   align-items: center;

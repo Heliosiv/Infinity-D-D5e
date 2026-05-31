@@ -28,7 +28,9 @@ import {
 import { runBargain } from "./merchant/bargain.js";
 import { totalWalletGp, sanitizeWallet } from "./merchant/currency.js";
 import { formatCoinBreakdown } from "./loot/hoard-budget.js";
+import { getItemRarity } from "./loot/tag-vocabulary.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
+import { SETTING_KEYS, getSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-session.hbs`;
@@ -182,6 +184,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       "bargain",
       `Bargain ${payload.tier?.id ?? "result"} · ${formatDelta(payload.deltaPct)}`,
     );
+    // Flag the row for a one-shot celebration on the next render.
+    this._justBargained = {
+      refId: payload.itemUuid,
+      side: payload.side,
+      win: Number(payload.deltaPct) <= 0,
+    };
     this.render(false);
   }
 
@@ -247,6 +255,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   _buildBuyRow(row, item, wallet) {
     const sealKey = `${row.uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
+    const rarity = item ? getItemRarity(item) : "";
     const baseGp = roundGp(resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal: null }));
     const finalGp = roundGp(resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal }));
     const outOfStock = !row.unlimited && row.qty <= 0;
@@ -261,6 +270,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       uuid: row.uuid,
       name: item?.name ?? "(missing item)",
       img: item?.img ?? FALLBACK_ITEM_IMAGE,
+      rarity,
+      rarityLabel: prettyRarity(rarity),
       stockLabel,
       baseLabel: `${baseGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
@@ -280,6 +291,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const ownedQty = Math.max(1, Math.floor(Number(data.system?.quantity ?? 1)));
     const sealKey = `${doc.id}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
+    const rarity = getItemRarity(data);
     const baseGp = roundGp(
       resolveUnitSellPrice({ merchant: this._merchant, item: data, seal: null }),
     );
@@ -292,6 +304,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       itemId: doc.id,
       name: data.name ?? "(item)",
       img: data.img ?? FALLBACK_ITEM_IMAGE,
+      rarity,
+      rarityLabel: prettyRarity(rarity),
       ownedQty,
       baseLabel: `${baseGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
@@ -304,6 +318,23 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   _onRender(context, options) {
     super._onRender?.(context, options);
+
+    // Honor the shared visual prefs (animations + rarity glow), mirroring
+    // the workspace and loot tools.
+    const root = this.element;
+    if (root) {
+      root.classList.toggle(
+        "mw-no-anim",
+        getSetting(SETTING_KEYS.ANIMATIONS) === false,
+      );
+      root.classList.toggle(
+        "mw-no-glow",
+        getSetting(SETTING_KEYS.RARITY_GLOW) === false,
+      );
+    }
+
+    // Play the one-shot bargain celebration if a result just landed.
+    this._playBargainCelebration();
 
     // Snap stored qty inputs back into the inputs after re-render.
     for (const [uuid, qty] of this._buyQty) {
@@ -343,6 +374,30 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         input.value = qty;
       });
     }
+  }
+
+  /**
+   * One-shot bargain celebration: flash the just-bargained row green
+   * (favorable) or red (unfavorable). Consumes the transient
+   * `_justBargained` marker set in `_onBargainSeal`. Respects mw-no-anim.
+   */
+  _playBargainCelebration() {
+    const mark = this._justBargained;
+    this._justBargained = null;
+    if (!mark || !mark.refId) return;
+    const root = this.element;
+    if (!root || root.classList.contains("mw-no-anim")) return;
+    const selector =
+      mark.side === "sell"
+        ? `.ms-row[data-item-id="${cssEscape(mark.refId)}"]`
+        : `.ms-row[data-uuid="${cssEscape(mark.refId)}"]`;
+    const rowEl = root.querySelector(selector);
+    if (!rowEl) return;
+    const cls = mark.win ? "ms-row--bargain-win" : "ms-row--bargain-fail";
+    rowEl.classList.remove("ms-row--bargain-win", "ms-row--bargain-fail");
+    void rowEl.offsetWidth; // reflow so re-adding restarts the animation
+    rowEl.classList.add(cls);
+    globalThis.setTimeout?.(() => rowEl.classList.remove(cls), 1000);
   }
 
   _appendLog(kind, text) {
@@ -603,6 +658,15 @@ function sealLabel(seal) {
   if (!seal) return "";
   const tierName = seal.tier?.id ?? "seal";
   return `${tierName} ${formatDelta(seal.deltaPct)}`;
+}
+
+/** "very-rare" → "Very Rare" for the rarity badge. Empty in → empty out. */
+function prettyRarity(rarity) {
+  return String(rarity ?? "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function cssEscape(value) {

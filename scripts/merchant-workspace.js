@@ -23,7 +23,7 @@ import {
   upsertMerchant,
 } from "./merchant/store.js";
 import { rollMerchantStock } from "./merchant/pool.js";
-import { LOOT_TYPES, RARITIES } from "./loot/tag-vocabulary.js";
+import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
 import {
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
@@ -204,10 +204,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const item = this._itemCache.get(row.uuid) ?? null;
     const basePrice = computeBuyPriceGp(merchant, row, item);
     const outOfStock = !row.unlimited && row.qty <= 0;
+    const rarity = item ? getItemRarity(item) : "";
     return {
       uuid: row.uuid,
       name: item?.name ?? "(unknown item)",
       img: item?.img ?? FALLBACK_ITEM_IMAGE,
+      rarity,
+      rarityLabel: prettifyToken(rarity),
       basePriceLabel: basePrice > 0 ? `${basePrice.toFixed(2)} gp` : "—",
       qtyDisplay: row.unlimited ? "∞" : row.qty,
       startingQty: row.startingQty,
@@ -246,9 +249,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   _onRender(context, options) {
     super._onRender?.(context, options);
 
-    // Honor the existing animation client setting.
+    // Honor the existing animation + rarity-glow client settings.
     const animations = getSetting(SETTING_KEYS.ANIMATIONS) !== false;
     this.element?.classList?.toggle("mw-no-anim", !animations);
+    this.element?.classList?.toggle(
+      "mw-no-glow",
+      getSetting(SETTING_KEYS.RARITY_GLOW) === false,
+    );
 
     this._wireFormChange();
     this._wireInventoryInputs();
