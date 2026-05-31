@@ -11,6 +11,8 @@
  * gracefully when `game.settings` is absent so tests can stub a store.
  */
 
+import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
+
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_SETTING_KEY = "merchants";
 export const MERCHANT_RECORD_VERSION = 1;
@@ -19,6 +21,11 @@ const DEFAULT_MARKUP = 1.0;
 const DEFAULT_SELL_RATIO = 0.5;
 const DEFAULT_BARGAIN_DC = 15;
 const DEFAULT_ALLOWED_SKILLS = Object.freeze(["prf", "dec"]);
+const DEFAULT_POOL_COUNT = 6;
+
+/** A full stack of ammunition (arrows, bolts, bullets, needles). Merchants
+ *  always stock ammo in this unit so quivers come full. */
+export const AMMO_STACK_SIZE = 20;
 
 const DEFAULT_BARGAIN_TIERS = Object.freeze([
   Object.freeze({ id: "crit-success", minMargin: 10, deltaPct: -20 }),
@@ -151,8 +158,34 @@ export function normalizeMerchant(input) {
     allowedSkills: dedupeAllowedSkills(raw.allowedSkills),
     allowedUserIds: toStrArray(raw.allowedUserIds),
     chatHidden: raw.chatHidden === true,
+    pool: normalizeStockPool(raw.pool),
     items: inventory.map(normalizeInventoryRow).filter(Boolean),
   };
+}
+
+/**
+ * Normalize a merchant's randomized stock pool config. Lenient: the
+ * workspace UI only submits known loot-type / rarity values, so this
+ * just dedupes strings and clamps the count.
+ */
+export function normalizeStockPool(raw) {
+  const p = raw && typeof raw === "object" ? raw : {};
+  return {
+    lootTypes: toStrArray(p.lootTypes),
+    rarities: toStrArray(p.rarities),
+    count: Math.min(50, Math.max(1, toInt(p.count, DEFAULT_POOL_COUNT))),
+  };
+}
+
+/**
+ * Resolve the starting quantity for a newly-stocked item. Ammunition is
+ * always stocked as a full stack of 20 (a full quiver); everything else
+ * uses the requested quantity, defaulting to 1.
+ */
+export function resolveStockQty(item, requested = 1) {
+  if (isAmmunitionItem(item)) return AMMO_STACK_SIZE;
+  const n = Math.floor(Number(requested));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
 }
 
 function dedupeAllowedSkills(raw) {

@@ -532,6 +532,17 @@ function merchantWorkspaceContext() {
       { id: "dec", label: "Deception", checked: true },
       { id: "itm", label: "Intimidation", checked: false },
     ],
+    poolLootTypeOptions: [
+      { value: "weapon-magic", label: "Weapon Magic", checked: true },
+      { value: "consumable", label: "Consumable", checked: false },
+      { value: "gem", label: "Gem", checked: true },
+    ],
+    poolRarityOptions: [
+      { value: "common", label: "Common", checked: true },
+      { value: "uncommon", label: "Uncommon", checked: false },
+      { value: "rare", label: "Rare", checked: false },
+    ],
+    poolCount: 6,
     inventoryRows: [
       {
         uuid: "Compendium.infinity-dnd5e-items.Item.potion",

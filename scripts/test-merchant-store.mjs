@@ -11,11 +11,14 @@ import {
   isUserAllowed,
   normalizeInventoryRow,
   normalizeMerchant,
+  normalizeStockPool,
   removeInventoryRow,
   resolveItemBasePriceGp,
+  resolveStockQty,
   restockAll,
   roundGp,
   upsertInventoryRow,
+  AMMO_STACK_SIZE,
 } from "./merchant/store.js";
 
 /* ------------------------------------------------------------------ *
@@ -189,6 +192,47 @@ import {
   assert.equal(isUserAllowed(merchant, "alice"), true);
   assert.equal(isUserAllowed(merchant, "carol"), false);
   assert.equal(isUserAllowed(null, "alice"), false);
+}
+
+/* ------------------------------------------------------------------ *
+ * Stock pool + ammunition stacking
+ * ------------------------------------------------------------------ */
+{
+  // normalizeStockPool: defaults, dedupe, count clamp
+  assert.deepEqual(normalizeStockPool(undefined), {
+    lootTypes: [],
+    rarities: [],
+    count: 6,
+  });
+  const pool = normalizeStockPool({
+    lootTypes: ["weapon-magic", "weapon-magic", "gem"],
+    rarities: ["common"],
+    count: 999,
+  });
+  assert.deepEqual(pool.lootTypes, ["weapon-magic", "gem"], "loot types deduped");
+  assert.deepEqual(pool.rarities, ["common"]);
+  assert.equal(pool.count, 50, "count clamped to 50");
+  assert.equal(normalizeStockPool({ count: 0 }).count, 1, "count floored to 1");
+
+  // normalizeMerchant carries a normalized pool, even when absent
+  const m = normalizeMerchant({ pool: { lootTypes: ["consumable"], count: 3 } });
+  assert.deepEqual(m.pool.lootTypes, ["consumable"]);
+  assert.equal(m.pool.count, 3);
+  assert.deepEqual(normalizeMerchant({}).pool, {
+    lootTypes: [],
+    rarities: [],
+    count: 6,
+  });
+
+  // resolveStockQty: ammo → full stack of 20, everything else → requested
+  const ammo = { system: { type: { value: "ammo" } } };
+  const sword = { system: { type: { value: "" } } };
+  assert.equal(AMMO_STACK_SIZE, 20);
+  assert.equal(resolveStockQty(ammo, 1), 20, "ammo stocks as a full stack of 20");
+  assert.equal(resolveStockQty(ammo, 5), 20, "ammo ignores the requested qty");
+  assert.equal(resolveStockQty(sword, 1), 1);
+  assert.equal(resolveStockQty(sword, 4), 4, "non-ammo honors requested qty");
+  assert.equal(resolveStockQty(sword, 0), 1, "invalid qty floors to 1");
 }
 
 process.stdout.write("merchant-store validation passed\n");

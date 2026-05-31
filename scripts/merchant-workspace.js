@@ -17,10 +17,13 @@ import {
   normalizeInventoryRow,
   normalizeMerchant,
   removeInventoryRow,
+  resolveStockQty,
   restockAll,
   upsertInventoryRow,
   upsertMerchant,
 } from "./merchant/store.js";
+import { rollMerchantStock } from "./merchant/pool.js";
+import { LOOT_TYPES, RARITIES } from "./loot/tag-vocabulary.js";
 import {
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
@@ -61,6 +64,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       save: MerchantWorkspaceApp._onSave,
       deleteMerchant: MerchantWorkspaceApp._onDeleteMerchant,
       addFromPack: MerchantWorkspaceApp._onAddFromPack,
+      generateStock: MerchantWorkspaceApp._onGenerateStock,
       restock: MerchantWorkspaceApp._onRestock,
       openSession: MerchantWorkspaceApp._onOpenSession,
       closeSession: MerchantWorkspaceApp._onCloseSession,
@@ -143,6 +147,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       checked: selected ? selected.allowedUserIds.includes(u.id) : false,
     }));
 
+    const pool = selected?.pool ?? { lootTypes: [], rarities: [], count: 6 };
+    const poolLootTypeSet = new Set(pool.lootTypes);
+    const poolRaritySet = new Set(pool.rarities);
+    const poolLootTypeOptions = LOOT_TYPES.map((value) => ({
+      value,
+      label: prettifyToken(value),
+      checked: poolLootTypeSet.has(value),
+    }));
+    const poolRarityOptions = RARITIES.map((value) => ({
+      value,
+      label: prettifyToken(value),
+      checked: poolRaritySet.has(value),
+    }));
+
     const inventoryRows = selected
       ? selected.items.map((row) => this._buildInventoryViewRow(selected, row))
       : [];
@@ -170,6 +188,9 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       hasPlayers: players.length > 0,
       playerOptions,
       skillOptions,
+      poolLootTypeOptions,
+      poolRarityOptions,
+      poolCount: pool.count,
       inventoryRows,
       activeSessions,
       canOpenSession:
@@ -333,13 +354,31 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       ui.notifications?.info(`${MODULE_ID}: already in inventory.`);
       return;
     }
+    // Ammunition always stocks as a full stack of 20; everything else as 1.
+    const item = await this._resolveItem(uuid);
+    const qty = resolveStockQty(item, 1);
     const next = upsertInventoryRow(
       merchant,
-      createInventoryRow(uuid, { qty: 1, startingQty: 1 }),
+      createInventoryRow(uuid, { qty, startingQty: qty }),
     );
     await upsertMerchant(next);
     playModuleSound(SOUND_EVENTS.ROSTER_ADD);
     this.render(false);
+  }
+
+  /** Resolve an item snapshot by uuid, using the render cache when warm. */
+  async _resolveItem(uuid) {
+    if (this._itemCache.has(uuid)) return this._itemCache.get(uuid);
+    try {
+      const doc = await fromUuid(uuid);
+      const snapshot = doc?.toObject?.() ?? (doc ? { ...doc } : null);
+      if (snapshot && !snapshot.uuid) snapshot.uuid = doc?.uuid ?? uuid;
+      this._itemCache.set(uuid, snapshot);
+      return snapshot;
+    } catch {
+      this._itemCache.set(uuid, null);
+      return null;
+    }
   }
 
   async _saveFromForm() {
@@ -360,6 +399,11 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       bargainAdvantage: data.bargainAdvantage === "on",
       allowedSkills: data.allowedSkills,
       allowedUserIds: data.allowedUserIds,
+      pool: {
+        lootTypes: data.poolLootTypes,
+        rarities: data.poolRarities,
+        count: Number(data.poolCount ?? merchant.pool?.count ?? 6),
+      },
     });
     await upsertMerchant(next);
   }
@@ -471,6 +515,48 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     await this._addUuidToInventory(pickedUuid);
   }
 
+  static async _onGenerateStock() {
+    if (!this._selectedId) return;
+    // Persist any pending form edits (e.g. just-toggled pool chips) so we
+    // roll against the latest config, not the last-saved one.
+    try {
+      await this._saveFromForm();
+    } catch {}
+    const merchant = findMerchant(this._selectedId);
+    if (!merchant) return;
+    const pool = merchant.pool ?? { lootTypes: [], rarities: [], count: 6 };
+    if (
+      (pool.lootTypes?.length ?? 0) === 0 &&
+      (pool.rarities?.length ?? 0) === 0
+    ) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: pick at least one item type or rarity for the pool.`,
+      );
+      return;
+    }
+    const items = await loadCompendiumItems().catch(() => []);
+    if (items.length === 0) {
+      ui.notifications?.warn(`${MODULE_ID}: no items in compendium.`);
+      return;
+    }
+    const exclude = new Set(merchant.items.map((r) => r.uuid));
+    const { rows, warnings } = rollMerchantStock(pool, items, { exclude });
+    if (rows.length === 0) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: ${warnings[0] ?? "nothing generated."}`,
+      );
+      return;
+    }
+    let next = merchant;
+    for (const row of rows) next = upsertInventoryRow(next, row);
+    await upsertMerchant(next);
+    playModuleSound(SOUND_EVENTS.ROLL_START);
+    ui.notifications?.info(
+      `${MODULE_ID}: generated ${rows.length} item(s) for ${merchant.name}.`,
+    );
+    this.render(false);
+  }
+
   static async _onRestock() {
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
@@ -567,7 +653,12 @@ function readFormFields(form) {
     }
   }
   // Normalize fields we expect as arrays even when only one selected.
-  for (const arrayKey of ["allowedSkills", "allowedUserIds"]) {
+  for (const arrayKey of [
+    "allowedSkills",
+    "allowedUserIds",
+    "poolLootTypes",
+    "poolRarities",
+  ]) {
     if (!(arrayKey in out)) out[arrayKey] = [];
     else if (!Array.isArray(out[arrayKey])) out[arrayKey] = [out[arrayKey]];
   }
@@ -626,6 +717,15 @@ async function promptPlayerPicker(merchant) {
     picked = [];
   }
   return picked;
+}
+
+/** "weapon-magic" → "Weapon Magic" for chip labels. */
+function prettifyToken(value) {
+  return String(value ?? "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function escapeText(value) {

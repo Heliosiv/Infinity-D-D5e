@@ -279,10 +279,56 @@
 .mw-chip input {
   display: none;
 }
-.mw-chip.is-active {
+/* Highlight off the live :checked state (not a render-time class) so a
+   click flips the chip instantly without waiting on a re-render — the
+   form auto-saves but does not re-render. Mirrors loot-forge's chips. */
+.mw-chip:has(input:checked) {
   background: var(--lf-accent);
   color: var(--lf-accent-contrast);
   border-color: var(--lf-accent);
+}
+.mw-chip--sm {
+  padding: 3px 8px;
+  font-size: 0.76rem;
+}
+
+/* Stock pool */
+.mw-hint {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+.mw-pool {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 720px) {
+  .mw-pool {
+    grid-template-columns: 1fr;
+  }
+}
+.mw-pool__col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.mw-pool__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.mw-field--inline {
+  flex-direction: column;
+  gap: 4px;
+  max-width: 120px;
+}
+.mw-field--inline .mw-input--num {
+  width: 90px;
 }
 
 /* Inventory */
