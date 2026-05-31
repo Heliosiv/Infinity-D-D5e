@@ -610,10 +610,10 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {PerEncounterLootApp} */
-  static async _onReset(_event, _target) {
+  static _onReset(_event, _target) {
     this._form = PerEncounterLootApp.buildDefaultForm();
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    await this._renderPreservingScroll();
+    renderAfterAction(() => this._renderPreservingScroll(), "reset");
   }
 
   /** @this {PerEncounterLootApp} */
@@ -1123,6 +1123,12 @@ export class PerEncounterLootApp extends HandlebarsApplicationMixin(
     playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
+    } catch (error) {
+      this._packStats = computePackStats([]);
+      console.error(`${MODULE_ID} | failed to preload loot pack stats`, error);
+      ui.notifications?.warn(
+        "Infinity D&D5e could not preload loot pack stats. Rolls can be retried after the compendium is available.",
+      );
     } finally {
       this._loadingItems = false;
       if (this.rendered) await this._renderPreservingScroll();
@@ -1207,7 +1213,11 @@ function resultImageForEntry(entry) {
   const image = String(
     entry?.imageSrc ?? entry?.itemData?.img ?? entry?.item?.img ?? "",
   ).trim();
-  return image || FALLBACK_ITEM_IMAGE;
+  if (!image) return FALLBACK_ITEM_IMAGE;
+  if (image.startsWith("assets/item-art/")) {
+    return `modules/${MODULE_ID}/${image}`;
+  }
+  return image;
 }
 
 function onResultImageError(event) {
@@ -1217,6 +1227,19 @@ function onResultImageError(event) {
   image.dataset.fallbackApplied = "true";
   image.classList.add("is-fallback");
   if (image.getAttribute("src") !== fallbackSrc) image.src = fallbackSrc;
+}
+
+function renderAfterAction(callback, action) {
+  try {
+    const result = callback();
+    if (typeof result?.catch === "function") {
+      result.catch((error) =>
+        console.warn(`${MODULE_ID} | ${action} render failed`, error),
+      );
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID} | ${action} render failed`, error);
+  }
 }
 
 /**

@@ -101,7 +101,7 @@
       </legend>
       <div class="lf-chiprow">
         {{#each rarityOptions}}
-        <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
+        <label class="lf-chip lf-chip--rarity-{{value}}">
           <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
           <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>
@@ -120,7 +120,7 @@
       </legend>
       <div class="lf-chiprow">
         {{#each lootTypeOptions}}
-        <label class="lf-chip {{#if selected}}is-checked{{/if}}">
+        <label class="lf-chip">
           <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
           <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>

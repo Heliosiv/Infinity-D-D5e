@@ -12,8 +12,27 @@
  */
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
+export const DEFAULT_ITEM_PACK_ID = "infinity-dnd5e.infinity-dnd5e-items";
 
 const cache = new Map(); // packId → { items, fetchedAt }
+
+export function buildCompendiumItemUuid(
+  packId = DEFAULT_ITEM_PACK_ID,
+  itemId,
+  documentName = "Item",
+) {
+  const cleanPackId = String(packId ?? "").trim() || DEFAULT_ITEM_PACK_ID;
+  const cleanItemId = String(itemId ?? "").trim();
+  const cleanDocumentName = String(documentName ?? "").trim() || "Item";
+  return cleanItemId
+    ? `Compendium.${cleanPackId}.${cleanDocumentName}.${cleanItemId}`
+    : "";
+}
+
+export function isFullCompendiumDocumentUuid(value) {
+  const parts = String(value ?? "").trim().split(".");
+  return parts.length >= 5 && parts[0] === "Compendium" && parts.every(Boolean);
+}
 
 /**
  * Load the bundled item compendium as plain JS objects, decorated
@@ -40,8 +59,7 @@ export async function loadCompendiumItems(opts = {}) {
       "NotInFoundry: loadCompendiumItems requires Foundry runtime",
     );
   }
-  const packId =
-    String(opts.packId ?? "").trim() || "infinity-dnd5e.infinity-dnd5e-items";
+  const packId = String(opts.packId ?? "").trim() || DEFAULT_ITEM_PACK_ID;
   const refresh = Boolean(opts.refresh);
 
   const cached = cache.get(packId);
@@ -75,9 +93,15 @@ export async function loadCompendiumItems(opts = {}) {
   const items = documents.map((doc) => {
     const data =
       typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+    const itemId = data._id ?? data.id ?? doc.id;
+    const documentName =
+      doc.documentName ?? pack.documentName ?? pack.metadata?.type ?? "Item";
+    const uuid = isFullCompendiumDocumentUuid(doc.uuid)
+      ? doc.uuid
+      : buildCompendiumItemUuid(packId, itemId, documentName);
     return {
       ...data,
-      uuid: doc.uuid ?? `Compendium.${packId}.${data._id ?? doc.id}`,
+      uuid,
     };
   });
   cache.set(packId, { items, fetchedAt: now });

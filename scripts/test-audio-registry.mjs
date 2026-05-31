@@ -4,8 +4,10 @@ import {
   SOUND_EVENTS,
   SOUND_REGISTRY,
   playModuleSound,
+  playSoundEvent,
   playResultSound,
   preloadModuleSounds,
+  receiveSoundEventPayload,
 } from "./audio.js";
 
 const eventValues = Object.values(SOUND_EVENTS);
@@ -34,6 +36,128 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
   files.add(entry.file);
   assert.ok(entry.volume >= 0 && entry.volume <= 1, `${eventKey}: volume`);
   assert.ok(entry.cooldownMs >= 0, `${eventKey}: cooldown`);
+}
+
+{
+  const originalGame = globalThis.game;
+  const originalAudioHelper = globalThis.AudioHelper;
+  const calls = [];
+  const socketPayloads = [];
+  globalThis.game = {
+    settings: {
+      get(moduleId, key) {
+        if (moduleId !== "infinity-dnd5e") return undefined;
+        if (key === "soundsEnabled") return true;
+        if (key === "automationSoundsEnabled") return true;
+        if (key === "soundVolume") return 0.5;
+        return undefined;
+      },
+    },
+    socket: {
+      emit(channel, payload) {
+        socketPayloads.push({ channel, payload });
+      },
+    },
+    user: { id: "user-a" },
+  };
+  globalThis.AudioHelper = {
+    play(data, socketOptions) {
+      calls.push({ data, socketOptions });
+      return { id: data.src };
+    },
+  };
+  try {
+    playSoundEvent(SOUND_EVENTS.ROLL_START, {
+      audience: "all",
+      automation: true,
+      contextKey: "Actor.a.Item.b",
+      phase: "use",
+      cooldownMs: 0,
+    });
+
+    assert.equal(calls.length, 1, "broadcast sound plays locally once");
+    assert.equal(socketPayloads.length, 1, "broadcast sound emits once");
+    assert.equal(socketPayloads[0].channel, "module.infinity-dnd5e");
+    assert.equal(socketPayloads[0].payload.type, "sound-event");
+    assert.equal(socketPayloads[0].payload.eventKey, SOUND_EVENTS.ROLL_START);
+    assert.equal(socketPayloads[0].payload.originUserId, "user-a");
+    assert.equal(
+      socketPayloads[0].payload.options.volume,
+      undefined,
+      "broadcast payload stays semantic and does not include sender volume",
+    );
+
+    receiveSoundEventPayload(socketPayloads[0].payload);
+    assert.equal(
+      calls.length,
+      1,
+      "a local echo of the same socket event is ignored",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalAudioHelper === undefined) delete globalThis.AudioHelper;
+    else globalThis.AudioHelper = originalAudioHelper;
+  }
+}
+
+{
+  const originalGame = globalThis.game;
+  const originalAudioHelper = globalThis.AudioHelper;
+  const calls = [];
+  let automationEnabled = false;
+  globalThis.game = {
+    settings: {
+      get(moduleId, key) {
+        if (moduleId !== "infinity-dnd5e") return undefined;
+        if (key === "soundsEnabled") return true;
+        if (key === "automationSoundsEnabled") return automationEnabled;
+        if (key === "soundVolume") return 0.25;
+        return undefined;
+      },
+    },
+    user: { id: "receiver" },
+  };
+  globalThis.AudioHelper = {
+    play(data) {
+      calls.push(data);
+      return { id: data.src };
+    },
+  };
+  try {
+    receiveSoundEventPayload({
+      type: "sound-event",
+      id: "remote-disabled",
+      eventKey: SOUND_EVENTS.ROLL_START,
+      originUserId: "remote",
+      options: { automation: true, contextKey: "Item.x", cooldownMs: 0 },
+    });
+    assert.equal(
+      calls.length,
+      0,
+      "receiving client can opt out of automation sounds",
+    );
+
+    automationEnabled = true;
+    receiveSoundEventPayload({
+      type: "sound-event",
+      id: "remote-enabled",
+      eventKey: SOUND_EVENTS.ROLL_START,
+      originUserId: "remote",
+      options: { automation: true, contextKey: "Item.y", cooldownMs: 0 },
+    });
+    assert.equal(calls.length, 1, "receiving client plays opted-in events");
+    assert.equal(
+      calls[0].volume,
+      SOUND_REGISTRY[SOUND_EVENTS.ROLL_START].volume * 0.25,
+      "receiving client applies its own volume",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalAudioHelper === undefined) delete globalThis.AudioHelper;
+    else globalThis.AudioHelper = originalAudioHelper;
+  }
 }
 
 {

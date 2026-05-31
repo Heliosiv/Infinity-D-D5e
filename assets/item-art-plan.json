@@ -6,15 +6,15 @@
     "uniqueRoot": "assets/item-art/unique"
   },
   "counts": {
-    "packItems": 1422,
-    "existingArtworkItems": 1412,
-    "absentArtworkItems": 10,
-    "items": 10,
+    "packItems": 1741,
+    "existingArtworkItems": 1724,
+    "absentArtworkItems": 17,
+    "items": 17,
     "reusableAssignments": 0,
-    "bespokeAssignments": 10,
+    "bespokeAssignments": 17,
     "sharedAssets": 0,
-    "uniqueAssets": 10,
-    "totalAssetsToGenerate": 10
+    "uniqueAssets": 17,
+    "totalAssetsToGenerate": 17
   },
   "sharedAssets": [],
   "uniqueAssets": [
@@ -47,11 +47,25 @@
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Carved Reliquary Casket\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/decorative-finery. Defining details: Carved Reliquary Casket A carved casket with inlaid saints, beasts, and knotwork along its sides. The reliquary is about the size of a bread loaf and displays best on an altar or shelf. Size: Medium ce..."
     },
     {
+      "id": "unique/cathedral-ruby-8rEeTCElX7x4CKgQ",
+      "itemId": "8rEeTCElX7x4CKgQ",
+      "itemName": "Cathedral Ruby",
+      "path": "assets/item-art/unique/cathedral-ruby-8rEeTCElX7x4CKgQ.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Cathedral Ruby\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/gems-jewelry/gemstones. Defining details: Cathedral Ruby A rich crimson ruby cut to hold color even in poor interior light, with a depth that reads almost velvety near the core. Stones of this quality turn up in reliquaries, signet ri..."
+    },
+    {
       "id": "unique/cubic-gate-6ai1pEde3iQX30Fr",
       "itemId": "6ai1pEde3iQX30Fr",
       "itemName": "Cubic Gate",
       "path": "assets/item-art/unique/cubic-gate-6ai1pEde3iQX30Fr.webp",
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Cubic Gate\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type consumable, rarity legendary, folder consumables/arcane-consumables. Defining details: Cubic Gate Wondrous item This cube is 3 inches across and radiates palpable magical energy. The six sides of the cube are each keyed to a different plane of existence, one of which is the..."
+    },
+    {
+      "id": "unique/dragon-garnet-bx5reodItf5nVWjr",
+      "itemId": "bx5reodItf5nVWjr",
+      "itemName": "Dragon Garnet",
+      "path": "assets/item-art/unique/dragon-garnet-bx5reodItf5nVWjr.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Dragon Garnet\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/gems-jewelry/gemstones. Defining details: Dragon Garnet A heavy crimson garnet cut wide and deep so the stone glows like banked coals. Merchants push gems like this under heroic names to appeal to duelists, minor nobles, and anyone t..."
     },
     {
       "id": "unique/gilded-mosaic-tablet-aRt10Mosc8Kl4Bm1",
@@ -68,11 +82,39 @@
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Gilded Reliquary Diptych\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/decorative-finery. Defining details: Gilded Reliquary Diptych A small hinged reliquary plated in gilt and lined with painted saints, stars, and tiny floral knots. Opened on a table or altar, it makes a modest chamber look wealthier and far..."
     },
     {
+      "id": "unique/lacquered-festival-mask-tjrE3k33qnYTNZOW",
+      "itemId": "tjrE3k33qnYTNZOW",
+      "itemName": "Lacquered Festival Mask",
+      "path": "assets/item-art/unique/lacquered-festival-mask-tjrE3k33qnYTNZOW.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Lacquered Festival Mask\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/decorative-finery. Defining details: Lacquered Festival Mask A painted wooden mask sealed in glossy lacquer, with stylized brows and gold accents meant to catch torchlight during formal processions. It sits on the edge between costume and..."
+    },
+    {
+      "id": "unique/porphyry-judge-effigy-aRt30Judg8Fg4Wh1",
+      "itemId": "aRt30Judg8Fg4Wh1",
+      "itemName": "Porphyry Judge Effigy",
+      "path": "assets/item-art/unique/porphyry-judge-effigy-aRt30Judg8Fg4Wh1.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Porphyry Judge Effigy\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/sculptures-idols. Defining details: Porphyry Judge Effigy A seated magistrate carved from red porphyry with folded tablets on the lap. White flecks in the stone make the solemn expression seem to shift when viewed from different angles..."
+    },
+    {
+      "id": "unique/ruby-yx71ogqERHUmDbRH",
+      "itemId": "yx71ogqERHUmDbRH",
+      "itemName": "Ruby",
+      "path": "assets/item-art/unique/ruby-yx71ogqERHUmDbRH.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Ruby\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/gems-jewelry/gemstones. Defining details: Ruby A deep red ruby cut to show dense color before raw size. Stones like this sell on intensity and confidence, the same traits that make them popular in regalia, heirlooms, and van..."
+    },
+    {
       "id": "unique/scarlet-token-mcmslMRPq0C6m4ze",
       "itemId": "mcmslMRPq0C6m4ze",
       "itemName": "Scarlet Token",
       "path": "assets/item-art/unique/scarlet-token-mcmslMRPq0C6m4ze.webp",
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Scarlet Token\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity uncommon, folder sundries/gems-jewelry/jewelry-tokens. Defining details: Scarlet Token A lacquer-red token stamped with an old sigil and backed in thin gilt metal. Whether it once served as a festival pass, military marker, or house favor, it now trades as a curio..."
+    },
+    {
+      "id": "unique/silver-filigree-mask-XBUOsrwthY205zro",
+      "itemId": "XBUOsrwthY205zro",
+      "itemName": "Silver Filigree Mask",
+      "path": "assets/item-art/unique/silver-filigree-mask-XBUOsrwthY205zro.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Silver Filigree Mask\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/decorative-finery. Defining details: Silver Filigree Mask A ceremonial silver mask chased with knotwork so fine it looks spun rather than carved. It was made for procession, altar display, or masquerade pageantry, not battlefield use,..."
     },
     {
       "id": "unique/silver-pilgrim-icon-aRt11Pilg9Lm5Cn2",
@@ -87,6 +129,13 @@
       "itemName": "Stone of Controlling Earth Elementals",
       "path": "assets/item-art/unique/stone-of-controlling-earth-elementals-TWFS1BtruQeE10BY.webp",
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Stone of Controlling Earth Elementals\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type consumable, rarity rare, folder consumables/arcane-consumables. Defining details: Stone of Controlling Earth Elementals Wondrous item If the stone is touching the ground, you can use an action to speak the stone's command word and summon an @Compendium[dnd5e.monsters.sApYLZj9PTZ40wJr]{Earth Eleme..."
+    },
+    {
+      "id": "unique/stone-prophet-bust-31AKX4TAV34wckzA",
+      "itemId": "31AKX4TAV34wckzA",
+      "itemName": "Stone Prophet Bust",
+      "path": "assets/item-art/unique/stone-prophet-bust-31AKX4TAV34wckzA.webp",
+      "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square inventory art\nPrimary request: Create a polished fantasy RPG item icon for \"Stone Prophet Bust\".\nStyle/medium: hand-painted fantasy inventory icon, crisp silhouette, high-detail object render.\nComposition/framing: centered single item, three-quarter view or readable flat lay, generous padding, readable at 64px.\nLighting/mood: soft dramatic rim light, subtle magical glow only when appropriate.\nBackground: dark neutral vignette or parchment-toned tabletop, not transparent.\nConstraints: no text, no numbers, no watermark, no UI frame, no character hands, no logo.\nContext: item type loot, rarity common, folder sundries/art-objects/sculptures-idols. Defining details: Stone Prophet Bust A weathered stone bust of a faceless prophet with one hand raised in warning or blessing. The missing features make it feel older, stranger, and somehow more deliberate than a c..."
     }
   ],
   "assignments": [
@@ -136,6 +185,33 @@
       "absenceReason": "generic treasure token placeholder: icons/commodities/treasure/token-runed-sun-gold.webp"
     },
     {
+      "itemId": "yx71ogqERHUmDbRH",
+      "name": "Ruby",
+      "mode": "bespoke",
+      "assetId": "unique/ruby-yx71ogqERHUmDbRH",
+      "path": "assets/item-art/unique/ruby-yx71ogqERHUmDbRH.webp",
+      "currentImg": "icons/commodities/gems/gem-faceted-round-red.webp",
+      "absenceReason": "default placeholder: icons/commodities/gems/gem-faceted-round-red.webp"
+    },
+    {
+      "itemId": "bx5reodItf5nVWjr",
+      "name": "Dragon Garnet",
+      "mode": "bespoke",
+      "assetId": "unique/dragon-garnet-bx5reodItf5nVWjr",
+      "path": "assets/item-art/unique/dragon-garnet-bx5reodItf5nVWjr.webp",
+      "currentImg": "icons/commodities/gems/gem-faceted-round-red.webp",
+      "absenceReason": "default placeholder: icons/commodities/gems/gem-faceted-round-red.webp"
+    },
+    {
+      "itemId": "XBUOsrwthY205zro",
+      "name": "Silver Filigree Mask",
+      "mode": "bespoke",
+      "assetId": "unique/silver-filigree-mask-XBUOsrwthY205zro",
+      "path": "assets/item-art/unique/silver-filigree-mask-XBUOsrwthY205zro.webp",
+      "currentImg": "icons/equipment/head/mask-ornate-silver.webp",
+      "absenceReason": "default placeholder: icons/equipment/head/mask-ornate-silver.webp"
+    },
+    {
       "itemId": "bDzDBlLKTmULPPv4",
       "name": "Gilded Reliquary Diptych",
       "mode": "bespoke",
@@ -143,6 +219,15 @@
       "path": "assets/item-art/unique/gilded-reliquary-diptych-bDzDBlLKTmULPPv4.webp",
       "currentImg": "icons/commodities/treasure/token-runed-os-grey.webp",
       "absenceReason": "generic treasure token placeholder: icons/commodities/treasure/token-runed-os-grey.webp"
+    },
+    {
+      "itemId": "31AKX4TAV34wckzA",
+      "name": "Stone Prophet Bust",
+      "mode": "bespoke",
+      "assetId": "unique/stone-prophet-bust-31AKX4TAV34wckzA",
+      "path": "assets/item-art/unique/stone-prophet-bust-31AKX4TAV34wckzA.webp",
+      "currentImg": "icons/commodities/treasure/statue-carved-faceless.webp",
+      "absenceReason": "default placeholder: icons/commodities/treasure/statue-carved-faceless.webp"
     },
     {
       "itemId": "aRt07Rlqy5Fg1Yh8",
@@ -172,6 +257,15 @@
       "absenceReason": "generic treasure token placeholder: icons/commodities/treasure/token-runed-os-grey.webp"
     },
     {
+      "itemId": "aRt30Judg8Fg4Wh1",
+      "name": "Porphyry Judge Effigy",
+      "mode": "bespoke",
+      "assetId": "unique/porphyry-judge-effigy-aRt30Judg8Fg4Wh1",
+      "path": "assets/item-art/unique/porphyry-judge-effigy-aRt30Judg8Fg4Wh1.webp",
+      "currentImg": "icons/commodities/treasure/statue-carved-faceless.webp",
+      "absenceReason": "default placeholder: icons/commodities/treasure/statue-carved-faceless.webp"
+    },
+    {
       "itemId": "aRt32Dipt0Hi6Yj3",
       "name": "Amber Reliquary Diptych",
       "mode": "bespoke",
@@ -179,6 +273,24 @@
       "path": "assets/item-art/unique/amber-reliquary-diptych-aRt32Dipt0Hi6Yj3.webp",
       "currentImg": "icons/commodities/treasure/token-amber.webp",
       "absenceReason": "generic treasure token placeholder: icons/commodities/treasure/token-amber.webp"
+    },
+    {
+      "itemId": "8rEeTCElX7x4CKgQ",
+      "name": "Cathedral Ruby",
+      "mode": "bespoke",
+      "assetId": "unique/cathedral-ruby-8rEeTCElX7x4CKgQ",
+      "path": "assets/item-art/unique/cathedral-ruby-8rEeTCElX7x4CKgQ.webp",
+      "currentImg": "icons/commodities/gems/gem-faceted-round-red.webp",
+      "absenceReason": "default placeholder: icons/commodities/gems/gem-faceted-round-red.webp"
+    },
+    {
+      "itemId": "tjrE3k33qnYTNZOW",
+      "name": "Lacquered Festival Mask",
+      "mode": "bespoke",
+      "assetId": "unique/lacquered-festival-mask-tjrE3k33qnYTNZOW",
+      "path": "assets/item-art/unique/lacquered-festival-mask-tjrE3k33qnYTNZOW.webp",
+      "currentImg": "icons/equipment/head/mask-ornate-silver.webp",
+      "absenceReason": "default placeholder: icons/equipment/head/mask-ornate-silver.webp"
     }
   ]
 }

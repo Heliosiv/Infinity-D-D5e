@@ -20,8 +20,14 @@ const PLAN_PATH = path.join(repoRoot, "assets", "item-art-plan.json");
 const PACK_PATH = path.join(repoRoot, "packs", "infinity-dnd5e-items.db");
 const TMP_IMAGEGEN_DIR = path.join(repoRoot, "tmp", "imagegen");
 const PLAN_SCHEMA = "infinity-dnd5e-item-art-plan-v2";
+const MODULE_ID = "infinity-dnd5e";
 
-const ABSENT_ART_PATHS = new Set(["icons/svg/item-bag.svg"]);
+const ABSENT_ART_PATHS = new Set([
+  "icons/svg/item-bag.svg",
+  "icons/commodities/gems/gem-faceted-round-red.webp",
+  "icons/equipment/head/mask-ornate-silver.webp",
+  "icons/commodities/treasure/statue-carved-faceless.webp",
+]);
 
 const ABSENT_ART_PATTERNS = Object.freeze([
   /^$/,
@@ -69,7 +75,25 @@ function normalizeArtPath(value) {
 }
 
 export function isGeneratedItemArtPath(value) {
-  return normalizeArtPath(value).startsWith("assets/item-art/");
+  const normalized = normalizeArtPath(value);
+  return (
+    normalized.startsWith("assets/item-art/") ||
+    normalized.startsWith(`modules/${MODULE_ID}/assets/item-art/`)
+  );
+}
+
+export function toFoundryItemArtPath(value) {
+  const normalized = normalizeArtPath(value);
+  if (!normalized.startsWith("assets/item-art/")) return normalized;
+  return `modules/${MODULE_ID}/${normalized}`;
+}
+
+export function toRepoItemArtPath(value) {
+  const normalized = normalizeArtPath(value);
+  const modulePrefix = `modules/${MODULE_ID}/`;
+  return normalized.startsWith(modulePrefix)
+    ? normalized.slice(modulePrefix.length)
+    : normalized;
 }
 
 export function existingCompendiumArtPath(item) {
@@ -460,6 +484,7 @@ async function commandApply({ presentOnly = false } = {}) {
       );
       continue;
     }
+    const appliedPath = toFoundryItemArtPath(assignment.path);
     if (!validPaths.has(assignment.path)) {
       if (presentOnly) {
         if (existingArt && item.img !== existingArt) {
@@ -476,8 +501,8 @@ async function commandApply({ presentOnly = false } = {}) {
       continue;
     }
     if (markArtGenerated(item, assignment)) metadataUpdates += 1;
-    if (item.img !== assignment.path) {
-      item.img = assignment.path;
+    if (item.img !== appliedPath) {
+      item.img = appliedPath;
       imageUpdates += 1;
       appliedMissing += 1;
     }

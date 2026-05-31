@@ -45,6 +45,7 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/per-creature-loot.hbs`;
+const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 
 const ITEMS_PER_CREATURE_RANGE = Object.freeze({ min: 1, max: 5, step: 1 });
 const ROSTER_LIMIT = 30; // soft cap to keep the window from becoming unmanageable
@@ -211,7 +212,7 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
       })),
 
       hasResult: Boolean(this._lastResult?.creatures?.length),
-      result: this._lastResult,
+      result: resultContext(this._lastResult),
     };
   }
 
@@ -235,6 +236,13 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     if (form) {
       form.addEventListener("input", (event) => this._onFormInput(event));
       form.addEventListener("change", (event) => this._onFormInput(event));
+    }
+
+    for (const image of root.querySelectorAll("[data-result-image]")) {
+      image.addEventListener("error", onResultImageError, { once: true });
+      if (image.complete && image.naturalWidth === 0) {
+        onResultImageError({ currentTarget: image });
+      }
     }
 
     if (!this._packStats && !this._loadingItems) {
@@ -267,10 +275,10 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {PerCreatureLootApp} */
-  static async _onReset(_event, _target) {
+  static _onReset(_event, _target) {
     this._form = PerCreatureLootApp.buildDefaultForm();
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    await this.render();
+    renderAfterAction(() => this.render(), "reset");
   }
 
   /** @this {PerCreatureLootApp} */
@@ -527,6 +535,11 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
         return;
     }
     this._form = next;
+    if (target.type === "checkbox") {
+      target
+        .closest(".lf-chip")
+        ?.classList.toggle("is-checked", target.checked);
+    }
     this._patchLiveReadouts();
   }
 
@@ -723,6 +736,15 @@ export class PerCreatureLootApp extends HandlebarsApplicationMixin(
     playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
+    } catch (error) {
+      this._packStats = computePackStats([]);
+      console.error(
+        `${MODULE_ID} | failed to preload per-creature pack stats`,
+        error,
+      );
+      ui.notifications?.warn(
+        "Infinity D&D5e could not preload per-creature pack stats. Rolls can be retried after the compendium is available.",
+      );
     } finally {
       this._loadingItems = false;
       if (this.rendered) await this.render();
@@ -769,6 +791,53 @@ function toDistributableEntry(entry) {
   }
   const uuid = entry.item?.uuid;
   return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
+}
+
+function resultContext(result) {
+  if (!result) return null;
+  return {
+    ...result,
+    creatures: (result.creatures ?? []).map((creature) => ({
+      ...creature,
+      items: (creature.items ?? []).map((entry) => ({
+        ...entry,
+        imageSrc: resultImageForEntry(entry),
+      })),
+    })),
+  };
+}
+
+function resultImageForEntry(entry) {
+  const image = String(
+    entry?.imageSrc ?? entry?.itemData?.img ?? entry?.item?.img ?? "",
+  ).trim();
+  if (!image) return FALLBACK_ITEM_IMAGE;
+  if (image.startsWith("assets/item-art/")) {
+    return `modules/${MODULE_ID}/${image}`;
+  }
+  return image;
+}
+
+function onResultImageError(event) {
+  const image = event.currentTarget;
+  if (!image || image.dataset.fallbackApplied === "true") return;
+  const fallbackSrc = image.dataset.fallbackSrc || FALLBACK_ITEM_IMAGE;
+  image.dataset.fallbackApplied = "true";
+  image.classList.add("is-fallback");
+  if (image.getAttribute("src") !== fallbackSrc) image.src = fallbackSrc;
+}
+
+function renderAfterAction(callback, action) {
+  try {
+    const result = callback();
+    if (typeof result?.catch === "function") {
+      result.catch((error) =>
+        console.warn(`${MODULE_ID} | ${action} render failed`, error),
+      );
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID} | ${action} render failed`, error);
+  }
 }
 
 /**

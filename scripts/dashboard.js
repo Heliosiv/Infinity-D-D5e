@@ -83,7 +83,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {InfinityDashboardApp} */
-  static async _onOpenSettings(_event, _target) {
+  static _onOpenSettings(_event, _target) {
     // Foundry's Configure Settings dialog scrolled to the Module
     // Settings tab. Best-effort across V12/V13 — both ship a
     // `SettingsConfig` form application. Fall back to a notification
@@ -93,7 +93,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
         globalThis.foundry?.applications?.settings?.SettingsConfig ??
         globalThis.SettingsConfig;
       if (typeof SC === "function") {
-        new SC().render(true);
+        renderSettingsConfig(SC);
         playModuleSound(SOUND_EVENTS.ITEM_OPEN);
         return;
       }
@@ -127,6 +127,24 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       console.error(`${MODULE_ID} | failed to open tool "${id}"`, error);
       ui.notifications?.error(`Failed to open ${tool.title}. See console.`);
     }
+  }
+}
+
+function renderSettingsConfig(SettingsConfigClass) {
+  const app = new SettingsConfigClass();
+  let renderResult;
+  try {
+    renderResult = app.render({ force: true });
+  } catch (error) {
+    renderResult = app.render(true);
+  }
+  if (typeof renderResult?.catch === "function") {
+    renderResult.catch((error) => {
+      console.warn(`${MODULE_ID} | SettingsConfig render failed`, error);
+      ui.notifications?.info(
+        "Open Foundry's Game Settings -> Configure Settings -> Module Settings to edit Infinity D&D5e defaults.",
+      );
+    });
   }
 }
 

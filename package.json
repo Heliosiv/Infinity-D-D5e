@@ -1,6 +1,6 @@
 {
   "name": "infinity-dnd5e",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "private": true,
   "description": "Dev tooling for the Infinity D&D5e Foundry module.",
   "type": "module",
@@ -13,6 +13,7 @@
     "check:budget": "node scripts/test-budget.mjs",
     "check:tag-vocabulary": "node scripts/test-tag-vocabulary.mjs",
     "check:pack-shape": "node scripts/test-pack-shape.mjs",
+    "generate:spell-scrolls": "node scripts/generate-spell-scrolls.mjs",
     "plan:images": "node scripts/plan-item-images.mjs",
     "art:jobs": "node scripts/art-pipeline.mjs jobs",
     "art:jobs:missing": "node scripts/art-pipeline.mjs jobs --missing-only",

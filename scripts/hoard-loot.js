@@ -12,7 +12,7 @@
  *   magic bias   — same dial as the other windows
  *   rarity       — chips, default all selected
  *   loot types   — chips, default all selected
- *   max items    — small numeric input, soft ceiling on the item count
+ *   max items    — small numeric input, 0 means no item-count ceiling
  *
  * Reuses the shared roller, pack stats, and settings reads.
  */
@@ -60,8 +60,9 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/hoard-loot.hbs`;
+const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 
-const MAX_ITEMS_RANGE = Object.freeze({ min: 1, max: 30 });
+const MAX_ITEMS_RANGE = Object.freeze({ min: 0, max: 30 });
 
 const SLIDER_LABELS = Object.freeze({
   pileBias: "Pile Bias",
@@ -241,7 +242,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       hasResult: Boolean(this._lastResult && this._lastResult.items?.length),
       hasCoinPile: Boolean(this._lastResult?.coinPileGp),
-      result: this._lastResult,
+      result: resultContext(this._lastResult),
     };
   }
 
@@ -265,6 +266,13 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (form) {
       form.addEventListener("input", (event) => this._onFormInput(event));
       form.addEventListener("change", (event) => this._onFormInput(event));
+    }
+
+    for (const image of root.querySelectorAll("[data-result-image]")) {
+      image.addEventListener("error", onResultImageError, { once: true });
+      if (image.complete && image.naturalWidth === 0) {
+        onResultImageError({ currentTarget: image });
+      }
     }
 
     if (!this._packStats && !this._loadingItems) {
@@ -295,10 +303,10 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /** @this {HoardLootApp} */
-  static async _onReset(_event, _target) {
+  static _onReset(_event, _target) {
     this._form = HoardLootApp.buildDefaultForm();
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    await this.render();
+    renderAfterAction(() => this.render(), "reset");
   }
 
   /** @this {HoardLootApp} */
@@ -490,7 +498,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
           target.value,
           MAX_ITEMS_RANGE.min,
           MAX_ITEMS_RANGE.max,
-          HOARD_DEFAULT_ITEM_CEILING[this._form.scale] ?? 8,
+          0,
         );
         break;
       case "rarity":
@@ -503,6 +511,11 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
     }
     this._form = next;
+    if (target.type === "checkbox") {
+      target
+        .closest(".lf-chip")
+        ?.classList.toggle("is-checked", target.checked);
+    }
     this._patchLiveReadouts();
   }
 
@@ -633,7 +646,12 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const raw =
         itemBudget > 0
           ? rollLoot(candidates, {
-              count: this._form.maxItems,
+              count: clampInt(
+                this._form.maxItems,
+                MAX_ITEMS_RANGE.min,
+                MAX_ITEMS_RANGE.max,
+                0,
+              ),
               budgetGp: itemBudget,
               magicBias: this._form.magicBias,
               artVariants: this._form.artVariants,
@@ -647,6 +665,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ...entry,
         rarity: getItemRarity(entry.item) || "common",
         displayName: entry.displayName || entry.item?.name || "",
+        imageSrc: resultImageForEntry(entry),
         variantSummary: entry.variant?.summary ?? "",
         valueLabel: entry.valueLabel ?? "",
         quantityLabel:
@@ -686,6 +705,12 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
     try {
       await this._loadItems();
+    } catch (error) {
+      this._packStats = computePackStats([]);
+      console.error(`${MODULE_ID} | failed to preload hoard pack stats`, error);
+      ui.notifications?.warn(
+        "Infinity D&D5e could not preload hoard pack stats. Rolls can be retried after the compendium is available.",
+      );
     } finally {
       this._loadingItems = false;
       if (this.rendered) await this.render();
@@ -731,6 +756,50 @@ function toDistributableEntry(entry) {
   }
   const uuid = entry.item?.uuid;
   return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
+}
+
+function resultContext(result) {
+  if (!result) return null;
+  return {
+    ...result,
+    items: (result.items ?? []).map((entry) => ({
+      ...entry,
+      imageSrc: resultImageForEntry(entry),
+    })),
+  };
+}
+
+function resultImageForEntry(entry) {
+  const image = String(
+    entry?.imageSrc ?? entry?.itemData?.img ?? entry?.item?.img ?? "",
+  ).trim();
+  if (!image) return FALLBACK_ITEM_IMAGE;
+  if (image.startsWith("assets/item-art/")) {
+    return `modules/${MODULE_ID}/${image}`;
+  }
+  return image;
+}
+
+function onResultImageError(event) {
+  const image = event.currentTarget;
+  if (!image || image.dataset.fallbackApplied === "true") return;
+  const fallbackSrc = image.dataset.fallbackSrc || FALLBACK_ITEM_IMAGE;
+  image.dataset.fallbackApplied = "true";
+  image.classList.add("is-fallback");
+  if (image.getAttribute("src") !== fallbackSrc) image.src = fallbackSrc;
+}
+
+function renderAfterAction(callback, action) {
+  try {
+    const result = callback();
+    if (typeof result?.catch === "function") {
+      result.catch((error) =>
+        console.warn(`${MODULE_ID} | ${action} render failed`, error),
+      );
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID} | ${action} render failed`, error);
+  }
 }
 
 function tierLabel(tier) {

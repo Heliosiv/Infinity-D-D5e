@@ -397,7 +397,7 @@ function hoardContext() {
     ]),
     rarityOptions: rarityOptions(["common", "uncommon", "rare", "very-rare"]),
     lootTypeOptions: lootTypeOptions(["gem", "art", "wondrous", "consumable"]),
-    maxItemsMin: 1,
+    maxItemsMin: 0,
     maxItemsMax: 20,
     maxItems: 8,
     loadingItems: false,

@@ -82,7 +82,7 @@
       </legend>
       <div class="lf-chiprow">
         {{#each rarityOptions}}
-        <label class="lf-chip lf-chip--rarity-{{value}} {{#if selected}}is-checked{{/if}}">
+        <label class="lf-chip lf-chip--rarity-{{value}}">
           <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
           <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>
@@ -101,7 +101,7 @@
       </legend>
       <div class="lf-chiprow">
         {{#each lootTypeOptions}}
-        <label class="lf-chip {{#if selected}}is-checked{{/if}}">
+        <label class="lf-chip">
           <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
           <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
         </label>
@@ -109,12 +109,12 @@
       </div>
     </fieldset>
 
-    {{!-- Advanced: max-items + art variants. Soft ceiling on the
-         item count; art variants generate rolled appraisals for
+    {{!-- Advanced: max-items + art variants. 0 disables the item-count
+         ceiling; art variants generate rolled appraisals for
          variable-art base items in the pack. --}}
     <div class="hl-advanced">
       <label class="hl-advanced__field">
-        <span>Max items <small>(soft ceiling)</small></span>
+        <span>Max items <small>(0 = no max)</small></span>
         <input
           class="lf-input hl-advanced__input"
           type="number"
@@ -123,6 +123,7 @@
           max="{{maxItemsMax}}"
           step="1"
           value="{{maxItems}}"
+          title="Set to 0 for no item-count ceiling."
         />
       </label>
       <label class="hl-advanced__field hl-advanced__field--checkbox">
@@ -195,7 +196,7 @@
       {{#each result.items}}
       <li class="lf-result__item lf-result__item--{{rarity}}" style="--lf-stagger: {{@index}}">
         <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
-          <img class="lf-result__icon" src="{{item.img}}" alt="" loading="lazy" />
+          <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
           <div class="lf-result__copy">
             <strong class="lf-result__name">{{displayName}}</strong>
             <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>

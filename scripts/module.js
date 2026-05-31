@@ -12,8 +12,15 @@ import { InfinityDashboardApp } from "./dashboard.js";
 import { PerEncounterLootApp } from "./app.js";
 import { HoardLootApp } from "./hoard-loot.js";
 import { PerCreatureLootApp } from "./per-creature-loot.js";
-import { preloadModuleSounds } from "./audio.js";
+import {
+  SOUND_EVENTS,
+  SOUND_REGISTRY,
+  playSoundEvent,
+  preloadModuleSounds,
+  registerSoundSocket,
+} from "./audio.js";
 import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
+import { registerSoundAutomation } from "./compat/sound-automation.js";
 import { SETTINGS } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
 import { computeLootBudget } from "./loot/budget.js";
@@ -52,6 +59,9 @@ function buildApi() {
     openPerEncounterLoot: () => PerEncounterLootApp.open(),
     openHoardLoot: () => HoardLootApp.open(),
     openPerCreatureLoot: () => PerCreatureLootApp.open(),
+    SOUND_EVENTS,
+    SOUND_REGISTRY,
+    playSoundEvent,
 
     rollLootBundle: async (opts = {}) => {
       const budget = computeLootBudget({
@@ -255,6 +265,8 @@ Hooks.once("ready", () => {
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
     if (mod && !mod.api) mod.api = buildApi();
+    registerSoundSocket();
+    registerSoundAutomation();
     void registerMonksTokenbarCompat().catch((error) => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });

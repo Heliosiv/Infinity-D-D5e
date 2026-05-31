@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import {
   existingCompendiumArtPath,
   isArtworkAbsent,
+  toFoundryItemArtPath,
 } from "./art-pipeline.mjs";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
@@ -84,7 +85,7 @@ for (const item of packItems) {
     const assetExists = existsSync(asset.path);
     const sourceArt = existingCompendiumArtPath(item);
 
-    if (item.img === assignment.path) {
+    if (item.img === toFoundryItemArtPath(assignment.path)) {
       assert.ok(assetExists, `${item.name} points at missing generated asset`);
       for (const scope of ["infinity-dnd5e", "party-operations"]) {
         const art = item.flags?.[scope]?.art;

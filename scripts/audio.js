@@ -1,9 +1,14 @@
 import { SETTING_KEYS, getSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
+const SOCKET_NAME = `module.${MODULE_ID}`;
 const SOUND_DIR = "assets/sounds";
 const MODULE_SOUND_DIR = `modules/${MODULE_ID}/${SOUND_DIR}`;
 const DEFAULT_COOLDOWN_MS = 120;
+const SOUND_SOCKET_TYPE = "sound-event";
+const SOUND_AUDIENCE_ALL = "all";
+const SOUND_AUDIENCE_LOCAL = "local";
+const SEEN_SOUND_EVENT_LIMIT = 250;
 
 export const SOUND_EVENTS = Object.freeze({
   LOADING_SHIMMER: "loading-shimmer",
@@ -44,19 +49,38 @@ export const SOUND_REGISTRY = Object.freeze({
 });
 
 const lastPlayedAt = new Map();
+const seenSocketSoundEvents = new Set();
+let soundSocketRegistered = false;
+
+export function registerSoundSocket() {
+  const socket = globalThis.game?.socket;
+  if (!socket || soundSocketRegistered) return false;
+  if (typeof socket.on !== "function") return false;
+
+  socket.on(SOCKET_NAME, receiveSoundEventPayload);
+  soundSocketRegistered = true;
+  return true;
+}
 
 export function playModuleSound(eventKey, options = {}) {
   const entry = SOUND_REGISTRY[eventKey];
   if (!entry || getSetting(SETTING_KEYS.SOUNDS_ENABLED) === false) return null;
+  if (
+    options.automation === true &&
+    getSetting(SETTING_KEYS.AUTOMATION_SOUNDS_ENABLED) === false
+  ) {
+    return null;
+  }
 
   const now = Date.now();
   const cooldownMs = Math.max(
     0,
     Number(options.cooldownMs ?? entry.cooldownMs ?? DEFAULT_COOLDOWN_MS),
   );
-  const previous = lastPlayedAt.get(eventKey) ?? 0;
+  const cooldownKey = soundCooldownKey(eventKey, options);
+  const previous = lastPlayedAt.get(cooldownKey) ?? 0;
   if (cooldownMs > 0 && now - previous < cooldownMs) return null;
-  lastPlayedAt.set(eventKey, now);
+  lastPlayedAt.set(cooldownKey, now);
 
   const delayMs = Math.max(0, Number(options.delayMs ?? 0));
   const play = () => playFoundrySound(entry, options);
@@ -65,6 +89,54 @@ export function playModuleSound(eventKey, options = {}) {
     return null;
   }
   return play();
+}
+
+export function playSoundEvent(eventKey, options = {}) {
+  const entry = SOUND_REGISTRY[eventKey];
+  if (!entry) return null;
+
+  const audience = options.audience ?? SOUND_AUDIENCE_LOCAL;
+  const playbackOptions = {
+    ...options,
+    audience: undefined,
+  };
+
+  if (audience !== SOUND_AUDIENCE_ALL) {
+    return playModuleSound(eventKey, playbackOptions);
+  }
+
+  const eventId = options.eventId ?? createSoundEventId(eventKey);
+  rememberSocketSoundEvent(eventId);
+  const localResult = playModuleSound(eventKey, playbackOptions);
+  const socket = globalThis.game?.socket;
+  if (typeof socket?.emit === "function") {
+    socket.emit(SOCKET_NAME, {
+      type: SOUND_SOCKET_TYPE,
+      id: eventId,
+      eventKey,
+      originUserId: globalThis.game?.user?.id ?? null,
+      options: sanitizeSocketSoundOptions(playbackOptions),
+    });
+  }
+  return localResult;
+}
+
+export function receiveSoundEventPayload(payload) {
+  if (!isValidSoundSocketPayload(payload)) return null;
+  if (seenSocketSoundEvents.has(payload.id)) return null;
+  if (
+    payload.originUserId &&
+    payload.originUserId === globalThis.game?.user?.id
+  ) {
+    rememberSocketSoundEvent(payload.id);
+    return null;
+  }
+
+  rememberSocketSoundEvent(payload.id);
+  return playModuleSound(payload.eventKey, {
+    ...payload.options,
+    automation: true,
+  });
 }
 
 export function playResultSound(result, options = {}) {
@@ -143,6 +215,61 @@ function playFoundrySound(entry, options) {
     });
   }
   return null;
+}
+
+function soundCooldownKey(eventKey, options) {
+  const contextKey = cleanSocketString(options.contextKey);
+  const phase = cleanSocketString(options.phase);
+  if (!contextKey && !phase) return eventKey;
+  return [eventKey, contextKey, phase].filter(Boolean).join(":");
+}
+
+function sanitizeSocketSoundOptions(options) {
+  const sanitized = {
+    automation: options.automation === true,
+  };
+  const contextKey = cleanSocketString(options.contextKey);
+  const phase = cleanSocketString(options.phase);
+  if (contextKey) sanitized.contextKey = contextKey;
+  if (phase) sanitized.phase = phase;
+
+  for (const numericKey of ["cooldownMs", "delayMs", "chimeDelayMs"]) {
+    const value = Number(options[numericKey]);
+    if (Number.isFinite(value) && value >= 0) sanitized[numericKey] = value;
+  }
+  return sanitized;
+}
+
+function isValidSoundSocketPayload(payload) {
+  return (
+    payload?.type === SOUND_SOCKET_TYPE &&
+    typeof payload.id === "string" &&
+    payload.id.length > 0 &&
+    Boolean(SOUND_REGISTRY[payload.eventKey]) &&
+    (!payload.options ||
+      (typeof payload.options === "object" && !Array.isArray(payload.options)))
+  );
+}
+
+function cleanSocketString(value) {
+  const stringValue = String(value ?? "").trim();
+  return stringValue.length > 0 ? stringValue.slice(0, 240) : "";
+}
+
+function createSoundEventId(eventKey) {
+  const userId = cleanSocketString(globalThis.game?.user?.id) || "local";
+  return `${MODULE_ID}.${userId}.${eventKey}.${Date.now()}.${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+function rememberSocketSoundEvent(eventId) {
+  if (!eventId) return;
+  if (seenSocketSoundEvents.size >= SEEN_SOUND_EVENT_LIMIT) {
+    const oldest = seenSocketSoundEvents.values().next().value;
+    if (oldest) seenSocketSoundEvents.delete(oldest);
+  }
+  seenSocketSoundEvents.add(eventId);
 }
 
 function resultItems(result) {
