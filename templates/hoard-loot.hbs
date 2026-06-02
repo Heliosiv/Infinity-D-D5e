@@ -110,8 +110,8 @@
     </fieldset>
 
     {{!-- Advanced: max-items + art variants. 0 disables the item-count
-         ceiling; art variants generate rolled appraisals for
-         variable-art base items in the pack. --}}
+         ceiling; art variants generate unique names and appraisal notes
+         for variable-art base items in the pack. --}}
     <div class="hl-advanced">
       <label class="hl-advanced__field">
         <span>Max items <small>(0 = no max)</small></span>
@@ -132,7 +132,7 @@
           name="artVariants"
           {{#if form.artVariants}}checked{{/if}}
         />
-        <span>Art variants <small>(rolled appraisals for art objects)</small></span>
+        <span>Art variants <small>(unique details for art objects)</small></span>
       </label>
     </div>
 

@@ -135,9 +135,9 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       pileBias: 0,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
-      // Art variants on by default — a treasure hoard is the most
-      // thematic place for rolled appraisals ("Signed Marble Bust @ 1.9×
-      // base value"). Toggleable via the form input.
+      // Art variants on by default - a treasure hoard is the most
+      // thematic place for specific art-object names and appraisal notes.
+      // Toggleable via the form input.
       artVariants: true,
       // Rarity narrows with the scale's narrative shape; the chips
       // remain editable and stay sticky across tier/scale clicks
@@ -658,9 +658,9 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
             })
           : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
 
-      // Decorate with displayName / valueLabel so rolled art appraisals
-      // ("Signed Marble Bust", "1.9× base value") render in the result
-      // list. Non-art entries fall back to the source item name.
+      // Decorate with displayName / valueLabel so rolled art variants
+      // render in the result list. Non-art entries fall back to the
+      // source item name.
       const decoratedItems = raw.items.map((entry) => ({
         ...entry,
         rarity: getItemRarity(entry.item) || "common",

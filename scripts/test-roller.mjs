@@ -227,7 +227,7 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
- * rollLoot - unique art variants and adjusted appraisals
+ * rollLoot - unique art variants preserve market values
  * ------------------------------------------------------------------ */
 {
   const art = fakeItem({
@@ -257,10 +257,10 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   assert.notEqual(entry.displayName, "Court Tapestry");
   assert.ok(entry.displayName.includes("Court Tapestry"));
   assert.equal(entry.variant.kind, "art");
-  assert.notEqual(entry.gpValue, 1000);
+  assert.equal(entry.gpValue, 1000);
   assert.equal(entry.gpTotal, entry.gpValue);
   assert.equal(result.totalGp, entry.gpValue);
-  assert.ok(entry.valueLabel.includes("base value"));
+  assert.equal(entry.valueLabel, "");
   assert.ok(entry.variant.summary.includes(";"));
   assert.equal(entry.itemData.name, entry.displayName);
   assert.equal(entry.itemData.system.price.value, entry.gpValue);
@@ -269,9 +269,22 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     entry.itemData.flags["infinity-dnd5e"].generatedTreasure.variantId,
     entry.variant.id,
   );
+  assert.equal(
+    entry.itemData.flags["infinity-dnd5e"].generatedTreasure.baseGp,
+    1000,
+  );
   assert.equal(entry.itemData.flags["party-operations"].gpValue, entry.gpValue);
   assert.ok(
     entry.itemData.system.description.value.includes("Generated appraisal"),
+  );
+  assert.ok(
+    entry.itemData.system.description.value.includes(
+      "market value of 1,000 gp",
+    ),
+  );
+  assert.ok(
+    !entry.itemData.system.description.value.includes("base value"),
+    "generated appraisal should not show a second adjusted/base value",
   );
   assert.equal(
     art.system.price.value,
@@ -281,7 +294,7 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
- * rollLoot - art variant values are used by budget trimming
+ * rollLoot - art market values are used by budget trimming
  * ------------------------------------------------------------------ */
 {
   const art = fakeItem({
@@ -308,18 +321,19 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   });
   const result = rollLoot([art, cheap], {
     count: 2,
-    budgetGp: 2800,
-    rng: seqRng([0.25, 0.75, 0.99, 0.99, 0.99, 0.99]),
+    budgetGp: 1000,
+    rng: seqRng([0, 0.75, 0.99, 0.99, 0.99, 0.99]),
     artVariants: true,
   });
 
   assert.equal(
     result.droppedForBudget,
     1,
-    "budget trimming saw the generated art value, not only the base value",
+    "budget trimming uses the art market value, not an adjusted appraisal",
   );
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].item._id, "art");
+  assert.equal(result.items[0].gpValue, 1000);
   assert.equal(result.totalGp, result.items[0].gpValue);
 }
 
@@ -628,20 +642,17 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
- * rollLoot — art-aware pre-filter
+ * rollLoot - art market-value pre-filter
  *
- * Variable-art items roll their realized gp in [base × 0.35, base × 2.75].
- * The pre-filter must let an art base into the pool if any roll could fit
- * the budget; otherwise a high-base art item is silently dropped even
- * when 35 %+ of its rolls would have been affordable. Mundane items still
- * obey the strict ceiling.
+ * Art variants preserve base market gp, so variable-art items obey the
+ * same budget ceiling as other items.
  * ------------------------------------------------------------------ */
 {
   const art = fakeItem({
     _id: "expensive-art",
     name: "Gilded Reliquary",
     type: "loot",
-    gpValue: 1000, // could realize as low as 350 gp (1000 × 0.35)
+    gpValue: 1000,
     lootType: "loot.loot",
     keywords: [
       "loot",
@@ -655,7 +666,7 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   const overpricedMundane = fakeItem({
     _id: "overpriced-mundane",
     name: "Wand of Web",
-    gpValue: 2000, // never below 2000 gp; must be filtered
+    gpValue: 2000,
     lootType: "loot.wand",
   });
   const affordable = fakeItem({
@@ -665,11 +676,11 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     lootType: "loot.consumable",
   });
 
-  // Budget 500 gp → ceil 550 gp → art base 1000 still allowed (1000 × 0.35
-  // = 350 fits), but the mundane 2000 gp wand must be excluded.
+  // Budget 500 gp -> ceil 550 gp -> both expensive items are excluded.
   const pool = [art, overpricedMundane, affordable];
   let artPicked = 0;
   let wandPicked = 0;
+  let affordablePicked = 0;
   for (let i = 0; i < 50; i += 1) {
     const result = rollLoot(pool, {
       count: 1,
@@ -680,35 +691,18 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     for (const entry of result.items) {
       if (entry.item._id === "expensive-art") artPicked += 1;
       if (entry.item._id === "overpriced-mundane") wandPicked += 1;
+      if (entry.item._id === "affordable") affordablePicked += 1;
     }
   }
-  assert.ok(
-    artPicked > 0,
-    "art items with high base gp still reach the draw pool",
-  );
+  assert.equal(artPicked, 0, "art market value obeys the budget ceiling");
   assert.equal(
     wandPicked,
     0,
     "mundane items above budget ceiling are excluded",
   );
-
-  // Without artVariants, the art base obeys the strict ceiling too.
-  let strictArtPicked = 0;
-  for (let i = 0; i < 50; i += 1) {
-    const result = rollLoot(pool, {
-      count: 1,
-      budgetGp: 500,
-      artVariants: false,
-      rng: mulberry32(i + 300),
-    });
-    for (const entry of result.items) {
-      if (entry.item._id === "expensive-art") strictArtPicked += 1;
-    }
-  }
-  assert.equal(
-    strictArtPicked,
-    0,
-    "without art variants, the 1000 gp base is filtered like any other item",
+  assert.ok(
+    affordablePicked > 0,
+    "affordable items remain available after budget filtering",
   );
 }
 

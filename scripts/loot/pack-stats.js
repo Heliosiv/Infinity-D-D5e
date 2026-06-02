@@ -15,6 +15,7 @@ import {
   getItemMagicNature,
   getItemRarity,
   getItemTier,
+  isBareSpellLootItem,
   isLootEligible,
 } from "./tag-vocabulary.js";
 
@@ -112,6 +113,7 @@ export function computeTierFilteredStats(items, tiers = null) {
     if (!item) continue;
     if (tierSet && !tierSet.has(getItemTier(item))) continue;
     if (!isLootEligible(item)) continue;
+    if (isBareSpellLootItem(item)) continue;
     total += 1;
     const rarity = getItemRarity(item);
     if (rarity) byRarity[rarity] = (byRarity[rarity] ?? 0) + 1;

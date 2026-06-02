@@ -188,6 +188,15 @@ export function getItemLootType(item) {
   );
 }
 
+/**
+ * True for source spell documents that are not inventory loot by themselves.
+ * Generated spell scrolls are consumable items with `loot.scroll`, so they do
+ * not match this guard.
+ */
+export function isBareSpellLootItem(item) {
+  return item?.type === "spell" || getItemLootType(item) === "loot.spell";
+}
+
 /** Get the tier id (`t1`-`t5`) off an item, or "" if not tagged. */
 export function getItemTier(item) {
   const raw = String(

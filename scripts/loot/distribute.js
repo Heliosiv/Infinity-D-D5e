@@ -27,8 +27,12 @@ import {
   currencyAddFromBreakdown,
   formatCoinBreakdown,
 } from "./hoard-budget.js";
+import { DEFAULT_ITEM_PACK_ID, loadCompendiumItems } from "./pack.js";
+import { isBareSpellLootItem } from "./tag-vocabulary.js";
 
 const MODULE_ID = "infinity-dnd5e";
+const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
+let spellScrollIndexPromise = null;
 
 /* ------------------------------------------------------------------ *
  * Drag-and-drop
@@ -49,8 +53,8 @@ export function beginDragFromResult(event, entry = null) {
   const uuid = entry?.item?.uuid ?? sourceEl?.dataset?.uuid;
   const quantity = Math.max(1, Math.floor(Number(entry?.quantity) || 1));
 
-  // Generated art variants always ship their own snapshot — the rolled
-  // appraisal, condition, and provenance only exist in `entry.itemData`.
+  // Generated art variants always ship their own snapshot because the
+  // specific name, condition, and provenance only exist in `entry.itemData`.
   let itemData = cloneItemData(entry?.itemData);
 
   // Multi-quantity normal items need a snapshot too. Foundry's stock drop
@@ -296,8 +300,14 @@ async function depositItemsCore(actor, items) {
   for (const ref of refs) {
     try {
       if (ref.itemData) {
-        const obj = cloneItemData(ref.itemData);
-        delete obj._id;
+        const source = cloneItemData(ref.itemData);
+        const obj = await prepareCreatableItemData(source, {
+          sourceUuid: ref.uuid,
+        });
+        if (!obj) {
+          failures.push(spellScrollFailureName(ref, source));
+          continue;
+        }
         setItemQuantity(obj, ref.quantity);
         itemData.push(obj);
         continue;
@@ -307,10 +317,14 @@ async function depositItemsCore(actor, items) {
         failures.push(ref.name ?? ref.uuid);
         continue;
       }
-      const obj = doc.toObject();
-      // Strip the source `_id` so Foundry assigns a fresh one and we
-      // never collide with an existing embedded item.
-      delete obj._id;
+      const source = doc.toObject();
+      const obj = await prepareCreatableItemData(source, {
+        sourceUuid: doc.uuid ?? ref.uuid,
+      });
+      if (!obj) {
+        failures.push(spellScrollFailureName(ref, source));
+        continue;
+      }
       setItemQuantity(obj, ref.quantity);
       itemData.push(obj);
     } catch (error) {
@@ -341,6 +355,116 @@ async function depositItemsCore(actor, items) {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+async function prepareCreatableItemData(source, { sourceUuid = "" } = {}) {
+  if (!source) return null;
+  const obj = isBareSpellLootItem(source)
+    ? await findSpellScrollForSpell(source, sourceUuid)
+    : cloneItemData(source);
+  if (!obj) return null;
+  // Strip source identity so Foundry assigns a fresh embedded item id.
+  delete obj._id;
+  delete obj.id;
+  delete obj.uuid;
+  return obj;
+}
+
+async function findSpellScrollForSpell(spellData, sourceUuid = "") {
+  const index = await getSpellScrollIndex();
+  for (const key of spellLookupKeys(spellData, sourceUuid)) {
+    const scroll = index.get(key);
+    if (scroll) return cloneItemData(scroll);
+  }
+  return null;
+}
+
+async function getSpellScrollIndex() {
+  if (!spellScrollIndexPromise) {
+    spellScrollIndexPromise = loadCompendiumItems({
+      packId: DEFAULT_ITEM_PACK_ID,
+    }).then(buildSpellScrollIndex);
+  }
+  return spellScrollIndexPromise;
+}
+
+function buildSpellScrollIndex(items) {
+  const index = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!isGeneratedSpellScroll(item)) continue;
+    const native = item.flags?.[MODULE_ID]?.spellScroll ?? {};
+    const source = item.flags?.["party-operations"]?.scrollSource ?? {};
+    addIndexKey(index, idKey(native.sourceSpellId), item);
+    addIndexKey(index, idKey(source.spellId), item);
+    addIndexKey(index, uuidKey(native.sourceSpellUuid), item);
+    addIndexKey(index, uuidKey(source.sourceUuid), item);
+    addIndexKey(
+      index,
+      spellNameKey(
+        native.sourceSpellName ?? source.spellName ?? stripScrollPrefix(item.name),
+        native.spellLevel ?? source.spellLevel,
+      ),
+      item,
+    );
+  }
+  return index;
+}
+
+function isGeneratedSpellScroll(item) {
+  const native = item?.flags?.[MODULE_ID]?.spellScroll;
+  if (native?.schema === SPELL_SCROLL_SCHEMA) return true;
+  const source = item?.flags?.["party-operations"]?.scrollSource;
+  return source?.schema === SPELL_SCROLL_SCHEMA;
+}
+
+function spellLookupKeys(spellData, sourceUuid) {
+  return [
+    idKey(spellData?._id),
+    idKey(spellData?.id),
+    uuidKey(sourceUuid),
+    uuidKey(spellData?.uuid),
+    uuidKey(spellData?.flags?.core?.sourceId),
+    uuidKey(spellData?._stats?.compendiumSource),
+    uuidKey(spellData?.flags?.["party-operations"]?.details?.coreSourceId),
+    spellNameKey(spellData?.name, spellData?.system?.level),
+  ].filter(Boolean);
+}
+
+function addIndexKey(index, key, item) {
+  if (key && !index.has(key)) index.set(key, item);
+}
+
+function idKey(value) {
+  const text = String(value ?? "").trim();
+  return text ? `id:${text}` : "";
+}
+
+function uuidKey(value) {
+  const text = String(value ?? "").trim();
+  return text ? `uuid:${text}` : "";
+}
+
+function spellNameKey(name, level) {
+  const cleanName = String(name ?? "")
+    .trim()
+    .toLowerCase();
+  if (!cleanName) return "";
+  return `name:${cleanName}:level:${normalizeSpellLevel(level)}`;
+}
+
+function stripScrollPrefix(name) {
+  return String(name ?? "").replace(/^Spell Scroll:\s*/i, "");
+}
+
+function normalizeSpellLevel(level) {
+  const value = Math.floor(Number(level));
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(9, value));
+}
+
+function spellScrollFailureName(ref, source) {
+  const name = ref?.name ?? source?.name ?? ref?.uuid ?? "spell";
+  return `${name} (spell scroll not found)`;
+}
 
 /**
  * Return character-type actors visible to the current user, sorted by
@@ -385,11 +509,16 @@ export function normalizeDistributableItems(items) {
       }
       if (!item || typeof item !== "object") return null;
       const quantity = normalizeQty(item.quantity);
+      const uuid = String(item.uuid ?? item.item?.uuid ?? "").trim();
       const itemData = cloneItemData(item.itemData ?? item.data);
       if (itemData) {
-        return { itemData, name: item.name ?? itemData.name, quantity };
+        return {
+          itemData,
+          name: item.name ?? itemData.name,
+          quantity,
+          ...(uuid ? { uuid } : {}),
+        };
       }
-      const uuid = String(item.uuid ?? item.item?.uuid ?? "").trim();
       return uuid
         ? { uuid, name: item.name ?? item.item?.name, quantity }
         : null;
