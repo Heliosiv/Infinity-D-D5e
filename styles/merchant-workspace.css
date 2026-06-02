@@ -361,6 +361,17 @@
   width: 90px;
 }
 
+/* Art field: text input + browse/upload button on one row. */
+.mw-field__row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.mw-field__row .mw-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Inventory */
 .mw-fieldset--inv {
   display: grid;

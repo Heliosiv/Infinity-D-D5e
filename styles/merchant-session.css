@@ -99,6 +99,15 @@
   font-size: 0.84rem;
   line-height: 1.35;
 }
+.ms-head__coffer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--ms-parchment-ink) 85%, var(--ms-wood));
+}
 .ms-head__purse {
   display: flex;
   flex-direction: column;
@@ -304,6 +313,12 @@
 }
 .ms-row__actions .mw-input--num {
   width: 56px;
+}
+
+.ms-row__warn {
+  color: color-mix(in srgb, var(--lf-danger) 85%, white);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 /* Seal pill */

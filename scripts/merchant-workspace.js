@@ -8,6 +8,7 @@
 
 import {
   BARGAIN_SKILLS,
+  clearInventory,
   computeBuyPriceGp,
   createBlankMerchant,
   createInventoryRow,
@@ -23,6 +24,11 @@ import {
   upsertMerchant,
 } from "./merchant/store.js";
 import { rollMerchantStock } from "./merchant/pool.js";
+import {
+  captureScroll,
+  restoreScroll,
+  bindScrollTracking,
+} from "./merchant/scroll.js";
 import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
 import {
   MERCHANT_EVENTS,
@@ -40,6 +46,12 @@ const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
 const FALLBACK_ART = "icons/svg/shop.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
+
+/** Scroll panes whose position survives action re-renders. */
+const SCROLL_TARGETS = [
+  { key: "list", selector: ".mw-list" },
+  { key: "edit", selector: ".mw-edit" },
+];
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -65,7 +77,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       deleteMerchant: MerchantWorkspaceApp._onDeleteMerchant,
       addFromPack: MerchantWorkspaceApp._onAddFromPack,
       generateStock: MerchantWorkspaceApp._onGenerateStock,
+      regenerateStock: MerchantWorkspaceApp._onRegenerateStock,
+      clearInventory: MerchantWorkspaceApp._onClearInventory,
       restock: MerchantWorkspaceApp._onRestock,
+      pickArt: MerchantWorkspaceApp._onPickArt,
       openSession: MerchantWorkspaceApp._onOpenSession,
       closeSession: MerchantWorkspaceApp._onCloseSession,
       invRemove: MerchantWorkspaceApp._onInvRemove,
@@ -260,6 +275,16 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._wireFormChange();
     this._wireInventoryInputs();
     this._wireDropZone();
+
+    // Preserve scroll position across action re-renders (select merchant,
+    // edit a row, generate stock…) so the view never snaps to the top.
+    const root = this.element;
+    if (root) {
+      bindScrollTracking(root, SCROLL_TARGETS, () => {
+        this._scroll = captureScroll(root, SCROLL_TARGETS);
+      });
+      restoreScroll(root, SCROLL_TARGETS, this._scroll);
+    }
   }
 
   _wireFormChange() {
@@ -404,6 +429,11 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       sellRatio: Number(data.sellRatio ?? merchant.sellRatio),
       bargainDC: Number(data.bargainDC ?? merchant.bargainDC),
       bargainAdvantage: data.bargainAdvantage === "on",
+      bargainSuccessPct: Number(
+        data.bargainSuccessPct ?? merchant.bargainSuccessPct,
+      ),
+      bargainFailPct: Number(data.bargainFailPct ?? merchant.bargainFailPct),
+      goldOnHand: data.goldOnHand,
       allowedSkills: data.allowedSkills,
       allowedUserIds: data.allowedUserIds,
       pool: {
@@ -523,13 +553,25 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   }
 
   static async _onGenerateStock() {
+    return this._generateStock({ replace: false });
+  }
+
+  static async _onRegenerateStock() {
+    return this._generateStock({ replace: true });
+  }
+
+  /**
+   * Roll the pool into inventory. `replace: true` clears all existing
+   * stock first (Re-Generate); `false` appends deduped (Generate).
+   */
+  async _generateStock({ replace }) {
     if (!this._selectedId) return;
-    // Persist any pending form edits (e.g. just-toggled pool chips) so we
-    // roll against the latest config, not the last-saved one.
+    // Persist pending form edits (e.g. just-toggled pool chips) so we roll
+    // against the latest config, not the last-saved one.
     try {
       await this._saveFromForm();
     } catch {}
-    const merchant = findMerchant(this._selectedId);
+    let merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     const pool = merchant.pool ?? { lootTypes: [], rarities: [], count: 6 };
     if (
@@ -546,6 +588,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       ui.notifications?.warn(`${MODULE_ID}: no items in compendium.`);
       return;
     }
+    if (replace) merchant = clearInventory(merchant);
     const exclude = new Set(merchant.items.map((r) => r.uuid));
     const { rows, warnings } = rollMerchantStock(pool, items, { exclude });
     if (rows.length === 0) {
@@ -559,9 +602,50 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     await upsertMerchant(next);
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(
-      `${MODULE_ID}: generated ${rows.length} item(s) for ${merchant.name}.`,
+      `${MODULE_ID}: ${replace ? "re-stocked" : "generated"} ${rows.length} item(s) for ${next.name}.`,
     );
     this.render(false);
+  }
+
+  static async _onClearInventory() {
+    if (!this._selectedId) return;
+    const merchant = findMerchant(this._selectedId);
+    if (!merchant || merchant.items.length === 0) return;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    const confirmed = DialogV2
+      ? await DialogV2.confirm({
+          window: { title: "Clear inventory?", icon: "fa-solid fa-trash" },
+          content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeText(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
+          rejectClose: false,
+        })
+      : true;
+    if (!confirmed) return;
+    await upsertMerchant(clearInventory(merchant));
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
+    this.render(false);
+  }
+
+  static async _onPickArt() {
+    const input = this.element?.querySelector?.('input[name="art"]');
+    const FP =
+      foundry?.applications?.apps?.FilePicker?.implementation ??
+      globalThis.FilePicker;
+    if (!FP) {
+      ui.notifications?.warn(`${MODULE_ID}: file picker unavailable.`);
+      return;
+    }
+    const picker = new FP({
+      type: "image",
+      current: input?.value || "",
+      callback: async (path) => {
+        if (input) input.value = path;
+        try {
+          await this._saveFromForm();
+        } catch {}
+        this.render(false);
+      },
+    });
+    picker.render(true);
   }
 
   static async _onRestock() {

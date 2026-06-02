@@ -18,13 +18,15 @@
  */
 
 import {
+  adjustMerchantGold,
+  buildMerchantBargainTiers,
   decrementInventory,
   findMerchant,
   isUserAllowed,
   normalizeMerchant,
   upsertMerchant,
 } from "./store.js";
-import { computeBargainOutcome, loadBargainTiers } from "./bargain.js";
+import { computeBargainOutcome } from "./bargain.js";
 import {
   closeSession,
   consumeSeal,
@@ -200,7 +202,8 @@ async function handleBargainResult(payload) {
   if (session.viewerUserId !== payload.originUserId) return;
   const merchant = findMerchant(session.merchantId);
   if (!merchant) return;
-  const tiers = loadBargainTiers();
+  // Per-merchant success/fail swing (no crit distinction).
+  const tiers = buildMerchantBargainTiers(merchant);
   const outcome = computeBargainOutcome(
     Number(rollTotal) || 0,
     Number(merchant.bargainDC) || 0,
@@ -233,6 +236,7 @@ async function handleCommitPurchase(payload) {
   if (!session) return;
   if (session.viewerUserId !== payload.originUserId) return;
   const requested = Math.max(1, Math.floor(Number(qty) || 1));
+  const totalGp = Math.max(0, Number(payload.totalGp) || 0);
 
   await runWithMerchantMutex(session.merchantId, async () => {
     const merchant = findMerchant(session.merchantId);
@@ -240,24 +244,20 @@ async function handleCommitPurchase(payload) {
     const row = merchant.items.find((r) => r.uuid === itemUuid);
     if (!row) return;
     if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "buy" });
-    if (row.unlimited) {
-      // No stock change required, but emit a state-update so other
-      // session viewers see the (unchanged) merchant snapshot.
-      await broadcastState(merchant);
-      return;
+
+    let updated = merchant;
+    // Decrement stock when the row is finite and the player's view was
+    // current; otherwise leave stock alone (they bought against stale
+    // state — the buy already executed client-side).
+    if (!row.unlimited && row.qty >= requested) {
+      try {
+        updated = decrementInventory(updated, itemUuid, requested);
+      } catch (error) {
+        console.warn(`${MODULE_ID} | decrement failed`, error);
+      }
     }
-    if (row.qty < requested) {
-      // Player saw old state — emit a state-update so they refresh.
-      await broadcastState(merchant);
-      return;
-    }
-    let updated;
-    try {
-      updated = decrementInventory(merchant, itemUuid, requested);
-    } catch (error) {
-      console.warn(`${MODULE_ID} | decrement failed`, error);
-      return;
-    }
+    // The merchant gains the gold the player paid (no-op if unlimited purse).
+    updated = adjustMerchantGold(updated, totalGp);
     await upsertMerchant(updated);
     await broadcastState(updated);
   });
@@ -269,10 +269,16 @@ async function handleCommitSale(payload) {
   if (!session) return;
   if (session.viewerUserId !== payload.originUserId) return;
   if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
-  // Sales don't change merchant stock (party doesn't grow the shop).
-  // Still emit a state-update so any GM observer refreshes the log.
-  const merchant = findMerchant(session.merchantId);
-  if (merchant) await broadcastState(merchant);
+  const totalGp = Math.max(0, Number(payload.totalGp) || 0);
+  // Sales don't change stock, but the merchant pays out — spend its gold
+  // (clamped at 0; no-op if the purse is unlimited).
+  await runWithMerchantMutex(session.merchantId, async () => {
+    const merchant = findMerchant(session.merchantId);
+    if (!merchant) return;
+    const updated = adjustMerchantGold(merchant, -totalGp);
+    await upsertMerchant(updated);
+    await broadcastState(updated);
+  });
 }
 
 async function broadcastState(merchant) {

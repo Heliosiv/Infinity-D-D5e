@@ -11,6 +11,7 @@
       {{#if merchant.description}}
       <p class="ms-head__desc">{{merchant.description}}</p>
       {{/if}}
+      {{#if merchantGoldLabel}}<span class="ms-head__coffer"><i class="fa-solid fa-vault" aria-hidden="true"></i> Coffer: {{merchantGoldLabel}}</span>{{/if}}
     </div>
     <div class="ms-head__purse">
       <span class="ms-head__purse-label">Purse</span>
@@ -82,6 +83,7 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             You have {{ownedQty}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
+            {{#if cannotSell}}<span class="ms-row__warn">merchant low on gold</span>{{/if}}
           </span>
         </div>
         <div class="ms-row__price">
@@ -97,9 +99,9 @@
           <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainSell" data-item-id="{{itemId}}" {{#if bargainLocked}}disabled{{/if}} title="Bargain">
             <i class="fa-solid fa-comments-dollar" aria-hidden="true"></i>
           </button>
-          <button type="button" class="mw-btn" data-action="sellOne" data-item-id="{{itemId}}">Sell 1</button>
-          <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{ownedQty}}" value="1" title="Quantity to sell" />
-          <button type="button" class="mw-btn mw-btn--primary" data-action="sellN" data-item-id="{{itemId}}">Sell</button>
+          <button type="button" class="mw-btn" data-action="sellOne" data-item-id="{{itemId}}" {{#if cannotSell}}disabled{{/if}}>Sell 1</button>
+          <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{maxSellQty}}" value="1" title="Quantity to sell" {{#if cannotSell}}disabled{{/if}} />
+          <button type="button" class="mw-btn mw-btn--primary" data-action="sellN" data-item-id="{{itemId}}" {{#if cannotSell}}disabled{{/if}}>Sell</button>
         </div>
       </article>
       {{/each}}

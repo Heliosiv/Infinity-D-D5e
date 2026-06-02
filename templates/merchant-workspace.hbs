@@ -53,8 +53,13 @@
               <input class="mw-input" type="text" name="name" value="{{selected.name}}" />
             </label>
             <label class="mw-field">
-              <span class="mw-field__label">Art URL</span>
-              <input class="mw-input" type="text" name="art" value="{{selected.art}}" placeholder="icons/svg/shop.svg" />
+              <span class="mw-field__label">Art</span>
+              <div class="mw-field__row">
+                <input class="mw-input" type="text" name="art" value="{{selected.art}}" placeholder="icons/svg/shop.svg" />
+                <button type="button" class="mw-btn mw-btn--icon" data-action="pickArt" title="Browse or upload an image">
+                  <i class="fa-solid fa-image" aria-hidden="true"></i>
+                </button>
+              </div>
             </label>
           </div>
         </div>
@@ -80,6 +85,18 @@
           <label class="mw-field mw-field--toggle">
             <span class="mw-field__label">Advantage on Bargain</span>
             <input type="checkbox" name="bargainAdvantage" {{#if selected.bargainAdvantage}}checked{{/if}} />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Gold on Hand</span>
+            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Bargain Success −%</span>
+            <input class="mw-input" type="number" name="bargainSuccessPct" min="0" max="100" step="1" value="{{selected.bargainSuccessPct}}" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Bargain Fail +%</span>
+            <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
           </label>
         </div>
 
@@ -146,6 +163,9 @@
             <button type="button" class="mw-btn mw-btn--primary" data-action="generateStock">
               <i class="fa-solid fa-dice" aria-hidden="true"></i> Generate Stock
             </button>
+            <button type="button" class="mw-btn" data-action="regenerateStock" title="Clear all stock, then roll a fresh batch from the pool">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Re-Generate
+            </button>
           </div>
         </fieldset>
 
@@ -191,6 +211,9 @@
             </button>
             <button type="button" class="mw-btn" data-action="restock">
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All
+            </button>
+            <button type="button" class="mw-btn mw-btn--danger" data-action="clearInventory">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Clear All
             </button>
           </div>
         </fieldset>

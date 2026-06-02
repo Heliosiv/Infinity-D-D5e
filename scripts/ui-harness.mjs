@@ -493,6 +493,9 @@ function merchantWorkspaceContext() {
     sellRatio: 0.5,
     bargainDC: 15,
     bargainAdvantage: false,
+    goldOnHand: 320,
+    bargainSuccessPct: 10,
+    bargainFailPct: 10,
     items: [{}, {}, {}],
     itemCountIsOne: false,
   };
@@ -601,6 +604,7 @@ function merchantSessionContext() {
       description: "A cramped stall of oddments and salvaged gear.",
     },
     walletLabel: "42 gp · 5 sp",
+    merchantGoldLabel: "320 gp",
     buyActive: true,
     sellActive: true,
     buyRows: [
@@ -651,6 +655,8 @@ function merchantSessionContext() {
         rarity: "common",
         rarityLabel: "Common",
         ownedQty: 1,
+        maxSellQty: 1,
+        cannotSell: false,
         baseLabel: "7.50 gp",
         finalLabel: "9.00 gp",
         priceDeltaLabel: "+20%",

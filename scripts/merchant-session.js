@@ -11,7 +11,7 @@
  * socket layer.
  */
 
-import { normalizeMerchant, roundGp } from "./merchant/store.js";
+import { normalizeMerchant, roundGp, merchantCanAfford } from "./merchant/store.js";
 import {
   resolveUnitBuyPrice,
   resolveUnitSellPrice,
@@ -31,11 +31,22 @@ import { formatCoinBreakdown } from "./loot/hoard-budget.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import {
+  captureScroll,
+  restoreScroll,
+  bindScrollTracking,
+} from "./merchant/scroll.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-session.hbs`;
 const FALLBACK_ART = "icons/svg/shop.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
+
+/** Scroll panes whose position survives action re-renders. */
+const SCROLL_TARGETS = [
+  { key: "rows", selector: ".ms-rows" },
+  { key: "log", selector: ".ms-log" },
+];
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -223,6 +234,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         art: this._merchant.art || FALLBACK_ART,
       },
       walletLabel,
+      merchantGoldLabel: formatMerchantGold(this._merchant.goldOnHand),
       buyActive: this._activeTab === "buy",
       sellActive: this._activeTab === "sell",
       buyRows,
@@ -300,6 +312,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     );
     if (baseGp <= 0) return null; // hide free items
     const showDelta = seal && Math.abs(seal.deltaPct) > 0;
+    // Gate selling on the merchant's gold-on-hand (tracked both ways).
+    const merchantGold = this._merchant.goldOnHand;
+    const unlimitedGold = merchantGold == null;
+    const affordableQty = unlimitedGold
+      ? ownedQty
+      : Math.floor((Number(merchantGold) || 0) / Math.max(0.01, finalGp));
+    const sellableQty = Math.max(0, Math.min(ownedQty, affordableQty));
+    const cannotSell = sellableQty < 1;
     return {
       itemId: doc.id,
       name: data.name ?? "(item)",
@@ -307,6 +327,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       rarity,
       rarityLabel: prettyRarity(rarity),
       ownedQty,
+      maxSellQty: Math.max(1, sellableQty),
+      cannotSell,
       baseLabel: `${baseGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
       priceDeltaLabel: showDelta ? formatDelta(-seal.deltaPct) : "",
@@ -351,6 +373,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
 
     this._wireQtyInputs();
+
+    // Preserve scroll position across action re-renders (buy, bargain, tab…).
+    if (root) {
+      bindScrollTracking(root, SCROLL_TARGETS, () => {
+        this._scroll = captureScroll(root, SCROLL_TARGETS);
+      });
+      restoreScroll(root, SCROLL_TARGETS, this._scroll);
+    }
   }
 
   _wireQtyInputs() {
@@ -459,6 +489,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       itemUuid: uuid,
       qty,
       sealId: result.sealId,
+      totalGp: result.totalGp,
     });
     this._seals.delete(sealKey);
     playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
@@ -504,6 +535,23 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     const sealKey = `${itemId}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
+    // Gate on the merchant's gold-on-hand before paying out.
+    const unitGp = roundGp(
+      resolveUnitSellPrice({
+        merchant: this._merchant,
+        item: ownedItem.toObject?.() ?? ownedItem,
+        seal,
+      }),
+    );
+    if (!merchantCanAfford(this._merchant, unitGp * Math.max(1, qty))) {
+      const gold = Number(this._merchant.goldOnHand) || 0;
+      ui.notifications?.warn(
+        `${MODULE_ID}: the merchant only has ${gold.toFixed(0)} gp on hand.`,
+      );
+      this._appendLog("fail", "Sell blocked — merchant is low on gold");
+      this.render(false);
+      return;
+    }
     const result = await executeSell({
       actor,
       merchant: this._merchant,
@@ -521,6 +569,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       itemUuid: itemId,
       qty,
       sealId: result.sealId,
+      totalGp: result.totalGp,
     });
     this._seals.delete(sealKey);
     playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
@@ -652,6 +701,13 @@ function formatDelta(deltaPct) {
   const n = Number(deltaPct) || 0;
   if (n === 0) return "no change";
   return `${n > 0 ? "+" : ""}${n.toFixed(0)}%`;
+}
+
+/** Merchant coffer label. Unlimited (null) → "" so the header hides it. */
+function formatMerchantGold(gold) {
+  if (gold == null) return "";
+  const n = Math.max(0, Number(gold) || 0);
+  return `${Number.isInteger(n) ? n : n.toFixed(2)} gp`;
 }
 
 function sealLabel(seal) {

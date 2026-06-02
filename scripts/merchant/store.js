@@ -20,6 +20,8 @@ export const MERCHANT_RECORD_VERSION = 1;
 const DEFAULT_MARKUP = 1.0;
 const DEFAULT_SELL_RATIO = 0.5;
 const DEFAULT_BARGAIN_DC = 15;
+const DEFAULT_BARGAIN_SUCCESS_PCT = 10;
+const DEFAULT_BARGAIN_FAIL_PCT = 10;
 const DEFAULT_ALLOWED_SKILLS = Object.freeze(["prf", "dec"]);
 const DEFAULT_POOL_COUNT = 6;
 
@@ -155,6 +157,15 @@ export function normalizeMerchant(input) {
     sellRatio: Math.max(0, toNumber(raw.sellRatio, DEFAULT_SELL_RATIO)),
     bargainDC: Math.max(0, toInt(raw.bargainDC, DEFAULT_BARGAIN_DC)),
     bargainAdvantage: raw.bargainAdvantage === true,
+    bargainSuccessPct: Math.max(
+      0,
+      toNumber(raw.bargainSuccessPct, DEFAULT_BARGAIN_SUCCESS_PCT),
+    ),
+    bargainFailPct: Math.max(
+      0,
+      toNumber(raw.bargainFailPct, DEFAULT_BARGAIN_FAIL_PCT),
+    ),
+    goldOnHand: normalizeGold(raw.goldOnHand),
     allowedSkills: dedupeAllowedSkills(raw.allowedSkills),
     allowedUserIds: toStrArray(raw.allowedUserIds),
     chatHidden: raw.chatHidden === true,
@@ -192,6 +203,14 @@ function dedupeAllowedSkills(raw) {
   const list = toStrArray(raw);
   if (list.length === 0) return [...DEFAULT_ALLOWED_SKILLS];
   return list.filter((skill) => BARGAIN_SKILLS[skill]);
+}
+
+/** Gold-on-hand normalizer: blank / undefined → null (unlimited). A real
+ *  0 means a broke merchant that can't buy anything. */
+function normalizeGold(raw) {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
 }
 
 /**
@@ -330,6 +349,55 @@ export function restockAll(merchant) {
     row.unlimited ? row : { ...row, qty: row.startingQty },
   );
   return m;
+}
+
+/** Remove every inventory row (keeps the merchant and its config). */
+export function clearInventory(merchant) {
+  const m = normalizeMerchant(merchant);
+  m.items = [];
+  return m;
+}
+
+/**
+ * Adjust a merchant's gold-on-hand by `deltaGp` (positive = gains, e.g. a
+ * player buying from it; negative = spends, e.g. buying a player's goods).
+ * Unlimited merchants (goldOnHand == null) are returned unchanged.
+ * Result is clamped to >= 0 and rounded to the nearest copper.
+ */
+export function adjustMerchantGold(merchant, deltaGp) {
+  const m = normalizeMerchant(merchant);
+  if (m.goldOnHand == null) return m; // unlimited purse
+  const next = Math.max(0, m.goldOnHand + (Number(deltaGp) || 0));
+  m.goldOnHand = Math.round(next * 100) / 100;
+  return m;
+}
+
+/** Whether the merchant can pay `gp` for a player's goods (unlimited → always). */
+export function merchantCanAfford(merchant, gp) {
+  const g = merchant?.goldOnHand;
+  if (g == null) return true;
+  return g >= (Number(gp) || 0);
+}
+
+/**
+ * Build the merchant's two-tier bargain schedule from its success / fail
+ * percentages (no critical distinction — a crit behaves like a normal
+ * success/failure). Success yields a negative delta (lowers a buy price;
+ * the sell path inverts it into a higher payout); failure raises it.
+ */
+export function buildMerchantBargainTiers(merchant) {
+  const success = Math.max(
+    0,
+    toNumber(merchant?.bargainSuccessPct, DEFAULT_BARGAIN_SUCCESS_PCT),
+  );
+  const fail = Math.max(
+    0,
+    toNumber(merchant?.bargainFailPct, DEFAULT_BARGAIN_FAIL_PCT),
+  );
+  return [
+    { id: "success", minMargin: 0, deltaPct: -success },
+    { id: "failure", minMargin: -Infinity, deltaPct: fail },
+  ];
 }
 
 /** Add or replace an inventory row by uuid. */

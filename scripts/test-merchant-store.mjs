@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
+  adjustMerchantGold,
   applyBargainDelta,
+  buildMerchantBargainTiers,
+  clearInventory,
   computeBuyPriceGp,
   computeSellPriceGp,
   createBlankMerchant,
   createInventoryRow,
   decrementInventory,
+  merchantCanAfford,
   getDefaultBargainTiers,
   isUserAllowed,
   normalizeInventoryRow,
@@ -233,6 +237,71 @@ import {
   assert.equal(resolveStockQty(sword, 1), 1);
   assert.equal(resolveStockQty(sword, 4), 4, "non-ammo honors requested qty");
   assert.equal(resolveStockQty(sword, 0), 1, "invalid qty floors to 1");
+}
+
+/* ------------------------------------------------------------------ *
+ * Gold-on-hand, bargain percentages, clear inventory
+ * ------------------------------------------------------------------ */
+{
+  // Normalized defaults
+  const def = normalizeMerchant({});
+  assert.equal(def.goldOnHand, null, "blank gold → unlimited (null)");
+  assert.equal(def.bargainSuccessPct, 10);
+  assert.equal(def.bargainFailPct, 10);
+
+  // Gold normalization
+  assert.equal(normalizeMerchant({ goldOnHand: 500 }).goldOnHand, 500);
+  assert.equal(
+    normalizeMerchant({ goldOnHand: 0 }).goldOnHand,
+    0,
+    "explicit 0 = broke, not unlimited",
+  );
+  assert.equal(normalizeMerchant({ goldOnHand: "" }).goldOnHand, null);
+  assert.equal(
+    normalizeMerchant({ goldOnHand: -50 }).goldOnHand,
+    0,
+    "negative clamps to 0",
+  );
+
+  // adjustMerchantGold
+  const g500 = normalizeMerchant({ id: "g", goldOnHand: 500 });
+  assert.equal(adjustMerchantGold(g500, 100).goldOnHand, 600, "gains gold");
+  assert.equal(
+    adjustMerchantGold(g500, -700).goldOnHand,
+    0,
+    "spending clamps at 0",
+  );
+  const unlimited = normalizeMerchant({ id: "u" });
+  assert.equal(
+    adjustMerchantGold(unlimited, -999).goldOnHand,
+    null,
+    "unlimited purse unchanged",
+  );
+
+  // merchantCanAfford
+  assert.equal(merchantCanAfford(g500, 400), true);
+  assert.equal(merchantCanAfford(g500, 600), false);
+  assert.equal(merchantCanAfford(unlimited, 1e9), true);
+
+  // clearInventory
+  const stocked = normalizeMerchant({
+    id: "s",
+    items: [{ uuid: "u1", qty: 3 }, { uuid: "u2", qty: 1 }],
+  });
+  assert.equal(clearInventory(stocked).items.length, 0, "inventory cleared");
+
+  // buildMerchantBargainTiers — 2 tiers, no crit distinction
+  const tiers = buildMerchantBargainTiers({
+    bargainSuccessPct: 15,
+    bargainFailPct: 25,
+  });
+  assert.equal(tiers.length, 2);
+  const success = tiers.find((t) => t.id === "success");
+  const failure = tiers.find((t) => t.id === "failure");
+  assert.equal(success.deltaPct, -15, "success lowers price");
+  assert.equal(success.minMargin, 0);
+  assert.equal(failure.deltaPct, 25, "failure raises price");
+  assert.equal(failure.minMargin, -Infinity);
 }
 
 process.stdout.write("merchant-store validation passed\n");
