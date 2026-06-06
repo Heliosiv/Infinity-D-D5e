@@ -102,6 +102,8 @@ export class PerCreatureLootApp extends BaseLootApp {
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       rarities: ["common", "uncommon"],
       lootTypes: [],
+      minItemGp: 0,
+      maxItemGp: 0,
       roster: [
         makeCreature({ name: "Creature 1", tier: defaultTier }),
         makeCreature({ name: "Creature 2", tier: defaultTier }),
@@ -179,6 +181,7 @@ export class PerCreatureLootApp extends BaseLootApp {
     const candidates = this._countCandidates();
     return {
       ...this._basePresetContext(),
+      ...this._marketContext(),
       form: this._form,
       moduleId: MODULE_ID,
       loadingItems: this._loadingItems,
@@ -396,6 +399,12 @@ export class PerCreatureLootApp extends BaseLootApp {
           0,
         );
         break;
+      case "minItemGp":
+        next.minItemGp = clampInt(target.value, 0, Number.MAX_SAFE_INTEGER, 0);
+        break;
+      case "maxItemGp":
+        next.maxItemGp = clampInt(target.value, 0, Number.MAX_SAFE_INTEGER, 0);
+        break;
       case "rarity":
         next.rarities = this._readChipGroup("rarity");
         break;
@@ -442,6 +451,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       "[data-candidates]",
       this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
     );
+    setText(root, "[data-value-range]", this._valueRangeLabel());
     setText(root, "[data-roster-budget]", formatGp(this._rosterTotalBudget()));
     this._syncSnapStates(root, "magicBias", this._form.magicBias);
   }
@@ -461,6 +471,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,
+      ...this._valueFilter(),
     };
   }
 

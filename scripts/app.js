@@ -169,6 +169,8 @@ export class PerEncounterLootApp extends BaseLootApp {
         RARITIES,
       ),
       lootTypes: [], // empty = all types
+      minItemGp: 0, // 0 = no floor
+      maxItemGp: 0, // 0 = no ceiling
     };
   }
 
@@ -228,6 +230,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       : null;
     return {
       ...this._basePresetContext(),
+      ...this._marketContext(),
       form: this._form,
       moduleId: MODULE_ID,
       projectedBudgetLabel: formatGp(projectedBudget),
@@ -452,6 +455,12 @@ export class PerEncounterLootApp extends BaseLootApp {
           0,
         );
         break;
+      case "minItemGp":
+        next.minItemGp = clampInt(target.value, 0, Number.MAX_SAFE_INTEGER, 0);
+        break;
+      case "maxItemGp":
+        next.maxItemGp = clampInt(target.value, 0, Number.MAX_SAFE_INTEGER, 0);
+        break;
       case "magicBias":
         next.magicBias = clampFloat(
           target.value,
@@ -528,6 +537,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       "[data-candidates]",
       this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
     );
+    setText(root, "[data-value-range]", this._valueRangeLabel());
 
     setText(
       root,
@@ -577,6 +587,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,
+      ...this._valueFilter(),
     };
   }
 

@@ -43,6 +43,12 @@ import { SETTING_KEYS, getSetting } from "../settings.js";
 import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
 import {
+  clampGp,
+  formatValueRange,
+  marketTierOptions,
+  valueFilterSpec,
+} from "./value-filter.js";
+import {
   clearHistory,
   deletePreset,
   exportPresets,
@@ -136,6 +142,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       clear: this._onClear,
       openItem: this._onOpenItem,
       snap: this._onSnap,
+      marketTier: this._onMarketTier,
       chipAll: this._onChipAll,
       chipNone: this._onChipNone,
       sendToChat: this._onSendToChat,
@@ -568,6 +575,40 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!name || !Number.isFinite(raw)) return;
     this._form = { ...this._form, [name]: raw };
     await this._renderPreservingScroll();
+  }
+
+  /** @this {BaseLootApp} — apply a one-click market-tier value band. */
+  static async _onMarketTier(_event, target) {
+    const min = clampGp(target?.dataset?.min, 0);
+    const max = clampGp(target?.dataset?.max, 0);
+    this._form = { ...this._form, minItemGp: min, maxItemGp: max };
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    await this._renderPreservingScroll();
+  }
+
+  /** The { minGp, maxGp } value slice each tool spreads into its filter spec. */
+  _valueFilter() {
+    return valueFilterSpec(this._form);
+  }
+
+  /** Market-tier buttons + value-range label; spread into _prepareContext. */
+  _marketContext() {
+    const min = this._form?.minItemGp ?? 0;
+    const max = this._form?.maxItemGp ?? 0;
+    return {
+      minItemGp: min,
+      maxItemGp: max,
+      valueRangeLabel: formatValueRange(min, max),
+      marketTiers: marketTierOptions(min, max),
+    };
+  }
+
+  /** Live value-range label for in-place readout patching (no re-render). */
+  _valueRangeLabel() {
+    return formatValueRange(
+      this._form?.minItemGp ?? 0,
+      this._form?.maxItemGp ?? 0,
+    );
   }
 
   /** @this {BaseLootApp} */

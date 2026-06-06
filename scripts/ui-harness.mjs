@@ -2,6 +2,18 @@ import { readFileSync } from "node:fs";
 
 import Handlebars from "handlebars";
 
+import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
+
+/** Market-filter context (mirrors BaseLootApp._marketContext) for the harness. */
+function marketContext(minItemGp = 0, maxItemGp = 0) {
+  return {
+    minItemGp,
+    maxItemGp,
+    valueRangeLabel: formatValueRange(minItemGp, maxItemGp),
+    marketTiers: marketTierOptions(minItemGp, maxItemGp),
+  };
+}
+
 const CSS_FILES = [
   "styles/tokens.css",
   "styles/dashboard.css",
@@ -339,6 +351,7 @@ function menuContext() {
 function perEncounterContext() {
   return {
     ...menuContext(),
+    ...marketContext(0, 5000),
     moduleId: "infinity-dnd5e",
     form: {
       itemLimitEnabled: true,
@@ -418,6 +431,7 @@ function perEncounterContext() {
 function hoardContext() {
   return {
     ...menuContext(),
+    ...marketContext(0, 1000),
     form: { artVariants: true },
     totalBudgetLabel: "2,400 gp",
     coinPileLabel: "900 gp",
@@ -492,6 +506,7 @@ function perCreatureContext() {
   ];
   return {
     ...menuContext(),
+    ...marketContext(),
     rosterRows: rows.map((row) => ({
       ...row,
       tierOptions: tierOptions(row.tier),
@@ -613,6 +628,10 @@ function merchantWorkspaceContext() {
       artifact: 0.05,
     }),
     poolCount: 6,
+    poolMinGp: 0,
+    poolMaxGp: 500,
+    poolValueRangeLabel: formatValueRange(0, 500),
+    poolMarketTiers: marketTierOptions(0, 500),
     inventoryRows: [
       {
         uuid: "Compendium.infinity-dnd5e-items.Item.potion",

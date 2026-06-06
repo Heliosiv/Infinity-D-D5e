@@ -205,6 +205,10 @@ export function normalizeStockPool(raw) {
     count: Math.min(50, Math.max(1, toInt(p.count, DEFAULT_POOL_COUNT))),
     rarityBalance,
     rarityWeights: resolveRarityWeights(rarityBalance, p.rarityWeights),
+    // Per-item gp value band; 0 = no floor / no ceiling. A value cap doubles
+    // as a market-realism dial (cheap = common, pricey = rare).
+    minGp: Math.max(0, toInt(p.minGp, 0)),
+    maxGp: Math.max(0, toInt(p.maxGp, 0)),
   };
 }
 

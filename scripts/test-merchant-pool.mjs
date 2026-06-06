@@ -162,4 +162,52 @@ const ITEMS = [
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Value band (minGp / maxGp) restricts the pool by item gp value
+ * ------------------------------------------------------------------ */
+{
+  const priced = (id, gp) => ({
+    _id: id,
+    uuid: `Compendium.test.Item.${id}`,
+    name: id,
+    img: "icons/svg/item-bag.svg",
+    system: { rarity: "common", price: { value: gp, denomination: "gp" } },
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "gem",
+        rarityNormalized: "common",
+        gpValue: gp,
+      },
+    },
+  });
+  const items = [priced("cheap", 50), priced("mid", 500), priced("dear", 5000)];
+
+  // A max ceiling excludes the expensive item (market-tier behavior).
+  const { rows } = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: [], count: 10, maxGp: 600 },
+    items,
+    { rng: mulberry32(3) },
+  );
+  const ids = new Set(rows.map((r) => r.uuid));
+  assert.ok(rows.length >= 1, "cheaper gems still stock under a cap");
+  assert.ok(
+    !ids.has("Compendium.test.Item.dear"),
+    "the 5,000 gp gem is excluded by maxGp 600",
+  );
+
+  // A floor excludes the cheapest item.
+  const { rows: rows2 } = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: [], count: 10, minGp: 100 },
+    items,
+    { rng: mulberry32(4) },
+  );
+  for (const row of rows2) {
+    assert.notEqual(
+      row.uuid,
+      "Compendium.test.Item.cheap",
+      "the 50 gp gem is excluded by minGp 100",
+    );
+  }
+}
+
 process.stdout.write("merchant-pool validation passed\n");

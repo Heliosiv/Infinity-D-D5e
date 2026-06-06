@@ -10,6 +10,7 @@
  */
 
 import { filterCandidates, rollLoot } from "../loot/roller.js";
+import { valueFilterSpec } from "../loot/value-filter.js";
 import { createInventoryRow, resolveStockQty } from "./store.js";
 
 /**
@@ -37,9 +38,11 @@ export function rollMerchantStock(pool, items, opts = {}) {
     return { rows: [], warnings };
   }
 
-  const candidates = filterCandidates(items, { lootTypes, rarities }).filter(
-    (item) => !exclude.has(item?.uuid),
-  );
+  const candidates = filterCandidates(items, {
+    lootTypes,
+    rarities,
+    ...valueFilterSpec({ minItemGp: pool?.minGp, maxItemGp: pool?.maxGp }),
+  }).filter((item) => !exclude.has(item?.uuid));
   if (candidates.length === 0) {
     warnings.push("No compendium items match the pool's types/rarities.");
     return { rows: [], warnings };

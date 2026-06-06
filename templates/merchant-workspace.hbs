@@ -173,6 +173,29 @@
               {{/each}}
             </div>
           </div>
+          <div class="mw-market">
+            <div class="mw-market__head">
+              <span class="mw-field__label">Item Value <small>(market tier or custom range)</small></span>
+              <strong class="mw-market__range-label" data-pool-value-range>{{poolValueRangeLabel}}</strong>
+            </div>
+            <div class="mw-market__tiers">
+              {{#each poolMarketTiers}}
+              <button type="button" class="mw-market__tier {{#if active}}is-active{{/if}}" data-action="marketTier" data-min="{{min}}" data-max="{{max}}" title="{{label}} — {{#if max}}items up to {{max}} gp{{else}}no value limit{{/if}}">
+                <i class="{{icon}}" aria-hidden="true"></i> {{label}}
+              </button>
+              {{/each}}
+            </div>
+            <div class="mw-market__range">
+              <label class="mw-field mw-field--inline">
+                <span class="mw-field__label">Min gp <small>(0 = none)</small></span>
+                <input class="mw-input mw-input--num" type="number" name="poolMinGp" min="0" step="50" value="{{poolMinGp}}" />
+              </label>
+              <label class="mw-field mw-field--inline">
+                <span class="mw-field__label">Max gp <small>(0 = none)</small></span>
+                <input class="mw-input mw-input--num" type="number" name="poolMaxGp" min="0" step="50" value="{{poolMaxGp}}" />
+              </label>
+            </div>
+          </div>
           <div class="mw-pool__foot">
             <label class="mw-field mw-field--inline">
               <span class="mw-field__label">How many</span>

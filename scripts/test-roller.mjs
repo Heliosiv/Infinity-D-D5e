@@ -80,6 +80,36 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * filterCandidates — per-item value band (minGp / maxGp)
+ * ------------------------------------------------------------------ */
+{
+  const cheap = fakeItem({ _id: "cheap", gpValue: 50 });
+  const mid = fakeItem({ _id: "mid", gpValue: 500 });
+  const dear = fakeItem({ _id: "dear", gpValue: 5000 });
+  const pool = [cheap, mid, dear];
+
+  assert.deepEqual(
+    filterCandidates(pool, { maxGp: 600 })
+      .map((i) => i._id)
+      .sort(),
+    ["cheap", "mid"],
+    "maxGp excludes the dear item",
+  );
+  assert.deepEqual(
+    filterCandidates(pool, { minGp: 100 })
+      .map((i) => i._id)
+      .sort(),
+    ["dear", "mid"],
+    "minGp excludes the cheap item",
+  );
+  assert.deepEqual(
+    filterCandidates(pool, { minGp: 100, maxGp: 600 }).map((i) => i._id),
+    ["mid"],
+    "a band keeps only the in-range item",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * getEffectiveRarity — untagged floors to common (reachability)
  * ------------------------------------------------------------------ */
 {

@@ -133,6 +133,8 @@ export class HoardLootApp extends BaseLootApp {
       rarityWeights: getRarityBalancePresetWeights(RARITY_BALANCE_DEFAULT_KEY),
       rarities: getDefaultRarities(tier, scale),
       lootTypes: [...LOOT_TYPES],
+      minItemGp: 0,
+      maxItemGp: 0,
     };
   }
 
@@ -207,6 +209,7 @@ export class HoardLootApp extends BaseLootApp {
       : null;
     return {
       ...this._basePresetContext(),
+      ...this._marketContext(),
       form: this._form,
       moduleId: MODULE_ID,
       totalBudgetLabel: formatGp(totalBudget),
@@ -399,6 +402,22 @@ export class HoardLootApp extends BaseLootApp {
             0,
           );
           break;
+        case "minItemGp":
+          next.minItemGp = clampInt(
+            target.value,
+            0,
+            Number.MAX_SAFE_INTEGER,
+            0,
+          );
+          break;
+        case "maxItemGp":
+          next.maxItemGp = clampInt(
+            target.value,
+            0,
+            Number.MAX_SAFE_INTEGER,
+            0,
+          );
+          break;
         case "rarityBalance":
           next.rarityBalance = normalizeRarityBalanceKey(target.value);
           next.rarityWeights = resolveRarityWeights(
@@ -471,6 +490,7 @@ export class HoardLootApp extends BaseLootApp {
       "[data-candidates]",
       this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
     );
+    setText(root, "[data-value-range]", this._valueRangeLabel());
 
     this._syncSnapStates(root, "pileBias", this._form.pileBias);
     this._syncSnapStates(root, "magicBias", this._form.magicBias);
@@ -496,6 +516,7 @@ export class HoardLootApp extends BaseLootApp {
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,
+      ...this._valueFilter(),
     };
   }
 

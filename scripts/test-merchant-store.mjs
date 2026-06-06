@@ -305,6 +305,8 @@ import {
       legendary: 1,
       artifact: 1,
     },
+    minGp: 0,
+    maxGp: 0,
   });
   const pool = normalizeStockPool({
     lootTypes: ["weapon-magic", "weapon-magic", "gem"],
@@ -325,6 +327,18 @@ import {
   assert.equal(pool.rarityWeights.rare, 0.5);
   assert.equal(normalizeStockPool({ count: 0 }).count, 1, "count floored to 1");
 
+  // Value band: non-negative integers, 0 = no limit.
+  const banded = normalizeStockPool({ minGp: 250, maxGp: 5000 });
+  assert.equal(banded.minGp, 250);
+  assert.equal(banded.maxGp, 5000);
+  assert.equal(
+    normalizeStockPool({ minGp: -10, maxGp: -1 }).minGp,
+    0,
+    "negative min floors to 0 (no limit)",
+  );
+  assert.equal(normalizeStockPool({ minGp: -10, maxGp: -1 }).maxGp, 0);
+  assert.equal(normalizeStockPool({ maxGp: 12.9 }).maxGp, 12, "floors max");
+
   // normalizeMerchant carries a normalized pool, even when absent
   const m = normalizeMerchant({
     pool: { lootTypes: ["consumable"], count: 3 },
@@ -344,6 +358,8 @@ import {
       legendary: 1,
       artifact: 1,
     },
+    minGp: 0,
+    maxGp: 0,
   });
 
   // resolveStockQty: ammo → full stack of 20, everything else → requested

@@ -40,6 +40,7 @@ import {
   resolveRarityWeights,
 } from "./loot/rarity-balance.js";
 import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
+import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { formatMultiplier, prettyLootType, prettyRarity } from "./ui-util.js";
 import {
   MERCHANT_EVENTS,
@@ -93,6 +94,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       deleteMerchant: MerchantWorkspaceApp._onDeleteMerchant,
       duplicateMerchant: MerchantWorkspaceApp._onDuplicateMerchant,
       addFromPack: MerchantWorkspaceApp._onAddFromPack,
+      marketTier: MerchantWorkspaceApp._onMarketTier,
       generateStock: MerchantWorkspaceApp._onGenerateStock,
       regenerateStock: MerchantWorkspaceApp._onRegenerateStock,
       clearInventory: MerchantWorkspaceApp._onClearInventory,
@@ -185,7 +187,11 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       count: 6,
       rarityBalance: RARITY_BALANCE_DEFAULT_KEY,
       rarityWeights: getRarityBalancePresetWeights(RARITY_BALANCE_DEFAULT_KEY),
+      minGp: 0,
+      maxGp: 0,
     };
+    const poolMinGp = Math.max(0, Number(pool.minGp) || 0);
+    const poolMaxGp = Math.max(0, Number(pool.maxGp) || 0);
     const poolRarityBalance = normalizeRarityBalanceKey(pool.rarityBalance);
     const poolRarityWeights = resolveRarityWeights(
       poolRarityBalance,
@@ -236,6 +242,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       poolRarityBalanceOptions: rarityBalanceOptions(poolRarityBalance),
       poolRarityWeightRows: rarityWeightRows(poolRarityWeights),
       poolCount: pool.count,
+      poolMinGp,
+      poolMaxGp,
+      poolValueRangeLabel: formatValueRange(poolMinGp, poolMaxGp),
+      poolMarketTiers: marketTierOptions(poolMinGp, poolMaxGp),
       inventoryRows,
       activeSessions,
       canOpenSession:
@@ -527,6 +537,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         count: Number(data.poolCount ?? merchant.pool?.count ?? 6),
         rarityBalance: data.poolRarityBalance,
         rarityWeights: data.poolRarityWeights,
+        minGp: Number(data.poolMinGp ?? merchant.pool?.minGp ?? 0),
+        maxGp: Number(data.poolMaxGp ?? merchant.pool?.maxGp ?? 0),
       },
     });
     await upsertMerchant(next);
@@ -654,6 +666,23 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
     if (!pickedUuid) return;
     await this._addUuidToInventory(pickedUuid);
+  }
+
+  static async _onMarketTier(_event, target) {
+    if (!this._selectedId) return;
+    const form = this.element?.querySelector?.('[data-form="merchant-edit"]');
+    if (!form) return;
+    const min = Math.max(0, Math.floor(Number(target?.dataset?.min) || 0));
+    const max = Math.max(0, Math.floor(Number(target?.dataset?.max) || 0));
+    const minInput = form.querySelector('[name="poolMinGp"]');
+    const maxInput = form.querySelector('[name="poolMaxGp"]');
+    if (minInput) minInput.value = String(min);
+    if (maxInput) maxInput.value = String(max);
+    try {
+      await this._saveFromForm();
+    } catch {}
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    this.render(false);
   }
 
   static async _onGenerateStock() {

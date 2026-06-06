@@ -129,6 +129,8 @@
       </div>
     </fieldset>
 
+    {{> marketFilter}}
+
     <div class="lf-form__actions">
       <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Generate (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
         <i class="fa-solid fa-dice" aria-hidden="true"></i>
@@ -369,4 +371,44 @@
     {{/if}}
   </div>
 </details>
+{{/inline}}
+
+{{!--
+  Item value filter, shared across all three loot windows. Market-tier preset
+  buttons fill the editable Min/Max gp range; a value cap doubles as a
+  market-realism dial (cheap = common, pricey = rare). Fed by
+  BaseLootApp._marketContext (marketTiers, min/maxItemGp, valueRangeLabel).
+--}}
+{{#*inline "marketFilter"}}
+<fieldset class="lf-fieldset lf-market-filter">
+  <legend class="lf-fieldset__legend">
+    Item Value <small>(market tier or custom range)</small>
+    <span class="lf-chiprow__bulk"><strong data-value-range>{{valueRangeLabel}}</strong></span>
+  </legend>
+  <div class="lf-market">
+    {{#each marketTiers}}
+    <button
+      type="button"
+      class="lf-market__tier {{#if active}}is-active{{/if}}"
+      data-action="marketTier"
+      data-min="{{min}}"
+      data-max="{{max}}"
+      title="{{label}} — {{#if max}}items up to {{max}} gp{{else}}no value limit{{/if}}"
+    >
+      <i class="{{icon}}" aria-hidden="true"></i>
+      <span>{{label}}</span>
+    </button>
+    {{/each}}
+  </div>
+  <div class="lf-market__range">
+    <label class="lf-field lf-field--inline">
+      <span class="lf-field__label">Min gp <small>(0 = none)</small></span>
+      <input class="lf-input" type="number" name="minItemGp" min="0" step="50" value="{{minItemGp}}" />
+    </label>
+    <label class="lf-field lf-field--inline">
+      <span class="lf-field__label">Max gp <small>(0 = none)</small></span>
+      <input class="lf-input" type="number" name="maxItemGp" min="0" step="50" value="{{maxItemGp}}" />
+    </label>
+  </div>
+</fieldset>
 {{/inline}}
