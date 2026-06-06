@@ -7,8 +7,9 @@
  * in a parent folder) so Foundry's "Install Module" / Forge upload
  * accepts it as-is.
  *
- * Pure node — no Foundry, no shell except `Compress-Archive` for the
- * final zip step (Windows-friendly, no extra deps).
+ * Pure node — compiles the compendium packs (NeDB → LevelDB), stages
+ * the runtime files, and zips with adm-zip (forward-slash entries on
+ * every platform, unlike PowerShell's Compress-Archive).
  *
  * Run: `npm run release` (or `node scripts/build-release.mjs`).
  */
@@ -26,6 +27,8 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+
+import AdmZip from "adm-zip";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -70,6 +73,20 @@ function shouldStage(sourcePath) {
 
   // Drop node test scripts and the build script itself.
   if (ext === ".mjs") return false;
+
+  // Drop the NeDB source pack (and its nedb backup temp) — the `.db` is
+  // the editable source, compiled into a LevelDB directory that ships in
+  // its place. (Guarded to packs/ so we never match an unrelated file.)
+  if (
+    normalized.includes("/packs/") &&
+    (base.endsWith(".db") || base.endsWith(".db~"))
+  ) {
+    return false;
+  }
+
+  // Drop the LevelDB runtime lock if one is lingering — Foundry creates
+  // its own on load; shipping a stale LOCK is at best noise.
+  if (base === "lock" && normalized.includes("/packs/")) return false;
 
   // Drop OS junk / editor backups.
   if (base === ".ds_store" || base === "thumbs.db") return false;
@@ -208,13 +225,25 @@ async function verifyStage(manifest) {
     }
   }
 
-  // Pack files referenced in module.json must exist too.
+  // Packs referenced in module.json must exist too. Foundry v11+ reads
+  // LevelDB *directories*; a valid one always contains a CURRENT file,
+  // so checking for it catches an empty or failed compile here rather
+  // than as a silent empty compendium inside Foundry.
   for (const pack of manifest?.packs ?? []) {
     const relativePath = String(pack?.path ?? "").trim();
     if (!relativePath) continue;
     const staged = path.join(stagingDir, relativePath);
     if (!(await pathExists(staged))) {
       throw new Error(`Manifest pack missing in staging: ${relativePath}`);
+    }
+    const stagedStat = await stat(staged);
+    if (stagedStat.isDirectory()) {
+      if (!(await pathExists(path.join(staged, "CURRENT")))) {
+        throw new Error(
+          `Pack "${relativePath}" is not a valid LevelDB directory ` +
+            `(no CURRENT file). Did the compile step run?`,
+        );
+      }
     }
   }
 }
@@ -271,29 +300,33 @@ async function writeNotes(manifest) {
   );
 }
 
-function runZip() {
-  // Windows-friendly: use PowerShell's Compress-Archive. Avoids
-  // adding adm-zip / yauzl / etc. as a dependency.
-  const escapedStaging = stagingDir.replace(/'/g, "''");
-  const escapedZip = zipPath.replace(/'/g, "''");
-  const command = [
-    "$ErrorActionPreference = 'Stop'",
-    `if (Test-Path '${escapedZip}') { Remove-Item '${escapedZip}' -Force }`,
-    `Compress-Archive -Path (Join-Path '${escapedStaging}' '*') -DestinationPath '${escapedZip}' -CompressionLevel Optimal`,
-  ].join("; ");
-  const result = spawnSync(
-    "powershell",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
-    {
-      cwd: repoRoot,
-      stdio: "inherit",
-    },
-  );
+/**
+ * Compile the NeDB source packs into their shipped LevelDB directories.
+ * Runs the standalone compiler in its own process so the native
+ * classic-level handle is fully torn down before we stage files.
+ */
+function compilePacks() {
+  const script = path.join(here, "compile-packs.mjs");
+  const result = spawnSync(process.execPath, [script], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
   if (result.status !== 0) {
-    throw new Error(
-      `Compress-Archive failed with exit code ${result.status ?? 1}`,
-    );
+    throw new Error(`Pack compile failed with exit code ${result.status ?? 1}`);
   }
+}
+
+function runZip() {
+  // Use adm-zip rather than PowerShell's Compress-Archive: on Windows
+  // PowerShell 5.1 writes zip entries with BACKSLASH separators, which
+  // violate the ZIP spec. Linux-based extractors (Foundry's server,
+  // Forge) then create literal files named "packs\infinity-dnd5e-items"
+  // instead of a packs/ directory — so the module installs with broken
+  // paths. adm-zip writes forward-slash entries on every platform, with
+  // module.json at the zip root (no wrapping folder).
+  const zip = new AdmZip();
+  zip.addLocalFolder(stagingDir);
+  zip.writeZip(zipPath);
 }
 
 async function writeSha() {
@@ -332,6 +365,9 @@ async function main() {
   if (!manifest?.version) throw new Error("module.json is missing a version");
 
   console.log(`Building release v${manifest.version}…`);
+
+  console.log("Compiling compendium packs (NeDB → LevelDB)…");
+  compilePacks();
 
   await clean();
   await stageFiles();

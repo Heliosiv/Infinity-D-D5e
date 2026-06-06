@@ -27,7 +27,7 @@
     {
       "name": "infinity-dnd5e-items",
       "label": "Infinity D&D5e - Curated Items",
-      "path": "packs/infinity-dnd5e-items.db",
+      "path": "packs/infinity-dnd5e-items",
       "type": "Item",
       "system": "dnd5e",
       "private": false

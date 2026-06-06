@@ -27,9 +27,12 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
       ["world", "client"].includes(entry.scope),
       `${entry.key} scope must be world or client`,
     );
+    // Config-visible settings must be primitives (the panel can render
+    // them); hidden stores (config:false) may be Object blobs.
+    const isHiddenObjectStore = entry.config === false && entry.type === Object;
     assert.ok(
-      [Boolean, Number, String].includes(entry.type),
-      `${entry.key} type must be one of the supported primitives`,
+      [Boolean, Number, String].includes(entry.type) || isHiddenObjectStore,
+      `${entry.key} type must be a supported primitive (or Object for a hidden store)`,
     );
     assert.notEqual(entry.default, undefined, `${entry.key} missing default`);
 

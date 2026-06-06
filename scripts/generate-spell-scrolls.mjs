@@ -125,13 +125,11 @@ const itemsWithoutGenerated = rawItems.filter(
 const retaggedItems = itemsWithoutGenerated.map((item) =>
   isGenericSpellScroll(item) ? retagGenericSpellScroll(item) : item,
 );
-const spells = retaggedItems
-  .filter(isSourceSpell)
-  .sort((a, b) => {
-    const byLevel = Number(a.system?.level ?? 0) - Number(b.system?.level ?? 0);
-    if (byLevel !== 0) return byLevel;
-    return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-  });
+const spells = retaggedItems.filter(isSourceSpell).sort((a, b) => {
+  const byLevel = Number(a.system?.level ?? 0) - Number(b.system?.level ?? 0);
+  if (byLevel !== 0) return byLevel;
+  return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+});
 
 const templates = collectScrollTemplates(retaggedItems);
 const generated = spells.map((spell) =>
@@ -166,7 +164,9 @@ function writePack(file, items) {
 function isGeneratedSpellScroll(item) {
   const flags = item?.flags?.[MODULE_ID]?.spellScroll;
   if (flags?.schema === GENERATED_SCHEMA) return true;
-  const keywords = item?.flags?.["party-operations"]?.keywords;
+  const keywords =
+    item?.flags?.[MODULE_ID]?.keywords ??
+    item?.flags?.["party-operations"]?.keywords;
   return Array.isArray(keywords) && keywords.includes(GENERATED_KEYWORD);
 }
 
@@ -183,19 +183,25 @@ function isGenericSpellScroll(item) {
 function isSourceSpell(item) {
   return (
     item?.type === "spell" &&
-    item?.flags?.["party-operations"]?.lootType === "loot.spell" &&
-    item?.flags?.["party-operations"]?.keywords?.includes("source.dnd5e.spells")
+    (item?.flags?.[MODULE_ID]?.lootType ??
+      item?.flags?.["party-operations"]?.lootType) === "loot.spell" &&
+    (
+      item?.flags?.[MODULE_ID]?.keywords ??
+      item?.flags?.["party-operations"]?.keywords
+    )?.includes("source.dnd5e.spells")
   );
 }
 
 function retagGenericSpellScroll(item) {
   const out = clone(item);
-  const po = (out.flags ??= {})["party-operations"] ?? {};
-  out.flags["party-operations"] = normalizeScrollFlags(po, {
+  out.flags ??= {};
+  const po = out.flags[MODULE_ID] ?? out.flags["party-operations"] ?? {};
+  out.flags[MODULE_ID] = normalizeScrollFlags(po, {
     sourceClass: "generated",
     extraKeywords: ["source.dnd5e.items"],
   });
-  delete out.flags["party-operations"].variableTreasureKind;
+  delete out.flags[MODULE_ID].variableTreasureKind;
+  delete out.flags["party-operations"];
   delete out.variableTreasureKind;
   return out;
 }
@@ -278,15 +284,18 @@ function collectScrollTemplates(items) {
 function createSpellScroll(spell, template) {
   const level = normalizeLevel(spell.system?.level);
   const fallback = LEVEL_FALLBACKS[level] ?? LEVEL_FALLBACKS[9];
-  const templatePo = template?.flags?.["party-operations"] ?? {};
-  const sourcePo = spell.flags?.["party-operations"] ?? {};
+  const templatePo =
+    template?.flags?.[MODULE_ID] ?? template?.flags?.["party-operations"] ?? {};
+  const sourcePo =
+    spell.flags?.[MODULE_ID] ?? spell.flags?.["party-operations"] ?? {};
   const id = deterministicId(spell._id);
   const name = `Spell Scroll: ${spell.name}`;
   const spellUuid = sourcePo.details?.coreSourceId
     ? sourcePo.details.coreSourceId
     : `Compendium.dnd5e.spells.Item.${spell._id}`;
   const gpValue = Number(templatePo.gpValue ?? fallback.price);
-  const rarityNormalized = templatePo.rarityNormalized ?? fallback.rarityNormalized;
+  const rarityNormalized =
+    templatePo.rarityNormalized ?? fallback.rarityNormalized;
   const tier = templatePo.tier ?? fallback.tier;
   const valueBand = templatePo.valueBand ?? fallback.valueBand;
   const activityEntries = Object.entries(spell.system?.activities ?? {});
@@ -327,7 +336,9 @@ function createSpellScroll(spell, template) {
       folderLabels: ["Spells", "Spell Scrolls"],
       primaryMode: "usable",
       activityTypes: uniqueSorted(
-        Object.values(activities).map((activity) => activity?.type).filter(Boolean),
+        Object.values(activities)
+          .map((activity) => activity?.type)
+          .filter(Boolean),
       ),
       activationTypes: uniqueSorted(
         Object.values(activities)
@@ -335,11 +346,20 @@ function createSpellScroll(spell, template) {
           .filter(Boolean),
       ),
       transferEffectCount: 0,
-      appliedEffectCount: Array.isArray(spell.effects) ? spell.effects.length : 0,
+      appliedEffectCount: Array.isArray(spell.effects)
+        ? spell.effects.length
+        : 0,
     },
     pricingSource: "spell-scroll-template",
     priceDenomination: "gp",
-    merchantCategories: ["arcana", "consumable", "loot", "magic", "scroll", "spell"],
+    merchantCategories: [
+      "arcana",
+      "consumable",
+      "loot",
+      "magic",
+      "scroll",
+      "spell",
+    ],
     saleLiquidity: "sale.standard",
     lootWeight: Number(sourcePo.lootWeight ?? templatePo.lootWeight ?? 1),
     maxRecommendedQty: 1,
@@ -370,7 +390,9 @@ function createSpellScroll(spell, template) {
       primaryMode: "usable",
       activityCount: activityEntries.length || Object.keys(activities).length,
       activityTypes: uniqueSorted(
-        Object.values(activities).map((activity) => activity?.type).filter(Boolean),
+        Object.values(activities)
+          .map((activity) => activity?.type)
+          .filter(Boolean),
       ),
       primaryActivityType: Object.values(activities)[0]?.type ?? "utility",
       activationTypes: uniqueSorted(
@@ -380,7 +402,9 @@ function createSpellScroll(spell, template) {
       ),
       effectCount: Array.isArray(spell.effects) ? spell.effects.length : 0,
       transferEffectCount: 0,
-      appliedEffectCount: Array.isArray(spell.effects) ? spell.effects.length : 0,
+      appliedEffectCount: Array.isArray(spell.effects)
+        ? spell.effects.length
+        : 0,
     },
     sourceClass: "generated",
     sourcePolicy: sourcePo.sourcePolicy ?? "normal",
@@ -398,7 +422,8 @@ function createSpellScroll(spell, template) {
       schema: "infinity-dnd5e-art-assignment-v1",
       mode: "reusable",
       assetId: "shared/consumable-spells-spell-scrolls",
-      plannedPath: "assets/item-art/shared/consumable-spells-spell-scrolls.webp",
+      plannedPath:
+        "assets/item-art/shared/consumable-spells-spell-scrolls.webp",
       fallbackIcon: template.img ?? fallback.img,
       generated: false,
     },
@@ -431,7 +456,14 @@ function createSpellScroll(spell, template) {
     system: {
       ...clone(template.system ?? {}),
       description: {
-        value: buildIdentifiedDescription({ id, name, spell, level, gpValue, rarityNormalized }),
+        value: buildIdentifiedDescription({
+          id,
+          name,
+          spell,
+          level,
+          gpValue,
+          rarityNormalized,
+        }),
         chat: buildChatDescription(name, spell, level),
       },
       source: sourceForScroll(spell.system?.source),
@@ -442,22 +474,26 @@ function createSpellScroll(spell, template) {
       equipped: false,
       rarity: template.system?.rarity ?? fallback.rarity,
       identified: true,
-      uses: clone(template.system?.uses ?? {
-        max: "1",
-        recovery: [],
-        autoDestroy: true,
-        spent: 0,
-      }),
-      damage: clone(template.system?.damage ?? {
-        base: {
-          number: null,
-          denomination: null,
-          types: [],
-          custom: { enabled: false },
-          scaling: { number: 1 },
+      uses: clone(
+        template.system?.uses ?? {
+          max: "1",
+          recovery: [],
+          autoDestroy: true,
+          spent: 0,
         },
-        replace: false,
-      }),
+      ),
+      damage: clone(
+        template.system?.damage ?? {
+          base: {
+            number: null,
+            denomination: null,
+            types: [],
+            custom: { enabled: false },
+            scaling: { number: 1 },
+          },
+          replace: false,
+        },
+      ),
       unidentified: {
         description: buildUnidentifiedDescription(id),
       },
@@ -472,10 +508,12 @@ function createSpellScroll(spell, template) {
     effects: clone(spell.effects ?? []),
     folder: template.folder ?? null,
     flags: {
-      ...(clone(template.flags ?? {})),
+      ...clone(template.flags ?? {}),
       core: { sourceId: spellUuid },
-      "party-operations": po,
-      [MODULE_ID]: nativeFlags,
+      // Loot tags (po) live in our own namespace alongside the native
+      // spellScroll/descriptionState block; po wins on any overlap so
+      // per-scroll values aren't shadowed by template-inherited ones.
+      [MODULE_ID]: { ...nativeFlags, ...po },
     },
     _stats: {
       compendiumSource: spellUuid,
@@ -524,7 +562,10 @@ function scrollActivity(activity, spellName) {
   return out;
 }
 
-function scrollKeywords(sourcePo, { rarityNormalized, tier, valueBand, level }) {
+function scrollKeywords(
+  sourcePo,
+  { rarityNormalized, tier, valueBand, level },
+) {
   return uniqueSorted([
     ...cleanScrollKeywords(sourcePo.keywords ?? []),
     GENERATED_KEYWORD,
@@ -562,7 +603,14 @@ function sourceForScroll(source) {
   return out;
 }
 
-function buildIdentifiedDescription({ id, name, spell, level, gpValue, rarityNormalized }) {
+function buildIdentifiedDescription({
+  id,
+  name,
+  spell,
+  level,
+  gpValue,
+  rarityNormalized,
+}) {
   const spellBody = extractSpellBody(spell.system?.description?.value);
   const levelLabel = level === 0 ? "cantrip" : `${ordinal(level)}-level`;
   return `<section class="infinity-item-description infinity-item-description--identified" data-schema="infinity-dnd5e-description-state-v1" data-identification-state="identified" data-item-id="${escapeHtml(id)}"><header class="infinity-item-state-header"><p><strong>Identified State:</strong> ${escapeHtml(name)}</p></header><div class="infinity-item-body" data-content="rules"><p>${escapeHtml(SCROLL_RULES)}</p><p><strong>Stored Spell:</strong> ${escapeHtml(spell.name)} (${escapeHtml(levelLabel)} ${escapeHtml(spell.system?.school ?? "spell")}).</p>${spellBody}</div><aside class="infinity-item-state" data-content="metadata"><p><strong>Item State</strong></p><ul class="infinity-item-state-list"><li>Consumable, Scroll</li><li>Rarity: ${escapeHtml(titleCase(rarityNormalized))}</li><li>Value: ${gpValue.toLocaleString()} gp</li><li>1 use(s)</li><li>Stored spell: ${escapeHtml(spell.name)}</li><li>Planned icon: shared asset</li></ul></aside></section>`;
@@ -606,7 +654,7 @@ function fallbackTemplate(level, fallback) {
       properties: [],
     },
     flags: {
-      "party-operations": {
+      [MODULE_ID]: {
         keywords: [],
         lootType: "loot.scroll",
         tier: fallback.tier,
@@ -645,7 +693,11 @@ function deterministicId(spellId) {
 }
 
 function uniqueSorted(values) {
-  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))].sort();
+  return [
+    ...new Set(
+      values.map((value) => String(value ?? "").trim()).filter(Boolean),
+    ),
+  ].sort();
 }
 
 function stripPrefix(value, prefix) {

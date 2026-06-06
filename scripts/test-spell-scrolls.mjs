@@ -14,11 +14,12 @@ const items = readFileSync(PACK_PATH, "utf8")
 const sourceSpells = items.filter(
   (item) =>
     item.type === "spell" &&
-    item.flags?.["party-operations"]?.lootType === "loot.spell" &&
-    item.flags?.["party-operations"]?.keywords?.includes("source.dnd5e.spells"),
+    item.flags?.["infinity-dnd5e"]?.lootType === "loot.spell" &&
+    item.flags?.["infinity-dnd5e"]?.keywords?.includes("source.dnd5e.spells"),
 );
 const generatedScrolls = items.filter(
-  (item) => item.flags?.["infinity-dnd5e"]?.spellScroll?.schema === GENERATED_SCHEMA,
+  (item) =>
+    item.flags?.["infinity-dnd5e"]?.spellScroll?.schema === GENERATED_SCHEMA,
 );
 const genericScrolls = items.filter(
   (item) =>
@@ -51,11 +52,22 @@ for (const spell of sourceSpells) {
 }
 
 for (const item of generatedScrolls) {
-  const po = item.flags?.["party-operations"] ?? {};
-  assert.equal(item.type, "consumable", `${item.name} must be an inventory item`);
-  assert.equal(item.system?.type?.value, "scroll", `${item.name} must be a scroll`);
+  const po = item.flags?.["infinity-dnd5e"] ?? {};
+  assert.equal(
+    item.type,
+    "consumable",
+    `${item.name} must be an inventory item`,
+  );
+  assert.equal(
+    item.system?.type?.value,
+    "scroll",
+    `${item.name} must be a scroll`,
+  );
   assert.equal(po.lootType, "loot.scroll", `${item.name} must roll as Scroll`);
-  assert.ok(po.keywords.includes("loot.scroll"), `${item.name} missing loot.scroll keyword`);
+  assert.ok(
+    po.keywords.includes("loot.scroll"),
+    `${item.name} missing loot.scroll keyword`,
+  );
   assert.ok(
     !po.keywords.includes("loot.spell"),
     `${item.name} should not roll as a bare spell`,
@@ -66,28 +78,38 @@ for (const item of generatedScrolls) {
   );
   assert.equal(po.variableTreasureKind, undefined);
   assert.ok(po.gpValue > 0, `${item.name} missing gp value`);
-  assert.ok(item.img && !item.img.includes("item-bag.svg"), `${item.name} missing scroll art`);
+  assert.ok(
+    item.img && !item.img.includes("item-bag.svg"),
+    `${item.name} missing scroll art`,
+  );
   assert.ok(
     Object.keys(item.system?.activities ?? {}).length > 0,
     `${item.name} should carry cast activity data`,
   );
   for (const activity of Object.values(item.system?.activities ?? {})) {
     assert.ok(
-      activity?.consumption?.targets?.some((target) => target.type === "itemUses"),
+      activity?.consumption?.targets?.some(
+        (target) => target.type === "itemUses",
+      ),
       `${item.name} activity should consume one scroll use`,
     );
   }
 }
 
 for (const item of genericScrolls) {
-  const po = item.flags?.["party-operations"] ?? {};
+  const po = item.flags?.["infinity-dnd5e"] ?? {};
   assert.equal(po.lootType, "loot.scroll", `${item.name} should be in Scroll`);
-  assert.ok(po.keywords.includes("loot.scroll"), `${item.name} missing loot.scroll keyword`);
+  assert.ok(
+    po.keywords.includes("loot.scroll"),
+    `${item.name} missing loot.scroll keyword`,
+  );
   assert.ok(!po.keywords.includes("loot.variable.art"));
   assert.equal(po.variableTreasureKind, undefined);
 }
 
-const scrollCandidates = filterCandidates(items, { lootTypes: ["loot.scroll"] });
+const scrollCandidates = filterCandidates(items, {
+  lootTypes: ["loot.scroll"],
+});
 assert.equal(
   scrollCandidates.length,
   generatedScrolls.length + genericScrolls.length,

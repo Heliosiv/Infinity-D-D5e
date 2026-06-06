@@ -3,7 +3,8 @@
  *
  * Turns reusable art-object base items into specific rolled treasures.
  * The original compendium entry stays intact; the loot result receives
- * a generated display name, appraisal summary, and adjusted gp value.
+ * a generated display name and appraisal summary while preserving the
+ * base market gp value.
  */
 
 import { getItemGpValue, getItemKeywords } from "./tag-vocabulary.js";
@@ -12,44 +13,37 @@ const ART_CONDITIONS = Object.freeze([
   {
     id: "chipped",
     prefix: "Chipped",
-    multiplier: 0.6,
-    summary: "visible damage lowers the appraisal",
+    summary: "visible damage is noted for sale negotiation",
   },
   {
     id: "smoke-darkened",
     prefix: "Smoke-Darkened",
-    multiplier: 0.8,
     summary: "age and grime need careful cleaning",
   },
   {
     id: "patinaed",
     prefix: "Patinaed",
-    multiplier: 0.95,
     summary: "age is visible but not damaging",
   },
   {
     id: "well-kept",
     prefix: "Well-Kept",
-    multiplier: 1,
     summary: "condition matches the expected market value",
   },
   {
     id: "restored",
     prefix: "Restored",
-    multiplier: 1.15,
-    summary: "competent restoration improves its sale price",
+    summary: "competent restoration is visible",
   },
   {
     id: "masterwork",
     prefix: "Masterwork",
-    multiplier: 1.5,
-    summary: "fine workmanship raises the appraisal",
+    summary: "fine workmanship stands out",
   },
   {
     id: "signed",
     prefix: "Signed",
-    multiplier: 1.85,
-    summary: "a maker's mark attracts collectors",
+    summary: "a maker's mark may attract collectors",
   },
 ]);
 
@@ -57,31 +51,26 @@ const ART_PROVENANCES = Object.freeze([
   {
     id: "unknown-workshop",
     label: "Unknown workshop",
-    multiplier: 0.9,
     summary: "no known provenance",
   },
   {
     id: "merchant-estate",
     label: "Merchant estate",
-    multiplier: 1.05,
     summary: "estate papers support a normal resale",
   },
   {
     id: "minor-noble",
     label: "Minor noble house",
-    multiplier: 1.18,
     summary: "minor noble provenance adds prestige",
   },
   {
     id: "temple-commission",
     label: "Temple commission",
-    multiplier: 1.25,
     summary: "religious buyers may pay a premium",
   },
   {
     id: "lost-dynasty",
     label: "Lost dynasty",
-    multiplier: 1.55,
     summary: "rare provenance makes the piece harder to price",
   },
 ]);
@@ -90,25 +79,21 @@ const ART_MARKETS = Object.freeze([
   {
     id: "cold-market",
     label: "Cold market",
-    multiplier: 0.85,
     summary: "current buyers are scarce",
   },
   {
     id: "steady-market",
     label: "Steady market",
-    multiplier: 1,
     summary: "ordinary luxury resale",
   },
   {
     id: "collector-interest",
     label: "Collector interest",
-    multiplier: 1.2,
     summary: "a collector would likely bid above baseline",
   },
   {
     id: "court-fashion",
     label: "Court fashion",
-    multiplier: 1.35,
     summary: "court taste is pushing the price up",
   },
 ]);
@@ -118,25 +103,21 @@ const ART_DETAILS_BY_CATEGORY = Object.freeze({
     {
       id: "gilt-frame",
       label: "Gilt frame",
-      multiplier: 1.08,
-      summary: "gilded framing improves display value",
+      summary: "gilded framing helps display",
     },
     {
       id: "rare-pigments",
       label: "Rare pigments",
-      multiplier: 1.18,
       summary: "rare pigments remain vivid",
     },
     {
       id: "faded-panel",
       label: "Faded panel",
-      multiplier: 0.82,
       summary: "some color has faded",
     },
     {
       id: "court-subject",
       label: "Court subject",
-      multiplier: 1.12,
       summary: "the subject has noble appeal",
     },
   ]),
@@ -144,25 +125,21 @@ const ART_DETAILS_BY_CATEGORY = Object.freeze({
     {
       id: "fine-carving",
       label: "Fine carving",
-      multiplier: 1.16,
       summary: "the carving is unusually precise",
     },
     {
       id: "missing-inlay",
       label: "Missing inlay",
-      multiplier: 0.78,
-      summary: "lost inlay reduces the price",
+      summary: "lost inlay is visible",
     },
     {
       id: "rare-stone",
       label: "Rare stone",
-      multiplier: 1.22,
-      summary: "uncommon material raises buyer interest",
+      summary: "uncommon material draws buyer interest",
     },
     {
       id: "portable-scale",
       label: "Portable scale",
-      multiplier: 1.06,
       summary: "easy transport improves liquidity",
     },
   ]),
@@ -170,25 +147,21 @@ const ART_DETAILS_BY_CATEGORY = Object.freeze({
     {
       id: "matched-stones",
       label: "Matched stones",
-      multiplier: 1.2,
-      summary: "matched stones increase the appraisal",
+      summary: "matched stones are intact",
     },
     {
       id: "loose-setting",
       label: "Loose setting",
-      multiplier: 0.75,
       summary: "repair is needed before resale",
     },
     {
       id: "fashionable-cut",
       label: "Fashionable cut",
-      multiplier: 1.18,
       summary: "the cut is currently in demand",
     },
     {
       id: "old-clasp",
       label: "Old clasp",
-      multiplier: 0.9,
       summary: "the clasp limits practical wear",
     },
   ]),
@@ -196,25 +169,21 @@ const ART_DETAILS_BY_CATEGORY = Object.freeze({
     {
       id: "delicate-metalwork",
       label: "Delicate metalwork",
-      multiplier: 1.14,
-      summary: "metalwork quality raises the appraisal",
+      summary: "metalwork quality is notable",
     },
     {
       id: "ritual-use",
       label: "Ritual use",
-      multiplier: 1.1,
       summary: "ritual associations add a buyer niche",
     },
     {
       id: "awkward-display",
       label: "Awkward display",
-      multiplier: 0.86,
       summary: "display and transport are inconvenient",
     },
     {
       id: "complete-set",
       label: "Complete set",
-      multiplier: 1.25,
       summary: "all matching pieces are still present",
     },
   ]),
@@ -251,13 +220,7 @@ export function createArtVariant(item, { rng = Math.random } = {}) {
   const category = inferArtCategory(item);
   const detail = pick(ART_DETAILS_BY_CATEGORY[category], rng);
   const market = pick(ART_MARKETS, rng);
-  const multiplier = clampMultiplier(
-    condition.multiplier *
-      provenance.multiplier *
-      detail.multiplier *
-      market.multiplier,
-  );
-  const gpValue = roundArtGp(baseGp * multiplier);
+  const gpValue = baseGp;
   const baseName = String(item?.name ?? "Art Object").trim() || "Art Object";
   const displayName = `${condition.prefix} ${baseName}`;
 
@@ -276,8 +239,7 @@ export function createArtVariant(item, { rng = Math.random } = {}) {
     category,
     gpValue,
     baseGp,
-    valueMultiplier: Number(multiplier.toFixed(2)),
-    valueLabel: `${formatMultiplier(multiplier)} base value`,
+    valueLabel: "",
     summary: [
       detail.summary,
       provenance.summary,
@@ -324,7 +286,6 @@ export function createArtVariantItemData(item, variant, { quantity = 1 } = {}) {
 
   itemData.flags = clonePlain(itemData.flags);
   const nativeFlags = clonePlain(itemData.flags["infinity-dnd5e"]);
-  const legacyFlags = clonePlain(itemData.flags["party-operations"]);
   const generatedTreasure = {
     schema: "infinity-generated-treasure-v1",
     kind: "art",
@@ -333,7 +294,6 @@ export function createArtVariantItemData(item, variant, { quantity = 1 } = {}) {
     variantId: variant.id,
     baseGp: variant.baseGp,
     gpValue: variant.gpValue,
-    valueMultiplier: variant.valueMultiplier,
     condition: variant.condition.id,
     provenance: variant.provenance.id,
     detail: variant.detail.id,
@@ -347,20 +307,14 @@ export function createArtVariantItemData(item, variant, { quantity = 1 } = {}) {
     sellValueGp: Math.floor(variant.gpValue / 2),
     generatedTreasure,
   };
-  itemData.flags["party-operations"] = {
-    ...legacyFlags,
-    gpValue: variant.gpValue,
-    sellValueGp: Math.floor(variant.gpValue / 2),
-    generatedTreasure,
-  };
 
   return itemData;
 }
 
 export function getVariableTreasureKind(item) {
   return String(
-    item?.flags?.["party-operations"]?.variableTreasureKind ??
-      item?.flags?.["infinity-dnd5e"]?.variableTreasureKind ??
+    item?.flags?.["infinity-dnd5e"]?.variableTreasureKind ??
+      item?.flags?.["party-operations"]?.variableTreasureKind ??
       item?.variableTreasureKind ??
       "",
   )
@@ -374,10 +328,8 @@ function appendAppraisalHtml(existingHtml, variant) {
     "<hr />",
     `<p><strong>Generated appraisal:</strong> ${escapeHtml(
       variant.displayName,
-    )} is worth ${variant.gpValue.toLocaleString()} gp (${escapeHtml(
-      variant.valueLabel,
-    )}).</p>`,
-    `<p>${escapeHtml(variant.summary)}</p>`,
+    )} has a market value of ${variant.gpValue.toLocaleString()} gp.</p>`,
+    `<p><strong>Appraisal notes:</strong> ${escapeHtml(variant.summary)}</p>`,
   ].join("");
   return existing ? `${existing}${appraisal}` : appraisal;
 }
@@ -432,7 +384,7 @@ function inferArtCategory(item) {
 
 function getFolderPathKey(item) {
   const flags =
-    item?.flags?.["party-operations"] ?? item?.flags?.["infinity-dnd5e"] ?? {};
+    item?.flags?.["infinity-dnd5e"] ?? item?.flags?.["party-operations"] ?? {};
   const explicit = String(
     flags?.folder?.pathKey ?? flags?.details?.folderPathKey ?? "",
   )
@@ -456,32 +408,6 @@ function pick(values, rng) {
     Math.max(0, Math.floor(rng() * values.length)),
   );
   return values[index];
-}
-
-/**
- * The lowest and highest realized-value multipliers any art variant can
- * produce, after condition × provenance × detail × market. Exported so
- * the roller can reason about the realized-gp range without duplicating
- * the clamp constants.
- */
-export const MIN_ART_MULTIPLIER = 0.35;
-export const MAX_ART_MULTIPLIER = 2.75;
-
-function clampMultiplier(value) {
-  return Math.min(MAX_ART_MULTIPLIER, Math.max(MIN_ART_MULTIPLIER, value));
-}
-
-function roundArtGp(value) {
-  const safe = Number.isFinite(value) && value > 0 ? value : 0;
-  if (safe <= 0) return 0;
-  if (safe < 50) return Math.max(1, Math.round(safe));
-  if (safe < 250) return Math.max(5, Math.round(safe / 5) * 5);
-  if (safe < 1000) return Math.max(25, Math.round(safe / 25) * 25);
-  return Math.max(100, Math.round(safe / 100) * 100);
-}
-
-function formatMultiplier(value) {
-  return `${Number(value.toFixed(2))}x`;
 }
 
 function slugify(value) {

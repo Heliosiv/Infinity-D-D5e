@@ -166,14 +166,15 @@ export function normalizeRarity(value) {
 
 /**
  * Get the keyword array off a raw compendium item entry.
- * Supports both flag namespaces (party-operations legacy + future
- * infinity-dnd5e namespace) so future re-tagging is a no-op.
+ * Reads the native `infinity-dnd5e` namespace first and falls back to
+ * the legacy `party-operations` one, so older-tagged items (e.g. copies
+ * already sitting on a character sheet) still resolve.
  */
 export function getItemKeywords(item) {
-  const legacy = item?.flags?.["party-operations"]?.keywords;
-  if (Array.isArray(legacy)) return legacy;
   const native = item?.flags?.["infinity-dnd5e"]?.keywords;
   if (Array.isArray(native)) return native;
+  const legacy = item?.flags?.["party-operations"]?.keywords;
+  if (Array.isArray(legacy)) return legacy;
   return [];
 }
 
@@ -181,18 +182,27 @@ export function getItemKeywords(item) {
 export function getItemLootType(item) {
   return (
     String(
-      item?.flags?.["party-operations"]?.lootType ??
-        item?.flags?.["infinity-dnd5e"]?.lootType ??
+      item?.flags?.["infinity-dnd5e"]?.lootType ??
+        item?.flags?.["party-operations"]?.lootType ??
         "",
     ).trim() || ""
   );
 }
 
+/**
+ * True for source spell documents that are not inventory loot by themselves.
+ * Generated spell scrolls are consumable items with `loot.scroll`, so they do
+ * not match this guard.
+ */
+export function isBareSpellLootItem(item) {
+  return item?.type === "spell" || getItemLootType(item) === "loot.spell";
+}
+
 /** Get the tier id (`t1`-`t5`) off an item, or "" if not tagged. */
 export function getItemTier(item) {
   const raw = String(
-    item?.flags?.["party-operations"]?.tier ??
-      item?.flags?.["infinity-dnd5e"]?.tier ??
+    item?.flags?.["infinity-dnd5e"]?.tier ??
+      item?.flags?.["party-operations"]?.tier ??
       "",
   ).trim();
   // Tag may arrive as `tier.t2` or just `t2`; strip the prefix.
@@ -203,8 +213,8 @@ export function getItemTier(item) {
 /** Get the value band (`v1`-`v5`) off an item, or "" if not tagged. */
 export function getItemValueBand(item) {
   const raw = String(
-    item?.flags?.["party-operations"]?.valueBand ??
-      item?.flags?.["infinity-dnd5e"]?.valueBand ??
+    item?.flags?.["infinity-dnd5e"]?.valueBand ??
+      item?.flags?.["party-operations"]?.valueBand ??
       "",
   ).trim();
   if (raw.startsWith("value.")) return raw.slice("value.".length);
@@ -214,8 +224,8 @@ export function getItemValueBand(item) {
 /** Get the normalized rarity off an item. */
 export function getItemRarity(item) {
   return normalizeRarity(
-    item?.flags?.["party-operations"]?.rarityNormalized ??
-      item?.flags?.["infinity-dnd5e"]?.rarityNormalized ??
+    item?.flags?.["infinity-dnd5e"]?.rarityNormalized ??
+      item?.flags?.["party-operations"]?.rarityNormalized ??
       item?.system?.rarity ??
       "",
   );
@@ -224,8 +234,8 @@ export function getItemRarity(item) {
 /** Get the gp value off an item. Returns 0 when not tagged. */
 export function getItemGpValue(item) {
   const raw = Number(
-    item?.flags?.["party-operations"]?.gpValue ??
-      item?.flags?.["infinity-dnd5e"]?.gpValue ??
+    item?.flags?.["infinity-dnd5e"]?.gpValue ??
+      item?.flags?.["party-operations"]?.gpValue ??
       0,
   );
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
@@ -234,8 +244,8 @@ export function getItemGpValue(item) {
 /** Get the loot weight (probability multiplier) off an item. Defaults to 1.0. */
 export function getItemLootWeight(item) {
   const raw = Number(
-    item?.flags?.["party-operations"]?.lootWeight ??
-      item?.flags?.["infinity-dnd5e"]?.lootWeight ??
+    item?.flags?.["infinity-dnd5e"]?.lootWeight ??
+      item?.flags?.["party-operations"]?.lootWeight ??
       1,
   );
   return Number.isFinite(raw) && raw > 0 ? raw : 1;
@@ -244,8 +254,8 @@ export function getItemLootWeight(item) {
 /** Get the max recommended quantity for one bundle. Defaults to 1. */
 export function getItemMaxQty(item) {
   const raw = Number(
-    item?.flags?.["party-operations"]?.maxRecommendedQty ??
-      item?.flags?.["infinity-dnd5e"]?.maxRecommendedQty ??
+    item?.flags?.["infinity-dnd5e"]?.maxRecommendedQty ??
+      item?.flags?.["party-operations"]?.maxRecommendedQty ??
       1,
   );
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
@@ -287,8 +297,8 @@ export function getItemMagicNature(item) {
 /** Is the item eligible to appear in a loot roll at all? */
 export function isLootEligible(item) {
   const eligible =
-    item?.flags?.["party-operations"]?.lootEligible ??
-    item?.flags?.["infinity-dnd5e"]?.lootEligible;
+    item?.flags?.["infinity-dnd5e"]?.lootEligible ??
+    item?.flags?.["party-operations"]?.lootEligible;
   if (eligible === false) return false;
   // Default: eligible unless tagged otherwise. Items missing the flag
   // are still rollable because the shipped compendium pre-dates the

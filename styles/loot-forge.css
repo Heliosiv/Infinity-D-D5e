@@ -1109,6 +1109,9 @@ select.lf-input {
   .lf-result__item {
     animation: none;
   }
+  .lf-result__ctrl {
+    transition: none;
+  }
 }
 
 /* =========================================================
@@ -1272,4 +1275,185 @@ select.lf-input {
 
 .infinity-dnd5e.loot-forge.lf-no-skel .lf-skeleton {
   display: none;
+}
+
+/* =========================================================
+   Per-item controls (shared across all three loot windows)
+   ---------------------------------------------------------
+   The lock / quantity / re-roll / send / delete cluster that
+   rides on every result row. Flex-wraps so the row stays
+   within the window at narrow widths.
+   ========================================================= */
+.infinity-dnd5e .lf-result__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.infinity-dnd5e .lf-result__ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.72;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease;
+}
+
+.infinity-dnd5e .lf-result__ctrl:hover,
+.infinity-dnd5e .lf-result__ctrl:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.infinity-dnd5e .lf-result__ctrl--danger:hover,
+.infinity-dnd5e .lf-result__ctrl--danger:focus-visible {
+  background: rgba(214, 78, 78, 0.28);
+}
+
+/* =========================================================
+   Presets / history / undo menu (shared across the windows)
+   ========================================================= */
+.infinity-dnd5e .lf-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.infinity-dnd5e .lf-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  list-style: none;
+  opacity: 0.8;
+}
+
+.infinity-dnd5e .lf-menu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.infinity-dnd5e .lf-menu__trigger:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.infinity-dnd5e .lf-menu__panel {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  width: min(280px, 80vw);
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: var(--lf-surface-elev, #1c2230);
+  box-shadow: 0 14px 30px rgba(7, 13, 25, 0.45);
+}
+
+.infinity-dnd5e .lf-menu__row {
+  display: flex;
+  gap: 6px;
+}
+
+.infinity-dnd5e .lf-menu__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.infinity-dnd5e .lf-menu__heading {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.infinity-dnd5e .lf-menu__list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.infinity-dnd5e .lf-menu__item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.infinity-dnd5e .lf-menu__load {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .lf-menu__load:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.infinity-dnd5e .lf-menu__del {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.infinity-dnd5e .lf-menu__del:hover {
+  opacity: 1;
+  background: rgba(214, 78, 78, 0.28);
+}
+
+/* Result filter/search row (shared across the windows). */
+.infinity-dnd5e .lf-result__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  opacity: 0.9;
+}
+
+.infinity-dnd5e .lf-result__search .lf-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.infinity-dnd5e .lf-result__search-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
 }

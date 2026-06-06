@@ -31,11 +31,11 @@ import {
   getItemTier,
   getItemValueBand,
   isAmmunitionItem,
+  isBareSpellLootItem,
   isLootEligible,
   normalizeRarity,
 } from "./tag-vocabulary.js";
 import {
-  MIN_ART_MULTIPLIER,
   createArtVariant,
   createArtVariantItemData,
   getVariableTreasureKind,
@@ -97,6 +97,7 @@ export function filterCandidates(items, filter = {}) {
   const out = [];
   for (const item of items) {
     if (!item) continue;
+    if (isBareSpellLootItem(item)) continue;
     if (requireEligible && !isLootEligible(item)) continue;
 
     if (lootTypes.size > 0 && !matchesLootTypes(item, lootTypes)) continue;
@@ -155,7 +156,7 @@ export function filterCandidates(items, filter = {}) {
  *                                    Applied as a per-item weight multiplier; ±1 zeroes
  *                                    out the opposite side entirely.
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 600
- * @param {boolean} [opts.artVariants] - generate specific art-object names and values
+ * @param {boolean} [opts.artVariants] - generate specific art-object names and appraisal notes
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
  * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number, displayName?: string, valueLabel?: string, variant?: object|null, itemData?: object|null }>,
  *             totalGp: number,
@@ -211,23 +212,8 @@ export function rollLoot(candidates, opts = {}) {
   // follow-up — producing single-item bundles 10× over budget. Pre-filtering
   // here keeps picks honest in the common case; the fallback below preserves
   // the one-item-over-budget safety when nothing affordable exists.
-  //
-  // Variable art items are a special case: their realized gp is drawn at
-  // materialization time and can land anywhere in
-  // [base × MIN_ART_MULTIPLIER, base × MAX_ART_MULTIPLIER]. When art
-  // variants are enabled, let an art base into the pool if any roll could
-  // fit the budget — otherwise a high-base art item would be silently
-  // dropped even when 35% of its rolls would have been affordable. Pass 2
-  // still trims the bundle if a particular roll lands above budget.
   const affordablePool = budgetEnforced
-    ? pool.filter((item) => {
-        const gp = getItemGpValue(item);
-        if (gp <= budgetCeil) return true;
-        if (artVariants && isVariableArtItem(item)) {
-          return gp * MIN_ART_MULTIPLIER <= budgetCeil;
-        }
-        return false;
-      })
+    ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
     : pool;
   const drawPool = affordablePool.length > 0 ? affordablePool : pool;
 
@@ -331,6 +317,43 @@ export function rollLoot(candidates, opts = {}) {
     droppedForBudget,
     warnings,
   };
+}
+
+/**
+ * Roll a single replacement item — the engine behind "re-roll just this
+ * one". Excludes every item already on the table (so the swap can't
+ * duplicate an existing pick) and rolls one item against the budget
+ * freed by the slot being replaced. Returns the decorated entry or
+ * `null` when nothing affordable/available remains (caller keeps the
+ * old item).
+ *
+ * @param {Array<object>} candidates - same pool filterCandidates returns
+ * @param {object} [opts]
+ * @param {Set<string>|string[]} [opts.excludeIds] - item ids already on the table
+ * @param {number} [opts.budgetGp] - gp freed by the replaced slot
+ * @param {number} [opts.magicBias]
+ * @param {boolean} [opts.artVariants]
+ * @param {() => number} [opts.rng]
+ * @returns {object|null}
+ */
+export function rerollOne(candidates, opts = {}) {
+  const exclude =
+    opts.excludeIds instanceof Set
+      ? opts.excludeIds
+      : new Set(opts.excludeIds ?? []);
+  const pool = (Array.isArray(candidates) ? candidates : []).filter(
+    (item) => !exclude.has(String(item?._id ?? item?.id ?? "")),
+  );
+  if (pool.length === 0) return null;
+  const budgetGp = Number(opts.budgetGp ?? 0);
+  const raw = rollLoot(pool, {
+    count: 1,
+    budgetGp: budgetGp > 0 ? budgetGp : 0,
+    magicBias: opts.magicBias,
+    artVariants: opts.artVariants === true,
+    rng: opts.rng,
+  });
+  return raw.items[0] ?? null;
 }
 
 function clampFraction(raw, fallback) {
