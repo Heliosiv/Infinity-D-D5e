@@ -51,7 +51,12 @@ import {
     allowedUserIds: ["u1", "u2", "u1"], // dedupe
     items: [
       { uuid: "Compendium.pack.Item.abc", qty: 5, startingQty: 5 },
-      { uuid: "Compendium.pack.Item.xyz", qty: 1, startingQty: 3, unlimited: true },
+      {
+        uuid: "Compendium.pack.Item.xyz",
+        qty: 1,
+        startingQty: 3,
+        unlimited: true,
+      },
       { uuid: "", qty: 1 }, // dropped
       null, // dropped
     ],
@@ -108,7 +113,11 @@ import {
 
   // Decrement unlimited is a no-op on qty
   const decUnl = decrementInventory(m, "u3", 99);
-  assert.equal(decUnl.items.find((r) => r.uuid === "u3").qty, 1, "unlimited qty unchanged");
+  assert.equal(
+    decUnl.items.find((r) => r.uuid === "u3").qty,
+    1,
+    "unlimited qty unchanged",
+  );
 
   // Out-of-stock throws
   assert.throws(() => decrementInventory(m, "u2", 1));
@@ -144,13 +153,22 @@ import {
  * Pricing
  * ------------------------------------------------------------------ */
 {
-  const item = { name: "Potion", system: { price: { value: 50, denomination: "gp" } } };
+  const item = {
+    name: "Potion",
+    system: { price: { value: 50, denomination: "gp" } },
+  };
   const merchant = normalizeMerchant({
     id: "m",
     defaultMarkup: 1.2,
     sellRatio: 0.5,
   });
-  const row = { uuid: "u", qty: 1, startingQty: 1, unlimited: false, priceOverrideGp: null };
+  const row = {
+    uuid: "u",
+    qty: 1,
+    startingQty: 1,
+    unlimited: false,
+    priceOverrideGp: null,
+  };
 
   assert.equal(computeBuyPriceGp(merchant, row, item), 60, "50 × 1.2 = 60");
   assert.equal(computeSellPriceGp(merchant, item), 25, "50 × 0.5 = 25");
@@ -165,11 +183,36 @@ import {
 
 {
   // Denomination conversion
-  assert.equal(resolveItemBasePriceGp({ system: { price: { value: 10, denomination: "gp" } } }), 10);
-  assert.equal(resolveItemBasePriceGp({ system: { price: { value: 1, denomination: "pp" } } }), 10);
-  assert.equal(resolveItemBasePriceGp({ system: { price: { value: 100, denomination: "sp" } } }), 10);
-  assert.equal(resolveItemBasePriceGp({ system: { price: { value: 1000, denomination: "cp" } } }), 10);
-  assert.equal(resolveItemBasePriceGp({ system: { price: { value: 2, denomination: "ep" } } }), 1);
+  assert.equal(
+    resolveItemBasePriceGp({
+      system: { price: { value: 10, denomination: "gp" } },
+    }),
+    10,
+  );
+  assert.equal(
+    resolveItemBasePriceGp({
+      system: { price: { value: 1, denomination: "pp" } },
+    }),
+    10,
+  );
+  assert.equal(
+    resolveItemBasePriceGp({
+      system: { price: { value: 100, denomination: "sp" } },
+    }),
+    10,
+  );
+  assert.equal(
+    resolveItemBasePriceGp({
+      system: { price: { value: 1000, denomination: "cp" } },
+    }),
+    10,
+  );
+  assert.equal(
+    resolveItemBasePriceGp({
+      system: { price: { value: 2, denomination: "ep" } },
+    }),
+    1,
+  );
   assert.equal(resolveItemBasePriceGp({}), 0);
   assert.equal(resolveItemBasePriceGp(null), 0);
 }
@@ -207,32 +250,65 @@ import {
     lootTypes: [],
     rarities: [],
     count: 6,
+    rarityBalance: "even",
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1,
+      artifact: 1,
+    },
   });
   const pool = normalizeStockPool({
     lootTypes: ["weapon-magic", "weapon-magic", "gem"],
     rarities: ["common"],
     count: 999,
+    rarityBalance: "custom",
+    rarityWeights: { common: 2, rare: 0.5 },
   });
-  assert.deepEqual(pool.lootTypes, ["weapon-magic", "gem"], "loot types deduped");
+  assert.deepEqual(
+    pool.lootTypes,
+    ["weapon-magic", "gem"],
+    "loot types deduped",
+  );
   assert.deepEqual(pool.rarities, ["common"]);
   assert.equal(pool.count, 50, "count clamped to 50");
+  assert.equal(pool.rarityBalance, "custom");
+  assert.equal(pool.rarityWeights.common, 2);
+  assert.equal(pool.rarityWeights.rare, 0.5);
   assert.equal(normalizeStockPool({ count: 0 }).count, 1, "count floored to 1");
 
   // normalizeMerchant carries a normalized pool, even when absent
-  const m = normalizeMerchant({ pool: { lootTypes: ["consumable"], count: 3 } });
+  const m = normalizeMerchant({
+    pool: { lootTypes: ["consumable"], count: 3 },
+  });
   assert.deepEqual(m.pool.lootTypes, ["consumable"]);
   assert.equal(m.pool.count, 3);
   assert.deepEqual(normalizeMerchant({}).pool, {
     lootTypes: [],
     rarities: [],
     count: 6,
+    rarityBalance: "even",
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1,
+      artifact: 1,
+    },
   });
 
   // resolveStockQty: ammo → full stack of 20, everything else → requested
   const ammo = { system: { type: { value: "ammo" } } };
   const sword = { system: { type: { value: "" } } };
   assert.equal(AMMO_STACK_SIZE, 20);
-  assert.equal(resolveStockQty(ammo, 1), 20, "ammo stocks as a full stack of 20");
+  assert.equal(
+    resolveStockQty(ammo, 1),
+    20,
+    "ammo stocks as a full stack of 20",
+  );
   assert.equal(resolveStockQty(ammo, 5), 20, "ammo ignores the requested qty");
   assert.equal(resolveStockQty(sword, 1), 1);
   assert.equal(resolveStockQty(sword, 4), 4, "non-ammo honors requested qty");
@@ -286,7 +362,10 @@ import {
   // clearInventory
   const stocked = normalizeMerchant({
     id: "s",
-    items: [{ uuid: "u1", qty: 3 }, { uuid: "u2", qty: 1 }],
+    items: [
+      { uuid: "u1", qty: 3 },
+      { uuid: "u2", qty: 1 },
+    ],
   });
   assert.equal(clearInventory(stocked).items.length, 0, "inventory cleared");
 

@@ -1,8 +1,8 @@
 /**
  * Infinity D&D5e — Merchant Stock Pool
  *
- * Turns a merchant's stock-pool config (allowed loot types + rarities +
- * a count) into a randomized set of inventory rows, drawn from the same
+ * Turns a merchant's stock-pool config (allowed loot types, rarities,
+ * rarity-balance weights, and a count) into randomized inventory rows, drawn from the same
  * curated compendium the loot tools use. Reuses the loot roller so the
  * weighting, eligibility, and rarity logic stay in one place.
  *
@@ -15,7 +15,7 @@ import { createInventoryRow, resolveStockQty } from "./store.js";
 /**
  * Roll randomized inventory rows from a merchant's stock pool.
  *
- * @param {{lootTypes?: string[], rarities?: string[], count?: number}} pool
+ * @param {{lootTypes?: string[], rarities?: string[], count?: number, rarityWeights?: Record<string, number>}} pool
  * @param {Array<object>} items - candidate item snapshots (loadCompendiumItems output)
  * @param {object} [opts]
  * @param {Set<string>|string[]} [opts.exclude] - uuids already stocked; skipped
@@ -45,7 +45,11 @@ export function rollMerchantStock(pool, items, opts = {}) {
     return { rows: [], warnings };
   }
 
-  const rolled = rollLoot(candidates, { count, rng: opts.rng });
+  const rolled = rollLoot(candidates, {
+    count,
+    rarityWeights: pool?.rarityWeights,
+    rng: opts.rng,
+  });
   const seen = new Set();
   const rows = [];
   for (const entry of rolled.items ?? []) {

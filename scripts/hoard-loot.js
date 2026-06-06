@@ -37,6 +37,16 @@ import {
   isAmmunitionItem,
   tierWindow,
 } from "./loot/tag-vocabulary.js";
+import {
+  RARITY_BALANCE_CUSTOM_KEY,
+  RARITY_BALANCE_DEFAULT_KEY,
+  clampRarityWeight,
+  getRarityBalancePresetWeights,
+  normalizeRarityBalanceKey,
+  rarityBalanceOptions,
+  rarityWeightRows,
+  resolveRarityWeights,
+} from "./loot/rarity-balance.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { BaseLootApp } from "./loot/loot-app-base.js";
 import {
@@ -53,6 +63,7 @@ import {
   escapeHtml,
   formatGp,
   formatMagicBias,
+  formatMultiplier,
   prettyLootType,
   prettyRarity,
 } from "./ui-util.js";
@@ -118,6 +129,8 @@ export class HoardLootApp extends BaseLootApp {
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
       artVariants: true,
+      rarityBalance: RARITY_BALANCE_DEFAULT_KEY,
+      rarityWeights: getRarityBalancePresetWeights(RARITY_BALANCE_DEFAULT_KEY),
       rarities: getDefaultRarities(tier, scale),
       lootTypes: [...LOOT_TYPES],
     };
@@ -129,8 +142,8 @@ export class HoardLootApp extends BaseLootApp {
     const persisted = persistEnabled ? HoardLootApp._persistedState : null;
     const defaults = HoardLootApp.buildDefaultForm();
     this._form = persisted?.form
-      ? { ...defaults, ...persisted.form }
-      : defaults;
+      ? normalizeHoardForm({ ...defaults, ...persisted.form })
+      : normalizeHoardForm(defaults);
     this._lastResult = persisted?.lastResult ?? null;
   }
 
@@ -243,6 +256,8 @@ export class HoardLootApp extends BaseLootApp {
         count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),
+      rarityBalanceOptions: rarityBalanceOptions(this._form.rarityBalance),
+      rarityWeightRows: rarityWeightRows(this._form.rarityWeights),
       lootTypeOptions: LOOT_TYPES.map((lootType) => ({
         value: lootType,
         label: prettyLootType(lootType),
@@ -344,50 +359,87 @@ export class HoardLootApp extends BaseLootApp {
     const target = event.target;
     if (!target?.name) return;
     const next = { ...this._form };
-    switch (target.name) {
-      case "pileBias":
-        next.pileBias = clampFloat(
-          target.value,
-          PILE_BIAS_RANGE.min,
-          PILE_BIAS_RANGE.max,
-          0,
-        );
-        break;
-      case "magicBias":
-        next.magicBias = clampFloat(
-          target.value,
-          MAGIC_BIAS_RANGE.min,
-          MAGIC_BIAS_RANGE.max,
-          0,
-        );
-        break;
-      case "artVariants":
-        next.artVariants = Boolean(target.checked);
-        break;
-      case "maxItems":
-        next.maxItems = clampInt(
-          target.value,
-          MAX_ITEMS_RANGE.min,
-          MAX_ITEMS_RANGE.max,
-          0,
-        );
-        break;
-      case "rarity":
-        next.rarities = this._readChipGroup("rarity");
-        break;
-      case "lootType":
-        next.lootTypes = this._readChipGroup("lootType");
-        break;
-      default:
-        return;
-    }
+    if (target.name.startsWith("rarityWeight.")) {
+      const rarity = target.name.slice("rarityWeight.".length);
+      const currentWeights = resolveRarityWeights(
+        this._form.rarityBalance,
+        this._form.rarityWeights,
+      );
+      next.rarityBalance = RARITY_BALANCE_CUSTOM_KEY;
+      next.rarityWeights = {
+        ...currentWeights,
+        [rarity]: clampRarityWeight(target.value, currentWeights[rarity] ?? 1),
+      };
+    } else
+      switch (target.name) {
+        case "pileBias":
+          next.pileBias = clampFloat(
+            target.value,
+            PILE_BIAS_RANGE.min,
+            PILE_BIAS_RANGE.max,
+            0,
+          );
+          break;
+        case "magicBias":
+          next.magicBias = clampFloat(
+            target.value,
+            MAGIC_BIAS_RANGE.min,
+            MAGIC_BIAS_RANGE.max,
+            0,
+          );
+          break;
+        case "artVariants":
+          next.artVariants = Boolean(target.checked);
+          break;
+        case "maxItems":
+          next.maxItems = clampInt(
+            target.value,
+            MAX_ITEMS_RANGE.min,
+            MAX_ITEMS_RANGE.max,
+            0,
+          );
+          break;
+        case "rarityBalance":
+          next.rarityBalance = normalizeRarityBalanceKey(target.value);
+          next.rarityWeights = resolveRarityWeights(
+            next.rarityBalance,
+            next.rarityWeights,
+          );
+          break;
+        case "rarity":
+          next.rarities = this._readChipGroup("rarity");
+          break;
+        case "lootType":
+          next.lootTypes = this._readChipGroup("lootType");
+          break;
+        default:
+          return;
+      }
     this._form = next;
     if (target.type === "checkbox") {
       target
         .closest(".lf-chip")
         ?.classList.toggle("is-checked", target.checked);
     }
+    this._syncRarityBalanceControls(target.name === "rarityBalance");
     this._patchLiveReadouts();
+  }
+
+  _syncRarityBalanceControls(writeWeights = false) {
+    if (!this.element) return;
+    const select = this.element.querySelector('[name="rarityBalance"]');
+    if (select) select.value = this._form.rarityBalance;
+    if (!writeWeights) return;
+    const weights = resolveRarityWeights(
+      this._form.rarityBalance,
+      this._form.rarityWeights,
+    );
+    for (const [rarity, weight] of Object.entries(weights)) {
+      const input = this.element.querySelector(
+        `input[name="rarityWeight.${rarity}"]`,
+      );
+      if (input) input.value = formatMultiplier(weight);
+    }
   }
 
   _patchLiveReadouts() {
@@ -477,6 +529,10 @@ export class HoardLootApp extends BaseLootApp {
               ),
               budgetGp: itemBudget,
               magicBias: this._form.magicBias,
+              rarityWeights: resolveRarityWeights(
+                this._form.rarityBalance,
+                this._form.rarityWeights,
+              ),
               artVariants: this._form.artVariants,
             })
           : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
@@ -519,6 +575,21 @@ export class HoardLootApp extends BaseLootApp {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+function normalizeHoardForm(form) {
+  const raw = form && typeof form === "object" ? form : {};
+  const rarityBalance = normalizeRarityBalanceKey(
+    raw.rarityBalance ??
+      (raw.rarityWeights
+        ? RARITY_BALANCE_CUSTOM_KEY
+        : RARITY_BALANCE_DEFAULT_KEY),
+  );
+  return {
+    ...raw,
+    rarityBalance,
+    rarityWeights: resolveRarityWeights(rarityBalance, raw.rarityWeights),
+  };
+}
 
 function resultContext(result) {
   if (!result) return null;

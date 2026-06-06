@@ -41,6 +41,10 @@ import {
   getVariableTreasureKind,
   isVariableArtItem,
 } from "./art-variants.js";
+import {
+  normalizeRarityWeights,
+  rarityWeightForRarity,
+} from "./rarity-balance.js";
 
 const VARIABLE_TREASURE_RARITY_BY_VALUE_BAND = Object.freeze({
   v1: "common",
@@ -155,6 +159,7 @@ export function filterCandidates(items, filter = {}) {
  * @param {number} [opts.magicBias] - in [-1, 1]. >0 favors magic items, <0 favors mundane.
  *                                    Applied as a per-item weight multiplier; ±1 zeroes
  *                                    out the opposite side entirely.
+ * @param {Record<string, number>} [opts.rarityWeights] - per-rarity probability multipliers.
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 600
  * @param {boolean} [opts.artVariants] - generate specific art-object names and appraisal notes
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
@@ -170,6 +175,7 @@ export function rollLoot(candidates, opts = {}) {
   const budgetGp = Number(opts.budgetGp ?? 0);
   const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
   const magicBias = clampBias(opts.magicBias);
+  const rarityWeights = normalizeRarityWeights(opts.rarityWeights);
   const maxCap = Math.max(1, Math.floor(Number(opts.maxCap ?? 40)));
   const budgetLowFrac = clampFraction(opts.budgetLowFrac, 0.85);
   const budgetHighFrac = Math.max(
@@ -224,7 +230,7 @@ export function rollLoot(candidates, opts = {}) {
   let skippedForBudget = 0;
   while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
-    const item = weightedPick(drawPool, rng, magicBias);
+    const item = weightedPick(drawPool, rng, magicBias, rarityWeights);
     if (!item) break;
     const id = String(item._id ?? item.id ?? `anon-${attempts}`);
     const gpValue = getItemGpValue(item);
@@ -332,6 +338,7 @@ export function rollLoot(candidates, opts = {}) {
  * @param {Set<string>|string[]} [opts.excludeIds] - item ids already on the table
  * @param {number} [opts.budgetGp] - gp freed by the replaced slot
  * @param {number} [opts.magicBias]
+ * @param {Record<string, number>} [opts.rarityWeights]
  * @param {boolean} [opts.artVariants]
  * @param {() => number} [opts.rng]
  * @returns {object|null}
@@ -350,6 +357,7 @@ export function rerollOne(candidates, opts = {}) {
     count: 1,
     budgetGp: budgetGp > 0 ? budgetGp : 0,
     magicBias: opts.magicBias,
+    rarityWeights: opts.rarityWeights,
     artVariants: opts.artVariants === true,
     rng: opts.rng,
   });
@@ -476,10 +484,13 @@ function materializeLootEntry(item, quantity, { artVariants, rng }) {
  * @param {Array<object>} pool
  * @param {() => number} rng
  * @param {number} magicBias - clamped to [-1, 1]
+ * @param {Record<string, number>} rarityWeights
  */
-function weightedPick(pool, rng, magicBias = 0) {
+function weightedPick(pool, rng, magicBias = 0, rarityWeights = null) {
   if (pool.length === 0) return null;
-  const weights = pool.map((item) => effectiveWeight(item, magicBias));
+  const weights = pool.map((item) =>
+    effectiveWeight(item, magicBias, rarityWeights),
+  );
   let totalWeight = 0;
   for (const weight of weights) totalWeight += weight;
   if (totalWeight <= 0) {
@@ -520,13 +531,17 @@ function rollInitialQuantity(item, { budgetCeil, gpValue, rng, runningTotal }) {
  * - neutral items always unchanged
  * - clamped at 0 so we never produce negative weights
  */
-function effectiveWeight(item, magicBias) {
-  const base = getItemLootWeight(item);
-  if (!magicBias) return base;
+function effectiveWeight(item, magicBias, rarityWeights) {
+  const rarityMultiplier = rarityWeightForRarity(
+    getEffectiveRarity(item),
+    rarityWeights,
+  );
+  const base = getItemLootWeight(item) * rarityMultiplier;
+  if (!magicBias) return Math.max(0, base);
   const nature = getItemMagicNature(item);
   if (nature === "magic") return Math.max(0, base * (1 + magicBias));
   if (nature === "mundane") return Math.max(0, base * (1 - magicBias));
-  return base;
+  return Math.max(0, base);
 }
 
 function clampBias(raw) {

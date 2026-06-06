@@ -29,8 +29,17 @@ import {
   restoreScroll,
   bindScrollTracking,
 } from "./merchant/scroll.js";
+import {
+  RARITY_BALANCE_CUSTOM_KEY,
+  RARITY_BALANCE_DEFAULT_KEY,
+  getRarityBalancePresetWeights,
+  normalizeRarityBalanceKey,
+  rarityBalanceOptions,
+  rarityWeightRows,
+  resolveRarityWeights,
+} from "./loot/rarity-balance.js";
 import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
-import { prettyLootType, prettyRarity } from "./ui-util.js";
+import { formatMultiplier, prettyLootType, prettyRarity } from "./ui-util.js";
 import {
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
@@ -168,7 +177,18 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       checked: selected ? selected.allowedUserIds.includes(u.id) : false,
     }));
 
-    const pool = selected?.pool ?? { lootTypes: [], rarities: [], count: 6 };
+    const pool = selected?.pool ?? {
+      lootTypes: [],
+      rarities: [],
+      count: 6,
+      rarityBalance: RARITY_BALANCE_DEFAULT_KEY,
+      rarityWeights: getRarityBalancePresetWeights(RARITY_BALANCE_DEFAULT_KEY),
+    };
+    const poolRarityBalance = normalizeRarityBalanceKey(pool.rarityBalance);
+    const poolRarityWeights = resolveRarityWeights(
+      poolRarityBalance,
+      pool.rarityWeights,
+    );
     const poolLootTypeSet = new Set(pool.lootTypes);
     const poolRaritySet = new Set(pool.rarities);
     const poolLootTypeOptions = LOOT_TYPES.map((value) => ({
@@ -211,6 +231,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       skillOptions,
       poolLootTypeOptions,
       poolRarityOptions,
+      poolRarityBalanceOptions: rarityBalanceOptions(poolRarityBalance),
+      poolRarityWeightRows: rarityWeightRows(poolRarityWeights),
       poolCount: pool.count,
       inventoryRows,
       activeSessions,
@@ -318,6 +340,12 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       // delegated handler — skip them here so we don't double-write
       // (and clobber the row change with stale inventory).
       if (target.dataset?.action || target.dataset?.role) return;
+      if (name === "poolRarityBalance") {
+        applyRarityBalancePresetToForm(form, target.value);
+      } else if (name.startsWith("poolRarityWeight.")) {
+        const select = form.querySelector('[name="poolRarityBalance"]');
+        if (select) select.value = RARITY_BALANCE_CUSTOM_KEY;
+      }
       // Auto-save on change for top-level fields.
       try {
         await this._saveFromForm();
@@ -462,6 +490,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         lootTypes: data.poolLootTypes,
         rarities: data.poolRarities,
         count: Number(data.poolCount ?? merchant.pool?.count ?? 6),
+        rarityBalance: data.poolRarityBalance,
+        rarityWeights: data.poolRarityWeights,
       },
     });
     await upsertMerchant(next);
@@ -778,7 +808,33 @@ function readFormFields(form) {
     if (!(arrayKey in out)) out[arrayKey] = [];
     else if (!Array.isArray(out[arrayKey])) out[arrayKey] = [out[arrayKey]];
   }
+  out.poolRarityBalance = normalizeRarityBalanceKey(out.poolRarityBalance);
+  out.poolRarityWeights = resolveRarityWeights(
+    out.poolRarityBalance,
+    readPrefixedFields(out, "poolRarityWeight."),
+  );
   return out;
+}
+
+function readPrefixedFields(source, prefix) {
+  const out = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!key.startsWith(prefix)) continue;
+    out[key.slice(prefix.length)] = value;
+  }
+  return out;
+}
+
+function applyRarityBalancePresetToForm(form, balanceKey) {
+  const normalized = normalizeRarityBalanceKey(balanceKey);
+  if (normalized === RARITY_BALANCE_CUSTOM_KEY) return;
+  const weights = getRarityBalancePresetWeights(normalized);
+  for (const [rarity, weight] of Object.entries(weights)) {
+    const input = form.querySelector(
+      `input[name="poolRarityWeight.${rarity}"]`,
+    );
+    if (input) input.value = formatMultiplier(weight);
+  }
 }
 
 function extractDroppedItemUuid(event) {

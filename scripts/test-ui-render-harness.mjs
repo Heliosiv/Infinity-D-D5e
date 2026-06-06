@@ -56,6 +56,9 @@ for (const friendlyLabel of [
   "Magic Equipment",
   "Potions &amp; Consumables",
   "Containers",
+  "Rarity Balance",
+  "Shop Stock",
+  "Treasure Hoard",
 ]) {
   assert.ok(
     documentHtml.includes(friendlyLabel),

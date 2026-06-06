@@ -319,6 +319,56 @@ select.lf-input {
   border-color: var(--lf-rarity-artifact);
 }
 
+/* Rarity balance weights */
+.lf-balance {
+  display: grid;
+  gap: 10px;
+}
+
+.lf-balance__preset {
+  display: grid;
+  grid-template-columns: 72px minmax(160px, 240px);
+  gap: 8px;
+  align-items: center;
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lf-balance__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 6px;
+}
+
+.lf-balance__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+  color: var(--lf-muted);
+  font-size: 0.76rem;
+}
+
+.lf-balance__row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lf-balance__row .lf-input {
+  padding: 4px 6px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-feature-settings: "tnum";
+}
+
 /* Actions */
 .lf-form__actions {
   display: flex;

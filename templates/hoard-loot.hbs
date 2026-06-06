@@ -91,6 +91,29 @@
       </div>
     </fieldset>
 
+    {{!-- Rarity balance weights --}}
+    <fieldset class="lf-fieldset">
+      <legend class="lf-fieldset__legend">Rarity Balance</legend>
+      <div class="lf-balance">
+        <label class="lf-balance__preset">
+          <span>Preset</span>
+          <select class="lf-input" name="rarityBalance">
+            {{#each rarityBalanceOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <div class="lf-balance__grid" aria-label="Rarity multipliers">
+          {{#each rarityWeightRows}}
+          <label class="lf-balance__row lf-balance__row--{{rarity}}">
+            <span>{{label}}</span>
+            <input class="lf-input" type="number" name="rarityWeight.{{rarity}}" min="{{min}}" max="{{max}}" step="{{step}}" value="{{weight}}" />
+          </label>
+          {{/each}}
+        </div>
+      </div>
+    </fieldset>
+
     {{!-- Loot type chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">

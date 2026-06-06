@@ -437,12 +437,27 @@ function hoardContext() {
       ["balanced", "Balanced", 0.45],
       ["items", "Items", 0.8],
     ]),
-    magicBias: slider("magicBias", "Magic vs. Mundane", 0.25, "Slightly Magical", [
-      ["mundane", "Mundane", -0.5],
-      ["neutral", "Neutral", 0],
-      ["magic", "Magical", 0.5],
-    ]),
+    magicBias: slider(
+      "magicBias",
+      "Magic vs. Mundane",
+      0.25,
+      "Slightly Magical",
+      [
+        ["mundane", "Mundane", -0.5],
+        ["neutral", "Neutral", 0],
+        ["magic", "Magical", 0.5],
+      ],
+    ),
     rarityOptions: rarityOptions(["common", "uncommon", "rare", "very-rare"]),
+    rarityBalanceOptions: rarityBalanceOptions("hoard"),
+    rarityWeightRows: rarityWeightRows({
+      common: 0.8,
+      uncommon: 1.1,
+      rare: 1.4,
+      "very-rare": 0.9,
+      legendary: 0.35,
+      artifact: 0.1,
+    }),
     lootTypeOptions: lootTypeOptions([
       "loot.gem",
       "loot.art",
@@ -584,6 +599,15 @@ function merchantWorkspaceContext() {
       { value: "uncommon", label: "Uncommon", checked: false },
       { value: "rare", label: "Rare", checked: false },
     ],
+    poolRarityBalanceOptions: rarityBalanceOptions("shop"),
+    poolRarityWeightRows: rarityWeightRows({
+      common: 3,
+      uncommon: 1.75,
+      rare: 0.75,
+      "very-rare": 0.35,
+      legendary: 0.12,
+      artifact: 0.05,
+    }),
     poolCount: 6,
     inventoryRows: [
       {
@@ -735,6 +759,27 @@ function rarityOptions(selected) {
     label,
     count,
     selected: selectedSet.has(value),
+  }));
+}
+
+function rarityBalanceOptions(selected = "even") {
+  return [
+    ["even", "Even"],
+    ["shop", "Shop Stock"],
+    ["hoard", "Treasure Hoard"],
+    ["highMagic", "High Magic"],
+    ["custom", "Custom"],
+  ].map(([value, label]) => ({ value, label, selected: value === selected }));
+}
+
+function rarityWeightRows(weights = {}) {
+  return COMMON_RARITIES.map(([rarity, label]) => ({
+    rarity,
+    label,
+    weight: Number(weights[rarity] ?? 1).toFixed(2),
+    min: 0,
+    max: 10,
+    step: 0.05,
   }));
 }
 

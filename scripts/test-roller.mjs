@@ -266,6 +266,34 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * rollLoot - rarity balance changes weighted selection
+ * ------------------------------------------------------------------ */
+{
+  const common = fakeItem({
+    _id: "common",
+    name: "Common Trinket",
+    rarity: "common",
+    gpValue: 10,
+  });
+  const rare = fakeItem({
+    _id: "rare",
+    name: "Rare Relic",
+    rarity: "rare",
+    gpValue: 10,
+  });
+  const result = rollLoot([common, rare], {
+    count: 1,
+    rng: seqRng([0.5]),
+    rarityWeights: { common: 1, rare: 10 },
+  });
+  assert.equal(
+    result.items[0].item._id,
+    "rare",
+    "rarity multipliers are applied to the weighted pick",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * rollLoot - unique art variants preserve market values
  * ------------------------------------------------------------------ */
 {

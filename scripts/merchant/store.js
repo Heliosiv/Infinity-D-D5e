@@ -11,6 +11,12 @@
  * gracefully when `game.settings` is absent so tests can stub a store.
  */
 
+import {
+  RARITY_BALANCE_CUSTOM_KEY,
+  RARITY_BALANCE_DEFAULT_KEY,
+  normalizeRarityBalanceKey,
+  resolveRarityWeights,
+} from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -86,8 +92,12 @@ function toStrArray(value) {
 
 /** Generate a stable id without leaning on Foundry's randomID(). */
 function generateId(prefix = "m") {
-  const stamp = Math.floor(Math.random() * 0x100000).toString(16).padStart(5, "0");
-  const tail = Math.floor(Math.random() * 0x100000).toString(16).padStart(5, "0");
+  const stamp = Math.floor(Math.random() * 0x100000)
+    .toString(16)
+    .padStart(5, "0");
+  const tail = Math.floor(Math.random() * 0x100000)
+    .toString(16)
+    .padStart(5, "0");
   return `${prefix}-${stamp}${tail}`;
 }
 
@@ -109,7 +119,9 @@ export function normalizeInventoryRow(row) {
     : toInt(row.qty ?? startingQty, startingQty);
   const overrideRaw = row.priceOverrideGp;
   const priceOverrideGp =
-    overrideRaw == null || overrideRaw === "" || !Number.isFinite(Number(overrideRaw))
+    overrideRaw == null ||
+    overrideRaw === "" ||
+    !Number.isFinite(Number(overrideRaw))
       ? null
       : Math.max(0, Number(overrideRaw));
   return {
@@ -181,10 +193,18 @@ export function normalizeMerchant(input) {
  */
 export function normalizeStockPool(raw) {
   const p = raw && typeof raw === "object" ? raw : {};
+  const rarityBalance = normalizeRarityBalanceKey(
+    p.rarityBalance ??
+      (p.rarityWeights
+        ? RARITY_BALANCE_CUSTOM_KEY
+        : RARITY_BALANCE_DEFAULT_KEY),
+  );
   return {
     lootTypes: toStrArray(p.lootTypes),
     rarities: toStrArray(p.rarities),
     count: Math.min(50, Math.max(1, toInt(p.count, DEFAULT_POOL_COUNT))),
+    rarityBalance,
+    rarityWeights: resolveRarityWeights(rarityBalance, p.rarityWeights),
   };
 }
 
@@ -272,7 +292,10 @@ export function computeBuyPriceGp(merchant, row, item) {
 export function computeSellPriceGp(merchant, item) {
   const basePrice = resolveItemBasePriceGp(item);
   if (basePrice <= 0) return 0;
-  return Math.max(0, basePrice * Math.max(0, merchant?.sellRatio ?? DEFAULT_SELL_RATIO));
+  return Math.max(
+    0,
+    basePrice * Math.max(0, merchant?.sellRatio ?? DEFAULT_SELL_RATIO),
+  );
 }
 
 /** Apply a bargain deltaPct (e.g. -20 for −20%) to a gp price. */
@@ -437,7 +460,10 @@ export function isUserAllowed(merchant, userId) {
 /** Load every merchant record from the world setting. */
 export function loadMerchants() {
   try {
-    const raw = globalThis.game?.settings?.get?.(MODULE_ID, MERCHANT_SETTING_KEY);
+    const raw = globalThis.game?.settings?.get?.(
+      MODULE_ID,
+      MERCHANT_SETTING_KEY,
+    );
     if (!Array.isArray(raw)) return [];
     return raw.map(normalizeMerchant);
   } catch {
@@ -460,11 +486,7 @@ export async function saveMerchants(merchants) {
   const cleaned = (Array.isArray(merchants) ? merchants : []).map(
     normalizeMerchant,
   );
-  await globalThis.game.settings.set(
-    MODULE_ID,
-    MERCHANT_SETTING_KEY,
-    cleaned,
-  );
+  await globalThis.game.settings.set(MODULE_ID, MERCHANT_SETTING_KEY, cleaned);
   return cleaned;
 }
 

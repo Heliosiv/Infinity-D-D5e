@@ -778,6 +778,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       excludeIds,
       budgetGp,
       magicBias: this._form.magicBias ?? 0,
+      rarityWeights: this._form.rarityWeights,
       artVariants: Boolean(old.variant) || Boolean(this._form.artVariants),
     });
 

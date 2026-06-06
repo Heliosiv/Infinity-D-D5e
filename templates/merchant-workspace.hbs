@@ -155,6 +155,24 @@
               </div>
             </div>
           </div>
+          <div class="mw-rarity-balance">
+            <label class="mw-field mw-rarity-balance__preset">
+              <span class="mw-field__label">Rarity Balance</span>
+              <select class="mw-input" name="poolRarityBalance">
+                {{#each poolRarityBalanceOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <div class="mw-rarity-balance__grid" aria-label="Rarity multipliers">
+              {{#each poolRarityWeightRows}}
+              <label class="mw-rarity-balance__row mw-rarity-balance__row--{{rarity}}">
+                <span>{{label}}</span>
+                <input class="mw-input mw-input--num" type="number" name="poolRarityWeight.{{rarity}}" min="{{min}}" max="{{max}}" step="{{step}}" value="{{weight}}" />
+              </label>
+              {{/each}}
+            </div>
+          </div>
           <div class="mw-pool__foot">
             <label class="mw-field mw-field--inline">
               <span class="mw-field__label">How many</span>
