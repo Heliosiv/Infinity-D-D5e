@@ -48,8 +48,10 @@ import {
 } from "./loot-store.js";
 import {
   MODULE_ID,
+  bindRowDoubleClickOpen,
   decorateEntry,
   onResultImageError,
+  openItemByUuid,
   renderAfterAction,
   resolveChatRecipients,
   resultImageForEntry,
@@ -235,6 +237,16 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         onResultImageError({ currentTarget: image });
       }
     }
+
+    // Repo-wide standard: double-click an item row to open its sheet.
+    bindRowDoubleClickOpen(root, {
+      rowSelector: "li[data-uuid]",
+      onOpen: (uuid) =>
+        openItemByUuid(uuid, {
+          onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+        }),
+    });
+
     this._bindScrollTracking(root);
 
     if (!this._packStats && !this._loadingItems) {
@@ -527,17 +539,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {BaseLootApp} */
   static async _onOpenItem(_event, target) {
-    const uuid = target?.dataset?.uuid;
-    if (!uuid) return;
-    try {
-      const doc = await fromUuid(uuid);
-      if (doc?.sheet) {
-        doc.sheet.render(true);
-        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
-      }
-    } catch (error) {
-      console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
-    }
+    await openItemByUuid(target?.dataset?.uuid, {
+      onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+    });
   }
 
   /** @this {BaseLootApp} */

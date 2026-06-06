@@ -39,6 +39,11 @@ import {
 } from "./merchant/socket.js";
 import { listSessions } from "./merchant/session-state.js";
 import { loadCompendiumItems } from "./loot/pack.js";
+import {
+  bindRowDoubleClickOpen,
+  openItemByUuid,
+  wireBackgroundImageFallback,
+} from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 
@@ -133,7 +138,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       this._selectedId = merchants[0].id;
     }
     const selected = this._selectedId
-      ? merchants.find((m) => m.id === this._selectedId) ?? null
+      ? (merchants.find((m) => m.id === this._selectedId) ?? null)
       : null;
 
     await this._refreshItemCache(merchants);
@@ -276,6 +281,19 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._wireInventoryInputs();
     this._wireDropZone();
 
+    if (this.element) {
+      // Recover broken inventory thumbnails (background-image, no onerror).
+      wireBackgroundImageFallback(this.element, ".mw-inv__icon");
+      // Repo-wide standard: double-click an inventory row to open its sheet.
+      bindRowDoubleClickOpen(this.element, {
+        rowSelector: ".mw-inv__row",
+        onOpen: (uuid) =>
+          openItemByUuid(uuid, {
+            onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+          }),
+      });
+    }
+
     // Preserve scroll position across action re-renders (select merchant,
     // edit a row, generate stock…) so the view never snaps to the top.
     const root = this.element;
@@ -336,7 +354,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
           this.render(false);
         } else if (role === "invQty") {
           const value = Math.max(0, Math.floor(Number(target.value) || 0));
-          await this._mutateInventoryRow(uuid, (row) => ({ ...row, qty: value }));
+          await this._mutateInventoryRow(uuid, (row) => ({
+            ...row,
+            qty: value,
+          }));
         } else if (role === "invStartQty") {
           const value = Math.max(0, Math.floor(Number(target.value) || 0));
           await this._mutateInventoryRow(uuid, (row) => ({
@@ -481,7 +502,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     if (!DialogV2) return;
     const confirmed = await DialogV2.confirm({
-      window: { title: `Delete "${merchant.name}"?`, icon: "fa-solid fa-trash" },
+      window: {
+        title: `Delete "${merchant.name}"?`,
+        icon: "fa-solid fa-trash",
+      },
       content: `<p>This will remove <strong>${escapeText(merchant.name)}</strong> and close any open sessions for them. Item compendium entries are untouched.</p>`,
       rejectClose: false,
     });
@@ -757,8 +781,9 @@ function readFormFields(form) {
 }
 
 function extractDroppedItemUuid(event) {
-  const payload = event.dataTransfer?.getData?.("text/plain")
-    || event.dataTransfer?.getData?.("application/json");
+  const payload =
+    event.dataTransfer?.getData?.("text/plain") ||
+    event.dataTransfer?.getData?.("application/json");
   if (!payload) return null;
   try {
     const parsed = JSON.parse(payload);

@@ -182,7 +182,7 @@
           <div class="mw-inv__drop" data-drop-zone="inventory">
             {{#if inventoryRows.length}}
               {{#each inventoryRows}}
-              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}">
+              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
                 <div class="mw-inv__name">
                   <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
                   <div class="mw-inv__copy">

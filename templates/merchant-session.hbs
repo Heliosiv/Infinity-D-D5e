@@ -32,7 +32,7 @@
   <section class="ms-rows" aria-label="Goods for sale">
     {{#if buyRows.length}}
       {{#each buyRows}}
-      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}">
+      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
         <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
         <div class="ms-row__copy">
           <strong class="ms-row__name">{{name}}</strong>
@@ -75,7 +75,7 @@
   <section class="ms-rows" aria-label="Your sellable items">
     {{#if sellRows.length}}
       {{#each sellRows}}
-      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}">
+      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
         <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
         <div class="ms-row__copy">
           <strong class="ms-row__name">{{name}}</strong>

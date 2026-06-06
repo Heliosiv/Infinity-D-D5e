@@ -222,6 +222,19 @@ export function buildUiHarnessDocument() {
         label: button.textContent.trim().replace(/\\s+/g, " "),
       });
     });
+
+    // Mirror the production double-click-to-open contract so the audit can
+    // verify it: ignore interactive children, require a [data-uuid] row.
+    window.__uiDblclicks = [];
+    document.addEventListener("dblclick", (event) => {
+      if (event.target.closest("input,select,textarea,button,a,[contenteditable],[data-action]")) return;
+      const row = event.target.closest("[data-uuid]");
+      if (!row) return;
+      window.__uiDblclicks.push({
+        uuid: row.dataset.uuid,
+        window: row.closest("[data-harness-window]")?.dataset.harnessWindow ?? "",
+      });
+    });
   </script>
 </body>
 </html>`;
@@ -669,6 +682,7 @@ function merchantSessionContext() {
     sellRows: [
       {
         itemId: "Item.longsword",
+        uuid: "Actor.harness.Item.longsword",
         name: "Longsword",
         img: iconDataUri("#54616b", "LO"),
         rarity: "common",

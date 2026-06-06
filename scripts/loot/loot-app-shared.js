@@ -78,6 +78,96 @@ export function resultImageForEntry(entry) {
   return image;
 }
 
+/**
+ * Open an item's sheet from its uuid — the single source of truth for
+ * the "open item" gesture across the whole repo (loot single-click,
+ * loot/merchant double-click). References `globalThis.fromUuid` lazily
+ * so this module stays node-importable; `onOpened` is injected so the
+ * shared module never has to depend on the audio layer.
+ *
+ * @param {string} uuid
+ * @param {object} [opts]
+ * @param {() => void} [opts.onOpened] - fired after the sheet renders
+ * @returns {Promise<boolean>} true when a sheet was opened
+ */
+export async function openItemByUuid(uuid, { onOpened } = {}) {
+  if (!uuid) return false;
+  const resolve = globalThis.fromUuid;
+  if (typeof resolve !== "function") return false;
+  try {
+    const doc = await resolve(uuid);
+    if (doc?.sheet) {
+      doc.sheet.render(true);
+      onOpened?.();
+      return true;
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
+  }
+  return false;
+}
+
+/** Children of a row that should NOT trigger double-click-to-open. */
+const ROW_INTERACTIVE_SELECTOR =
+  "input, select, textarea, button, a, [contenteditable], [data-action]";
+
+/**
+ * Wire the repo-wide "double-click an item row to open its sheet"
+ * standard. One delegated listener on the stable window root, bound once
+ * (dataset guard — `this.element` survives ApplicationV2 re-renders).
+ * Double-clicks on interactive children (qty fields, buy/sell buttons,
+ * the loot open button, row controls) are ignored. The row must carry a
+ * `data-uuid`.
+ *
+ * @param {HTMLElement} root
+ * @param {object} opts
+ * @param {string} opts.rowSelector - selector for the item row container
+ * @param {(uuid: string, event: Event) => unknown} opts.onOpen
+ */
+export function bindRowDoubleClickOpen(root, { rowSelector, onOpen } = {}) {
+  if (!root || !rowSelector || typeof onOpen !== "function") return;
+  if (root.dataset.infinityDnd5eDblclickBound === "true") return;
+  root.dataset.infinityDnd5eDblclickBound = "true";
+  root.addEventListener("dblclick", (event) => {
+    if (event.target?.closest?.(ROW_INTERACTIVE_SELECTOR)) return;
+    const row = event.target?.closest?.(rowSelector);
+    const uuid = row?.dataset?.uuid;
+    if (!uuid) return;
+    void onOpen(uuid, event);
+  });
+}
+
+/**
+ * Probe each `background-image` element under `root` and swap to the
+ * fallback icon if the image fails to load — the background-image
+ * analogue of {@link onResultImageError} for merchant rows. Idempotent
+ * per element; node-safe (no-ops when `Image` is unavailable).
+ */
+export function wireBackgroundImageFallback(
+  root,
+  selector,
+  fallbackSrc = FALLBACK_ITEM_IMAGE,
+) {
+  if (!root?.querySelectorAll) return;
+  const ImageCtor = globalThis.Image;
+  if (typeof ImageCtor !== "function") return;
+  for (const el of root.querySelectorAll(selector)) {
+    if (el.dataset.bgFallbackChecked === "true") continue;
+    el.dataset.bgFallbackChecked = "true";
+    const match = /url\(["']?(.*?)["']?\)/.exec(
+      el.style?.backgroundImage ?? "",
+    );
+    const url = match?.[1];
+    if (!url || url === fallbackSrc) continue;
+    const probe = new ImageCtor();
+    probe.addEventListener("error", () => {
+      el.style.backgroundImage = `url('${fallbackSrc}')`;
+      el.classList.add("is-fallback");
+    });
+    probe.src = url;
+  }
+}
+
 /** `<img>` error handler — swap a broken result image for the fallback once. */
 export function onResultImageError(event) {
   const image = event.currentTarget;

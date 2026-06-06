@@ -11,7 +11,11 @@
  * socket layer.
  */
 
-import { normalizeMerchant, roundGp, merchantCanAfford } from "./merchant/store.js";
+import {
+  normalizeMerchant,
+  roundGp,
+  merchantCanAfford,
+} from "./merchant/store.js";
 import {
   resolveUnitBuyPrice,
   resolveUnitSellPrice,
@@ -29,6 +33,11 @@ import { runBargain } from "./merchant/bargain.js";
 import { totalWalletGp, sanitizeWallet } from "./merchant/currency.js";
 import { formatCoinBreakdown } from "./loot/hoard-budget.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
+import {
+  bindRowDoubleClickOpen,
+  openItemByUuid,
+  wireBackgroundImageFallback,
+} from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import {
@@ -142,7 +151,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._unsubscribers.push(
       subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) => {
         if (payload?.sessionId !== this._sessionId) return;
-        if (payload.targetUserId && payload.targetUserId !== globalThis.game?.user?.id) {
+        if (
+          payload.targetUserId &&
+          payload.targetUserId !== globalThis.game?.user?.id
+        ) {
           return;
         }
         this._closingFromExternal = true;
@@ -174,7 +186,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   _onBargainSeal(payload) {
     if (!payload || payload.sessionId !== this._sessionId) return;
-    if (payload.targetUserId && payload.targetUserId !== globalThis.game?.user?.id) {
+    if (
+      payload.targetUserId &&
+      payload.targetUserId !== globalThis.game?.user?.id
+    ) {
       return;
     }
     const key = `${payload.itemUuid}::${payload.side}`;
@@ -210,8 +225,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const actor = resolvePlayerActor();
     const wallet = sanitizeWallet(actor?.system?.currency);
     const walletLabel =
-      formatCoinBreakdown(wallet) ||
-      `${totalWalletGp(wallet).toFixed(2)} gp`;
+      formatCoinBreakdown(wallet) || `${totalWalletGp(wallet).toFixed(2)} gp`;
 
     const itemMap = await this._resolveMerchantItems();
 
@@ -268,15 +282,17 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const sealKey = `${row.uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
     const rarity = item ? getItemRarity(item) : "";
-    const baseGp = roundGp(resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal: null }));
-    const finalGp = roundGp(resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal }));
+    const baseGp = roundGp(
+      resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal: null }),
+    );
+    const finalGp = roundGp(
+      resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal }),
+    );
     const outOfStock = !row.unlimited && row.qty <= 0;
     const walletGp = walletGpFromObject(wallet);
     const cannotBuy = outOfStock || finalGp > walletGp || !item;
     const maxQty = row.unlimited ? 99 : Math.max(1, row.qty);
-    const stockLabel = row.unlimited
-      ? "Unlimited stock"
-      : `Stock: ${row.qty}`;
+    const stockLabel = row.unlimited ? "Unlimited stock" : `Stock: ${row.qty}`;
     const showDelta = seal && Math.abs(seal.deltaPct) > 0;
     return {
       uuid: row.uuid,
@@ -300,12 +316,19 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   _buildSellRow(doc) {
     const data = doc.toObject?.() ?? doc;
-    const ownedQty = Math.max(1, Math.floor(Number(data.system?.quantity ?? 1)));
+    const ownedQty = Math.max(
+      1,
+      Math.floor(Number(data.system?.quantity ?? 1)),
+    );
     const sealKey = `${doc.id}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
     const rarity = getItemRarity(data);
     const baseGp = roundGp(
-      resolveUnitSellPrice({ merchant: this._merchant, item: data, seal: null }),
+      resolveUnitSellPrice({
+        merchant: this._merchant,
+        item: data,
+        seal: null,
+      }),
     );
     const finalGp = roundGp(
       resolveUnitSellPrice({ merchant: this._merchant, item: data, seal }),
@@ -322,6 +345,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const cannotSell = sellableQty < 1;
     return {
       itemId: doc.id,
+      // Full embedded-item uuid so the shared double-click-to-open works
+      // on sell rows too (data-item-id stays for buy/sell/bargain dispatch).
+      uuid: doc.uuid,
       name: data.name ?? "(item)",
       img: data.img ?? FALLBACK_ITEM_IMAGE,
       rarity,
@@ -373,6 +399,19 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
 
     this._wireQtyInputs();
+
+    if (root) {
+      // Recover broken item-row thumbnails (background-image, no native onerror).
+      wireBackgroundImageFallback(root, ".ms-row__icon");
+      // Repo-wide standard: double-click a row to open its sheet.
+      bindRowDoubleClickOpen(root, {
+        rowSelector: ".ms-row",
+        onOpen: (uuid) =>
+          openItemByUuid(uuid, {
+            onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+          }),
+      });
+    }
 
     // Preserve scroll position across action re-renders (buy, bargain, tab…).
     if (root) {
@@ -479,6 +518,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       seal,
     });
     if (!result.ok) {
+      ui.notifications?.warn(`${MODULE_ID}: buy failed — ${result.reason}.`);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       this._appendLog("fail", `Buy failed: ${result.reason}`);
       this.render(false);
       return;
@@ -518,10 +559,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   static _onSellN(_event, target) {
     const itemId = target?.dataset?.itemId;
-    const qty = Math.max(
-      1,
-      Math.floor(Number(this._sellQty.get(itemId) ?? 1)),
-    );
+    const qty = Math.max(1, Math.floor(Number(this._sellQty.get(itemId) ?? 1)));
     return this._performSell(itemId, qty);
   }
 
@@ -739,21 +777,22 @@ async function promptSkillPicker(allowedSkills) {
     dec: "Deception",
     itm: "Intimidation",
   };
-  const allowed = Array.isArray(allowedSkills) && allowedSkills.length > 0
-    ? allowedSkills
-    : ["prf", "dec"];
+  const allowed =
+    Array.isArray(allowedSkills) && allowedSkills.length > 0
+      ? allowedSkills
+      : ["prf", "dec"];
   if (allowed.length === 1) return allowed[0];
   if (!DialogV2) return allowed[0];
   const options = allowed
-    .map(
-      (id) =>
-        `<option value="${id}">${labels[id] ?? id}</option>`,
-    )
+    .map((id) => `<option value="${id}">${labels[id] ?? id}</option>`)
     .join("");
   let picked = null;
   try {
     picked = await DialogV2.prompt({
-      window: { title: "Bargain — pick skill", icon: "fa-solid fa-comments-dollar" },
+      window: {
+        title: "Bargain — pick skill",
+        icon: "fa-solid fa-comments-dollar",
+      },
       content: `
         <p>Choose how you want to haggle:</p>
         <label style="display:grid;gap:4px;">

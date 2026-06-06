@@ -90,7 +90,7 @@ async function main() {
     );
     for (const result of summary) {
       process.stdout.write(
-        `${result.viewport.name}: ${result.buttonCount} action button(s), ${result.clickedCount} click(s), screenshot ${result.screenshotFile}\n`,
+        `${result.viewport.name}: ${result.buttonCount} action button(s), ${result.clickedCount} click(s), ${result.dblclickCount}/${result.openableRowCount} row dbl-click(s), screenshot ${result.screenshotFile}\n`,
       );
       for (const issue of result.issues) {
         process.stdout.write(`  - ${issue}\n`);
@@ -393,10 +393,33 @@ async function auditPage() {
     issues.push(`clicked ${clickedCount} of ${buttons.length} action buttons`);
   }
 
+  // Double-click-to-open coverage: every item row carries data-uuid and
+  // must open its sheet on double-click. Dispatch on the row itself (not
+  // an interactive child) and confirm the production-mirroring tracker saw
+  // each one.
+  const openableRows = [
+    ...document.querySelectorAll(
+      "[data-harness-window] li[data-uuid], [data-harness-window] .mw-inv__row[data-uuid], [data-harness-window] .ms-row[data-uuid]",
+    ),
+  ];
+  for (const row of openableRows) {
+    row.scrollIntoView({ block: "center", inline: "center" });
+    await nextFrame();
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  }
+  const dblclickCount = window.__uiDblclicks?.length ?? 0;
+  if (dblclickCount !== openableRows.length) {
+    issues.push(
+      `double-click opened ${dblclickCount} of ${openableRows.length} item rows`,
+    );
+  }
+
   return {
     issues,
     buttonCount: buttons.length,
     clickedCount,
+    dblclickCount,
+    openableRowCount: openableRows.length,
     windows: windows.map((root) => root.dataset.harnessWindow),
   };
 
