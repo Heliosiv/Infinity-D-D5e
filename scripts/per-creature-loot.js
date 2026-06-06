@@ -37,7 +37,7 @@ import {
   formatGp,
   formatMagicBias,
   prettyLootType,
-  titleCase,
+  prettyRarity,
 } from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -48,7 +48,7 @@ const ROSTER_LIMIT = 30; // soft cap to keep the window manageable
 
 const SLIDER_LABELS = Object.freeze({
   itemsPerCreature: "Items per Creature",
-  magicBias: "Magic Bias",
+  magicBias: "Magic vs. Mundane",
 });
 
 export class PerCreatureLootApp extends BaseLootApp {
@@ -219,7 +219,7 @@ export class PerCreatureLootApp extends BaseLootApp {
 
       rarityOptions: RARITIES.map((rarity) => ({
         value: rarity,
-        label: titleCase(rarity),
+        label: prettyRarity(rarity),
         count: stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),

@@ -54,7 +54,7 @@ import {
   formatGp,
   formatMagicBias,
   prettyLootType,
-  titleCase,
+  prettyRarity,
 } from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -63,8 +63,8 @@ const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/hoard-loot.hbs`;
 const MAX_ITEMS_RANGE = Object.freeze({ min: 0, max: 30 });
 
 const SLIDER_LABELS = Object.freeze({
-  pileBias: "Pile Bias",
-  magicBias: "Magic Bias",
+  pileBias: "Coin vs. Items",
+  magicBias: "Magic vs. Mundane",
 });
 
 const SCALE_ORDER = Object.freeze(["small", "standard", "large", "massive"]);
@@ -239,7 +239,7 @@ export class HoardLootApp extends BaseLootApp {
 
       rarityOptions: RARITIES.map((rarity) => ({
         value: rarity,
-        label: titleCase(rarity),
+        label: prettyRarity(rarity),
         count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),

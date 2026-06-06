@@ -30,6 +30,7 @@ import {
   bindScrollTracking,
 } from "./merchant/scroll.js";
 import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
+import { prettyLootType, prettyRarity } from "./ui-util.js";
 import {
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
@@ -172,12 +173,12 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const poolRaritySet = new Set(pool.rarities);
     const poolLootTypeOptions = LOOT_TYPES.map((value) => ({
       value,
-      label: prettifyToken(value),
+      label: prettyLootType(value),
       checked: poolLootTypeSet.has(value),
     }));
     const poolRarityOptions = RARITIES.map((value) => ({
       value,
-      label: prettifyToken(value),
+      label: prettyRarity(value),
       checked: poolRaritySet.has(value),
     }));
 
@@ -230,7 +231,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       name: item?.name ?? "(unknown item)",
       img: item?.img ?? FALLBACK_ITEM_IMAGE,
       rarity,
-      rarityLabel: prettifyToken(rarity),
+      rarityLabel: prettyRarity(rarity),
       basePriceLabel: basePrice > 0 ? `${basePrice.toFixed(2)} gp` : "—",
       qtyDisplay: row.unlimited ? "∞" : row.qty,
       startingQty: row.startingQty,
@@ -833,15 +834,6 @@ async function promptPlayerPicker(merchant) {
     picked = [];
   }
   return picked;
-}
-
-/** "weapon-magic" → "Weapon Magic" for chip labels. */
-function prettifyToken(value) {
-  return String(value ?? "")
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function escapeText(value) {

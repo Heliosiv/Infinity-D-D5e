@@ -1,7 +1,7 @@
 {{!--
   Infinity D&D5e — Hoard Loot window template.
-  Tier × Hoard Scale drives the budget; the Pile Bias slider trades
-  raw coin for items. Item count is a soft ceiling, demoted from the
+  Tier × Hoard Scale drives the budget; the Coin vs. Items slider trades
+  raw coin for items. Item count is a soft cap, demoted from the
   main controls. Rarity + loot-type chips default to all-selected.
 --}}
 <div class="hl-shell">
@@ -10,7 +10,7 @@
       <div>
         <h2 class="hl-form__title">Hoard Loot</h2>
         <p class="hl-form__hint">
-          Roll a treasure cache. Pick a tier and a scale; the Pile Bias slider trades coin for items.
+          Roll a treasure cache. Pick a tier and a scale; the Coin vs. Items slider trades coin for items.
         </p>
       </div>
       <div class="hl-form__budget" aria-live="polite">
@@ -66,7 +66,7 @@
       </div>
     </fieldset>
 
-    {{!-- Two-slider row: Pile Bias is the main dial; Magic Bias is secondary --}}
+    {{!-- Two-slider row: Coin vs. Items is the main dial; Magic vs. Mundane is secondary --}}
     <div class="lf-form__sliders">
       {{> hoardSlider pileBias}}
       {{> hoardSlider magicBias}}
@@ -94,7 +94,7 @@
     {{!-- Loot type chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Loot Types
+        Item Types
         <span class="lf-chiprow__bulk">
           <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
           <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
@@ -111,7 +111,7 @@
     </fieldset>
 
     {{!-- Advanced: max-items + art variants. 0 disables the item-count
-         ceiling; art variants generate unique names and appraisal notes
+         cap; art variants generate unique names and appraisal notes
          for variable-art base items in the pack. --}}
     <div class="hl-advanced">
       <label class="hl-advanced__field">
@@ -124,7 +124,7 @@
           max="{{maxItemsMax}}"
           step="1"
           value="{{maxItems}}"
-          title="Set to 0 for no item-count ceiling."
+          title="Set to 0 for no item-count cap."
         />
       </label>
       <label class="hl-advanced__field hl-advanced__field--checkbox">
@@ -161,7 +161,7 @@
       <span class="lf-skeleton lf-skeleton--lg"></span>
       <span class="lf-skeleton"></span>
       <span class="lf-skeleton lf-skeleton--sm"></span>
-      <p class="lf-result__placeholder">Loading compendium…</p>
+      <p class="lf-result__placeholder">Loading items…</p>
     </div>
     {{else if hasResult}}
     <header class="lf-result__head">

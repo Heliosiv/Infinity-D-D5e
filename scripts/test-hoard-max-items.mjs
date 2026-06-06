@@ -18,8 +18,8 @@ assert.ok(
   "hoard max-items label should document the no-ceiling value",
 );
 assert.ok(
-  template.includes('title="Set to 0 for no item-count ceiling."'),
-  "hoard max-items input should explain the no-ceiling value",
+  template.includes('title="Set to 0 for no item-count cap."'),
+  "hoard max-items input should explain the no-cap value",
 );
 assert.ok(
   harness.includes("maxItemsMin: 0"),

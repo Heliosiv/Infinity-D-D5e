@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
-import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
+import {
+  MAGIC_BIAS_RANGE,
+  filterCandidates,
+  getEffectiveRarity,
+  rollLoot,
+} from "./loot/roller.js";
 
 import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
 import { mulberry32, seqRng } from "./test-utils/rng.mjs";
@@ -31,6 +36,40 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   assert.deepEqual(
     byBand.map((i) => i._id),
     ["e"],
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * getEffectiveRarity — untagged floors to common (reachability)
+ * ------------------------------------------------------------------ */
+{
+  // Explicit rarity always wins.
+  assert.equal(getEffectiveRarity(fakeItem({ rarity: "rare" })), "rare");
+
+  // Untagged mundane gear / sundries floor to common so a Common→Artifact
+  // range still surfaces them.
+  const untagged = fakeItem({
+    rarity: "",
+    lootType: "loot.trade-good",
+    keywords: ["loot.trade-good"],
+  });
+  assert.equal(
+    getEffectiveRarity(untagged),
+    "common",
+    "untagged floors to common",
+  );
+  // That floor makes it reachable by the Common filter that previously
+  // dropped untagged items entirely…
+  assert.equal(
+    filterCandidates([untagged], { rarities: ["common"] }).length,
+    1,
+    "untagged item now caught by Common",
+  );
+  // …without leaking into other rarities.
+  assert.equal(
+    filterCandidates([untagged], { rarities: ["rare"] }).length,
+    0,
+    "untagged item is common-only, not rare",
   );
 }
 

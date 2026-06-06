@@ -105,7 +105,7 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.DEFAULT_MAGIC_BIAS,
-    name: "Default Magic Bias",
+    name: "Default Magic vs. Mundane",
     hint:
       "−1.0 (all mundane) … 0 (neutral) … +1.0 (all magic). " +
       "Applied as a per-item weight multiplier in the roller.",

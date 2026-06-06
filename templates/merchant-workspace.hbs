@@ -71,11 +71,11 @@
 
         <div class="mw-form__grid">
           <label class="mw-field">
-            <span class="mw-field__label">Markup ×</span>
+            <span class="mw-field__label">Buy Price ×</span>
             <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Sell Ratio ×</span>
+            <span class="mw-field__label">Sell-Back ×</span>
             <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" />
           </label>
           <label class="mw-field">
@@ -91,11 +91,11 @@
             <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Bargain Success −%</span>
+            <span class="mw-field__label">Discount if Bargain Succeeds</span>
             <input class="mw-input" type="number" name="bargainSuccessPct" min="0" max="100" step="1" value="{{selected.bargainSuccessPct}}" />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Bargain Fail +%</span>
+            <span class="mw-field__label">Penalty if Bargain Fails</span>
             <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
           </label>
         </div>
@@ -129,8 +129,8 @@
         </fieldset>
 
         <fieldset class="mw-fieldset">
-          <legend>Stock Pool <small>randomized inventory</small></legend>
-          <p class="mw-hint">Pick item types and/or rarities, choose how many to draw, then <strong>Generate Stock</strong> to roll random items from the compendium into this merchant. Ammunition always stocks in full stacks of 20.</p>
+          <legend>Random Stock <small>auto-generated inventory</small></legend>
+          <p class="mw-hint">Pick item types and/or rarities, choose how many to draw, then <strong>Generate Stock</strong> to roll random items from the item library into this merchant. Ammunition always stocks in full stacks of 20.</p>
           <div class="mw-pool">
             <div class="mw-pool__col">
               <span class="mw-field__label">Item Types</span>
@@ -202,12 +202,12 @@
               </div>
               {{/each}}
             {{else}}
-              <p class="mw-empty">Drag items from the sidebar / compendium here, or click <strong>Add From Pack</strong>.</p>
+              <p class="mw-empty">Drag items from the sidebar / item library here, or click <strong>Add From Library</strong>.</p>
             {{/if}}
           </div>
           <div class="mw-inv__actions">
             <button type="button" class="mw-btn" data-action="addFromPack">
-              <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Pack
+              <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Library
             </button>
             <button type="button" class="mw-btn" data-action="restock">
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All

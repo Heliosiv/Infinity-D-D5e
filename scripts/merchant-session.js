@@ -38,6 +38,7 @@ import {
   openItemByUuid,
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
+import { prettyRarity } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import {
@@ -752,15 +753,6 @@ function sealLabel(seal) {
   if (!seal) return "";
   const tierName = seal.tier?.id ?? "seal";
   return `${tierName} ${formatDelta(seal.deltaPct)}`;
-}
-
-/** "very-rare" → "Very Rare" for the rarity badge. Empty in → empty out. */
-function prettyRarity(rarity) {
-  return String(rarity ?? "")
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function cssEscape(value) {

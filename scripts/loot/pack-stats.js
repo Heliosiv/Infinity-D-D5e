@@ -18,6 +18,7 @@ import {
   isBareSpellLootItem,
   isLootEligible,
 } from "./tag-vocabulary.js";
+import { getEffectiveRarity } from "./roller.js";
 
 /**
  * Build a stats snapshot for a candidate pool.
@@ -115,8 +116,10 @@ export function computeTierFilteredStats(items, tiers = null) {
     if (!isLootEligible(item)) continue;
     if (isBareSpellLootItem(item)) continue;
     total += 1;
-    const rarity = getItemRarity(item);
-    if (rarity) byRarity[rarity] = (byRarity[rarity] ?? 0) + 1;
+    // Effective rarity (floors untagged → common, treasure → value band) so
+    // the chip count matches exactly what selecting that rarity will return.
+    const rarity = getEffectiveRarity(item);
+    byRarity[rarity] = (byRarity[rarity] ?? 0) + 1;
     const lootType = getItemLootType(item);
     if (lootType) byLootType[lootType] = (byLootType[lootType] ?? 0) + 1;
   }

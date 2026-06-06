@@ -54,6 +54,7 @@ import {
   formatMagicBias,
   formatMultiplier,
   prettyLootType,
+  prettyRarity,
   titleCase,
 } from "./ui-util.js";
 
@@ -69,7 +70,7 @@ const SLIDER_LABELS = Object.freeze({
   generosityMultiplier: "Generosity",
   partySize: "Party Size",
   count: "Item Limit",
-  magicBias: "Magic Bias",
+  magicBias: "Magic vs. Mundane",
 });
 
 /** Single-snap anchor so users can hammer Magic Bias back to center. */
@@ -307,7 +308,7 @@ export class PerEncounterLootApp extends BaseLootApp {
 
       rarityOptions: RARITIES.map((rarity) => ({
         value: rarity,
-        label: titleCase(rarity),
+        label: prettyRarity(rarity),
         count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
         selected: this._form.rarities.includes(rarity),
       })),

@@ -268,11 +268,12 @@ async function handleCommitSale(payload) {
   const session = getSession(sessionId);
   if (!session) return;
   if (session.viewerUserId !== payload.originUserId) return;
-  if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
   const totalGp = Math.max(0, Number(payload.totalGp) || 0);
   // Sales don't change stock, but the merchant pays out — spend its gold
-  // (clamped at 0; no-op if the purse is unlimited).
+  // (clamped at 0; no-op if the purse is unlimited). Seal consumption runs
+  // inside the mutex too, matching the buy path.
   await runWithMerchantMutex(session.merchantId, async () => {
+    if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
     const merchant = findMerchant(session.merchantId);
     if (!merchant) return;
     const updated = adjustMerchantGold(merchant, -totalGp);

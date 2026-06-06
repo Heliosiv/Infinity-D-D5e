@@ -35,6 +35,33 @@ for (const view of views) {
 }
 
 const documentHtml = buildUiHarnessDocument();
+assert.ok(
+  !/>Loot\./i.test(documentHtml),
+  "rendered chip labels should not leak raw loot.* keys",
+);
+for (const retiredLabel of [
+  "Wands",
+  "Rods",
+  "Staves",
+  "Rings",
+  "Wondrous Items",
+]) {
+  assert.ok(
+    !documentHtml.includes(retiredLabel),
+    `retired stock-pool chip should not render: ${retiredLabel}`,
+  );
+}
+for (const friendlyLabel of [
+  "Magic Weapons",
+  "Magic Equipment",
+  "Potions &amp; Consumables",
+  "Containers",
+]) {
+  assert.ok(
+    documentHtml.includes(friendlyLabel),
+    `friendly loot chip should render: ${friendlyLabel}`,
+  );
+}
 for (const expectedId of [
   "dashboard",
   "per-encounter",

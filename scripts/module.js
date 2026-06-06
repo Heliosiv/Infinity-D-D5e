@@ -172,7 +172,7 @@ function registerBuiltinTools() {
     id: "hoard-loot",
     title: "Hoard Loot",
     description:
-      "A treasure cache — tier × scale sets the budget, Pile Bias trades raw coin for items.",
+      "A treasure cache — tier × scale sets the budget; the Coin vs. Items slider trades raw coin for items.",
     icon: "fa-solid fa-sack-dollar",
     category: "loot",
     status: "available",

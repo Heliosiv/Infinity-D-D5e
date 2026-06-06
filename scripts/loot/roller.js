@@ -394,15 +394,31 @@ function matchesLootTypes(item, lootTypes) {
   return false;
 }
 
+/**
+ * Effective rarity used for both filtering and chip counts:
+ *   - an explicit normalized rarity when the item carries one;
+ *   - for variable art/gem treasure, the rarity implied by its gp value band;
+ *   - otherwise "common" — untagged mundane gear and sundries floor to common
+ *     so a Common→Artifact selection always surfaces them.
+ *
+ * NB: a handful of genuinely-magic items the source left un-rarited (e.g. a
+ * Wand of Magic Missiles tagged loot.consumable) also floor to common here.
+ * That keeps them reachable; assigning their true rarity is a separate
+ * per-item data-tagging task.
+ */
+export function getEffectiveRarity(item) {
+  const direct = getItemRarity(item);
+  if (direct) return direct;
+  if (isVariableArtItem(item) || isVariableGemItem(item)) {
+    return (
+      VARIABLE_TREASURE_RARITY_BY_VALUE_BAND[getItemValueBand(item)] ?? "common"
+    );
+  }
+  return "common";
+}
+
 function matchesRarities(item, rarities) {
-  const directRarity = getItemRarity(item);
-  if (directRarity) return rarities.has(directRarity);
-
-  if (!isVariableArtItem(item) && !isVariableGemItem(item)) return false;
-
-  const fallbackRarity =
-    VARIABLE_TREASURE_RARITY_BY_VALUE_BAND[getItemValueBand(item)] ?? "";
-  return Boolean(fallbackRarity && rarities.has(fallbackRarity));
+  return rarities.has(getEffectiveRarity(item));
 }
 
 function isVariableGemItem(item) {

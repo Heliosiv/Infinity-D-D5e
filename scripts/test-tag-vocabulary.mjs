@@ -186,6 +186,83 @@ assert.equal(normalizeRarity("nonexistent"), "");
   );
 }
 
+/* loot-type aliases — coarse source buckets fold onto curated chips */
+{
+  // Bare weapon/armour source tags → curated `.mundane` chips.
+  assert.equal(
+    getItemLootType(fakeItem({ lootType: "loot.weapon" })),
+    "loot.weapon.mundane",
+  );
+  assert.equal(
+    getItemLootType(fakeItem({ lootType: "loot.armor" })),
+    "loot.armor.mundane",
+  );
+  // Generic treasure/sundries → Trade Goods; poisons → Consumable.
+  assert.equal(
+    getItemLootType(fakeItem({ lootType: "loot.loot" })),
+    "loot.trade-good",
+  );
+  assert.equal(
+    getItemLootType(fakeItem({ lootType: "loot.poison" })),
+    "loot.consumable",
+  );
+  // Already-canonical types pass through untouched.
+  for (const t of ["loot.equipment.magic", "loot.potion", "loot.container"]) {
+    assert.equal(getItemLootType(fakeItem({ lootType: t })), t);
+  }
+}
+
+/* coverage invariant — every shipped lootType maps onto exactly one chip */
+{
+  // Canonical buckets the pack carries after aliasing; each must be a chip.
+  const shippedCanonical = [
+    "loot.weapon.magic",
+    "loot.weapon.mundane",
+    "loot.armor.magic",
+    "loot.armor.mundane",
+    "loot.equipment.magic",
+    "loot.equipment",
+    "loot.consumable",
+    "loot.potion",
+    "loot.scroll",
+    "loot.tool",
+    "loot.trade-good",
+    "loot.container",
+  ];
+  for (const t of shippedCanonical) {
+    assert.ok(LOOT_TYPES.includes(t), `shipped lootType "${t}" needs a chip`);
+  }
+  // Retired phantom chips: gone from the UI list, but still magic-classified
+  // so the bias dial keeps treating any such future item as magic.
+  for (const t of [
+    "loot.wand",
+    "loot.rod",
+    "loot.staff",
+    "loot.ring",
+    "loot.wondrous",
+  ]) {
+    assert.ok(!LOOT_TYPES.includes(t), `"${t}" should no longer be a chip`);
+    assert.ok(MAGIC_LOOT_TYPES.has(t), `"${t}" must stay magic-classified`);
+  }
+}
+
+/* new magic/mundane classifications */
+{
+  assert.equal(
+    getItemMagicNature(fakeItem({ lootType: "loot.equipment.magic" })),
+    "magic",
+  );
+  assert.equal(
+    getItemMagicNature(fakeItem({ lootType: "loot.potion" })),
+    "magic",
+  );
+  // loot.loot folds to trade-good → mundane
+  assert.equal(
+    getItemMagicNature(fakeItem({ lootType: "loot.loot" })),
+    "mundane",
+  );
+}
+
 /* future-proofing: infinity-dnd5e flag namespace works alongside legacy */
 {
   const item = {

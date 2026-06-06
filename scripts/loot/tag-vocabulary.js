@@ -49,31 +49,32 @@ export function tierWindow(tier) {
 export const VALUE_BANDS = Object.freeze(["v1", "v2", "v3", "v4", "v5"]);
 
 /**
- * Canonical loot-type buckets. The roller filters candidates by
- * matching against `flags.party-operations.lootType` first and
- * falling back to keyword scan.
+ * Canonical loot-type buckets surfaced as UI filter chips. The roller
+ * matches a candidate's canonical lootType (see `getItemLootType`, which
+ * applies `LOOT_TYPE_ALIASES`) first, then falls back to a keyword scan.
  *
- * Keep this list curated — only buckets that actually appear in the
- * shipped compendium belong here. Adding a bucket without items in
- * it leaves a phantom option in the UI.
+ * Keep this list curated under one rule: every chip must resolve to real
+ * items in the shipped pack (directly or via an alias), AND every shipped
+ * lootType must map onto one of these chips, so no item is unreachable.
+ * Buckets the pack folds into broader ones (wand/rod/staff/ring/wondrous →
+ * consumable & equipment.magic) are intentionally NOT chips; they live only
+ * in `MAGIC_LOOT_TYPES` for magic-bias classification.
  */
 export const LOOT_TYPES = Object.freeze([
   "loot.weapon.magic",
   "loot.weapon.mundane",
   "loot.armor.magic",
   "loot.armor.mundane",
+  "loot.equipment.magic",
   "loot.equipment",
   "loot.consumable",
+  "loot.potion",
   "loot.scroll",
-  "loot.wand",
-  "loot.rod",
-  "loot.staff",
-  "loot.ring",
-  "loot.wondrous",
+  "loot.tool",
   "loot.gem",
   "loot.art",
-  "loot.tool",
   "loot.trade-good",
+  "loot.container",
 ]);
 
 /** Rarity buckets that mean "magic-rare or better" — useful for tier filtering. */
@@ -93,13 +94,19 @@ export const MAGIC_LOOT_TYPES = Object.freeze(
   new Set([
     "loot.weapon.magic",
     "loot.armor.magic",
+    "loot.equipment.magic", // wondrous magic gear: rings, ioun stones, robes
     "loot.scroll",
+    "loot.consumable", // potions / elixirs / consumed magic items
+    "loot.potion",
+    // Retained for classification though no longer surfaced as chips: the
+    // shipped pack folds these into consumable / equipment.magic, so they
+    // never appear as a primary lootType. Keeping them here means any future
+    // item tagged this way is still treated as magic by the bias dial.
     "loot.wand",
     "loot.rod",
     "loot.staff",
     "loot.ring",
     "loot.wondrous",
-    "loot.consumable", // potions / elixirs / consumed magic items
   ]),
 );
 
@@ -178,15 +185,39 @@ export function getItemKeywords(item) {
   return [];
 }
 
+/**
+ * Loot-type aliases that canonicalize the source compendium's coarse buckets
+ * onto curated chips, so every shipped item is reachable by exactly one chip:
+ *
+ *   - The pack tags non-magic weapons/armour as plain `loot.weapon` /
+ *     `loot.armor` (only the magic variants carry a suffix); the vocabulary
+ *     uses the explicit `.mundane` suffix.
+ *   - Generic treasure & sundries (`loot.loot`: gems, art, hammers, chalk)
+ *     fold onto the Trade Goods chip. Variable gems/art are still independently
+ *     reachable via the Gem/Art chips through the variable-treasure detector.
+ *   - Poisons (`loot.poison`) fold onto Consumable.
+ *
+ * Canonicalizing on read keeps the data lined up with LOOT_TYPES /
+ * MUNDANE_LOOT_TYPES in one place, instead of every call site exact-matching a
+ * string the pack never carries. A Map (not a plain object) so a stray
+ * lootType like "toString" can't resolve to an inherited prototype member.
+ */
+const LOOT_TYPE_ALIASES = new Map([
+  ["loot.weapon", "loot.weapon.mundane"],
+  ["loot.armor", "loot.armor.mundane"],
+  ["loot.loot", "loot.trade-good"],
+  ["loot.poison", "loot.consumable"],
+]);
+
 /** Get the canonical lootType bucket off an item, or "" if not tagged. */
 export function getItemLootType(item) {
-  return (
+  const raw =
     String(
       item?.flags?.["infinity-dnd5e"]?.lootType ??
         item?.flags?.["party-operations"]?.lootType ??
         "",
-    ).trim() || ""
-  );
+    ).trim() || "";
+  return LOOT_TYPE_ALIASES.get(raw) ?? raw;
 }
 
 /**

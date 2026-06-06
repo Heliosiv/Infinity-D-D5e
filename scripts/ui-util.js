@@ -14,12 +14,56 @@ export function titleCase(value) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-/** "loot.weapon.magic" -> "Weapon · Magic". */
+/**
+ * Friendly, plain-English labels for the curated loot-type buckets, keyed by
+ * the canonical keys in loot/tag-vocabulary.js. Display text lives here with
+ * the other UI formatters (and stays node-testable) rather than in the enum
+ * source. Any key missing from this map falls back to the generic transform in
+ * `prettyLootType`, so a newly added bucket still renders legibly.
+ */
+export const LOOT_TYPE_LABELS = Object.freeze({
+  "loot.weapon.magic": "Magic Weapons",
+  "loot.weapon.mundane": "Weapons",
+  "loot.armor.magic": "Magic Armor",
+  "loot.armor.mundane": "Armor & Shields",
+  "loot.equipment.magic": "Magic Equipment",
+  "loot.equipment": "Adventuring Gear",
+  "loot.consumable": "Potions & Consumables",
+  "loot.potion": "Potions",
+  "loot.scroll": "Scrolls",
+  "loot.wand": "Wands",
+  "loot.rod": "Rods",
+  "loot.staff": "Staves",
+  "loot.ring": "Rings",
+  "loot.wondrous": "Wondrous Items",
+  "loot.gem": "Gems",
+  "loot.art": "Art Objects",
+  "loot.tool": "Tools",
+  "loot.trade-good": "Trade Goods",
+  "loot.container": "Containers",
+});
+
+/**
+ * Plain-English label for a loot-type key — e.g. "loot.weapon.magic" -> "Magic
+ * Weapons". Unmapped keys fall back to a generic "Category · Subtype" transform
+ * so an unrecognized bucket still reads sensibly. Empty in -> empty out.
+ */
 export function prettyLootType(value) {
-  return String(value ?? "")
+  const key = String(value ?? "");
+  if (LOOT_TYPE_LABELS[key]) return LOOT_TYPE_LABELS[key];
+  return key
     .replace(/^loot\./, "")
     .replace(/\./g, " · ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** "very-rare" -> "Very Rare" for rarity badges. Empty in -> empty out. */
+export function prettyRarity(value) {
+  return String(value ?? "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /** Format an integer gp value with thousands separators and a "gp" suffix. */
