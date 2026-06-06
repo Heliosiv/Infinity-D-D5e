@@ -113,7 +113,7 @@ export async function promptDistributeItems(items, opts = {}) {
     : null;
   const hasCurrency = Boolean(
     currency &&
-      (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
+    (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
   );
   if (cleaned.length === 0 && !hasCurrency) {
     ui.notifications?.warn(`${MODULE_ID}: nothing to distribute.`);
@@ -197,6 +197,206 @@ export async function promptDistributeItems(items, opts = {}) {
     created: res.created,
     currencyAdded: res.currencyAdded,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Multi-actor split distribution
+ * ------------------------------------------------------------------ */
+
+/**
+ * Distribute items round-robin across actors (no coin handling). Pure —
+ * exported for unit testing. Returns one assignment per actor id.
+ *
+ * @param {Array<object>} items - normalized distributable entries
+ * @param {string[]} actorIds
+ * @returns {Array<{actorId: string, items: object[]}>}
+ */
+export function planRoundRobin(items, actorIds) {
+  const ids = (Array.isArray(actorIds) ? actorIds : []).filter(Boolean);
+  const assignments = ids.map((actorId) => ({ actorId, items: [] }));
+  if (assignments.length === 0) return [];
+  (Array.isArray(items) ? items : []).forEach((item, index) => {
+    assignments[index % assignments.length].items.push(item);
+  });
+  return assignments;
+}
+
+/** Split a coin breakdown as evenly as possible; remainder to the first. */
+function splitCurrencyEven(currency, count) {
+  const out = Array.from({ length: count }, () => ({
+    pp: 0,
+    gp: 0,
+    ep: 0,
+    sp: 0,
+    cp: 0,
+  }));
+  if (count <= 0 || !currency) return out;
+  for (const denom of ["pp", "gp", "ep", "sp", "cp"]) {
+    const total = Math.floor(Number(currency[denom]) || 0);
+    const base = Math.floor(total / count);
+    let remainder = total - base * count;
+    for (let i = 0; i < count; i += 1) {
+      out[i][denom] = base + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Round-robin the items AND divide the coin pile evenly across actors.
+ * Pure — exported for unit testing.
+ *
+ * @param {Array<object>} items
+ * @param {object|null} currency - a {pp,gp,sp,cp}-ish coin breakdown
+ * @param {string[]} actorIds
+ * @returns {Array<{actorId: string, items: object[], currency: object}>}
+ */
+export function planEvenSplit(items, currency, actorIds) {
+  const assignments = planRoundRobin(items, actorIds);
+  if (assignments.length === 0) return [];
+  const split = splitCurrencyEven(currency, assignments.length);
+  assignments.forEach((assignment, index) => {
+    assignment.currency = split[index];
+  });
+  return assignments;
+}
+
+/**
+ * Deposit a set of per-actor assignments. Loops the single-actor
+ * {@link depositToActor} and surfaces one combined notification.
+ *
+ * @param {Array<{actorId: string, items?: object[], currency?: object}>} assignments
+ * @param {object} [opts]
+ * @param {boolean} [opts.notify=true]
+ * @returns {Promise<{created: number, recipients: string[]}>}
+ */
+export async function depositToActors(assignments, { notify = true } = {}) {
+  ensureFoundry();
+  let created = 0;
+  const recipients = [];
+  for (const assignment of assignments ?? []) {
+    if (!assignment?.actorId) continue;
+    const res = await depositToActor(assignment.actorId, {
+      items: assignment.items ?? [],
+      currency: assignment.currency ?? null,
+      notify: false,
+    });
+    created += res.created;
+    if (res.created > 0 || res.currencyAdded) {
+      recipients.push(game.actors?.get?.(assignment.actorId)?.name ?? "actor");
+    }
+  }
+  if (notify) {
+    if (recipients.length > 0) {
+      ui.notifications?.info(
+        `${MODULE_ID}: split ${created} item(s) across ${recipients.length} character(s) — ${recipients.join(", ")}.`,
+      );
+    } else {
+      ui.notifications?.warn(`${MODULE_ID}: nothing was distributed.`);
+    }
+  }
+  return { created, recipients };
+}
+
+/**
+ * Open a multi-actor picker (checkbox list + split mode) and distribute
+ * the haul across the chosen characters.
+ *
+ * @param {Array<string|object>} items
+ * @param {object} [opts]
+ * @param {object} [opts.currency] - coin breakdown to divide
+ * @param {string} [opts.title]
+ * @param {string} [opts.hint]
+ * @returns {Promise<{created:number, recipients:string[]} | null>}
+ */
+export async function promptDistributeSplit(items, opts = {}) {
+  ensureFoundry();
+  const cleaned = normalizeDistributableItems(items);
+  const currency = opts.currency
+    ? currencyAddFromBreakdown(opts.currency)
+    : null;
+  const hasCurrency = Boolean(
+    currency &&
+    (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
+  );
+  if (cleaned.length === 0 && !hasCurrency) {
+    ui.notifications?.warn(`${MODULE_ID}: nothing to distribute.`);
+    return null;
+  }
+  const candidates = listDistributableActors();
+  if (candidates.length === 0) {
+    ui.notifications?.warn(`${MODULE_ID}: no character-type actors available.`);
+    return null;
+  }
+  const DialogV2 = foundry?.applications?.api?.DialogV2;
+  if (!DialogV2) {
+    ui.notifications?.error(
+      `${MODULE_ID}: DialogV2 unavailable (Foundry V12+ required).`,
+    );
+    return null;
+  }
+
+  const checkboxes = candidates
+    .map(
+      (actor) =>
+        `<label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" name="actor" value="${escapeAttr(actor.id)}" checked /> <span>${escapeText(actor.name)}</span></label>`,
+    )
+    .join("");
+  const content = `
+    <div class="infinity-dnd5e-distribute">
+      <p>${escapeText(opts.hint ?? "Choose characters and how to split the haul.")}</p>
+      <label style="display:grid;gap:4px;">
+        <span>Split mode</span>
+        <select name="mode">
+          <option value="even">Even split — round-robin items + divided coins</option>
+          <option value="round-robin">Round-robin items — coins to the first</option>
+        </select>
+      </label>
+      <fieldset style="margin-top:8px;display:grid;gap:4px;">
+        <legend>Characters</legend>
+        ${checkboxes}
+      </fieldset>
+    </div>`;
+
+  let payload = null;
+  try {
+    payload = await DialogV2.prompt({
+      window: {
+        title: opts.title ?? "Split Across Party",
+        icon: "fa-solid fa-users",
+      },
+      content,
+      ok: {
+        label: "Distribute",
+        icon: "fa-solid fa-share-nodes",
+        callback: (_event, button) => {
+          const form = button?.form;
+          if (!form) return null;
+          const ids = [
+            ...form.querySelectorAll("input[name='actor']:checked"),
+          ].map((input) => input.value);
+          return { ids, mode: form.elements.mode?.value ?? "even" };
+        },
+      },
+      rejectClose: false,
+    });
+  } catch (error) {
+    console.debug(`${MODULE_ID} | split dialog dismissed`, error);
+    return null;
+  }
+  if (!payload?.ids?.length) return null;
+
+  let assignments;
+  if (payload.mode === "round-robin") {
+    assignments = planRoundRobin(cleaned, payload.ids);
+    if (opts.currency && assignments[0]) {
+      assignments[0].currency = currencyAddFromBreakdown(opts.currency);
+    }
+  } else {
+    assignments = planEvenSplit(cleaned, opts.currency ?? null, payload.ids);
+  }
+  return depositToActors(assignments, { notify: true });
 }
 
 /**
@@ -392,7 +592,10 @@ function buildSpellScrollIndex(items) {
   for (const item of Array.isArray(items) ? items : []) {
     if (!isGeneratedSpellScroll(item)) continue;
     const native = item.flags?.[MODULE_ID]?.spellScroll ?? {};
-    const source = item.flags?.["party-operations"]?.scrollSource ?? {};
+    const source =
+      item.flags?.[MODULE_ID]?.scrollSource ??
+      item.flags?.["party-operations"]?.scrollSource ??
+      {};
     addIndexKey(index, idKey(native.sourceSpellId), item);
     addIndexKey(index, idKey(source.spellId), item);
     addIndexKey(index, uuidKey(native.sourceSpellUuid), item);
@@ -400,7 +603,9 @@ function buildSpellScrollIndex(items) {
     addIndexKey(
       index,
       spellNameKey(
-        native.sourceSpellName ?? source.spellName ?? stripScrollPrefix(item.name),
+        native.sourceSpellName ??
+          source.spellName ??
+          stripScrollPrefix(item.name),
         native.spellLevel ?? source.spellLevel,
       ),
       item,
@@ -412,7 +617,9 @@ function buildSpellScrollIndex(items) {
 function isGeneratedSpellScroll(item) {
   const native = item?.flags?.[MODULE_ID]?.spellScroll;
   if (native?.schema === SPELL_SCROLL_SCHEMA) return true;
-  const source = item?.flags?.["party-operations"]?.scrollSource;
+  const source =
+    item?.flags?.[MODULE_ID]?.scrollSource ??
+    item?.flags?.["party-operations"]?.scrollSource;
   return source?.schema === SPELL_SCROLL_SCHEMA;
 }
 
@@ -424,6 +631,7 @@ function spellLookupKeys(spellData, sourceUuid) {
     uuidKey(spellData?.uuid),
     uuidKey(spellData?.flags?.core?.sourceId),
     uuidKey(spellData?._stats?.compendiumSource),
+    uuidKey(spellData?.flags?.[MODULE_ID]?.details?.coreSourceId),
     uuidKey(spellData?.flags?.["party-operations"]?.details?.coreSourceId),
     spellNameKey(spellData?.name, spellData?.system?.level),
   ].filter(Boolean);

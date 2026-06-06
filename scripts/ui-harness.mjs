@@ -305,8 +305,25 @@ function dashboardContext() {
   };
 }
 
+function menuContext() {
+  return {
+    presets: [
+      { id: "preset-1", name: "Boss Vault" },
+      { id: "preset-2", name: "Humanoid Mooks" },
+    ],
+    hasPresets: true,
+    history: [
+      { id: "hist-1", label: "8 items · 450 gp" },
+      { id: "hist-2", label: "5 items · 1,200 gp" },
+    ],
+    hasHistory: true,
+    canUndo: true,
+  };
+}
+
 function perEncounterContext() {
   return {
+    ...menuContext(),
     moduleId: "infinity-dnd5e",
     form: {
       itemLimitEnabled: true,
@@ -385,6 +402,7 @@ function perEncounterContext() {
 
 function hoardContext() {
   return {
+    ...menuContext(),
     form: { artVariants: true },
     totalBudgetLabel: "2,400 gp",
     coinPileLabel: "900 gp",
@@ -438,6 +456,7 @@ function perCreatureContext() {
     { id: "boss-1", name: "Ogre Boss", tier: "t3", budgetLabel: "210 gp" },
   ];
   return {
+    ...menuContext(),
     rosterRows: rows.map((row) => ({
       ...row,
       tierOptions: tierOptions(row.tier),
@@ -763,6 +782,8 @@ function item(
 ) {
   return {
     resultId: id,
+    entryId: id,
+    variant: variantSummary ? { id, summary: variantSummary } : null,
     rarity,
     displayName,
     variantSummary,

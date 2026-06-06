@@ -2,19 +2,13 @@
  * Infinity D&D5e — HoardLootApp
  *
  * GM-only window for rolling a treasure cache. A "hoard" is a single
- * pile (a chest, a dragon's stash, a defeated boss's stockpile), so
- * the gp budget is driven by *tier × scale*, not by a creature count.
+ * pile (a chest, a dragon's stash, a defeated boss's stockpile), so the
+ * gp budget is driven by *tier × scale*, not by a creature count. The
+ * pile-bias slider splits the budget between a raw coin pile and the
+ * item bundle.
  *
- *   tier         — segmented row, T1..T5
- *   hoard scale  — segmented row, Small / Standard / Large / Massive
- *   pile bias    — slider, splits the budget between a raw coin pile
- *                  and the item bundle (the unique hoard control)
- *   magic bias   — same dial as the other windows
- *   rarity       — chips, default all selected
- *   loot types   — chips, default all selected
- *   max items    — small numeric input, 0 means no item-count ceiling
- *
- * Reuses the shared roller, pack stats, and settings reads.
+ * Extends {@link BaseLootApp} for the shared lifecycle; this file owns
+ * the hoard-specific context, coin-pile split, and generation.
  */
 
 import {
@@ -29,10 +23,8 @@ import {
   getScaleFlavor,
   splitCoinPile,
 } from "./loot/hoard-budget.js";
-import { nearestPreset } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
-import { loadCompendiumItems } from "./loot/pack.js";
 import {
   computePackStats,
   computeTierFilteredStats,
@@ -42,11 +34,19 @@ import {
   LOOT_TYPES,
   RARITIES,
   TIERS,
-  getItemRarity,
   isAmmunitionItem,
   tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { BaseLootApp } from "./loot/loot-app-base.js";
+import {
+  humanizeKey,
+  resultImageForEntry,
+  sameSet,
+  setText,
+  tierLabel,
+  toDistributableEntry,
+} from "./loot/loot-app-shared.js";
 import {
   clampFloat,
   clampInt,
@@ -58,9 +58,7 @@ import {
 } from "./ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/hoard-loot.hbs`;
-const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 
 const MAX_ITEMS_RANGE = Object.freeze({ min: 0, max: 30 });
 
@@ -71,15 +69,18 @@ const SLIDER_LABELS = Object.freeze({
 
 const SCALE_ORDER = Object.freeze(["small", "standard", "large", "massive"]);
 
-/* ------------------------------------------------------------------ *
- * Application V2 host
- * ------------------------------------------------------------------ */
-
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
-export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
+export class HoardLootApp extends BaseLootApp {
   static _instance = null;
   static _persistedState = null;
+
+  static FORM_NAME = "hoard-loot";
+  static TOOL_ID = "hoard-loot";
+  static CHAT_ALIAS = "Hoard Loot";
+  static SLIDER_LABELS = SLIDER_LABELS;
+  static SCROLL_TARGETS = Object.freeze([
+    { key: "shell", selector: ".hl-shell" },
+    { key: "windowContent", selector: ".window-content" },
+  ]);
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-hoard-loot",
@@ -92,37 +93,18 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     },
     position: { width: 760, height: 720 },
     actions: {
+      ...BaseLootApp.SHARED_ACTIONS,
       generate: HoardLootApp._onGenerate,
-      reset: HoardLootApp._onReset,
-      clear: HoardLootApp._onClear,
-      openItem: HoardLootApp._onOpenItem,
-      sendToChat: HoardLootApp._onSendToChat,
       depositHaul: HoardLootApp._onDepositHaul,
-      snap: HoardLootApp._onSnap,
       tierSelect: HoardLootApp._onTierSelect,
       scaleSelect: HoardLootApp._onScaleSelect,
-      chipAll: HoardLootApp._onChipAll,
-      chipNone: HoardLootApp._onChipNone,
     },
-    form: {
-      handler: undefined,
-      closeOnSubmit: false,
-      submitOnChange: false,
-    },
+    form: { handler: undefined, closeOnSubmit: false, submitOnChange: false },
   };
 
   static PARTS = {
     body: { template: TEMPLATE_PATH },
   };
-
-  /** Open (or focus) the singleton instance. */
-  static open() {
-    playModuleSound(SOUND_EVENTS.UI_OPEN);
-    if (!HoardLootApp._instance) HoardLootApp._instance = new HoardLootApp();
-    if (HoardLootApp._instance.rendered) HoardLootApp._instance.bringToFront();
-    else HoardLootApp._instance.render(true);
-    return HoardLootApp._instance;
-  }
 
   /* ------------------- state ------------------- */
 
@@ -135,15 +117,8 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       pileBias: 0,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
       maxItems: HOARD_DEFAULT_ITEM_CEILING[scale] ?? 8,
-      // Art variants on by default - a treasure hoard is the most
-      // thematic place for specific art-object names and appraisal notes.
-      // Toggleable via the form input.
       artVariants: true,
-      // Rarity narrows with the scale's narrative shape; the chips
-      // remain editable and stay sticky across tier/scale clicks
-      // until the GM customizes them away from the table default.
       rarities: getDefaultRarities(tier, scale),
-      // Loot types stay all-selected by default — orthogonal to scale.
       lootTypes: [...LOOT_TYPES],
     };
   }
@@ -157,10 +132,51 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ? { ...defaults, ...persisted.form }
       : defaults;
     this._lastResult = persisted?.lastResult ?? null;
-    this._loadingItems = false;
-    this._cachedItems = null;
-    this._cachedItemsAt = 0;
-    this._packStats = null;
+  }
+
+  /* ------------------- base hooks ------------------- */
+
+  _primaryGenerate() {
+    return this._generate();
+  }
+
+  _snapLabel(key) {
+    return humanizeKey(key);
+  }
+
+  _chipUniverse(group) {
+    if (group === "rarity") return RARITIES;
+    if (group === "lootType") return LOOT_TYPES;
+    return null;
+  }
+
+  _buildChatHtml(result) {
+    return buildHoardChatHtml(result);
+  }
+
+  /** The hoard haul includes the coin pile alongside its items. */
+  _distributableHaul() {
+    const items = (this._lastResult?.items ?? [])
+      .map(toDistributableEntry)
+      .filter(Boolean);
+    const currency = this._lastResult?.coinPileGp
+      ? this._lastResult.coinBreakdown
+      : null;
+    return { items, currency };
+  }
+
+  /** Recompute item + grand totals (coin pile included) after a mutation. */
+  _recomputeTotals() {
+    if (!this._lastResult) return;
+    const itemsTotal = (this._lastResult.items ?? []).reduce(
+      (sum, entry) => sum + (entry.gpTotal ?? 0),
+      0,
+    );
+    const coin = this._lastResult.coinPileGp ?? 0;
+    this._lastResult.itemsTotalGp = itemsTotal;
+    this._lastResult.itemsTotalGpLabel = formatGp(itemsTotal);
+    this._lastResult.totalGp = itemsTotal + coin;
+    this._lastResult.totalGpLabel = formatGp(itemsTotal + coin);
   }
 
   /* ------------------- context ------------------- */
@@ -173,14 +189,11 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
     const stats = this._packStats ?? computePackStats([]);
     const candidates = this._countCandidates();
-    // Tier-aware chip counts: when items are loaded, count rarities and
-    // loot types ONLY within the current tier window — so the chip the
-    // user sees reflects what they'll actually roll, not the pack-wide
-    // total. Falls back to pack-wide stats before the compendium loads.
     const tierStats = this._cachedItems
       ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
       : null;
     return {
+      ...this._basePresetContext(),
       form: this._form,
       moduleId: MODULE_ID,
       totalBudgetLabel: formatGp(totalBudget),
@@ -246,53 +259,6 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
-  /* ------------------- lifecycle ------------------- */
-
-  async _onRender(context, options) {
-    super._onRender?.(context, options);
-    const root = this.element;
-    if (!root) return;
-
-    root.classList.toggle(
-      "lf-no-anim",
-      getSetting(SETTING_KEYS.ANIMATIONS) === false,
-    );
-    root.classList.toggle(
-      "lf-no-glow",
-      getSetting(SETTING_KEYS.RARITY_GLOW) === false,
-    );
-
-    const form = root.querySelector("[data-form='hoard-loot']");
-    if (form) {
-      form.addEventListener("input", (event) => this._onFormInput(event));
-      form.addEventListener("change", (event) => this._onFormInput(event));
-    }
-
-    for (const image of root.querySelectorAll("[data-result-image]")) {
-      image.addEventListener("error", onResultImageError, { once: true });
-      if (image.complete && image.naturalWidth === 0) {
-        onResultImageError({ currentTarget: image });
-      }
-    }
-
-    if (!this._packStats && !this._loadingItems) {
-      this._primePackStats();
-    }
-  }
-
-  _onClose(options) {
-    super._onClose?.(options);
-    if (getSetting(SETTING_KEYS.PERSIST_STATE) !== false) {
-      HoardLootApp._persistedState = {
-        form: { ...this._form },
-        lastResult: this._lastResult,
-      };
-    } else {
-      HoardLootApp._persistedState = null;
-    }
-    HoardLootApp._instance = null;
-  }
-
   /* ------------------- actions ------------------- */
 
   /** @this {HoardLootApp} */
@@ -300,61 +266,6 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this._loadingItems) return;
     playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate();
-  }
-
-  /** @this {HoardLootApp} */
-  static _onReset(_event, _target) {
-    this._form = HoardLootApp.buildDefaultForm();
-    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    renderAfterAction(() => this.render(), "reset");
-  }
-
-  /** @this {HoardLootApp} */
-  static async _onClear(_event, _target) {
-    this._lastResult = null;
-    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    await this.render();
-  }
-
-  /** @this {HoardLootApp} */
-  static async _onOpenItem(event, target) {
-    const uuid = target?.dataset?.uuid;
-    if (!uuid) return;
-    try {
-      const doc = await fromUuid(uuid);
-      if (doc?.sheet) {
-        doc.sheet.render(true);
-        playModuleSound(SOUND_EVENTS.ITEM_OPEN);
-      }
-    } catch (error) {
-      console.warn(`${MODULE_ID} | failed to open item`, { uuid, error });
-    }
-  }
-
-  /** @this {HoardLootApp} */
-  static async _onSendToChat(_event, _target) {
-    if (!this._lastResult) {
-      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.info("Nothing to send — roll a hoard first.");
-      return;
-    }
-    const html = buildHoardChatHtml(this._lastResult);
-    const messageData = {
-      content: html,
-      speaker: ChatMessage.getSpeaker({ alias: "Hoard Loot" }),
-    };
-    const whispers = resolveChatRecipients(
-      getSetting(SETTING_KEYS.CHAT_MODE) ?? "public",
-    );
-    if (whispers !== null) messageData.whisper = whispers;
-    try {
-      await ChatMessage.create(messageData);
-      playModuleSound(SOUND_EVENTS.CHAT_SEND);
-    } catch (error) {
-      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      console.error(`${MODULE_ID} | failed to send hoard to chat`, error);
-      ui.notifications?.error("Failed to send loot to chat. See console.");
-    }
   }
 
   /** @this {HoardLootApp} */
@@ -385,28 +296,16 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /** @this {HoardLootApp} */
-  static async _onSnap(_event, target) {
-    const name = target?.dataset?.target;
-    const raw = Number(target?.dataset?.value);
-    if (!name || !Number.isFinite(raw)) return;
-    this._form = { ...this._form, [name]: raw };
-    await this.render();
-  }
-
-  /** @this {HoardLootApp} */
   static async _onTierSelect(_event, target) {
     const newTier = target?.dataset?.value;
     if (!newTier || newTier === this._form.tier) return;
-    // Sticky rarity update: if the GM hasn't customized rarities
-    // away from the (prev tier, scale) default, slide them to the
-    // (new tier, scale) default. Otherwise leave their tweaks alone.
     const prevDefaults = getDefaultRarities(this._form.tier, this._form.scale);
     const customizedRarities = !sameSet(this._form.rarities, prevDefaults);
     const nextRarities = customizedRarities
       ? this._form.rarities
       : getDefaultRarities(newTier, this._form.scale);
     this._form = { ...this._form, tier: newTier, rarities: nextRarities };
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /** @this {HoardLootApp} */
@@ -415,14 +314,12 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!newScale || newScale === this._form.scale) return;
     const prevScale = this._form.scale;
 
-    // Sticky max-items update.
     const prevCeilingDefault = HOARD_DEFAULT_ITEM_CEILING[prevScale];
     const customizedMaxItems = this._form.maxItems !== prevCeilingDefault;
     const nextMaxItems = customizedMaxItems
       ? this._form.maxItems
       : (HOARD_DEFAULT_ITEM_CEILING[newScale] ?? this._form.maxItems);
 
-    // Sticky rarity update.
     const prevRarityDefaults = getDefaultRarities(this._form.tier, prevScale);
     const customizedRarities = !sameSet(
       this._form.rarities,
@@ -438,33 +335,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       maxItems: nextMaxItems,
       rarities: nextRarities,
     };
-    await this.render();
-  }
-
-  /** @this {HoardLootApp} */
-  static async _onChipAll(_event, target) {
-    const group = target?.dataset?.group;
-    if (group === "rarity") {
-      this._form = { ...this._form, rarities: [...RARITIES] };
-    } else if (group === "lootType") {
-      this._form = { ...this._form, lootTypes: [...LOOT_TYPES] };
-    } else {
-      return;
-    }
-    await this.render();
-  }
-
-  /** @this {HoardLootApp} */
-  static async _onChipNone(_event, target) {
-    const group = target?.dataset?.group;
-    if (group === "rarity") {
-      this._form = { ...this._form, rarities: [] };
-    } else if (group === "lootType") {
-      this._form = { ...this._form, lootTypes: [] };
-    } else {
-      return;
-    }
-    await this.render();
+    await this._renderPreservingScroll();
   }
 
   /* ------------------- form handling ------------------- */
@@ -502,10 +373,10 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         );
         break;
       case "rarity":
-        next.rarities = readMultiCheckGroup(this.element, "rarity");
+        next.rarities = this._readChipGroup("rarity");
         break;
       case "lootType":
-        next.lootTypes = readMultiCheckGroup(this.element, "lootType");
+        next.lootTypes = this._readChipGroup("lootType");
         break;
       default:
         return;
@@ -531,7 +402,6 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     setText(root, "[data-total-budget]", formatGp(totalBudget));
     setText(root, "[data-coin-pile-projected]", formatGp(coinPileGp));
     setText(root, "[data-item-budget]", formatGp(itemBudget));
-
     setText(
       root,
       "[data-readout='pileBias']",
@@ -554,17 +424,14 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._syncSnapStates(root, "magicBias", this._form.magicBias);
   }
 
-  _syncSnapStates(root, target, value) {
-    const snaps = root.querySelectorAll(
-      `.lf-slider__snap[data-target="${target}"]`,
-    );
-    for (const snap of snaps) {
-      const snapValue = Number(snap.dataset.value);
-      snap.classList.toggle(
-        "is-active",
-        Number.isFinite(snapValue) && Math.abs(snapValue - value) < 0.01,
-      );
-    }
+  /** Read a chip group's checked values off the live form. */
+  _readChipGroup(group) {
+    if (!this.element) return [];
+    return [
+      ...this.element.querySelectorAll(
+        `input[type='checkbox'][name='${group}']:checked`,
+      ),
+    ].map((el) => el.value);
   }
 
   _formForBudget() {
@@ -572,55 +439,11 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _filterSpec() {
-    // Tier window — pull from the chosen tier AND one tier below so a T2
-    // hoard can include T1 commons (arrows, daggers, torches, gold). The
-    // curated pack tags all real common gear at T1, so a strict single-
-    // tier filter at T2 surfaces zero commons even when the user has the
-    // common rarity chip selected. Matches the Per-Creature/Per-Encounter
-    // behavior.
     return {
       tiers: tierWindow(this._form.tier),
       rarities: this._form.rarities,
       lootTypes: this._form.lootTypes,
       requireEligible: true,
-    };
-  }
-
-  _countCandidates() {
-    if (!this._cachedItems) return 0;
-    return filterCandidates(this._cachedItems, this._filterSpec()).length;
-  }
-
-  _candidateLabel(count, totalItems) {
-    if (!this._packStats) return "—";
-    if (count === 0) {
-      return `0 items match · pack has ${totalItems.toLocaleString()}`;
-    }
-    return `${count.toLocaleString()} item${count === 1 ? "" : "s"} match current filters`;
-  }
-
-  _sliderContext({ name, value, range, presets, valueLabel }) {
-    const presetLabel = presets
-      ? humanizeKey(nearestPreset(value, presets))
-      : "";
-    return {
-      name,
-      label: SLIDER_LABELS[name] ?? name,
-      value,
-      min: range.min,
-      max: range.max,
-      step: range.step,
-      valueLabel,
-      // Avoid echoing the primary label as a secondary tag.
-      presetLabel: presetLabel === valueLabel ? "" : presetLabel,
-      snaps: presets
-        ? Object.entries(presets).map(([key, target]) => ({
-            key,
-            label: humanizeKey(key),
-            value: target,
-            active: Math.abs(value - target) < 0.01,
-          }))
-        : null,
     };
   }
 
@@ -633,7 +456,7 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (needsLoad) {
       this._loadingItems = true;
       playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
-      await this.render();
+      await this._renderPreservingScroll();
     }
     try {
       const totalBudget = computeHoardBudget(this._formForBudget());
@@ -658,22 +481,9 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
             })
           : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
 
-      // Decorate with displayName / valueLabel so rolled art variants
-      // render in the result list. Non-art entries fall back to the
-      // source item name.
-      const decoratedItems = raw.items.map((entry) => ({
-        ...entry,
-        rarity: getItemRarity(entry.item) || "common",
-        displayName: entry.displayName || entry.item?.name || "",
-        imageSrc: resultImageForEntry(entry),
-        variantSummary: entry.variant?.summary ?? "",
-        valueLabel: entry.valueLabel ?? "",
-        quantityLabel:
-          entry.quantity > 1 || isAmmunitionItem(entry.item)
-            ? `×${entry.quantity} · `
-            : "",
-        gpTotalLabel: formatGp(entry.gpTotal),
-      }));
+      const decoratedItems = raw.items.map((entry) =>
+        this._decorateEntry(entry),
+      );
 
       this._lastResult = {
         items: decoratedItems,
@@ -681,6 +491,8 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         itemsTotalGpLabel: formatGp(raw.totalGp),
         itemBudget,
         itemBudgetLabel: formatGp(itemBudget),
+        // Surfaced for the shared single-slot reroll (base reads budgetGp).
+        budgetGp: itemBudget,
         coinPileGp,
         coinPileLabel: formatGp(coinPileGp),
         coinBreakdown: coinDenominationBreakdown(coinPileGp),
@@ -695,68 +507,18 @@ export class HoardLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       generatedResult = this._lastResult;
     } finally {
       this._loadingItems = false;
-      await this.render();
-      if (generatedResult) playResultSound(generatedResult, { kind: "hoard" });
+      await this._renderPreservingScroll();
+      if (generatedResult) {
+        playResultSound(generatedResult, { kind: "hoard" });
+        this._recordRoll(generatedResult);
+      }
     }
-  }
-
-  async _primePackStats() {
-    this._loadingItems = true;
-    playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
-    try {
-      await this._loadItems();
-    } catch (error) {
-      this._packStats = computePackStats([]);
-      console.error(`${MODULE_ID} | failed to preload hoard pack stats`, error);
-      ui.notifications?.warn(
-        "Infinity D&D5e could not preload hoard pack stats. Rolls can be retried after the compendium is available.",
-      );
-    } finally {
-      this._loadingItems = false;
-      if (this.rendered) await this.render();
-    }
-  }
-
-  _isItemCacheFresh() {
-    const minutes = Number(getSetting(SETTING_KEYS.PACK_TTL_MINUTES) ?? 5);
-    const ttlMs =
-      Math.max(1, Number.isFinite(minutes) ? minutes : 5) * 60 * 1000;
-    return Boolean(
-      this._cachedItems && Date.now() - this._cachedItemsAt < ttlMs,
-    );
-  }
-
-  async _loadItems() {
-    if (this._isItemCacheFresh()) return this._cachedItems;
-    this._cachedItems = await loadCompendiumItems({ packId: PACK_ID });
-    this._cachedItemsAt = Date.now();
-    this._packStats = computePackStats(this._cachedItems);
-    return this._cachedItems;
   }
 }
 
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
-
-/**
- * Map a hoard result entry to the distribute helper's accepted shape,
- * preserving the rolled stack quantity. Handles generated `itemData`
- * (art / gem variants) and plain UUID-bearing compendium entries.
- */
-function toDistributableEntry(entry) {
-  if (!entry) return null;
-  const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
-  if (entry.itemData) {
-    return {
-      itemData: entry.itemData,
-      name: entry.itemData.name ?? entry.item?.name ?? "",
-      quantity,
-    };
-  }
-  const uuid = entry.item?.uuid;
-  return uuid ? { uuid, name: entry.item?.name ?? "", quantity } : null;
-}
 
 function resultContext(result) {
   if (!result) return null;
@@ -769,63 +531,6 @@ function resultContext(result) {
   };
 }
 
-function resultImageForEntry(entry) {
-  const image = String(
-    entry?.imageSrc ?? entry?.itemData?.img ?? entry?.item?.img ?? "",
-  ).trim();
-  if (!image) return FALLBACK_ITEM_IMAGE;
-  if (image.startsWith("assets/item-art/")) {
-    return `modules/${MODULE_ID}/${image}`;
-  }
-  return image;
-}
-
-function onResultImageError(event) {
-  const image = event.currentTarget;
-  if (!image || image.dataset.fallbackApplied === "true") return;
-  const fallbackSrc = image.dataset.fallbackSrc || FALLBACK_ITEM_IMAGE;
-  image.dataset.fallbackApplied = "true";
-  image.classList.add("is-fallback");
-  if (image.getAttribute("src") !== fallbackSrc) image.src = fallbackSrc;
-}
-
-function renderAfterAction(callback, action) {
-  try {
-    const result = callback();
-    if (typeof result?.catch === "function") {
-      result.catch((error) =>
-        console.warn(`${MODULE_ID} | ${action} render failed`, error),
-      );
-    }
-  } catch (error) {
-    console.warn(`${MODULE_ID} | ${action} render failed`, error);
-  }
-}
-
-function tierLabel(tier) {
-  const map = {
-    t1: "T1 — Lvl 1–4",
-    t2: "T2 — Lvl 5–10",
-    t3: "T3 — Lvl 11–16",
-    t4: "T4 — Lvl 17–20",
-    t5: "T5 — Epic",
-  };
-  return map[tier] ?? tier;
-}
-
-/**
- * Convert a key like "coinHeavy" or "very-rare" into a human label
- * with spaces: "Coin Heavy", "Very Rare". Empty input → "".
- */
-function humanizeKey(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  return raw
-    .replace(/[-_]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function formatPileBias(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || Math.abs(num) < 0.025) return "Mixed";
@@ -836,9 +541,6 @@ function formatPileBias(value) {
 function buildHoardChatHtml(result) {
   const lines = result.items
     .map((entry) => {
-      // Art variants display their rolled name ("Signed Marble Bust");
-      // chat link still points at the base compendium item via uuid so
-      // clicking opens the source sheet.
       const displayName = entry.displayName ?? entry.item?.name ?? "?";
       const link = entry.item?.uuid
         ? `@UUID[${entry.item.uuid}]{${escapeHtml(displayName)}}`
@@ -866,43 +568,4 @@ function buildHoardChatHtml(result) {
   ${coinLine}
   ${result.items.length ? `<ul style="margin: 0; padding-left: 18px;">${lines}</ul>` : ""}
 </div>`;
-}
-
-function resolveChatRecipients(mode) {
-  if (mode === "public") return null;
-  const users = globalThis.game?.users;
-  if (!users) return null;
-  const list = users.values?.() ?? users;
-  const out = [];
-  for (const user of list) {
-    if (!user?.active) continue;
-    const isGM = user.isGM === true || user.role >= 4;
-    if (mode === "whisper-gm" && isGM) out.push(user.id);
-    if (mode === "whisper-players" && !isGM) out.push(user.id);
-  }
-  return out;
-}
-
-/**
- * Treat two arrays as unordered sets — order doesn't matter, duplicates
- * collapse. Used by the sticky-defaults logic in tier/scale handlers.
- */
-function sameSet(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  const setA = new Set(a);
-  if (setA.size !== new Set(b).size) return false;
-  for (const item of b) if (!setA.has(item)) return false;
-  return true;
-}
-
-function setText(root, selector, text) {
-  const el = root.querySelector(selector);
-  if (el) el.textContent = String(text ?? "");
-}
-
-function readMultiCheckGroup(root, group) {
-  if (!root) return [];
-  return [
-    ...root.querySelectorAll(`input[type='checkbox'][name='${group}']:checked`),
-  ].map((el) => el.value);
 }

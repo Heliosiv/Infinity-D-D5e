@@ -9,3 +9,9 @@ release/
 .claude/
 *.bak
 *.tmp
+
+# Compiled LevelDB compendium packs. Generated from the packs/*.db
+# sources by `npm run compile:packs` (and the release build). The .db
+# files are the tracked source of truth; the LevelDB dirs are build
+# artifacts (and their internal file names churn on every compile).
+packs/*/

@@ -27,6 +27,8 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
       ["world", "client"].includes(entry.scope),
       `${entry.key} scope must be world or client`,
     );
+    // Primitives render in the config panel; Array/Object are allowed for
+    // hidden stores (merchant records, saved presets, roll history).
     assert.ok(
       [Boolean, Number, String, Array, Object].includes(entry.type),
       `${entry.key} type must be one of the supported types`,

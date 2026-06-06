@@ -18,6 +18,7 @@
         <strong data-roster-budget>{{rosterTotalBudgetLabel}}</strong>
         <span class="pc-form__budget-sub" data-candidates>{{candidateLabel}}</span>
       </div>
+      {{> toolMenu}}
     </header>
 
     {{!-- Roster --}}
@@ -156,8 +157,22 @@
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
           <span>Send to Chat</span>
         </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="distributeSplit" title="Split all drops across multiple characters">
+          <i class="fa-solid fa-users" aria-hidden="true"></i>
+          <span>Split</span>
+        </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="exportJournal" title="Save this haul to a journal entry">
+          <i class="fa-solid fa-book" aria-hidden="true"></i>
+          <span>Journal</span>
+        </button>
       </div>
     </header>
+
+    <div class="lf-result__search">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" class="lf-input" data-result-search placeholder="Filter drops…" aria-label="Filter drops by name or rarity" />
+      <span class="lf-result__search-count" data-search-count aria-live="polite"></span>
+    </div>
 
     <div class="pc-result__creatures">
       {{#each result.creatures}}
@@ -182,15 +197,7 @@
         {{#if items.length}}
         <ul class="pc-creature__items">
           {{#each items}}
-          <li class="lf-result__item lf-result__item--{{rarity}}" style="--lf-stagger: {{@index}}">
-            <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
-              <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
-              <div class="lf-result__copy">
-                <strong class="lf-result__name">{{item.name}}</strong>
-                <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}</span>
-              </div>
-            </button>
-          </li>
+          {{> lootItem}}
           {{/each}}
         </ul>
         {{else}}
@@ -241,4 +248,91 @@
   </div>
   {{/if}}
 </div>
+{{/inline}}
+
+{{!-- Shared result-item row (see loot-forge.hbs for the canonical copy). --}}
+{{#*inline "lootItem"}}
+<li
+  class="lf-result__item lf-result__item--{{rarity}} {{#if locked}}is-locked{{/if}}"
+  style="--lf-stagger: {{@index}}"
+  draggable="true"
+  data-result-item
+  data-draggable-result-id
+  data-entry-id="{{entryId}}"
+  data-result-id="{{entryId}}"
+  data-uuid="{{item.uuid}}"
+  data-search-text="{{displayName}} {{rarity}}"
+>
+  <button
+    type="button"
+    class="lf-result__lock"
+    data-action="toggleLock"
+    data-entry-id="{{entryId}}"
+    aria-pressed="{{#if locked}}true{{else}}false{{/if}}"
+    title="{{#if locked}}Locked — won't be re-rolled{{else}}Lock this item{{/if}}"
+  >
+    <i class="fa-solid {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}" aria-hidden="true"></i>
+  </button>
+  <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
+    <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
+    <div class="lf-result__copy">
+      <strong class="lf-result__name">{{displayName}}</strong>
+      {{#if variantSummary}}<span class="lf-result__variant">{{variantSummary}}</span>{{/if}}
+      {{#if sourceLabel}}<span class="lf-result__source">{{sourceLabel}}</span>{{/if}}
+      <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
+    </div>
+  </button>
+  <div class="lf-result__controls">
+    {{#unless variant}}
+    <button type="button" class="lf-result__ctrl" data-action="itemQtyDec" data-entry-id="{{entryId}}" title="Fewer" aria-label="Decrease quantity"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
+    <button type="button" class="lf-result__ctrl" data-action="itemQtyInc" data-entry-id="{{entryId}}" title="More" aria-label="Increase quantity"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+    {{/unless}}
+    <button type="button" class="lf-result__ctrl" data-action="rerollOne" data-entry-id="{{entryId}}" title="Re-roll just this item" aria-label="Re-roll this item"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+    <button type="button" class="lf-result__ctrl" data-action="distributeOne" data-entry-id="{{entryId}}" title="Send to one actor" aria-label="Send to actor"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+    <button type="button" class="lf-result__ctrl lf-result__ctrl--danger" data-action="deleteItem" data-entry-id="{{entryId}}" title="Remove this item" aria-label="Remove item"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+  </div>
+</li>
+{{/inline}}
+
+{{!-- Presets + history + undo menu (see loot-forge.hbs for canonical copy). --}}
+{{#*inline "toolMenu"}}
+<details class="lf-menu">
+  <summary class="lf-menu__trigger" title="Presets, recent rolls & undo" aria-label="Presets and history menu">
+    <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+  </summary>
+  <div class="lf-menu__panel">
+    <div class="lf-menu__row">
+      <input type="text" class="lf-input lf-menu__name" data-preset-name placeholder="Preset name…" aria-label="New preset name" maxlength="40" />
+      <button type="button" class="lf-btn lf-btn--small" data-action="savePreset" title="Save current settings as a preset">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save</span>
+      </button>
+    </div>
+    {{#if hasPresets}}
+    <div class="lf-menu__heading">Presets</div>
+    <ul class="lf-menu__list">
+      {{#each presets}}
+      <li class="lf-menu__item">
+        <button type="button" class="lf-menu__load" data-action="loadPreset" data-preset-id="{{id}}" title="Load this preset">{{name}}</button>
+        <button type="button" class="lf-menu__del" data-action="deletePreset" data-preset-id="{{id}}" title="Delete this preset" aria-label="Delete preset"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+      </li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{#if hasHistory}}
+    <div class="lf-menu__heading">Recent rolls</div>
+    <ul class="lf-menu__list">
+      {{#each history}}
+      <li class="lf-menu__item">
+        <button type="button" class="lf-menu__load" data-action="loadHistory" data-history-id="{{id}}" title="Reopen this roll">{{label}}</button>
+      </li>
+      {{/each}}
+    </ul>
+    {{/if}}
+    {{#if canUndo}}
+    <button type="button" class="lf-btn lf-btn--small lf-menu__undo" data-action="undo" title="Undo the last item change">
+      <i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Undo</span>
+    </button>
+    {{/if}}
+  </div>
+</details>
 {{/inline}}

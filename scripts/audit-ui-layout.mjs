@@ -16,6 +16,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1360, height: 920 },
   { name: "tablet", width: 900, height: 900 },
   { name: "narrow", width: 520, height: 900 },
+  { name: "phone", width: 380, height: 900 },
 ];
 
 async function main() {
@@ -102,12 +103,20 @@ async function main() {
   } finally {
     await client?.close();
     await stopChrome(chrome);
-    rmSync(profileDir, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 100,
-    });
+    // Best-effort: Chrome can briefly hold the profile dir on Windows,
+    // throwing EPERM. The temp dir is disposable, so don't fail the run.
+    try {
+      rmSync(profileDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    } catch (error) {
+      console.warn(
+        `ui:audit — could not remove temp profile: ${error.message}`,
+      );
+    }
   }
 }
 
@@ -287,6 +296,7 @@ async function auditPage() {
   ];
   const windows = [...document.querySelectorAll("[data-harness-window]")];
 
+  // Overflow check runs with all popover menus collapsed (their default).
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
@@ -301,7 +311,7 @@ async function auditPage() {
     }
   }
 
-  for (const button of buttons) {
+  async function auditButton(button, { skipCover = false } = {}) {
     button.scrollIntoView({ block: "center", inline: "center" });
     await nextFrame();
     await nextFrame();
@@ -319,7 +329,7 @@ async function auditPage() {
       issues.push(
         `${windowName}: "${label}" action target is too small (${rect.width}x${rect.height})`,
       );
-      continue;
+      return;
     }
     if (
       rect.right < 0 ||
@@ -330,7 +340,7 @@ async function auditPage() {
       issues.push(
         `${windowName}: "${label}" action target is outside the viewport`,
       );
-      continue;
+      return;
     }
 
     const centerX = Math.max(
@@ -341,15 +351,41 @@ async function auditPage() {
       0,
       Math.min(innerHeight - 1, rect.top + rect.height / 2),
     );
-    const top = document.elementFromPoint(centerX, centerY);
-    const topButton = top?.closest?.("button");
-    if (topButton !== button) {
-      issues.push(
-        `${windowName}: "${label}" action center is covered by ${top ? describe(top) : "nothing"}`,
-      );
-      continue;
+    // Popover-menu buttons float over content and can be clipped by the
+    // harness window's overflow:hidden (a harness artifact, not a real
+    // Foundry layout), so the cover check is skipped for them.
+    if (!skipCover) {
+      const top = document.elementFromPoint(centerX, centerY);
+      const topButton = top?.closest?.("button");
+      if (topButton !== button) {
+        issues.push(
+          `${windowName}: "${label}" action center is covered by ${top ? describe(top) : "nothing"}`,
+        );
+        return;
+      }
     }
     button.click();
+  }
+
+  // Popover menu buttons live inside a collapsed <details>; audit each
+  // menu in isolation (open it, click its buttons, close it) so the
+  // panel never covers the rest of the window's controls.
+  for (const menu of document.querySelectorAll(
+    "[data-harness-window] details.lf-menu",
+  )) {
+    menu.open = true;
+    await nextFrame();
+    await nextFrame();
+    for (const button of menu.querySelectorAll("button[data-action]")) {
+      await auditButton(button, { skipCover: true });
+    }
+    menu.open = false;
+  }
+
+  // Everything else, with menus collapsed.
+  for (const button of buttons) {
+    if (button.closest("details.lf-menu")) continue;
+    await auditButton(button);
   }
 
   const clickedCount = window.__uiClicks?.length ?? 0;

@@ -153,6 +153,7 @@ export function normalizeAutomationContext(args, { source = "unknown" } = {}) {
     rarity: normalizeId(
       item?.system?.rarity ??
         item?.rarity ??
+        item?.flags?.["infinity-dnd5e"]?.rarityNormalized ??
         item?.flags?.["party-operations"]?.rarityNormalized,
     ),
     soundProfile,

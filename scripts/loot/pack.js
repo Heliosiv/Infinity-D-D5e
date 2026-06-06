@@ -30,7 +30,9 @@ export function buildCompendiumItemUuid(
 }
 
 export function isFullCompendiumDocumentUuid(value) {
-  const parts = String(value ?? "").trim().split(".");
+  const parts = String(value ?? "")
+    .trim()
+    .split(".");
   return parts.length >= 5 && parts[0] === "Compendium" && parts.every(Boolean);
 }
 
@@ -106,7 +108,7 @@ export async function loadCompendiumItems(opts = {}) {
   });
   cache.set(packId, { items, fetchedAt: now });
   console.log(
-    `infinity-dnd5e | loaded ${items.length} items from ${packId} (tagged: ${items.filter((it) => it?.flags?.["party-operations"]?.tier || it?.flags?.["infinity-dnd5e"]?.tier).length})`,
+    `infinity-dnd5e | loaded ${items.length} items from ${packId} (tagged: ${items.filter((it) => it?.flags?.["infinity-dnd5e"]?.tier || it?.flags?.["party-operations"]?.tier).length})`,
   );
   return items;
 }

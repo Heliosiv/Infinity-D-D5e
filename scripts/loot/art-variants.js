@@ -286,7 +286,6 @@ export function createArtVariantItemData(item, variant, { quantity = 1 } = {}) {
 
   itemData.flags = clonePlain(itemData.flags);
   const nativeFlags = clonePlain(itemData.flags["infinity-dnd5e"]);
-  const legacyFlags = clonePlain(itemData.flags["party-operations"]);
   const generatedTreasure = {
     schema: "infinity-generated-treasure-v1",
     kind: "art",
@@ -308,20 +307,14 @@ export function createArtVariantItemData(item, variant, { quantity = 1 } = {}) {
     sellValueGp: Math.floor(variant.gpValue / 2),
     generatedTreasure,
   };
-  itemData.flags["party-operations"] = {
-    ...legacyFlags,
-    gpValue: variant.gpValue,
-    sellValueGp: Math.floor(variant.gpValue / 2),
-    generatedTreasure,
-  };
 
   return itemData;
 }
 
 export function getVariableTreasureKind(item) {
   return String(
-    item?.flags?.["party-operations"]?.variableTreasureKind ??
-      item?.flags?.["infinity-dnd5e"]?.variableTreasureKind ??
+    item?.flags?.["infinity-dnd5e"]?.variableTreasureKind ??
+      item?.flags?.["party-operations"]?.variableTreasureKind ??
       item?.variableTreasureKind ??
       "",
   )
@@ -391,7 +384,7 @@ function inferArtCategory(item) {
 
 function getFolderPathKey(item) {
   const flags =
-    item?.flags?.["party-operations"] ?? item?.flags?.["infinity-dnd5e"] ?? {};
+    item?.flags?.["infinity-dnd5e"] ?? item?.flags?.["party-operations"] ?? {};
   const explicit = String(
     flags?.folder?.pathKey ?? flags?.details?.folderPathKey ?? "",
   )

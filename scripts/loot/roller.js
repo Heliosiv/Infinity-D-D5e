@@ -319,6 +319,43 @@ export function rollLoot(candidates, opts = {}) {
   };
 }
 
+/**
+ * Roll a single replacement item — the engine behind "re-roll just this
+ * one". Excludes every item already on the table (so the swap can't
+ * duplicate an existing pick) and rolls one item against the budget
+ * freed by the slot being replaced. Returns the decorated entry or
+ * `null` when nothing affordable/available remains (caller keeps the
+ * old item).
+ *
+ * @param {Array<object>} candidates - same pool filterCandidates returns
+ * @param {object} [opts]
+ * @param {Set<string>|string[]} [opts.excludeIds] - item ids already on the table
+ * @param {number} [opts.budgetGp] - gp freed by the replaced slot
+ * @param {number} [opts.magicBias]
+ * @param {boolean} [opts.artVariants]
+ * @param {() => number} [opts.rng]
+ * @returns {object|null}
+ */
+export function rerollOne(candidates, opts = {}) {
+  const exclude =
+    opts.excludeIds instanceof Set
+      ? opts.excludeIds
+      : new Set(opts.excludeIds ?? []);
+  const pool = (Array.isArray(candidates) ? candidates : []).filter(
+    (item) => !exclude.has(String(item?._id ?? item?.id ?? "")),
+  );
+  if (pool.length === 0) return null;
+  const budgetGp = Number(opts.budgetGp ?? 0);
+  const raw = rollLoot(pool, {
+    count: 1,
+    budgetGp: budgetGp > 0 ? budgetGp : 0,
+    magicBias: opts.magicBias,
+    artVariants: opts.artVariants === true,
+    rng: opts.rng,
+  });
+  return raw.items[0] ?? null;
+}
+
 function clampFraction(raw, fallback) {
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) return fallback;

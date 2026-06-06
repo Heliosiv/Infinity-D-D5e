@@ -40,6 +40,10 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_DEFAULT_BARGAIN_DC: "merchantDefaultBargainDC",
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
+  // Hidden stores (no config UI) — keyed-by-tool blobs of saved presets
+  // and recent roll history. Managed by scripts/loot/loot-store.js.
+  SAVED_PRESETS: "savedPresets",
+  ROLL_HISTORY: "rollHistory",
 });
 
 /* ------------------------------------------------------------------ *
@@ -314,6 +318,24 @@ export const SETTINGS = Object.freeze([
       "whisper-gm": "Whisper to GMs only",
     },
   },
+  {
+    key: SETTING_KEYS.SAVED_PRESETS,
+    name: "Saved Loot Presets",
+    hint: "Internal store for named tool presets. Not shown in the UI.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
+  },
+  {
+    key: SETTING_KEYS.ROLL_HISTORY,
+    name: "Loot Roll History",
+    hint: "Internal store for recent rolls. Not shown in the UI.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
+  },
 ]);
 
 /* ------------------------------------------------------------------ *
@@ -337,6 +359,22 @@ export function getSetting(key) {
     return live === undefined ? fallback : live;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Write a setting value. No-op (resolves false) when `game.settings`
+ * isn't available — so callers in node tests don't throw. Returns true
+ * when the write was attempted against a live game.
+ */
+export async function setSetting(key, value) {
+  try {
+    if (!globalThis.game?.settings?.set) return false;
+    await globalThis.game.settings.set(MODULE_ID, key, value);
+    return true;
+  } catch (error) {
+    console.warn(`${MODULE_ID} | failed to write setting "${key}"`, error);
+    return false;
   }
 }
 

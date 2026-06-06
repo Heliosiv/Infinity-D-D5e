@@ -87,7 +87,7 @@ for (const item of packItems) {
 
     if (item.img === toFoundryItemArtPath(assignment.path)) {
       assert.ok(assetExists, `${item.name} points at missing generated asset`);
-      for (const scope of ["infinity-dnd5e", "party-operations"]) {
+      for (const scope of ["infinity-dnd5e"]) {
         const art = item.flags?.[scope]?.art;
         assert.equal(
           art?.generated,
@@ -103,7 +103,7 @@ for (const item of packItems) {
       sourceArt,
       `${item.name} should stay on source placeholder until its generated asset is applied`,
     );
-    for (const scope of ["infinity-dnd5e", "party-operations"]) {
+    for (const scope of ["infinity-dnd5e"]) {
       const art = item.flags?.[scope]?.art;
       assert.equal(
         art?.generated,
@@ -120,7 +120,7 @@ for (const item of packItems) {
     `${item.name} should preserve existing compendium artwork`,
   );
 
-  for (const scope of ["infinity-dnd5e", "party-operations"]) {
+  for (const scope of ["infinity-dnd5e"]) {
     const art = item.flags?.[scope]?.art;
     assert.equal(
       art?.generated,

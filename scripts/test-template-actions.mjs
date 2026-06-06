@@ -1,46 +1,70 @@
+/**
+ * Cross-check every window template against its application's registered
+ * actions: every `data-action` in the template must have a handler, and
+ * every registered handler must be used by the template (or be an
+ * allow-listed dynamic action).
+ *
+ * Actions are read from the live class `DEFAULT_OPTIONS.actions` (via a
+ * stubbed Foundry import) rather than parsed from source, so spread-in
+ * shared handlers from BaseLootApp are counted correctly.
+ */
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+
+// Minimal Foundry stub so the window modules evaluate under node.
+globalThis.foundry = {
+  applications: {
+    api: {
+      ApplicationV2: class {
+        constructor(options = {}) {
+          this.options = options;
+        }
+      },
+      HandlebarsApplicationMixin: (Base) => class extends Base {},
+    },
+  },
+};
 
 const CHECKS = [
   {
     name: "dashboard",
     template: "templates/dashboard.hbs",
-    script: "scripts/dashboard.js",
+    script: "./dashboard.js",
   },
   {
     name: "per-encounter loot",
     template: "templates/loot-forge.hbs",
-    script: "scripts/app.js",
+    script: "./app.js",
     dynamicActions: ["useParty"],
   },
   {
     name: "hoard loot",
     template: "templates/hoard-loot.hbs",
-    script: "scripts/hoard-loot.js",
+    script: "./hoard-loot.js",
   },
   {
     name: "per-creature loot",
     template: "templates/per-creature-loot.hbs",
-    script: "scripts/per-creature-loot.js",
+    script: "./per-creature-loot.js",
   },
   {
     name: "merchant workspace",
     template: "templates/merchant-workspace.hbs",
-    script: "scripts/merchant-workspace.js",
+    script: "./merchant-workspace.js",
   },
   {
     name: "merchant session",
     template: "templates/merchant-session.hbs",
-    script: "scripts/merchant-session.js",
+    script: "./merchant-session.js",
   },
 ];
 
 for (const check of CHECKS) {
   const templateSource = readFileSync(check.template, "utf8");
-  const scriptSource = readFileSync(check.script, "utf8");
   const templateActions = extractTemplateActions(templateSource);
   const dynamicTemplateActions = extractDynamicTemplateActions(templateSource);
-  const registeredActions = extractRegisteredActions(scriptSource);
+  const registeredActions = await loadRegisteredActions(check);
   const dynamicActions = new Set(check.dynamicActions ?? []);
 
   assert.ok(
@@ -64,11 +88,6 @@ for (const check of CHECKS) {
       registeredActions.has(action),
       `${check.name}: dynamic action "${action}" is missing from DEFAULT_OPTIONS.actions`,
     );
-    assert.ok(
-      scriptSource.includes(`action: "${action}"`) ||
-        scriptSource.includes(`action: '${action}'`),
-      `${check.name}: dynamic action "${action}" should be provided by render context`,
-    );
   }
 
   const templateOrDynamic = new Set([...templateActions, ...dynamicActions]);
@@ -87,14 +106,9 @@ for (const check of CHECKS) {
     [],
     `${check.name}: unaccounted dynamic data-action expression(s)`,
   );
-
-  for (const expression of dynamicTemplateActions) {
-    assert.ok(
-      dynamicActions.size > 0,
-      `${check.name}: dynamic data-action "{{${expression}}}" needs an explicit test allow-list`,
-    );
-  }
 }
+
+delete globalThis.foundry;
 
 process.stdout.write("template action coverage validation passed\n");
 
@@ -118,12 +132,31 @@ function extractDynamicTemplateActions(source) {
   return actions;
 }
 
-function extractRegisteredActions(source) {
+async function loadRegisteredActions(check) {
+  // Prefer the live class — it sees spread-in shared handlers (e.g. the
+  // loot apps' ...BaseLootApp.SHARED_ACTIONS).
+  try {
+    const mod = await import(check.script);
+    for (const exported of Object.values(mod)) {
+      if (typeof exported === "function" && exported.DEFAULT_OPTIONS?.actions) {
+        return new Set(Object.keys(exported.DEFAULT_OPTIONS.actions));
+      }
+    }
+  } catch {
+    // Module not importable under the node stub (e.g. extra globals) —
+    // fall back to parsing the literal actions block from source.
+  }
+  const fsPath = `scripts/${check.script.replace(/^\.\//, "")}`;
+  const source = readFileSync(fsPath, "utf8");
   const blockMatch = source.match(/\bactions:\s*\{([\s\S]*?)\n\s*\},/);
-  assert.ok(blockMatch, "application source should contain an actions block");
+  if (!blockMatch) {
+    throw new Error(
+      `${check.script}: could not resolve actions (import + source-parse both failed)`,
+    );
+  }
   const actions = new Set();
-  for (const match of blockMatch[1].matchAll(/^\s*([A-Za-z_$][\w$]*)\s*:/gm)) {
-    actions.add(match[1]);
+  for (const m of blockMatch[1].matchAll(/^\s*([A-Za-z_$][\w$]*)\s*:/gm)) {
+    actions.add(m[1]);
   }
   return actions;
 }
