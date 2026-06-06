@@ -124,4 +124,48 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
   assert.equal(eligibleOnly.byRarity.common, 1);
 }
 
+/* ammunition — synthetic loot.ammunition bucket counts arrows/bolts/bullets
+   even though the pack tags them loot.consumable */
+{
+  const ammo = fakeItem({
+    _id: "arrow",
+    name: "Arrow",
+    tier: "t1",
+    lootType: "loot.consumable",
+    keywords: [
+      "subtype.ammo",
+      "rarity.common",
+      "tier.t1",
+      "value.v1",
+      "loot.consumable",
+    ],
+  });
+  const potion = fakeItem({
+    _id: "potion",
+    name: "Healing Potion",
+    tier: "t1",
+    lootType: "loot.consumable",
+  });
+
+  const stats = computePackStats([ammo, potion]);
+  assert.equal(
+    stats.byLootType["loot.consumable"],
+    2,
+    "both still count as consumables",
+  );
+  assert.equal(
+    stats.byLootType["loot.ammunition"],
+    1,
+    "only the arrow counts toward the synthetic ammunition chip",
+  );
+
+  const tierStats = computeTierFilteredStats([ammo, potion], ["t1"]);
+  assert.equal(
+    tierStats.byLootType["loot.ammunition"],
+    1,
+    "ammo is counted in the tier-windowed chip stats too",
+  );
+  assert.equal(tierStats.byLootType["loot.consumable"], 2);
+}
+
 process.stdout.write("pack-stats validation passed\n");

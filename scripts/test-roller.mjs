@@ -40,6 +40,46 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * filterCandidates — synthetic Ammunition chip
+ * ------------------------------------------------------------------ */
+{
+  // Arrows/bolts/bullets ship tagged loot.consumable; the Ammunition chip
+  // resolves them through the ammo predicate, not a lootType.
+  const arrow = fakeItem({
+    _id: "arrow",
+    name: "Arrow",
+    lootType: "loot.consumable",
+    keywords: [
+      "subtype.ammo",
+      "rarity.common",
+      "tier.t1",
+      "value.v1",
+      "loot.consumable",
+    ],
+  });
+  const potion = fakeItem({
+    _id: "potion",
+    name: "Healing Potion",
+    lootType: "loot.consumable",
+  });
+  const pool = [arrow, potion];
+
+  // The Ammunition chip pulls only the arrow, even though both are consumables.
+  const ammoOnly = filterCandidates(pool, { lootTypes: ["loot.ammunition"] });
+  assert.deepEqual(
+    ammoOnly.map((i) => i._id),
+    ["arrow"],
+    "ammunition chip matches only ammo",
+  );
+
+  // The Consumables chip still includes both — ammo stays reachable there too.
+  const consumables = filterCandidates(pool, {
+    lootTypes: ["loot.consumable"],
+  });
+  assert.deepEqual(consumables.map((i) => i._id).sort(), ["arrow", "potion"]);
+}
+
+/* ------------------------------------------------------------------ *
  * getEffectiveRarity — untagged floors to common (reachability)
  * ------------------------------------------------------------------ */
 {

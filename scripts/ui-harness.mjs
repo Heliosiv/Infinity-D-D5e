@@ -33,6 +33,7 @@ const COMMON_LOOT_TYPES = [
   ["loot.consumable", "Potions & Consumables", 64],
   ["loot.potion", "Potions", 22],
   ["loot.scroll", "Scrolls", 44],
+  ["loot.ammunition", "Ammunition", 18],
   ["loot.tool", "Tools", 39],
   ["loot.gem", "Gems", 34],
   ["loot.art", "Art Objects", 42],

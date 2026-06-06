@@ -399,6 +399,9 @@ function matchesLootTypes(item, lootTypes) {
 
   if (lootTypes.has("loot.art") && isVariableArtItem(item)) return true;
   if (lootTypes.has("loot.gem") && isVariableGemItem(item)) return true;
+  // Synthetic "Ammunition" chip: arrows/bolts/bullets ship as loot.consumable,
+  // so match them through the dedicated ammo predicate instead of a lootType.
+  if (lootTypes.has("loot.ammunition") && isAmmunitionItem(item)) return true;
   return false;
 }
 

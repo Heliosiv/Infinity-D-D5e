@@ -59,6 +59,13 @@ export const VALUE_BANDS = Object.freeze(["v1", "v2", "v3", "v4", "v5"]);
  * Buckets the pack folds into broader ones (wand/rod/staff/ring/wondrous →
  * consumable & equipment.magic) are intentionally NOT chips; they live only
  * in `MAGIC_LOOT_TYPES` for magic-bias classification.
+ *
+ * `loot.ammunition` is a *synthetic* chip: the pack tags every arrow / bolt /
+ * bullet as `loot.consumable`, so there is no `loot.ammunition` lootType on
+ * any item. The roller resolves this chip through `isAmmunitionItem()` (and
+ * the stats counter does the same), giving the GM a dedicated lever to pull
+ * ammunition into a roll or shop without dredging the whole consumable pool —
+ * the same "virtual chip" pattern as the variable gem/art detectors.
  */
 export const LOOT_TYPES = Object.freeze([
   "loot.weapon.magic",
@@ -70,6 +77,7 @@ export const LOOT_TYPES = Object.freeze([
   "loot.consumable",
   "loot.potion",
   "loot.scroll",
+  "loot.ammunition",
   "loot.tool",
   "loot.gem",
   "loot.art",

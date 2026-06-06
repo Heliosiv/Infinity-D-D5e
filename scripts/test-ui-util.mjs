@@ -24,6 +24,7 @@ assert.equal(titleCase(null), "");
 assert.equal(prettyLootType("loot.weapon.magic"), "Magic Weapons");
 assert.equal(prettyLootType("loot.weapon.mundane"), "Weapons");
 assert.equal(prettyLootType("loot.consumable"), "Potions & Consumables");
+assert.equal(prettyLootType("loot.ammunition"), "Ammunition");
 assert.equal(prettyLootType("loot.trade-good"), "Trade Goods");
 assert.equal(prettyLootType(""), "");
 // Unmapped keys fall back to the generic "Category · Subtype" transform.

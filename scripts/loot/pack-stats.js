@@ -15,6 +15,7 @@ import {
   getItemMagicNature,
   getItemRarity,
   getItemTier,
+  isAmmunitionItem,
   isBareSpellLootItem,
   isLootEligible,
 } from "./tag-vocabulary.js";
@@ -61,6 +62,11 @@ export function computePackStats(items) {
     const lootType = getItemLootType(item);
     if (lootType)
       stats.byLootType[lootType] = (stats.byLootType[lootType] ?? 0) + 1;
+    // Synthetic ammo chip: count arrows/bolts/bullets (tagged loot.consumable)
+    // under loot.ammunition too, so the chip shows a real count.
+    if (isAmmunitionItem(item))
+      stats.byLootType["loot.ammunition"] =
+        (stats.byLootType["loot.ammunition"] ?? 0) + 1;
 
     const nature = getItemMagicNature(item);
     stats.byMagicNature[nature] += 1;
@@ -122,6 +128,8 @@ export function computeTierFilteredStats(items, tiers = null) {
     byRarity[rarity] = (byRarity[rarity] ?? 0) + 1;
     const lootType = getItemLootType(item);
     if (lootType) byLootType[lootType] = (byLootType[lootType] ?? 0) + 1;
+    if (isAmmunitionItem(item))
+      byLootType["loot.ammunition"] = (byLootType["loot.ammunition"] ?? 0) + 1;
   }
   return { byRarity, byLootType, total };
 }

@@ -31,6 +31,7 @@ export const LOOT_TYPE_LABELS = Object.freeze({
   "loot.consumable": "Potions & Consumables",
   "loot.potion": "Potions",
   "loot.scroll": "Scrolls",
+  "loot.ammunition": "Ammunition",
   "loot.wand": "Wands",
   "loot.rod": "Rods",
   "loot.staff": "Staves",
