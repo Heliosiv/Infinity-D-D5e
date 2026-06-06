@@ -271,6 +271,14 @@
   font-feature-settings: "tnum";
 }
 
+.pc-creature__budget-hint {
+  margin-left: -4px;
+  font-size: 0.78rem;
+  color: var(--lf-muted);
+  font-feature-settings: "tnum";
+  white-space: nowrap;
+}
+
 .pc-creature__reroll {
   width: 28px;
   height: 28px;

@@ -24,7 +24,12 @@
  */
 
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "../audio.js";
-import { promptDistributeItems, promptDistributeSplit } from "./distribute.js";
+import {
+  depositToActors,
+  planEvenSplit,
+  promptDistributeItems,
+  promptDistributeSplit,
+} from "./distribute.js";
 import { buildJournalEntry } from "./journal.js";
 import { loadCompendiumItems } from "./pack.js";
 import { computePackStats } from "./pack-stats.js";
@@ -35,12 +40,15 @@ import {
   isAmmunitionItem,
 } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
-import { formatGp, titleCase } from "../ui-util.js";
+import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
 import {
+  clearHistory,
   deletePreset,
+  exportPresets,
   getHistoryEntry,
   getPreset,
+  importPresets,
   listHistory,
   listPresets,
   pushHistory,
@@ -49,12 +57,16 @@ import {
 import {
   MODULE_ID,
   bindRowDoubleClickOpen,
+  copyTextToClipboard,
   decorateEntry,
+  downloadJson,
   onResultImageError,
   openItemByUuid,
+  pickJsonFile,
   renderAfterAction,
   resolveChatRecipients,
   resultImageForEntry,
+  selectedTokenActorIds,
   setText,
   toDistributableEntry,
 } from "./loot-app-shared.js";
@@ -127,8 +139,10 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       chipAll: this._onChipAll,
       chipNone: this._onChipNone,
       sendToChat: this._onSendToChat,
+      copyToClipboard: this._onCopyToClipboard,
       distributeOne: this._onDistributeOne,
       distributeSplit: this._onDistributeSplit,
+      distributeToSelected: this._onDistributeToSelected,
       exportJournal: this._onExportJournal,
       toggleLock: this._onToggleLock,
       deleteItem: this._onDeleteItem,
@@ -138,7 +152,10 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       savePreset: this._onSavePreset,
       loadPreset: this._onLoadPreset,
       deletePreset: this._onDeletePreset,
+      exportPresets: this._onExportPresets,
+      importPresets: this._onImportPresets,
       loadHistory: this._onLoadHistory,
+      clearHistory: this._onClearHistory,
       undo: this._onUndo,
     };
   }
@@ -608,6 +625,32 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return Boolean(this._lastResult);
   }
 
+  /** Plain-text summary of the current result for clipboard / paste. */
+  _buildPlainText(result) {
+    return plainTextLootSummary(result, { title: this.constructor.CHAT_ALIAS });
+  }
+
+  /** @this {BaseLootApp} */
+  static async _onCopyToClipboard(_event, _target) {
+    if (!this._hasChatResult()) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.info("Nothing to copy — generate a roll first.");
+      return;
+    }
+    const copied = await copyTextToClipboard(
+      this._buildPlainText(this._lastResult),
+    );
+    if (copied) {
+      playModuleSound(SOUND_EVENTS.CHAT_SEND);
+      ui.notifications?.info("Loot summary copied to clipboard.");
+    } else {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "Could not copy to clipboard — your browser blocked clipboard access.",
+      );
+    }
+  }
+
   /** @this {BaseLootApp} */
   static async _onDistributeOne(_event, target) {
     const entry = this._findEntry(
@@ -650,6 +693,38 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       title: "Split Across Party",
     });
     if (result?.created) playModuleSound(SOUND_EVENTS.DEPOSIT);
+  }
+
+  /**
+   * Split the haul across the characters of the currently selected canvas
+   * tokens — the no-dialog counterpart to Split. Skips the picker entirely,
+   * using `canvas.tokens.controlled` as the recipient set.
+   * @this {BaseLootApp}
+   */
+  static async _onDistributeToSelected(_event, _target) {
+    if (!this._hasChatResult()) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.info("Nothing to distribute — generate a roll first.");
+      return;
+    }
+    const actorIds = selectedTokenActorIds();
+    if (actorIds.length === 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.info(
+        "Select one or more linked character tokens on the canvas first.",
+      );
+      return;
+    }
+    const { items, currency } = this._distributableHaul();
+    if (items.length === 0 && !currency) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      return;
+    }
+    const assignments = planEvenSplit(items, currency, actorIds);
+    const result = await depositToActors(assignments, { notify: true });
+    if (result?.created || result?.recipients?.length) {
+      playModuleSound(SOUND_EVENTS.DEPOSIT);
+    }
   }
 
   /** @this {BaseLootApp} */
@@ -893,6 +968,51 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** @this {BaseLootApp} */
   static async _onDeletePreset(_event, target) {
     await deletePreset(this.constructor.TOOL_ID, target?.dataset?.presetId);
+    await this._renderPreservingScroll();
+  }
+
+  /** @this {BaseLootApp} */
+  static async _onExportPresets(_event, _target) {
+    const toolId = this.constructor.TOOL_ID;
+    const data = exportPresets(toolId);
+    if (!data.presets.length) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.info("No presets to export yet — save one first.");
+      return;
+    }
+    const ok = downloadJson(`${toolId}-presets.json`, data);
+    if (ok) {
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      ui.notifications?.info(
+        `Exported ${data.presets.length} preset(s) to ${toolId}-presets.json.`,
+      );
+    } else {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn("Could not start the preset download.");
+    }
+  }
+
+  /** @this {BaseLootApp} */
+  static async _onImportPresets(_event, _target) {
+    const data = await pickJsonFile();
+    if (!data) return;
+    const imported = await importPresets(this.constructor.TOOL_ID, data);
+    if (imported > 0) {
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      ui.notifications?.info(`Imported ${imported} preset(s).`);
+      await this._renderPreservingScroll();
+    } else {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "No presets found in that file — it may be for a different tool or not an Infinity preset export.",
+      );
+    }
+  }
+
+  /** @this {BaseLootApp} */
+  static async _onClearHistory(_event, _target) {
+    await clearHistory(this.constructor.TOOL_ID);
+    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this._renderPreservingScroll();
   }
 

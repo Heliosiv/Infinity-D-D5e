@@ -422,6 +422,22 @@
   display: grid;
   gap: 8px;
 }
+.mw-inv__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.9;
+}
+.mw-inv__search .mw-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mw-inv__search-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
 .mw-inv__head {
   display: grid;
   grid-template-columns: 1.5fr 70px 70px 90px 30px 30px;

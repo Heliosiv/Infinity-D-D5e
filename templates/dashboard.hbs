@@ -13,6 +13,29 @@
   </header>
 
   {{#if hasTools}}
+  {{#if hasRecentTools}}
+  <section class="id-section id-section--recent">
+    <h3 class="id-section__title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently Used</h3>
+    <ul class="id-grid">
+      {{#each recentTools}}
+      <li class="id-tile">
+        <button
+          type="button"
+          class="id-tile__btn"
+          data-action="launch"
+          data-tool-id="{{id}}"
+        >
+          <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+          <span class="id-tile__copy">
+            <strong class="id-tile__title">{{title}}</strong>
+            <span class="id-tile__desc">{{description}}</span>
+          </span>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/if}}
   {{#each categories}}
   <section class="id-section">
     <h3 class="id-section__title">{{label}}</h3>

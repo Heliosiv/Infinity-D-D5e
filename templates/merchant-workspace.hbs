@@ -189,6 +189,13 @@
 
         <fieldset class="mw-fieldset mw-fieldset--inv">
           <legend>Inventory <small>({{selected.items.length}} {{#if selected.itemCountIsOne}}row{{else}}rows{{/if}})</small></legend>
+          {{#if inventoryRows.length}}
+          <div class="mw-inv__search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" class="mw-input" data-inv-search placeholder="Filter inventory…" aria-label="Filter inventory by item name" />
+            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite"></span>
+          </div>
+          {{/if}}
           <div class="mw-inv__head">
             <span>Item</span>
             <span>Qty</span>
@@ -200,7 +207,7 @@
           <div class="mw-inv__drop" data-drop-zone="inventory">
             {{#if inventoryRows.length}}
               {{#each inventoryRows}}
-              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
+              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" data-search-text="{{name}}{{#if rarityLabel}} {{rarityLabel}}{{/if}}" title="Double-click to open sheet">
                 <div class="mw-inv__name">
                   <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
                   <div class="mw-inv__copy">
@@ -243,6 +250,9 @@
             </button>
           </div>
           <div class="mw-form__foot-right">
+            <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
+              <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
+            </button>
             <button type="button" class="mw-btn" data-action="save">
               <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save
             </button>

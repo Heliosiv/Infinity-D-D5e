@@ -40,6 +40,7 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_DEFAULT_BARGAIN_DC: "merchantDefaultBargainDC",
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
+  MERCHANT_CONFIRM_TRANSACTIONS: "merchantConfirmTransactions",
   // Hidden stores (no config UI) — keyed-by-tool blobs of saved presets
   // and recent roll history. Managed by scripts/loot/loot-store.js.
   SAVED_PRESETS: "savedPresets",
@@ -317,6 +318,17 @@ export const SETTINGS = Object.freeze([
       public: "Public — visible to everyone",
       "whisper-gm": "Whisper to GMs only",
     },
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_CONFIRM_TRANSACTIONS,
+    name: "Confirm Merchant Purchases",
+    hint:
+      "Ask the player to confirm before a buy or sell goes through in a " +
+      "merchant session. Off by default for quick shopping.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
   },
   {
     key: SETTING_KEYS.SAVED_PRESETS,

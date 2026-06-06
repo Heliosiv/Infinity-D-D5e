@@ -86,6 +86,17 @@
   color: var(--lf-muted);
 }
 
+.id-section__title i {
+  margin-right: 6px;
+  opacity: 0.8;
+}
+
+/* Recently-used row sits above the category grid, set off by a divider. */
+.id-section--recent {
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--lf-border);
+}
+
 /* Tile grid */
 .id-grid {
   list-style: none;

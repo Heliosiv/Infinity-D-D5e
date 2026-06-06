@@ -168,6 +168,91 @@ export function wireBackgroundImageFallback(
   }
 }
 
+/**
+ * Trigger a browser download of `data` serialized as pretty JSON. Returns
+ * `true` when the download was initiated, `false` when the DOM/URL APIs are
+ * unavailable (node tests). Never throws.
+ */
+export function downloadJson(filename, data) {
+  const doc = globalThis.document;
+  const urlApi = globalThis.URL;
+  const BlobCtor = globalThis.Blob;
+  if (!doc?.createElement || !urlApi?.createObjectURL || !BlobCtor)
+    return false;
+  try {
+    const blob = new BlobCtor([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = urlApi.createObjectURL(blob);
+    const anchor = doc.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    doc.body?.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    urlApi.revokeObjectURL(url);
+    return true;
+  } catch (error) {
+    console.warn(`${MODULE_ID} | JSON download failed`, error);
+    return false;
+  }
+}
+
+/**
+ * Open the OS file picker for a single JSON file and resolve its parsed
+ * contents. Resolves `null` on cancel, unreadable file, or invalid JSON.
+ * Never throws.
+ */
+export function pickJsonFile() {
+  return new Promise((resolve) => {
+    const doc = globalThis.document;
+    const ReaderCtor = globalThis.FileReader;
+    if (!doc?.createElement || !ReaderCtor) {
+      resolve(null);
+      return;
+    }
+    const input = doc.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      const reader = new ReaderCtor();
+      reader.addEventListener("load", () => {
+        try {
+          resolve(JSON.parse(String(reader.result)));
+        } catch {
+          resolve(null);
+        }
+      });
+      reader.addEventListener("error", () => resolve(null));
+      reader.readAsText(file);
+    });
+    input.click();
+  });
+}
+
+/**
+ * Best-effort copy of `text` to the system clipboard. Resolves `true` on
+ * success, `false` when the Clipboard API is unavailable (node tests,
+ * insecure context) or the write is rejected. Never throws.
+ */
+export async function copyTextToClipboard(text) {
+  const clipboard = globalThis.navigator?.clipboard;
+  if (typeof clipboard?.writeText === "function") {
+    try {
+      await clipboard.writeText(String(text ?? ""));
+      return true;
+    } catch (error) {
+      console.warn(`${MODULE_ID} | clipboard write failed`, error);
+    }
+  }
+  return false;
+}
+
 /** `<img>` error handler — swap a broken result image for the fallback once. */
 export function onResultImageError(event) {
   const image = event.currentTarget;
@@ -216,6 +301,30 @@ export function resolveChatRecipients(mode) {
     if (mode === "whisper-players" && !isGM) out.push(user.id);
   }
   return out;
+}
+
+/**
+ * Resolve the world-actor ids of the currently selected canvas tokens.
+ * Only linked/world actors are returned — `depositToActor` looks recipients
+ * up via `game.actors.get`, so synthetic unlinked-token actors are skipped
+ * to avoid silently depositing onto the base prototype. Deduped, order
+ * preserved. Returns [] when there's no canvas (node tests, no scene).
+ */
+export function selectedTokenActorIds() {
+  const controlled = globalThis.canvas?.tokens?.controlled;
+  if (!Array.isArray(controlled)) return [];
+  const actors = globalThis.game?.actors;
+  const ids = [];
+  const seen = new Set();
+  for (const token of controlled) {
+    const id = token?.actor?.id;
+    if (!id || seen.has(id)) continue;
+    // Skip ids that aren't world actors (unlinked synthetic token actors).
+    if (typeof actors?.get === "function" && !actors.get(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
 /**

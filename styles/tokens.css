@@ -36,3 +36,12 @@
   --lf-rarity-legendary: #ffb15d;
   --lf-rarity-artifact: #f47272;
 }
+
+/* The result/inventory search boxes hide non-matching rows by toggling the
+   `hidden` attribute. Those rows carry author `display: flex/grid` rules,
+   which (per the cascade) override the user-agent `[hidden] { display: none }`
+   rule and leave the rows visible. Make `hidden` authoritative again, scoped
+   to module windows so it never touches core Foundry chrome. */
+.infinity-dnd5e [hidden] {
+  display: none !important;
+}

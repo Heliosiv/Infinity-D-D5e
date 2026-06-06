@@ -7,6 +7,7 @@ import {
   formatGp,
   formatMagicBias,
   formatMultiplier,
+  plainTextLootSummary,
   prettyLootType,
   prettyRarity,
   LOOT_TYPE_LABELS,
@@ -80,5 +81,87 @@ assert.equal(
   "&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;",
 );
 assert.equal(escapeHtml(null), "");
+
+/* plainTextLootSummary */
+{
+  // null / non-object → empty string (nothing to copy)
+  assert.equal(plainTextLootSummary(null), "");
+  assert.equal(plainTextLootSummary(undefined), "");
+  assert.equal(plainTextLootSummary("nope"), "");
+
+  // Flat bundle (Per-Encounter shape)
+  const flat = plainTextLootSummary(
+    {
+      items: [
+        {
+          displayName: "Flame Tongue",
+          quantity: 1,
+          rarity: "rare",
+          gpTotal: 5000,
+        },
+        { displayName: "Arrows", quantity: 20, rarity: "common", gpTotal: 1 },
+      ],
+      totalGpLabel: "5,001 gp",
+    },
+    { title: "Loot Forge" },
+  );
+  const flatLines = flat.split("\n");
+  assert.equal(flatLines[0], "Loot Forge", "title heads the summary");
+  assert.ok(
+    flatLines.includes("- Flame Tongue (Rare · 5,000 gp)"),
+    "single item line, no qty prefix",
+  );
+  assert.ok(
+    flatLines.includes("- 20× Arrows (Common · 1 gp)"),
+    "stacked item shows ×N",
+  );
+  assert.equal(flatLines.at(-1), "Total: 5,001 gp", "total closes the summary");
+
+  // Hoard shape — coin pile line before total
+  const hoard = plainTextLootSummary(
+    {
+      items: [
+        { displayName: "Ruby", quantity: 1, rarity: "uncommon", gpTotal: 100 },
+      ],
+      coinPileGp: 250,
+      coinPileLabel: "250 gp",
+      coinBreakdownLabel: "2pp, 5gp",
+      totalGpLabel: "350 gp",
+    },
+    { title: "Hoard Loot" },
+  );
+  assert.ok(
+    hoard.includes("Coin pile: 250 gp (2pp, 5gp)"),
+    "coin pile rendered with breakdown",
+  );
+  assert.ok(hoard.endsWith("Total: 350 gp"));
+
+  // Per-Creature shape — grouped by creature, empty creature noted
+  const perCreature = plainTextLootSummary({
+    creatures: [
+      {
+        name: "Goblin",
+        totalGpLabel: "10 gp",
+        items: [
+          { displayName: "Dagger", quantity: 1, rarity: "common", gpTotal: 10 },
+        ],
+      },
+      { name: "Orc", totalGpLabel: "0 gp", items: [] },
+    ],
+    grandTotalLabel: "10 gp",
+  });
+  assert.ok(perCreature.includes("Goblin — 10 gp"), "creature heading + total");
+  assert.ok(
+    perCreature.includes("  - Dagger (Common · 10 gp)"),
+    "indented drop",
+  );
+  assert.ok(perCreature.includes("Orc — 0 gp"));
+  assert.ok(perCreature.includes("  - (no drops)"), "empty creature noted");
+  assert.ok(perCreature.endsWith("Total: 10 gp"));
+
+  // Falls back to formatGp when label fields are absent
+  const noLabels = plainTextLootSummary({ items: [], totalGp: 0 });
+  assert.ok(noLabels.endsWith("Total: 0 gp"));
+}
 
 console.log("ui-util validation passed");

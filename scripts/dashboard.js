@@ -24,6 +24,22 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 ) {
   static _instance = null;
 
+  /** Session-scoped most-recently-launched tool ids (newest first). */
+  static _recentToolIds = [];
+  /** How many recent tools to pin above the category grid. */
+  static RECENT_LIMIT = 3;
+
+  /** Record a tool launch; moves it to the front, dedupes, caps the list. */
+  static _recordRecent(id) {
+    if (!id) return;
+    const next = InfinityDashboardApp._recentToolIds.filter((x) => x !== id);
+    next.unshift(id);
+    InfinityDashboardApp._recentToolIds = next.slice(
+      0,
+      InfinityDashboardApp.RECENT_LIMIT,
+    );
+  }
+
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-dashboard",
     tag: "section",
@@ -63,6 +79,16 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     const moduleVersion = String(
       game.modules?.get?.(MODULE_ID)?.version ?? "0.0.0",
     );
+    const recentTools = InfinityDashboardApp._recentToolIds
+      .map((id) => getTool(id))
+      .filter((tool) => tool && tool.status === "available")
+      .map((tool) => ({
+        ...tool,
+        isAvailable: true,
+        isComingSoon: false,
+        statusLabel: "",
+      }));
+
     return {
       moduleId: MODULE_ID,
       moduleVersion,
@@ -73,6 +99,8 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
         isComingSoon: tool.status === "coming-soon",
         statusLabel: tool.status === "coming-soon" ? "Coming Soon" : "",
       })),
+      recentTools,
+      hasRecentTools: recentTools.length > 0,
       categories: groupByCategory(tools),
     };
   }
@@ -123,6 +151,11 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     }
     try {
       tool.open();
+      InfinityDashboardApp._recordRecent(id);
+      // Refresh so the Recently Used row reflects this launch next time the
+      // dashboard is glanced at. render(false) doesn't steal focus from the
+      // tool window that just opened.
+      void this.render(false);
     } catch (error) {
       console.error(`${MODULE_ID} | failed to open tool "${id}"`, error);
       ui.notifications?.error(`Failed to open ${tool.title}. See console.`);

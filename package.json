@@ -1,6 +1,6 @@
 {
   "name": "infinity-dnd5e",
-  "version": "0.2.28",
+  "version": "0.2.29",
   "private": true,
   "description": "Dev tooling for the Infinity D&D5e Foundry module.",
   "type": "module",

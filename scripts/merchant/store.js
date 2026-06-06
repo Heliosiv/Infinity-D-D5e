@@ -254,6 +254,23 @@ export function createBlankMerchant(overrides = {}) {
 }
 
 /**
+ * Build a duplicate of an existing merchant — same configuration (markup,
+ * sell ratio, bargain settings, allowed skills/players, stock pool, gold),
+ * a fresh id, an empty inventory, and a "(Copy)" suffixed name. Pure: never
+ * mutates the source. Used by the workspace "Duplicate" button so a curated
+ * merchant can serve as a template for the next one.
+ */
+export function duplicateMerchant(merchant, overrides = {}) {
+  const source = normalizeMerchant(merchant);
+  return normalizeMerchant({
+    ...source,
+    id: generateId(),
+    name: overrides.name ?? `${source.name} (Copy)`,
+    items: [],
+  });
+}
+
+/**
  * Build a fresh inventory row from a compendium item UUID + optional
  * starting quantity / price override.
  */

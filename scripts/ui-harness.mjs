@@ -298,19 +298,22 @@ function dashboardContext() {
       status: "available",
     },
   ];
+  const decorated = tools.map((tool) => ({
+    ...tool,
+    isAvailable: true,
+    isComingSoon: false,
+    statusLabel: "",
+  }));
   return {
     moduleVersion: MODULE_VERSION,
     hasTools: true,
+    recentTools: decorated.slice(0, 2),
+    hasRecentTools: true,
     categories: [
       {
         category: "loot",
         label: "Loot",
-        tools: tools.map((tool) => ({
-          ...tool,
-          isAvailable: true,
-          isComingSoon: false,
-          statusLabel: "",
-        })),
+        tools: decorated,
       },
     ],
   };

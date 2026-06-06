@@ -77,6 +77,74 @@ export async function deletePreset(toolId, presetId) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Preset export / import
+ * ------------------------------------------------------------------ */
+
+export const PRESET_EXPORT_SCHEMA = "infinity-dnd5e-presets-v1";
+
+/** Build a serializable export blob for a tool's presets (name + form only). */
+export function exportPresets(toolId) {
+  return {
+    schema: PRESET_EXPORT_SCHEMA,
+    toolId,
+    presets: listPresets(toolId).map((preset) => ({
+      name: preset.name,
+      form: clone(preset.form) ?? {},
+    })),
+  };
+}
+
+/**
+ * Validate an export blob and return its importable presets as a clean
+ * `[{ name, form }]` list. Rejects the wrong schema or a mismatched tool id
+ * (presets are tool-specific), and drops malformed entries. Pure — exported
+ * for unit testing.
+ */
+export function parsePresetExport(data, toolId) {
+  if (!data || typeof data !== "object") return [];
+  if (data.schema !== PRESET_EXPORT_SCHEMA) return [];
+  if (toolId && data.toolId && data.toolId !== toolId) return [];
+  const list = Array.isArray(data.presets) ? data.presets : [];
+  const out = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = String(entry.name ?? "").trim();
+    if (!name) continue;
+    if (!entry.form || typeof entry.form !== "object") continue;
+    out.push({ name, form: clone(entry.form) });
+  }
+  return out;
+}
+
+/**
+ * Merge an export blob into a tool's saved presets. Same-name presets are
+ * overwritten (case-insensitive) so re-importing updates in place. Returns
+ * the number of presets imported.
+ */
+export async function importPresets(toolId, data) {
+  const incoming = parsePresetExport(data, toolId);
+  if (incoming.length === 0) return 0;
+  const store = { ...readStore(SETTING_KEYS.SAVED_PRESETS) };
+  const list = Array.isArray(store[toolId]) ? [...store[toolId]] : [];
+  for (const { name, form } of incoming) {
+    const idx = list.findIndex(
+      (preset) => preset.name.toLowerCase() === name.toLowerCase(),
+    );
+    const preset = {
+      id: idx >= 0 ? list[idx].id : mintId("p"),
+      name,
+      form: clone(form) ?? {},
+      savedAt: Date.now(),
+    };
+    if (idx >= 0) list[idx] = preset;
+    else list.push(preset);
+  }
+  store[toolId] = list;
+  await setSetting(SETTING_KEYS.SAVED_PRESETS, store);
+  return incoming.length;
+}
+
+/* ------------------------------------------------------------------ *
  * History
  * ------------------------------------------------------------------ */
 

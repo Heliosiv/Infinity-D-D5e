@@ -21,6 +21,10 @@ const {
   getPreset,
   savePreset,
   deletePreset,
+  exportPresets,
+  importPresets,
+  parsePresetExport,
+  PRESET_EXPORT_SCHEMA,
   listHistory,
   pushHistory,
   clearHistory,
@@ -56,6 +60,86 @@ assert.deepEqual(listPresets("toolB"), []);
 await deletePreset("toolA", a.id);
 assert.equal(listPresets("toolA").length, 1);
 assert.equal(listPresets("toolA")[0].name, "Mooks");
+
+/* --------------------- preset export / import --------------------- */
+
+// Export the surviving toolA preset ("Mooks").
+const blob = exportPresets("toolA");
+assert.equal(blob.schema, PRESET_EXPORT_SCHEMA);
+assert.equal(blob.toolId, "toolA");
+assert.equal(blob.presets.length, 1);
+assert.equal(blob.presets[0].name, "Mooks");
+
+// parsePresetExport rejects junk, wrong schema, and mismatched tool ids.
+assert.deepEqual(parsePresetExport(null, "toolA"), []);
+assert.deepEqual(
+  parsePresetExport({ schema: "nope", presets: [] }, "toolA"),
+  [],
+);
+assert.deepEqual(
+  parsePresetExport(
+    {
+      schema: PRESET_EXPORT_SCHEMA,
+      toolId: "other",
+      presets: [{ name: "X", form: {} }],
+    },
+    "toolA",
+  ),
+  [],
+  "mismatched toolId rejected",
+);
+assert.equal(
+  parsePresetExport(
+    {
+      schema: PRESET_EXPORT_SCHEMA,
+      toolId: "toolA",
+      presets: [
+        { name: "Good", form: { tier: "t2" } },
+        { name: "", form: {} }, // no name → dropped
+        { name: "NoForm" }, // no form → dropped
+        null, // junk → dropped
+      ],
+    },
+    "toolA",
+  ).length,
+  1,
+  "only well-formed presets survive",
+);
+
+// Import into a fresh tool, then re-import to confirm in-place update.
+const imported = await importPresets("toolC", {
+  schema: PRESET_EXPORT_SCHEMA,
+  toolId: "toolC",
+  presets: [
+    { name: "Alpha", form: { tier: "t1" } },
+    { name: "Beta", form: { tier: "t3" } },
+  ],
+});
+assert.equal(imported, 2, "import returns the count");
+assert.equal(listPresets("toolC").length, 2);
+
+const reimported = await importPresets("toolC", {
+  schema: PRESET_EXPORT_SCHEMA,
+  toolId: "toolC",
+  presets: [{ name: "alpha", form: { tier: "t4" } }],
+});
+assert.equal(reimported, 1);
+assert.equal(
+  listPresets("toolC").length,
+  2,
+  "same-name import does not duplicate",
+);
+assert.equal(
+  listPresets("toolC").find((p) => p.name.toLowerCase() === "alpha").form.tier,
+  "t4",
+  "same-name import updates the form in place",
+);
+
+assert.equal(
+  await importPresets("toolC", { bogus: true }),
+  0,
+  "junk imports 0",
+);
 
 /* ----------------------------- history ----------------------------- */
 

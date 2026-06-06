@@ -118,7 +118,7 @@
     </fieldset>
 
     <div class="lf-form__actions">
-      <button type="button" class="lf-btn lf-btn--primary" data-action="generate">
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
         <i class="fa-solid fa-dice" aria-hidden="true"></i>
         <span>Roll All</span>
       </button>
@@ -157,9 +157,17 @@
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
           <span>Send to Chat</span>
         </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="copyToClipboard" title="Copy a plain-text summary to the clipboard">
+          <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+          <span>Copy</span>
+        </button>
         <button type="button" class="lf-btn lf-btn--small" data-action="distributeSplit" title="Split all drops across multiple characters">
           <i class="fa-solid fa-users" aria-hidden="true"></i>
           <span>Split</span>
+        </button>
+        <button type="button" class="lf-btn lf-btn--small" data-action="distributeToSelected" title="Split all drops across the selected canvas tokens' characters">
+          <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+          <span>To Selected</span>
         </button>
         <button type="button" class="lf-btn lf-btn--small" data-action="exportJournal" title="Save this haul to a journal entry">
           <i class="fa-solid fa-book" aria-hidden="true"></i>
@@ -184,6 +192,7 @@
           </div>
           <div class="pc-creature__right">
             <span class="pc-creature__total">{{totalGpLabel}}</span>
+            {{#if budgetLabel}}<span class="pc-creature__budget-hint" title="Per-creature gp budget">/ {{budgetLabel}}</span>{{/if}}
             <button
               type="button"
               class="pc-creature__reroll"
@@ -307,6 +316,12 @@
       <button type="button" class="lf-btn lf-btn--small" data-action="savePreset" title="Save current settings as a preset">
         <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save</span>
       </button>
+      <button type="button" class="lf-btn lf-btn--small lf-menu__io" data-action="exportPresets" title="Download all presets as a JSON file" aria-label="Export presets">
+        <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="lf-btn lf-btn--small lf-menu__io" data-action="importPresets" title="Import presets from a JSON file" aria-label="Import presets">
+        <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+      </button>
     </div>
     {{#if hasPresets}}
     <div class="lf-menu__heading">Presets</div>
@@ -328,6 +343,9 @@
       </li>
       {{/each}}
     </ul>
+    <button type="button" class="lf-btn lf-btn--small lf-menu__clear" data-action="clearHistory" title="Forget every recent roll">
+      <i class="fa-solid fa-trash" aria-hidden="true"></i><span>Clear History</span>
+    </button>
     {{/if}}
     {{#if canUndo}}
     <button type="button" class="lf-btn lf-btn--small lf-menu__undo" data-action="undo" title="Undo the last item change">

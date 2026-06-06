@@ -10,6 +10,7 @@ import {
   createBlankMerchant,
   createInventoryRow,
   decrementInventory,
+  duplicateMerchant,
   merchantCanAfford,
   getDefaultBargainTiers,
   isUserAllowed,
@@ -91,6 +92,51 @@ import {
   assert.equal(row.qty, 3);
   assert.equal(row.startingQty, 3);
   assert.equal(row.priceOverrideGp, 12.5);
+}
+
+/* ------------------------------------------------------------------ *
+ * duplicateMerchant — copy config, fresh id, empty inventory
+ * ------------------------------------------------------------------ */
+{
+  const source = normalizeMerchant({
+    id: "m-orig",
+    name: "Yannick",
+    defaultMarkup: 1.4,
+    sellRatio: 0.6,
+    bargainDC: 18,
+    allowedSkills: ["dec"],
+    allowedUserIds: ["u1", "u2"],
+    goldOnHand: 750,
+    pool: { lootTypes: ["gem"], rarities: ["rare"], count: 5 },
+    items: [
+      { uuid: "Compendium.x.Item.a", qty: 3, startingQty: 3 },
+      { uuid: "Compendium.x.Item.b", qty: 1, startingQty: 1 },
+    ],
+  });
+
+  const copy = duplicateMerchant(source);
+  assert.ok(copy.id, "copy has an id");
+  assert.notEqual(copy.id, source.id, "copy gets a fresh id");
+  assert.equal(copy.name, "Yannick (Copy)", "name suffixed with (Copy)");
+  assert.equal(copy.items.length, 0, "inventory cleared on the copy");
+  assert.equal(copy.defaultMarkup, 1.4, "markup config carried over");
+  assert.equal(copy.sellRatio, 0.6, "sell ratio carried over");
+  assert.equal(copy.bargainDC, 18, "bargain DC carried over");
+  assert.equal(copy.goldOnHand, 750, "gold on hand carried over");
+  assert.deepEqual(copy.allowedSkills, ["dec"], "allowed skills carried over");
+  assert.deepEqual(copy.allowedUserIds, ["u1", "u2"], "players carried over");
+  assert.deepEqual(copy.pool.lootTypes, ["gem"], "stock pool carried over");
+  assert.equal(copy.pool.count, 5);
+
+  // Source is never mutated.
+  assert.equal(source.items.length, 2, "source inventory untouched");
+  assert.equal(source.name, "Yannick", "source name untouched");
+
+  // Custom name override wins over the "(Copy)" default.
+  assert.equal(
+    duplicateMerchant(source, { name: "Yannick II" }).name,
+    "Yannick II",
+  );
 }
 
 /* ------------------------------------------------------------------ *

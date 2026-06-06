@@ -17,6 +17,7 @@ import {
   resolveChatRecipients,
   resultImageForEntry,
   sameSet,
+  selectedTokenActorIds,
   setText,
   tierLabel,
   toDistributableEntry,
@@ -71,6 +72,41 @@ assert.deepEqual(
 );
 assert.equal(toDistributableEntry({ item: {} }), null);
 assert.equal(toDistributableEntry(null), null);
+
+// selectedTokenActorIds — dedupes, keeps only world actors, degrades to [].
+{
+  const savedCanvas = globalThis.canvas;
+  const savedGame = globalThis.game;
+  const worldActors = new Map([
+    ["a1", {}],
+    ["a2", {}],
+  ]);
+  globalThis.game = { actors: { get: (id) => worldActors.get(id) ?? null } };
+  globalThis.canvas = {
+    tokens: {
+      controlled: [
+        { actor: { id: "a1" } },
+        { actor: { id: "a1" } }, // duplicate → deduped
+        { actor: { id: "a2" } },
+        { actor: { id: "synthetic" } }, // not a world actor → skipped
+        { actor: null }, // no actor → skipped
+        {}, // no token.actor → skipped
+      ],
+    },
+  };
+  assert.deepEqual(selectedTokenActorIds(), ["a1", "a2"]);
+
+  globalThis.canvas = { tokens: { controlled: [] } };
+  assert.deepEqual(selectedTokenActorIds(), [], "no selection → empty");
+
+  delete globalThis.canvas;
+  assert.deepEqual(selectedTokenActorIds(), [], "no canvas → empty");
+
+  if (savedCanvas !== undefined) globalThis.canvas = savedCanvas;
+  else delete globalThis.canvas;
+  if (savedGame !== undefined) globalThis.game = savedGame;
+  else delete globalThis.game;
+}
 
 // renderAfterAction — swallows sync throw and async rejection. Silence
 // the expected console.warn so the test output stays clean.

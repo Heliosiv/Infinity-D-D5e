@@ -13,6 +13,7 @@ import {
   createBlankMerchant,
   createInventoryRow,
   deleteMerchant,
+  duplicateMerchant,
   findMerchant,
   loadMerchants,
   normalizeInventoryRow,
@@ -90,6 +91,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       selectMerchant: MerchantWorkspaceApp._onSelectMerchant,
       save: MerchantWorkspaceApp._onSave,
       deleteMerchant: MerchantWorkspaceApp._onDeleteMerchant,
+      duplicateMerchant: MerchantWorkspaceApp._onDuplicateMerchant,
       addFromPack: MerchantWorkspaceApp._onAddFromPack,
       generateStock: MerchantWorkspaceApp._onGenerateStock,
       regenerateStock: MerchantWorkspaceApp._onRegenerateStock,
@@ -303,6 +305,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._wireFormChange();
     this._wireInventoryInputs();
     this._wireDropZone();
+    this._wireInventorySearch();
 
     if (this.element) {
       // Recover broken inventory thumbnails (background-image, no onerror).
@@ -408,6 +411,38 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     });
   }
 
+  /**
+   * Client-side filter over the inventory rows by item name / rarity. Hides
+   * non-matching rows in place without a re-render — mirrors the loot
+   * windows' result-search box.
+   */
+  _wireInventorySearch() {
+    const search = this.element?.querySelector?.("[data-inv-search]");
+    if (!search) return;
+    search.addEventListener("input", (event) =>
+      this._applyInventorySearch(String(event.target?.value ?? "")),
+    );
+  }
+
+  _applyInventorySearch(query) {
+    const root = this.element;
+    if (!root) return;
+    const needle = query.trim().toLowerCase();
+    let shown = 0;
+    for (const row of root.querySelectorAll(".mw-inv__row")) {
+      const hay = (
+        row.dataset.searchText ??
+        row.textContent ??
+        ""
+      ).toLowerCase();
+      const match = !needle || hay.includes(needle);
+      row.toggleAttribute("hidden", !match);
+      if (match) shown += 1;
+    }
+    const count = root.querySelector("[data-inv-search-count]");
+    if (count) count.textContent = needle ? `${shown} shown` : "";
+  }
+
   _wireDropZone() {
     const drop = this.element?.querySelector?.('[data-drop-zone="inventory"]');
     if (!drop) return;
@@ -504,6 +539,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     await upsertMerchant(blank);
     this._selectedId = blank.id;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    this.render(false);
+  }
+
+  static async _onDuplicateMerchant() {
+    if (!this._selectedId) return;
+    const merchant = findMerchant(this._selectedId);
+    if (!merchant) return;
+    const copy = duplicateMerchant(merchant);
+    await upsertMerchant(copy);
+    this._selectedId = copy.id;
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    ui.notifications?.info(
+      `${MODULE_ID}: duplicated ${merchant.name} (inventory left empty).`,
+    );
     this.render(false);
   }
 

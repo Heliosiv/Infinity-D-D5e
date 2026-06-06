@@ -510,11 +510,29 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     const sealKey = `${uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
+    const itemObj = item.toObject?.() ?? item;
+    if (getSetting(SETTING_KEYS.MERCHANT_CONFIRM_TRANSACTIONS) === true) {
+      const unitGp = roundGp(
+        resolveUnitBuyPrice({
+          merchant: this._merchant,
+          row,
+          item: itemObj,
+          seal,
+        }),
+      );
+      const confirmed = await confirmTransaction({
+        side: "buy",
+        name: itemObj.name ?? "item",
+        qty,
+        totalGp: roundGp(unitGp * Math.max(1, qty)),
+      });
+      if (!confirmed) return;
+    }
     const result = await executeBuy({
       actor,
       merchant: this._merchant,
       row,
-      item: item.toObject?.() ?? item,
+      item: itemObj,
       qty,
       seal,
     });
@@ -590,6 +608,15 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this._appendLog("fail", "Sell blocked — merchant is low on gold");
       this.render(false);
       return;
+    }
+    if (getSetting(SETTING_KEYS.MERCHANT_CONFIRM_TRANSACTIONS) === true) {
+      const confirmed = await confirmTransaction({
+        side: "sell",
+        name: ownedItem.name ?? "item",
+        qty,
+        totalGp: roundGp(unitGp * Math.max(1, qty)),
+      });
+      if (!confirmed) return;
     }
     const result = await executeSell({
       actor,
@@ -760,6 +787,40 @@ function cssEscape(value) {
     return CSS.escape(String(value ?? ""));
   }
   return String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+function escapeText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Ask the player to confirm a buy/sell before it commits. Gated by the
+ * MERCHANT_CONFIRM_TRANSACTIONS setting at the call site. Resolves true when
+ * confirmed (or when no dialog implementation exists, so it never blocks a
+ * headless flow), false when declined or dismissed.
+ */
+async function confirmTransaction({ side, name, qty, totalGp }) {
+  const DialogV2 = foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.confirm !== "function") return true;
+  const verb = side === "sell" ? "Sell" : "Buy";
+  const qtyLabel = Number(qty) > 1 ? `${qty}× ` : "";
+  const price = Number(totalGp) || 0;
+  try {
+    return await DialogV2.confirm({
+      window: {
+        title: `${verb} ${name}?`,
+        icon:
+          side === "sell" ? "fa-solid fa-coins" : "fa-solid fa-cart-shopping",
+      },
+      content: `<p>${verb} <strong>${escapeText(qtyLabel)}${escapeText(name)}</strong> for <strong>${price.toFixed(2)} gp</strong>?</p>`,
+      rejectClose: false,
+    });
+  } catch {
+    return false;
+  }
 }
 
 async function promptSkillPicker(allowedSkills) {

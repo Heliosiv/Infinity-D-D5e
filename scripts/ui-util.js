@@ -116,3 +116,66 @@ export function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/**
+ * Render a single decorated result entry as a plain-text bullet line, e.g.
+ * "- 20× Arrows (Common · 1 gp)". Pure; used by {@link plainTextLootSummary}.
+ */
+function plainTextEntryLine(entry, indent = "") {
+  const name = entry?.displayName || entry?.item?.name || "Unknown item";
+  const quantity = Math.max(1, Math.floor(Number(entry?.quantity) || 1));
+  const qty = quantity > 1 ? `${quantity}× ` : "";
+  const meta = [
+    entry?.rarity ? prettyRarity(entry.rarity) : "",
+    formatGp(entry?.gpTotal),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `${indent}- ${qty}${name}${meta ? ` (${meta})` : ""}`;
+}
+
+/**
+ * Build a plain-text summary of a rolled loot result, suitable for copying
+ * to the clipboard and pasting into Discord, session notes, or a wiki.
+ *
+ * Handles all three loot-window result shapes: a flat `items` bundle
+ * (Per-Encounter), an `items` bundle plus a coin pile (Hoard), and a
+ * `creatures[].items` roster (Per-Creature). Pure and dependency-free so it
+ * stays node-testable alongside the other formatters.
+ *
+ * @param {object|null} result - the tool's `_lastResult`
+ * @param {object} [opts]
+ * @param {string} [opts.title] - heading line (usually the tool's chat alias)
+ * @returns {string} multi-line summary, or "" when there is nothing to show
+ */
+export function plainTextLootSummary(result, { title = "Loot" } = {}) {
+  if (!result || typeof result !== "object") return "";
+  const lines = [String(title)];
+
+  if (Array.isArray(result.creatures)) {
+    for (const creature of result.creatures) {
+      const total = creature?.totalGpLabel ?? formatGp(creature?.totalGp);
+      lines.push(`${creature?.name ?? "Creature"} — ${total}`);
+      const items = Array.isArray(creature?.items) ? creature.items : [];
+      if (items.length === 0) lines.push("  - (no drops)");
+      else
+        for (const entry of items) lines.push(plainTextEntryLine(entry, "  "));
+    }
+    lines.push(
+      `Total: ${result.grandTotalLabel ?? formatGp(result.grandTotal)}`,
+    );
+    return lines.join("\n");
+  }
+
+  const items = Array.isArray(result.items) ? result.items : [];
+  for (const entry of items) lines.push(plainTextEntryLine(entry));
+  if (result.coinPileGp) {
+    const coin = result.coinPileLabel ?? formatGp(result.coinPileGp);
+    const breakdown = result.coinBreakdownLabel
+      ? ` (${result.coinBreakdownLabel})`
+      : "";
+    lines.push(`Coin pile: ${coin}${breakdown}`);
+  }
+  lines.push(`Total: ${result.totalGpLabel ?? formatGp(result.totalGp)}`);
+  return lines.join("\n");
+}
