@@ -210,4 +210,98 @@ const ITEMS = [
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Name de-dup — two different entries sharing a name collapse to one row
+ * ------------------------------------------------------------------ */
+{
+  const items = [
+    mkItem("p1", "gem", "common", { name: "Healing Potion" }),
+    mkItem("p2", "gem", "common", { name: "Healing Potion" }),
+    mkItem("d1", "gem", "common", { name: "Dagger" }),
+  ];
+  const { rows } = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: ["common"], count: 5 },
+    items,
+    { rng: mulberry32(7) },
+  );
+  assert.equal(
+    new Set(rows.map((r) => r.uuid)).size,
+    rows.length,
+    "no duplicate uuids",
+  );
+  // Only the first "Healing Potion" entry can survive; its twin never rolls.
+  assert.ok(
+    rows.every((r) => r.uuid !== "Compendium.test.Item.p2"),
+    "the duplicate-named entry is dropped before rolling",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * excludeNames — an item already on the shelf (by name) is not re-rolled
+ * ------------------------------------------------------------------ */
+{
+  const items = [
+    mkItem("p1", "gem", "common", { name: "Healing Potion" }),
+    mkItem("d1", "gem", "common", { name: "Dagger" }),
+  ];
+  const { rows } = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: ["common"], count: 5 },
+    items,
+    { excludeNames: ["Healing Potion"], rng: mulberry32(1) },
+  );
+  assert.ok(
+    rows.every((r) => r.uuid !== "Compendium.test.Item.p1"),
+    "an excluded name is never rolled",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Fill modes — blank count + budget vs. neither set
+ * ------------------------------------------------------------------ */
+{
+  const priced = (id, gp) => ({
+    _id: id,
+    uuid: `Compendium.test.Item.${id}`,
+    name: `Gizmo ${id}`,
+    img: "icons/svg/item-bag.svg",
+    system: { rarity: "common", price: { value: gp, denomination: "gp" } },
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "gem",
+        rarityNormalized: "common",
+        gpValue: gp,
+      },
+    },
+  });
+  const items = Array.from({ length: 8 }, (_, i) => priced(`g${i}`, 20));
+
+  // Blank count + budget → fill mode (no count/budget fallback warning).
+  const filled = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: ["common"], count: 0, budgetGp: 100 },
+    items,
+    { rng: mulberry32(3) },
+  );
+  assert.ok(filled.rows.length >= 1, "budget fill produces stock");
+  assert.ok(
+    filled.rows.length <= items.length,
+    "budget fill never exceeds the candidate pool",
+  );
+  assert.ok(
+    !filled.warnings.some((w) => w.includes("default of")),
+    "no fallback warning when a budget is set",
+  );
+
+  // Neither count nor budget → fallback to a default spread, with a warning.
+  const fallback = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: ["common"], count: 0, budgetGp: 0 },
+    items,
+    { rng: mulberry32(3) },
+  );
+  assert.ok(
+    fallback.warnings.some((w) => w.includes("default of")),
+    "fallback warning when neither count nor budget is set",
+  );
+  assert.ok(fallback.rows.length >= 1, "fallback still produces stock");
+}
+
 process.stdout.write("merchant-pool validation passed\n");

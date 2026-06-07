@@ -8,10 +8,58 @@
  * the v3 / v4 return-shape divergence.
  */
 
-import { getDefaultBargainTiers } from "./store.js";
+import {
+  BARGAIN_SKILLS,
+  PASSIVE_HAGGLE_BASELINE,
+  getDefaultBargainTiers,
+} from "./store.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
+
+/* ------------------------------------------------------------------ *
+ * Passive haggle
+ * ------------------------------------------------------------------ */
+
+/**
+ * Compute the always-on passive price nudge for a shopper, BEFORE any active
+ * bargain roll. Uses the best passive among the merchant's allowed bargain
+ * skills, measured against the "average commoner" baseline of 10.
+ *
+ * Returns a deltaPct in the same convention as a bargain seal:
+ *   negative = better for the shopper (discount on buy, bonus on sell),
+ *   positive = worse. 0 when passive haggle is off, no actor, or no skills.
+ *
+ * Pure read of `actor.system.skills[id].passive`; safe outside Foundry.
+ *
+ * @param {object} merchant - normalized merchant record
+ * @param {object} actor - the shopper's actor (or null)
+ * @returns {number} deltaPct, clamped to ±passiveCapPct
+ */
+export function computePassiveBargainPct(merchant, actor) {
+  if (!merchant || merchant.passiveHaggle === false) return 0;
+  const skills = actor?.system?.skills;
+  if (!skills || typeof skills !== "object") return 0;
+  const allowed =
+    Array.isArray(merchant.allowedSkills) && merchant.allowedSkills.length > 0
+      ? merchant.allowedSkills
+      : Object.keys(BARGAIN_SKILLS);
+
+  let bestPassive = null;
+  for (const id of allowed) {
+    const passive = Number(skills[id]?.passive);
+    if (!Number.isFinite(passive)) continue;
+    if (bestPassive == null || passive > bestPassive) bestPassive = passive;
+  }
+  if (bestPassive == null) return 0;
+
+  const perPoint = Math.max(0, Number(merchant.passivePctPerPoint) || 0);
+  const cap = Math.max(0, Number(merchant.passiveCapPct) || 0);
+  // Above baseline helps the shopper (negative delta); below hurts (positive).
+  const raw = -(bestPassive - PASSIVE_HAGGLE_BASELINE) * perPoint;
+  // `|| 0` also collapses a -0 (passive exactly at baseline) to a clean 0.
+  return Math.max(-cap, Math.min(cap, raw)) || 0;
+}
 
 /* ------------------------------------------------------------------ *
  * Tier resolution
@@ -29,9 +77,8 @@ const MODULE_ID = "infinity-dnd5e";
  */
 export function computeBargainOutcome(rollTotal, dc, tiers) {
   const margin = Number(rollTotal) - Number(dc);
-  const list = Array.isArray(tiers) && tiers.length > 0
-    ? tiers
-    : getDefaultBargainTiers();
+  const list =
+    Array.isArray(tiers) && tiers.length > 0 ? tiers : getDefaultBargainTiers();
   const sorted = list
     .filter((tier) => tier && typeof tier === "object")
     .map((tier) => ({
@@ -121,9 +168,8 @@ export async function runBargain({
     return { ok: false, reason: "skill-roll-failed" };
   }
 
-  const tierList = Array.isArray(tiers) && tiers.length > 0
-    ? tiers
-    : loadBargainTiers();
+  const tierList =
+    Array.isArray(tiers) && tiers.length > 0 ? tiers : loadBargainTiers();
 
   const outcome = computeBargainOutcome(total, Number(dc) || 0, tierList);
   return {

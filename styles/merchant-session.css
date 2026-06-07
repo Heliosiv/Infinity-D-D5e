@@ -108,6 +108,16 @@
   font-weight: 700;
   color: color-mix(in srgb, var(--ms-parchment-ink) 85%, var(--ms-wood));
 }
+.ms-head__haggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  margin-left: 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--ms-parchment-ink) 80%, var(--ms-wood));
+}
 .ms-head__purse {
   display: flex;
   flex-direction: column;
@@ -383,6 +393,20 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   border: 1px solid var(--lf-border);
+}
+
+/* Always-on passive-haggle tag — softer than a rolled bargain seal. */
+.ms-haggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lf-accent, #6a8) 18%, transparent);
+  color: var(--lf-text-strong);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--lf-accent, #6a8) 45%, transparent);
 }
 
 /* Transaction log */

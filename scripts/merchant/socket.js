@@ -29,7 +29,7 @@ import {
   upsertMerchant,
 } from "./store.js";
 import { resolveUnitBuyPrice } from "./transaction.js";
-import { computeBargainOutcome } from "./bargain.js";
+import { computeBargainOutcome, computePassiveBargainPct } from "./bargain.js";
 import {
   closeSession,
   consumeSeal,
@@ -283,7 +283,20 @@ async function handleCommitPurchase(payload) {
     try {
       const itemDoc = await fromUuid(itemUuid);
       const item = itemDoc?.toObject?.() ?? itemDoc ?? null;
-      const unitGp = resolveUnitBuyPrice({ merchant, row, item, seal });
+      // Re-derive the passive haggle nudge from the buyer's own actor so the
+      // GM price matches what the player paid (a seal supersedes it inside
+      // resolveUnitBuyPrice, so this is a no-op when an active bargain sealed).
+      const passivePct = computePassiveBargainPct(
+        merchant,
+        resolveSessionActor(session),
+      );
+      const unitGp = resolveUnitBuyPrice({
+        merchant,
+        row,
+        item,
+        seal,
+        passivePct,
+      });
       if (unitGp > 0) trueTotal = roundGp(unitGp * requested);
     } catch (error) {
       console.warn(`${MODULE_ID} | commit-purchase reprice failed`, error);
@@ -353,6 +366,26 @@ async function handleCommitSale(payload) {
     await upsertMerchant(updated);
     await broadcastState(updated);
   });
+}
+
+/**
+ * Resolve the actor a session's viewer is shopping as — mirrors the player
+ * client's `resolvePlayerActor` (assigned character, else first owned
+ * character) so the GM can re-derive the same passive haggle nudge.
+ */
+function resolveSessionActor(session) {
+  const userId = session?.viewerUserId;
+  if (!userId) return null;
+  const users = globalThis.game?.users;
+  const user = users?.get?.(userId);
+  if (!user) return null;
+  if (user.character) return user.character;
+  const actors = globalThis.game?.actors;
+  return (
+    actors?.find?.(
+      (a) => a?.type === "character" && a?.testUserPermission?.(user, "OWNER"),
+    ) ?? null
+  );
 }
 
 async function broadcastState(merchant) {

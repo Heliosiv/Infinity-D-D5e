@@ -98,6 +98,18 @@
             <span class="mw-field__label">Penalty if Bargain Fails</span>
             <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
           </label>
+          <label class="mw-field mw-field--toggle">
+            <span class="mw-field__label">Passive Haggle</span>
+            <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Passive % per Point</span>
+            <input class="mw-input" type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{selected.passivePctPerPoint}}" title="Price shift per point of passive skill above/below 10" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Passive Cap %</span>
+            <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Maximum passive price shift in either direction" />
+          </label>
         </div>
 
         <fieldset class="mw-fieldset">
@@ -198,14 +210,52 @@
           </div>
           <div class="mw-pool__foot">
             <label class="mw-field mw-field--inline">
-              <span class="mw-field__label">How many</span>
-              <input class="mw-input mw-input--num" type="number" name="poolCount" min="1" max="50" step="1" value="{{poolCount}}" />
+              <span class="mw-field__label">Max lines <small>(blank = fill budget)</small></span>
+              <input class="mw-input mw-input--num" type="number" name="poolCount" min="0" max="50" step="1" value="{{poolCount}}" placeholder="Auto" />
+            </label>
+            <label class="mw-field mw-field--inline">
+              <span class="mw-field__label">Stock Budget gp <small>(0 = none)</small></span>
+              <input class="mw-input mw-input--num" type="number" name="poolBudgetGp" min="0" step="50" value="{{poolBudgetGp}}" placeholder="0" />
             </label>
             <button type="button" class="mw-btn mw-btn--primary" data-action="generateStock">
               <i class="fa-solid fa-dice" aria-hidden="true"></i> Generate Stock
             </button>
             <button type="button" class="mw-btn" data-action="regenerateStock" title="Clear all stock, then roll a fresh batch from the pool">
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Re-Generate
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="mw-fieldset">
+          <legend>Buys From Players <small>what this merchant will purchase</small></legend>
+          <p class="mw-hint">Pick the item types and/or rarities this merchant buys back from players. Leave everything unchecked to buy anything sellable.{{#if buysAnything}} <strong>Currently buys anything.</strong>{{/if}}</p>
+          <div class="mw-pool">
+            <div class="mw-pool__col">
+              <span class="mw-field__label">Item Types</span>
+              <div class="mw-chiprow">
+                {{#each buyFilterLootTypeOptions}}
+                <label class="mw-chip mw-chip--sm">
+                  <input type="checkbox" name="buyFilterLootTypes" value="{{value}}" {{#if checked}}checked{{/if}} />
+                  <span>{{label}}</span>
+                </label>
+                {{/each}}
+              </div>
+            </div>
+            <div class="mw-pool__col">
+              <span class="mw-field__label">Rarities</span>
+              <div class="mw-chiprow">
+                {{#each buyFilterRarityOptions}}
+                <label class="mw-chip mw-chip--sm">
+                  <input type="checkbox" name="buyFilterRarities" value="{{value}}" {{#if checked}}checked{{/if}} />
+                  <span>{{label}}</span>
+                </label>
+                {{/each}}
+              </div>
+            </div>
+          </div>
+          <div class="mw-pool__foot">
+            <button type="button" class="mw-btn" data-action="copyStockToBuyFilter" title="Copy the Random Stock item types and rarities into this filter">
+              <i class="fa-solid fa-copy" aria-hidden="true"></i> Copy from Random Stock
             </button>
           </div>
         </fieldset>

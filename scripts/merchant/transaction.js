@@ -18,6 +18,7 @@ import {
   computeSellPriceGp,
   roundGp,
 } from "./store.js";
+import { itemMatchesBuyFilter } from "./buy-filter.js";
 import { deductCurrency, planCurrencyDeduction } from "./currency.js";
 import {
   currencyAddFromBreakdown,
@@ -64,30 +65,46 @@ export function isSellable(item) {
 
 /**
  * Resolve the per-unit gp price the buyer will pay for one of this
- * inventory row, applying optional bargain seal.
+ * inventory row. An active bargain seal supersedes the always-on passive
+ * haggle nudge (`passivePct`); both use the seal deltaPct convention
+ * (negative = cheaper for the buyer).
  */
-export function resolveUnitBuyPrice({ merchant, row, item, seal = null }) {
+export function resolveUnitBuyPrice({
+  merchant,
+  row,
+  item,
+  seal = null,
+  passivePct = 0,
+}) {
   const base = computeBuyPriceGp(merchant, row, item);
   if (base <= 0) return 0;
-  if (seal && Number.isFinite(seal.deltaPct)) {
-    return roundGp(applyBargainDelta(base, seal.deltaPct));
-  }
+  const delta =
+    seal && Number.isFinite(seal.deltaPct)
+      ? seal.deltaPct
+      : Number(passivePct) || 0;
+  if (delta) return roundGp(applyBargainDelta(base, delta));
   return roundGp(base);
 }
 
 /**
- * Resolve the per-unit gp price the merchant will pay the seller for
- * one of this item, applying optional bargain seal.
+ * Resolve the per-unit gp price the merchant will pay the seller for one
+ * of this item. As with buying, an active seal supersedes the passive
+ * nudge; the sign is flipped so a "−20%" delta (phrased as "price down")
+ * becomes a "+20%" payout to the seller.
  */
-export function resolveUnitSellPrice({ merchant, item, seal = null }) {
+export function resolveUnitSellPrice({
+  merchant,
+  item,
+  seal = null,
+  passivePct = 0,
+}) {
   const base = computeSellPriceGp(merchant, item);
   if (base <= 0) return 0;
-  if (seal && Number.isFinite(seal.deltaPct)) {
-    // Selling: positive delta = better payout for the player. Flip the
-    // sign so a "−20%" bargain seal — phrased as "price down" — becomes
-    // "+20%" payout when applied to a sell.
-    return roundGp(applyBargainDelta(base, -seal.deltaPct));
-  }
+  const delta =
+    seal && Number.isFinite(seal.deltaPct)
+      ? seal.deltaPct
+      : Number(passivePct) || 0;
+  if (delta) return roundGp(applyBargainDelta(base, -delta));
   return roundGp(base);
 }
 
@@ -112,6 +129,7 @@ export async function executeBuy({
   item,
   qty = 1,
   seal = null,
+  passivePct = 0,
   notify = true,
 } = {}) {
   if (!actor || typeof actor.update !== "function") {
@@ -124,7 +142,7 @@ export async function executeBuy({
   if (!row.unlimited && Number(row.qty) < count) {
     return { ok: false, reason: "out-of-stock", available: row.qty };
   }
-  const unitGp = resolveUnitBuyPrice({ merchant, row, item, seal });
+  const unitGp = resolveUnitBuyPrice({ merchant, row, item, seal, passivePct });
   const totalGp = roundGp(unitGp * count);
   if (totalGp <= 0) {
     return { ok: false, reason: "no-price" };
@@ -236,6 +254,7 @@ export async function executeSell({
   ownedItem,
   qty = 1,
   seal = null,
+  passivePct = 0,
   notify = true,
 } = {}) {
   if (!actor || typeof actor.update !== "function") {
@@ -248,6 +267,11 @@ export async function executeSell({
     return { ok: false, reason: "not-sellable" };
   }
   const itemData = ownedItem.toObject?.() ?? ownedItem;
+  // Honor the merchant's "Buys From Players" filter — a stale window must not
+  // sell an item this merchant won't purchase.
+  if (!itemMatchesBuyFilter(merchant.buyFilter, itemData)) {
+    return { ok: false, reason: "not-bought-here" };
+  }
   const inStack = Math.max(
     0,
     Math.floor(Number(itemData.system?.quantity ?? 1)),
@@ -258,7 +282,12 @@ export async function executeSell({
   if (inStack < count) {
     return { ok: false, reason: "not-enough", available: inStack };
   }
-  const unitGp = resolveUnitSellPrice({ merchant, item: itemData, seal });
+  const unitGp = resolveUnitSellPrice({
+    merchant,
+    item: itemData,
+    seal,
+    passivePct,
+  });
   const totalGp = roundGp(unitGp * count);
   if (totalGp <= 0) {
     return { ok: false, reason: "no-value" };

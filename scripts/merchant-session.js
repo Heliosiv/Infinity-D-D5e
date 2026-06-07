@@ -32,7 +32,12 @@ import {
   emitMerchantEvent,
   subscribe,
 } from "./merchant/socket.js";
-import { computeBargainOutcome, runBargain } from "./merchant/bargain.js";
+import {
+  computeBargainOutcome,
+  computePassiveBargainPct,
+  runBargain,
+} from "./merchant/bargain.js";
+import { itemMatchesBuyFilter } from "./merchant/buy-filter.js";
 import { totalWalletGp, sanitizeWallet } from "./merchant/currency.js";
 import { formatCoinBreakdown } from "./loot/hoard-budget.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
@@ -259,18 +264,30 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const walletLabel =
       formatCoinBreakdown(wallet) || `${totalWalletGp(wallet).toFixed(2)} gp`;
 
+    // Always-on passive haggle nudge from the shopper's best allowed social
+    // skill. The action handlers recompute this from the actor so a buy/sell
+    // prices identically to what's displayed here.
+    const passivePct = computePassiveBargainPct(this._merchant, actor);
+
     const itemMap = await this._resolveMerchantItems();
 
     const buyRows = await Promise.all(
       this._merchant.items.map((row) =>
-        this._buildBuyRow(row, itemMap.get(row.uuid) ?? null, wallet),
+        this._buildBuyRow(
+          row,
+          itemMap.get(row.uuid) ?? null,
+          wallet,
+          passivePct,
+        ),
       ),
     );
 
     const sellRows = actor
       ? actor.items
           .filter(isSellable)
-          .map((doc) => this._buildSellRow(doc))
+          // "Buys From Players" filter: only show what this merchant will buy.
+          .filter((doc) => itemMatchesBuyFilter(this._merchant.buyFilter, doc))
+          .map((doc) => this._buildSellRow(doc, passivePct))
           .filter(Boolean)
       : [];
 
@@ -281,6 +298,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       },
       walletLabel,
       merchantGoldLabel: formatMerchantGold(this._merchant.goldOnHand),
+      passiveHaggleLabel: formatPassiveHaggle(passivePct),
       previewMode: this._previewMode,
       previewNoActor: this._previewMode && !actor,
       noActor: !actor,
@@ -317,16 +335,33 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     return map;
   }
 
-  _buildBuyRow(row, item, wallet) {
+  _buildBuyRow(row, item, wallet, passivePct = 0) {
     const sealKey = `${row.uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
     const rarity = item ? getItemRarity(item) : "";
-    const baseGp = roundGp(
-      resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal: null }),
+    // List price (no seal, no passive) vs the price the player actually pays.
+    const listGp = roundGp(
+      resolveUnitBuyPrice({
+        merchant: this._merchant,
+        row,
+        item,
+        seal: null,
+        passivePct: 0,
+      }),
     );
     const finalGp = roundGp(
-      resolveUnitBuyPrice({ merchant: this._merchant, row, item, seal }),
+      resolveUnitBuyPrice({
+        merchant: this._merchant,
+        row,
+        item,
+        seal,
+        passivePct,
+      }),
     );
+    // A seal supersedes the passive nudge; otherwise passive drives the delta.
+    const effectiveDeltaPct = seal
+      ? Number(seal.deltaPct) || 0
+      : Number(passivePct) || 0;
     const outOfStock = !row.unlimited && row.qty <= 0;
     const walletGp = walletGpFromObject(wallet);
     const cannotBuy = outOfStock || finalGp > walletGp || !item;
@@ -337,7 +372,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     else if (finalGp > walletGp) cannotBuyReason = "Not enough gold";
     const maxQty = row.unlimited ? 99 : Math.max(1, row.qty);
     const stockLabel = row.unlimited ? "Unlimited stock" : `Stock: ${row.qty}`;
-    const showDelta = seal && Math.abs(seal.deltaPct) > 0;
+    const showDelta = Math.abs(effectiveDeltaPct) > 0 && finalGp !== listGp;
     return {
       uuid: row.uuid,
       name: item?.name ?? "(missing item)",
@@ -345,10 +380,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       rarity,
       rarityLabel: prettyRarity(rarity),
       stockLabel,
-      baseLabel: `${baseGp.toFixed(2)} gp`,
+      baseLabel: `${listGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
-      priceDeltaLabel: showDelta ? formatDelta(seal.deltaPct) : "",
-      deltaClass: seal && seal.deltaPct < 0 ? "down" : "up",
+      priceDeltaLabel: showDelta ? formatDelta(effectiveDeltaPct) : "",
+      deltaClass: effectiveDeltaPct < 0 ? "down" : "up",
+      // Distinguish the always-on passive nudge from a rolled bargain seal.
+      passiveActive: !seal && showDelta,
       bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
       cannotBuy,
@@ -359,7 +396,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     };
   }
 
-  _buildSellRow(doc) {
+  _buildSellRow(doc, passivePct = 0) {
     const data = doc.toObject?.() ?? doc;
     const ownedQty = Math.max(
       1,
@@ -368,18 +405,27 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const sealKey = `${doc.id}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
     const rarity = getItemRarity(data);
-    const baseGp = roundGp(
+    const listGp = roundGp(
       resolveUnitSellPrice({
         merchant: this._merchant,
         item: data,
         seal: null,
+        passivePct: 0,
       }),
     );
     const finalGp = roundGp(
-      resolveUnitSellPrice({ merchant: this._merchant, item: data, seal }),
+      resolveUnitSellPrice({
+        merchant: this._merchant,
+        item: data,
+        seal,
+        passivePct,
+      }),
     );
-    if (baseGp <= 0) return null; // hide free items
-    const showDelta = seal && Math.abs(seal.deltaPct) > 0;
+    if (listGp <= 0) return null; // hide free items
+    const effectiveDeltaPct = seal
+      ? Number(seal.deltaPct) || 0
+      : Number(passivePct) || 0;
+    const showDelta = Math.abs(effectiveDeltaPct) > 0 && finalGp !== listGp;
     // Gate selling on the merchant's gold-on-hand (tracked both ways).
     const merchantGold = this._merchant.goldOnHand;
     const unlimitedGold = merchantGold == null;
@@ -400,10 +446,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ownedQty,
       maxSellQty: Math.max(1, sellableQty),
       cannotSell,
-      baseLabel: `${baseGp.toFixed(2)} gp`,
+      baseLabel: `${listGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
-      priceDeltaLabel: showDelta ? formatDelta(-seal.deltaPct) : "",
-      deltaClass: seal && seal.deltaPct < 0 ? "down" : "up",
+      // Sell payout: a negative delta is a BONUS, so flip the sign for display.
+      priceDeltaLabel: showDelta ? formatDelta(-effectiveDeltaPct) : "",
+      deltaClass: effectiveDeltaPct < 0 ? "down" : "up",
+      passiveActive: !seal && showDelta,
       bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
     };
@@ -555,6 +603,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     const sealKey = `${uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
+    const passivePct = computePassiveBargainPct(this._merchant, actor);
     const itemObj = item.toObject?.() ?? item;
     if (getSetting(SETTING_KEYS.MERCHANT_CONFIRM_TRANSACTIONS) === true) {
       const unitGp = roundGp(
@@ -563,6 +612,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
           row,
           item: itemObj,
           seal,
+          passivePct,
         }),
       );
       const confirmed = await confirmTransaction({
@@ -580,6 +630,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       item: itemObj,
       qty,
       seal,
+      passivePct,
     });
     if (!result.ok) {
       ui.notifications?.warn(`${MODULE_ID}: buy failed — ${result.reason}.`);
@@ -639,12 +690,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     const sealKey = `${itemId}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
+    const passivePct = computePassiveBargainPct(this._merchant, actor);
     // Gate on the merchant's gold-on-hand before paying out.
     const unitGp = roundGp(
       resolveUnitSellPrice({
         merchant: this._merchant,
         item: ownedItem.toObject?.() ?? ownedItem,
         seal,
+        passivePct,
       }),
     );
     if (!merchantCanAfford(this._merchant, unitGp * Math.max(1, qty))) {
@@ -671,6 +724,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ownedItem,
       qty,
       seal,
+      passivePct,
     });
     if (!result.ok) {
       this._appendLog("fail", `Sell failed: ${result.reason}`);
@@ -766,12 +820,17 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const count = Math.max(1, Math.floor(Number(qty) || 1));
     const sealKey = `${uuid}::buy`;
     const seal = this._seals.get(sealKey) ?? null;
+    const passivePct = computePassiveBargainPct(
+      this._merchant,
+      this._previewActor,
+    );
     const unitGp = roundGp(
       resolveUnitBuyPrice({
         merchant: this._merchant,
         row,
         item: item?.toObject?.() ?? item,
         seal,
+        passivePct,
       }),
     );
     const totalGp = roundGp(unitGp * count);
@@ -810,11 +869,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const count = Math.max(1, Math.floor(Number(qty) || 1));
     const sealKey = `${itemId}::sell`;
     const seal = this._seals.get(sealKey) ?? null;
+    const passivePct = computePassiveBargainPct(this._merchant, actor);
     const unitGp = roundGp(
       resolveUnitSellPrice({
         merchant: this._merchant,
         item: ownedItem.toObject?.() ?? ownedItem,
         seal,
+        passivePct,
       }),
     );
     const totalGp = roundGp(unitGp * count);
@@ -964,6 +1025,18 @@ function formatDelta(deltaPct) {
   return `${n > 0 ? "+" : ""}${n.toFixed(0)}%`;
 }
 
+/**
+ * Plain-language header chip for the always-on passive haggle. Negative pct =
+ * the shopper's charm earns better prices; positive = the merchant is a tough
+ * negotiator. Empty string hides the chip.
+ */
+function formatPassiveHaggle(pct) {
+  const n = Number(pct) || 0;
+  if (n === 0) return "";
+  if (n < 0) return `Your haggling: better prices (${n.toFixed(0)}%)`;
+  return `Tough seller: worse prices (+${n.toFixed(0)}%)`;
+}
+
 /** Merchant coffer label. Unlimited (null) reads "Unlimited" so players know
  *  the shop can always pay out. */
 function formatMerchantGold(gold) {
@@ -1022,14 +1095,14 @@ async function confirmTransaction({ side, name, qty, totalGp }) {
 async function promptSkillPicker(allowedSkills) {
   const DialogV2 = foundry?.applications?.api?.DialogV2;
   const labels = {
-    prf: "Persuasion",
+    per: "Persuasion",
     dec: "Deception",
     itm: "Intimidation",
   };
   const allowed =
     Array.isArray(allowedSkills) && allowedSkills.length > 0
       ? allowedSkills
-      : ["prf", "dec"];
+      : ["per", "dec"];
   if (allowed.length === 1) return allowed[0];
   if (!DialogV2) return allowed[0];
   const options = allowed

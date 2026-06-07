@@ -12,6 +12,7 @@
       <p class="ms-head__desc">{{merchant.description}}</p>
       {{/if}}
       {{#if merchantGoldLabel}}<span class="ms-head__coffer"><i class="fa-solid fa-vault" aria-hidden="true"></i> Shop Gold: {{merchantGoldLabel}}</span>{{/if}}
+      {{#if passiveHaggleLabel}}<span class="ms-head__haggle"><i class="fa-solid fa-comments-dollar" aria-hidden="true"></i> {{passiveHaggleLabel}}</span>{{/if}}
     </div>
     <div class="ms-head__purse">
       <span class="ms-head__purse-label">Your Gold</span>
@@ -47,6 +48,7 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             {{stockLabel}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained price">{{sealLabel}}</span>{{/if}}
+            {{#if passiveActive}}<span class="ms-haggle" title="Your passive haggling adjusted this price">haggle</span>{{/if}}
             {{#if cannotBuyReason}}<span class="ms-row__warn">{{cannotBuyReason}}</span>{{/if}}
           </span>
         </div>
@@ -91,6 +93,7 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             You have {{ownedQty}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
+            {{#if passiveActive}}<span class="ms-haggle" title="Your passive haggling adjusted this payout">haggle</span>{{/if}}
             {{#if cannotSell}}<span class="ms-row__warn">merchant low on gold</span>{{/if}}
           </span>
         </div>

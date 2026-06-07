@@ -98,6 +98,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       marketTier: MerchantWorkspaceApp._onMarketTier,
       generateStock: MerchantWorkspaceApp._onGenerateStock,
       regenerateStock: MerchantWorkspaceApp._onRegenerateStock,
+      copyStockToBuyFilter: MerchantWorkspaceApp._onCopyStockToBuyFilter,
       clearInventory: MerchantWorkspaceApp._onClearInventory,
       restock: MerchantWorkspaceApp._onRestock,
       pickArt: MerchantWorkspaceApp._onPickArt,
@@ -194,6 +195,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       lootTypes: [],
       rarities: [],
       count: 6,
+      budgetGp: 0,
       rarityBalance: RARITY_BALANCE_DEFAULT_KEY,
       rarityWeights: getRarityBalancePresetWeights(RARITY_BALANCE_DEFAULT_KEY),
       minGp: 0,
@@ -201,6 +203,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     };
     const poolMinGp = Math.max(0, Number(pool.minGp) || 0);
     const poolMaxGp = Math.max(0, Number(pool.maxGp) || 0);
+    const poolBudgetGp = Math.max(0, Number(pool.budgetGp) || 0);
     const poolRarityBalance = normalizeRarityBalanceKey(pool.rarityBalance);
     const poolRarityWeights = resolveRarityWeights(
       poolRarityBalance,
@@ -218,6 +221,23 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       label: prettyRarity(value),
       checked: poolRaritySet.has(value),
     }));
+
+    // "Buys From Players" — mirror of the stock pool, applied to the sell side.
+    const buyFilter = selected?.buyFilter ?? { lootTypes: [], rarities: [] };
+    const buyFilterLootTypeSet = new Set(buyFilter.lootTypes);
+    const buyFilterRaritySet = new Set(buyFilter.rarities);
+    const buyFilterLootTypeOptions = LOOT_TYPES.map((value) => ({
+      value,
+      label: prettyLootType(value),
+      checked: buyFilterLootTypeSet.has(value),
+    }));
+    const buyFilterRarityOptions = RARITIES.map((value) => ({
+      value,
+      label: prettyRarity(value),
+      checked: buyFilterRaritySet.has(value),
+    }));
+    const buysAnything =
+      buyFilter.lootTypes.length === 0 && buyFilter.rarities.length === 0;
 
     const inventoryRows = selected
       ? selected.items.map((row) => this._buildInventoryViewRow(selected, row))
@@ -250,11 +270,16 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       poolRarityOptions,
       poolRarityBalanceOptions: rarityBalanceOptions(poolRarityBalance),
       poolRarityWeightRows: rarityWeightRows(poolRarityWeights),
-      poolCount: pool.count,
+      // Blank when there's no line cap (0 = fill toward the stock budget).
+      poolCount: Number(pool.count) > 0 ? pool.count : "",
+      poolBudgetGp: poolBudgetGp > 0 ? poolBudgetGp : "",
       poolMinGp,
       poolMaxGp,
       poolValueRangeLabel: formatValueRange(poolMinGp, poolMaxGp),
       poolMarketTiers: marketTierOptions(poolMinGp, poolMaxGp),
+      buyFilterLootTypeOptions,
+      buyFilterRarityOptions,
+      buysAnything,
       inventoryRows,
       activeSessions,
       canOpenSession:
@@ -537,17 +562,28 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         data.bargainSuccessPct ?? merchant.bargainSuccessPct,
       ),
       bargainFailPct: Number(data.bargainFailPct ?? merchant.bargainFailPct),
+      passiveHaggle: data.passiveHaggle === "on",
+      passivePctPerPoint: Number(
+        data.passivePctPerPoint ?? merchant.passivePctPerPoint,
+      ),
+      passiveCapPct: Number(data.passiveCapPct ?? merchant.passiveCapPct),
       goldOnHand: data.goldOnHand,
       allowedSkills: data.allowedSkills,
       allowedUserIds: data.allowedUserIds,
       pool: {
         lootTypes: data.poolLootTypes,
         rarities: data.poolRarities,
-        count: Number(data.poolCount ?? merchant.pool?.count ?? 6),
+        // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
+        count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
+        budgetGp: data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
         rarityBalance: data.poolRarityBalance,
         rarityWeights: data.poolRarityWeights,
         minGp: Number(data.poolMinGp ?? merchant.pool?.minGp ?? 0),
         maxGp: Number(data.poolMaxGp ?? merchant.pool?.maxGp ?? 0),
+      },
+      buyFilter: {
+        lootTypes: data.buyFilterLootTypes,
+        rarities: data.buyFilterRarities,
       },
     });
     await upsertMerchant(next);
@@ -732,7 +768,18 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
     if (replace) merchant = clearInventory(merchant);
     const exclude = new Set(merchant.items.map((r) => r.uuid));
-    const { rows, warnings } = rollMerchantStock(pool, items, { exclude });
+    // Also exclude by name so an append can't add a different library entry
+    // that happens to share a display name with something already on the shelf.
+    const nameByUuid = new Map(items.map((it) => [it.uuid, it.name]));
+    const excludeNames = new Set();
+    for (const r of merchant.items) {
+      const name = nameByUuid.get(r.uuid) ?? this._itemCache.get(r.uuid)?.name;
+      if (name) excludeNames.add(name);
+    }
+    const { rows, warnings } = rollMerchantStock(pool, items, {
+      exclude,
+      excludeNames,
+    });
     if (rows.length === 0) {
       ui.notifications?.warn(
         `${MODULE_ID}: ${warnings[0] ?? "nothing generated."}`,
@@ -745,6 +792,31 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(
       `${MODULE_ID}: ${replace ? "re-stocked" : "generated"} ${rows.length} item(s) for ${next.name}.`,
+    );
+    this.render(false);
+  }
+
+  /** Copy the Random Stock item-types + rarities into the Buys-From-Players
+   *  filter, so a merchant buys back the same kinds of goods it sells. */
+  static async _onCopyStockToBuyFilter() {
+    if (!this._selectedId) return;
+    // Persist pending form edits so we copy the latest pool selections.
+    try {
+      await this._saveFromForm();
+    } catch {}
+    const merchant = findMerchant(this._selectedId);
+    if (!merchant) return;
+    const next = normalizeMerchant({
+      ...merchant,
+      buyFilter: {
+        lootTypes: [...merchant.pool.lootTypes],
+        rarities: [...merchant.pool.rarities],
+      },
+    });
+    await upsertMerchant(next);
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    ui.notifications?.info(
+      `${MODULE_ID}: copied stock types & rarities into the buy filter.`,
     );
     this.render(false);
   }
@@ -909,6 +981,8 @@ function readFormFields(form) {
     "allowedUserIds",
     "poolLootTypes",
     "poolRarities",
+    "buyFilterLootTypes",
+    "buyFilterRarities",
   ]) {
     if (!(arrayKey in out)) out[arrayKey] = [];
     else if (!Array.isArray(out[arrayKey])) out[arrayKey] = [out[arrayKey]];
@@ -970,12 +1044,15 @@ async function promptPreviewActor() {
   if (!DialogV2 || characters.length === 0) {
     return { actor: globalThis.game?.user?.character ?? null };
   }
+  // Default to the GM's assigned character, else the first one, so the Sell
+  // tab is populated by default — "None" stays available but isn't the default.
   const assignedId = globalThis.game?.user?.character?.id ?? "";
+  const defaultId = assignedId || characters[0]?.id || "";
   const options = [
     `<option value="">None — just browse the window</option>`,
     ...characters.map(
       (a) =>
-        `<option value="${escapeAttr(a.id)}" ${a.id === assignedId ? "selected" : ""}>${escapeText(a.name)}</option>`,
+        `<option value="${escapeAttr(a.id)}" ${a.id === defaultId ? "selected" : ""}>${escapeText(a.name)}</option>`,
     ),
   ].join("");
   let picked;

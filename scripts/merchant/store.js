@@ -28,8 +28,22 @@ const DEFAULT_SELL_RATIO = 0.5;
 const DEFAULT_BARGAIN_DC = 15;
 const DEFAULT_BARGAIN_SUCCESS_PCT = 10;
 const DEFAULT_BARGAIN_FAIL_PCT = 10;
-const DEFAULT_ALLOWED_SKILLS = Object.freeze(["prf", "dec"]);
+const DEFAULT_ALLOWED_SKILLS = Object.freeze(["per", "dec"]);
 const DEFAULT_POOL_COUNT = 6;
+
+/** Always-on passive haggle: a charismatic shopper nudges prices before any
+ *  roll. Defaults below shift the price 2% per point of passive skill away
+ *  from the "average commoner" baseline of 10, capped at ±20%. */
+const DEFAULT_PASSIVE_PCT_PER_POINT = 2;
+const DEFAULT_PASSIVE_CAP_PCT = 20;
+
+/** Passive haggle anchors against this "average person" passive score: a
+ *  passive of 10 yields no nudge; higher helps the shopper, lower hurts. */
+export const PASSIVE_HAGGLE_BASELINE = 10;
+
+/** Legacy bargain skill ids → their corrected dnd5e ids. `prf` (Performance)
+ *  was historically mislabeled "Persuasion"; Persuasion's real id is `per`. */
+const LEGACY_SKILL_ALIASES = Object.freeze({ prf: "per" });
 
 /** A full stack of ammunition (arrows, bolts, bullets, needles). Merchants
  *  always stock ammo in this unit so quivers come full. */
@@ -42,9 +56,11 @@ const DEFAULT_BARGAIN_TIERS = Object.freeze([
   Object.freeze({ id: "crit-failure", minMargin: -Infinity, deltaPct: 20 }),
 ]);
 
-/** Skills the GM can allow for bargaining. Display labels for the UI. */
+/** Skills the GM can allow for bargaining. Display labels for the UI.
+ *  Ids are dnd5e skill keys — `per` is Persuasion (NOT `prf`, which is
+ *  Performance). Legacy `prf` records are migrated in dedupeAllowedSkills. */
 export const BARGAIN_SKILLS = Object.freeze({
-  prf: "Persuasion",
+  per: "Persuasion",
   dec: "Deception",
   itm: "Intimidation",
 });
@@ -177,13 +193,73 @@ export function normalizeMerchant(input) {
       0,
       toNumber(raw.bargainFailPct, DEFAULT_BARGAIN_FAIL_PCT),
     ),
+    // Always-on passive haggle. Default ON so a charismatic shopper sees
+    // baseline price movement without rolling; the GM can disable per merchant.
+    passiveHaggle: raw.passiveHaggle !== false,
+    passivePctPerPoint: Math.max(
+      0,
+      toNumber(raw.passivePctPerPoint, DEFAULT_PASSIVE_PCT_PER_POINT),
+    ),
+    passiveCapPct: Math.max(
+      0,
+      toNumber(raw.passiveCapPct, DEFAULT_PASSIVE_CAP_PCT),
+    ),
     goldOnHand: normalizeGold(raw.goldOnHand),
     allowedSkills: dedupeAllowedSkills(raw.allowedSkills),
     allowedUserIds: toStrArray(raw.allowedUserIds),
     chatHidden: raw.chatHidden === true,
     pool: normalizeStockPool(raw.pool),
-    items: inventory.map(normalizeInventoryRow).filter(Boolean),
+    buyFilter: normalizeBuyFilter(raw.buyFilter),
+    // mergeStockRows keeps the invariant "one row per uuid" — self-heals any
+    // legacy data that ever doubled an item onto two rows.
+    items: mergeStockRows(inventory.map(normalizeInventoryRow).filter(Boolean)),
   };
+}
+
+/**
+ * Normalize a merchant's "Buys From Players" filter — the mirror of the
+ * stock pool that gates which items the merchant will purchase. Empty
+ * lists (the default) mean "buys anything sellable".
+ */
+export function normalizeBuyFilter(raw) {
+  const f = raw && typeof raw === "object" ? raw : {};
+  return {
+    lootTypes: toStrArray(f.lootTypes),
+    rarities: toStrArray(f.rarities),
+  };
+}
+
+/**
+ * Collapse inventory rows that point to the same library item (uuid) into a
+ * single row, summing quantity + starting quantity. Keeps the first row's
+ * price override / notes / unlimited flag. Pure: returns a new array.
+ */
+export function mergeStockRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const byUuid = new Map();
+  for (const row of list) {
+    const normalized = normalizeInventoryRow(row);
+    if (!normalized) continue;
+    const existing = byUuid.get(normalized.uuid);
+    if (!existing) {
+      byUuid.set(normalized.uuid, { ...normalized });
+      continue;
+    }
+    // Merge: unlimited stays unlimited; otherwise sum the stacks.
+    existing.unlimited = existing.unlimited || normalized.unlimited;
+    existing.qty = existing.unlimited
+      ? existing.qty
+      : existing.qty + normalized.qty;
+    existing.startingQty += normalized.startingQty;
+    if (
+      existing.priceOverrideGp == null &&
+      normalized.priceOverrideGp != null
+    ) {
+      existing.priceOverrideGp = normalized.priceOverrideGp;
+    }
+    if (!existing.notes && normalized.notes) existing.notes = normalized.notes;
+  }
+  return [...byUuid.values()];
 }
 
 /**
@@ -202,7 +278,11 @@ export function normalizeStockPool(raw) {
   return {
     lootTypes: toStrArray(p.lootTypes),
     rarities: toStrArray(p.rarities),
-    count: Math.min(50, Math.max(1, toInt(p.count, DEFAULT_POOL_COUNT))),
+    // 0 = no line cap (an explicit blank "How many" → fill toward budgetGp).
+    // A missing field still defaults to DEFAULT_POOL_COUNT for back-compat.
+    count: Math.min(50, Math.max(0, toInt(p.count, DEFAULT_POOL_COUNT))),
+    // Total stock value to fill toward; 0 = no budget (use count instead).
+    budgetGp: Math.max(0, toInt(p.budgetGp, 0)),
     rarityBalance,
     rarityWeights: resolveRarityWeights(rarityBalance, p.rarityWeights),
     // Per-item gp value band; 0 = no floor / no ceiling. A value cap doubles
@@ -224,9 +304,13 @@ export function resolveStockQty(item, requested = 1) {
 }
 
 function dedupeAllowedSkills(raw) {
-  const list = toStrArray(raw);
+  // Migrate legacy ids (prf→per) before validating, then drop unknowns and
+  // any duplicate the migration produced.
+  const migrated = toStrArray(raw).map((s) => LEGACY_SKILL_ALIASES[s] ?? s);
+  const list = [...new Set(migrated)];
   if (list.length === 0) return [...DEFAULT_ALLOWED_SKILLS];
-  return list.filter((skill) => BARGAIN_SKILLS[skill]);
+  const valid = list.filter((skill) => BARGAIN_SKILLS[skill]);
+  return valid.length > 0 ? valid : [...DEFAULT_ALLOWED_SKILLS];
 }
 
 /** Gold-on-hand normalizer: blank / undefined → null (unlimited). A real

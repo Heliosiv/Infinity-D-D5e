@@ -16,6 +16,8 @@ import {
   merchantCanAfford,
   getDefaultBargainTiers,
   isUserAllowed,
+  mergeStockRows,
+  normalizeBuyFilter,
   normalizeInventoryRow,
   normalizeMerchant,
   normalizeStockPool,
@@ -27,6 +29,11 @@ import {
   upsertInventoryRow,
   AMMO_STACK_SIZE,
 } from "./merchant/store.js";
+import { computePassiveBargainPct } from "./merchant/bargain.js";
+import {
+  itemBuyCategories,
+  itemMatchesBuyFilter,
+} from "./merchant/buy-filter.js";
 
 /* ------------------------------------------------------------------ *
  * normalizeMerchant
@@ -38,7 +45,11 @@ import {
   assert.equal(blank.defaultMarkup, 1.0);
   assert.equal(blank.sellRatio, 0.5);
   assert.equal(blank.bargainDC, 15);
-  assert.deepEqual(blank.allowedSkills, ["prf", "dec"]);
+  assert.deepEqual(blank.allowedSkills, ["per", "dec"]);
+  assert.equal(blank.passiveHaggle, true, "passive haggle on by default");
+  assert.equal(blank.passivePctPerPoint, 2);
+  assert.equal(blank.passiveCapPct, 20);
+  assert.deepEqual(blank.buyFilter, { lootTypes: [], rarities: [] });
   assert.deepEqual(blank.items, []);
 }
 
@@ -298,6 +309,7 @@ import {
     lootTypes: [],
     rarities: [],
     count: 6,
+    budgetGp: 0,
     rarityBalance: "even",
     rarityWeights: {
       common: 1,
@@ -327,7 +339,26 @@ import {
   assert.equal(pool.rarityBalance, "custom");
   assert.equal(pool.rarityWeights.common, 2);
   assert.equal(pool.rarityWeights.rare, 0.5);
-  assert.equal(normalizeStockPool({ count: 0 }).count, 1, "count floored to 1");
+  assert.equal(
+    normalizeStockPool({ count: 0 }).count,
+    0,
+    "count 0 = no line cap (fill toward budget)",
+  );
+  assert.equal(
+    normalizeStockPool({ count: "" }).count,
+    0,
+    "blank count = no line cap",
+  );
+  assert.equal(
+    normalizeStockPool({ budgetGp: 2500 }).budgetGp,
+    2500,
+    "stock budget retained",
+  );
+  assert.equal(
+    normalizeStockPool({ budgetGp: -5 }).budgetGp,
+    0,
+    "negative budget floors to 0",
+  );
 
   // Value band: non-negative integers, 0 = no limit.
   const banded = normalizeStockPool({ minGp: 250, maxGp: 5000 });
@@ -351,6 +382,7 @@ import {
     lootTypes: [],
     rarities: [],
     count: 6,
+    budgetGp: 0,
     rarityBalance: "even",
     rarityWeights: {
       common: 1,
@@ -526,6 +558,172 @@ import {
     applyPreviewSell(normalizeMerchant({ id: "u2" }), 50).goldOnHand,
     null,
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Legacy skill migration (prf → per) + invalid fallback
+ * ------------------------------------------------------------------ */
+{
+  assert.deepEqual(
+    normalizeMerchant({ allowedSkills: ["prf", "dec"] }).allowedSkills,
+    ["per", "dec"],
+    "legacy prf (Performance) migrates to per (Persuasion)",
+  );
+  assert.deepEqual(
+    normalizeMerchant({ allowedSkills: ["prf", "per"] }).allowedSkills,
+    ["per"],
+    "migration de-dupes when both prf and per are present",
+  );
+  assert.deepEqual(
+    normalizeMerchant({ allowedSkills: ["bogus"] }).allowedSkills,
+    ["per", "dec"],
+    "all-invalid skill list falls back to defaults",
+  );
+  assert.equal(
+    normalizeMerchant({ passiveHaggle: false }).passiveHaggle,
+    false,
+    "passive haggle can be disabled",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * mergeStockRows — collapse duplicate uuids into one summed row
+ * ------------------------------------------------------------------ */
+{
+  const merged = mergeStockRows([
+    { uuid: "a", qty: 2, startingQty: 2 },
+    { uuid: "b", qty: 1, startingQty: 1, priceOverrideGp: null },
+    { uuid: "a", qty: 3, startingQty: 3, priceOverrideGp: 9 },
+  ]);
+  assert.equal(merged.length, 2, "two distinct rows after merge");
+  const a = merged.find((r) => r.uuid === "a");
+  assert.equal(a.qty, 5, "quantities summed");
+  assert.equal(a.startingQty, 5, "starting quantities summed");
+  assert.equal(a.priceOverrideGp, 9, "first non-null override kept");
+
+  // Unlimited stays unlimited; normalizeMerchant applies merge automatically.
+  const m = normalizeMerchant({
+    items: [
+      { uuid: "x", qty: 1, startingQty: 1 },
+      { uuid: "x", qty: 4, startingQty: 4 },
+    ],
+  });
+  assert.equal(m.items.length, 1, "normalizeMerchant collapses duplicate rows");
+  assert.equal(m.items[0].qty, 5);
+}
+
+/* ------------------------------------------------------------------ *
+ * Buy filter — normalize + matching (tagged + dnd5e fallback)
+ * ------------------------------------------------------------------ */
+{
+  assert.deepEqual(normalizeBuyFilter(undefined), {
+    lootTypes: [],
+    rarities: [],
+  });
+  assert.deepEqual(
+    normalizeBuyFilter({
+      lootTypes: ["loot.weapon.magic", "loot.weapon.magic"],
+    }),
+    { lootTypes: ["loot.weapon.magic"], rarities: [] },
+    "buy filter dedupes loot types",
+  );
+
+  const longsword = { type: "weapon", system: { type: { value: "martial" } } };
+  const magicSword = {
+    type: "weapon",
+    system: { type: { value: "martial" }, rarity: "rare" },
+  };
+  const potion = {
+    type: "consumable",
+    system: { type: { value: "potion" } },
+  };
+
+  // dnd5e fallback classification
+  assert.ok(
+    itemBuyCategories(longsword).has("loot.weapon.mundane"),
+    "mundane weapon classified",
+  );
+  assert.ok(
+    itemBuyCategories(magicSword).has("loot.weapon.magic"),
+    "rarity marks a magic weapon",
+  );
+  assert.ok(itemBuyCategories(potion).has("loot.potion"), "potion classified");
+  assert.ok(
+    itemBuyCategories(potion).has("loot.consumable"),
+    "potion is also a consumable",
+  );
+
+  // Empty filter buys anything.
+  assert.equal(itemMatchesBuyFilter({}, longsword), true);
+  assert.equal(
+    itemMatchesBuyFilter({ lootTypes: [], rarities: [] }, potion),
+    true,
+  );
+
+  // A weapons-only smith buys swords, not potions.
+  const smith = { lootTypes: ["loot.weapon.mundane", "loot.weapon.magic"] };
+  assert.equal(itemMatchesBuyFilter(smith, longsword), true);
+  assert.equal(itemMatchesBuyFilter(smith, potion), false);
+
+  // AND semantics: type AND rarity must both match.
+  const rareSmith = {
+    lootTypes: ["loot.weapon.magic", "loot.weapon.mundane"],
+    rarities: ["rare"],
+  };
+  assert.equal(
+    itemMatchesBuyFilter(rareSmith, magicSword),
+    true,
+    "rare magic weapon matches a rare weapons filter",
+  );
+  assert.equal(
+    itemMatchesBuyFilter(rareSmith, longsword),
+    false,
+    "common longsword fails the rare filter",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Passive haggle — vs-10 baseline, capped, supersedable
+ * ------------------------------------------------------------------ */
+{
+  const merchant = normalizeMerchant({
+    allowedSkills: ["per", "dec"],
+    passivePctPerPoint: 2,
+    passiveCapPct: 20,
+  });
+  const actor = (per, dec) => ({
+    system: { skills: { per: { passive: per }, dec: { passive: dec } } },
+  });
+
+  assert.equal(
+    computePassiveBargainPct(merchant, actor(10, 8)),
+    0,
+    "passive 10 (baseline) → no nudge",
+  );
+  assert.equal(
+    computePassiveBargainPct(merchant, actor(15, 12)),
+    -10,
+    "best passive 15 → −10% (2% × 5 points)",
+  );
+  assert.equal(
+    computePassiveBargainPct(merchant, actor(8, 7)),
+    4,
+    "below baseline → positive (worse) delta",
+  );
+  assert.equal(
+    computePassiveBargainPct(merchant, actor(40, 40)),
+    -20,
+    "capped at −20%",
+  );
+  assert.equal(
+    computePassiveBargainPct(
+      { ...merchant, passiveHaggle: false },
+      actor(20, 20),
+    ),
+    0,
+    "disabled passive haggle → 0",
+  );
+  assert.equal(computePassiveBargainPct(merchant, null), 0, "no actor → 0");
 }
 
 process.stdout.write("merchant-store validation passed\n");
