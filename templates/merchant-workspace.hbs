@@ -138,6 +138,14 @@
           {{else}}
           <p class="mw-empty">No active player users.</p>
           {{/if}}
+          <label class="mw-field mw-field--inline mw-field--selfservice">
+            <span class="mw-field__label">Self-Service <small>(can allowed players open this shop themselves?)</small></span>
+            <select class="mw-input" name="selfServiceMode">
+              {{#each selfServiceOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
         </fieldset>
 
         <fieldset class="mw-fieldset">

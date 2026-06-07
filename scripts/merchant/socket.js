@@ -20,12 +20,16 @@
 import {
   adjustMerchantGold,
   buildMerchantBargainTiers,
+  canSelfOpen,
   decrementInventory,
   findMerchant,
+  getSelfServiceMode,
   isUserAllowed,
+  loadMerchants,
   merchantCanAfford,
   normalizeMerchant,
   roundGp,
+  sanitizeMerchantForList,
   upsertMerchant,
 } from "./store.js";
 import { resolveUnitBuyPrice } from "./transaction.js";
@@ -52,6 +56,15 @@ export const MERCHANT_EVENTS = Object.freeze({
   COMMIT_PURCHASE: "merchant:commit-purchase",
   COMMIT_SALE: "merchant:commit-sale",
   STATE_UPDATE: "merchant:state-update",
+  // Player-initiated shop access (the "storefront door"). REQUEST events go
+  // player→GM and are handled only on the authoritative GM; REPLY goes back
+  // to the requesting player.
+  SHOP_LIST_REQUEST: "merchant:shop-list-request",
+  SHOP_LIST_REPLY: "merchant:shop-list-reply",
+  SHOP_REQUEST: "merchant:shop-request",
+  // GM→player outcome for a shop-open request (denied / unavailable) so a
+  // rejected click resolves visibly instead of dying silently.
+  SHOP_RESULT: "merchant:shop-result",
 });
 
 const MERCHANT_TYPES = new Set(Object.values(MERCHANT_EVENTS));
@@ -201,6 +214,24 @@ export async function receiveMerchantPayload(payload) {
           closeSession(payload.sessionId);
         } catch (error) {
           console.warn(`${MODULE_ID} | session-close cleanup`, error);
+        }
+      }
+      break;
+    case MERCHANT_EVENTS.SHOP_LIST_REQUEST:
+      if (isAuthoritativeGM()) {
+        try {
+          handleShopListRequest(payload);
+        } catch (error) {
+          console.error(`${MODULE_ID} | shop-list-request handler`, error);
+        }
+      }
+      break;
+    case MERCHANT_EVENTS.SHOP_REQUEST:
+      if (isAuthoritativeGM()) {
+        try {
+          await handleShopRequest(payload);
+        } catch (error) {
+          console.error(`${MODULE_ID} | shop-request handler`, error);
         }
       }
       break;
@@ -394,6 +425,170 @@ async function broadcastState(merchant) {
     merchantId: merchant.id,
     merchant: normalizeMerchant(merchant),
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * Player-initiated shop access (GM-authoritative)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A player asked for their shop list. Reply with a SANITIZED projection of only
+ * the merchants they may self-open — never the raw world records (gold, markups,
+ * overrides, allow-lists). canSelfOpen is the single gate (allowed + reachable).
+ *
+ * NB: like SESSION_OPEN / STATE_UPDATE, the reply is world-broadcast and scoped
+ * client-side by targetUserId; the projection is the actual privacy guard. The
+ * underlying MERCHANTS setting is world-scoped (every client can already read
+ * the full raw records), so this is strictly the least-leaky path in the file.
+ */
+function handleShopListRequest(payload) {
+  const userId = payload.originUserId;
+  if (!isActiveNonGm(userId)) return;
+  const shops = loadMerchants()
+    .filter((merchant) => canSelfOpen(merchant, userId))
+    .map(sanitizeMerchantForList);
+  emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REPLY, {
+    targetUserId: userId,
+    shops,
+  });
+}
+
+/**
+ * A player asked to open a shop on their own initiative. Re-validate GM-side
+ * (never trust the client), then "open" walks in immediately while "knock"
+ * routes to GM approval. A disallowed user, a GM requester, an off/missing
+ * shop, or an offline claimed origin is rejected — canSelfOpen is the gate.
+ * Rejections send the player a SHOP_RESULT so the click never dies silently.
+ */
+async function handleShopRequest(payload) {
+  const userId = payload.originUserId;
+  const merchantId = payload.merchantId;
+  if (!isActiveNonGm(userId) || !merchantId) return;
+  const merchant = findMerchant(merchantId);
+  if (!merchant || !canSelfOpen(merchant, userId)) {
+    console.warn(
+      `${MODULE_ID} | shop-request rejected (user ${userId}, merchant ${merchantId})`,
+    );
+    emitShopResult(userId, merchantId, "unavailable");
+    return;
+  }
+  // Already shopping here → just re-pop their window; don't re-prompt/re-toast.
+  if (findSessionFor(merchant.id, userId)) {
+    pushOpenSession({ merchant, targetUserIds: [userId] });
+    return;
+  }
+  if (getSelfServiceMode(merchant) === "knock") {
+    await requestKnockApproval(merchant, userId);
+    return;
+  }
+  openSelfServiceSession(merchant, userId);
+}
+
+/** Open a self-service session for `userId`. Toasts the GM only when the
+ *  session is genuinely new, so a re-click doesn't spam the GM. */
+function openSelfServiceSession(merchant, userId) {
+  const isNew = !findSessionFor(merchant.id, userId);
+  const opened = pushOpenSession({ merchant, targetUserIds: [userId] });
+  if (opened.length > 0 && isNew) notifyGmShopOpened(merchant, userId);
+}
+
+/** Non-blocking GM toast when a player self-opens a shop. Framed from the GM's
+ *  side ("opened X for Y") rather than as a confident audit claim, since the
+ *  requesting identity is client-asserted (Foundry's socket can't authenticate
+ *  the sender). */
+function notifyGmShopOpened(merchant, userId) {
+  globalThis.ui?.notifications?.info?.(
+    `${MODULE_ID}: opened ${merchant.name} for ${lookupUserName(userId)}.`,
+  );
+}
+
+/** Player→GM requests assert their own origin id; trust it only when it maps to
+ *  a currently-connected non-GM user. This blocks opening a session "as" an
+ *  offline/forged id (it can't fully stop impersonating another *online* allowed
+ *  player — that needs server-verified sockets — but caps the blast radius to
+ *  shops that player is already allowed at). */
+function isActiveNonGm(userId) {
+  const user = userId ? globalThis.game?.users?.get?.(userId) : null;
+  return Boolean(user && user.active && !user.isGM);
+}
+
+/** Player-targeted negative outcome so a rejected/declined click resolves
+ *  visibly instead of dying silently. */
+function emitShopResult(userId, merchantId, outcome) {
+  emitMerchantEvent(MERCHANT_EVENTS.SHOP_RESULT, {
+    targetUserId: userId,
+    merchantId,
+    outcome, // "denied" | "unavailable"
+  });
+}
+
+/** Outstanding knock prompts, keyed `${userId}::${merchantId}`, so a spam-
+ *  clicking (or scripted) player can't stack modal Approve/Deny dialogs. */
+const knockPending = new Set();
+
+/**
+ * "knock" mode: a player requested entry; ask the GM to approve before opening.
+ * Runs on the authoritative GM, so exactly one Approve/Deny prompt appears.
+ * Fails safe — no dialog (headless), a decline, or revoked access never opens a
+ * session — coalesces duplicate in-flight knocks, re-validates at approval time,
+ * and tells the waiting player the outcome.
+ */
+async function requestKnockApproval(merchant, userId) {
+  const who = lookupUserName(userId);
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.confirm !== "function") {
+    globalThis.ui?.notifications?.info?.(
+      `${MODULE_ID}: ${who} is knocking at ${merchant.name} (no approval dialog available).`,
+    );
+    emitShopResult(userId, merchant.id, "unavailable");
+    return;
+  }
+  const pendingKey = `${userId}::${merchant.id}`;
+  if (knockPending.has(pendingKey)) return; // a prompt is already open for this pair
+  knockPending.add(pendingKey);
+  let approved = false;
+  try {
+    approved = await DialogV2.confirm({
+      window: {
+        title: `${merchant.name} — Entry Request`,
+        icon: "fa-solid fa-hand",
+      },
+      content: `<p><strong>${escapeText(who)}</strong> is knocking at <strong>${escapeText(merchant.name)}</strong>. Open a shopping session for them?</p>`,
+      rejectClose: false,
+    });
+  } catch {
+    approved = false;
+  } finally {
+    knockPending.delete(pendingKey);
+  }
+  if (!approved) {
+    globalThis.ui?.notifications?.info?.(
+      `${MODULE_ID}: turned ${who} away from ${merchant.name}.`,
+    );
+    emitShopResult(userId, merchant.id, "denied");
+    return;
+  }
+  // Re-validate — access may have changed while the prompt was open.
+  const fresh = findMerchant(merchant.id);
+  if (!fresh || !canSelfOpen(fresh, userId)) {
+    globalThis.ui?.notifications?.warn(
+      `${MODULE_ID}: ${who} can no longer enter ${merchant.name}.`,
+    );
+    emitShopResult(userId, merchant.id, "unavailable");
+    return;
+  }
+  openSelfServiceSession(fresh, userId);
+}
+
+function lookupUserName(userId) {
+  return globalThis.game?.users?.get?.(userId)?.name ?? "A player";
+}
+
+function escapeText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /* ------------------------------------------------------------------ *

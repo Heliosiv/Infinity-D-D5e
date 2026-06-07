@@ -22,6 +22,7 @@ const CSS_FILES = [
   "styles/per-creature-loot.css",
   "styles/merchant-workspace.css",
   "styles/merchant-session.css",
+  "styles/shop-picker.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -108,6 +109,22 @@ export function buildHarnessViews() {
       "templates/merchant-session.hbs",
       merchantSessionContext(),
       { width: 720, height: 600 },
+    ),
+    view(
+      "shop-picker",
+      "Shops (player)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-empty",
+      "Shops (empty)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerEmptyContext(),
+      { width: 440, height: 560 },
     ),
   ];
 }
@@ -607,6 +624,19 @@ function merchantWorkspaceContext() {
       { id: "dec", label: "Deception", checked: true },
       { id: "itm", label: "Intimidation", checked: false },
     ],
+    selfServiceOptions: [
+      { value: "off", label: "Off — only the GM opens it", selected: false },
+      {
+        value: "open",
+        label: "Open — allowed players walk in",
+        selected: true,
+      },
+      {
+        value: "knock",
+        label: "Knock — players ask, you approve",
+        selected: false,
+      },
+    ],
     poolLootTypeOptions: [
       { value: "loot.weapon.magic", label: "Magic Weapons", checked: true },
       {
@@ -782,6 +812,41 @@ function merchantSessionContext() {
     sessionSpentLabel: "48.00 gp",
     sessionEarnedLabel: "9.00 gp",
   };
+}
+
+function shopPickerContext() {
+  return {
+    noGm: false,
+    loading: false,
+    hasShops: true,
+    shops: [
+      {
+        id: "m-brundle",
+        name: "Brundle's Wares",
+        art: iconDataUri("#5a7a3f", "BW"),
+        description: "Dusty oddments and salvaged gear.",
+        knock: false,
+      },
+      {
+        id: "m-iron",
+        name: "The Iron Rest",
+        art: iconDataUri("#6b7480", "IR"),
+        description: "Arms & armor, fairly priced.",
+        knock: true,
+      },
+      {
+        id: "m-arc",
+        name: "Arcanum Sundries",
+        art: iconDataUri("#7a4f8c", "AS"),
+        description: "",
+        knock: false,
+      },
+    ],
+  };
+}
+
+function shopPickerEmptyContext() {
+  return { noGm: false, loading: false, hasShops: false, shops: [] };
 }
 
 function tierOptions(selectedTier) {

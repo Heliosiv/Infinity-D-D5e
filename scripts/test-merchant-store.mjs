@@ -15,8 +15,12 @@ import {
   duplicateMerchant,
   merchantCanAfford,
   getDefaultBargainTiers,
+  getSelfServiceMode,
+  isSelfServiceReachable,
   isUserAllowed,
   mergeStockRows,
+  sanitizeMerchantForList,
+  SELF_SERVICE_MODES,
   normalizeBuyFilter,
   normalizeInventoryRow,
   normalizeMerchant,
@@ -724,6 +728,108 @@ import {
     "disabled passive haggle → 0",
   );
   assert.equal(computePassiveBargainPct(merchant, null), 0, "no actor → 0");
+}
+
+/* ------------------------------------------------------------------ *
+ * Self-service access mode + sanitized list projection
+ * ------------------------------------------------------------------ */
+{
+  // Default: a shop with no allowed players is GM-pull only ("off").
+  assert.equal(
+    normalizeMerchant({}).selfServiceMode,
+    "off",
+    "no allowed players → off by default",
+  );
+  assert.equal(createBlankMerchant({ name: "X" }).selfServiceMode, "off");
+
+  // Cold-start: a legacy record with allowed players but no explicit mode
+  // upgrades to "open" so it isn't invisible after the feature ships.
+  assert.equal(
+    normalizeMerchant({ allowedUserIds: ["u1"] }).selfServiceMode,
+    "open",
+    "allowed players + absent mode → open (cold-start upgrade)",
+  );
+
+  // An explicit value always wins over the cold-start rule.
+  assert.equal(
+    normalizeMerchant({ allowedUserIds: ["u1"], selfServiceMode: "off" })
+      .selfServiceMode,
+    "off",
+    "explicit off wins over cold-start",
+  );
+  assert.equal(
+    normalizeMerchant({ allowedUserIds: ["u1"], selfServiceMode: "knock" })
+      .selfServiceMode,
+    "knock",
+  );
+  // A present-but-unrecognized value FAILS CLOSED to "off" (it is not treated
+  // as "absent", so the cold-start upgrade does not apply even with players).
+  assert.equal(
+    normalizeMerchant({ allowedUserIds: ["u1"], selfServiceMode: "bogus" })
+      .selfServiceMode,
+    "off",
+    "garbage mode fails closed even with allowed players",
+  );
+  assert.equal(
+    normalizeMerchant({ selfServiceMode: "bogus" }).selfServiceMode,
+    "off",
+  );
+  // A genuinely blank/absent field still cold-starts (blank is indistinguishable
+  // from missing and carries no intent).
+  assert.equal(
+    normalizeMerchant({ allowedUserIds: ["u1"], selfServiceMode: "" })
+      .selfServiceMode,
+    "open",
+    "blank mode is treated as absent → cold-start upgrade",
+  );
+
+  // Idempotent: re-normalizing a saved "open" record keeps it open.
+  const once = normalizeMerchant({ allowedUserIds: ["u1"] });
+  assert.equal(normalizeMerchant(once).selfServiceMode, "open");
+
+  // getSelfServiceMode + isSelfServiceReachable
+  assert.deepEqual([...SELF_SERVICE_MODES], ["off", "open", "knock"]);
+  assert.equal(getSelfServiceMode({ selfServiceMode: "knock" }), "knock");
+  assert.equal(getSelfServiceMode({ selfServiceMode: "nope" }), "off");
+  assert.equal(getSelfServiceMode(null), "off");
+  assert.equal(isSelfServiceReachable({ selfServiceMode: "off" }), false);
+  assert.equal(isSelfServiceReachable({ selfServiceMode: "open" }), true);
+  assert.equal(isSelfServiceReachable({ selfServiceMode: "knock" }), true);
+
+  // sanitizeMerchantForList strips every economy + permission internal.
+  const rich = normalizeMerchant({
+    id: "m-brundle",
+    name: "Brundle's Wares",
+    art: "shop.webp",
+    description: "Dusty oddments.",
+    goldOnHand: 999,
+    defaultMarkup: 2,
+    sellRatio: 0.7,
+    bargainDC: 18,
+    allowedUserIds: ["u1", "u2"],
+    buyFilter: { lootTypes: ["loot.gem"], rarities: ["rare"] },
+    items: [{ uuid: "Compendium.p.Item.a", qty: 3, priceOverrideGp: 5 }],
+  });
+  const safe = sanitizeMerchantForList(rich);
+  assert.deepEqual(
+    Object.keys(safe).sort(),
+    ["art", "description", "id", "name", "selfServiceMode"],
+    "list projection exposes only id/name/art/description/selfServiceMode",
+  );
+  assert.equal(safe.id, "m-brundle");
+  assert.equal(safe.selfServiceMode, "open");
+  for (const leaked of [
+    "goldOnHand",
+    "defaultMarkup",
+    "sellRatio",
+    "bargainDC",
+    "allowedUserIds",
+    "buyFilter",
+    "items",
+    "pool",
+  ]) {
+    assert.equal(safe[leaked], undefined, `${leaked} must not leak to players`);
+  }
 }
 
 process.stdout.write("merchant-store validation passed\n");

@@ -976,10 +976,15 @@ export function registerMerchantSessionAutoOpen() {
     // everyone.
     if (globalThis.game?.user?.isGM) return;
     if (payload.targetUserId !== globalThis.game?.user?.id) return;
+    // Chime only when the window is genuinely new (not a re-pop from a repeat
+    // request), and here — when the session truly opens — rather than
+    // optimistically on the player's click.
+    const wasOpen = instances.has(payload.sessionId);
     MerchantSessionApp.open({
       sessionId: payload.sessionId,
       merchant: payload.merchant,
     });
+    if (!wasOpen) playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
   });
 }
 

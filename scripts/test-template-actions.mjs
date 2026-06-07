@@ -58,6 +58,11 @@ const CHECKS = [
     template: "templates/merchant-session.hbs",
     script: "./merchant-session.js",
   },
+  {
+    name: "shop picker",
+    template: "templates/shop-picker.hbs",
+    script: "./shop-picker.js",
+  },
 ];
 
 for (const check of CHECKS) {

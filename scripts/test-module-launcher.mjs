@@ -27,4 +27,48 @@ assert.doesNotMatch(
   "sidebar launcher injection should stay removed",
 );
 
+/* ---- Player-initiated Shops launcher (non-GM) ---- */
+
+assert.match(
+  source,
+  /if \(game\.user\?\.isGM\) registerGmSceneControls\(controls\);\s*else registerPlayerSceneControls\(controls\);/s,
+  "scene-controls hook should branch GM vs player",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls\(controls\) \{/,
+  "a dedicated non-GM scene-control registration should exist",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?if \(active\) ShopPickerApp\.open\(\)/,
+  "the player category should open the ShopPickerApp (never the GM dashboard)",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?controls\.push\(categoryEntry\(/,
+  "V12 player launcher should push a Shops category",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?controls\[category\] = categoryEntry\(/,
+  "V13 player launcher should add a Shops category record",
+);
+
+assert.match(
+  source,
+  /openShops: \(\) => ShopPickerApp\.open\(\)/,
+  "the module API should expose openShops",
+);
+
+assert.match(
+  source,
+  /game\.keybindings\.register\(MODULE_ID, "openShops"/,
+  "a player Shops keybinding should be registered",
+);
+
 process.stdout.write("module launcher validation passed\n");

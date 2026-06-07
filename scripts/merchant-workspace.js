@@ -15,12 +15,14 @@ import {
   deleteMerchant,
   duplicateMerchant,
   findMerchant,
+  getSelfServiceMode,
   loadMerchants,
   normalizeInventoryRow,
   normalizeMerchant,
   removeInventoryRow,
   resolveStockQty,
   restockAll,
+  SELF_SERVICE_MODES,
   upsertInventoryRow,
   upsertMerchant,
 } from "./merchant/store.js";
@@ -64,6 +66,14 @@ const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
 const FALLBACK_ART = "icons/svg/shop.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
+
+/** Plain-language labels for the self-service access modes (matches the order
+ *  of SELF_SERVICE_MODES). */
+const SELF_SERVICE_LABELS = {
+  off: "Off — only the GM opens it",
+  open: "Open — allowed players walk in",
+  knock: "Knock — players ask, you approve",
+};
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
@@ -191,6 +201,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       checked: selected ? selected.allowedUserIds.includes(u.id) : false,
     }));
 
+    const selfServiceMode = selected ? getSelfServiceMode(selected) : "off";
+    const selfServiceOptions = SELF_SERVICE_MODES.map((value) => ({
+      value,
+      label: SELF_SERVICE_LABELS[value] ?? value,
+      selected: value === selfServiceMode,
+    }));
+
     const pool = selected?.pool ?? {
       lootTypes: [],
       rarities: [],
@@ -265,6 +282,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         : null,
       hasPlayers: players.length > 0,
       playerOptions,
+      selfServiceOptions,
       skillOptions,
       poolLootTypeOptions,
       poolRarityOptions,
@@ -570,6 +588,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       goldOnHand: data.goldOnHand,
       allowedSkills: data.allowedSkills,
       allowedUserIds: data.allowedUserIds,
+      selfServiceMode: data.selfServiceMode,
       pool: {
         lootTypes: data.poolLootTypes,
         rarities: data.poolRarities,

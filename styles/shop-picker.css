@@ -1,0 +1,141 @@
+/**
+ * Infinity D&D5e — Shop Picker (player "Shops" launcher).
+ * Leans on the shared design tokens (--lf-*) used by the loot + merchant UIs,
+ * with safe fallbacks so the window reads correctly even if tokens.css is late.
+ */
+
+.infinity-shop-picker .sp-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 0;
+}
+
+.infinity-shop-picker .sp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-shop-picker .sp-head__title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-shop-picker .sp-head__hint {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.infinity-shop-picker .sp-btn--icon {
+  flex: 0 0 auto;
+  border: 1px solid var(--lf-border, #555);
+  background: var(--lf-surface-elev, rgba(255, 255, 255, 0.04));
+  color: inherit;
+  border-radius: var(--lf-radius-sm, 4px);
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+}
+.infinity-shop-picker .sp-btn--icon:hover {
+  border-color: var(--lf-accent, #6a8);
+}
+
+.infinity-shop-picker .sp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.infinity-shop-picker .sp-row__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border, #555);
+  border-radius: var(--lf-radius-sm, 4px);
+  background: var(--lf-bg-alt, rgba(0, 0, 0, 0.2));
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.infinity-shop-picker .sp-row__btn:hover {
+  border-color: var(--lf-accent, #6a8);
+}
+
+.infinity-shop-picker .sp-row__art {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--lf-radius-sm, 4px);
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px var(--lf-border, #555) inset;
+}
+
+.infinity-shop-picker .sp-row__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.infinity-shop-picker .sp-row__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-shop-picker .sp-row__desc {
+  font-size: 0.8rem;
+  opacity: 0.72;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-shop-picker .sp-row__tag {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--lf-accent, #6a8) 45%, transparent);
+  background: color-mix(in srgb, var(--lf-accent, #6a8) 16%, transparent);
+}
+
+.infinity-shop-picker .sp-row__go {
+  flex: 0 0 auto;
+  opacity: 0.55;
+}
+
+.infinity-shop-picker .sp-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  padding: 28px 12px;
+  opacity: 0.78;
+  font-size: 0.9rem;
+  border: 1px dashed var(--lf-border, #555);
+  border-radius: var(--lf-radius-sm, 4px);
+}

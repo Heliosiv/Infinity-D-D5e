@@ -17,6 +17,7 @@ import {
   MerchantSessionApp,
   registerMerchantSessionAutoOpen,
 } from "./merchant-session.js";
+import { ShopPickerApp } from "./shop-picker.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
 import { closeViewerSessions } from "./merchant/session-state.js";
 import {
@@ -67,6 +68,7 @@ function buildApi() {
     openHoardLoot: () => HoardLootApp.open(),
     openPerCreatureLoot: () => PerCreatureLootApp.open(),
     openMerchantWorkspace: () => MerchantWorkspaceApp.open(),
+    openShops: () => ShopPickerApp.open(),
     MerchantSessionApp,
     SOUND_EVENTS,
     SOUND_REGISTRY,
@@ -259,6 +261,19 @@ function registerKeybindings() {
       restricted: true, // GM-only
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
+    // Player-facing Shops launcher — NOT restricted, so players can bind it.
+    // GMs are no-op'd here (they use the Merchant Workspace).
+    game.keybindings.register(MODULE_ID, "openShops", {
+      name: "Open Infinity D&D5e Shops",
+      hint: "Open the merchant shops you have access to (players).",
+      editable: [{ key: "KeyO", modifiers: ["Shift"] }],
+      onDown: () => {
+        if (game.user?.isGM) return false;
+        ShopPickerApp.open();
+        return true;
+      },
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to register keybindings`, error);
   }
@@ -327,8 +342,20 @@ Hooks.once("ready", () => {
  * a Record<name, { tools: Record }>. We handle both shapes.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
-  if (!game.user?.isGM) return;
+  try {
+    if (game.user?.isGM) registerGmSceneControls(controls);
+    else registerPlayerSceneControls(controls);
+  } catch (error) {
+    console.error(`${MODULE_ID} | scene-controls registration failed`, error);
+  }
+});
 
+/**
+ * GM launcher: the Dashboard category (primary) + a Token-Controls fallback
+ * button. Registered twice for discoverability. Handles both the V12 Array and
+ * V13+ Record control shapes.
+ */
+function registerGmSceneControls(controls) {
   const launcherToolName = "infinity-dnd5e-launcher";
   const dashboardToolName = "infinity-dnd5e-dashboard";
 
@@ -423,7 +450,53 @@ Hooks.on("getSceneControlButtons", (controls) => {
   } catch (error) {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
   }
-});
+}
+
+/**
+ * Player launcher: a dedicated "Shops" category that opens the ShopPickerApp.
+ * This is a SEPARATE registration from the GM block above — it never reuses the
+ * GM dashboard. Handles both the V12 Array and V13+ Record control shapes.
+ */
+function registerPlayerSceneControls(controls) {
+  const shopsToolName = "infinity-dnd5e-shops-tool";
+  const category = "infinity-dnd5e-shops";
+  const baseTool = {
+    name: shopsToolName,
+    title: "Shops",
+    icon: "fa-solid fa-store",
+    button: true,
+    visible: true,
+    toggle: false,
+    order: 0,
+    onClick: () => ShopPickerApp.open(),
+    onChange: () => ShopPickerApp.open(),
+  };
+  const onCategoryChange = (_event, active) => {
+    if (active) ShopPickerApp.open();
+  };
+  const categoryEntry = (tools) => ({
+    name: category,
+    title: "Shops",
+    icon: "fa-solid fa-store",
+    visible: true,
+    activeTool: shopsToolName,
+    order: 99,
+    onChange: onCategoryChange,
+    tools,
+  });
+
+  if (Array.isArray(controls)) {
+    controls.push(categoryEntry([{ ...baseTool }]));
+  } else if (controls && typeof controls === "object") {
+    controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
+  } else {
+    console.warn(
+      `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
+    );
+    return;
+  }
+  console.log(`${MODULE_ID} | registered player Shops scene control`);
+}
 
 function nextToolOrder(tools) {
   if (!tools || typeof tools !== "object") return 0;

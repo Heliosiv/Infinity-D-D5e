@@ -1,0 +1,53 @@
+{{!--
+  Infinity D&D5e — Shop Picker template.
+  Player-facing "Shops" launcher. Lists the sanitized merchants the player may
+  open on their own; clicking one asks the GM to host a live session.
+--}}
+<div class="sp-shell">
+  <header class="sp-head">
+    <div class="sp-head__title">
+      <h2><i class="fa-solid fa-store" aria-hidden="true"></i> Shops</h2>
+      <p class="sp-head__hint">Pick a shop to step inside.</p>
+    </div>
+    <button type="button" class="sp-btn sp-btn--icon" data-action="refresh" title="Refresh the list">
+      <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+    </button>
+  </header>
+
+  {{#if noGm}}
+    <p class="sp-empty">
+      <i class="fa-solid fa-moon" aria-hidden="true"></i>
+      <span>Shops are closed — no GM is online.</span>
+    </p>
+  {{else}}
+    {{#if loading}}
+      <p class="sp-empty">
+        <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+        <span>Looking for open shops…</span>
+      </p>
+    {{else}}
+      {{#if hasShops}}
+        <ul class="sp-list" aria-label="Shops you can visit">
+          {{#each shops}}
+          <li class="sp-row">
+            <button type="button" class="sp-row__btn" data-action="openShop" data-merchant-id="{{id}}">
+              <span class="sp-row__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
+              <span class="sp-row__copy">
+                <strong class="sp-row__name">{{name}}</strong>
+                {{#if description}}<span class="sp-row__desc">{{description}}</span>{{/if}}
+                {{#if knock}}<span class="sp-row__tag"><i class="fa-solid fa-hand" aria-hidden="true"></i> Knock — ask to enter</span>{{/if}}
+              </span>
+              <i class="sp-row__go fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p class="sp-empty">
+          <i class="fa-solid fa-store-slash" aria-hidden="true"></i>
+          <span>No shops are open to you right now.</span>
+        </p>
+      {{/if}}
+    {{/if}}
+  {{/if}}
+</div>

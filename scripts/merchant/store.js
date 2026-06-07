@@ -45,6 +45,17 @@ export const PASSIVE_HAGGLE_BASELINE = 10;
  *  was historically mislabeled "Persuasion"; Persuasion's real id is `per`. */
 const LEGACY_SKILL_ALIASES = Object.freeze({ prf: "per" });
 
+/**
+ * Self-service shop-access modes — whether an allowed player can open a session
+ * on their own initiative (vs. the GM pulling them in via the workspace):
+ *   - "off"   : GM-pull only. The kill switch; the shop never appears in a
+ *               player's Shops picker.
+ *   - "open"  : any allowed player can walk in and open a live session.
+ *   - "knock" : allowed players request entry; the GM approves each one.
+ */
+export const SELF_SERVICE_MODES = Object.freeze(["off", "open", "knock"]);
+const DEFAULT_SELF_SERVICE_MODE = "off";
+
 /** A full stack of ammunition (arrows, bolts, bullets, needles). Merchants
  *  always stock ammo in this unit so quivers come full. */
 export const AMMO_STACK_SIZE = 20;
@@ -175,6 +186,7 @@ export function normalizeMerchant(input) {
   const raw = input && typeof input === "object" ? input : {};
   const id = toStr(raw.id) || generateId();
   const inventory = Array.isArray(raw.items) ? raw.items : [];
+  const allowedUserIds = toStrArray(raw.allowedUserIds);
   return {
     id,
     version: MERCHANT_RECORD_VERSION,
@@ -206,7 +218,15 @@ export function normalizeMerchant(input) {
     ),
     goldOnHand: normalizeGold(raw.goldOnHand),
     allowedSkills: dedupeAllowedSkills(raw.allowedSkills),
-    allowedUserIds: toStrArray(raw.allowedUserIds),
+    allowedUserIds,
+    // Whether allowed players can self-open this shop. Cold-start: a legacy
+    // record with allowed players but no explicit mode upgrades to "open" so
+    // the feature isn't invisible on first run; shops with no allowed players
+    // stay "off". Once saved, the explicit value sticks (idempotent).
+    selfServiceMode: normalizeSelfServiceMode(
+      raw.selfServiceMode,
+      allowedUserIds,
+    ),
     chatHidden: raw.chatHidden === true,
     pool: normalizeStockPool(raw.pool),
     buyFilter: normalizeBuyFilter(raw.buyFilter),
@@ -311,6 +331,23 @@ function dedupeAllowedSkills(raw) {
   if (list.length === 0) return [...DEFAULT_ALLOWED_SKILLS];
   const valid = list.filter((skill) => BARGAIN_SKILLS[skill]);
   return valid.length > 0 ? valid : [...DEFAULT_ALLOWED_SKILLS];
+}
+
+/**
+ * Resolve the self-service mode. A recognized explicit value always wins. When
+ * the field is absent/unknown, apply the cold-start rule: a record that already
+ * has allowed players upgrades to "open" (so a just-upgraded world isn't a wall
+ * of empty pickers), otherwise it stays "off".
+ */
+function normalizeSelfServiceMode(raw, allowedUserIds) {
+  const v = toStr(raw).toLowerCase();
+  if (SELF_SERVICE_MODES.includes(v)) return v;
+  // A present-but-unrecognized value (corruption / external edit) fails CLOSED
+  // to "off" rather than cold-starting to "open" — only a genuinely absent
+  // field gets the cold-start upgrade below.
+  if (v) return DEFAULT_SELF_SERVICE_MODE;
+  const allowed = Array.isArray(allowedUserIds) ? allowedUserIds : [];
+  return allowed.length > 0 ? "open" : DEFAULT_SELF_SERVICE_MODE;
 }
 
 /** Gold-on-hand normalizer: blank / undefined → null (unlimited). A real
@@ -568,6 +605,49 @@ export function isUserAllowed(merchant, userId) {
     ? merchant.allowedUserIds
     : [];
   return list.includes(userId);
+}
+
+/** The shop's self-service mode ("off" | "open" | "knock"), validated. */
+export function getSelfServiceMode(merchant) {
+  const m = toStr(merchant?.selfServiceMode).toLowerCase();
+  return SELF_SERVICE_MODES.includes(m) ? m : DEFAULT_SELF_SERVICE_MODE;
+}
+
+/**
+ * Whether allowed players can reach this shop on their own — true for both
+ * "open" (walk in) and "knock" (request entry). "off" shops are GM-pull only
+ * and never surface in a player's Shops picker.
+ */
+export function isSelfServiceReachable(merchant) {
+  return getSelfServiceMode(merchant) !== "off";
+}
+
+/**
+ * The single authority gate for player-initiated shop access — used by BOTH
+ * the Shops list reply and an inbound shop-open request. A user may self-open a
+ * shop only if they are an allowed (non-GM) player AND the shop is self-service
+ * reachable (open or knock). Never trust the client; the GM re-checks this.
+ */
+export function canSelfOpen(merchant, userId) {
+  return isUserAllowed(merchant, userId) && isSelfServiceReachable(merchant);
+}
+
+/**
+ * Project a merchant to the minimal, safe shape a player may see in the Shops
+ * picker. The MERCHANTS setting is world-scoped (every client can read the raw
+ * records), so the GM-side list reply MUST strip economy + permission internals
+ * — goldOnHand, markups, priceOverrideGp, buyFilter, other players' allow-lists
+ * — leaving only what's needed to render and pick a storefront.
+ */
+export function sanitizeMerchantForList(merchant) {
+  const m = normalizeMerchant(merchant);
+  return {
+    id: m.id,
+    name: m.name,
+    art: m.art,
+    description: m.description,
+    selfServiceMode: m.selfServiceMode,
+  };
 }
 
 /* ------------------------------------------------------------------ *
