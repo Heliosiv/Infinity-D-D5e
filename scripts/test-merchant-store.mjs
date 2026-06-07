@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   adjustMerchantGold,
   applyBargainDelta,
+  applyPreviewBuy,
+  applyPreviewSell,
   buildMerchantBargainTiers,
   clearInventory,
   computeBuyPriceGp,
@@ -443,6 +445,87 @@ import {
   assert.equal(success.minMargin, 0);
   assert.equal(failure.deltaPct, 25, "failure raises price");
   assert.equal(failure.minMargin, -Infinity);
+}
+
+/* ------------------------------------------------------------------ *
+ * isUserAllowed — GMs are never "allowed" players
+ * ------------------------------------------------------------------ */
+{
+  const merchant = normalizeMerchant({ allowedUserIds: ["alice", "gm-1"] });
+  // No game stubbed → can't resolve GM, falls back to list membership.
+  assert.equal(isUserAllowed(merchant, "alice"), true);
+
+  const savedGame = globalThis.game;
+  globalThis.game = {
+    users: {
+      get: (id) => (id === "gm-1" ? { isGM: true } : { isGM: false }),
+    },
+  };
+  try {
+    assert.equal(
+      isUserAllowed(merchant, "gm-1"),
+      false,
+      "a GM id is rejected even when listed in allowedUserIds",
+    );
+    assert.equal(
+      isUserAllowed(merchant, "alice"),
+      true,
+      "a non-GM listed player is still allowed",
+    );
+  } finally {
+    if (savedGame === undefined) delete globalThis.game;
+    else globalThis.game = savedGame;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * GM preview math — sandbox buy/sell against a merchant clone
+ * ------------------------------------------------------------------ */
+{
+  const m = normalizeMerchant({
+    id: "shop",
+    goldOnHand: 100,
+    items: [
+      { uuid: "u-pot", qty: 5, startingQty: 5 },
+      { uuid: "u-rope", qty: 1, startingQty: 1, unlimited: true },
+    ],
+  });
+
+  // Finite stock decrements; merchant gains the paid gold; source untouched.
+  const afterBuy = applyPreviewBuy(m, "u-pot", 2, 30);
+  assert.equal(afterBuy.items.find((r) => r.uuid === "u-pot").qty, 3);
+  assert.equal(afterBuy.goldOnHand, 130);
+  assert.equal(
+    m.items.find((r) => r.uuid === "u-pot").qty,
+    5,
+    "preview buy does not mutate the source merchant",
+  );
+
+  // Unlimited row: stock unchanged, gold still gained.
+  const afterUnl = applyPreviewBuy(m, "u-rope", 3, 36);
+  assert.equal(afterUnl.items.find((r) => r.uuid === "u-rope").qty, 1);
+  assert.equal(afterUnl.goldOnHand, 136);
+
+  // Buying past finite stock leaves stock alone but still credits gold.
+  const afterOver = applyPreviewBuy(m, "u-pot", 99, 50);
+  assert.equal(afterOver.items.find((r) => r.uuid === "u-pot").qty, 5);
+  assert.equal(afterOver.goldOnHand, 150);
+
+  // Unlimited purse stays unlimited.
+  const unlPurse = normalizeMerchant({
+    id: "x",
+    items: [{ uuid: "u", qty: 3, startingQty: 3 }],
+  });
+  assert.equal(applyPreviewBuy(unlPurse, "u", 1, 20).goldOnHand, null);
+
+  // Preview sell: merchant pays out, clamped at 0; unlimited purse unchanged.
+  const seller = normalizeMerchant({ id: "s", goldOnHand: 100 });
+  assert.equal(applyPreviewSell(seller, 30).goldOnHand, 70);
+  assert.equal(applyPreviewSell(seller, 999).goldOnHand, 0);
+  assert.equal(
+    applyPreviewSell(normalizeMerchant({ id: "u2" }), 50).goldOnHand,
+    null,
+  );
 }
 
 process.stdout.write("merchant-store validation passed\n");

@@ -24,8 +24,10 @@ import {
   findMerchant,
   isUserAllowed,
   normalizeMerchant,
+  roundGp,
   upsertMerchant,
 } from "./store.js";
+import { resolveUnitBuyPrice } from "./transaction.js";
 import { computeBargainOutcome } from "./bargain.js";
 import {
   closeSession,
@@ -236,28 +238,59 @@ async function handleCommitPurchase(payload) {
   if (!session) return;
   if (session.viewerUserId !== payload.originUserId) return;
   const requested = Math.max(1, Math.floor(Number(qty) || 1));
-  const totalGp = Math.max(0, Number(payload.totalGp) || 0);
+  const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
 
   await runWithMerchantMutex(session.merchantId, async () => {
     const merchant = findMerchant(session.merchantId);
-    if (!merchant) return;
+    if (!merchant) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase: merchant ${session.merchantId} is gone`,
+      );
+      return;
+    }
     const row = merchant.items.find((r) => r.uuid === itemUuid);
     if (!row) return;
-    if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "buy" });
+    // Verify + burn the bargain seal here (inside the mutex) and keep its
+    // delta for the GM-side reprice.
+    const seal = sealId
+      ? consumeSeal(sessionId, sealId, { itemUuid, side: "buy" })
+      : null;
+
+    // Recompute the price from the merchant's OWN data — never trust the
+    // client's claimed total. The merchant's gold gain uses this server
+    // figure, so a buggy/forged client can't shortchange (or overpay) it.
+    let trueTotal = clientTotalGp;
+    try {
+      const itemDoc = await fromUuid(itemUuid);
+      const item = itemDoc?.toObject?.() ?? itemDoc ?? null;
+      const unitGp = resolveUnitBuyPrice({ merchant, row, item, seal });
+      if (unitGp > 0) trueTotal = roundGp(unitGp * requested);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | commit-purchase reprice failed`, error);
+    }
+    if (Math.abs(trueTotal - clientTotalGp) > 0.01) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase price mismatch (client ${clientTotalGp}, server ${trueTotal}) — using server price`,
+      );
+    }
 
     let updated = merchant;
     // Decrement stock when the row is finite and the player's view was
-    // current; otherwise leave stock alone (they bought against stale
-    // state — the buy already executed client-side).
+    // current; otherwise the buy already executed client-side against stale
+    // state, so leave stock alone but surface it rather than silently swallow.
     if (!row.unlimited && row.qty >= requested) {
       try {
         updated = decrementInventory(updated, itemUuid, requested);
       } catch (error) {
         console.warn(`${MODULE_ID} | decrement failed`, error);
       }
+    } else if (!row.unlimited) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase: "${itemUuid}" stock ${row.qty} < ${requested} (concurrent/stale buy) — charged but not decremented`,
+      );
     }
     // The merchant gains the gold the player paid (no-op if unlimited purse).
-    updated = adjustMerchantGold(updated, totalGp);
+    updated = adjustMerchantGold(updated, trueTotal);
     await upsertMerchant(updated);
     await broadcastState(updated);
   });

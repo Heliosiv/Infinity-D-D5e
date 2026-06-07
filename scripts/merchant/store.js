@@ -462,13 +462,59 @@ export function removeInventoryRow(merchant, uuid) {
   return m;
 }
 
-/** Whether a given user id may open a session for this merchant. */
+/** True when `userId` resolves to a GM user. Lazy game read; false in node. */
+function isUserIdGM(userId) {
+  try {
+    return globalThis.game?.users?.get?.(userId)?.isGM === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a given user id may open a *player* session for this merchant. GMs
+ * are never "allowed" players — they use the GM Preview path, not the live
+ * player session — so a stray GM id in `allowedUserIds` can't auto-open a
+ * real (data-mutating) session on the GM's own client.
+ */
 export function isUserAllowed(merchant, userId) {
   if (!merchant || !userId) return false;
+  if (isUserIdGM(userId)) return false;
   const list = Array.isArray(merchant.allowedUserIds)
     ? merchant.allowedUserIds
     : [];
   return list.includes(userId);
+}
+
+/* ------------------------------------------------------------------ *
+ * GM Preview (sandbox) math
+ *
+ * Pure: apply a simulated buy/sell to an in-memory merchant clone so the GM
+ * can drive the shop window without touching real data. Reuses the same
+ * stock + gold primitives the live path uses.
+ * ------------------------------------------------------------------ */
+
+/** Preview a buy: decrement finite stock + the merchant gains `totalGp`. */
+export function applyPreviewBuy(merchant, uuid, qty, totalGp) {
+  let m = normalizeMerchant(merchant);
+  const row = m.items.find((r) => r.uuid === uuid);
+  const count = Math.max(1, Math.floor(Number(qty) || 1));
+  if (row && !row.unlimited && row.qty >= count) {
+    try {
+      m = decrementInventory(m, uuid, count);
+    } catch {
+      // leave stock alone if the decrement can't apply
+    }
+  }
+  return adjustMerchantGold(m, Math.max(0, Number(totalGp) || 0));
+}
+
+/** Preview a sell: the merchant pays out `totalGp` (clamped at 0). */
+export function applyPreviewSell(merchant, totalGp) {
+  return adjustMerchantGold(
+    normalizeMerchant(merchant),
+    -Math.max(0, Number(totalGp) || 0),
+  );
 }
 
 /* ------------------------------------------------------------------ *

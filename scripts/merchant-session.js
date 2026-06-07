@@ -12,6 +12,9 @@
  */
 
 import {
+  applyPreviewBuy,
+  applyPreviewSell,
+  buildMerchantBargainTiers,
   normalizeMerchant,
   roundGp,
   merchantCanAfford,
@@ -29,7 +32,7 @@ import {
   emitMerchantEvent,
   subscribe,
 } from "./merchant/socket.js";
-import { runBargain } from "./merchant/bargain.js";
+import { computeBargainOutcome, runBargain } from "./merchant/bargain.js";
 import { totalWalletGp, sanitizeWallet } from "./merchant/currency.js";
 import { formatCoinBreakdown } from "./loot/hoard-budget.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
@@ -95,7 +98,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
    * Open a session window. If one is already open for this sessionId,
    * focus it.
    */
-  static open({ sessionId, merchant }) {
+  static open({
+    sessionId,
+    merchant,
+    previewMode = false,
+    previewActor = null,
+  }) {
     if (!sessionId) return null;
     let app = instances.get(sessionId);
     if (!app) {
@@ -105,6 +113,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         id: `infinity-dnd5e-merchant-session-${sessionId}`,
         sessionId,
         merchant: normalizeMerchant(merchant),
+        previewMode,
+        previewActor,
       });
       instances.set(sessionId, app);
     } else {
@@ -128,6 +138,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     super(options);
     this._sessionId = options.sessionId;
     this._merchant = normalizeMerchant(options.merchant);
+    // GM Preview: a self-contained sandbox window. Buy/sell/bargain run
+    // locally against this in-memory merchant clone — no socket, no chat, no
+    // real merchant/actor writes — so the GM can see exactly how the shop
+    // behaves without consequences.
+    this._previewMode = options.previewMode === true;
+    this._previewActor = options.previewActor ?? null;
     this._activeTab = "buy";
     this._seals = new Map(); // `${itemRefId}::${side}` → seal
     this._buyQty = new Map(); // uuid → qty input value
@@ -136,32 +152,36 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._bargainPending = new Set();
     this._closingFromExternal = false;
 
-    this._title = `${this._merchant?.name ?? "Merchant"} — Shop`;
+    this._title = `${this._previewMode ? "[Preview] " : ""}${this._merchant?.name ?? "Merchant"} — Shop`;
 
     this._unsubscribers = [];
-    this._unsubscribers.push(
-      subscribe(MERCHANT_EVENTS.STATE_UPDATE, (payload) =>
-        this._onStateUpdate(payload),
-      ),
-    );
-    this._unsubscribers.push(
-      subscribe(MERCHANT_EVENTS.BARGAIN_SEAL, (payload) =>
-        this._onBargainSeal(payload),
-      ),
-    );
-    this._unsubscribers.push(
-      subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) => {
-        if (payload?.sessionId !== this._sessionId) return;
-        if (
-          payload.targetUserId &&
-          payload.targetUserId !== globalThis.game?.user?.id
-        ) {
-          return;
-        }
-        this._closingFromExternal = true;
-        this.close();
-      }),
-    );
+    // Preview is self-contained: real session broadcasts must not bleed into
+    // (or re-render) the sandbox, so skip every socket subscription.
+    if (!this._previewMode) {
+      this._unsubscribers.push(
+        subscribe(MERCHANT_EVENTS.STATE_UPDATE, (payload) =>
+          this._onStateUpdate(payload),
+        ),
+      );
+      this._unsubscribers.push(
+        subscribe(MERCHANT_EVENTS.BARGAIN_SEAL, (payload) =>
+          this._onBargainSeal(payload),
+        ),
+      );
+      this._unsubscribers.push(
+        subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) => {
+          if (payload?.sessionId !== this._sessionId) return;
+          if (
+            !payload.targetUserId ||
+            payload.targetUserId !== globalThis.game?.user?.id
+          ) {
+            return;
+          }
+          this._closingFromExternal = true;
+          this.close();
+        }),
+      );
+    }
   }
 
   get title() {
@@ -188,7 +208,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   _onBargainSeal(payload) {
     if (!payload || payload.sessionId !== this._sessionId) return;
     if (
-      payload.targetUserId &&
+      !payload.targetUserId ||
       payload.targetUserId !== globalThis.game?.user?.id
     ) {
       return;
@@ -223,7 +243,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   /* -------------------- context -------------------- */
 
   async _prepareContext() {
-    const actor = resolvePlayerActor();
+    const actor = this._previewMode ? this._previewActor : resolvePlayerActor();
     const wallet = sanitizeWallet(actor?.system?.currency);
     const walletLabel =
       formatCoinBreakdown(wallet) || `${totalWalletGp(wallet).toFixed(2)} gp`;
@@ -250,6 +270,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       },
       walletLabel,
       merchantGoldLabel: formatMerchantGold(this._merchant.goldOnHand),
+      previewMode: this._previewMode,
+      previewNoActor: this._previewMode && !actor,
       buyActive: this._activeTab === "buy",
       sellActive: this._activeTab === "sell",
       buyRows,
@@ -292,6 +314,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const outOfStock = !row.unlimited && row.qty <= 0;
     const walletGp = walletGpFromObject(wallet);
     const cannotBuy = outOfStock || finalGp > walletGp || !item;
+    // Tell the player WHY a buy is blocked instead of an inert disabled button.
+    let cannotBuyReason = "";
+    if (!item) cannotBuyReason = "Item unavailable";
+    else if (outOfStock) cannotBuyReason = "Out of stock";
+    else if (finalGp > walletGp) cannotBuyReason = "Not enough gold";
     const maxQty = row.unlimited ? 99 : Math.max(1, row.qty);
     const stockLabel = row.unlimited ? "Unlimited stock" : `Stock: ${row.qty}`;
     const showDelta = seal && Math.abs(seal.deltaPct) > 0;
@@ -309,6 +336,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
       cannotBuy,
+      cannotBuyReason,
       maxQty,
       outOfStock,
       missing: !item,
@@ -496,6 +524,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   async _performBuy(uuid, qty) {
     if (!uuid) return;
+    if (this._previewMode) return this._previewBuy(uuid, qty);
     const row = this._merchant.items.find((r) => r.uuid === uuid);
     if (!row) return;
     const item = await fromUuid(uuid).catch(() => null);
@@ -583,6 +612,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   }
 
   async _performSell(itemId, qty) {
+    if (this._previewMode) return this._previewSell(itemId, qty);
     const actor = resolvePlayerActor();
     if (!actor || !itemId) return;
     const ownedItem = actor.items?.get?.(itemId);
@@ -668,6 +698,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   async _performBargain(refId, side) {
     if (!refId) return;
+    if (this._previewMode) return this._previewBargain(refId, side);
     const sealKey = `${refId}::${side}`;
     if (this._seals.has(sealKey) || this._bargainPending.has(sealKey)) return;
     const actor = resolvePlayerActor();
@@ -703,6 +734,143 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     });
     // Seal will arrive on the bargain-seal event handler.
   }
+
+  /* -------------------- GM preview (sandbox) -------------------- *
+   * All three mutate the in-memory merchant clone (stock + gold) and log the
+   * result. They never touch a real actor, the real merchant store, chat, or
+   * the socket — so a GM can drive the shop window risk-free.
+   * ------------------------------------------------------------- */
+
+  async _previewBuy(uuid, qty) {
+    const row = this._merchant.items.find((r) => r.uuid === uuid);
+    if (!row) return;
+    const item = await fromUuid(uuid).catch(() => null);
+    const count = Math.max(1, Math.floor(Number(qty) || 1));
+    const sealKey = `${uuid}::buy`;
+    const seal = this._seals.get(sealKey) ?? null;
+    const unitGp = roundGp(
+      resolveUnitBuyPrice({
+        merchant: this._merchant,
+        row,
+        item: item?.toObject?.() ?? item,
+        seal,
+      }),
+    );
+    const totalGp = roundGp(unitGp * count);
+    if (totalGp <= 0) {
+      ui.notifications?.info(
+        `${MODULE_ID}: this item has no price to preview.`,
+      );
+      return;
+    }
+    if (!row.unlimited && row.qty < count) {
+      this._appendLog("fail", "Preview: out of stock");
+      this.render(false);
+      return;
+    }
+    this._merchant = applyPreviewBuy(this._merchant, uuid, count, totalGp);
+    this._seals.delete(sealKey);
+    playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
+    this._appendLog(
+      "buy",
+      `Preview: bought ${count}× ${item?.name ?? "item"} for ${totalGp.toFixed(2)} gp`,
+    );
+    this.render(false);
+  }
+
+  async _previewSell(itemId, qty) {
+    const actor = this._previewActor;
+    if (!actor) {
+      ui.notifications?.info(
+        `${MODULE_ID}: pick a character when opening the preview to try selling.`,
+      );
+      return;
+    }
+    const ownedItem = actor.items?.get?.(itemId);
+    if (!ownedItem) return;
+    const count = Math.max(1, Math.floor(Number(qty) || 1));
+    const sealKey = `${itemId}::sell`;
+    const seal = this._seals.get(sealKey) ?? null;
+    const unitGp = roundGp(
+      resolveUnitSellPrice({
+        merchant: this._merchant,
+        item: ownedItem.toObject?.() ?? ownedItem,
+        seal,
+      }),
+    );
+    const totalGp = roundGp(unitGp * count);
+    if (totalGp <= 0) {
+      ui.notifications?.info(`${MODULE_ID}: this item has no resale value.`);
+      return;
+    }
+    if (!merchantCanAfford(this._merchant, totalGp)) {
+      this._appendLog("fail", "Preview: merchant is low on gold");
+      this.render(false);
+      return;
+    }
+    this._merchant = applyPreviewSell(this._merchant, totalGp);
+    this._seals.delete(sealKey);
+    playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
+    this._appendLog(
+      "sell",
+      `Preview: sold ${count}× ${ownedItem.name} for ${totalGp.toFixed(2)} gp (item kept)`,
+    );
+    this.render(false);
+  }
+
+  async _previewBargain(refId, side) {
+    const sealKey = `${refId}::${side}`;
+    if (this._seals.has(sealKey) || this._bargainPending.has(sealKey)) return;
+    const actor = this._previewActor;
+    if (!actor) {
+      ui.notifications?.info(
+        `${MODULE_ID}: pick a character when opening the preview to try bargaining.`,
+      );
+      return;
+    }
+    const skillId = await promptSkillPicker(this._merchant.allowedSkills);
+    if (!skillId) return;
+    this._bargainPending.add(sealKey);
+    this.render(false);
+    const outcome = await runBargain({
+      actor,
+      skillId,
+      dc: this._merchant.bargainDC,
+      advantage: this._merchant.bargainAdvantage,
+      chatMessage: false,
+    });
+    this._bargainPending.delete(sealKey);
+    if (!outcome.ok) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: bargain ${outcome.reason ?? "cancelled"}.`,
+      );
+      this.render(false);
+      return;
+    }
+    const result = computeBargainOutcome(
+      outcome.rollTotal,
+      Number(this._merchant.bargainDC) || 0,
+      buildMerchantBargainTiers(this._merchant),
+    );
+    this._seals.set(sealKey, {
+      sealId: `preview-${refId}-${side}`,
+      tier: result.tier,
+      deltaPct: result.deltaPct,
+      rollTotal: outcome.rollTotal,
+      dc: this._merchant.bargainDC,
+    });
+    playModuleSound(
+      result.deltaPct <= 0
+        ? SOUND_EVENTS.MERCHANT_BARGAIN_WIN
+        : SOUND_EVENTS.MERCHANT_BARGAIN_FAIL,
+    );
+    this._appendLog(
+      "bargain",
+      `Preview bargain ${result.tier?.id ?? "result"} · ${formatDelta(result.deltaPct)}`,
+    );
+    this._justBargained = { refId, side, win: Number(result.deltaPct) <= 0 };
+    this.render(false);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -721,12 +889,12 @@ export function registerMerchantSessionAutoOpen() {
   autoOpenRegistered = true;
   subscribe(MERCHANT_EVENTS.SESSION_OPEN, (payload) => {
     if (!payload) return;
-    if (
-      payload.targetUserId &&
-      payload.targetUserId !== globalThis.game?.user?.id
-    ) {
-      return;
-    }
+    // GMs never auto-open a live (data-mutating) player session — they use
+    // the GM Preview button instead. And the target must match THIS user
+    // explicitly; a missing/blank target is ignored rather than opening for
+    // everyone.
+    if (globalThis.game?.user?.isGM) return;
+    if (payload.targetUserId !== globalThis.game?.user?.id) return;
     MerchantSessionApp.open({
       sessionId: payload.sessionId,
       merchant: payload.merchant,
@@ -769,9 +937,10 @@ function formatDelta(deltaPct) {
   return `${n > 0 ? "+" : ""}${n.toFixed(0)}%`;
 }
 
-/** Merchant coffer label. Unlimited (null) → "" so the header hides it. */
+/** Merchant coffer label. Unlimited (null) reads "Unlimited" so players know
+ *  the shop can always pay out. */
 function formatMerchantGold(gold) {
-  if (gold == null) return "";
+  if (gold == null) return "Unlimited";
   const n = Math.max(0, Number(gold) || 0);
   return `${Number.isInteger(n) ? n : n.toFixed(2)} gp`;
 }

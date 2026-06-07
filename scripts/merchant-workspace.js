@@ -25,6 +25,7 @@ import {
   upsertMerchant,
 } from "./merchant/store.js";
 import { rollMerchantStock } from "./merchant/pool.js";
+import { MerchantSessionApp } from "./merchant-session.js";
 import {
   captureScroll,
   restoreScroll,
@@ -100,6 +101,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       clearInventory: MerchantWorkspaceApp._onClearInventory,
       restock: MerchantWorkspaceApp._onRestock,
       pickArt: MerchantWorkspaceApp._onPickArt,
+      previewSession: MerchantWorkspaceApp._onPreviewSession,
       openSession: MerchantWorkspaceApp._onOpenSession,
       closeSession: MerchantWorkspaceApp._onCloseSession,
       invRemove: MerchantWorkspaceApp._onInvRemove,
@@ -792,6 +794,24 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this.render(false);
   }
 
+  static async _onPreviewSession() {
+    if (!this._selectedId) return;
+    const merchant = findMerchant(this._selectedId);
+    if (!merchant) return;
+    const choice = await promptPreviewActor();
+    if (!choice) return; // cancelled
+    MerchantSessionApp.open({
+      sessionId: `preview-${merchant.id}`,
+      merchant,
+      previewMode: true,
+      previewActor: choice.actor,
+    });
+    playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+    ui.notifications?.info(
+      `${MODULE_ID}: opened a preview of ${merchant.name} — nothing real changes.`,
+    );
+  }
+
   static async _onOpenSession() {
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
@@ -927,6 +947,57 @@ function extractDroppedItemUuid(event) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Pick which character the GM "shops as" in a preview. Returns
+ * `{ actor }` (actor may be null = browse-only) on confirm, or `null` when
+ * the GM dismisses the dialog. Falls back to the GM's assigned character when
+ * no picker is available.
+ */
+async function promptPreviewActor() {
+  const DialogV2 = foundry?.applications?.api?.DialogV2;
+  const characters = (
+    globalThis.game?.actors?.filter?.((a) => a?.type === "character") ?? []
+  ).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  if (!DialogV2 || characters.length === 0) {
+    return { actor: globalThis.game?.user?.character ?? null };
+  }
+  const assignedId = globalThis.game?.user?.character?.id ?? "";
+  const options = [
+    `<option value="">None — just browse the window</option>`,
+    ...characters.map(
+      (a) =>
+        `<option value="${escapeAttr(a.id)}" ${a.id === assignedId ? "selected" : ""}>${escapeText(a.name)}</option>`,
+    ),
+  ].join("");
+  let picked;
+  try {
+    picked = await DialogV2.prompt({
+      window: { title: "Preview Shop — shop as…", icon: "fa-solid fa-eye" },
+      content: `
+        <div class="mw-pick">
+          <p>Open a sandbox shop window. Buying, selling, and bargaining are simulated and logged — no real items or coin change hands. Pick a character to try selling + bargaining, or just browse.</p>
+          <label style="display:grid;gap:4px;">
+            <span>Shop as</span>
+            <select name="actorId">${options}</select>
+          </label>
+        </div>
+      `,
+      ok: {
+        label: "Open Preview",
+        icon: "fa-solid fa-eye",
+        callback: (_event, button) =>
+          button?.form?.elements?.actorId?.value ?? "",
+      },
+      rejectClose: false,
+    });
+  } catch {
+    return null;
+  }
+  if (picked === null || picked === undefined) return null; // dismissed
+  if (picked === "") return { actor: null }; // browse-only
+  return { actor: globalThis.game?.actors?.get?.(picked) ?? null };
 }
 
 async function promptPlayerPicker(merchant) {

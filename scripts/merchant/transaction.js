@@ -18,10 +18,7 @@ import {
   computeSellPriceGp,
   roundGp,
 } from "./store.js";
-import {
-  deductCurrency,
-  planCurrencyDeduction,
-} from "./currency.js";
+import { deductCurrency, planCurrencyDeduction } from "./currency.js";
 import {
   currencyAddFromBreakdown,
   formatCoinBreakdown,
@@ -30,7 +27,14 @@ import { SETTING_KEYS, getSetting } from "../settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
-const NON_SELLABLE_ITEM_TYPES = new Set(["class", "subclass", "race", "background", "feat", "spell"]);
+const NON_SELLABLE_ITEM_TYPES = new Set([
+  "class",
+  "subclass",
+  "race",
+  "background",
+  "feat",
+  "spell",
+]);
 
 /* ------------------------------------------------------------------ *
  * Sell-eligibility
@@ -244,9 +248,14 @@ export async function executeSell({
     return { ok: false, reason: "not-sellable" };
   }
   const itemData = ownedItem.toObject?.() ?? ownedItem;
-  const inStack = Math.max(0, Math.floor(Number(itemData.system?.quantity ?? 1)));
+  const inStack = Math.max(
+    0,
+    Math.floor(Number(itemData.system?.quantity ?? 1)),
+  );
   const count = Math.max(1, Math.floor(Number(qty) || 1));
-  if (inStack > 0 && inStack < count) {
+  // A genuinely empty stack (qty 0) must not sell — the old `inStack > 0`
+  // guard let a 0-quantity item through and pay out coin for nothing.
+  if (inStack < count) {
     return { ok: false, reason: "not-enough", available: inStack };
   }
   const unitGp = resolveUnitSellPrice({ merchant, item: itemData, seal });
@@ -255,13 +264,17 @@ export async function executeSell({
     return { ok: false, reason: "no-value" };
   }
 
+  // Snapshot the pre-sale item so a failed payout can be rolled back —
+  // otherwise a payout error would delete the player's item for free.
+  const preSaleSnapshot = cloneItemSnapshot(ownedItem) ?? itemData;
+  const removedWholeStack = Math.max(0, inStack - count) <= 0;
+
   // 1. Remove the requested quantity.
   try {
-    const remaining = Math.max(0, inStack - count);
-    if (remaining <= 0) {
+    if (removedWholeStack) {
       await actor.deleteEmbeddedDocuments("Item", [ownedItem.id]);
     } else {
-      await ownedItem.update({ "system.quantity": remaining });
+      await ownedItem.update({ "system.quantity": inStack - count });
     }
   } catch (error) {
     console.error(`${MODULE_ID} | sell removal failed`, error);
@@ -278,7 +291,7 @@ export async function executeSell({
   const fractional = totalGp - Math.floor(totalGp);
   if (fractional > 0) {
     add.sp = Math.floor(fractional * 10);
-    add.cp = Math.round((fractional * 100) - add.sp * 10);
+    add.cp = Math.round(fractional * 100 - add.sp * 10);
   }
   const cur = actor.system?.currency ?? {};
   try {
@@ -290,10 +303,24 @@ export async function executeSell({
       "system.currency.cp": (cur.cp ?? 0) + add.cp,
     });
   } catch (error) {
+    // Roll the removal back so the player doesn't lose the item for nothing.
+    try {
+      if (removedWholeStack) {
+        const restore = cloneItemSnapshot(preSaleSnapshot);
+        if (restore) {
+          delete restore._id;
+          await actor.createEmbeddedDocuments("Item", [restore]);
+        }
+      } else {
+        await ownedItem.update({ "system.quantity": inStack });
+      }
+    } catch (rollbackError) {
+      console.warn(`${MODULE_ID} | sell rollback failed`, rollbackError);
+    }
     console.error(`${MODULE_ID} | sell payout failed`, error);
     if (notify) {
       ui.notifications?.error(
-        `${MODULE_ID}: payout failed — item removed but no coin credited.`,
+        `${MODULE_ID}: payout failed — item restored, sale cancelled.`,
       );
     }
     return { ok: false, reason: "payout-failed", error };
@@ -420,7 +447,15 @@ function setItemQuantity(snapshot, qty) {
   if (!snapshot) return;
   const n = Math.max(1, Math.floor(Number(qty) || 1));
   snapshot.system = snapshot.system ?? {};
-  const PHYSICAL = ["weapon", "equipment", "consumable", "tool", "loot", "container", "backpack"];
+  const PHYSICAL = [
+    "weapon",
+    "equipment",
+    "consumable",
+    "tool",
+    "loot",
+    "container",
+    "backpack",
+  ];
   if (PHYSICAL.includes(snapshot.type) || "quantity" in snapshot.system) {
     snapshot.system.quantity = n;
   }

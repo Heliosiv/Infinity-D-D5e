@@ -19,6 +19,13 @@
     </div>
   </header>
 
+  {{#if previewMode}}
+  <div class="ms-preview-banner" role="note">
+    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+    <span>Preview — nothing real changes. Buy, sell &amp; bargain are simulated and logged{{#if previewNoActor}}; pick a character when opening to try selling or bargaining{{/if}}.</span>
+  </div>
+  {{/if}}
+
   <nav class="ms-tabs" role="tablist">
     <button type="button" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="tab" data-tab="buy" role="tab">
       <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Buy
@@ -40,6 +47,7 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             {{stockLabel}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained price">{{sealLabel}}</span>{{/if}}
+            {{#if cannotBuyReason}}<span class="ms-row__warn">{{cannotBuyReason}}</span>{{/if}}
           </span>
         </div>
         <div class="ms-row__price">
