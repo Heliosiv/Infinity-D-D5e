@@ -114,14 +114,18 @@
       </article>
       {{/each}}
     {{else}}
+      {{#if noActor}}
+      <p class="mw-empty">No character to sell from{{#if previewMode}} — pick one when opening the preview{{else}} — ask your GM to assign you a character{{/if}}.</p>
+      {{else}}
       <p class="mw-empty">No sellable items on your sheet.</p>
+      {{/if}}
     {{/if}}
   </section>
   {{/if}}
 
   {{#if log.length}}
   <footer class="ms-log" aria-label="Transaction log">
-    <h4>This session</h4>
+    <h4>This session{{#if sessionSpentLabel}} · spent {{sessionSpentLabel}}{{/if}}{{#if sessionEarnedLabel}} · earned {{sessionEarnedLabel}}{{/if}}</h4>
     <ul>
       {{#each log}}
       <li class="{{kind}}">{{text}}</li>

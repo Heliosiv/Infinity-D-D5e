@@ -133,16 +133,23 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     super(options);
     this._selectedId = null;
     this._itemCache = new Map(); // uuid → resolved item snapshot
-    this._stateUnsub = subscribe(MERCHANT_EVENTS.STATE_UPDATE, () =>
-      this.render(false),
-    );
+    // Re-render on stock changes AND on session open/close so the "Active
+    // Sessions" list stays accurate even when a player closes their own window.
+    this._unsubs = [
+      subscribe(MERCHANT_EVENTS.STATE_UPDATE, () => this.render(false)),
+      subscribe(MERCHANT_EVENTS.SESSION_OPEN, () => this.render(false)),
+      subscribe(MERCHANT_EVENTS.SESSION_CLOSE, () => this.render(false)),
+    ];
   }
 
   _onClose(options) {
     super._onClose?.(options);
-    try {
-      this._stateUnsub?.();
-    } catch {}
+    for (const fn of this._unsubs ?? []) {
+      try {
+        fn();
+      } catch {}
+    }
+    this._unsubs = [];
     MerchantWorkspaceApp._instance = null;
   }
 

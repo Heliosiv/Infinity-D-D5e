@@ -693,6 +693,7 @@ function merchantSessionContext() {
     merchantGoldLabel: "320 gp",
     previewMode: true,
     previewNoActor: false,
+    noActor: false,
     buyActive: true,
     sellActive: true,
     buyRows: [
@@ -760,6 +761,8 @@ function merchantSessionContext() {
       { kind: "buy", text: "Bought 1× Potion of Healing for 48.00 gp" },
       { kind: "bargain", text: "Bargain crit-success · -20%" },
     ],
+    sessionSpentLabel: "48.00 gp",
+    sessionEarnedLabel: "9.00 gp",
   };
 }
 

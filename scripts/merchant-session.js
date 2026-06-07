@@ -149,6 +149,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._buyQty = new Map(); // uuid → qty input value
     this._sellQty = new Map(); // itemId → qty input value
     this._log = []; // session-only transaction log
+    this._spentGp = 0; // running total spent this session
+    this._earnedGp = 0; // running total earned this session
     this._bargainPending = new Set();
     this._closingFromExternal = false;
 
@@ -197,6 +199,15 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     this._unsubscribers = [];
     instances.delete(this._sessionId);
+    // Voluntary player close (not a sandbox preview, not a GM-pushed close):
+    // tell the GM to drop the session record so its Active Sessions list stays
+    // current. Unsubscribed above, so this window won't react to its own echo.
+    if (!this._previewMode && !this._closingFromExternal && this._sessionId) {
+      emitMerchantEvent(MERCHANT_EVENTS.SESSION_CLOSE, {
+        sessionId: this._sessionId,
+        targetUserId: globalThis.game?.user?.id ?? null,
+      });
+    }
   }
 
   _onStateUpdate(payload) {
@@ -272,11 +283,16 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       merchantGoldLabel: formatMerchantGold(this._merchant.goldOnHand),
       previewMode: this._previewMode,
       previewNoActor: this._previewMode && !actor,
+      noActor: !actor,
       buyActive: this._activeTab === "buy",
       sellActive: this._activeTab === "sell",
       buyRows,
       sellRows,
       log: this._log.slice(-30),
+      sessionSpentLabel:
+        this._spentGp > 0 ? `${this._spentGp.toFixed(2)} gp` : "",
+      sessionEarnedLabel:
+        this._earnedGp > 0 ? `${this._earnedGp.toFixed(2)} gp` : "",
     };
   }
 
@@ -457,7 +473,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     for (const input of buyInputs) {
       input.addEventListener("change", () => {
         const uuid = input.dataset.uuid;
-        const qty = Math.max(1, Math.floor(Number(input.value) || 1));
+        const qty = clampQtyInput(input);
         this._buyQty.set(uuid, qty);
         input.value = qty;
       });
@@ -467,7 +483,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     for (const input of sellInputs) {
       input.addEventListener("change", () => {
         const itemId = input.dataset.itemId;
-        const qty = Math.max(1, Math.floor(Number(input.value) || 1));
+        const qty = clampQtyInput(input);
         this._sellQty.set(itemId, qty);
         input.value = qty;
       });
@@ -581,6 +597,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       totalGp: result.totalGp,
     });
     this._seals.delete(sealKey);
+    this._spentGp = roundGp(this._spentGp + result.totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
     this._appendLog(
       "buy",
@@ -668,6 +685,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       totalGp: result.totalGp,
     });
     this._seals.delete(sealKey);
+    this._earnedGp = roundGp(this._earnedGp + result.totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
     this._appendLog(
       "sell",
@@ -770,6 +788,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     this._merchant = applyPreviewBuy(this._merchant, uuid, count, totalGp);
     this._seals.delete(sealKey);
+    this._spentGp = roundGp(this._spentGp + totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
     this._appendLog(
       "buy",
@@ -810,6 +829,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     this._merchant = applyPreviewSell(this._merchant, totalGp);
     this._seals.delete(sealKey);
+    this._earnedGp = roundGp(this._earnedGp + totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
     this._appendLog(
       "sell",
@@ -919,6 +939,13 @@ function resolvePlayerActor() {
         a?.testUserPermission?.(globalThis.game?.user, "OWNER"),
     ) ?? null
   );
+}
+
+/** Clamp a qty input to [1, its max attribute], floored to an integer. */
+function clampQtyInput(input) {
+  const max = Number(input?.max);
+  const value = Math.max(1, Math.floor(Number(input?.value) || 1));
+  return Number.isFinite(max) && max >= 1 ? Math.min(max, value) : value;
 }
 
 function walletGpFromObject(wallet) {

@@ -18,6 +18,7 @@ import {
   registerMerchantSessionAutoOpen,
 } from "./merchant-session.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
+import { closeViewerSessions } from "./merchant/session-state.js";
 import {
   SOUND_EVENTS,
   SOUND_REGISTRY,
@@ -288,6 +289,20 @@ Hooks.once("ready", () => {
     registerSoundAutomation();
     registerMerchantSocket();
     registerMerchantSessionAutoOpen();
+    // GC merchant session records when a player disconnects so the GM's
+    // "Active Sessions" list and seal maps don't leak across a session.
+    Hooks.on("userConnected", (user, connected) => {
+      try {
+        if (!connected && game.user?.isGM && user?.id) {
+          closeViewerSessions(user.id);
+        }
+      } catch (error) {
+        console.warn(
+          `${MODULE_ID} | merchant session cleanup on disconnect failed`,
+          error,
+        );
+      }
+    });
     void registerMonksTokenbarCompat().catch((error) => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });

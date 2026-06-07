@@ -316,7 +316,7 @@ export const SETTINGS = Object.freeze([
     choices: {
       "whisper-gm-buyer": "Whisper to GM and buyer (recommended)",
       public: "Public — visible to everyone",
-      "whisper-gm": "Whisper to GMs only",
+      "whisper-gm": "Whisper to GMs only (buyer not notified in chat)",
     },
   },
   {

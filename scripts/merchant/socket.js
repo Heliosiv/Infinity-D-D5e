@@ -23,6 +23,7 @@ import {
   decrementInventory,
   findMerchant,
   isUserAllowed,
+  merchantCanAfford,
   normalizeMerchant,
   roundGp,
   upsertMerchant,
@@ -190,6 +191,19 @@ export async function receiveMerchantPayload(payload) {
         }
       }
       break;
+    case MERCHANT_EVENTS.SESSION_CLOSE:
+      // A player closing their own shop window tells the authoritative GM to
+      // drop the session record so the workspace's Active Sessions list stays
+      // accurate. (GM-originated closes already call closeSession directly and
+      // are echo-suppressed here.)
+      if (isAuthoritativeGM() && payload.sessionId) {
+        try {
+          closeSession(payload.sessionId);
+        } catch (error) {
+          console.warn(`${MODULE_ID} | session-close cleanup`, error);
+        }
+      }
+      break;
   }
 }
 
@@ -251,10 +265,16 @@ async function handleCommitPurchase(payload) {
     const row = merchant.items.find((r) => r.uuid === itemUuid);
     if (!row) return;
     // Verify + burn the bargain seal here (inside the mutex) and keep its
-    // delta for the GM-side reprice.
+    // delta for the GM-side reprice. A missing/expired seal simply prices at
+    // base (resolveUnitBuyPrice ignores a null seal) — but say so.
     const seal = sealId
       ? consumeSeal(sessionId, sealId, { itemUuid, side: "buy" })
       : null;
+    if (sealId && !seal) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase: seal "${sealId}" not found/expired — pricing at base`,
+      );
+    }
 
     // Recompute the price from the merchant's OWN data — never trust the
     // client's claimed total. The merchant's gold gain uses this server
@@ -306,9 +326,29 @@ async function handleCommitSale(payload) {
   // (clamped at 0; no-op if the purse is unlimited). Seal consumption runs
   // inside the mutex too, matching the buy path.
   await runWithMerchantMutex(session.merchantId, async () => {
-    if (sealId) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
     const merchant = findMerchant(session.merchantId);
-    if (!merchant) return;
+    if (!merchant) {
+      console.warn(
+        `${MODULE_ID} | commit-sale: merchant ${session.merchantId} is gone`,
+      );
+      return;
+    }
+    if (sealId) {
+      const seal = consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
+      if (!seal) {
+        console.warn(
+          `${MODULE_ID} | commit-sale: seal "${sealId}" not found/expired`,
+        );
+      }
+    }
+    // The player already pocketed the coin client-side. If the merchant can't
+    // cover it (two players cashed out at once / stale view), its gold floors
+    // at 0 — surface that rather than hide the shortfall.
+    if (!merchantCanAfford(merchant, totalGp)) {
+      console.warn(
+        `${MODULE_ID} | commit-sale: payout ${totalGp} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — floored at 0`,
+      );
+    }
     const updated = adjustMerchantGold(merchant, -totalGp);
     await upsertMerchant(updated);
     await broadcastState(updated);

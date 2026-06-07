@@ -21,10 +21,17 @@ function buildSessionKey(merchantId, viewerUserId) {
   return `${merchantId}::${viewerUserId}`;
 }
 
+/** Unguessable token; crypto.randomUUID where available, else a Math fallback. */
+function randomToken() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  const a = Math.floor(Math.random() * 0xffffffff).toString(16);
+  const b = Math.floor(Math.random() * 0xffffffff).toString(16);
+  return `${a}${b}`;
+}
+
 function generateSessionId() {
-  const stamp = Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
-  const tail = Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
-  return `s-${stamp}${tail}`;
+  return `s-${randomToken()}`;
 }
 
 /**
@@ -98,7 +105,7 @@ function buildBargainKey(itemUuid, side) {
 }
 
 function generateSealId() {
-  return `seal-${Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")}-${Date.now() & 0xffffff}`;
+  return `seal-${randomToken()}`;
 }
 
 /**
@@ -165,7 +172,10 @@ const mutexChains = new Map(); // merchantId → trailing Promise
  */
 export function runWithMerchantMutex(merchantId, fn) {
   const prev = mutexChains.get(merchantId) ?? Promise.resolve();
-  const result = prev.then(() => fn(), () => fn());
+  const result = prev.then(
+    () => fn(),
+    () => fn(),
+  );
   const sink = result.catch(() => {});
   mutexChains.set(merchantId, sink);
   sink.then(() => {
