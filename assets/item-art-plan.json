@@ -6,8 +6,8 @@
     "uniqueRoot": "assets/item-art/unique"
   },
   "counts": {
-    "packItems": 1741,
-    "existingArtworkItems": 1724,
+    "packItems": 1636,
+    "existingArtworkItems": 1619,
     "absentArtworkItems": 17,
     "items": 17,
     "reusableAssignments": 0,

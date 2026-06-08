@@ -4,8 +4,8 @@ Absent-art-only generation plan. Existing compendium icons are preserved and are
 
 ## Counts
 
-- Pack items scanned: 1741
-- Existing artwork preserved: 1724
+- Pack items scanned: 1636
+- Existing artwork preserved: 1619
 - Items missing source artwork: 17
 - Reusable assignments: 0
 - Bespoke assignments: 17

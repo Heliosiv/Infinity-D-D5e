@@ -38,22 +38,35 @@ const ARMOR_SUBTYPES = new Set([
 export function itemBuyCategories(item) {
   const out = new Set();
 
-  // 1. Tagged compendium items (incl. ones the player bought from a merchant,
-  //    which keep their source flags) carry a canonical lootType directly.
-  const tagged = getItemLootType(item);
-  if (tagged) out.add(tagged);
-
-  // 2. Synthetic ammunition chip — same virtual-chip pattern the roller uses.
+  // Synthetic ammunition chip — arrows/bolts ship as loot.consumable, so this
+  // virtual-chip predicate applies whether or not the item is tagged.
   if (isAmmunitionItem(item)) out.add("loot.ammunition");
 
-  // 3. dnd5e-type fallback for untagged sheet items.
+  // 1. Tagged compendium items (incl. ones the player bought from a merchant,
+  //    which keep their source flags) carry a canonical lootType. Trust it and
+  //    STOP — the dnd5e-type fallback below exists only to classify untagged
+  //    character-sheet gear. Running it on tagged items both double-classifies
+  //    (every consumable also picked up loot.consumable) and, worse, mis-flags
+  //    mundane base gear as magic, because this pack tags base weapons/armor as
+  //    rarity "common" (see the heuristic note in the fallback).
+  const tagged = getItemLootType(item);
+  if (tagged) {
+    out.add(tagged);
+    return out;
+  }
+
+  // 2. dnd5e-type fallback for untagged sheet items.
   const type = String(item?.type ?? "").toLowerCase();
   const subtype = String(item?.system?.type?.value ?? "")
     .trim()
     .toLowerCase();
-  // A non-empty system.rarity is dnd5e's marker for a magic item (it may be
-  // any rarity, including "common"); plain mundane gear leaves it blank.
-  const isMagic = Boolean(String(item?.system?.rarity ?? "").trim());
+  // dnd5e uses system.rarity to mark magic items, but the curated pack also
+  // stamps mundane base gear with rarity "common". So only a rarity ABOVE
+  // common counts as magic here; "common" or blank is treated as mundane.
+  const rarity = String(item?.system?.rarity ?? "")
+    .trim()
+    .toLowerCase();
+  const isMagic = rarity !== "" && rarity !== "common";
 
   switch (type) {
     case "weapon":
@@ -70,6 +83,7 @@ export function itemBuyCategories(item) {
       out.add("loot.consumable");
       if (subtype === "potion") out.add("loot.potion");
       if (subtype === "scroll") out.add("loot.scroll");
+      if (subtype === "reagent") out.add("loot.reagent");
       break;
     case "tool":
       out.add("loot.tool");
@@ -77,6 +91,7 @@ export function itemBuyCategories(item) {
     case "loot":
       if (subtype === "gem") out.add("loot.gem");
       else if (subtype === "art") out.add("loot.art");
+      else if (subtype === "reagent") out.add("loot.reagent");
       else out.add("loot.trade-good");
       break;
     case "container":

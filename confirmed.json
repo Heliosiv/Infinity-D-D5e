@@ -1,0 +1,978 @@
+[
+  {
+    "name": "Amulet of the Planes",
+    "id": "8ABk0XV76Hzq8Qul",
+    "issueType": "wrong-category",
+    "severity": "high",
+    "current": "dndType=equipment, sub=light (armor), lootType=loot.armor.magic, folder=armor/magic-armor-shields/light-armor, system.type.value=\"light\"",
+    "suggested": "Re-tag as magic equipment (lootType loot.equipment.magic), set armor subtype to a non-armor value (trinket/clothing) so it stops granting a base AC, and move out of the armor/light-armor folder into a wondrous/magic-equipment folder.",
+    "rationale": "Its own description reads \"Wondrous Item (requires attunement)\" — it is a neck amulet, not light armor; carrying armor subtype \"light\" wrongly gives it an armor AC base and files it as armor in loot/merchant filters.",
+    "slice": "armor",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the real item JSON (line 115 of packs/infinity-dnd5e-items.db, _id 8ABk0XV76Hzq8Qul). Every \"current\"-state claim checks out: type=equipment with system.type.value=\"light\" (armor \"light\" subtype), flags.infinity-dnd5e.lootType=\"loot.armor.magic\", merchantCategories include \"armor\", and folder = armor/magic-armor-shields/light-armor (folderPathKey + folder object both confirm). The rationale is also confirmed: the description literally reads \"<em>Wondrous Item (requires attunement)</em>\", the item-state list says \"Equipment, Jewelry\", and img is a neck pendant (icons/equipment/neck/pendant-faceted-green.webp). The bad armor classification has even leaked into player-facing text — the unidentified description reads \"A jewelry armor awaiting identification... Visible form: Jewelry Armor.\" In dnd5e, equipment with type.value=\"light\" is treated as wearable Light Armor (occupies the armor AC slot / proficiency path) even though system.armor.value is 0, so the tag is functionally wrong, not cosmetic. This is NOT an alias (loot.armor.magic is the stored lootType, and the armor TYPE is the root cause), and NOT systemic: a scoped scan found this is the only non-armor neck/ring/cloak item carrying an armor type.value (the other \"Ring Mail\" hits are genuine heavy armor). Item-specific and actionable.",
+      "refinedSuggestion": "Re-type as a true wondrous/jewelry item: change system.type.value from \"light\" to a non-armor value (e.g. \"trinket\" or clear it) so it no longer occupies the Light Armor slot or grants an armor AC base. Re-derive the loot tags accordingly: lootType loot.equipment.magic (drop loot.armor.magic), remove \"armor\" from merchantCategories/keywords (keep equipment/magic/outfitting), drop subtype.light / folder.family.armor / folder.leaf.light-armor keywords, and move it from armor/magic-armor-shields/light-armor into a wondrous/magic-equipment folder. Also regenerate the unidentified description so it stops calling the amulet \"Jewelry Armor.\" Root cause is upstream system.type.value=\"light\" driving the armor folder + lootType derivation, so fixing the type and re-running the tagger should cascade correctly."
+    }
+  },
+  {
+    "name": "Helm of Comprehending Languages",
+    "id": "rY9sRFQp5CFSfsat",
+    "issueType": "wrong-category",
+    "severity": "high",
+    "current": "dndType=equipment, sub=light (armor), lootType=loot.armor.magic, folder=armor/magic-armor-shields/light-armor, system.type.value=\"light\"",
+    "suggested": "Re-tag as magic equipment (loot.equipment.magic) with a non-armor subtype, and move out of the armor/light-armor folder.",
+    "rationale": "Description says \"Wondrous item\" — it is a helm, not light armor; the armor subtype \"light\" wrongly grants it a base AC and miscategorizes it as armor.",
+    "slice": "armor",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against item rY9sRFQp5CFSfsat in packs/infinity-dnd5e-items.db (line 794). The item's own description reads \"<em>Wondrous item</em>\" — it is a helm that casts Comprehend Languages, with a single utility activity, no AC/armor mechanic, and properties:[]. Yet system.type.value=\"light\", which the dnd5e system interprets as the Light Armor subtype (granting base-AC/armor-proficiency behavior that does not belong on a wondrous helm). The miscategorization cascades: lootType=\"loot.armor.magic\" (canonical category, not an alias), folder=armor/magic-armor-shields/light-armor (familyKey \"armor\", leafKey \"light-armor\", sort path under Armor), keywords include folder.family.armor, folder.leaf.light-armor, subtype.light, merchant.armor, and details.folderLabels=[\"Armor\",\"Magic Armor & Shields\",\"Light Armor\"]. The auto-generated unidentified description is the giveaway it's wrong: it calls the helm \"An armor awaiting identification\" described by \"worked metal, balance, and edge finish\" (Visible form: Armor) — edge/blade language for a helm. This is item-specific and actionable; the armor subtype is not defensible.",
+      "refinedSuggestion": "Clear the armor subtype: set system.type.value=\"\" (or a wondrous/trinket equipment subtype) so the item stops behaving as Light Armor. Re-tag lootType to a non-armor magic-equipment category (e.g. loot.equipment.magic / wondrous), and move it out of armor/magic-armor-shields/light-armor into a wondrous-item or magic-equipment folder. Update the derived infinity-dnd5e fields accordingly (keywords folder.family/leaf/section, subtype.*, merchant.armor, details.folderPathKey/folderLabels, and the folder.* block) and regenerate the unidentified description so it no longer calls a helm \"armor\" with \"edge finish\"."
+    }
+  },
+  {
+    "name": "Helm of Teleportation",
+    "id": "DEQkJiQdGyfmSNkV",
+    "issueType": "wrong-category",
+    "severity": "high",
+    "current": "dndType=equipment, sub=light (armor), lootType=loot.armor.magic, folder=armor/magic-armor-shields/light-armor, system.type.value=\"light\"",
+    "suggested": "Re-tag as magic equipment (loot.equipment.magic) with a non-armor subtype, and move out of the armor/light-armor folder.",
+    "rationale": "Description says \"Wondrous item\" — it is a helm, not light armor; the armor subtype \"light\" wrongly grants it a base AC and miscategorizes it as armor.",
+    "slice": "armor",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against item DEQkJiQdGyfmSNkV. Description is \"Wondrous item, (requires attunement)\" — a head-slot helm that casts Teleport, not light armor. Yet system.type.value=\"light\" (the dnd5e light-armor subtype, which classifies it as wearable armor), lootType=\"loot.armor.magic\", folder=armor/magic-armor-shields/light-armor, and keywords carry subtype.light + folder.family.armor + merchant.armor. The unidentified flavor even reads \"An armor awaiting identification... Visible form: Armor,\" which is plainly wrong for a teleport helm. Mitigation: system.armor.value is 0, so it doesn't actually grant AC numerically, but the \"light\" subtype still miscategorizes it as armor in the system and drives all the wrong loot/merchant/folder placement. Not an alias case (loot.armor.magic is the specific tag, not the loot.armor shorthand). Item-specific, not systemic. Actionable.",
+      "refinedSuggestion": "Clear the armor subtype: set system.type.value from \"light\" to \"\" so the helm is treated as wondrous equipment, not light armor. Re-tag lootType to loot.equipment.magic and update infinity-dnd5e keywords (drop subtype.light, folder.family.armor, folder.leaf.light-armor, folder.section.magic-armor-shields, merchant.armor; the merchant.equipment/magic/outfitting tags can stay). Move the folder out of armor/magic-armor-shields/light-armor into a wondrous/magic-equipment path (e.g. by head slot or wondrous item), and update the folder.* block (familyKey/sectionKey/leafKey/path/pathKey) and details.folderPathKey/folderLabels accordingly. Also fix the unidentified.description, which currently describes it as \"armor\" with \"worked metal, balance, and edge finish.\""
+    }
+  },
+  {
+    "name": "Amulet of the Planes",
+    "id": "8ABk0XV76Hzq8Qul",
+    "issueType": "price-sanity",
+    "severity": "med",
+    "current": "gp=100000, rarity=very-rare",
+    "suggested": "Lower to the very-rare band (roughly 5,000-50,000 gp), e.g. ~20,000-30,000 gp.",
+    "rationale": "100,000 gp is double the top of the very-rare value band and ~10x its very-rare armor peers in this slice (which sit at 5,000-9,000 gp), exceeding even most legendary items here.",
+    "slice": "armor",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the pack JSON (line 115, _id 8ABk0XV76Hzq8Qul): system.price.value=100000 gp, system.rarity=\"veryRare\", flag gpValue=100000, valueBand=\"value.v5\", sellValueGp=50000. This is the canonical 5e Amulet of the Planes, an official Very Rare Wondrous Item. The DMG/Xanathar market band for Very Rare is 5,001-50,000 gp, so 100,000 gp is exactly 2x the top of the band and sits squarely in Legendary territory. The price is item-specific real data (not an alias and not derived), and 100,000 gp for a Very Rare item is not defensible. Note: the finding's \"very-rare armor peers\" framing is slightly off because this item is mis-classified as light armor (lootType=loot.armor.magic, folder armor/.../light-armor) when it is actually a neck-slot Wondrous Item — but that folder/type mis-tag is a separate issue and does not affect the price-sanity verdict. The price overage holds on its own against the official Very Rare band.",
+      "refinedSuggestion": "Set system.price.value (and flag gpValue / sellValueGp) into the Very Rare band of 5,001-50,000 gp. The canonical DMG value for Amulet of the Planes is in this range; a reasonable target is ~25,000-50,000 gp (50,000 if you want it at the top of Very Rare). Currently 100,000 gp doubles the band ceiling and reads as Legendary."
+    }
+  },
+  {
+    "name": "Airship Supplies",
+    "id": "H95wzHKsLXrU92Hk",
+    "issueType": "wrong category/subtype/folder",
+    "severity": "med",
+    "current": "dndType=consumable, system.type.value=\"ammo\" (Item State shows \"Consumable, Ammo\"), folder=weapons/ammunition, icon=containers/bags/pack-simple-leather-tan.webp",
+    "suggested": "Re-type as a trade good / adventuring gear (e.g. loot type loot.trade-good or loot.equipment; clear the consumable \"ammo\" subtype) and move out of weapons/ammunition into a goods/supplies folder",
+    "rationale": "Description (\"a bundled crate of cordage, brass fittings, treated canvas patches... that keep an airship serviceable\") and pack-icon make this ship-repair supplies, not ammunition; its own merchant tags even include \"tradegood\".",
+    "slice": "weapons-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the pack JSON (line 244, _id H95wzHKsLXrU92Hk). The item is a maintenance-supplies crate (\"cordage, brass fittings, treated canvas patches... that keep an airship serviceable\"; activity chatFlavor \"Use one bundle of airship supplies for maintenance.\") yet is typed as a consumable with system.type.value=\"ammo\" (Item State shows \"Consumable, Ammo\"; unidentified text calls it \"an ammo\"). It sits in folder weapons/ammunition (flags.infinity-dnd5e.folder.pathKey=\"weapons/ammunition\", section \"Ammunition\") with a pack/bag icon and a planned art asset literally named shared/ammunition-ammo. The miscategorization is real and self-contradicted by the item's own metadata: merchantCategories include \"supplies\" and \"tradegood\" (keywords merchant.supplies, merchant.tradegood) while subtype.ammo / folder.section.ammunition coexist. This is not an alias (ammo is a genuine distinct dnd5e subtype), not defensible, and is item-specific. Caveat: the item carries a real utility activity + applied effect with a 16-hour duration, so retyping the whole Foundry item to \"loot\" (as the suggestion alternatively proposes) would strip its mechanics; the correct fix is to keep it usable and just clear the ammo subtype and move the folder.",
+      "refinedSuggestion": "Clear the bogus ammunition classification: set system.type.value away from \"ammo\" (use \"trinket\"/adventuring-gear-style subtype, or convert to a goods item if no activity is needed) so the Item State no longer reads \"Consumable, Ammo.\" Re-folder it out of weapons/ammunition into a goods/supplies family (update flags.infinity-dnd5e.folder family/section keys, pathKey, folderPathKey, and the subtype.ammo / folder.section.ammunition / folder.path.weapons.ammunition keywords to match). Re-point the planned art away from shared/ammunition-ammo. Keep the existing utility activity, applied effect, and uses intact — do not flatten it to a static loot item, since it has functional maintenance mechanics. This also resolves the item's internal contradiction where its merchant tags already say \"supplies\"/\"tradegood\"."
+    }
+  },
+  {
+    "name": "Component Pouch",
+    "id": "eZGmdOhaTWMicXPW",
+    "issueType": "wrong category/subtype/folder",
+    "severity": "med",
+    "current": "dndType=consumable, system.type.value=\"ammo\", folder=weapons/ammunition",
+    "suggested": "Re-type as adventuring gear/equipment (loot.equipment; remove the \"ammo\" consumable subtype) and move out of weapons/ammunition",
+    "rationale": "A component pouch is spellcasting equipment (a watertight belt pouch holding material components) per its own description and PHB; it is in no sense ammunition fired from a weapon.",
+    "slice": "weapons-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the JSON at packs/infinity-dnd5e-items.db (id eZGmdOhaTWMicXPW). All three current-state claims confirmed: type=\"consumable\", system.type.value=\"ammo\", and folder = weapons/ammunition (flags.infinity-dnd5e.details.folderPathKey=\"weapons/ammunition\", folderLabels [\"Weapons\",\"Ammunition\"]). The item's own embedded SRD text describes it as \"a small, watertight leather belt pouch that has compartments to hold all the material components... you need to cast your spells\" — spellcasting adventuring gear, not weapon ammunition. This is item-specific, not systemic: of the 18 items subtyped \"ammo\"/filed under weapons/ammunition, 16 are genuine ammunition (Arrow, Crossbow Bolt, Sling Bullet, Blowgun Needle and their +N/of-Slaying variants). Component Pouch (and Airship Supplies) are the only outliers, so the category is otherwise correctly curated and the mis-subtype here is a real anomaly, not a defensible alias or a known systemic problem. The bad \"ammo\" subtype also cascades into wrong derived fields: unidentified.description (\"An ammo awaiting identification\"), art assetId \"shared/ammunition-ammo\", keywords subtype.ammo / folder.path.weapons.ammunition, and lootType \"loot.consumable\".",
+      "refinedSuggestion": "Re-type Component Pouch as adventuring gear/equipment: clear system.type.value=\"ammo\" (set to \"\" or the equipment/trinket adventuring-gear subtype, not a consumable subtype) and move it out of the weapons/ammunition folder into an Adventuring Gear / spellcasting-focus folder. Re-derive the cascaded fields so they stop saying \"ammo\": update lootType to loot.equipment, the subtype/folder keywords (drop subtype.ammo, folder.path.weapons.ammunition, folder.section.ammunition, folder.family.weapons), the folder block (familyKey/sectionKey/pathKey), the unidentified.description text, and the art assetId (shared/ammunition-ammo). Leave the 16 genuine ammunition items unchanged."
+    }
+  },
+  {
+    "name": "Blowgun Needle",
+    "id": "gBQ8xqTA5f8wP5iu",
+    "issueType": "naming/description quality",
+    "severity": "low",
+    "current": "Description: \"...fired through a blowgun using the force of the wielders lungs.\"",
+    "suggested": "\"...the force of the wielder's lungs.\"",
+    "rationale": "Missing possessive apostrophe (\"wielders\" -> \"wielder's\"), the exact apostrophe class of error the guide calls out.",
+    "slice": "weapons-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against real item data at line 618 of packs/infinity-dnd5e-items.db. The item _id=\"gBQ8xqTA5f8wP5iu\", name=\"Blowgun Needle\" has the description text \"...fired through a blowgun using the force of the wielders lungs.\" The word \"wielders\" is used in a possessive sense (the lungs belonging to the wielder) and is missing its apostrophe — it should be \"wielder's\". This is an item-specific, actionable grammar typo, not an alias tag and not a known-systemic issue. Verified exact wording via sed extraction of line 618.",
+      "refinedSuggestion": "In the Blowgun Needle description, change \"using the force of the wielders lungs\" to \"using the force of the wielder's lungs\" (add the possessive apostrophe)."
+    }
+  },
+  {
+    "name": "Arrow",
+    "id": "3c7JXOzsv55gqJS5",
+    "issueType": "naming/description quality",
+    "severity": "low",
+    "current": "Description: \"...goose feather fletching and hammer metal bodkins.\"",
+    "suggested": "\"...and hammered metal bodkins.\"",
+    "rationale": "\"hammer metal bodkins\" is ungrammatical; the intended word is \"hammered\" (the metal-forming process), a clear text typo.",
+    "slice": "weapons-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data for item _id=\"3c7JXOzsv55gqJS5\" (name=\"Arrow\") in E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db. The literal text \"goose feather fletching and hammer metal bodkins\" appears in the actual item, in TWO fields: system.description.value and system.description.chat. \"hammer metal bodkins\" is ungrammatical — \"hammer\" (noun/verb) is used where the past participle \"hammered\" belongs to describe the metal-forming process. This is a clear, item-specific text typo, not a tag/alias matter and not a known-systemic issue. Both occurrences should be corrected.",
+      "refinedSuggestion": "Change \"goose feather fletching and hammer metal bodkins\" to \"goose feather fletching and hammered metal bodkins\" in both system.description.value and system.description.chat for this item."
+    }
+  },
+  {
+    "name": "Sprig of Mistletoe",
+    "id": "xDK9GQd2iqOGH8Sd",
+    "issueType": "wrong-category/magic-mislabel",
+    "severity": "high",
+    "current": "loot.weapon.magic; properties include 'mgc'; folder weapons/magic-weapons/natural-weapons; merchant arms|magic|weapon; common; 1 gp",
+    "suggested": "Retag as mundane druidic focus (remove 'mgc', non-magic folder/merchant).",
+    "rationale": "A Sprig of Mistletoe is a mundane 1 gp druidic focus, not a magic weapon; 'mgc' + magic classification is wrong.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the pack JSON (id xDK9GQd2iqOGH8Sd, line 873 of packs/infinity-dnd5e-items.db). The item carries properties [\"foc\",\"mgc\"], flags.infinity-dnd5e.lootType=\"loot.weapon.magic\", folder path weapons/magic-weapons/natural-weapons, merchantCategories [\"arms\",\"magic\",\"weapon\"], plus magic-flavored keywords (loot.weapon.magic, magic.bonus, merchant.magic, prop.mgc, folder.section.magic-weapons). Yet it is rarity \"common\", price 1 gp, attunement \"\", magicalBonus null, source SRD 5.1, and its own description calls it a \"druidic focus / spellcasting focus.\" A Sprig of Mistletoe in 5e is a mundane 1 gp druidic focus, not a magic item — the \"mgc\" property is spurious and the magic classification cascades from it (magic folder, magic merchant channel, loot.weapon.magic, magic.bonus keyword). This is item-specific and not a defensible alias; the correct property set is \"foc\" only. (Separately, typing it as a weapon/natural weapon is questionable since a focus is gear, but that is outside this finding's scope.)",
+      "refinedSuggestion": "Remove the \"mgc\" property (keep \"foc\"); drop magic.bonus and prop.mgc keywords. Reclassify lootType from loot.weapon.magic to a mundane bucket (loot.weapon or a focus/gear category). Move folder out of weapons/magic-weapons/natural-weapons into a non-magic folder, and drop \"magic\" from merchantCategories (keep arms/weapon or route to a mundane-gear channel). Net: tag as a mundane common 1 gp druidic focus, not a magic weapon."
+    }
+  },
+  {
+    "name": "Yew Wand",
+    "id": "t5yP0d7YaKwuKKiH",
+    "issueType": "wrong-category/magic-mislabel",
+    "severity": "high",
+    "current": "loot.weapon.magic; properties include 'mgc'; folder weapons/magic-weapons/natural-weapons; merchant arms|magic|weapon; common; 10 gp",
+    "suggested": "Retag as mundane druidic focus (remove 'mgc', non-magic folder/merchant).",
+    "rationale": "A Yew Wand here is described as a mundane 10 gp druidic focus, not the magic 'Wand' item; 'mgc' + magic-weapons classification is wrong.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the real item (line 815, id t5yP0d7YaKwuKKiH). Yew Wand is type=weapon, type.value=\"natural\", price 10 gp, rarity common, NO attunement, properties=['foc','mgc']. Its identified description explicitly defines it as a \"Spellcasting Focus / druidic focus\" (\"A druidic focus is a special item designed to channel the power of spells from the druid's spell list... in place of any material component which does not list a cost\"). In 5e a druidic focus is mundane adventuring gear, not the magic \"Wand\" magic-item line. The economics confirm this: 10 gp, common, no attunement, and only a single \"utility\" activity with zero effects (effectCount 0) — none of the charges/attunement/spell mechanics a real magic Wand carries. Yet it is tagged magic everywhere: prop.mgc, lootType loot.weapon.magic, folder weapons/magic-weapons/natural-weapons, merchant arms|magic|weapon, and flag magic.bonus. The \"inscribed with powerful runes\" line is flavor about channeling nature magic, not mechanical magic-item status. This is the real (non-alias) magic subclass, item-specific, and the mgc/magic classification is genuinely wrong. The \"natural-weapons\" folder leaf is also a secondary oddity (a held wand/scepter is not a natural weapon).",
+      "refinedSuggestion": "Retag as a mundane druidic spellcasting focus, not a magic item: remove the 'mgc' property (keep 'foc'), drop the prop.mgc and magic.bonus keywords, change lootType from loot.weapon.magic to the mundane weapon class, and move it out of the magic-weapons folder / merchant.magic category into a mundane focus/equipment classification (it is common, 10 gp, no attunement). Also reconsider the 'natural-weapons' folder leaf, which is inappropriate for a carved wand."
+    }
+  },
+  {
+    "name": "Rod",
+    "id": "OojyyGfh91iViuMF",
+    "issueType": "wrong-category/magic-mislabel",
+    "severity": "high",
+    "current": "loot.weapon.magic; properties include 'mgc'; folder weapons/magic-weapons/simple-melee; merchant arms|magic|weapon; common; 10 gp",
+    "suggested": "Retag as mundane arcane focus (remove 'mgc', non-magic folder/merchant).",
+    "rationale": "This 'Rod' is described as a mundane 10 gp arcane focus, not a magic rod; the 'mgc' flag and magic classification are incorrect.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against item OojyyGfh91iViuMF (\"Rod\"). The description is explicitly the SRD mundane arcane focus: \"used by spellcasters to focus their attention and arcane energy... Spellcasting Focus. An arcane focus is a special item designed to channel the power of arcane spells.\" It is priced at 10 gp, rarity \"common\", attunement=\"\" , magicalBonus=null, attuned=false — no magical bonus or attunement at all. Yet system.properties = [\"foc\",\"mgc\"]: it carries the magical (\"mgc\") flag in addition to the correct focus (\"foc\") flag. That stray mgc cascades into the magic classification: lootType=\"loot.weapon.magic\" (the real classification, not a benign alias), folder weapons/magic-weapons/simple-melee (section \"Magic Weapons\"), merchantCategories [\"arms\",\"magic\",\"weapon\"], and keywords loot.weapon.magic / merchant.magic / prop.mgc / magic.bonus. This is item-specific and actionable: a mundane 10 gp arcane focus is mislabeled magic. Note the foc property is correct and must be kept — only mgc is wrong.",
+      "refinedSuggestion": "Remove only the \"mgc\" property from system.properties (keep \"foc\"), and clear magicalBonus. Then re-derive the loot tags so this mundane arcane focus stops being classified magic: lootType \"loot.weapon.magic\" -> non-magic weapon loot type; folder weapons/magic-weapons/simple-melee -> weapons/.../simple-melee (non-magic section); merchantCategories drop \"magic\" (keep arms/weapon); and strip the magic keywords (loot.weapon.magic, merchant.magic, prop.mgc, magic.bonus, folder.section.magic-weapons, folder.path.weapons.magic-weapons.simple-melee)."
+    }
+  },
+  {
+    "name": "Silver Dagger",
+    "id": "mNKCedEElfCGWjJj",
+    "issueType": "wrong-category/rarity-sanity",
+    "severity": "high",
+    "current": "loot.weapon.magic; rarity uncommon; folder weapons/magic-weapons/simple-melee; merchant arms|magic|...; properties ['fin','lgt','sil','thr'] (no 'mgc'); 100 gp",
+    "suggested": "Reclassify as a mundane weapon: lootType loot.weapon.mundane, clear rarity (or 'common' per mundane policy), move to a mundane weapons folder, drop 'magic' merchant category.",
+    "rationale": "A silvered dagger is mundane in D&D 5e (base dagger + 100 gp silvering); it has no 'mgc' property and no magic effect, so tagging it uncommon magic in the magic-weapons folder is incorrect.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the item JSON (id mNKCedEElfCGWjJj). The data backs every claim: system.properties = [\"fin\",\"lgt\",\"sil\",\"thr\"] (no \"mgc\"); system.magicalBonus = null; attunement \"\" / attuned false; effects []; only an \"attack\" activity; flags.midiProperties.magicdam/magiceffect = false; source is the SRD dagger (Compendium.dnd5e.items.Item.59pjg8FGM4GG4Fdd). The item's own description states it \"bypass[es] resistances and immunities to NONMAGICAL attacks\" — confirming the weapon itself is nonmagical. Yet the infinity-dnd5e flag tags it lootType \"loot.weapon.magic\", rarity \"uncommon\", merchantCategories includes \"magic\", and folder path weapons/magic-weapons/simple-melee (keywords include magic.bonus, merchant.magic, folder.section.magic-weapons). In D&D 5e a silvered weapon is mundane (base dagger + 100 gp silvering) and carries no magic-item rarity. This is not an alias (loot.weapon.magic is a real subtype, not the loot.weapon alias), is item-specific rather than a broad namespace issue, and the current tag is not defensible. price 100 gp matches the silvering cost. Real and actionable.",
+      "refinedSuggestion": "Reclassify as a mundane weapon. Set infinity-dnd5e.lootType to \"loot.weapon.mundane\" and update the corresponding keyword (loot.weapon.magic -> loot.weapon.mundane). Clear the magic-item rarity: set system.rarity to \"\" (or \"common\" if mundane policy requires a value) and update rarityNormalized/keyword rarity.uncommon accordingly. Move folder to a mundane simple-melee weapons path (e.g. weapons/simple-melee, not weapons/magic-weapons/simple-melee) and update folder.* (sectionKey/sectionLabel, pathKey, pathKeys/pathLabels, folderPathKey, folderLabels, keywords folder.section.magic-weapons + folder.path.weapons.magic-weapons.simple-melee). Drop the \"magic\" merchant category (remove \"magic\" from merchantCategories and the merchant.magic keyword) and remove the magic.bonus keyword. Leave the silvered (\"sil\") property, the 100 gp price, and the attack activity untouched — they are correct. Re-run the tagger/compile (npm run compile:packs) so derived keywords stay consistent."
+    }
+  },
+  {
+    "name": "Vicious Glaive",
+    "id": "eKip69fExSYN661B",
+    "issueType": "description-typo",
+    "severity": "low",
+    "current": "Description reads 'This polearm provies the ability...'",
+    "suggested": "Fix typo 'provies' -> 'provides'.",
+    "rationale": "Player-visible flavor text contains a spelling error.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (line 581, Vicious Glaive, id eKip69fExSYN661B, type weapon). The identified-state description body reads: \"This polearm provies the ability to attack with deadly efficiency from greater range than typical melee weapons.\" \"provies\" is a clear misspelling of \"provides\". It is player-visible flavor text and item-specific. The typo actually occurs in TWO fields, not one: system.description.value AND system.description.chat (same sentence duplicated). Zero occurrences of the correct \"provides\". Not an alias, not systemic, not defensible.",
+      "refinedSuggestion": "In packs/infinity-dnd5e-items.db for item eKip69fExSYN661B (Vicious Glaive), fix the typo \"provies\" -> \"provides\" in BOTH system.description.value and system.description.chat (the sentence \"This polearm provies the ability...\" is duplicated across both fields). Recompile the LevelDB pack via npm run compile:packs after editing."
+    }
+  },
+  {
+    "name": "Vicious Greatsword",
+    "id": "FpLaviCom3XR1ckP",
+    "issueType": "description-typo",
+    "severity": "low",
+    "current": "Description reads 'over four feet long an almost five inches wide'",
+    "suggested": "Fix to 'over four feet long and almost five inches wide'.",
+    "rationale": "Player-visible flavor text has a grammatical typo ('an' for 'and').",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed verbatim in packs/infinity-dnd5e-items.db for Vicious Greatsword (id FpLaviCom3XR1ckP). The description reads: \"A mighty two-handed blade is over four feet long an almost five inches wide.\" The \"an\" is a clear typo for \"and\" joining two dimension clauses. It is player-visible flavor text, item-specific (the only item with this phrasing; the 2 matches are the same text in the rules body and the chat-card preview), not a tag/alias issue, and not part of any systemic pattern.",
+      "refinedSuggestion": "In the Vicious Greatsword description (rules body and the chat-card copy), change \"over four feet long an almost five inches wide\" to \"over four feet long and almost five inches wide\". Update both occurrences in packs/infinity-dnd5e-items.db so the rules and chat text stay consistent, then recompile the LevelDB pack via `npm run compile:packs`."
+    }
+  },
+  {
+    "name": "Vicious Blowgun",
+    "id": "ozYrQ5N4s81h35Fa",
+    "issueType": "description-typo",
+    "severity": "low",
+    "current": "Description reads 'favored by tribes and guerrila fighters'",
+    "suggested": "Fix typo 'guerrila' -> 'guerrilla'.",
+    "rationale": "Player-visible flavor text contains a spelling error.",
+    "slice": "weapons-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Line 757 of packs/infinity-dnd5e-items.db is the Vicious Blowgun (id ozYrQ5N4s81h35Fa). Its player-visible description (infinity-item-body rules content, identified-state) reads: \"A primitive, but deadly, weapon favored by tribes and guerrila fighters.\" \"guerrila\" is a real misspelling of \"guerrilla\" — the correct spelling appears 0 times in the entire file while the typo appears 4 times, so it is not an intentional style. This is item-specific player-visible flavor text, not a tag/alias or systemic-code issue. Caveat: the typo occurs twice within this item (both identified and unidentified state copies), and the same misspelling also appears on line 862 in a different item — a global find/replace would fix all four occurrences.",
+      "refinedSuggestion": "In the Vicious Blowgun description (line 757, id ozYrQ5N4s81h35Fa), replace \"guerrila fighters\" with \"guerrilla fighters\". Apply to both copies of the description in that record (identified and unidentified state blocks). Optionally fix the same \"guerrila\"->\"guerrilla\" typo on line 862 in the same pass."
+    }
+  },
+  {
+    "name": "Spear / Vicious Spear",
+    "id": "OG4nBBydvmfWYXIk",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"A gleaming steel point mouted atop a stout wooden haft\"",
+    "suggested": "Fix \"mouted\" -> \"mounted\" in the player-visible description.",
+    "rationale": "Player-visible typo; same misspelling reused in Vicious Spear (e7JpVX2549vp9mgF).",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed in packs/infinity-dnd5e-items.db line 347 (item _id OG4nBBydvmfWYXIk, \"Spear\"). The string \"mouted\" appears in player-visible text and the intended word is plainly \"mounted\" (\"A gleaming steel point mouted atop a stout wooden haft\"). The same typo is reused in the Vicious Spear (e7JpVX2549vp9mgF, line 574), matching the rationale. Note: within THIS item the misspelling occurs twice — once in the description rules body (infinity-item-body) and once in the chat flavor field — so a single-occurrence fix would leave one behind. Real, actionable, item-specific typo (not a tag/alias issue).",
+      "refinedSuggestion": "In item OG4nBBydvmfWYXIk (\"Spear\"), correct \"mouted\" -> \"mounted\" in BOTH player-visible occurrences: the description rules body and the chat flavor text (\"A gleaming steel point mounted atop a stout wooden haft\"). Apply the same fix to the Vicious Spear (e7JpVX2549vp9mgF), which reuses the identical text."
+    }
+  },
+  {
+    "name": "Dart / Vicious Dart",
+    "id": "3rCO8MTIdPGSW6IJ",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"a short wooden shaft and crossed feathres with a sharp ... tip\"",
+    "suggested": "Fix \"feathres\" -> \"feathers\" in the description.",
+    "rationale": "Player-visible typo; same misspelling reused in Vicious Dart (jeoZmDD9fuQdvC77).",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against line 58 of packs/infinity-dnd5e-items.db, item _id \"3rCO8MTIdPGSW6IJ\" name \"Dart\". The description text literally reads \"...a short wooden shaft and crossed feathres with a sharp wooden or metal tip.\" \"feathres\" is a misspelling of \"feathers\". It appears in BOTH player-visible fields of this item: the rules description body (data-content=\"rules\") and the chat card (\"chat\":\"...crossed feathres...\"). The same typo is independently confirmed in item jeoZmDD9fuQdvC77 (\"Vicious Dart\", line 673), matching the finding's rationale. This is an item-specific, player-facing content typo (not a tag/alias issue), so it is real and actionable.",
+      "refinedSuggestion": "In item \"Dart\" (id 3rCO8MTIdPGSW6IJ), correct \"feathres\" -> \"feathers\" in BOTH the rules description body and the chat description (both contain the phrase \"crossed feathres with a sharp wooden or metal tip\"). Apply the identical fix to \"Vicious Dart\" (id jeoZmDD9fuQdvC77), then recompile the LevelDB pack via `npm run compile:packs`."
+    }
+  },
+  {
+    "name": "Sickle / Vicious Sickle",
+    "id": "i4NeNZ30ycwPDHMx",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"light enough to be wielded in one hand for treshing crops or foes\"",
+    "suggested": "Fix \"treshing\" -> \"threshing\" in the description.",
+    "rationale": "Player-visible typo; same misspelling reused in Vicious Sickle (AChuumAYmts5uGFT).",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Item id i4NeNZ30ycwPDHMx (name \"Sickle\") on line 651 of packs/infinity-dnd5e-items.db contains \"treshing\" in its player-visible description, exactly matching the quoted text: \"light enough to be wielded in one hand for treshing crops or foes.\" Correct spelling is \"threshing\". The misspelling occurs TWICE in this single item record (the data-content=\"rules\" paragraph and a secondary chat/flavor <p>), so both must be fixed. Real, item-specific, player-visible typo — not an alias or tag issue. Minor caveat: the finding's rationale cites a sibling item AChuumAYmts5uGFT, but the only other \"treshing\" instance is on line 148 (a separate record); that does not affect the validity of this item-specific fix.",
+      "refinedSuggestion": "In item i4NeNZ30ycwPDHMx (\"Sickle\") in packs/infinity-dnd5e-items.db, fix the spelling \"treshing\" -> \"threshing\" in both occurrences in the description (the data-content=\"rules\" paragraph and the secondary flavor paragraph), then recompile the pack (npm run compile:packs)."
+    }
+  },
+  {
+    "name": "Longsword / Rusty Longsword",
+    "id": "10ZP2Bu3vnCuYMIB",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"A lengthy stright blade designed for slashing foes\"",
+    "suggested": "Fix \"stright\" -> \"straight\" in the description.",
+    "rationale": "Player-visible typo; same misspelling reused in Rusty Longsword (ennPTzd70YVuAo8c).",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed in item 10ZP2Bu3vnCuYMIB (Longsword). The player-visible description contains \"A lengthy stright blade designed for slashing foes\" in BOTH system.description.value and system.description.chat (line 13 of packs/infinity-dnd5e-items.db). \"stright\" is an unambiguous misspelling of \"straight\". Verified the rationale: the same typo recurs in Rusty Longsword (ennPTzd70YVuAo8c, line 596) as cited, and ALSO in Vicious Longsword (pC3202gDTy8G5i4r, line 761) which the finding did not mention — 3 total occurrences across the pack. This is a genuine item-specific content typo (not a tag/alias issue), and the fix is concrete.",
+      "refinedSuggestion": "In item 10ZP2Bu3vnCuYMIB (Longsword), fix \"stright\" -> \"straight\" in both system.description.value and system.description.chat (the phrase \"A lengthy stright blade designed for slashing foes\"). Note the identical typo also exists in two sibling items, Rusty Longsword (ennPTzd70YVuAo8c) and Vicious Longsword (pC3202gDTy8G5i4r), and should be corrected there too."
+    }
+  },
+  {
+    "name": "Glaive",
+    "id": "rOG1OM2ihgPjOvFW",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"This polearm provies the ability to attack with deadly efficiency\"",
+    "suggested": "Fix \"provies\" -> \"provides\" in the description.",
+    "rationale": "Player-visible typo in the weapon's flavor text.",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified in packs/infinity-dnd5e-items.db (line 789). Glaive (id rOG1OM2ihgPjOvFW) system.description.value contains the literal string \"This polearm provies the ability to attack with deadly efficiency from greater range than typical melee weapons.\" \"provies\" is a clear misspelling of \"provides\" and is player-visible flavor text. This is an item-specific content typo, not a tag/alias or systemic-tagging issue. Note: the identical sentence (and same typo) also appears in \"Vicious Glaive\" (id eKip69fExSYN661B) — only those 2 items are affected, so it is a narrow shared-boilerplate typo, not a broad systemic one; the same fix should be applied there too.",
+      "refinedSuggestion": "In Glaive (id rOG1OM2ihgPjOvFW), system.description.value, change \"This polearm provies the ability\" to \"This polearm provides the ability\". Apply the identical correction to Vicious Glaive (id eKip69fExSYN661B), which shares the same sentence."
+    }
+  },
+  {
+    "name": "Blowgun",
+    "id": "wNWK6yJMHG9ANqQV",
+    "issueType": "typo",
+    "severity": "low",
+    "current": "Description reads \"a weapon favored by tribes and guerrila fighters\"",
+    "suggested": "Fix \"guerrila\" -> \"guerrilla\" in the description.",
+    "rationale": "Player-visible typo in the weapon's flavor text.",
+    "slice": "weapons-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack file E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db line 862. The Blowgun item (_id \"wNWK6yJMHG9ANqQV\", name \"Blowgun\", type weapon) description contains the exact phrase \"a weapon favored by tribes and guerrila fighters\". \"guerrila\" is a real misspelling of \"guerrilla\" (double-l, double-r) and is player-visible flavor text. Item-specific and actionable. Note: the same typo also appears in the sibling item \"Vicious Blowgun\" (_id \"ozYrQ5N4s81h35Fa\", line 757), which likely reuses this flavor text — worth fixing in the same pass, but it does not invalidate this finding.",
+      "refinedSuggestion": "In the Blowgun (id wNWK6yJMHG9ANqQV) description, change \"tribes and guerrila fighters\" to \"tribes and guerrilla fighters\". The identical typo is also present in \"Vicious Blowgun\" (id ozYrQ5N4s81h35Fa); fix both occurrences for consistency."
+    }
+  },
+  {
+    "name": "Berryl Gemstone",
+    "id": "1aGgIFK8tOBzhk8X",
+    "issueType": "naming/spelling",
+    "severity": "med",
+    "current": "name: \"Berryl Gemstone\"; desc \"A sea-green berryl stone\"",
+    "suggested": "Rename to \"Beryl Gemstone\" (and fix \"berryl\" in the description to \"beryl\").",
+    "rationale": "\"Berryl\" is a misspelling of the real gemstone \"Beryl\"; no correctly-spelled Beryl exists elsewhere in the pack, so this is an error rather than a variant.",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack file (line 22, _id 1aGgIFK8tOBzhk8X). The item consistently uses the misspelling \"Berryl\" (double-R) in 5 player-visible spots: name \"Berryl Gemstone\", the \"Identified State: Berryl Gemstone\" header, the chat-block title, \"A sea-green berryl stone\" in the description value, and the same phrase in the chat text. The correct mineral is \"Beryl\" (B-E-R-Y-L). No correctly-spelled \"Beryl\" exists anywhere else in the pack, so this is an error, not a variant/alias. The green faceted-gem icon and \"sea-green\" wording confirm it's meant to be the real gemstone. Not a systemic issue (only this one item is affected). The audit's current/suggested text is accurate; only minor scope note: the misspelling also appears in the identified-state header and chat block (not just name+desc), and in the internal identifier \"berryl-gemstone\".",
+      "refinedSuggestion": "Fix the \"Berryl\" -> \"Beryl\" misspelling everywhere it appears on this item: name (\"Beryl Gemstone\"), the Identified State header, the chat-block title, and both \"sea-green berryl stone\" occurrences (description value + chat text) -> \"sea-green beryl stone\". Leave the internal identifier \"berryl-gemstone\" as-is unless references are updated together, to avoid breaking lookups."
+    }
+  },
+  {
+    "name": "Military Saddle",
+    "id": "PLkzJ310FzBnRrI5",
+    "issueType": "wrong subtype/folder",
+    "severity": "med",
+    "current": "system.type.value: \"clothing\"; folder sundries/adventuring-gear/clothing-wearables",
+    "suggested": "Change subtype off \"clothing\" and move out of the clothing-wearables folder (tack, not apparel).",
+    "rationale": "A military saddle is mount tack, not character clothing; the \"clothing\" subtype and clothing-wearables folder are wrong.",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the pack (E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db, line 362). Item is Military Saddle (id PLkzJ310FzBnRrI5), foundryType equipment. Confirmed: system.type.value=\"clothing\"; folder leaf \"clothing-wearables\" with folderPathKey \"sundries/adventuring-gear/clothing-wearables\"; curation keywords include subtype.clothing, folder.leaf.clothing-wearables. The item's own description (in the pack) reads: \"A type of seat that is fastened to a mount's back... affix part of the mount's tack such as stirrups.\" That is unambiguously mount tack, not character apparel, so both the clothing subtype and the Clothing & Wearables folder are a real, item-specific mismatch. Not an excluded alias (lootType is loot.equipment), not systemic (legit clothing items belong in that folder), and the current tag is not defensible. Caveat: \"clothing\" is also the dnd5e system's real equipment subtype enum and the SRD saddle ships with it upstream; the system enum has no tack/trapping option, so the cleanly in-module-fixable part is the curated folder/leaf placement and the module's own subtype.clothing keyword.",
+      "refinedSuggestion": "Reclassify Military Saddle (PLkzJ310FzBnRrI5) as mount tack rather than apparel. Move it out of the Sundries > Adventuring Gear > Clothing & Wearables folder into a tack/mounts (or generic adventuring-gear) leaf, and update the module curation keywords accordingly: replace subtype.clothing and the folder.leaf/folder.path clothing-wearables keywords (under flags.infinity-dnd5e) plus the flags.infinity-dnd5e.folder block (familyKey/sectionKey/leafKey/path/pathKey) and details.folderPathKey/folderLabels to the new location. For system.type.value: since the dnd5e equipment enum has no \"tack\" option, either blank it or pick the least-wrong neutral subtype rather than leaving \"clothing\" (low priority vs. the folder fix). Apply the same check to other saddles/barding/tack if present."
+    }
+  },
+  {
+    "name": "Taurine",
+    "id": "85mRD0d5phAfu2XN",
+    "issueType": "naming/quality",
+    "severity": "low",
+    "current": "name: \"Taurine\"; desc \"A mauve taurine crystal\" sold as a 200gp gem",
+    "suggested": "Rename to an actual (or unambiguously fictional) gemstone, e.g. \"Tourmaline\" or a coined fantasy name.",
+    "rationale": "\"Taurine\" is a real-world biochemical compound (a sulfonic acid), not any gemstone; among the pack's otherwise real gem names it reads as a placeholder/typo (likely intended \"Tourmaline\").",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the pack. Record at packs/infinity-dnd5e-items.db: name \"Taurine\", _id 85mRD0d5phAfu2XN, type \"loot\", identifier \"taurine\", price 200gp, img icons/commodities/gems/gem-rough-cushion-purple-pink.webp. The identified description reads \"A mauve taurine crystal with smoky inclusions...\" and metadata lists it as Treasure / Rarity: Common / Value: 200 gp — so it is unambiguously presented as a collectible gemstone. \"Taurine\" is in fact a real-world biochemical compound (an amino sulfonic acid, the energy-drink ingredient), not a gemstone or mineral. The audit's \"among real gem names\" premise checks out: the pack holds ~50 genuine gem/mineral names (Agate, Amethyst, Black Opal, Bloodstone, Diamond, Emerald, Imperial Topaz, Moonstone, Ruby, Sapphire, Star Sapphire, Sunfire Citrine, etc.), and the real word \"Tourmaline\" already appears in \"Verdant Tourmaline Prism.\" Coined fantasy gems in the pack (Dragon Garnet, Ember Spinel, Frost Quartz Prism, Winterglass Diamond, Mist-Vein Emerald) are all built on real mineral roots, so an unmodified \"Taurine\" stands out as a likely typo/placeholder for \"Tourmaline.\" The finding does not concern a loot tag (flags here are only standard core/midi-qol/dae entries), so the alias/tag exclusions don't apply. Real, item-specific, low-severity cosmetic/lore fix with a localized rename. Note: name appears in three spots that must all change to stay consistent — system.identifier (\"taurine\"), the name field, and twice in the description value (header \"Identified State: Taurine\" and the \"mauve taurine crystal\" lore line), plus the chat snippet.",
+      "refinedSuggestion": "Rename to a real or root-real gemstone. Given the pack already uses \"Tourmaline,\" the cleanest fix is \"Tourmaline\" (or a coined variant matching the pack's style, e.g. \"Mauve Tourmaline\" / \"Stormveil Tourmaline\" to fit the smoky-inclusion lore). Update all occurrences for this _id: the name field, system.identifier (taurine -> tourmaline), the description.value header (\"Identified State: ...\") and the \"mauve taurine crystal\" lore sentence, and the chat snippet so they stay in sync."
+    }
+  },
+  {
+    "name": "Chalk",
+    "id": "5fJn3LQ2eQG7luEO",
+    "issueType": "description typo",
+    "severity": "low",
+    "current": "desc: \"...porous sedimentary acarbonate rock...\"",
+    "suggested": "Fix to \"...porous sedimentary carbonate rock...\" (\"acarbonate\" -> \"a carbonate\").",
+    "rationale": "\"acarbonate\" is a typo for \"a carbonate\"; visible in the player-facing identified description.",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed in packs/infinity-dnd5e-items.db line 81. Item id 5fJn3LQ2eQG7luEO, name \"Chalk\" (type loot). The string \"acarbonate\" appears literally twice — once in the identified-state \"rules\" description and once in the \"chat\" description, both player-facing. Full text: \"It is soft white porous sedimentary acarbonate rock, a form of limestone composed of the mineral calcite. Can be used to draw shapes.\" This is a dropped-space typo: \"a carbonate rock\" (chalk is a calcite/limestone carbonate rock). Item-specific (string unique to this item), not an alias, not systemic, directly confirmable. Real and actionable.",
+      "refinedSuggestion": "In packs/infinity-dnd5e-items.db, item \"Chalk\" (id 5fJn3LQ2eQG7luEO), fix the description typo \"porous sedimentary acarbonate rock\" -> \"porous sedimentary carbonate rock\" (or \"a carbonate rock\"). It occurs in both the identified-state \"rules\" body and the \"chat\" description; correct both occurrences, then recompile the LevelDB pack via `npm run compile:packs`."
+    }
+  },
+  {
+    "name": "Hourglass",
+    "id": "G7LqGzKR5ts0WlJ9",
+    "issueType": "description typo",
+    "severity": "low",
+    "current": "desc: \"...used to measure the psaage of time...\"",
+    "suggested": "Fix \"psaage\" -> \"passage\".",
+    "rationale": "Misspelling of \"passage\" in the player-facing description.",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack file E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db, line 229, item name=\"Hourglass\", id=G7LqGzKR5ts0WlJ9. The system.description.value HTML contains the literal string \"It is a device used to measure the psaage of time.\" — a genuine misspelling of \"passage\" in the player-facing description. Item-specific, actionable, and not an alias or systemic-vocabulary issue.",
+      "refinedSuggestion": "In the Hourglass item description, change \"used to measure the psaage of time\" to \"used to measure the passage of time\"."
+    }
+  },
+  {
+    "name": "Reliquary",
+    "id": "gP1URGq3kVIIFHJ7",
+    "issueType": "wrong/odd folder",
+    "severity": "low",
+    "current": "folder sundries/art-objects/decorative-finery (its sibling holy symbols Amulet & Emblem are in sundries/adventuring-gear/general-gear)",
+    "suggested": "Move Reliquary into general-gear alongside Amulet and Emblem.",
+    "rationale": "Reliquary is a holy-symbol spellcasting focus (SRD trio Amulet/Emblem/Reliquary); filing it under art-objects/decorative-finery separates it from its two functionally-identical siblings.",
+    "slice": "sundries-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against pack data. Reliquary (gP1URGq3kVIIFHJ7) sits in folder sundries/art-objects/decorative-finery (flags.infinity-dnd5e.folder.pathKey + details.folderPathKey both confirm). Its description explicitly states it is a holy symbol usable as a spellcasting focus by clerics/paladins. Its two SRD siblings, Amulet (paqlMjggWkBIAeCe) and Emblem (laVqttkGMW4B9654), are both holy symbols, both equipment/trinket, both 5gp, and both filed in sundries/adventuring-gear/general-gear. So 2 of the 3 functionally-identical holy-symbol foci are in general-gear while Reliquary alone is split into art-objects/decorative-finery. The art-objects placement is somewhat defensible (a reliquary can be ornate, and the item also carries loot.variable.art/treasure.art/merchant.art tags + variableTreasureKind=art), but its mechanical identity and SRD grouping match its siblings exactly. Real, item-specific, low-severity folder inconsistency; not an alias, not a systemic class issue.",
+      "refinedSuggestion": "Move Reliquary (gP1URGq3kVIIFHJ7) from sundries/art-objects/decorative-finery into sundries/adventuring-gear/general-gear to sit alongside its functionally-identical holy-symbol foci Amulet (paqlMjggWkBIAeCe) and Emblem (laVqttkGMW4B9654). This requires updating the folder reference (currently folder id 3xoP25yjfMVVEi5k) plus the infinity-dnd5e flag folder block: folder.pathKey/path/pathKeys/pathLabels/sectionKey/leafKey, the folder.* keywords (folder.section, folder.leaf, folder.path.*), and details.folderPathKey/folderLabels. Optionally reconsider the art-treasure tags (loot.variable.art, treasure.art, merchant.art, variableTreasureKind=art), since Amulet/Emblem are not tagged as art — though that is a secondary consideration."
+    }
+  },
+  {
+    "name": "inconspicuous Box",
+    "id": "GUgSvlEeG7ownaX0",
+    "issueType": "multiple: naming/typo + magic rarity missing + tier/value mismatch + merchant miscategorization",
+    "severity": "high",
+    "current": "name 'inconspicuous Box' (lowercase start); desc 'The inconspicous Coffer is a rare magical artifact...' (typo 'inconspicous'; noun drifts Box->Coffer->case); rarity ''; merchantCategories container|storage (no magic); tier t1 while gp=5000 (valueBand v5)",
+    "suggested": "Capitalize to 'Inconspicuous Box', fix 'inconspicous'->'inconspicuous', make the noun consistent (Box vs Coffer vs case); set rarity to 'rare' (desc literally says 'rare magical artifact'); add 'magic' merchant category; bump tier to match the 5000gp v5 value (e.g. t4)",
+    "rationale": "A described 'rare magical artifact' priced at 5000gp is carrying no rarity, no magic merchant tag, and tier t1 (same as a 1gp basket) plus a lowercased name and typos.",
+    "slice": "sundries-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against line 234 of packs/infinity-dnd5e-items.db (id=GUgSvlEeG7ownaX0). Every claim is literally true. name='inconspicuous Box' (lowercase start). system.rarity='' AND rarityNormalized='' AND keyword 'rarity.none' AND metadata aside 'Rarity: ' blank — yet the body says \"is a rare magical artifact\", has a \"Magical Properties\" section (negates all scrying), and the item-state lists \"Activities: Utility\". Desc contains the typo \"inconspicous Coffer\" and the noun is wildly inconsistent: name says \"Box\", body says \"Coffer\", \"this case\", and repeatedly \"the Aegis Coffer\" (an entirely different proper name) — worse than the finding noted. merchantCategories=[\"container\",\"storage\"] with no magic tag. tier='tier.t1' (lowest tier, same as a 1gp basket) while gpValue=5000, valueBand='value.v5', value.high. The tier↔value mismatch is internally self-contradictory. Not an alias, not systemic, not a defensible single tag — a concrete multi-field data-quality defect on one item.",
+      "refinedSuggestion": "Fix this single item's data: (1) Capitalize name to 'Inconspicuous Box'. (2) Fix typo 'inconspicous'->'inconspicuous' and make the noun consistent throughout the description — pick one name (it currently mixes Box / Coffer / \"case\" / \"Aegis Coffer\"); if \"Aegis Coffer\" is the intended name, rename the item, otherwise replace all \"Aegis Coffer\"/\"Coffer\"/\"case\" with \"Inconspicuous Box\". (3) Set rarity to 'rare' (system.rarity, rarityNormalized, and the 'rarity.none' keyword) since the desc explicitly calls it \"a rare magical artifact\". (4) Add a 'magic' merchant category alongside container/storage. (5) Raise tier from tier.t1 to match the v5/5000gp band per the project's tier-to-valueBand convention (don't leave a 5000gp magical artifact at the same tier as a 1gp basket)."
+    }
+  },
+  {
+    "name": "Black Opal",
+    "id": "0BIXYULR7r7Uguhv",
+    "issueType": "tier/value inversion (rarity-derived tier ignores gp) across gemstones",
+    "severity": "med",
+    "current": "12 gemstones at 250-1000gp (valueBand v3/v4) are tagged tier t1 because rarity is empty, while cheaper gems with a rarity get higher tiers: Black Opal 1000gp t1, Cathedral Ruby (8rEeTCElX7x4CKgQ) 1000gp t1, Dragon Garnet (bx5reodItf5nVWjr) 1000gp t1, Royal Alexandrite Shard (z23R1KnpLep8zFHm) 1000gp t1, Black Pearl Pair (AvZNeZWMYvvq65Hb) 500gp t1, Ember Spinel (UknNCLG0V2shkXTI) 500gp t1, Emerald (2q1Cvb7GDga4dq13) 500gp t1, Imperial Topaz (eYWbGHHhTVTZhis1) 500gp t1, Mist-Vein Emerald (9hLppZ9P8ddKWCzn) 500gp t1, Fire Opal Tear (vY5nszZ6U14X8Vrg) 250gp t1, Queen's Tear Pearl (eqahThWz5W5jlRxD) 250gp t1, Sapphire (MgBcW83MBYjAbuLZ) 250gp t1 -- yet Alexandrite 200gp = t2 and Diamond 150gp = t2",
+    "suggested": "Derive gem tier from value band (gp) rather than rarity, so a 1000gp gem ranks at/above a 150gp gem. Expected ~t3 for the v3 500gp gems and ~t4 for the v4 1000gp gems within this folder's curve",
+    "rationale": "Within the same gemstones folder, 1000gp stones rank tier t1 while 150-200gp stones rank t2 -- a value/tier inversion that mis-sorts the most valuable gems to the lowest tier.",
+    "slice": "sundries-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against pack data E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db. Black Opal (0BIXYULR7r7Uguhv): gpValue=1000, valueBand=value.v4, rarityNormalized=\"\" (empty), tier=tier.t1 — exactly as the finding claims. All 12 cited gems confirmed (250-1000gp, empty rarity, all t1). Counter-examples confirmed: alexandrite (200gp, rarity=uncommon -> t2) and diamond (150gp, rarity=uncommon -> t2). Enumerated the whole gemstones folder (38 items): tier.t1 spans gp 5-5000; tier.t2 spans gp 25-250. Every single t2 gem has rarityNormalized=uncommon and every t1 gem has (none)/common — tier tracks rarity, not price. The extreme cases: 5000gp winterglass-diamond and 1000gp black-opal/cathedral-ruby/dragon-garnet/royal-alexandrite-shard are t1, while 25gp diamond-dust is t2. This is a genuine, item-specific value/tier inversion, not an alias and not a duplicate-systemic noise tag. It is actionable: hoard-loot.js line 515 feeds tier into tierWindow() to filter the candidate pool, so a high-tier loot roll would surface the 25gp t2 dust but exclude the 1000-5000gp t1 gems — misrouting the most valuable treasure away from high-tier encounters. Caveat on the suggestion: the codebase's TIERS are an APL/character-power band (tag-vocabulary.js line 24: t1=lvl1-4 ... t5=epic), and a separate gp-driven valueBand (v1-v5) already exists; the gem tier currently defaults to t1 whenever rarity is empty, which is the root cause.",
+      "refinedSuggestion": "For treasure with no inherent power level (gemstones/art in the sundries/gems-jewelry/gemstones folder), stop defaulting tier to t1 when rarity is empty. Instead derive the gem's tier from its gpValue/valueBand so price monotonically maps to tier: e.g. map value bands to tiers (roughly v1/v2->t1, v3 (250-500gp)->t2/t3, v4 (1000gp)->t4, v5 (5000gp)->t5), or at minimum ensure a 1000gp gem ranks >= a 150-200gp uncommon gem. This is a re-tag of the pack data (schema po-loot-v3, tier field + tier.tN keyword) — the empty-rarity fallback in the upstream tagging pipeline is the bug. Concretely, black-opal/cathedral-ruby/dragon-garnet/royal-alexandrite-shard/star-sapphire-cabochon (1000gp v4) should land around t4, the 500gp v3 gems around t3, and they must not sit below alexandrite/diamond (150-200gp uncommon, currently t2). Validate by re-running the gemstones-folder crosstab so tier becomes non-decreasing in gpValue."
+    }
+  },
+  {
+    "name": "Burglar's Pack",
+    "id": "xsB7Y2WI476kvOt4",
+    "issueType": "placeholder/wrong description (generic Backpack text on named packs)",
+    "severity": "med",
+    "current": "Description is the generic 'A backpack can hold one cubic foot or 30 pounds of gear...' boilerplate instead of describing the pack's bundled contents. Same boilerplate on Dungeoneer's Pack (XY8b594Dn7plACLL), Entertainer's Pack (6OYR11aJX2dEVtOj), Explorer's Pack (8KWz5DJbWUpNWniP), Priest's Pack (6BybWxK5GcEzqcOV), Scholar's Pack (UOE8RGOpgv2oWIvM)",
+    "suggested": "Give each named pack a description of its actual contents (matching the bespoke style already used on Diplomat's Pack Qy2aRjl4iQ8EmaT5), or list the SRD pack contents",
+    "rationale": "Six named adventuring packs share copy-pasted generic backpack text and say nothing about what they actually contain; Diplomat's Pack shows the intended bespoke treatment, so these are unfinished.",
+    "slice": "sundries-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against pack data at packs/infinity-dnd5e-items.db. Burglar's Pack (xsB7Y2WI476kvOt4) rules body is the generic \"A backpack can hold one cubic foot or 30 pounds of gear. You can also strap items, such as a bedroll or a coil of rope, to the outside of a backpack.\" All five other cited packs carry the identical paragraph verbatim: Dungeoneer's (XY8b594Dn7plACLL), Entertainer's (6OYR11aJX2dEVtOj), Explorer's (8KWz5DJbWUpNWniP), Priest's (6BybWxK5GcEzqcOV), Scholar's (UOE8RGOpgv2oWIvM). Diplomat's Pack (Qy2aRjl4iQ8EmaT5) confirms the intended bespoke style with a content-specific, flavorful description, so the six are genuinely unfinished, not deliberately generic. All are type=container with no embedded contents in the pack file (contents populate on the actor), so the fix is purely the description text. Not a tag/alias issue, not a defensible current value, item-specific and actionable.",
+      "refinedSuggestion": "Replace the copy-pasted backpack boilerplate on the six named adventuring packs with content-specific descriptions matching the bespoke style of Diplomat's Pack (Qy2aRjl4iQ8EmaT5). For each, write a short flavor paragraph plus the SRD contents list: Burglar's Pack (backpack, bag of 1000 ball bearings, 10 ft string, bell, 5 candles, crowbar, hammer, 10 pitons, hooded lantern, 2 flasks oil, 5 days rations, tinderbox, waterskin, 50 ft hempen rope); Dungeoneer's Pack (backpack, crowbar, hammer, 10 pitons, 10 torches, tinderbox, 10 days rations, waterskin, 50 ft hempen rope); Entertainer's Pack (backpack, bedroll, 2 costumes, 5 candles, 5 days rations, waterskin, disguise kit); Explorer's Pack (backpack, bedroll, mess kit, tinderbox, 10 torches, 10 days rations, waterskin, 50 ft hempen rope); Priest's Pack (backpack, blanket, 10 candles, tinderbox, alms box, 2 blocks incense, censer, vestments, 2 days rations, waterskin); Scholar's Pack (backpack, book of lore, bottle of ink, ink pen, 10 sheets parchment, little bag of sand, small knife). Edit packs/infinity-dnd5e-items.db source then recompile with npm run compile:packs."
+    }
+  },
+  {
+    "name": "Pouch",
+    "id": "9bWTRRDym06PzSAf",
+    "issueType": "description encoding artifact (mojibake)",
+    "severity": "low",
+    "current": "Description reads 'A pouch can hold up to â…• cubic foot or 6 pounds of gear.' -- 'â…•' is a UTF-8 mojibake of the fraction one-fifth (1/5)",
+    "suggested": "Replace 'â…•' with '1/5' (or the proper '⅕') so the capacity reads correctly",
+    "rationale": "A garbled character in the player-visible description; the intended text is 'one-fifth cubic foot'.",
+    "slice": "sundries-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the real data. In packs/infinity-dnd5e-items.db line 137 (Pouch, _id 9bWTRRDym06PzSAf), system.description.value contains: \"A pouch can hold up to â…• cubic foot or 6 pounds of gear.\" A hex dump of the bytes between \"up to \" and \" cubic foot\" yields c3 a2 e2 80 a6 e2 80 a2, which is exactly the double-encoded (UTF-8 -> Windows-1252 -> UTF-8) mojibake of ⅕ (U+2155, vulgar fraction one fifth = e2 85 95): e2->Ã¢ (c3 a2), 85->… (e2 80 a6), 95->• (e2 80 a2). So the finding's identification is precisely correct. This is player-visible identified-state text, item-specific to this _id, and actionable. It is not an alias and not unconfirmable. Note: the structured field system.capacity.volume.value is null and unaffected, so only the description string needs fixing. (Aside: 16 lines in the pack contain the c3 a2 sequence, so other items may have similar mojibake, but this finding correctly pinpoints a genuine instance in this specific item.)",
+      "refinedSuggestion": "In packs/infinity-dnd5e-items.db, item _id 9bWTRRDym06PzSAf (Pouch), system.description.value: replace the garbled \"â…•\" (bytes c3 a2 e2 80 a6 e2 80 a2) with the ASCII \"1/5\" so the text reads \"A pouch can hold up to 1/5 cubic foot or 6 pounds of gear.\" Prefer plain \"1/5\" over the Unicode ⅕ to avoid re-introducing encoding artifacts through the source-pack -> LevelDB compile pipeline. Only the description string needs changing; system.capacity.volume.value is null and is unaffected."
+    }
+  },
+  {
+    "name": "Ring of Telekinesis",
+    "id": "hxfOtvFrY1PXHQN1",
+    "issueType": "price-sanity",
+    "severity": "high",
+    "current": "gp 80000, rarity very-rare",
+    "suggested": "Reprice to ~10000-14000 gp (in line with peer very-rare rings)",
+    "rationale": "80,000 gp dwarfs every other ring in this folder including legendary ones (Ring of Three Wishes 50,000, Ring of Djinni Summoning 45,000) and all other very-rare rings (Regeneration 12,000, Shooting Stars 14,000); an order-of-magnitude price outlier for a correctly-rarity'd very-rare item.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the pack file (line 648, id hxfOtvFrY1PXHQN1): Ring of Telekinesis is priced 80000 gp at rarity veryRare. Comparison across all 34 \"Ring of\" items in infinity-dnd5e-items.db corroborates the outlier claim exactly. The two other very-rare rings are Shooting Stars (14000) and Regeneration (12000); the most expensive LEGENDARY ring (a full rarity tier higher) is Three Wishes at 50000, followed by Djinni Summoning 45000. So at 80000 gp this very-rare ring is ~5.7x its nearest very-rare peer and 1.6x the costliest legendary ring in the entire folder — a clear order-of-magnitude, item-specific price anomaly. Rarity itself (veryRare) is correct and defensible; only the price is wrong, so this is a targeted price-sanity fix, not an alias or systemic tagging issue. Note: the cached flag fields infinity-dnd5e.gpValue (80000), valueBand value.v5, sellValueGp (40000), tier.t4 and value.high all derive from the system price and will need re-derivation when the price is corrected.",
+      "refinedSuggestion": "Reprice system.price.value from 80000 to ~13000 gp (between Ring of Regeneration 12000 and Ring of Shooting Stars 14000) to align with peer very-rare rings; keep rarity veryRare. Re-run pack tagging/compile so the derived flags update: infinity-dnd5e.gpValue, valueBand (v5 -> likely v4), sellValueGp (currently 40000), and the value.high/value.v5 keyword tags."
+    }
+  },
+  {
+    "name": "Ring of Spell Storing",
+    "id": "9cIlRtKDtDXQtElf",
+    "issueType": "price-sanity",
+    "severity": "med",
+    "current": "gp 20000, rarity rare",
+    "suggested": "Reprice to ~5000-6000 gp (peer rare-ring band)",
+    "rationale": "Rarity 'rare' is correct per SRD, but 20,000 gp is far above peer rare rings (6,000 and below); same anomalous high price as Ring of Free Action, inconsistent with its rarity.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against packs/infinity-dnd5e-items.db (id 9cIlRtKDtDXQtElf): price.value=20000 gp, rarity=\"rare\", attunement required. The anomaly is real and item-specific. Every other rare ring in the pack tops out at 6,000 gp (Feather Falling 2,000; Protection 3,500; Evasion/Ram 5,000; all resistance rings + X-ray Vision 6,000). 20,000 gp is in the legendary band (Invisibility/Spell Turning 25,000+) and above all veryRare rings except Telekinesis. Ring of Spell Storing sits at 3.3x the next-highest rare ring, sharing the exact 20,000 gp outlier value with Ring of Free Action. This is a genuine price-vs-rarity mismatch, not an alias or vocabulary issue, and is actionable per-item.",
+      "refinedSuggestion": "Reprice Ring of Spell Storing from 20000 gp to 6000 gp to match the pack's rare-ring ceiling (Fire/Cold/etc. Resistance rings, X-ray Vision all at 6000). As a potent attunement-required item it warrants the top of the rare band, but 20000 gp belongs to legendary rings. Edit system.price.value to 6000 (keep denomination gp, rarity rare)."
+    }
+  },
+  {
+    "name": "Ring of Feather Falling",
+    "id": "JyYwliYiWEw2g0yJ",
+    "issueType": "wrong-merchant-tag",
+    "severity": "med",
+    "current": "merchant buy-filter tags: equipment|herb|ingredient|jewelry|magic|outfitting",
+    "suggested": "Remove 'herb' and 'ingredient' tags; should be equipment|jewelry|magic|outfitting like every other ring",
+    "rationale": "A magic ring is tagged as an alchemy herb/ingredient, so it would surface in herbalist/apothecary merchant stock and buy filters; no other ring in the folder carries these tags - clearly stray contamination unique to this item.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (line 288 of packs/infinity-dnd5e-items.db). Item JyYwliYiWEw2g0yJ \"Ring of Feather Falling\" carries merchantCategories=[equipment,herb,ingredient,jewelry,magic,outfitting] plus the matching keywords merchant.herb and merchant.ingredient. It is a Rare attunement magic ring (descend 60ft/round, no fall damage); its description has zero alchemy/herb/ingredient content. I enumerated all 53 rings in the pack: this is the ONLY ring carrying herb/ingredient — every other magic ring (Ring of Acid Resistance, Ring of Jumping, Ring of Protection, etc.) carries exactly [equipment,jewelry,magic,outfitting], the suggested correct set. So this is clearly stray, item-specific contamination, not a systemic/aliased pattern. The merchant.* keywords are live runtime data (e.g. scripts/loot/roller.js reads merchant.gem), so the stray herb/ingredient tags would genuinely surface this ring in herbalist/apothecary stock pools. One caveat on the finding's wording: scripts/merchant/buy-filter.js actually keys off the lootType (loot.equipment.magic, which is correct here), not merchantCategories — so the precise misfire is in merchant stock/category surfacing rather than the buy-filter per se, but the underlying defect and the suggested remediation are sound.",
+      "refinedSuggestion": "Remove the stray \"herb\" and \"ingredient\" entries from this item's merchant tags so it matches every other magic ring. Edit item JyYwliYiWEw2g0yJ in packs/infinity-dnd5e-items.db: set flags.infinity-dnd5e.merchantCategories to [equipment,jewelry,magic,outfitting] and delete the \"merchant.herb\" and \"merchant.ingredient\" entries from flags.infinity-dnd5e.keywords. Recompile via npm run compile:packs. This stops a feather-falling ring from appearing in herbalist/apothecary merchant stock."
+    }
+  },
+  {
+    "name": "Adamantine Bar",
+    "id": "GgQkUMbwLoiMzlXn",
+    "issueType": "price-sanity",
+    "severity": "med",
+    "current": "gp 7.69, rarity uncommon",
+    "suggested": "Reprice to a sensible premium-metal value (well above the Mithril Bar's 46 gp)",
+    "rationale": "7.69 gp is an oddly-precise placeholder/conversion artifact and is cheaper than ordinary trade silver (5 gp); adamantine is a premium crafting metal that should out-price the sibling Mithril Bar (46 gp), so the value is implausibly low for an 'uncommon' material.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Adamantine Bar (GgQkUMbwLoiMzlXn): type=loot, rarity=uncommon, price.value=7.69 gp, in folder leaf 'materials-metals'. Comparing same-folder trade metals: Iron 0.1 gp, Copper 0.5 gp, Silver 5 gp, Gold 50 gp, Mithril Bar 46 gp (also uncommon). 7.69 is the ONLY fractional/non-round value in the entire metals group — a clear conversion-artifact/placeholder. Adamantine is a premium crafting metal (its armor line is priced as an elite tier, e.g. Adamantine Plate 2000 gp, on par with mithral), yet the raw bar at 7.69 gp is ~1/6 of the sibling Mithril Bar (46 gp), which is implausibly low for 'uncommon'. Real, item-specific, not an alias, not systemic. Note: the rationale's claim that 7.69 is 'cheaper than trade silver (5 gp)' is slightly off — it is marginally ABOVE silver — but the central argument (should out-price the 46 gp Mithril Bar) holds. Item file: E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db (line 237). Fixing system.price.value cascades to flags.infinity-dnd5e.gpValue (7.69) and sellValueGp (3.85), which are derived.",
+      "refinedSuggestion": "Reprice the Adamantine Bar above the Mithril Bar (46 gp) to reflect adamantine as the premium crafting metal — e.g. set system.price.value to a clean ~50-60 gp (round, not fractional). Replace the 7.69 gp placeholder/conversion artifact. After updating system.price.value, regenerate the derived flags.infinity-dnd5e.gpValue and sellValueGp (currently 7.69 / 3.85) so they stay consistent; keep rarity 'uncommon' (matches sibling) and the value band/tags will re-derive from the new price."
+    }
+  },
+  {
+    "name": "Incense",
+    "id": "jsR8i4HOjATQ1EwI",
+    "issueType": "price-sanity",
+    "severity": "med",
+    "current": "gp 150",
+    "suggested": "Reprice to ~1-5 gp range",
+    "rationale": "A wrapped bundle of incense is priced at 150 gp while the sibling 'Block of Incense' is 1 gp and 'Stick of Incense' is 0.2 gp; 150 gp is art-object money for perfumed resin - a two-order-of-magnitude outlier.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db, line 678). Audited item Incense (jsR8i4HOjATQ1EwI) is type=loot with price {value:150, denomination:gp}. Its description explicitly says \"A wrapped bundle of incense ... Even when it is NOT temple-grade, stock like this moves easily\" — i.e. ordinary, low-end trade good. Sibling incense items in the same pack: Stick of Incense (3b0RvGi0TnTYpIxn) = 2 sp (0.2 gp); Block of Incense (eJY20LOs3pOkRDPl) = 1 gp; and a second item literally named \"Incense\" (TniiNAWSasgVGZ5V) that is described as the *temple-grade* version yet priced at only 1 gp. So the audited non-temple-grade bundle is priced 150x the temple-grade bundle and 750x the stick — a two-to-three-order-of-magnitude outlier. Real, item-specific price-sanity bug (not an alias, not systemic). Note: jsR8i and TniiN are near-duplicate \"Incense\" entries sharing identifier \"incense\"; the 150 gp one is the defective one.",
+      "refinedSuggestion": "Reprice Incense (jsR8i4HOjATQ1EwI) from 150 gp to ~1 gp to match the pack's other ordinary incense (Block of Incense = 1 gp, Stick = 0.2 gp, and the temple-grade \"Incense\" = 1 gp). Its own text calls it below temple-grade, so 1 gp (or 5 sp) is appropriate; 150 gp is art-object money for a mundane perfumed-resin trade good. Consider also de-duplicating against the 1 gp \"Incense\" (TniiNAWSasgVGZ5V) since both share identifier \"incense\"."
+    }
+  },
+  {
+    "name": "Ring of Spell Storing",
+    "id": "9cIlRtKDtDXQtElf",
+    "issueType": "description-quality",
+    "severity": "low",
+    "current": "Description reads 'it contains 1d6 âˆ’ 1 levels of stored spells'",
+    "suggested": "Replace the mojibake 'âˆ’' with a proper minus sign: '1d6 - 1 levels'",
+    "rationale": "UTF-8 minus sign (U+2212) was mis-decoded to 'âˆ’' in the player-visible description; only ~6 items pack-wide carry this corruption, so it is item-specific, not the known systemic note.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. \"Ring of Spell Storing\" (id 9cIlRtKDtDXQtElf, line 138 of packs/infinity-dnd5e-items.db) has player-visible description text \"it contains 1d6 âˆ’ 1 levels of stored spells chosen by the GM.\" The corrupt glyph decodes to codepoints U+00E2 U+02C6 U+2019 — classic mojibake from a UTF-8 U+2212 (MINUS SIGN, 0xE2 0x88 0x92) mis-decoded via Windows-1252/Latin-1. Single occurrence in this item, in a clean \"1d6 minus 1\" arithmetic context. Verified this is item-specific: exactly 6 items pack-wide carry the same âˆ’ corruption (Ring of Warmth, Ring of Spell Storing, Boots of the Winterlands, Deck of Illusions, Ioun Stone of Reserve, Deck of Many Things), matching the rationale's ~6 estimate. Not a tag/alias issue, not a systemic-note duplicate. Actionable and item-specific.",
+      "refinedSuggestion": "In system.description.value of item 9cIlRtKDtDXQtElf, replace the mojibake sequence \"âˆ’\" (codepoints U+00E2 U+02C6 U+2019) with a proper character so the text reads \"it contains 1d6 - 1 levels of stored spells\". Use a plain ASCII hyphen-minus (U+002D) for safe rendering, or a true minus sign (U+2212) if matching official formatting; the underlying source clearly intended U+2212. The same fix applies to the 5 sibling items carrying identical corruption."
+    }
+  },
+  {
+    "name": "Ring of Warmth",
+    "id": "2veAOEyfbDJuxR8Y",
+    "issueType": "description-quality",
+    "severity": "low",
+    "current": "Description reads 'temperatures as low as âˆ’âˆ‒50 degrees Fahrenheit'",
+    "suggested": "Replace the mojibake 'âˆ’' with a proper minus sign: '-50 degrees Fahrenheit'",
+    "rationale": "Same mis-decoded minus-sign mojibake corrupts the player-visible temperature value; verifiable in the raw description and limited to a handful of items.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against raw pack data. Ring of Warmth (_id 2veAOEyfbDJuxR8Y) in E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db: the identified system.description.value reads \"temperatures as low as âˆ’50 degrees Fahrenheit\". Hexdump confirms the bytes between \"as low as \" and \"50 degrees\" are c3 a2 cb 86 e2 80 99 (= â ˆ '), which is the classic Windows-1252 mis-decode of the UTF-8 minus sign U+2212 (e2 88 92). The same mojibake also appears in the truncated system.description.chat field (\"as low as âˆ’5...\"). This is real, item-specific, and player-visible. Scope check: the exact mojibake byte sequence appears in only ~6 items (Boots of the Winterlands, Deck of Illusions, Deck of Many Things, Ioun Stone of Reserve, Ring of Spell Storing, Ring of Warmth), so it is a handful-of-items issue rather than a pack-wide systemic defect — consistent with the finding's rationale and squarely actionable for this item. Not a tag/alias matter.",
+      "refinedSuggestion": "In Ring of Warmth (_id 2veAOEyfbDJuxR8Y), fix both fields that contain the corrupted temperature: system.description.value and system.description.chat. Replace the mojibake byte sequence c3 a2 cb 86 e2 80 99 (rendered \"âˆ’\") immediately before \"50 degrees Fahrenheit\" with a correct minus sign — preferably the Unicode minus U+2212 (\"−50 degrees Fahrenheit\") to match SRD 5.1 typography, or a plain ASCII hyphen (\"-50 degrees Fahrenheit\") for maximum portability. Then recompile the LevelDB pack via npm run compile:packs."
+    }
+  },
+  {
+    "name": "Pepper",
+    "id": "pUwuKJk3wAgiAhNU",
+    "issueType": "naming-quality",
+    "severity": "low",
+    "current": "Description: 'Highly prized by chefs for its versaility'",
+    "suggested": "Fix typo to 'versatility' (also duplicated in copy 8SQ7vyE6gevpfJvn)",
+    "rationale": "Misspelling 'versaility' is in the player-visible description text of both Pepper copies.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the pack. The string \"versaility\" appears exactly twice in packs/infinity-dnd5e-items.db, once per Pepper copy. Both are inside the player-visible system.description.value HTML (identified-state body), reading: \"...also known as the piper nigrum. Highly prized by chefs for its versaility and can be utilized in a pinch by adventurers...\". One copy is the named item id pUwuKJk3wAgiAhNU; the second is the duplicate id 8SQ7vyE6gevpfJvn (both name=\"Pepper\", type=\"loot\"), matching the finding exactly. This is a genuine, item-specific misspelling in player-facing text, not a tag/alias issue.",
+      "refinedSuggestion": "In packs/infinity-dnd5e-items.db, fix the misspelling \"versaility\" to \"versatility\" in the description.value of both Pepper copies (ids pUwuKJk3wAgiAhNU and 8SQ7vyE6gevpfJvn): \"Highly prized by chefs for its versatility\". If a source packs/*.db build file exists, correct it there and recompile via npm run compile:packs so the LevelDB pack regenerates."
+    }
+  },
+  {
+    "name": "Iron",
+    "id": "M2jQ9hMZdqKdrmpj",
+    "issueType": "naming-quality",
+    "severity": "low",
+    "current": "Description: 'appreciated for its relative abundence'",
+    "suggested": "Fix typo to 'abundance' (also duplicated in copy V3uxNwciT4Ln7S4k)",
+    "rationale": "Misspelling 'abundence' appears in the player-visible description of both Iron copies.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Line 315 is the \"Iron\" item (id M2jQ9hMZdqKdrmpj); its player-visible description reads \"...iron is appreciated for its relative abundence and ease of attainment...\". The misspelling \"abundence\" appears 4 times total across the file (2 in this item, 2 in the duplicate copy id V3uxNwciT4Ln7S4k on line 1304); the correct spelling \"abundance\" appears 0 times. Both \"Iron\" copies exist and both carry the typo in visible description text. This is a genuine, item-specific spelling error, not an alias or systemic tag issue — safe to fix.",
+      "refinedSuggestion": "Correct the spelling \"abundence\" -> \"abundance\" in the player-visible description of the Iron item (id M2jQ9hMZdqKdrmpj, packs/infinity-dnd5e-items.db line 315), and apply the same fix to the duplicate copy (id V3uxNwciT4Ln7S4k, line 1304). The string occurs twice per copy (4 total), so a global replace of \"abundence\" -> \"abundance\" in the pack source covers all instances; recompile via npm run compile:packs."
+    }
+  },
+  {
+    "name": "Ginger",
+    "id": "oIn4ZUCI02B8NfdU",
+    "issueType": "naming-quality",
+    "severity": "low",
+    "current": "Description: 'the same family as tumeric and cardamom'",
+    "suggested": "Fix typo to 'turmeric' (also duplicated in copy VcHmykfFBurKzCO6)",
+    "rationale": "Misspelling 'tumeric' appears in the player-visible description of both Ginger copies.",
+    "slice": "sundries-3",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the pack. Item oIn4ZUCI02B8NfdU (Ginger) contains the misspelling \"tumeric\" in both the player-visible identified description value (\"It belongs to the same family as tumeric and cardamom.\") and the chat field. \"tumeric\" is an unambiguous typo for the spice \"turmeric\". A grep for \"tumeric\" confirms it also appears in a second Ginger item with _id VcHmykfFBurKzCO6 (present as a real separate line in the pack, not just a sourceId reference), so the duplicate-copy claim holds. This is a real, actionable, item-specific naming/spelling defect, not a tag-alias or systemic issue.",
+      "refinedSuggestion": "Correct \"tumeric\" to \"turmeric\" in the Ginger description. Fix it in both the identified description.value and description.chat fields of item oIn4ZUCI02B8NfdU, and apply the same correction to the duplicate Ginger copy VcHmykfFBurKzCO6 (both the value and chat fields)."
+    }
+  },
+  {
+    "name": "Book of Shadows",
+    "id": "CwWbeQ6XyqFzbMYw",
+    "issueType": "wrong category / lootType",
+    "severity": "high",
+    "current": "type:loot, lootType:loot.loot (aliases to Trade Good), rarity veryRare, 12000gp, foldered under sundries/wondrous-items/trinkets-implements",
+    "suggested": "Tag as a magic wondrous implement: lootType loot.equipment.magic (and ideally type:equipment), matching the other wondrous items in its folder.",
+    "rationale": "A 12,000gp very-rare attuned grimoire that lets you cast cantrips at will is a magic implement, not a mundane Trade Good; loot.loot routes it to the wrong filter chip and merchant pool.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "refinedSuggestion": "Retag Book of Shadows (id CwWbeQ6XyqFzbMYw) lootType from `loot.loot` to `loot.equipment.magic` so it routes to the magic-implement chip/merchant pool instead of the mundane Trade Goods chip. It is the only one of 30 items in folder sundries/wondrous-items/trinkets-implements still on `loot.loot`; the other 29 wondrous items all use `loot.equipment.magic`. Also drop the stale `loot`/`merchant.loot` routing in flags.infinity-dnd5e.keywords and merchantCategories (currently [\"loot\",\"magic\"]) so it is no longer dual-listed in the generic-loot pool. Changing the Foundry document type from loot to equipment is optional/secondary — the lootType retag alone fixes the wrong filter-chip and merchant routing.",
+      "note": "Confirmed from packs/infinity-dnd5e-items.db line 175: type=loot, lootType=loot.loot, rarity veryRare, 12000gp, folder sundries/wondrous-items/trinkets-implements. Description confirms it is a very-rare magic grimoire granting at-will cantrip casting (keywords include magic.bonus, merchant.magic; one Utility activity) — a magic wondrous implement, not a mundane Trade Good. tag-vocabulary.js line 220 maps loot.loot -> loot.trade-good and comment (lines 207-209) confirms loot.loot folds onto the Trade Goods chip for gems/art/hammers/chalk; line 109 documents loot.equipment.magic as wondrous magic gear (rings, ioun stones, robes). Folder audit: 29/30 sibling items use loot.equipment.magic; Book of Shadows is the sole outlier on loot.loot — item-specific, not systemic. The loot.loot alias caveat does not apply because the tag is simply wrong for this item, and the suggested fix (loot.equipment.magic) is a real distinct category, not an alias."
+    }
+  },
+  {
+    "name": "Wand of the War Mage +2",
+    "id": "k3T7tpcdzDyVKlF4",
+    "issueType": "rarity sanity",
+    "severity": "med",
+    "current": "rarity:uncommon, 2000gp (same as +1's band; +1 is uncommon, +3 is very-rare)",
+    "suggested": "Set rarity to rare and price into the rare band, leaving +1 uncommon and +3 very-rare.",
+    "rationale": "DMG rates Wand of the War Mage +1 uncommon, +2 rare, +3 very rare; tagging +2 uncommon breaks the canonical +1/+2/+3 progression that the other two wands already follow.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (line 681, packs/infinity-dnd5e-items.db). Wand of the War Mage +2 (id k3T7tpcdzDyVKlF4): rarity=\"uncommon\", price.value=2000gp, and module flags rarityNormalized=\"uncommon\"/gpValue=2000/valueBand=\"value.v4\"/tier=\"tier.t2\". Verified siblings in the same pack: +1 (OPbdSlrhkUDNpgcS) = uncommon, 1200gp; +3 (IuVaBrq17AqxpXc4) = very-rare, 19200gp. So the +2 shares the +1's uncommon band and breaks the +1/+2/+3 progression the other two already follow. DMG 2014 canon rates this wand +1 uncommon / +2 rare / +3 very rare, so the +2 should be rare. The huge price gap (2000 -> 19200, ~9.6x) vs the tight 1200 -> 2000 gap corroborates the mis-banding. The module derives merchant tier, value band, and loot tags from this rarity/price, so the error propagates into module behavior (merchant.magic pricing, loot value bands). Item-specific, confirmable, not an alias and not a systemic tagging issue. Caveat: the item is a verbatim mirror of the official dnd5e system compendium (compendiumSource Compendium.dnd5e.items.Item.k3T7tpcdzDyVKlF4), so the uncommon tag originates upstream; fixing it here is a deliberate, defensible divergence to restore canon.",
+      "refinedSuggestion": "Set system.rarity to \"rare\" and rarityNormalized to \"rare\" for Wand of the War Mage +2 (k3T7tpcdzDyVKlF4), and reprice into the rare band so it sits between the uncommon +1 (1200gp) and very-rare +3 (19200gp) instead of clustering with the +1. Re-run npm run compile:packs so the derived flags (valueBand, tier, gpValue, sellValueGp, merchant tiers) regenerate from the corrected rarity/price. Leave +1 uncommon and +3 very-rare unchanged."
+    }
+  },
+  {
+    "name": "Robe of Useful Items",
+    "id": "2ksm2KXCY3vBHTAx",
+    "issueType": "price sanity",
+    "severity": "med",
+    "current": "uncommon, 140gp",
+    "suggested": "Reprice into the uncommon wondrous-item band (~1,500-2,000gp) used by the rest of the slice.",
+    "rationale": "Every other uncommon wondrous item in this slice is priced 1,500-2,000gp; 140gp sits in the v1 (trinket) band and is ~10x too low for an uncommon magic item.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the pack. Robe of Useful Items (_id 2ksm2KXCY3vBHTAx) is system.type=\"equipment\", subtype \"clothing\", rarity \"uncommon\", price 140gp. I enumerated all 55 uncommon equipment items in packs/infinity-dnd5e-items.db: the genuine wondrous magic items (clothing/trinket subtypes) are tightly clustered at 1,500-2,000gp (e.g. Cloak of Elvenkind 2000, Hat of Disguise 2000, Helm of Telepathy 2000, Gauntlets of Ogre Power 2000, Bracers of Archery 1500, Goggles of Night 1500, Necklace of Adaptation 1500). The Robe at 140gp is the single dramatic outlier — ~10x below its peers and the only clothing-subtype magic item under 500gp. The item's own embedded Foundry Note even reveals why: \"price guide has been calculated at 5 x item for the maximum number of items possible\" — i.e. 5x the value of the mundane contents (daggers/lanterns/rope), which is trinket-band logic, not magic-item pricing. This is a real, item-specific price-sanity problem, not an alias or a systemic issue (the rest of the slice is correctly banded). Note the in-item Foundry Note explicitly invites GMs to adjust, but as shipped the value is out of band.",
+      "refinedSuggestion": "Reprice system.price.value from 140 to the uncommon wondrous-item band (1,500-2,000gp; 2,000gp matches the modal clothing-subtype uncommon items like Cloak of Elvenkind / Hat of Disguise). Also update the two embedded display strings in system.description (the \"Value: 140 gp\" line in the metadata aside) to match, and revise the Foundry Note's \"5 x item\" pricing rationale since that calculation reflects only the mundane patch contents, not the magic item's rarity-based value."
+    }
+  },
+  {
+    "name": "Cotton",
+    "id": "ZcAgZHJ1hhqbedLF",
+    "issueType": "naming/description quality (typo)",
+    "severity": "low",
+    "current": "Description reads 'Used for all many of items and clothing.'",
+    "suggested": "Fix to 'Used for all manner of items and clothing.' (same typo recurs in Linen LgFk7OKZAmKkV4Qk/Gh1JxTlM9aRGNrUH and Silk PcXGYXebvqv0BS2z/jad5oFMDv21mPvJP).",
+    "rationale": "'all many of' is a malformed phrase in player-visible text; the intended idiom is 'all manner of'.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against packs/infinity-dnd5e-items.db. The Cotton item (id ZcAgZHJ1hhqbedLF, name \"Cotton\") description literally reads: \"A square yard of cotton of average quality and weight. Used for all many of items and clothing.\" The typo appears in BOTH the player-visible `rules` body and the `chat` summary. \"all many of\" is a malformed phrase; intended idiom is \"all manner of\". Confirmed systemic: the phrase occurs 16 times total in the pack (twice per item) across ~8 textile trade goods — including Cotton, Canvas, Linen, and Silk (finding correctly named Linen and Silk; Canvas also affected). Real, actionable, player-facing typo. Best fixed as a global sweep since it recurs identically.",
+      "refinedSuggestion": "In Cotton (ZcAgZHJ1hhqbedLF) replace \"Used for all many of items and clothing.\" with \"Used for all manner of items and clothing.\" in both the rules description and the chat summary. Apply the same correction project-wide: the identical phrase \"all many of\" appears 16 times across ~8 textile trade goods (Cotton, Canvas, Linen, Silk, etc.), each in both rules + chat fields — do a single find/replace in the source packs (packs/*.db) then recompile via `npm run compile:packs`."
+    }
+  },
+  {
+    "name": "Linen",
+    "id": "LgFk7OKZAmKkV4Qk",
+    "issueType": "naming/description quality (typo)",
+    "severity": "low",
+    "current": "Description reads 'particularly valued in warm climtes.'",
+    "suggested": "Fix 'climtes' to 'climates'.",
+    "rationale": "'climtes' is a clear misspelling in player-visible description text (also present in the duplicate Linen Gh1JxTlM9aRGNrUH).",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack file packs/infinity-dnd5e-items.db. The item id=LgFk7OKZAmKkV4Qk name=\"Linen\" (line 310) has player-visible description HTML reading: \"...its durability and breathability make it particularly valued in warm climtes.</p>\". \"climtes\" is a clear misspelling of \"climates\". The same typo is also present in the duplicate Linen item id=Gh1JxTlM9aRGNrUH (line 1299), matching the rationale. This is a real, item-specific description-quality defect in player-facing text, not a tag/alias or systemic issue.",
+      "refinedSuggestion": "In the description of item LgFk7OKZAmKkV4Qk (Linen), change \"particularly valued in warm climtes\" to \"particularly valued in warm climates\". Apply the same fix to the duplicate Linen item Gh1JxTlM9aRGNrUH, which contains the identical typo."
+    }
+  },
+  {
+    "name": "Boots of the Winterlands",
+    "id": "RDPFmUR9exTEXFc8",
+    "issueType": "naming/description quality (encoding)",
+    "severity": "low",
+    "current": "Description shows 'as low as âˆ’50 degrees Fahrenheit' and 'âˆ’100 degrees'.",
+    "suggested": "Re-encode the corrupted bytes to the proper minus sign: '−50' / '−100' (or '-50' / '-100').",
+    "rationale": "'âˆ’' is UTF-8 minus-sign mojibake (double-decoded) appearing in player-visible text; only ~6 items pack-wide carry this corruption.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the real item data in packs/infinity-dnd5e-items.db. Item RDPFmUR9exTEXFc8 \"Boots of the Winterlands\" has system.description.value containing player-visible body text \"tolerate temperatures as low as âˆ’50 degrees Fahrenheit\" and \"as low as âˆ’100 degrees Fahrenheit\". Codepoint dump of the bytes preceding \"50\" = U+00E2 (â) U+02C6 (ˆ) U+2019 (’), which is the Windows-1252 re-decode of UTF-8 0xE2 0x88 0x92 = U+2212 MINUS SIGN — classic double-decode mojibake. Confirmed item-specific and narrow: exactly 6 items pack-wide carry this 'âˆ’' minus-sign corruption (Ring of Warmth, Ring of Spell Storing, Boots of the Winterlands, Deck of Illusions, Ioun Stone of Reserve, Deck of Many Things), matching the finding's \"~6 items\" claim. Not a tag alias, not a systemic loot-tag issue. Severity low is correct (cosmetic, player-facing display only).",
+      "refinedSuggestion": "In RDPFmUR9exTEXFc8 system.description.value, replace the two mojibake minus sequences \"âˆ’50\" and \"âˆ’100\" with proper signed numbers: \"−50 degrees Fahrenheit\" and \"−100 degrees Fahrenheit\" (or plain ASCII \"-50\"/\"-100\" if the pipeline doesn't reliably preserve U+2212). The corrupt bytes are a double-decoded U+2212; the underlying packs/*.db source should be re-saved as clean UTF-8. Apply the same fix to the other 5 affected items to clear this batch of corruption."
+    }
+  },
+  {
+    "name": "Ioun Stone of Reserve",
+    "id": "jvKmgJYL33E8gev5",
+    "issueType": "naming/description quality (encoding)",
+    "severity": "low",
+    "current": "Description reads 'contains 1d4 âˆ’ 1 levels of' spell slots.",
+    "suggested": "Re-encode 'âˆ’' to a proper minus sign: '1d4 − 1' (or '1d4 - 1').",
+    "rationale": "Same UTF-8 minus-sign mojibake as Boots of the Winterlands; visible in the rules text players read off the item.",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against the real record (packs/infinity-dnd5e-items.db, line 679; name=\"Ioun Stone of Reserve\", id=jvKmgJYL33E8gev5). The \"Stone of Reserve\" paragraph reads: \"When found, it contains 1d4 âˆ’ 1 levels of stored spells chosen by the GM.\" Codepoint inspection of the garbled run confirms U+00E2 (â) U+02C6 (ˆ) U+2019 (’), i.e. UTF-8 bytes E2 88 92 — the Unicode MINUS SIGN (U+2212) — double-decoded as Windows-1252. This is genuine, player-facing mojibake in the rules text, item-specific and actionable, with an exact deterministic fix. It is the same systemic encoding class as Boots of the Winterlands but a distinct real occurrence that must be fixed in this record (not a tag alias and not a mere duplicate of the same string).",
+      "refinedSuggestion": "In the description of item jvKmgJYL33E8gev5 (Ioun Stone of Reserve), replace the garbled \"1d4 âˆ’ 1\" with a proper minus sign so it reads \"it contains 1d4 − 1 levels of stored spells\" (U+2212; or use ASCII \"1d4 - 1\"). Concretely, replace the three-character run U+00E2 U+02C6 U+2019 (the mojibake of UTF-8 E2 88 92) with a single \"−\". Worth a pass to catch the same E2 88 92 → â ˆ ’ corruption across other pack items."
+    }
+  },
+  {
+    "name": "Periapt of Health",
+    "id": "9v0TPDXNa9S7aNB4",
+    "issueType": "naming/description quality (grammar)",
+    "severity": "low",
+    "current": "Description reads 'the effects of the disease are suppressed you while you wear the pendant.'",
+    "suggested": "Remove the stray 'you': 'the effects of the disease are suppressed while you wear the pendant.'",
+    "rationale": "Garbled clause in player-visible description text (extra 'you').",
+    "slice": "sundries-4",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Item \"Periapt of Health\" (id 9v0TPDXNa9S7aNB4) exists in E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db (line 146). Its player-visible HTML description contains the exact garbled clause inside a <p>: \"...If you are already infected with a disease, the effects of the disease are suppressed you while you wear the pendant.\" The stray \"you\" is a real grammar error in user-facing text. The phrase \"suppressed you while\" occurs exactly once across the whole pack, so this is an item-specific typo, not a systemic pattern or a tag alias. Low severity but a clean, surgical one-word fix.",
+      "refinedSuggestion": "In the description of Periapt of Health (id 9v0TPDXNa9S7aNB4), delete the stray \"you\" so the clause reads: \"the effects of the disease are suppressed while you wear the pendant.\" (matches the canonical SRD Periapt of Health wording)."
+    }
+  },
+  {
+    "name": "Rod of Absorption",
+    "id": "6pjaQzbtxQTuQ4RW",
+    "issueType": "rarity",
+    "severity": "med",
+    "current": "rarity: legendary (price 50,000 gp)",
+    "suggested": "rarity: very-rare",
+    "rationale": "Canonical D&D5e (DMG) rarity for Rod of Absorption is very rare, not legendary; its true peers Rod of Alertness and Rod of Security are correctly tagged very-rare in this same slice, making Absorption the outlier.",
+    "slice": "consumables-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (line 100 of packs/infinity-dnd5e-items.db). Rod of Absorption (_id 6pjaQzbtxQTuQ4RW) is tagged system.rarity:\"legendary\" with price.value 50000, and its description metadata also reads \"Rarity: Legendary / Value: 50,000 gp\". Canonical DMG rarity for Rod of Absorption is very rare, not legendary. Peer check holds: Rod of Security (line 141) and Rod of Alertness (line 189) are both tagged \"veryRare\" in this same slice, making Absorption the lone outlier. This is a real, item-specific rarity error, not an alias or systemic duplicate. Caveat for the fix: the wrong tier also propagated into price (50,000 gp), the value band (valueBand value.v5 / gpValue 50000 / sellValueGp 25000), and the embedded description/metadata text, so a complete correction should bring those in line with very-rare too.",
+      "refinedSuggestion": "Change system.rarity from \"legendary\" to \"veryRare\" (canonical DMG tier for Rod of Absorption), matching its peers Rod of Security and Rod of Alertness. For a complete fix, also re-tier the price to a very-rare value (DMG very-rare band ~5,001–50,000 gp; consider aligning nearer its peers rather than the legendary-floor 50,000), update the value band/gpValue/sellValueGp accordingly, and correct the embedded description metadata text from \"Rarity: Legendary / Value: 50,000 gp\"."
+    }
+  },
+  {
+    "name": "Red Ammonita",
+    "id": "ENxfOsfB50KNcblA",
+    "issueType": "naming",
+    "severity": "low",
+    "current": "name: \"Red Ammonita\" (described as a red-capped forest mushroom freckled with pale flecks)",
+    "suggested": "rename to \"Red Amanita\" (or a clearly intentional fantasy spelling)",
+    "rationale": "The description is unmistakably Amanita muscaria (red cap, white flecks, hallucinogenic, dangerous reputation); \"Ammonita\" reads as a misspelling -- an ammonite is a fossil mollusk, unrelated to fungi.",
+    "slice": "consumables-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (packs/infinity-dnd5e-items.db, line 1324). Item id ENxfOsfB50KNcblA has name \"Red Ammonita\", type consumable/food. Description: \"A red-capped forest mushroom freckled with pale flecks... changes hands among cooks, trippers, and alchemists... how a fungus earns a dangerous reputation.\" This is unmistakably Amanita muscaria (fly agaric): red cap, white/pale flecks, hallucinogenic (\"trippers\"), dangerous reputation. The correct genus spelling is \"Amanita\". \"Ammonita\" collides with \"ammonite\" (a fossil cephalopod mollusk, unrelated to fungi), so it reads as a misspelling rather than an intentional fantasy variant. This is a real, item-specific naming defect in the name field (not a tag/alias or systemic issue), severity low.",
+      "refinedSuggestion": "Rename the item from \"Red Ammonita\" to \"Red Amanita\" to match the genus the description plainly evokes (fly agaric / Amanita muscaria). Update the name field and the two in-description occurrences (identified-state header \"Identified State: Red Ammonita\", the chat block \"<strong>Red Ammonita</strong>\", and the activity chatFlavor \"Use Red Ammonita\") on item ENxfOsfB50KNcblA. If a fantasy spelling is preferred, choose one that does not collide with the real word \"ammonite\" (e.g., \"Redcap Amanita\")."
+    }
+  },
+  {
+    "name": "Dust of Dryness",
+    "id": "eMR6B4bIoJPUDJG8",
+    "issueType": "rarity",
+    "severity": "high",
+    "current": "rarity:\"\" (none); sub:trinket; lootType:loot.consumable; gp:1200; desc: \"Dust of Dryness Wondrous item ...\"",
+    "suggested": "Set rarity to \"uncommon\" (DMG Dust of Dryness is uncommon) and tag as a magic item (e.g. loot.consumable is acceptable but it must carry a rarity).",
+    "rationale": "Clearly-magic Wondrous item priced at 1,200gp but carries no rarity at all, contradicting the guide's rule that any clearly-magic item must have a rarity.",
+    "slice": "consumables-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against packs/infinity-dnd5e-items.db (line 584, id eMR6B4bIoJPUDJG8). system.rarity is empty (\"\"); flag keywords include rarity.none and rarityNormalized:\"\". The description explicitly reads \"Dust of Dryness Wondrous item ...\", so it is unambiguously a magic item, priced 1200gp. This is a genuine item-specific outlier, not a systemic gap: of 168 items whose description contains \"Wondrous item\", 167 carry a real rarity and Dust of Dryness is the ONLY one without. The DMG rarity is uncommon, corroborated by sibling items in the same pack (Dust of Disappearance=uncommon, Dust of Sneezing and Choking=uncommon, Bag of Holding=uncommon). loot.consumable is a defensible loot type and can stay; the actual defect is the missing rarity.",
+      "refinedSuggestion": "Set system.rarity to \"uncommon\" for Dust of Dryness (id eMR6B4bIoJPUDJG8), matching DMG and its sibling Dust/Bag items in this pack. Also update the infinity-dnd5e flag block to reflect the rarity (set rarityNormalized to \"uncommon\" and replace the \"rarity.none\" keyword with the uncommon-tier equivalent). Keep lootType loot.consumable as-is."
+    }
+  },
+  {
+    "name": "Deck of Many Things",
+    "id": "oSarKEU8x1AupB6z",
+    "issueType": "wrong subtype/folder",
+    "severity": "med",
+    "current": "type:consumable, subtype value \"potion\"; folder consumables/potions/magic-potions; desc: \"Deck of Many Things Wondrous item ...\"",
+    "suggested": "Change consumable subtype off \"potion\" (it is a Wondrous item, not a potion) and move out of the potions/magic-potions folder into a wondrous/artifact location.",
+    "rationale": "A famous legendary artifact deck of cards is mislabeled as a potion subtype and filed under magic-potions, contradicting its own \"Wondrous item\" description.",
+    "slice": "consumables-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Verified against item oSarKEU8x1AupB6z (line 749 of packs/infinity-dnd5e-items.db). Confirmed: type=\"consumable\"; system.type = {value:\"potion\", subtype:\"\"} so the dnd5e consumable subtype dropdown is literally set to \"potion\"; folder is consumables/potions/magic-potions (folderPathKey, folderLabels [\"Consumables\",\"Potions\",\"Magic Potions\"], leaf \"magic-potions\"). The identified description literally reads \"<em>Wondrous item</em>\" and chat summary begins \"Deck of Many Things Wondrous item...\". Rarity is legendary; it is the classic legendary artifact deck of cards. The \"potion\" subtype is indefensible and not a mere alias — the loot/merchant aliases (loot.potion, merchant.potion, subtype.potion keyword) all cascade from the wrong system.type.value. The data even contradicts itself: the item-state metadata block lists \"Consumable, Deck\" and uses(max)=22 (the cards), yet the subtype says potion. This is a real, item-specific mislabel, not a known-systemic default. Actionable at the source field.",
+      "refinedSuggestion": "Fix the consumable subtype: change system.type.value from \"potion\" to a non-potion value appropriate for a deck (e.g. \"trinket\" or leave it without the potion subtype), since the Deck of Many Things is a Wondrous item, not a potion. Then move it out of folder consumables/potions/magic-potions into a wondrous-item/artifact location, and re-derive the dependent metadata (folderPathKey, folder.* block, keywords folder.leaf.magic-potions / subtype.potion / loot.potion / merchant.potion, merchantCategories [\"consumable\",\"magic\",\"potion\"]) so none of them keep classifying it as a potion."
+    }
+  },
+  {
+    "name": "Deck of Illusions",
+    "id": "Wk7EOYoY3b2tgGoS",
+    "issueType": "wrong subtype/folder",
+    "severity": "med",
+    "current": "type:consumable, subtype value \"potion\"; folder consumables/potions/magic-potions; desc: \"Deck of Illusions Wondrous item ...\"",
+    "suggested": "Remove the \"potion\" subtype and relocate out of magic-potions; it is a Wondrous item (set of parchment cards).",
+    "rationale": "A deck of cards is tagged as a potion subtype and filed under magic-potions, directly contradicting its \"Wondrous item\" description.",
+    "slice": "consumables-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against item Wk7EOYoY3b2tgGoS in E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db. The Deck of Illusions is a consumable whose dnd5e type.value is \"potion\" and is filed in folder consumables/potions/magic-potions (folderLabels: Consumables > Potions > Magic Potions). Its identified description literally reads \"Wondrous item — This box contains a set of parchment cards.\" A deck of cards is not a potion, so the potion typing/folder is a genuine, item-specific contradiction. Adversarial checks: not a defensible tag; not a loot.* alias (the offending markers are type.value:\"potion\", the infinity-dnd5e keywords subtype.potion / loot.potion / merchant.potion, merchantCategories [\"consumable\",\"magic\",\"potion\"], and the magic-potions folder branch). Not systemic: of 49 items typed \"potion\", 47 are legitimate potions/oils/philters/alchemical liquids; only the two card decks (Deck of Illusions and its sibling Deck of Many Things) are miscategorized. One precision correction to the finding: there is no populated \"subtype\" field (system.type.subtype is \"\"); the actual field carrying \"potion\" is system.type.value, reinforced by the potion-flavored tags and folder.",
+      "refinedSuggestion": "Reclassify the Deck of Illusions out of the potion bucket. Set system.type.value away from \"potion\" (it should reflect a wondrous/curio item, not a potion), and move it out of the Consumables > Potions > Magic Potions folder. Update the infinity-dnd5e tags/folder metadata accordingly: drop subtype.potion, loot.potion, merchant.potion, folder.leaf.magic-potions, folder.section.potions, and the consumables/potions/magic-potions folderPathKey/folder block, and remove \"potion\" from merchantCategories. Note the same fix applies to its sibling, Deck of Many Things, which shares the identical miscategorization."
+    }
+  },
+  {
+    "name": "Potion of Giants Size",
+    "id": "9HEjizGE5QOmkGh9",
+    "issueType": "naming/rarity contradiction",
+    "severity": "med",
+    "current": "name \"Potion of Giants Size\" (missing apostrophe / wrong form); rarity:legendary; gp:10000 (1000pp); desc header literally reads \"Type: Potion, Rare\"",
+    "suggested": "Rename to \"Potion of Giant Size\" (matches the item's own h1/h2 text) and reconcile rarity: either set rarity to rare to match the description, or fix the description to legendary. Re-check the 10,000gp price against the chosen rarity.",
+    "rationale": "Possessive/naming error plus the item's own description says \"Rare\" while the rarity field says legendary, and the price is set as if for a top-tier item.",
+    "slice": "consumables-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against packs/infinity-dnd5e-items.db (id 9HEjizGE5QOmkGh9). name=\"Potion of Giants Size\" but the item's own description <h1> reads \"Potion of Giant Size\" and every body reference uses \"Giant Size\" (singular, no possessive) — so the name field contradicts the item's own text. Rarity field=legendary and the metadata aside says \"Rarity: Legendary\", yet the description <h2> reads \"Type: Potion, Rare\" — a real internal contradiction in this one item. Price = {value:1000, denomination:pp} = 10,000 gp, which fits legendary tier, so \"Rare\" is the outlier. (Minor extra: the aside's \"Value: 10,000 pp\" label is itself wrong vs the price field's 1000 pp.) This is item-specific, factual, and actionable; not an alias/loot-tag/systemic issue.",
+      "refinedSuggestion": "Fix two self-contradictions in item 9HEjizGE5QOmkGh9: (1) Rename the name field from \"Potion of Giants Size\" to \"Potion of Giant Size\" to match the item's own <h1> and body text (also update the \"Identified State\" header line that repeats the bad name). (2) Reconcile rarity: the rarity field (legendary), the metadata aside (\"Rarity: Legendary\"), and the 10,000 gp price all agree on legendary, so change the description <h2> from \"Type: Potion, Rare\" to \"Type: Potion, Legendary\". While editing, also fix the aside line \"Value: 10,000 pp\" — the price field is 1000 pp (= 10,000 gp), so it should read \"Value: 1,000 pp\" or \"Value: 10,000 gp\"."
+    }
+  },
+  {
+    "name": "Incense",
+    "id": "TniiNAWSasgVGZ5V",
+    "issueType": "wrong subtype/folder",
+    "severity": "low",
+    "current": "type:consumable, subtype value \"potion\"; folder consumables/potions; lootType loot.consumable; desc: mundane temple incense (resin, cedar oil, flower petals)",
+    "suggested": "Drop the \"potion\" subtype and move out of consumables/potions into a trade-goods / general consumables folder; its own merchant tags (ingredient|tradegood) already indicate a trade good.",
+    "rationale": "Mundane burnable incense is tagged with a potion subtype and filed in the potions folder, which misrepresents a non-potion trade good.",
+    "slice": "consumables-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the real item data (line 415 of packs/infinity-dnd5e-items.db). Incense (id TniiNAWSasgVGZ5V) is type=consumable with system.type.value=\"potion\", filed in folder consumables/potions (flag folder.familyKey=consumables, sectionKey=potions; details.folderPathKey=\"consumables/potions\"), lootType=\"loot.consumable\". Its description is unambiguously a mundane non-potion trade good: \"temple-grade incense blended from resin, cedar oil, and crushed flower petals... perfumes a chamber for hours... in rites, court receptions, or funerary vigils.\" The \"potion\" subtype is factually wrong here (it is burned, not quaffed/sealed) and it is NOT a harmless alias — it actively drives: the consumables/potions folder placement, merchant category \"potion\" (alongside the correct ingredient/tradegood), and keywords subtype.potion/loot.potion/merchant.potion. Strongest concrete symptom: the auto-generated unidentified description nonsensically calls it \"A potion awaiting identification... described by sealed glass, color, and residue\" — sealed-glass-potion language on a bundle of burnable incense. This is item-specific (not systemic, not an alias) and actionable.",
+      "refinedSuggestion": "Change system.type.value from \"potion\" to \"trinket\" (the dnd5e catch-all consumable subtype; there is no generic trade-goods subtype in the 5e system), or clear it to \"\". Re-file the folder from consumables/potions into a general/trade-goods consumables section, and update the dependent metadata: drop the \"potion\" merchant category and the subtype.potion/loot.potion/merchant.potion/folder.section.potions/folder.path.consumables.potions keywords (keep ingredient/tradegood, which already mark it correctly). Regenerate the unidentified description so it stops calling the incense a sealed-glass \"potion.\" The identified \"Item State\" line (\"Consumable, Potion\") and folderLabels [\"Consumables\",\"Potions\"] should update accordingly."
+    }
+  },
+  {
+    "name": "Flute",
+    "id": "eJOrPcAz9EcquyRQ",
+    "issueType": "naming/description quality",
+    "severity": "med",
+    "current": "Identified description body reads: \"A lute to evoke awe, wonder, or fear in your audience.\" (also mirrored in the chat description)",
+    "suggested": "Change \"A lute\" to \"A flute\" so the description matches the item.",
+    "rationale": "Copy-paste error: the player-visible Flute description self-identifies as a lute; every other instrument in the slice correctly self-references, so this is a unique, item-specific text bug.",
+    "slice": "tools",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (packs/infinity-dnd5e-items.db, line 578, item name=\"Flute\" id=\"eJOrPcAz9EcquyRQ\", type=\"tool\"). The identified description body reads \"A lute to evoke awe, wonder, or fear in your audience.\" and the same text is mirrored in the chat description — 2 occurrences of \"A lute\" total. The header (\"Identified State: Flute\") and metadata (\"Tool, Flute\") correctly say Flute, so the body is a self-contradicting copy-paste error lifted from the Lute entry. Item-specific, not systemic: every other instrument self-references correctly — Lute \"A lute...\", Drum \"A drum, of any variety...\", Lyre \"A lyre...\", Viol \"A viol...\", Pan Flute \"A set of panpipes...\", Bagpipes \"A set of bagpipes...\", Dulcimer \"A dulcimer...\", Shawm \"A shawm...\". Not an alias, not a duplicate of a known-systemic issue.",
+      "refinedSuggestion": "In the Flute item (id eJOrPcAz9EcquyRQ) in packs/infinity-dnd5e-items.db, replace both occurrences of \"A lute to evoke awe, wonder, or fear in your audience\" with \"A flute to evoke awe, wonder, or fear in your audience\" — one in system.description.value (the identified body) and one in system.description.chat. If the .db is compiled from a packs/*.db source, fix the source and recompile via `npm run compile:packs`."
+    }
+  },
+  {
+    "name": "Mason's Tools (Dwarven)",
+    "id": "gLe5f61hybkMmOZF",
+    "issueType": "price sanity",
+    "severity": "low",
+    "current": "gp 150, rarity common, description identical to standard Mason's Tools (no special properties)",
+    "suggested": "Lower price toward the base Mason's Tools value (~10 gp) or, if the premium is intentional, add a descriptive/mechanical justification (and reconsider rarity).",
+    "rationale": "At 150 gp this is ~15x the base Mason's Tools (10 gp) and the highest-priced common artisan tool in the slice, yet carries identical generic masonry text and plain \"common\" rarity, so the markup is unjustified.",
+    "slice": "tools",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data (line 619, id gLe5f61hybkMmOZF). price.value=150 gp, rarity=\"common\", properties=[], only the standard \"check\" activity, and the description is the verbatim generic masonry text identical to base Mason's Tools (\"These special tools include the items needed to pursue a craft or trade in masonry.\"). Sourced from the same base item (Compendium.dnd5e.items.Item.skUih6tBvcBbORzA). Comparing all 39 tool items in the pack: base \"Mason's Tools\" is 10 gp; the Dwarven variant at 150 gp is exactly 15x that and is the single most expensive tool in the whole pack (next highest is 50 gp), making it a clear anomaly, not systemic. The 150 figure is consistent across system.price, the embedded description metadata, and the flag gpValue:150, and it propagates into the economy (sellValueGp:75, valueBand value.v3). Not an alias, not a duplicate of a systemic issue. Item-specific and actionable: the \"Dwarven\" flavor carries no mechanical or descriptive payoff to justify the premium at plain common rarity.",
+      "refinedSuggestion": "The 150 gp price (system.price.value, with matching flags.infinity-dnd5e.gpValue:150 and the embedded description \"Value: 150 gp\"/sellValueGp:75) is unjustified: this variant duplicates base Mason's Tools' generic text with properties=[] and no special activity/bonus, yet costs 15x the 10 gp base and is the priciest tool in the pack. Either (a) lower it toward the 10 gp base (and update gpValue/the description metadata/sellValueGp to match), or (b) if a \"Dwarven\" premium is intentional, justify it: add descriptive flavor or a mechanical perk (e.g., a check bonus on stonework) and reconsider whether it should remain plain \"common\" rarity. Whichever path, keep system.price, flags.infinity-dnd5e.gpValue, the description's \"Value:\" line, and sellValueGp internally consistent."
+    }
+  },
+  {
+    "name": "Shield",
+    "id": "z1mx84ONwkXKUZd7",
+    "issueType": "naming/description quality",
+    "severity": "med",
+    "current": "Description body reads \"A sturdy shield built to catch blows, ward arrows, and advertise that its bearer intends to still be standing afterward. Even plain shields carry a kind of blunt dignity...\" — flavor text for a physical/mundane shield. The unidentified text likewise describes \"worked metal, balance, and edge finish.\" None of the actual 1st-level abjuration Shield spell mechanics (reaction trigger \"when you take it... or targeted by the magic missile spell\", +5 AC until start of next turn, no damage from magic missile) appear in the player-visible rules body.",
+    "suggested": "Replace the description (and unidentified description) with the real Shield spell text, e.g. \"An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack, and you take no damage from magic missile.\" Bring it in line with the other spell-source docs in the slice.",
+    "rationale": "Content-collision bug: this spell-source document carries a mundane shield's flavor text instead of the Shield spell's rules, so the scroll it generates and any GM/player reading it would be meaningless — distinct from a per-spell SRD nitpick (the rules text is entirely absent/wrong). Name, identifier, school (abj), level (1), and activation are all correct, confirming only the description body was mis-populated.",
+    "slice": "spells-source-1",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against the raw record (line 1289). This is the 1st-level abjuration Shield spell (type=spell, level=1, school=abj, identifier=shield, sourceId Compendium.dnd5e.spells.Item.z1mx84ONwkXKUZd7) with a correct reaction activation/condition (\"...when you are hit by an attack or targeted by the magic missile spell\"). But the player-visible identified rules body (data-content=\"rules\") contains mundane physical-shield flavor only -- \"A sturdy shield built to catch blows, ward arrows...\" / \"Even plain shields carry a kind of blunt dignity...\" -- with NONE of the Shield spell mechanics (+5 AC until start of next turn, including vs the triggering attack; no damage from magic missile). The unidentified description compounds it, describing the formula via \"worked metal, balance, and edge finish\" (a metal shield, not an inscribed abjuration). The chat preview field carries the same mundane text. This is a real content-collision bug (the polysemous name \"Shield\" pulled in armor flavor), item-specific, and not a generic SRD nitpick -- the rules text is entirely absent/wrong. Scaffolding is otherwise correct, so only the description fields need fixing.",
+      "refinedSuggestion": "Replace the identified rules body (and mirror it in the system.description.chat preview and the unidentified description) with the actual Shield spell text instead of mundane-armor flavor. Suggested rules body: \"An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack, and you take no damage from magic missile.\" For the unidentified description, swap the \"worked metal, balance, and edge finish\" inspection cues for spell-formula language consistent with the other level-1 spell-source docs in the slice (e.g. arcane notation / abjuration tradition cues), since this is an inscribed spell formula, not a physical shield. Leave name, identifier, school (abj), level (1), activation/condition, and activity chatFlavor (\"Cast Shield.\") unchanged -- they are correct."
+    }
+  },
+  {
+    "name": "Spirit Guardians",
+    "id": "uCud2s4TjMfjiXUb",
+    "issueType": "wrong-merchant-category",
+    "severity": "med",
+    "current": "merchantCategories: [\"arcana\",\"art\",\"loot\",\"luxury\",\"magic\",\"spell\",\"treasure\"], saleLiquidity: \"sale.luxury\" (roster merchant string: arcana|art|loot|luxury|magic|spell|treasure)",
+    "suggested": "Reset to the standard spell-source tagging used by ~298 other spells: merchantCategories [\"arcana\",\"magic\",\"spell\"] and saleLiquidity \"sale.standard\".",
+    "rationale": "Spirit Guardians is a 3rd-level cleric protection spell-source doc, yet it is the ONLY spell in the entire 319-spell set tagged as art/loot/luxury/treasure with sale.luxury liquidity — clear merchant-category data pollution that would mis-stock/mis-price it as a treasure trade good.",
+    "slice": "spells-source-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against packs/infinity-dnd5e-items.db (_id uCud2s4TjMfjiXUb). Spirit Guardians is a level-3 concentration spell, type \"spell\", gpValue 500, tier.t2. Its flags.infinity-dnd5e really does carry merchantCategories [\"arcana\",\"art\",\"loot\",\"luxury\",\"magic\",\"spell\",\"treasure\"], saleLiquidity \"sale.luxury\", variableTreasureKind \"art\", and keywords merchant.art/merchant.loot/merchant.luxury/merchant.treasure + treasure.art + loot.variable.art. Verified the anomaly is unique: of 319 spells, 298 use [\"arcana\",\"magic\",\"spell\"] and the other ~20 only add minor specialty cats (curio/travel/herb/jewelry); Spirit Guardians is the SOLE spell with art/loot/luxury/treasure cats, the SOLE spell with saleLiquidity \"sale.luxury\" (236 standard / 82 specialty / 1 luxury), and the SOLE spell with variableTreasureKind \"art\". This is not an alias and not a value rule — 250,000 gp spells like Wish/Time Stop are plain [\"arcana\",\"magic\",\"spell\"] with sale.specialty, so a 500 gp spell carrying art/treasure/luxury tags is clear item-specific data pollution that would mis-stock it with art/treasure merchants and mis-price it via luxury liquidity. Real, actionable, item-specific.",
+      "refinedSuggestion": "Strip the art/treasure pollution and align Spirit Guardians to the standard spell-source profile: set merchantCategories to [\"arcana\",\"magic\",\"spell\"], saleLiquidity to \"sale.standard\" (matches the 236-spell majority for a low-value 500 gp / tier.t2 spell), remove variableTreasureKind (\"art\") and lootType/loot.variable.art treasure framing, and drop the polluting keywords (merchant.art, merchant.loot, merchant.luxury, merchant.treasure, treasure.art, loot.variable, loot.variable.art, sale.luxury), keeping merchant.arcana/merchant.magic/merchant.spell and sale.standard. Fix in the source packs/*.db record, then recompile via npm run compile:packs."
+    }
+  },
+  {
+    "name": "Creation",
+    "id": "lnaGnxMzpYnbw1uU",
+    "issueType": "description-quality",
+    "severity": "low",
+    "current": "Description reads: \"...create a nonliving object of vegetable matter within 'range': soft goods, rope, wood, or something similar.\" — the word range is wrapped in stray single quotes.",
+    "suggested": "Remove the stray single quotes so it reads \"...within range: soft goods, rope, wood...\" (matching every other spell's clean 'within range' phrasing).",
+    "rationale": "Leftover import/template artifact: 'range' is the only single-quoted placeholder token across all 319 spell descriptions, and it is player-visible in the SRD text for Creation.",
+    "slice": "spells-source-2",
+    "verdict": {
+      "real": true,
+      "confidence": "high",
+      "note": "Confirmed against pack data. Item id lnaGnxMzpYnbw1uU (name \"Creation\", type \"spell\") in E:/Infinity D&D5e/.claude/worktrees/cranky-proskuriakova-236245/packs/infinity-dnd5e-items.db. Its identified rules body literally reads: \"...create a nonliving object of vegetable matter within 'range': soft goods, rope, wood, or something similar.\" The word range is wrapped in stray single quotes. Verified uniqueness: across all 319 spells, 'range' (single-quoted) appears in exactly ONE description (Creation), while 176 spells use the clean unquoted \"within range\" phrasing. The 5e/SRD Creation text has no quotes here, so this is a genuine import/template artifact that is player-visible in the identified state. Item-specific, confirmable, actionable; not an alias or systemic duplicate.",
+      "refinedSuggestion": "In Creation's system.description.value, change \"within 'range':\" to \"within range:\" (remove the two stray single-quote characters around the word range) so it matches the clean \"within range\" phrasing used by the other 175+ spells."
+    }
+  }
+]

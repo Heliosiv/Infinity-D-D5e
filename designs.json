@@ -1,0 +1,347 @@
+[
+  {
+    "lens": "tag-schema",
+    "proposals": [
+      {
+        "title": "Unify gem/art/ammo/reagent virtual-chip detection into one classifier table consumed by every call site",
+        "problem": "The 'virtual chip' concept (a chip that resolves to items by predicate, not by literal lootType) is implemented three different ways. The roller (scripts/loot/roller.js matchesLootTypes, lines 391-406) resolves loot.art via isVariableArtItem, loot.gem via isVariableGemItem, loot.ammunition via isAmmunitionItem. pack-stats.js (computePackStats line 67, computeTierFilteredStats line 131) only counts loot.ammunition virtually and never counts loot.gem/loot.art at all. The merchant buy-filter (scripts/merchant/buy-filter.js itemBuyCategories, lines 78-83) resolves gem/art/reagent from the dnd5e system.type.value subtype instead, a totally separate code path. So the same chip is computed by keyword-flag detection in one place, by dnd5e-subtype in another, and not at all in a third. A curator who wants the Gem chip to behave consistently must edit at least 3 files with 3 incompatible mental models.",
+        "proposal": "In tag-vocabulary.js add a single ordered table, e.g. VIRTUAL_LOOT_TYPES = [{ key: 'loot.gem', test: isVariableGemItem }, { key: 'loot.art', test: isVariableArtItem }, { key: 'loot.ammunition', test: isAmmunitionItem }, ...], and a function itemLootChips(item) -> Set<string> that returns the canonical lootType (after aliases) plus every virtual key whose test passes. Rewrite roller.matchesLootTypes, both pack-stats counters, and merchant buy-filter to call itemLootChips. Adding a new virtual chip then means appending one row, and chip counts in the UI automatically match what the roller actually returns.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Make the Gems and Art chips show real counts (currently always 0 in the chip UI)",
+        "problem": "The pack canonicalizes all 96 gem and 166 art items to loot.loot -> loot.trade-good (verified: 40 gems + 74 art carry lootType loot.loot; the rest carry only the variableTreasureKind flag with no lootType). computeTierFilteredStats and computePackStats (scripts/loot/pack-stats.js) bucket items strictly by getItemLootType and only add a synthetic count for loot.ammunition. They never run isVariableGemItem/isVariableArtItem. The chip option builders (scripts/app.js line 318, hoard-loot.js line 264, per-creature-loot.js line 229) read byLootType[lootType] for the count, so the Gems and Art Objects chips render 'Gems (0)' / 'Art Objects (0)' even though selecting them yields hundreds of items via the roller. The label says nothing is there while the roller says otherwise.",
+        "proposal": "Have the stats counters increment byLootType['loot.gem'] / byLootType['loot.art'] whenever isVariableGemItem/isVariableArtItem is true, exactly as they already do for loot.ammunition (pack-stats.js lines 67-69 and 131-132). Folding this into the unified itemLootChips classifier from the first proposal fixes it in one stroke for all call sites.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Tighten variableTreasureKind so magic items and spell docs stop being classified as gems/art",
+        "problem": "grep of the pack shows variableTreasureKind:'gem' on magic items like Pearl of Power, Gem of Seeing, Gem of Brightness, Elemental Gem of Water/Earth/Fire, and Figurine of Wondrous Power (Onyx Dog); variableTreasureKind:'art' even lands on items tagged lootType loot.spell and loot.equipment. isVariableGemItem (roller.js line 435) returns true immediately when getVariableTreasureKind===\"gem\" with no folder/type guard (unlike isVariableArtItem which at least checks the art-objects folder / type==='loot'). Result: a Pearl of Power matches the mundane Gems chip and is eligible for plain gem treatment, and magic items leak into the gem/art treasure pools. inferArtCategory (art-variants.js line 351) also matches bare keywords like 'gem', 'ring', 'crown' in names, widening the leak.",
+        "proposal": "Restrict the gem/art virtual detectors to genuinely mundane treasure: require type==='loot' (or absence of system.rarity) AND not in MAGIC_LOOT_TYPES before honoring variableTreasureKind, mirroring the folder guard already in isVariableArtItem. Separately, re-tag the ~15 magic items currently flagged variableTreasureKind:'gem'/'art' to drop that flag (they are wondrous/consumable magic, not appraisable mundane treasure). Add a vocabulary test asserting no item is simultaneously magic-natured and a variable-treasure gem/art.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Promote loot.reagent to a first-class virtual chip and classify it as mundane",
+        "problem": "loot.reagent was added as a chip (tag-vocabulary.js line 82) and a buy-filter category (buy-filter.js lines 73, 81), but it was only half-wired. It is absent from both MAGIC_LOOT_TYPES and MUNDANE_LOOT_TYPES, so getItemMagicNature returns 'neutral' for alchemical supplies, meaning the Magic Bias dial ignores them while it correctly pushes gems/tools/trade-goods as mundane. There is also no virtual detector: reagents only resolve through a literal lootType, yet the pack splits reagents across dnd5e types (verified: loot.reagent items are type '' x73, action x17, consumable x15, utility x17, loot x2) and some raw ingredients live under loot.loot in herbs-reagents folders. So the roller's Reagent chip can miss ingredients that lack the exact lootType while the buy-filter catches them via subtype — the two sides disagree.",
+        "proposal": "Add 'loot.reagent' to MUNDANE_LOOT_TYPES so the magic-bias dial treats alchemical supplies like other mundane goods. Add an isReagentItem(item) predicate (system.type.value==='reagent' OR keyword subtype.reagent OR herbs-reagents folder) and register it in the unified virtual-chip table so the Reagent chip, its stat count, and buy-filter all resolve identically. This makes reagent the documented precedent for 'how a curator adds a category' instead of a half-applied special case.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Fix the stale single-source-of-truth header and stamp one schema-version constant",
+        "problem": "tag-vocabulary.js is declared the single source of truth, but its own header is wrong on two counts: it says the schema is 'po-loot-v3' and that 'v0.1 reads the party-operations flag namespace verbatim; a future milestone migrates to infinity-dnd5e' — yet every reader in this same file (getItemKeywords line 192, getItemLootType line 225, etc.) already reads infinity-dnd5e FIRST and treats party-operations as fallback, and MEMORY notes the migration is done. Meanwhile the pack carries a zoo of schema tags (po-loot-usage-v1, po-loot-folder-v1, po-item-enrichment-v3, infinity-dnd5e-art-assignment-v1, infinity-dnd5e-description-state-v1, infinity-dnd5e-spell-scroll-v1) and the spell-scroll generator (generate-spell-scrolls.mjs line 326) plus a test fixture still stamp tagSchema:'po-loot-v3'. There is no single version constant; the 'source of truth' file documents a state that no longer exists.",
+        "proposal": "Export a TAG_SCHEMA constant (e.g. 'infinity-loot-v4') and a FLAG_NAMESPACE='infinity-dnd5e' from tag-vocabulary.js; have the generator, fixtures, and any writer import it instead of the literal 'po-loot-v3'. Rewrite the header to state the current truth (native namespace primary, party-operations legacy fallback) and list the live flag-schema names so a curator knows which schema each flag block belongs to.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Centralize the dnd5e-type -> lootType derivation so curators tag from one rule, not many",
+        "problem": "The 'expected lootType by dnd5e type/subtype' mapping from the audit guide is re-encoded by hand in at least two divergent places and implied in a third. buy-filter.js itemBuyCategories (lines 58-90) hard-codes the weapon/equipment/consumable/loot/container switch with its own ARMOR_SUBTYPES set (light/medium/heavy/shield/natural). The pack-build/tagging pipeline encodes the same mapping separately (the .db is the output). A curator adding a category (say loot.poison as a real chip, or splitting 'food' out of consumable) must touch the chip list, the magic/mundane sets, the labels map, the stats counters, the buy-filter switch, and the tagging script — six edits with no shared definition. The audit's own 'poisons fold into consumable / ammo synthetic / gems-art' notes are scattered across comments rather than expressed once.",
+        "proposal": "Lift the dnd5e (type, subtype) -> canonical lootType decision into one exported pure function deriveLootTypeFromDnd5e(item) in tag-vocabulary.js, and have buy-filter.js, the offline tagging script, and any future live-item classifier call it. Pair it with the virtual-chip table and the labels map so the full lifecycle of one category (derive -> alias -> chip -> label -> magic-nature -> count -> buy-filter) is declared in adjacent, cross-referenced structures in a single file. Document the 'add a category' recipe at the top of tag-vocabulary.js pointing at those four structures.",
+        "impact": "med",
+        "effort": "high"
+      },
+      {
+        "title": "Resolve the loot.consumable overload that mixes mundane gear, food, and magic potions under one magic-classified bucket",
+        "problem": "loot.consumable is in MAGIC_LOOT_TYPES (tag-vocabulary.js line 110) with the comment 'potions / elixirs / consumed magic items', so the Magic Bias dial treats the entire bucket as magic. But the pack files mundane items into loot.consumable as consumable/trinket and consumable/food: torches, oil flasks, lamps, pitons, ball bearings, hempen rope, hooded lanterns, candles, rations, waterskins (visible throughout summary.json duplicates). These are mundane gear, yet a +Magic bias up-weights them and a +Mundane bias suppresses them, which is backwards. The 'Potions & Consumables' chip label compounds the confusion by advertising potions while the bucket is mostly mundane sundries that arguably belong under Adventuring Gear.",
+        "proposal": "Either (a) split a mundane-gear virtual sub-signal so getItemMagicNature returns 'mundane' for consumable items whose dnd5e subtype is trinket/food and that carry no system.rarity, keeping true potions/elixirs magic; or (b) re-tag mundane consumable sundries (torch, oil, piton, rope, rations, waterskin, candle, lamp, lantern) to loot.equipment so the magic bucket stays honestly magic. Add a vocabulary test that no zero-rarity consumable/trinket is magic-classified.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Make alias hygiene enforceable: assert every shipped lootType is either a chip or an alias key, in CI",
+        "problem": "Alias correctness currently relies on a hand-maintained shippedCanonical list in test-tag-vocabulary.mjs (lines 219-234) that a curator must remember to update. The pack actually ships loot.armor, loot.weapon, loot.loot, loot.poison (verified raw counts: loot.armor x14, loot.weapon x40, loot.loot x241, loot.poison x2) which only stay reachable because LOOT_TYPE_ALIASES maps them. Nothing in CI reads the real .db to confirm the invariant 'every distinct lootType in the pack resolves (directly or via alias) to exactly one LOOT_TYPES chip, and every chip resolves to >=1 shipped item.' If a future pack rebuild introduces a typo'd lootType (e.g. loot.armour) or drops the last item of a chip, the hand-list test passes while real items become unreachable.",
+        "proposal": "Add a data-driven test that scans packs/infinity-dnd5e-items.db, collects the distinct lootType set, and asserts each one is in LOOT_TYPES or LOOT_TYPE_ALIASES, and that each non-virtual chip has at least one resolving item. This converts the curator-discipline rule documented in the LOOT_TYPES comment (lines 56-60) into an enforced invariant and catches alias drift at build time instead of in play.",
+        "impact": "med",
+        "effort": "low"
+      }
+    ]
+  },
+  {
+    "lens": "loot-balance",
+    "proposals": [
+      {
+        "title": "Rarity is collinear with tier — the two filters aren't independent levers",
+        "problem": "Cross-tabbing the pack (tier x effective-rarity) shows every tier holds exactly ONE rarity band: t1 is 100% common, t2 100% uncommon, t3 100% rare, t4 only very-rare+legendary. There is no item anywhere that is, e.g., a rare-rarity t1 weapon or an uncommon t4 trinket. The UI exposes tier and rarity as separate chip groups (RARITIES + TIERS in scripts/loot/tag-vocabulary.js), so a GM naturally assumes they combine freely. They don't: selecting tier=t1 + rarity=rare yields an empty pool, and rollLoot (scripts/loot/roller.js) returns the 'Candidate pool is empty' warning with no hint that the two chips are mutually exclusive. The tierWindow() helper (t-1..t) was added precisely to paper over this — it widens t3 to pull t2 uncommons — but it only masks the adjacent case and leaves all non-adjacent combinations dead.",
+        "proposal": "Make the data model honest about the coupling. Option A (lowest churn): in the roller/UI, when a tier+rarity combo resolves to zero candidates, fall back to rarity-only (drop the tier filter) and surface a clear warning instead of an empty bundle. Option B (better): re-tier the pack so a given rarity spans more than one tier where lore supports it (e.g. a few uncommon items belong at t1, some rare at t2), decoupling the axes. Option C (cleanest long-term): collapse tier into a derived view of rarity in the UI and stop presenting them as orthogonal, since today they encode the same information. Document the chosen invariant in tag-vocabulary.js next to the TIERS/RARITIES enums so future tagging keeps the axes consistent.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Common rarity collapses to ~20 items at high tiers — high-tier rolls can't include mundane gear",
+        "problem": "Because common items are tagged t1 only, rolling at t3 with the common chip checked surfaces just 50 items pack-wide, and at t4 only 20 (all loot.trade-good/loot.container — no magic chip has a single common item reachable at t3/t4). The tierWindow(t)=[t-1,t] window stops one tier short, so a t4 roll's window [t3,t4] never reaches the t1 commons. Practical effect: a GM rolling a tier-4 hoard who wants the party to also find ropes, torches, healing-potion-tier commons, or filler trade goods gets essentially nothing on the common chip, and the bundle is all very-rare/legendary. This is the inverse of the comment in tierWindow() that says the window exists 'so a T2 roll can also pick up T1 commons' — that intent silently breaks at t3+.",
+        "proposal": "Two complementary fixes. (1) Add a 'staples' / always-available band: tag a curated set of mundane commons (rope, torch, rations, basic ammo, healer's kit) as tier-agnostic so they're reachable from any tier window — either a special tier value the window always includes, or a lootEligible-style 'alwaysStock' flag the filter ORs in. (2) Alternatively widen tierWindow to optionally reach down to t1 for the explicitly-common rarity selection only. Add a test in scripts/test-roller.mjs asserting that 'roll t4 + common chip + each magic lootType' yields a non-empty pool (or an explicit, intended empty with a warning).",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "'common' is a junk-drawer band: 251 untagged items (incl. genuinely-magic ones) floor to common with a 0.01-15,000 gp spread",
+        "problem": "getEffectiveRarity() in scripts/loot/roller.js floors any item with no rarity tag to 'common' (251 non-spell items, ~18% of the rollable pack). The code comment openly admits this sweeps in 'a Wand of Magic Missiles tagged loot.consumable'. The result: the common band's gp ranges from 0.01 to 15,000 gp (p50=10, p90=750), so a 'common'-only roll can legitimately surface a 15,000 gp item next to a 1-cp candle, and the value-filter is the only thing keeping a low-level common roll sane. This corrupts both balance (a low-tier loot drop can spike wildly) and merchant stock (the Shop Stock preset weights common x3, amplifying whatever junk is mis-floored into common).",
+        "proposal": "Run a one-time backfill pass that assigns true rarityNormalized to the 251 untagged items (the audit's per-item slices will catch the genuinely-magic mis-tags; the rest are mundane and can be set to 'common' explicitly so the floor stops being load-bearing). Then change getEffectiveRarity's fallback to be conservative: only floor to common for items whose lootType is in MUNDANE_LOOT_TYPES, and route anything magic-natured-but-untagged to a quarantine (exclude from rolls or flag as needs-rarity) rather than silently calling it common. Add a check in scripts/run-checks.mjs that fails CI if a magic-lootType item ships with no rarity.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "maxRecommendedQty is inert for 640 of 649 items — only ammunition ever uses it",
+        "problem": "649 non-spell items carry maxRecommendedQty>1 (e.g. potions at 6, scrolls at 8, trade goods at 4-12), but rollInitialQuantity() in scripts/loot/roller.js short-circuits to quantity 1 unless isAmmunitionItem(item) is true. Only 9 of those 649 are actually ammunition, so the maxQty data on 640 items (98.6%) is dead weight: a roll never produces 'Potion of Healing x4' even though the tag says it should, and merchant stock ignores it too (pool.js forces ammo to 20 via resolveStockQty and otherwise takes the roller's qty of 1). The pack is carrying a maintained policy field that the engine throws away, which is misleading to anyone tuning it.",
+        "proposal": "Pick one and make code + data agree. Either (a) honor maxRecommendedQty for stackable consumables/trade-goods too — let rollInitialQuantity roll 1..maxQty for items whose lootType is consumable/potion/scroll/reagent/trade-good/ammunition, bounded by the per-pick budget ceiling exactly as it already does for ammo; this makes hoards feel like hoards (stacks of potions, bundles of arrows, sacks of trade goods). Or (b) if single-quantity drops are the intended design, strip maxRecommendedQty from the 640 non-stackable items and document that the field is ammo-only. Option (a) is the higher-value fix and reuses the existing budget-aware quantity code.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "108 duplicate copies skew roll probability and churn merchant dedup — concentrated in trade-goods/consumables",
+        "problem": "82 duplicate-name clusters / 107-108 extra copies exist (Waterskin x6, Rations x6, Tinderbox x5, Candle x4, Hempen Rope x4...). 51 extra copies are loot.trade-good and 26 are loot.consumable — exactly the low-tier common pool that dominates t1/t2 rolls. Each extra copy is an independent draw target in weightedPick() (scripts/loot/roller.js), so Waterskin is 6x more likely to roll than any unique common, distorting the 'flavor spread' of a low-tier haul toward a handful of mundane items. The merchant layer (scripts/merchant/pool.js) then spends real work collapsing these: it dedupes candidates by name AND filters the rolled result by name, so the duplicates inflate the candidate count, waste roll attempts on names that get discarded, and make the effective stock pool smaller than it looks. The T1 common consumable pool is 63 rows but only 38 distinct names.",
+        "proposal": "De-duplicate the pack to one canonical document per name (the audit guide already flags this as known finding #3 — this entry quantifies the loot-balance cost to justify prioritizing it). After collapse, the roller's per-name probability normalizes and pool.js's name-dedup becomes a cheap safety net instead of a load-bearing correction. If某 a few names are intentionally distinct (e.g. Amethyst at 10gp vs 20gp, Incense potion vs reagent), rename them so the distinction is visible to the GM rather than a hidden coin-flip. Add a check in run-checks.mjs / test-pack-shape.mjs that fails when two rollable documents share a normalized name.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "'Artifact' is a dead chip and dead preset weight — zero artifact items exist",
+        "problem": "RARITIES in scripts/loot/tag-vocabulary.js includes 'artifact', ELEVATED_RARITIES includes it, and every rarity-balance preset in scripts/loot/rarity-balance.js assigns it a weight (Shop 0.05, Hoard 0.1, HighMagic 0.35). But the pack contains zero artifact-rarity items. So the artifact rarity chip, wherever it renders, always rolls an empty pool, and the preset artifact weights are multiplying against nothing — pure noise in the weight tables that a GM tuning Custom weights will waste time on.",
+        "proposal": "Either add a small curated artifact set (a handful of t4/epic signature items — the pack already has 84 legendaries to model pricing on) so the chip and the preset weights mean something, OR remove 'artifact' from the user-facing RARITIES/chip list and the preset weight maps until such content exists, keeping it only as an accepted normalizeRarity() value for forward-compat. Whichever is chosen, add a startup/pack-stats assertion that every selectable rarity resolves to >=1 item so a dead chip can't ship again.",
+        "impact": "low",
+        "effort": "low"
+      },
+      {
+        "title": "Several chip+tier cells resolve to 1-2 items — rolls there are deterministic, not random",
+        "problem": "Beyond the empty cells, the reachable-pool cross-tab shows multiple live cells with only 1-2 candidates after the tierWindow is applied: loot.container yields 2 at rare and 2 at very-rare; loot.reagent yields 1 at rare and tops out (no t4 reagent at all); loot.trade-good at t4 has a single very-rare item; loot.potion at t4-legendary has only 2. When a GM filters to one of these chips at that tier+rarity, weightedPick() repeatedly returns the same one or two items, so the 're-roll this one' feature (rerollOne) and the merchant stock roll can't actually vary the result. The Alchemical Supplies (reagent) and Containers chips are the weakest — they effectively can't supply a mid/high-tier shop.",
+        "proposal": "Set a minimum-viable-pool target (e.g. >=4 distinct items) per advertised chip x rarity band and backfill the thin cells: add a few rare/very-rare containers (Bag of Holding variants, Heward's Handy Haversack already exist — give them distinct rarities/tiers), and extend the reagent line into t3/t4 (rare/very-rare alchemical ingredients) so 'Alchemical Supplies' works at the tiers an apothecary would actually carry high-end stock. Generate a coverage report from scripts/loot/pack-stats.js that lists every chip x rarity cell below the threshold, and wire it into ui:audit so coverage regressions are visible each release.",
+        "impact": "med",
+        "effort": "med"
+      }
+    ]
+  },
+  {
+    "lens": "merchant",
+    "proposals": [
+      {
+        "title": "Fix the buy-filter magic/mundane misclassification by reusing getItemMagicNature",
+        "problem": "scripts/merchant/buy-filter.js:56 derives isMagic from `Boolean(system.rarity)`. But every mundane base item in the pack carries system.rarity:\"common\" — verified: all 40 tagged mundane weapons (Dagger, Longsword, Plate, etc.) and 13/14 mundane armor pieces. itemBuyCategories ALSO always runs the dnd5e-type fallback even when a canonical lootType is already present. Runtime-confirmed results: a curated mundane Longsword (tagged loot.weapon.mundane, rarity common) returns categories [loot.weapon.mundane, loot.weapon.magic]; an untagged SRD copy returns [loot.weapon.magic] only. Concrete breakage: a merchant whose buyFilter is {lootTypes:['loot.weapon.mundane']} REFUSES a player's plain longsword (untagged copy classifies as magic-only), while a {lootTypes:['loot.weapon.magic']} merchant wrongly BUYS mundane gear. Both directions are wrong and player-visible via executeSell's not-bought-here rejection (transaction.js:272).",
+        "proposal": "In itemBuyCategories: (1) when getItemLootType(item) returns a value, trust it and SKIP the dnd5e-type fallback entirely (the fallback exists only for untagged sheet items) — and prefer reusing the existing getItemMagicNature(item) from tag-vocabulary.js, which already maps lootType→magic/mundane/neutral via MAGIC_LOOT_TYPES/MUNDANE_LOOT_TYPES. (2) For the genuinely-untagged fallback, change the magic test so common does NOT imply magic: `const isMagic = rarity && rarity !== 'common';` (dnd5e marks a base item common; true magic items are uncommon+). This single line removes the systemic mis-tag for the 53 mundane weapon/armor items and matches dnd5e convention. Add the regression cases below.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Add scripts/test-merchant-buy-filter.mjs (currently the only untested merchant module)",
+        "problem": "scripts/merchant/ has 7 sibling test files (test-merchant-bargain/currency/pool/session-state/shop-access/store/transaction.mjs) but NO test for buy-filter.js — the exact module carrying the verified misclassification bug. That gap is why the common-rarity mis-tag shipped. The buy-filter is also the gate executeSell calls, so a regression here silently blocks or allows sales.",
+        "proposal": "Add a node test mirroring the existing test-merchant-*.mjs harness. Cover: (a) tagged mundane Longsword (rarity common) must NOT match a magic-only filter and MUST match a mundane-only filter; (b) untagged SRD-copy mundane gear (rarity common, no flag) classifies as mundane; (c) a true magic item (rarity uncommon+, loot.weapon.magic tag) matches magic-only and not mundane-only; (d) empty filter buys anything; (e) AND-semantics: lootType+rarity both required. Wire it into the same npm test runner the other merchant tests use.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Either wire up or delete the dead merchantCategories / saleLiquidity / sellValueGp flags",
+        "problem": "All 1,741 items carry flags.infinity-dnd5e.merchantCategories (42-value taxonomy), saleLiquidity (sale.standard/specialty/luxury/salvage), and sellValueGp — but a full scripts/*.js grep shows ZERO runtime readers. The merchant UI buy-filter uses the canonical LOOT_TYPES chip set (merchant-workspace.js:246), not merchantCategories. computeSellPriceGp (store.js:434) computes sell-back as raw system.price × merchant.sellRatio and never consults sellValueGp (which is hard-coded to floor(gp/2) at generation time anyway). So three per-item flag families bloat every document and mislead maintainers into thinking they drive pricing/stock when they drive nothing.",
+        "proposal": "Decide intent per flag. If sellValueGp is meant to be the sell authority (it would let curated items override the flat 50% — e.g. liquid commodities sell near face, salvage sells low), make computeSellPriceGp prefer getItemSellValue(item) when present and fall back to price×sellRatio. If saleLiquidity is meant to modulate sell ratio (luxury/specialty/salvage liquidity tiers), feed it into resolveUnitSellPrice. If merchantCategories was an abandoned earlier taxonomy superseded by lootType chips, strip all three from the compile:packs output to shrink the LevelDB and remove the false affordance. At minimum, document in store.js which flags are authoritative.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Collapse the merchantCategories taxonomy's redundant and singleton buckets",
+        "problem": "The baked merchantCategories vocabulary has structural incoherence even before deciding whether to keep it: near-duplicate pairs that always co-occur (tool=39/tools=39, container=57/storage=57, equipment=219/outfitting=219, arms=288/weapon=287, ingredient=49/potion=49) and noise singletons (alcohol:1, drink:1, token:1, smithing:2, poison:2). 'loot' (594), 'treasure' (141) and 'tradegood' (104) also overlap ambiguously with the canonical loot.* chips. This is the taxonomy a future shop-by-category feature would build on, and it would inherit the redundancy.",
+        "proposal": "If the flags are kept (see prior proposal), normalize the taxonomy at generation time: drop the plural/singular twins (keep one of tool/tools, container/storage, etc.), merge singletons up to their parent (alcohol/drink→consumable, token→curio/art, smithing/leather→crafting), and define the taxonomy ONCE as an exported frozen set in tag-vocabulary.js (the way LOOT_TYPES/RARITIES are) so generate-spell-scrolls.mjs and art-variants.js import it instead of hand-listing string arrays. This makes the category layer maintainable and prevents the writers from drifting apart.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Couple market-tier presets to rarity/lootType, not just a gp ceiling",
+        "problem": "MARKET_TIERS (value-filter.js) realism is a pure gp ceiling: General Store ≤200, Town ≤500, Bazaar ≤1000, Emporium ≤5000. The doc comment claims '~95% common/uncommon' at General Store. Verified against the pack: the low end holds (only 12 magic weapons/armor/equipment fall ≤200gp — base Staff/Wand/Rod/Silver Dagger, defensible), but it degrades upward — 107 magic items ≤1000gp, 246 ≤5000gp. Because the tier preset ONLY sets minGp/maxGp and leaves pool.lootTypes/rarities untouched, a GM who picks 'Town Market' but also ticks the magic-weapon chip gets +1 swords on a village shelf. The tier label promises realism the mechanism can't enforce alone.",
+        "proposal": "Extend MARKET_TIERS entries with optional companion defaults (e.g. general/town imply rarities:['common','uncommon'] and exclude loot.*.magic; bazaar+ widen them) and have the workspace tier-preset click set lootTypes/rarities alongside minGp/maxGp (with a confirm if the GM already customized them). Alternatively gate magic lootTypes behind a per-tier allowMagic flag. Either way the 'General Store vs Emporium' label becomes a real stock-composition dial rather than a price cap that silently lets rares through.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Make sellable items the merchant won't buy a clearer dead-end, and surface buy-filter on the sell tab",
+        "problem": "executeSell rejects with reason 'not-bought-here' when itemMatchesBuyFilter fails (transaction.js:272), and that check rides directly on the buggy itemBuyCategories. Until the heuristic is fixed, players hit silent/confusing sell rejections on ordinary gear; even after the fix, the buyFilter is intentionally stripped from the player-facing sanitizeMerchantForList projection (store.js:642), so a player has no way to know WHAT a shop buys before being told 'no'.",
+        "proposal": "After fixing itemBuyCategories, add a player-visible hint of what the merchant buys (e.g. surface a non-sensitive summary like 'Buys: Weapons, Armor' derived from buyFilter.lootTypes — labels only, no prices/gold) on the sell tab so a refusal is predictable. Keep the economy internals stripped, but the buy-category labels are safe to show and remove the 'why won't it take my sword' confusion.",
+        "impact": "low",
+        "effort": "med"
+      }
+    ]
+  },
+  {
+    "lens": "content-quality",
+    "proposals": [
+      {
+        "title": "Strip the asset-pipeline dev-note (\"Planned icon\" / \"Icon plan\") out of every player-visible description block",
+        "problem": "All 1,741 items render a build-pipeline annotation into player-facing HTML. The identified \"Item State\" aside ends with \"<li>Planned icon: shared asset</li>\" (1,447x) or \"bespoke asset\" (294x), and every unidentified block ends with \"<li>Icon plan: Shared/Bespoke custom art queued</li>\". This is internal art-tracking metadata (it mirrors flags[\"infinity-dnd5e\"].art.mode / generated:false / plannedPath) that has no meaning to a player or GM and makes every item card look unfinished. The in-repo generator scripts/generate-spell-scrolls.mjs hardcodes both strings verbatim (line 616 identified aside, line 625 unidentified block), so the 329 generated scrolls reproduce the leak on every build; the other ~1,412 items inherited it from the external po-item-enrichment-v3 pass.",
+        "proposal": "Two-part fix. (1) In scripts/generate-spell-scrolls.mjs, delete the \"<li>Planned icon: shared asset</li>\" from buildIdentifiedDescription (line 616) and the \"<li>Icon plan: Shared custom art queued</li>\" from buildUnidentifiedDescription (line 625) so future builds stop emitting it. No test asserts on these strings (test-spell-scrolls.mjs has zero references), so the change is low-risk. (2) Add a one-shot cleanup pass over packs/infinity-dnd5e-items.db that removes the two <li> patterns from system.description.value and system.unidentified.description for all items, then recompile via npm run compile:packs. The art intent is fully preserved in the structured flags[\"infinity-dnd5e\"].art object, so nothing is lost. Optionally gate any future dev-note rendering behind a debug-only toggle that never ships to players.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Stop generating identified/unidentified state machinery and \"Use X\" actions for spell SOURCE documents",
+        "problem": "The 319 spell source documents (type:\"spell\", lootType:\"loot.spell\") - which the audit guide explicitly states \"are not loot themselves\" - carry the full item-identification UI as if they were lootable objects. Polymorph (id 04nMsTWkIFvkbXlY), for example, renders \"<strong>Identified State:</strong> Polymorph\", an \"Item State\" aside reading \"Value: 2,500 gp / Activities: Save / Planned icon: bespoke asset\", AND a full unidentified description (\"An inscribed spell formula awaiting identification... Visible form: Inscribed Spell Formula / Identification state: Unidentified\"). flags.descriptionState shows {identified:true, unidentified:true}. A spell definition a GM drags onto a sheet is never appraised, sold, or identified, so this is incoherent on the card and clutters the spell description with a treasure-style sales block.",
+        "proposal": "For type==\"spell\" documents, suppress the unidentified block entirely (set system.unidentified.description to \"\" and descriptionState.unidentified=false) and drop the treasure-style \"Item State\" aside (Value/Activities/Planned-icon) from the identified description, leaving just the spell rules text. If the merchant/scroll-generator pipeline needs the gp value, it already reads it from flags[\"infinity-dnd5e\"].gpValue, not from the rendered HTML. Do this as a targeted pass keyed on type=\"spell\" in the same cleanup script as proposal #1.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Fix the wrong sub-gp currency math in the \"Value:\" line of the Item State block",
+        "problem": "The custom \"Value:\" line in the Item State aside renders the gp-denominated gpValue number but pairs it with a downshifted denomination label without converting the magnitude. Candle (price {value:1, denomination:\"cp\"}, gpValue 0.01) renders \"<li>Value: 0.01 cp</li>\" - it should read \"1 cp\". 116 items show this defect: 49 \"0.N cp\" and 67 \"0.N sp\" lines (e.g. Bucket \"0.05 cp\", Basket \"0.4 sp\"). The actual dnd5e system.price is correct, so the custom block visibly contradicts Foundry's own price display directly beneath it - a GM comparing the two sees \"0.01 cp\" vs \"1 cp\".",
+        "proposal": "Render the Value line from system.price (value + denomination) rather than from gpValue, or apply the correct conversion (gp->sp x10, gp->cp x100) when choosing a sub-gp denomination so the number matches the unit. Patch the formatter wherever the aside is built (the in-repo template uses gpValue.toLocaleString() + \" gp\" in generate-spell-scrolls.mjs line 616, which is safe for scrolls; the sub-gp items came from the enrichment pass, so the fix belongs in the cleanup script that rewrites these <li> values from system.price).",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Suppress the empty \"Rarity:\" line for the 251 no-rarity items",
+        "problem": "251 items render \"<li>Rarity: </li>\" - a label with nothing after it - in the player-visible Item State block. These are the trade goods, containers, and treasure that intentionally carry no rarity (rarity \"(none)\" in the summary). On the card a player/GM sees a dangling \"Rarity:\" with an empty value, which reads as a data-entry error rather than \"this item has no rarity.\"",
+        "proposal": "In the Item State aside builder, omit the Rarity <li> entirely when rarityNormalized is empty/none (rather than emitting an empty one). Apply the same conditional in generate-spell-scrolls.mjs line 616 for safety and in the one-shot cleanup pass for the existing 251 items. This pairs naturally with the apostrophe/value cleanup since it touches the same <ul class=\"infinity-item-state-list\"> block.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Fix the three possessive/apostrophe naming inconsistencies (Angels Trumpet, Eagles Fern, Potion of Giants Size)",
+        "problem": "The pack uses correct apostrophe-s possessives almost everywhere (Healer's Kit, Tinker's Tools, Hunter's Mark, ~40 items), but three names break the convention. \"Angels Trumpet\" (id BhfuI7UoZntTMH9a, reagent) and \"Eagles Fern\" (id PubrFxRC2UE5Ynhs, reagent) should be \"Angel's Trumpet\" and \"Eagle's Fern\". \"Potion of Giants Size\" (id 9HEjizGE5QOmkGh9, legendary potion) is a different case: the canonical SRD name is \"Potion of Giant Size\" (singular adjective, no possessive) - and the bug is provable inside the single item, where the activity button reads \"Drink Potion of Giant Size\" and identifier is \"potion-of-giants-size\" while the player-visible header reads \"Identified State: Potion of Giants Size\". So one item shows two different spellings of its own name.",
+        "proposal": "Rename: BhfuI7UoZntTMH9a -> \"Angel's Trumpet\"; PubrFxRC2UE5Ynhs -> \"Eagle's Fern\"; 9HEjizGE5QOmkGh9 -> \"Potion of Giant Size\" (singular). Update each item's name field AND the embedded \"Identified State:\" header text in system.description.value so the card header matches. For the potion, also align the identifier to \"potion-of-giant-size\" for consistency with the activity text. These are exact, low-volume hand edits.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Remove fabricated \"Use X\" utility activities from pure loot, trade goods, and containers",
+        "problem": "300 loot/container items carry a fabricated type:\"utility\" activity with an action activation and chatFlavor \"Use <name>\", producing a meaningless clickable button on the character sheet. Examples: \"Use Cow\" (Cow, VEyHiaiFe3RIFDHT), \"Use Gold\", \"Use Silk\", \"Use Chicken\", \"Use Diamond\". Even Studded Leather Armor +3 has \"Use Studded Leather Armor +3\". 800 items total render \"Activities: Utility\" in the Item State block. Livestock, raw metals, gems, and currency are not usable actions, so the button is pure noise to players. Care is required because some \"loot\"-shaped magic items are legitimately actionable (Iron Flask \"resolve the listed save\", Iron Horn of Valhalla) and must keep their activity.",
+        "proposal": "Add a pass that removes the lone dnd5eactivity000 utility activity (and the resulting \"Activities: Utility\" <li>) from items where it is a no-op: type in {loot, container} with a single utility activity whose chatFlavor is exactly \"Use <name>\" and which has no save/damage/effects. Whitelist genuinely-magic loot (rarity present and not common, or has effects/save) so Iron Flask et al. are untouched. Verify against the merchant/loot tooling first since pack-stats and the roller read activity metadata.",
+        "impact": "med",
+        "effort": "high"
+      },
+      {
+        "title": "Make the unidentified state coherent: skip it for mundane gear and improve the base-item reveal wording",
+        "problem": "All 1,741 items carry a full unidentified description block, but only 6 items actually start unidentified (identified:false). So a plain Dagger, Cow, or Waterskin has fabricated \"awaiting identification / hidden marks / Identification state: Unidentified\" lore that is incoherent for mundane gear (mundane items are never identified/unidentified in 5e). If a GM ever toggles identification on these, they get nonsense like \"A dagger awaiting identification.\" Separately, the reveal labels read awkwardly - \"Visible form: Longsword Weapon\", \"Plate Armor\", \"Scalemail Armor\" (74 weapon entries append the redundant word \"Weapon\") - and the body text is drawn from a tiny phrase pool (one \"described by paper stock, ink, and binding...\" sentence covers all 319 scrolls), so even the items that should be unidentifiable read as filler.",
+        "proposal": "(1) Only emit an unidentified block for items that can plausibly be unidentified (magic items with rarity uncommon+, or anything shipped identified:false); for mundane gear/trade goods/containers set system.unidentified.description to \"\" and descriptionState.unidentified=false. (2) Drop the trailing redundant noun in \"Visible form\" (\"Longsword\" not \"Longsword Weapon\", \"Plate\" not \"Plate Armor\"). (3) Lower priority: expand the unidentified phrase pool so visually-distinct item classes don't all share one sentence. Fold (1) and (2) into the same cleanup script; treat (3) as a follow-up polish task.",
+        "impact": "med",
+        "effort": "high"
+      },
+      {
+        "title": "Add a packs lint/check step that catches dev-notes, empty labels, currency mismatches, and apostrophe drift before release",
+        "problem": "All of the above leaked into 1,741 items at once and there is no committed regenerator for the main item descriptions (they came from an external po-item-enrichment-v3 pass), only generate-spell-scrolls.mjs in-repo. Without an automated gate, the next enrichment run or manual edit can silently reintroduce dev-notes, empty \"Rarity:\" lines, sub-gp currency mismatches, or apostrophe-less names, and nobody notices until a player sees the card. The repo already has a test/check harness (npm run check, the test-*.mjs suite) this can plug into.",
+        "proposal": "Add a scripts/test-pack-content.mjs (wired into run-checks.mjs) that scans packs/infinity-dnd5e-items.db and fails on: (a) any \"Planned icon:\" or \"Icon plan:\" string in description HTML; (b) any \"<li>Rarity: </li>\" empty label; (c) any \"<li>Value: 0.N (cp|sp)</li>\" magnitude/denomination mismatch vs system.price; (d) type=\"spell\" documents carrying an unidentified block or treasure \"Item State\" aside; (e) multi-word names ending in a bare plural that the rest of the pack would write with 's (heuristic warning, not hard fail). This converts every finding above into a durable regression guard.",
+        "impact": "high",
+        "effort": "med"
+      }
+    ]
+  },
+  {
+    "lens": "dnd5e-correctness",
+    "proposals": [
+      {
+        "title": "Strip phantom \"utility\" activities from all 243 loot-type items (Emerald, gems, trade goods, art)",
+        "problem": "Every loot-type item in the pack carries a generated activity (e.g. Emerald `2q1Cvb7GDga4dq13` has `system.activities.dnd5eactivity000` = {type:\"utility\", activation.type:\"action\", chatFlavor:\"Use Emerald\"}). All 243/243 loot items are affected, including pure inert treasure: gems (Black Opal, Emerald, Amethyst), metals (Gold, Iron), livestock, and art objects. The dnd5e 5.x `loot` ItemDataModel has NO ActivitiesField — loot is inert \"stuff\" with no activation. These activities are schema-invalid: they let a player spend an Action to \"Use\" an emerald and either get silently dropped on import or render a broken activity row on the sheet.",
+        "proposal": "In the pack-generation pipeline, gate activity emission on item type: never emit `system.activities` for `type:\"loot\"`. Add a `npm run check` assertion (alongside test-pack-shape.mjs) that fails if any loot document has a non-empty activities map. Re-compile packs via `npm run compile:packs`. This is mechanical and verifiable (count must drop to 0).",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Fix the \"Value:\" line in the baked Item State block to use the stored denomination, not the gp-normalized number",
+        "problem": "The player-visible Item State block renders the gp-converted numeric value paired with the RAW denomination string. Piton (`TqyvIglHDj5kfohR`, stored 5 cp) renders \"Value: 0.05 cp\"; Oil Flask (`psoZaItkOScMVaHL`, stored 1 sp) renders \"Value: 0.1 sp\"; Torch (`BnOCLuNWhVvzHLjl`, stored 1 cp) renders \"Value: 0.01 cp\". \"0.05 cp\" is nonsensical (a twentieth of a copper). This hits every item whose `system.price.denomination` is not gp. The runtime merchant path (`resolveItemBasePriceGp` in scripts/merchant/store.js) handles denominations correctly, so the bug is isolated to the description-generation step that produced the .db.",
+        "proposal": "In the description-block generator, render `${price.value} ${price.denomination}` directly from the stored fields (so 5 cp shows \"5 cp\"), OR convert to gp AND relabel as gp (\"0.05 gp\"). Do not mix the converted magnitude with the original unit. Regenerate the Item State HTML across the pack. Add a test asserting the rendered Value line's unit matches `system.price.denomination`.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Adopt one explicit mundane-rarity rule and apply it pack-wide",
+        "problem": "Rarity for non-magic items is inconsistent both across and WITHIN dnd5e item types: base gear (Dagger, Plate, Shield) and most tools carry `rarity:\"common\"`, but containers split 19 common / 30 none (Backpack, Quiver, Chest some-yes-some-no), tools are 37 common but Lute and Disguise Kit are blank, equipment clothing is common while saddles are blank, and loot treasure/gems are uniformly blank. Even the 6 Waterskin duplicates split (1 common, 5 blank). There is no stated rule, so the pack can't be validated and merchants/filters that key off rarity behave unevenly.",
+        "proposal": "Pick the dnd5e-idiomatic rule the SRD uses: mundane physical items (weapon/armor/equipment/tool/container) = `rarity:\"common\"`; pure trade goods / gems / art / treasure (`type:loot`) = no rarity (they aren't graded on the magic-item scale). Encode it as a single normalization pass in the generator keyed on item type, and add a `test-rarity-balance.mjs` assertion that every non-loot mundane item is `common` and every plain loot item is blank. This resolves the known systemic inconsistency with a checkable invariant.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Correct the camelCase rarity key on the two non-spell `very-rare` magic items",
+        "problem": "dnd5e 5.x canonical rarity is `veryRare` (camelCase). Two real magic items store the invalid hyphenated form `very-rare`: Wand of the War Mage +3 (`IuVaBrq17AqxpXc4`, equipment) and Mirror of Life Trapping (`hf5j1meGsA33HkUj`, consumable). These won't match `CONFIG.DND5E.itemRarity`, so the sheet shows a blank/unknown rarity and any rarity-keyed logic skips them. (69 spell documents also carry `very-rare`, but per the audit guide spell-source rarity is out of scope.)",
+        "proposal": "Set `system.rarity` to `veryRare` on those two item docs. Add a generator/validation guard that rejects any `system.rarity` not in the dnd5e rarity enum (common, uncommon, rare, veryRare, legendary, artifact) for non-spell items, so the hyphenated form can't reappear.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Re-subtype wondrous/utility items wrongly tagged `consumable/potion`",
+        "problem": "Seven items are modeled as `consumable` with subtype `potion` despite not being potions: Deck of Many Things (`oSarKEU8x1AupB6z`, legendary, autoDestroy:true, 22 uses) and Deck of Illusions (`Wk7EOYoY3b2tgGoS`, autoDestroy:true) are famous wondrous items — \"potion\" plus autoDestroy means using a card deletes the deck; Alchemist's Fire, Acid (vial), Basic Poison are throwables; Incense (`TniiNAWSasgVGZ5V`) and Restorative Ointment are not potions either. The potion subtype is the dnd5e cue for \"drink this,\" which is wrong for all seven.",
+        "proposal": "Reassign subtypes: the two Decks → `trinket` (or model as wondrous equipment) with autoDestroy:false and uses sized to the deck (52/34/22 cards as charges, not destroy-on-use); Basic Poison → the existing `poison` subtype; Alchemist's Fire / Acid / Incense / Restorative Ointment → `trinket`. Add a name-vs-subtype lint that flags `potion`-subtyped items whose name lacks potion/oil/elixir/philter/draught cues.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Repair the swapped/misused `consumable/poison` subtype",
+        "problem": "The dedicated `poison` consumable subtype holds only \"Truth Serum\" and \"Potion of Poison\" — but Potion of Poison is a magic potion (belongs under `potion`), while genuine poisons like Basic Poison (`eVbPkYjpl29RE2uW`) are filed under `potion`. The two correct buckets are effectively swapped, so neither the dnd5e sheet's poison handling nor the module's filters land on the right items.",
+        "proposal": "Move Potion of Poison to `potion`; move Basic Poison (and any other actual poisons) to `poison`. Keep Truth Serum as `poison`. This is a 3-4 document edit; fold it into the same name-vs-subtype lint from the potion fix so the buckets stay coherent.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Decide consumable-vs-loot for reusable mundane gear and fix single-use modeling on non-consumables",
+        "problem": "Functionally identical adventuring gear is split arbitrarily between `type:consumable/trinket` (Hempen Rope, Torch, Lamp, Hooded Lantern, Piton — all with `uses.max:\"1\"`) and `type:loot` (Crowbar, Bedroll, Tinderbox, Bell, Soap, Mess Kit). Worse, reusable items are modeled as one-use: Hempen Rope, Lamp, and Hooded Lantern have uses.max:\"1\" so a single \"use\" expends a 50-ft coil of rope or a lantern; Waterskin is `consumable/food` (so drinking once destroys the skin). Rope also carries two unrelated activities (check + save).",
+        "proposal": "Define a rule: items that are genuinely expended (torch, piton, oil flask, caltrops, ammunition) stay `consumable` with uses/autoDestroy; durable gear (rope, lamp, lantern, crowbar, bedroll, tinderbox, mess kit, bell, soap, waterskin) is `type:equipment` (subtype gear/trinket) or inert `loot`, with NO uses.max and NO autoDestroy. Strip the spurious check/save activities from Rope. Re-model Waterskin as equipment/container rather than food. Apply via a small remap table in the generator.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Clamp sub-copper unit prices to a representable minimum",
+        "problem": "Three items store prices below 1 cp, which dnd5e cannot represent as coin: Ball Bearings (`3YSUIp4eFo26YxJr` and `79zrBwqEp2MCJ1Bl`) at `0.1 cp` and Sling Bullet (`z9SbsMIBZzuhZOqT`) at `0.2 cp`. SRD ball bearings (a bag of 1,000) cost 1 gp; sling bullets are ~1 cp each / 4 cp per 20. These look like a per-stack price divided by quantity into a sub-copper unit. `resolveItemBasePriceGp` yields ~0.001 gp, which rounds to 0 in the merchant and shows a meaningless price.",
+        "proposal": "Set Ball Bearings to its SRD stack price (1 gp for the bag) and Sling Bullet to 1 cp (or 4 cp/20). Add a generator guard that floors any non-zero price to at least 1 cp (0.01 gp) and warns when a stack item's unit price falls below 1 cp, prompting whether it should be priced per-stack instead.",
+        "impact": "low",
+        "effort": "low"
+      },
+      {
+        "title": "Promote named gems/art-objects to the native dnd5e `gem`/`art` loot subtypes",
+        "problem": "Loot subtypes are currently {blank:151, treasure:89, reagent:2, material:1}. Named gemstones (Emerald, Amethyst, Black Opal, Amber) and art objects (Censer, Opal Broach, Starburst Pendant) sit under blank or `treasure` rather than the native dnd5e loot subtypes `gem` and `art`. dnd5e 5.x ships these subtypes (CONFIG.DND5E.lootTypes), and using them lets the native sheet, other modules, and any gem/art-aware tooling recognize the items — the module already distinguishes loot.gem/loot.art via its own flag layer, so the system field is just lagging behind.",
+        "proposal": "In the generator, map items in gems-jewelry folders to `system.type.value:\"gem\"` and art-objects folders to `\"art\"`, keeping the module's loot.gem/loot.art flags as the UI driver. No new registration needed (both are native). Verify with a quick pass that loot subtype counts shift from blank/treasure into gem/art.",
+        "impact": "low",
+        "effort": "low"
+      }
+    ]
+  },
+  {
+    "lens": "tooling",
+    "proposals": [
+      {
+        "title": "Duplicate-name guard: scripts/test-pack-duplicates.mjs",
+        "problem": "82 duplicate-name clusters / 107 extra non-spell copies ship in the pack (Waterskin x6, Rations x6, Tinderbox x5, Candle x4, Hempen Rope x4, Backpack/Bedroll/Crowbar x3...). I confirmed 82 clusters / 107 extra copies by normalized (name.trim().toLowerCase() + type) grouping over packs/infinity-dnd5e-items.db. Nothing in run-checks.mjs detects this, so re-running the source/enrichment pipeline silently re-introduces accidental identical copies, bloating the loot pool and merchant stock with the same item.",
+        "proposal": "Add scripts/test-pack-duplicates.mjs (auto-picked up by run-checks.mjs since it matches test-*.mjs). Parse the .db line-by-line like test-pack-shape.mjs, skip type==='spell' (SRD spell sources legitimately share base names with items, e.g. Shield spell vs Shield armor), and cluster by key = name.trim().toLowerCase()+'|'+type. A cluster is a TRUE duplicate (fail) only when the variants share the SAME flags['infinity-dnd5e'].lootType AND identical system.price.value/denomination (these are the accidental copies — every cluster I sampled, e.g. Waterskin's 6 ids, is byte-identical on those fields). Clusters that differ (e.g. Amethyst 10gp vs 20gp, Incense 1gp potion vs 150gp reagent, Shield armor vs Shield spell) are reported as WARN-only, not a failure, so intentional variants don't break CI. Seed a baseline allowlist constant ALLOWED_DUPLICATES = new Set() and assert.equal(trueDuplicates.filter(c=>!allowed).length, 0, ...) printing each offending name + all its _ids. This makes the known backlog explicitly opt-in to fix and hard-blocks NEW accidental dupes from the next pipeline run.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "lootType vs dndType + magic-nature validator: scripts/test-pack-loottype.mjs",
+        "problem": "lootType is the single field driving the UI chips, roller, and merchant filters, yet nothing validates it against the underlying dnd5e item. I found 9 spellcasting foci (Staff, Wand, Rod, Orb, Crystal, Totem, Sprig of Mistletoe, Wooden Staff, Yew Wand) tagged lootType 'loot.weapon.magic' while carrying rarity 'common' — they are mundane foci miscategorized as magic weapons, so they pollute the Magic Weapons chip and magic-bias rolls. The type->lootType crosstab is otherwise clean today, so a validator both catches these 9 and prevents future drift.",
+        "proposal": "Add scripts/test-pack-loottype.mjs importing getItemLootType + getItemMagicNature from ./loot/tag-vocabulary.js (reuse, don't re-implement alias resolution). Two assertions: (1) Type-compatibility matrix — for each item assert the resolved canonical lootType is in the allowed set for item.type (weapon -> loot.weapon.{mundane,magic}; container -> loot.container; tool -> loot.tool; consumable -> loot.{consumable,potion,scroll,reagent,ammunition,poison-alias}; etc., mirroring the AUDIT-GUIDE 'Expected lootType by type' baseline). Print name+_id+type+lootType for violations. (2) Magic-nature sanity — flag items where getItemMagicNature()==='magic' but (system.rarity falls back to 'common'/none) AND lootType is one of loot.weapon.magic/armor.magic/equipment.magic; that exact rule surfaces the 9 foci. Ship with a small KNOWN constant so the 9 can be triaged (reclassify to loot.equipment / loot.weapon.mundane) and then removed from the allowlist, after which the assert hard-blocks regressions.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Description dev-note linter: scripts/test-pack-descriptions.mjs",
+        "problem": "All 1,741 items carry the dev-note 'Planned icon: shared asset' inside the player-visible Item State block of system.description.value (I confirmed the phrase appears in 1741/1741 descriptions, alongside the 'Identified State:' header and a data-item-id attribute). This internal art-pipeline scaffolding leaks to players. There is no linter, so any placeholder/dev string can ride along into a release undetected.",
+        "proposal": "Add scripts/test-pack-descriptions.mjs that scans system.description.value (plus .unidentified/.chat if present) for a DENY list of developer/placeholder substrings: /Planned icon/i, /shared asset/i, /bespoke asset/i, /\\bTODO\\b/, /\\bFIXME\\b/, /\\bplaceholder\\b/i, /lorem ipsum/i, /XXX/, and unresolved Handlebars/template artifacts /\\{\\{.*?\\}\\}/. Report name+_id+matchedPattern. Because the 'Planned icon' note is currently universal, gate it behind an env flag for staged rollout: const STRICT = process.env.PACK_DESC_STRICT==='1'; emit a non-fatal WARN count by default and assert.equal(violations,0) only when STRICT, then flip STRICT on in the npm 'release' script (release: run-checks && build-release) once the note is stripped at enrichment time. That way the dev-note is surfaced now and permanently blocked at release time without breaking the everyday `npm run check`.",
+        "impact": "high",
+        "effort": "low"
+      },
+      {
+        "title": "Rarity-policy check: scripts/test-pack-rarity.mjs",
+        "problem": "system.rarity is stored in two incompatible formats simultaneously: I measured 207 items as camelCase 'veryRare' and 69 as hyphen 'very-rare' for the SAME logical rarity. getItemRarity()/normalizeRarity() papers over this at read time, but the raw pack data is inconsistent and any consumer that reads system.rarity directly (Foundry's own sheet sorting, third-party modules) sees a split. Separately, the mundane-rarity policy is inconsistent (loot type: 176 none vs 54 'common'; containers: 30 none vs 19 'common'; tools: 37 'common' vs 2 none) — the known systemic finding, but currently unenforced either way.",
+        "proposal": "Add scripts/test-pack-rarity.mjs with three checks: (1) Canonical-format guard — assert every non-empty system.rarity is already a normalized value (RARITIES from tag-vocabulary.js, i.e. hyphenated 'very-rare'); the 276 split values fail until re-canonicalized, turning a silent read-time fixup into an explicit data invariant. (2) Magic-needs-rarity — assert every item whose lootType is in MAGIC_LOOT_TYPES (excluding consumables/scrolls which are commonly 'common') has a non-empty, non-'common' system.rarity; catches clearly-magic items shipping rarity-less. (3) Mundane-rarity-policy — pick ONE policy and enforce it: assert that mundane base gear (lootType in MUNDANE_LOOT_TYPES + loot.container/loot.equipment) is CONSISTENT — either all carry 'common' or all carry none, by reporting the minority bucket per lootType so the GM/maintainer makes a deliberate call. Reuse RARITIES, MAGIC_LOOT_TYPES, MUNDANE_LOOT_TYPES, getItemLootType already exported from tag-vocabulary.js.",
+        "impact": "med",
+        "effort": "med"
+      },
+      {
+        "title": "Price/value-band consistency check: scripts/test-pack-pricing.mjs",
+        "problem": "gpValue, valueBand, and system.price are three views of the same number that can silently diverge under hand-edits or pipeline changes. Right now they agree perfectly (I verified 0 mismatches across 1,737 priced items for valueBand-derived-from-gpValue, and 0 mismatches for gpValue vs system.price after denomination conversion — including the 52 cp / 67 sp / 1 pp non-gp items). That makes this the ideal moment to lock the invariant before it drifts; a single mis-entered denomination (e.g. price in cp but gpValue computed as if gp) would 100x an item's loot/merchant value undetected.",
+        "proposal": "Add scripts/test-pack-pricing.mjs that, for every item: (a) converts system.price.value via a denomination table {pp:10,gp:1,ep:0.5,sp:0.1,cp:0.01} and asserts it equals flags['infinity-dnd5e'].gpValue within a small epsilon (max(0.011, gpValue*0.001)); (b) derives the expected band from gpValue using the AUDIT-GUIDE bands (v0<=4, v1<=46, v2<=140, v3<=700, v4<=2800, else v5) and asserts it matches the stored valueBand (strip the 'value.' prefix via getItemValueBand). Report name+_id+price+denom+gpValue+band+expected for any mismatch. Centralize the DENOM_TO_GP table and bandFromGp() in scripts/loot/value-bands.js so the roller/merchant and this test share one definition. This is a pure regression guard: green today, red the instant pricing drifts.",
+        "impact": "med",
+        "effort": "low"
+      },
+      {
+        "title": "Repeatable de-dup + re-tag migration: scripts/migrate-pack-dedup.mjs (+ npm script)",
+        "problem": "The duplicate guard will fail until the 107 accidental copies are removed, and the 9 misclassified foci + split rarity formats need a one-shot fix — but there is no repeatable, idempotent way to do it. The existing migrate-pack-namespace.mjs is the perfect template (in-place edit of the NeDB .db, idempotent, preserves _ids), but it only handles the flag-namespace move.",
+        "proposal": "Add scripts/migrate-pack-dedup.mjs modeled directly on migrate-pack-namespace.mjs (same readFile/parse-lines/writeFile-LF-with-trailing-newline shape, same idempotency contract, same console summary). Three idempotent passes, each gated by a CLI flag so they can run independently: (1) --dedup: for each true-duplicate cluster (same normalized name+type+lootType+price), keep the lexicographically-first _id and drop the rest, logging dropped _ids; CRITICAL: before dropping, scan for inbound UUID references in art plans / spell-scroll source links / data/ so no live reference is orphaned (migrate-pack-namespace.mjs notes _id preservation matters for exactly this reason) — refuse to drop a referenced id and report it. (2) --recanonical-rarity: rewrite every system.rarity through normalizeRarity() from tag-vocabulary.js so 'veryRare'->'very-rare' across all 207 items, and refresh flags.rarityNormalized to match. (3) --reclassify-foci: retag the 9 named foci (Staff, Wooden Staff, Wand, Yew Wand, Rod, Totem, Orb, Crystal, Sprig of Mistletoe) from loot.weapon.magic to the correct lootType. End each run with the same '--- moved/already-clean ---' summary and remind to run `npm run compile:packs`. Wire npm scripts (migrate:dedup, migrate:rarity, migrate:foci) alongside the existing compile:packs entry. Re-running on a clean pack is a no-op, so it is safe to keep around as the canonical fixer whenever a check above goes red.",
+        "impact": "high",
+        "effort": "med"
+      },
+      {
+        "title": "Make the data-quality checks first-class in run-checks + release",
+        "problem": "run-checks.mjs auto-discovers any scripts/test-*.mjs, so the six new files above are wired in for free on `npm run check` — but the heaviest data invariants (dev-note strict mode, full pricing/rarity scan) only matter at ship time, and there are no per-check npm aliases for the new pack checks the way there are for roller/budget/tag-vocabulary/pack-shape.",
+        "proposal": "1) Add per-check aliases mirroring the existing pattern (check:pack-duplicates, check:pack-loottype, check:pack-descriptions, check:pack-rarity, check:pack-pricing) so a maintainer can run one validator in isolation while fixing it. 2) Keep the everyday `npm run check` lenient (WARN counts + allowlists) so the known backlog doesn't block normal dev, but set PACK_DESC_STRICT=1 (and any other strict gates) in the existing `release` script (release: run-checks && build-release) so a release physically cannot ship the dev-note or unresolved dupes. 3) Add a one-line CONTRIBUTING/README note: '.db is the editable source of truth; after any migrate:* run `npm run compile:packs`; `npm run check` must be green before `npm run release`.' This closes the loop so the guards are both discoverable and enforced exactly where it matters.",
+        "impact": "med",
+        "effort": "low"
+      }
+    ]
+  }
+]

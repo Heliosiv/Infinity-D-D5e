@@ -156,6 +156,31 @@ function registerSettings() {
 }
 
 /* ------------------------------------------------------------------ *
+ * dnd5e item-type registration
+ *
+ * The curated pack reclassifies raw alchemical ingredients (herbs, fungi,
+ * reagents) out of the "potion" bucket and onto a dedicated "reagent"
+ * subtype. dnd5e ships no such subtype, so we register it on CONFIG before
+ * any sheet renders — for both `consumable` items (e.g. dried herbs that
+ * keep a use activity) and `loot` items (inert spell components / ritual
+ * herbs). Without this the dnd5e Details tab would show a blank subtype for
+ * `system.type.value === "reagent"`; with it, the native sheet reads
+ * "Reagent" and the module's "Alchemical Supplies" chip lines up.
+ * ------------------------------------------------------------------ */
+
+function registerReagentItemType() {
+  const dnd5e = globalThis.CONFIG?.DND5E;
+  if (!dnd5e) return;
+  const entry = { label: "Reagent" };
+  if (dnd5e.consumableTypes && !dnd5e.consumableTypes.reagent) {
+    dnd5e.consumableTypes.reagent = entry;
+  }
+  if (dnd5e.lootTypes && !dnd5e.lootTypes.reagent) {
+    dnd5e.lootTypes.reagent = { ...entry };
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Tool registration
  * ------------------------------------------------------------------ */
 
@@ -221,6 +246,11 @@ Hooks.once("init", () => {
     }
   } catch (error) {
     console.warn(`${MODULE_ID} | init api assignment failed`, error);
+  }
+  try {
+    registerReagentItemType();
+  } catch (error) {
+    console.error(`${MODULE_ID} | registerReagentItemType failed`, error);
   }
   try {
     registerSettings();

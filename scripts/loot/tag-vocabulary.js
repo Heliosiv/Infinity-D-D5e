@@ -76,6 +76,10 @@ export const LOOT_TYPES = Object.freeze([
   "loot.equipment",
   "loot.consumable",
   "loot.potion",
+  // Raw alchemical ingredients (herbs, fungi, reagents) — surfaced as the
+  // "Alchemical Supplies" chip. Distinct from finished potions so the GM can
+  // stock a herbalist/apothecary without dredging the magic-potion pool.
+  "loot.reagent",
   "loot.scroll",
   "loot.ammunition",
   "loot.tool",

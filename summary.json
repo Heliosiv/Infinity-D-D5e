@@ -1,0 +1,2158 @@
+{
+  "totalItems": 1741,
+  "byType": {
+    "equipment": 219,
+    "weapon": 287,
+    "loot": 243,
+    "consumable": 577,
+    "container": 57,
+    "tool": 39,
+    "spell": 319
+  },
+  "bySub": {
+    "equipment/light": 19,
+    "weapon/martialM": 162,
+    "loot/": 151,
+    "weapon/simpleM": 75,
+    "equipment/trinket": 72,
+    "consumable/trinket": 126,
+    "loot/treasure": 89,
+    "container/": 57,
+    "tool/art": 18,
+    "equipment/medium": 35,
+    "consumable/wand": 12,
+    "consumable/potion": 49,
+    "tool/game": 3,
+    "equipment/clothing": 50,
+    "weapon/martialR": 25,
+    "consumable/ammo": 18,
+    "weapon/simpleR": 20,
+    "equipment/heavy": 33,
+    "consumable/food": 18,
+    "tool/music": 11,
+    "consumable/": 2,
+    "consumable/rod": 6,
+    "consumable/scroll": 329,
+    "tool/": 7,
+    "consumable/reagent": 15,
+    "equipment/shield": 10,
+    "weapon/natural": 5,
+    "loot/reagent": 2,
+    "consumable/poison": 2,
+    "spell/": 319,
+    "loot/material": 1
+  },
+  "byLoot": {
+    "loot.armor.magic": 83,
+    "loot.weapon.magic": 247,
+    "loot.loot": 241,
+    "loot.weapon": 40,
+    "loot.equipment.magic": 105,
+    "loot.consumable": 185,
+    "loot.container": 57,
+    "loot.tool": 39,
+    "loot.potion": 46,
+    "loot.equipment": 17,
+    "loot.scroll": 329,
+    "loot.armor": 14,
+    "loot.reagent": 17,
+    "loot.poison": 2,
+    "loot.spell": 319
+  },
+  "byRarity": {
+    "legendary": 99,
+    "very-rare": 276,
+    "uncommon": 362,
+    "(none)": 251,
+    "common": 374,
+    "rare": 379
+  },
+  "byTier": {
+    "tier.t4": 379,
+    "tier.t2": 396,
+    "tier.t1": 571,
+    "tier.t3": 395
+  },
+  "byFamily": {
+    "armor": 97,
+    "weapons": 305,
+    "sundries": 437,
+    "consumables": 215,
+    "tools": 39,
+    "spells": 648
+  },
+  "sectionCount": 55,
+  "bandRange": {
+    "value.v5": {
+      "min": 3000,
+      "max": 500000,
+      "n": 516,
+      "p50": 8000
+    },
+    "value.v4": {
+      "min": 750,
+      "max": 2800,
+      "n": 316,
+      "p50": 1280
+    },
+    "value.v0": {
+      "min": 0,
+      "max": 4,
+      "n": 208,
+      "p50": 0.5
+    },
+    "value.v1": {
+      "min": 5,
+      "max": 46,
+      "n": 196,
+      "p50": 10
+    },
+    "value.v3": {
+      "min": 150,
+      "max": 700,
+      "n": 298,
+      "p50": 320
+    },
+    "value.v2": {
+      "min": 50,
+      "max": 140,
+      "n": 207,
+      "p50": 60
+    }
+  },
+  "findingsTotal": 2373,
+  "sevCount": {
+    "med": 1741,
+    "low": 251,
+    "high": 381
+  },
+  "catCount": {
+    "desc-devnote": 1741,
+    "missing": 251,
+    "category-suspect": 62,
+    "unknown-loottype": 319
+  },
+  "duplicates": [
+    {
+      "name": "Candle",
+      "count": 4,
+      "variants": [
+        {
+          "id": "0NoBBP3MMkvJlwZY",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "CNVsvqfTbtcoHiEo",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "HgFNy16VK0iJgpFx",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "oylFuuS3t1nqNKsM",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Jug",
+      "count": 2,
+      "variants": [
+        {
+          "id": "0ZBWwjFz3nIAXMLW",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "bBaH1NS1tQO0ODMk",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Hammer",
+      "count": 3,
+      "variants": [
+        {
+          "id": "14pNRT4sZy9rgvhb",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "nmuGH3OKdoMOwJqj",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "xWQopgOHbS6LjsZm",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Chest",
+      "count": 2,
+      "variants": [
+        {
+          "id": "2YbuclKfhDL0bU4u",
+          "type": "container",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "zrfwOCYJXj63KcIq",
+          "type": "container",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Fine Clothes",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3OXueEpvDDCVfGFA",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 15,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        },
+        {
+          "id": "FqFmdzIBUSxFKKfi",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 15,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        }
+      ]
+    },
+    {
+      "name": "Ball Bearings",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3YSUIp4eFo26YxJr",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "79zrBwqEp2MCJ1Bl",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Small Knife",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3nVvaHVfHsgwGlkL",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "C05ytVXByOG8uBAc",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Pitcher",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3pEB74SAGPJrHT0U",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "nXWdGtzi8DXDLLsL",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Sealing Wax",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3uEyuCfnAzGkwAn5",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "HqM7xtEgwV1l3HTZ",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Handy Haversack",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3vo6ClAX5KTHb7Sm",
+          "type": "container",
+          "sub": "",
+          "gp": 2000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "7vqs5AqI4VCmuszx",
+          "type": "container",
+          "sub": "",
+          "gp": 2000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Amethyst",
+      "count": 2,
+      "variants": [
+        {
+          "id": "3xEj1h2pJyhd6t81",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/gems-jewelry/gemstones"
+        },
+        {
+          "id": "v3YmhCho5fvPiKdv",
+          "type": "loot",
+          "sub": "",
+          "gp": 20,
+          "loot": "loot.loot",
+          "folder": "sundries/gems-jewelry/gemstones"
+        }
+      ]
+    },
+    {
+      "name": "Blanket",
+      "count": 2,
+      "variants": [
+        {
+          "id": "419eNv7xp2p7Xlo5",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "uYniEJCeAuwUC4JY",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Quiver",
+      "count": 2,
+      "variants": [
+        {
+          "id": "4MtQKPn9qMWCFjDA",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "7MGvVY3ddwS1CsCZ",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Barrel",
+      "count": 2,
+      "variants": [
+        {
+          "id": "53f3ppOanjiptBTH",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "7Yqbqg5EtVW16wfT",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Map or Scroll Case",
+      "count": 2,
+      "variants": [
+        {
+          "id": "5mIeX824uMklU3xq",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "sXTLr44Pt2LzUqTe",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Backpack",
+      "count": 3,
+      "variants": [
+        {
+          "id": "7CPuXZHmyhoHolIm",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "H8YCd689ezlD26aT",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "McTSTN1S19LyVinI",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Censer",
+      "count": 2,
+      "variants": [
+        {
+          "id": "7ztvHyYJCcOOAWmR",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/art-objects/decorative-finery"
+        },
+        {
+          "id": "lg6oohwQndZT4Z0m",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/art-objects/decorative-finery"
+        }
+      ]
+    },
+    {
+      "name": "Wheat",
+      "count": 2,
+      "variants": [
+        {
+          "id": "AsxYc0tPNYt59U96",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.01,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "WdPAGBRUWYaS0TNQ",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.01,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Torch",
+      "count": 3,
+      "variants": [
+        {
+          "id": "BnOCLuNWhVvzHLjl",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "29ZLE8PERtFVD3QU",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "ltbDV5OitV0yrDFU",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.01,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Sheep",
+      "count": 2,
+      "variants": [
+        {
+          "id": "C97QX98SvHnMSwB4",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "P29EeDJQrJJXOIuK",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Sack",
+      "count": 2,
+      "variants": [
+        {
+          "id": "CNdDj8dsXVpRVpXt",
+          "type": "container",
+          "sub": "",
+          "gp": 0.01,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "twUtA4KxIgssAaNU",
+          "type": "container",
+          "sub": "",
+          "gp": 0.01,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Tinderbox",
+      "count": 5,
+      "variants": [
+        {
+          "id": "DNOSEAvF4Oh1DlWy",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "1FSubnBpSTDmVaYV",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "CG0LhGQtc3KOAeE1",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "DSWvkerPQsusbqzJ",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "m7I2KkwIWttQSElS",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Bedroll",
+      "count": 3,
+      "variants": [
+        {
+          "id": "DVXmyetZuvxbzAwW",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "DxfCBU7uBoRNAnDm",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "IGg1yAvcOyhIqzBi",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Costume Clothes",
+      "count": 2,
+      "variants": [
+        {
+          "id": "E2h6sEe6FU2tnU96",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 5,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        },
+        {
+          "id": "ug9bTGmTTEN7JwmP",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 5,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        }
+      ]
+    },
+    {
+      "name": "Bell",
+      "count": 2,
+      "variants": [
+        {
+          "id": "F6GwSqjErX1u35Re",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "KyW8s4pCgPAkgTXI",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Alms Box",
+      "count": 3,
+      "variants": [
+        {
+          "id": "FHs1YLOFcjCzp1G9",
+          "type": "container",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "g8fQZ1WyTz2bTtvA",
+          "type": "container",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "ac8IamT5vDrH1ZT8",
+          "type": "container",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Tankard",
+      "count": 2,
+      "variants": [
+        {
+          "id": "GsmRWbZLijuTVy1g",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "uw6fINSmZ2j2o57A",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Vial",
+      "count": 2,
+      "variants": [
+        {
+          "id": "HJ20EPWp2dpKyREH",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "meJEfX3gZgtMX4x2",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Bag of Devouring",
+      "count": 2,
+      "variants": [
+        {
+          "id": "HW8oEpnhIXJBA7iP",
+          "type": "container",
+          "sub": "",
+          "gp": 5000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "YG9QW0flem4SLL6A",
+          "type": "container",
+          "sub": "",
+          "gp": 5000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Glass Bottle",
+      "count": 2,
+      "variants": [
+        {
+          "id": "HZp69hhyNZUUCipF",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "Og207R4yc92DZ5Ta",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Disguise Kit",
+      "count": 2,
+      "variants": [
+        {
+          "id": "IBhDAr7WkhWPYLVn",
+          "type": "tool",
+          "sub": "",
+          "gp": 25,
+          "loot": "loot.tool",
+          "folder": "tools/other-tools"
+        },
+        {
+          "id": "kj5DNiBKasYWyuj6",
+          "type": "tool",
+          "sub": "",
+          "gp": 25,
+          "loot": "loot.tool",
+          "folder": "tools/other-tools"
+        }
+      ]
+    },
+    {
+      "name": "Canvas",
+      "count": 2,
+      "variants": [
+        {
+          "id": "IcBuh7RHzFltgk8M",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        },
+        {
+          "id": "mFJkwdzb9IpLC3Ip",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        }
+      ]
+    },
+    {
+      "name": "Copper",
+      "count": 2,
+      "variants": [
+        {
+          "id": "Ix6OGUAfOPYYdFKE",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        },
+        {
+          "id": "aXWzDW0huOa0WuIO",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        }
+      ]
+    },
+    {
+      "name": "Goat",
+      "count": 2,
+      "variants": [
+        {
+          "id": "JhdWyKuXpFAKUYtW",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "pMj0mA1wyEhoO6zP",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Silver",
+      "count": 2,
+      "variants": [
+        {
+          "id": "L55zjzM8wiD19gnK",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        },
+        {
+          "id": "9t5X9HG9ou6YMSdJ",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        }
+      ]
+    },
+    {
+      "name": "Linen",
+      "count": 2,
+      "variants": [
+        {
+          "id": "LgFk7OKZAmKkV4Qk",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        },
+        {
+          "id": "Gh1JxTlM9aRGNrUH",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        }
+      ]
+    },
+    {
+      "name": "Iron",
+      "count": 2,
+      "variants": [
+        {
+          "id": "M2jQ9hMZdqKdrmpj",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        },
+        {
+          "id": "V3uxNwciT4Ln7S4k",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        }
+      ]
+    },
+    {
+      "name": "Iron Pot",
+      "count": 2,
+      "variants": [
+        {
+          "id": "M8xM8BLK4tpUayEE",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "xDhs75PeUft0q7Dx",
+          "type": "container",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Efficient Quiver",
+      "count": 2,
+      "variants": [
+        {
+          "id": "MGrhNKiQRO94vCn2",
+          "type": "container",
+          "sub": "",
+          "gp": 1000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "MLNzQUsVUi0PEV3i",
+          "type": "container",
+          "sub": "",
+          "gp": 1000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Silk",
+      "count": 2,
+      "variants": [
+        {
+          "id": "PcXGYXebvqv0BS2z",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        },
+        {
+          "id": "jad5oFMDv21mPvJP",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        }
+      ]
+    },
+    {
+      "name": "Hempen Rope (50 ft.)",
+      "count": 4,
+      "variants": [
+        {
+          "id": "QXmaarJ4X8P0C1HV",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "U5fRz04JWgNS1WvK",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "bDZFQqLQE73cFB8c",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "oRrNK2H2vcN4Kp74",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Bucket",
+      "count": 2,
+      "variants": [
+        {
+          "id": "Qaqqc7v05hmih98y",
+          "type": "container",
+          "sub": "",
+          "gp": 0.05,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "mQVYcHmMSoCUnBnM",
+          "type": "container",
+          "sub": "",
+          "gp": 0.05,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Salt",
+      "count": 2,
+      "variants": [
+        {
+          "id": "R1J1W2xKHj5o004o",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.05,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "eDVTXE3qv28DwvPl",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.05,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Soap",
+      "count": 2,
+      "variants": [
+        {
+          "id": "REBWkTKe6lJaIkpn",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "sJ9gfQnz2jdT6GAB",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Chicken",
+      "count": 2,
+      "variants": [
+        {
+          "id": "TM9VmwPoJBHqJzqK",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "l1YRv9sdhQPaSQop",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Bag of Holding",
+      "count": 2,
+      "variants": [
+        {
+          "id": "TZ9gUwDKpz50OK9P",
+          "type": "container",
+          "sub": "",
+          "gp": 2000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "aDHRuUs29SrumWfq",
+          "type": "container",
+          "sub": "",
+          "gp": 2000,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Saddlebags",
+      "count": 2,
+      "variants": [
+        {
+          "id": "TmfaFUSZJAotndn9",
+          "type": "container",
+          "sub": "",
+          "gp": 4,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "kQHuP8Gmu0YrJDOf",
+          "type": "container",
+          "sub": "",
+          "gp": 4,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Incense",
+      "count": 2,
+      "variants": [
+        {
+          "id": "TniiNAWSasgVGZ5V",
+          "type": "consumable",
+          "sub": "potion",
+          "gp": 1,
+          "loot": "loot.consumable",
+          "folder": "consumables/potions"
+        },
+        {
+          "id": "jsR8i4HOjATQ1EwI",
+          "type": "loot",
+          "sub": "",
+          "gp": 150,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Piton",
+      "count": 3,
+      "variants": [
+        {
+          "id": "TqyvIglHDj5kfohR",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.05,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "P31t6tGgt9aLAdYt",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.05,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "wmedRPNenLVSUaT5",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.05,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Cinnamon",
+      "count": 2,
+      "variants": [
+        {
+          "id": "UFEoJ4JtIiY0VCtF",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "Pn04ySJYcG06Jc4a",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Waterskin",
+      "count": 6,
+      "variants": [
+        {
+          "id": "Uv0ilmzbWvqmlCVH",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "1L5wkmbw0fmNAr38",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "2cKJTN5Ki77oCrQn",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "a8fe9d81BRW86cvP",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "kx8DGQizmR5UI21R",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "q4RcCLeKviqgckqt",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.2,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        }
+      ]
+    },
+    {
+      "name": "Mess Kit",
+      "count": 2,
+      "variants": [
+        {
+          "id": "V13fjV5oSmvbRdgP",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "lBg9CPRdpRhn4DO4",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Crowbar",
+      "count": 3,
+      "variants": [
+        {
+          "id": "V5UAjT3ed6sDNtgm",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "AkyQyonZMVcvOrXU",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "yUGNrsXMfsUKwsUg",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Cow",
+      "count": 2,
+      "variants": [
+        {
+          "id": "VEyHiaiFe3RIFDHT",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "W6pJovmnVyjbk0fA",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Parchment",
+      "count": 2,
+      "variants": [
+        {
+          "id": "WFQS2vT8ddrFjTJg",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "9c0CHs90xqPw81iP",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Flask",
+      "count": 2,
+      "variants": [
+        {
+          "id": "WrUnJoQZmmgt9l58",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "lHS63sC6bypENNlR",
+          "type": "container",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Basket",
+      "count": 2,
+      "variants": [
+        {
+          "id": "Wv7HzD6dv1P0q78N",
+          "type": "container",
+          "sub": "",
+          "gp": 0.4,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "uOzWQ8YXV3LpFnXG",
+          "type": "container",
+          "sub": "",
+          "gp": 0.4,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Ox",
+      "count": 2,
+      "variants": [
+        {
+          "id": "ZfESpO7Zj7Kp6Ldz",
+          "type": "loot",
+          "sub": "",
+          "gp": 15,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "WCbKUQcahzQQX0pL",
+          "type": "loot",
+          "sub": "",
+          "gp": 15,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Crossbow Bolt Case",
+      "count": 2,
+      "variants": [
+        {
+          "id": "azCkWA0t9k4Z4Sb9",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        },
+        {
+          "id": "eJtPBiZtr2pp6ynt",
+          "type": "container",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.container",
+          "folder": "sundries/containers-packs/storage"
+        }
+      ]
+    },
+    {
+      "name": "Flour",
+      "count": 2,
+      "variants": [
+        {
+          "id": "cFvYCJinCypVCDhN",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "CrcfT5jwcJTPTsfQ",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Ink Bottle",
+      "count": 3,
+      "variants": [
+        {
+          "id": "dP7jMKyHTTgVb3ii",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "UICmOXUKBmHp9o4y",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "qGfu1070HAllkO4W",
+          "type": "loot",
+          "sub": "",
+          "gp": 10,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Block of Incense",
+      "count": 2,
+      "variants": [
+        {
+          "id": "eJY20LOs3pOkRDPl",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "xxRC1qTIGzGEvmkg",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Rations",
+      "count": 6,
+      "variants": [
+        {
+          "id": "f4w4GxBi0nYXmhX4",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "8d95YV1jHcxPygJ9",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "EC6ugXsfJZmjMNAj",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "JwJf6M6HCSSMgKx3",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "P5UuhUBZL59wZiCY",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        },
+        {
+          "id": "YM4QueTsF3DL77mH",
+          "type": "consumable",
+          "sub": "food",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/food-provisions/meals-rations"
+        }
+      ]
+    },
+    {
+      "name": "Paper",
+      "count": 2,
+      "variants": [
+        {
+          "id": "fNMkFCOvMiW2Rh3t",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "0huCWvOncUsme84v",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.2,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Gold",
+      "count": 2,
+      "variants": [
+        {
+          "id": "hvAn2a6ukt1NpGU3",
+          "type": "loot",
+          "sub": "",
+          "gp": 50,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        },
+        {
+          "id": "HHh7Ihuk8ToxJzQX",
+          "type": "loot",
+          "sub": "",
+          "gp": 50,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        }
+      ]
+    },
+    {
+      "name": "Cotton",
+      "count": 2,
+      "variants": [
+        {
+          "id": "iAhvVUZD5s0ltpSX",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        },
+        {
+          "id": "ZcAgZHJ1hhqbedLF",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.5,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/textiles-hides"
+        }
+      ]
+    },
+    {
+      "name": "Bag of Sand",
+      "count": 2,
+      "variants": [
+        {
+          "id": "iOMRrzfzFCfPGuD6",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "f3eF8EYq1rkqFwDP",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.1,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Vestments",
+      "count": 2,
+      "variants": [
+        {
+          "id": "irtqrzaUCeshmTZp",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 1,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        },
+        {
+          "id": "mE6rsbIJXAd4tr4e",
+          "type": "equipment",
+          "sub": "clothing",
+          "gp": 1,
+          "loot": "loot.equipment",
+          "folder": "sundries/adventuring-gear/clothing-wearables"
+        }
+      ]
+    },
+    {
+      "name": "Book of Lore",
+      "count": 2,
+      "variants": [
+        {
+          "id": "l794iywHk8Wc6Uvi",
+          "type": "loot",
+          "sub": "",
+          "gp": 25,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "Bt7nIb37nU7Wxevx",
+          "type": "loot",
+          "sub": "",
+          "gp": 25,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Cloves",
+      "count": 2,
+      "variants": [
+        {
+          "id": "mCKdF0P09Wo5hmqx",
+          "type": "loot",
+          "sub": "",
+          "gp": 3,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "u753EokyA4vjksle",
+          "type": "loot",
+          "sub": "",
+          "gp": 3,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Pig",
+      "count": 2,
+      "variants": [
+        {
+          "id": "mXeVbLoCdSpN0tO7",
+          "type": "loot",
+          "sub": "",
+          "gp": 3,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        },
+        {
+          "id": "YJ2pBio6uEg5vhgN",
+          "type": "loot",
+          "sub": "",
+          "gp": 3,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/livestock"
+        }
+      ]
+    },
+    {
+      "name": "Saffron",
+      "count": 2,
+      "variants": [
+        {
+          "id": "nhJTtimIPVa0Yw0p",
+          "type": "loot",
+          "sub": "",
+          "gp": 15,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "Mrmkw4uaWX6UKpbn",
+          "type": "loot",
+          "sub": "",
+          "gp": 15,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Ginger",
+      "count": 2,
+      "variants": [
+        {
+          "id": "oIn4ZUCI02B8NfdU",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "VcHmykfFBurKzCO6",
+          "type": "loot",
+          "sub": "",
+          "gp": 1,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Pepper",
+      "count": 2,
+      "variants": [
+        {
+          "id": "pUwuKJk3wAgiAhNU",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        },
+        {
+          "id": "8SQ7vyE6gevpfJvn",
+          "type": "loot",
+          "sub": "",
+          "gp": 2,
+          "loot": "loot.loot",
+          "folder": "sundries/herbs-reagents/reagents"
+        }
+      ]
+    },
+    {
+      "name": "Platinum",
+      "count": 2,
+      "variants": [
+        {
+          "id": "pcIwvfpEEjXRpBJe",
+          "type": "loot",
+          "sub": "",
+          "gp": 500,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        },
+        {
+          "id": "Eyl9QYZcM9CYIqbA",
+          "type": "loot",
+          "sub": "",
+          "gp": 500,
+          "loot": "loot.loot",
+          "folder": "sundries/trade-goods/materials-metals"
+        }
+      ]
+    },
+    {
+      "name": "Oil Flask",
+      "count": 3,
+      "variants": [
+        {
+          "id": "psoZaItkOScMVaHL",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "j01YDOu2AolsRvdN",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "jDTM1RjtZMu9YYL9",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.1,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Lute",
+      "count": 2,
+      "variants": [
+        {
+          "id": "qBydtUUIkv520DT7",
+          "type": "tool",
+          "sub": "music",
+          "gp": 35,
+          "loot": "loot.tool",
+          "folder": "tools/musical-instruments"
+        },
+        {
+          "id": "vp4KpqdSfg3cvfCS",
+          "type": "tool",
+          "sub": "music",
+          "gp": 35,
+          "loot": "loot.tool",
+          "folder": "tools/musical-instruments"
+        }
+      ]
+    },
+    {
+      "name": "Lamp",
+      "count": 2,
+      "variants": [
+        {
+          "id": "qMzHmlmha8qMDnEF",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "vmymwrmE730l3pKh",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 0.5,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Shield",
+      "count": 3,
+      "variants": [
+        {
+          "id": "sSs3hSzkKBMNBgTs",
+          "type": "equipment",
+          "sub": "shield",
+          "gp": 10,
+          "loot": "loot.armor",
+          "folder": "armor/armor-shields/shields"
+        },
+        {
+          "id": "ypmzVapk7guDIqx4",
+          "type": "equipment",
+          "sub": "shield",
+          "gp": 10,
+          "loot": "loot.armor",
+          "folder": "armor/armor-shields/shields"
+        },
+        {
+          "id": "z1mx84ONwkXKUZd7",
+          "type": "spell",
+          "sub": "",
+          "gp": 50,
+          "loot": "loot.spell",
+          "folder": "spells/level-1"
+        }
+      ]
+    },
+    {
+      "name": "Hooded Lantern",
+      "count": 2,
+      "variants": [
+        {
+          "id": "trmWAdUoR6Y2B7rA",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 10,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        },
+        {
+          "id": "wjHtGnd05SPdURqE",
+          "type": "consumable",
+          "sub": "trinket",
+          "gp": 10,
+          "loot": "loot.consumable",
+          "folder": "consumables/other-consumables"
+        }
+      ]
+    },
+    {
+      "name": "Ink Pen",
+      "count": 3,
+      "variants": [
+        {
+          "id": "uVm7MiB71QblfnoY",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "8Fe9YSSe4ymQq8UM",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "ybeLtyIloDvKhDz8",
+          "type": "loot",
+          "sub": "",
+          "gp": 0.02,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    },
+    {
+      "name": "Perfume",
+      "count": 2,
+      "variants": [
+        {
+          "id": "uuh4UH3Jx5CsFjdA",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        },
+        {
+          "id": "LECtCKWa0mt0Vy1U",
+          "type": "loot",
+          "sub": "",
+          "gp": 5,
+          "loot": "loot.loot",
+          "folder": "sundries/adventuring-gear/general-loot"
+        }
+      ]
+    }
+  ],
+  "sliceSizes": {
+    "equipment": 219,
+    "weapon": 287,
+    "loot": 243,
+    "consumable": 577,
+    "container": 57,
+    "tool": 39,
+    "spell": 319
+  }
+}
