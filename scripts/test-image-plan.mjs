@@ -7,8 +7,10 @@ import { existsSync, readFileSync } from "node:fs";
 
 import {
   existingCompendiumArtPath,
+  isGeneratedItemArtPath,
   isArtworkAbsent,
   toFoundryItemArtPath,
+  toRepoItemArtPath,
 } from "./art-pipeline.mjs";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
@@ -32,6 +34,7 @@ const assignmentByItem = new Map(
 );
 const absentItems = packItems.filter(isArtworkAbsent);
 const absentItemIds = new Set(absentItems.map((item) => item._id));
+let curatedGeneratedReplacements = 0;
 
 assert.equal(
   plan.schema,
@@ -114,6 +117,31 @@ for (const item of packItems) {
     continue;
   }
 
+  const art = item.flags?.["infinity-dnd5e"]?.art;
+  if (art?.generated === true) {
+    const sourceArt = existingCompendiumArtPath(item);
+    const expectedImg = toFoundryItemArtPath(art.plannedPath);
+    assert.ok(
+      isGeneratedItemArtPath(item.img),
+      `${item.name} generated replacement should use module item-art`,
+    );
+    assert.equal(
+      item.img,
+      expectedImg,
+      `${item.name} generated replacement should match plannedPath`,
+    );
+    assert.ok(
+      existsSync(toRepoItemArtPath(art.plannedPath)),
+      `${item.name} generated replacement points at missing asset`,
+    );
+    assert.ok(
+      sourceArt && sourceArt !== item.img,
+      `${item.name} generated replacement should preserve source art as fallbackIcon`,
+    );
+    curatedGeneratedReplacements += 1;
+    continue;
+  }
+
   assert.equal(
     item.img,
     existingCompendiumArtPath(item),
@@ -163,5 +191,5 @@ assert.equal(
 
 const presentAssets = assets.filter((asset) => existsSync(asset.path)).length;
 process.stdout.write(
-  `image plan validation passed (${presentAssets}/${assets.length} assets generated for ${absentItems.length} absent-art item(s); ${packItems.length - absentItems.length} existing art item(s) preserved)\n`,
+  `image plan validation passed (${presentAssets}/${assets.length} assets generated for ${absentItems.length} absent-art item(s); ${curatedGeneratedReplacements} curated generated replacement(s); ${packItems.length - absentItems.length - curatedGeneratedReplacements} existing art item(s) preserved)\n`,
 );
