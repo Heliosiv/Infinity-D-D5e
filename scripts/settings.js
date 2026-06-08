@@ -41,6 +41,17 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
   MERCHANT_CONFIRM_TRANSACTIONS: "merchantConfirmTransactions",
+  // Quartermaster / party-resource feature.
+  RESOURCE_AUTO_TRIGGER: "resourceAutoTrigger",
+  RESOURCE_DEFAULT_ENVIRONMENT: "resourceDefaultEnvironment",
+  RESOURCE_FORAGE_MODE: "resourceForageMode",
+  RESOURCE_WATER_ENABLED: "resourceWaterEnabled",
+  RESOURCE_HALF_RATIONS: "resourceHalfRations",
+  RESOURCE_MAX_CATCHUP_DAYS: "resourceMaxCatchUpDays",
+  RESOURCE_REPORT_MODE: "resourceReportMode",
+  // Hidden resource stores (no config UI) — edited via the Resource Manager.
+  RESOURCE_CONFIG: "resourceConfig",
+  RESOURCE_RUNSTATE: "resourceRunState",
   // Hidden stores (no config UI) — keyed-by-tool blobs of saved presets
   // and recent roll history. Managed by scripts/loot/loot-store.js.
   SAVED_PRESETS: "savedPresets",
@@ -329,6 +340,111 @@ export const SETTINGS = Object.freeze([
     config: true,
     type: Boolean,
     default: false,
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_AUTO_TRIGGER,
+    name: "Auto-Run Daily Upkeep",
+    hint:
+      "When a new in-game day begins (via Simple Calendar or the world clock), " +
+      "automatically prompt foraging and consume the party's food, water, and " +
+      "light. Turn off to only run upkeep from the Quartermaster's Advance Day button.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT,
+    name: "Default Party Environment",
+    hint: "Where the party starts out. Sets the foraging difficulty until you change it.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "limited",
+    choices: {
+      abundant: "Abundant — easy foraging (DC 10)",
+      limited: "Limited — moderate foraging (DC 15)",
+      sparse: "Sparse — hard foraging (DC 20)",
+      settlement: "Settlement — buy supplies, no foraging",
+      underground: "Underground — no foraging",
+    },
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_FORAGE_MODE,
+    name: "Foraging Yield Mode",
+    hint: "How gathered food/water is credited when several characters forage on the same day.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "each",
+    choices: {
+      each: "Each forager keeps their own haul",
+      best: "Best single result feeds the party",
+    },
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_WATER_ENABLED,
+    name: "Track Water",
+    hint: "Track and consume water as well as food. Turn off for tables that don't bother with water.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_HALF_RATIONS,
+    name: "Half Rations",
+    hint: "Halve daily food use to stretch supplies (the 5e rationing option). Prolonged half rations still risks exhaustion.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_MAX_CATCHUP_DAYS,
+    name: "Max Catch-Up Days",
+    hint:
+      "If the clock jumps several days at once (or the GM was offline), cap how " +
+      "many days of upkeep run in one go so a long jump doesn't cascade.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 7,
+    range: { min: 1, max: 30, step: 1 },
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_REPORT_MODE,
+    name: "Upkeep Report Mode",
+    hint: "Who sees the daily supply report in chat.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "whisper-gm",
+    choices: {
+      "whisper-gm": "Whisper to GMs only",
+      "whisper-gm-owner": "Whisper to GMs and each affected player",
+      public: "Public — visible to everyone",
+    },
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_CONFIG,
+    name: "Quartermaster Config",
+    hint:
+      "Persistent resource setup (tracked resources, environments, matching). " +
+      "Managed by the Resource Manager window; edit through that, not here.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
+  },
+  {
+    key: SETTING_KEYS.RESOURCE_RUNSTATE,
+    name: "Quartermaster Run-State",
+    hint: "Internal day-tracking + last upkeep report. Not shown in the UI.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
   },
   {
     key: SETTING_KEYS.SAVED_PRESETS,

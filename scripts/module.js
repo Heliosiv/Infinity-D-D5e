@@ -18,6 +18,16 @@ import {
   registerMerchantSessionAutoOpen,
 } from "./merchant-session.js";
 import { ShopPickerApp } from "./shop-picker.js";
+import { ResourceManagerApp } from "./resource-manager.js";
+import {
+  ForagePromptApp,
+  registerForagePromptAutoOpen,
+} from "./forage-prompt.js";
+import { registerResourceSocket } from "./resource/socket.js";
+import {
+  registerResourceCalendarWatcher,
+  advanceDayNow,
+} from "./resource/calendar-watcher.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
 import { closeViewerSessions } from "./merchant/session-state.js";
 import {
@@ -69,7 +79,10 @@ function buildApi() {
     openPerCreatureLoot: () => PerCreatureLootApp.open(),
     openMerchantWorkspace: () => MerchantWorkspaceApp.open(),
     openShops: () => ShopPickerApp.open(),
+    openResourceManager: () => ResourceManagerApp.open(),
+    advanceDay: () => advanceDayNow(),
     MerchantSessionApp,
+    ForagePromptApp,
     SOUND_EVENTS,
     SOUND_REGISTRY,
     playSoundEvent,
@@ -228,6 +241,17 @@ function registerBuiltinTools() {
     status: "available",
     open: () => MerchantWorkspaceApp.open(),
   });
+
+  registerTool({
+    id: "resource-manager",
+    title: "Quartermaster",
+    description:
+      "Track food, water, and light. As days pass, players forage (Survival) and the party's supplies are spent automatically.",
+    icon: "fa-solid fa-campground",
+    category: "party",
+    status: "available",
+    open: () => ResourceManagerApp.open(),
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -334,6 +358,10 @@ Hooks.once("ready", () => {
     registerSoundAutomation();
     registerMerchantSocket();
     registerMerchantSessionAutoOpen();
+    // Quartermaster / party-resource feature.
+    registerResourceSocket();
+    registerForagePromptAutoOpen();
+    registerResourceCalendarWatcher();
     // GC merchant session records when a player disconnects so the GM's
     // "Active Sessions" list and seal maps don't leak across a session.
     Hooks.on("userConnected", (user, connected) => {

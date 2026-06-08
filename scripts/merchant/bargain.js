@@ -189,7 +189,7 @@ export async function runBargain({
  * shape across dnd5e v3 / v4. v3 returns a single Roll (or null); v4
  * may return an Array<Roll>. We return the first non-null Roll.
  */
-async function rollSkillCompat(actor, skillId, options) {
+export async function rollSkillCompat(actor, skillId, options) {
   const result = await actor.rollSkill(skillId, options);
   if (!result) return null;
   if (Array.isArray(result)) return result.find(Boolean) ?? null;

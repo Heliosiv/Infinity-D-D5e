@@ -59,6 +59,40 @@ export function prettyLootType(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Plain-language labels for the Quartermaster's default resources and
+ * environments, keyed by the stable internal ids in scripts/resource/*. As with
+ * loot types, display text lives here (node-testable) and any unmapped id falls
+ * back to a generic title-case transform.
+ */
+export const RESOURCE_LABELS = Object.freeze({
+  food: "Food",
+  water: "Water",
+  light: "Light",
+});
+
+export const ENVIRONMENT_LABELS = Object.freeze({
+  abundant: "Abundant",
+  limited: "Limited",
+  sparse: "Sparse",
+  settlement: "Settlement",
+  underground: "Underground",
+});
+
+/** Plain-English label for a resource id. Empty in -> empty out. */
+export function prettyResource(value) {
+  const key = String(value ?? "").trim();
+  if (!key) return "";
+  return RESOURCE_LABELS[key] ?? titleCase(key.replace(/[-_]/g, " "));
+}
+
+/** Plain-English label for an environment id. Empty in -> empty out. */
+export function prettyEnvironment(value) {
+  const key = String(value ?? "").trim();
+  if (!key) return "";
+  return ENVIRONMENT_LABELS[key] ?? titleCase(key.replace(/[-_]/g, " "));
+}
+
 /** "very-rare" -> "Very Rare" for rarity badges. Empty in -> empty out. */
 export function prettyRarity(value) {
   return String(value ?? "")

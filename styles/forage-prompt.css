@@ -1,0 +1,103 @@
+/* =========================================================
+   Infinity D&D5e - Forage Prompt (player daily window)
+   Scoped to .infinity-dnd5e.infinity-forage-prompt.
+   ========================================================= */
+
+.infinity-dnd5e.infinity-forage-prompt .window-content {
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  overflow: auto;
+}
+
+.infinity-dnd5e .fp-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.infinity-dnd5e .fp-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.infinity-dnd5e .fp-head__icon {
+  font-size: 1.6rem;
+  color: var(--lf-accent);
+}
+
+.infinity-dnd5e .fp-head__title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--lf-text-strong);
+}
+
+.infinity-dnd5e .fp-head__dc {
+  margin: 2px 0 0;
+  color: var(--lf-muted);
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .fp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.infinity-dnd5e .fp-prompt {
+  margin: 0;
+}
+
+.infinity-dnd5e .fp-hint {
+  margin: 0;
+  color: var(--lf-muted);
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .fp-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .fp-body--waiting,
+.infinity-dnd5e .fp-body--done {
+  align-items: center;
+  text-align: center;
+}
+
+.infinity-dnd5e .fp-spin {
+  font-size: 1.5rem;
+  color: var(--lf-accent);
+  animation: fp-spin 1.2s linear infinite;
+}
+
+.infinity-dnd5e.rm-no-anim .fp-spin,
+.infinity-dnd5e .fp-spin.is-static {
+  animation: none;
+}
+
+@keyframes fp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.infinity-dnd5e .fp-result {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.infinity-dnd5e .fp-result--win {
+  color: var(--lf-success);
+}
+
+.infinity-dnd5e .fp-result--fail {
+  color: var(--lf-muted);
+}
+
+.infinity-dnd5e .fp-empty {
+  margin: 0;
+  color: var(--lf-muted);
+}

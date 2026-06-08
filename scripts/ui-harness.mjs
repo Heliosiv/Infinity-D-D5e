@@ -23,6 +23,8 @@ const CSS_FILES = [
   "styles/merchant-workspace.css",
   "styles/merchant-session.css",
   "styles/shop-picker.css",
+  "styles/resource-manager.css",
+  "styles/forage-prompt.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -125,6 +127,22 @@ export function buildHarnessViews() {
       "templates/shop-picker.hbs",
       shopPickerEmptyContext(),
       { width: 440, height: 560 },
+    ),
+    view(
+      "resource-manager",
+      "Quartermaster",
+      "infinity-resource-manager",
+      "templates/resource-manager.hbs",
+      resourceManagerContext(),
+      { width: 880, height: 700 },
+    ),
+    view(
+      "forage-prompt",
+      "Forage Prompt (player)",
+      "infinity-forage-prompt",
+      "templates/forage-prompt.hbs",
+      foragePromptContext(),
+      { width: 460, height: 400 },
     ),
   ];
 }
@@ -847,6 +865,110 @@ function shopPickerContext() {
 
 function shopPickerEmptyContext() {
   return { noGm: false, loading: false, hasShops: false, shops: [] };
+}
+
+function resourceManagerContext() {
+  const resources = [
+    {
+      id: "food",
+      label: "Food (Rations)",
+      perDay: 1,
+      scopeIsParty: false,
+      keywords: "ration, rations, food",
+      flagTag: "food",
+      itemUuids: [],
+    },
+    {
+      id: "water",
+      label: "Water",
+      perDay: 1,
+      scopeIsParty: false,
+      keywords: "waterskin, water ration",
+      flagTag: "water",
+      itemUuids: [],
+    },
+    {
+      id: "light",
+      label: "Light (Torches)",
+      perDay: 2,
+      scopeIsParty: true,
+      keywords: "torch, torches",
+      flagTag: "light",
+      itemUuids: ["Compendium.dnd5e.items.Item.torch0000000001"],
+    },
+  ];
+  const counts = (food, water, light) => [
+    { id: "food", label: "Food (Rations)", total: food },
+    { id: "water", label: "Water", total: water },
+    { id: "light", label: "Light (Torches)", total: light },
+  ];
+  return {
+    isAuthoritative: true,
+    environments: [
+      { id: "abundant", label: "Abundant (forest, coast, grassland)", selected: false },
+      { id: "limited", label: "Limited (hills, farmland, woods)", selected: true },
+      { id: "sparse", label: "Sparse (desert, tundra, badlands)", selected: false },
+      { id: "settlement", label: "Settlement (buy supplies - no foraging)", selected: false },
+      { id: "underground", label: "Underground (dungeon - no foraging)", selected: false },
+    ],
+    currentEnvLabel: "Limited",
+    currentEnvForageable: true,
+    currentEnvDc: 15,
+    forageMode: "each",
+    forageModeEach: true,
+    halfRations: false,
+    waterEnabled: true,
+    autoTrigger: true,
+    resources,
+    hasParty: true,
+    partyRows: [
+      {
+        actorId: "a1",
+        name: "Aric the Ranger",
+        exhaustion: 0,
+        counts: counts(6, 4, 3),
+      },
+      { actorId: "a2", name: "Mira Quickstep", exhaustion: 1, counts: counts(0, 2, 0) },
+    ],
+    report: {
+      days: 1,
+      environmentLabel: "Limited",
+      hasSuggestions: true,
+      rows: [
+        {
+          name: "Aric the Ranger",
+          ok: true,
+          shortFood: 0,
+          shortWater: 0,
+          foragedFood: 5,
+          foragedWater: 4,
+        },
+        {
+          name: "Mira Quickstep",
+          ok: false,
+          shortFood: 1,
+          shortWater: 0,
+          foragedFood: 0,
+          foragedWater: 0,
+        },
+      ],
+    },
+  };
+}
+
+function foragePromptContext() {
+  return {
+    environmentLabel: "Limited (hills, farmland, woods)",
+    dc: 15,
+    noActor: false,
+    isPrompt: true,
+    isWaiting: false,
+    isDone: false,
+    actorName: "Aric the Ranger",
+    passiveLabel: "Your passive Survival is 14",
+    wisLabel: "Wisdom +2",
+    result: { success: false, food: 0, water: 0 },
+  };
 }
 
 function tierOptions(selectedTier) {

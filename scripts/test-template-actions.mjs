@@ -63,6 +63,16 @@ const CHECKS = [
     template: "templates/shop-picker.hbs",
     script: "./shop-picker.js",
   },
+  {
+    name: "resource manager",
+    template: "templates/resource-manager.hbs",
+    script: "./resource-manager.js",
+  },
+  {
+    name: "forage prompt",
+    template: "templates/forage-prompt.hbs",
+    script: "./forage-prompt.js",
+  },
 ];
 
 for (const check of CHECKS) {

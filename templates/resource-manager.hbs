@@ -1,0 +1,147 @@
+{{!--
+  Infinity D&D5e — Quartermaster (Resource Manager).
+  GM-only. Configure what counts as food/water/light, set the party's
+  environment, run daily upkeep, and review the last report.
+--}}
+<div class="rm-shell">
+  <header class="rm-head">
+    <div class="rm-head__title">
+      <h2><i class="fa-solid fa-campground" aria-hidden="true"></i> Quartermaster</h2>
+      <p class="rm-head__sub">Party supplies — food, water &amp; light.</p>
+    </div>
+    <div class="rm-head__actions">
+      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="Run one day of foraging + consumption now">
+        <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
+      </button>
+      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="refresh" title="Refresh">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="resetConfig" title="Reset to defaults">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  {{#unless isAuthoritative}}
+  <p class="rm-note rm-note--warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Another GM is the active one — daily upkeep runs on their client.</p>
+  {{/unless}}
+
+  <section class="rm-section rm-environment">
+    <h3>Where is the party?</h3>
+    <div class="rm-environment__row">
+      <select class="mw-input" data-role="environment" aria-label="Current environment">
+        {{#each environments}}
+        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+      <span class="rm-environment__status">
+        {{#if currentEnvForageable}}
+        <i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open · DC {{currentEnvDc}}
+        {{else}}
+        <i class="fa-solid fa-ban" aria-hidden="true"></i> No foraging here
+        {{/if}}
+      </span>
+    </div>
+  </section>
+
+  <section class="rm-section rm-options">
+    <h3>Rules</h3>
+    <div class="rm-options__grid">
+      <label class="rm-toggle"><input type="checkbox" data-config-path="autoTrigger" {{#if autoTrigger}}checked{{/if}} /> Auto-run on day change</label>
+      <label class="rm-toggle"><input type="checkbox" data-config-path="waterEnabled" {{#if waterEnabled}}checked{{/if}} /> Track water</label>
+      <label class="rm-toggle"><input type="checkbox" data-config-path="halfRations" {{#if halfRations}}checked{{/if}} /> Half rations</label>
+      <label class="rm-field">
+        <span>Foraging yield</span>
+        <select class="mw-input" data-config-path="forageMode">
+          <option value="each" {{#if forageModeEach}}selected{{/if}}>Each forager keeps their own</option>
+          <option value="best" {{#unless forageModeEach}}selected{{/unless}}>Best result feeds the party</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="rm-section rm-resources">
+    <div class="rm-section__head">
+      <h3>Tracked resources</h3>
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="addResource"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add</button>
+    </div>
+    {{#each resources}}
+    <article class="rm-resource">
+      <div class="rm-resource__top">
+        <input class="mw-input rm-resource__label" type="text" value="{{label}}" data-config-path="resource:{{id}}:label" aria-label="Resource name" />
+        <label class="rm-resource__perday">Per day
+          <input class="mw-input mw-input--num" type="number" min="0" step="1" value="{{perDay}}" data-config-path="resource:{{id}}:perDay" />
+        </label>
+        <label class="rm-resource__scope">Scope
+          <select class="mw-input" data-config-path="resource:{{id}}:scope">
+            <option value="per-character" {{#unless scopeIsParty}}selected{{/unless}}>Each character</option>
+            <option value="party" {{#if scopeIsParty}}selected{{/if}}>Whole party</option>
+          </select>
+        </label>
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeResource" data-resource-id="{{id}}" title="Remove resource">
+          <i class="fa-solid fa-trash" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="rm-resource__match">
+        <label class="rm-field">
+          <span>Name keywords (comma-separated)</span>
+          <input class="mw-input" type="text" value="{{keywords}}" data-config-path="resource:{{id}}:keywords" placeholder="e.g. ration, rations" />
+        </label>
+        <label class="rm-field rm-field--narrow">
+          <span>Tag</span>
+          <input class="mw-input" type="text" value="{{flagTag}}" data-config-path="resource:{{id}}:flagTag" />
+        </label>
+      </div>
+      <div class="rm-resource__tags" data-drop-resource="{{id}}">
+        <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here to bind it exactly</span>
+        {{#each itemUuids}}
+        <span class="rm-tag">{{this}}
+          <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{this}}" title="Remove">×</button>
+        </span>
+        {{/each}}
+      </div>
+    </article>
+    {{/each}}
+  </section>
+
+  <section class="rm-section rm-party">
+    <h3>Party supplies</h3>
+    {{#if hasParty}}
+    <table class="rm-table">
+      <thead>
+        <tr>
+          <th>Character</th>
+          {{#each resources}}<th>{{label}}</th>{{/each}}
+          <th>Exhaustion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each partyRows}}
+        <tr>
+          <td>{{name}}</td>
+          {{#each counts}}<td class="rm-num">{{total}}</td>{{/each}}
+          <td class="rm-num">{{exhaustion}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="rm-note">No player-owned characters found yet.</p>
+    {{/if}}
+  </section>
+
+  {{#if report}}
+  <section class="rm-section rm-report">
+    <h3>Last upkeep — {{report.environmentLabel}}{{#if report.hasSuggestions}} · exhaustion suggested{{/if}}</h3>
+    <ul class="rm-report__list">
+      {{#each report.rows}}
+      <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
+        <strong>{{name}}</strong>
+        {{#if ok}}supplied{{else}}short {{shortFood}} food / {{shortWater}} water{{/if}}
+        {{#if foragedFood}} · foraged +{{foragedFood}} food{{/if}}{{#if foragedWater}} / +{{foragedWater}} water{{/if}}
+      </li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/if}}
+</div>

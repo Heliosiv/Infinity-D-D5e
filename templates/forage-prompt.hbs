@@ -1,0 +1,53 @@
+{{!--
+  Infinity D&D5e — Forage Prompt.
+  Pushed to a player when a new day begins somewhere they can forage. They roll
+  Wisdom (Survival) to gather, or skip; the GM resolves and deposits the yield.
+--}}
+<div class="fp-shell">
+  <header class="fp-head">
+    <i class="fa-solid fa-wheat-awn fp-head__icon" aria-hidden="true"></i>
+    <div class="fp-head__copy">
+      <h2 class="fp-head__title">A new day in {{environmentLabel}}</h2>
+      {{#if dc}}<p class="fp-head__dc">Foraging DC {{dc}} (Wisdom · Survival)</p>{{/if}}
+    </div>
+  </header>
+
+  {{#if noActor}}
+  <p class="fp-empty">No character is assigned to you — ask your GM to assign one so you can forage.</p>
+  {{else if isPrompt}}
+  <section class="fp-body">
+    <p class="fp-prompt">Will <strong>{{actorName}}</strong> spend time foraging for food and water today?</p>
+    {{#if passiveLabel}}<p class="fp-hint">{{passiveLabel}}{{#if wisLabel}} · {{wisLabel}}{{/if}}</p>{{/if}}
+    <div class="fp-actions">
+      <button type="button" class="mw-btn mw-btn--primary" data-action="rollSurvival">
+        <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> Roll Survival
+      </button>
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="skip">
+        Skip foraging
+      </button>
+    </div>
+  </section>
+  {{else if isWaiting}}
+  <section class="fp-body fp-body--waiting">
+    <i class="fa-solid fa-hourglass-half fp-spin" aria-hidden="true"></i>
+    <p>Your roll is in — waiting for the quartermaster to tally the haul…</p>
+  </section>
+  {{else if isDone}}
+  <section class="fp-body fp-body--done">
+    {{#if result.success}}
+    <p class="fp-result fp-result--win">
+      <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
+      You foraged <strong>+{{result.food}}</strong> food and <strong>+{{result.water}}</strong> water.
+    </p>
+    {{else}}
+    <p class="fp-result fp-result--fail">
+      <i class="fa-solid fa-cloud" aria-hidden="true"></i>
+      You came up empty-handed today.
+    </p>
+    {{/if}}
+    <div class="fp-actions">
+      <button type="button" class="mw-btn" data-action="dismiss">Close</button>
+    </div>
+  </section>
+  {{/if}}
+</div>

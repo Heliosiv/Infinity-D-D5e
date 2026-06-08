@@ -1,0 +1,234 @@
+/* =========================================================
+   Infinity D&D5e - Quartermaster (GM resource manager)
+   Scoped to .infinity-dnd5e.infinity-resource-manager.
+   ========================================================= */
+
+.infinity-dnd5e.infinity-resource-manager .window-content {
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  overflow: auto;
+}
+
+.infinity-dnd5e .rm-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.infinity-dnd5e .rm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--lf-border);
+  padding-bottom: 10px;
+}
+
+.infinity-dnd5e .rm-head__title h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--lf-text-strong);
+}
+
+.infinity-dnd5e .rm-head__sub {
+  margin: 2px 0 0;
+  color: var(--lf-muted);
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-head__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.infinity-dnd5e .rm-note {
+  margin: 0;
+  color: var(--lf-muted);
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-note--warn {
+  color: var(--lf-warn);
+}
+
+.infinity-dnd5e .rm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.infinity-dnd5e .rm-section > h3,
+.infinity-dnd5e .rm-section__head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--lf-accent);
+}
+
+.infinity-dnd5e .rm-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.infinity-dnd5e .rm-environment__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .rm-environment__status {
+  color: var(--lf-muted);
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-options__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.infinity-dnd5e .rm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.infinity-dnd5e .rm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-field--narrow {
+  max-width: 120px;
+}
+
+.infinity-dnd5e .rm-resource {
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.infinity-dnd5e .rm-resource__top {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .rm-resource__label {
+  flex: 1 1 160px;
+  font-weight: 600;
+}
+
+.infinity-dnd5e .rm-resource__perday,
+.infinity-dnd5e .rm-resource__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+  color: var(--lf-muted);
+}
+
+.infinity-dnd5e .rm-resource__match {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .rm-resource__match .rm-field:first-child {
+  flex: 1 1 220px;
+}
+
+.infinity-dnd5e .rm-resource__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px;
+  border: 1px dashed var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+}
+
+.infinity-dnd5e .rm-resource__droplabel {
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+}
+
+.infinity-dnd5e .rm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--lf-surface-elev);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .rm-tag__x {
+  min-width: 18px;
+  min-height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--lf-danger);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.infinity-dnd5e .rm-party {
+  overflow-x: auto;
+}
+
+.infinity-dnd5e .rm-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-table th,
+.infinity-dnd5e .rm-table td {
+  border-bottom: 1px solid var(--lf-border);
+  padding: 4px 6px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.infinity-dnd5e .rm-table .rm-num,
+.infinity-dnd5e .rm-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.infinity-dnd5e .rm-report__list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.infinity-dnd5e .rm-report__list .is-short {
+  color: var(--lf-danger);
+}
+
+.infinity-dnd5e .rm-report__list .is-ok {
+  color: var(--lf-success);
+}
