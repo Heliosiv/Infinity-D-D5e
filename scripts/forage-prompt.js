@@ -118,7 +118,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       actorName: actor?.name ?? this._actorName ?? null,
       noActor: !actor,
-      environmentLabel: env.label ?? prettyEnvironment(env.id) ?? "the wild",
+      environmentLabel: prettyEnvironment(env.id) || env.label || "the wild",
       dc: env.dc ?? null,
       passiveLabel:
         passive == null ? "" : `Your passive Survival is ${passive}`,
