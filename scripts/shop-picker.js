@@ -55,7 +55,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static open() {
     if (globalThis.game?.user?.isGM) {
       ui.notifications?.info(
-        `${MODULE_ID}: the Shops picker is for players — GMs use the Merchant Workspace.`,
+        "The Shops picker is for players — GMs use the Merchant Workspace.",
       );
       return null;
     }
@@ -73,6 +73,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super(options);
     this._shops = []; // sanitized projections from the GM
     this._loading = true;
+    this._pending = new Set(); // merchantIds the player is waiting on (knock/entering)
     this._unsubs = [
       subscribe(MERCHANT_EVENTS.SHOP_LIST_REPLY, (payload) =>
         this._onShopList(payload),
@@ -80,6 +81,15 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       subscribe(MERCHANT_EVENTS.SHOP_RESULT, (payload) =>
         this._onShopResult(payload),
       ),
+      // When the GM actually opens our session, clear the waiting state.
+      subscribe(MERCHANT_EVENTS.SESSION_OPEN, (payload) => {
+        if (!payload || payload.targetUserId !== globalThis.game?.user?.id) {
+          return;
+        }
+        if (this._pending.delete(payload.merchantId) && this.rendered) {
+          this.render(false);
+        }
+      }),
     ];
     // Self-heal the "no GM online" state when a GM connects (and re-check on
     // disconnect). Mirrors module.js's existing userConnected hook.
@@ -144,10 +154,11 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!payload || payload.targetUserId !== globalThis.game?.user?.id) return;
     const name =
       this._shops.find((s) => s.id === payload.merchantId)?.name ?? "that shop";
+    this._pending.delete(payload.merchantId);
     ui.notifications?.info(
       payload.outcome === "denied"
-        ? `${MODULE_ID}: the GM turned you away from ${name}.`
-        : `${MODULE_ID}: ${name} isn't available right now.`,
+        ? `The GM turned you away from ${name}.`
+        : `${name} isn't available right now.`,
     );
     this._requestList(); // self-heal: drop a row the GM just closed
     if (this.rendered) this.render(false);
@@ -161,6 +172,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       art: s.art || FALLBACK_ART,
       description: s.description || "",
       knock: s.selfServiceMode === "knock",
+      pending: this._pending.has(s.id),
     }));
     return {
       noGm,
@@ -182,24 +194,27 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static _onOpenShop(_event, target) {
     const merchantId = target?.dataset?.merchantId;
     if (!merchantId) return;
+    // Already waiting on this shop — don't re-fire (the row shows a waiting
+    // state); a second request would just spam the GM.
+    if (this._pending.has(merchantId)) return;
     if (!globalThis.game?.users?.activeGM) {
-      ui.notifications?.warn(
-        `${MODULE_ID}: shops are closed — no GM is online.`,
-      );
+      ui.notifications?.warn("Shops are closed — no GM is online right now.");
       this.render(false);
       return;
     }
     emitMerchantEvent(MERCHANT_EVENTS.SHOP_REQUEST, { merchantId });
-    // Interim feedback on every click so the request never feels like a dead
-    // click. The session-open chime plays when the window actually opens (see
-    // registerMerchantSessionAutoOpen); a rejection arrives via SHOP_RESULT.
+    // Show a persistent waiting state on the row (cleared on SESSION_OPEN or
+    // SHOP_RESULT) so the request never feels like a dead click. The session
+    // chime plays when the window actually opens (registerMerchantSessionAutoOpen).
     const shop = this._shops?.find((s) => s.id === merchantId);
     const name = shop?.name ?? "the shop";
+    this._pending.add(merchantId);
     ui.notifications?.info(
-      shop?.selfServiceMode === "knock"
-        ? `${MODULE_ID}: knocking at ${name}…`
-        : `${MODULE_ID}: entering ${name}…`,
+      shop?.knock || shop?.selfServiceMode === "knock"
+        ? `Knocking at ${name} — waiting for the GM…`
+        : `Entering ${name}…`,
     );
+    this.render(false);
   }
 
   static _onRefresh() {

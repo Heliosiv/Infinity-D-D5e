@@ -73,9 +73,17 @@
   animation: fp-spin 1.2s linear infinite;
 }
 
-.infinity-dnd5e.rm-no-anim .fp-spin,
+.infinity-dnd5e.fp-no-anim .fp-spin,
 .infinity-dnd5e .fp-spin.is-static {
   animation: none;
+}
+
+/* Always kill the spin for motion-sensitive users, independent of any GM
+   toggle (players never see the GM's animation setting). */
+@media (prefers-reduced-motion: reduce) {
+  .infinity-dnd5e .fp-spin {
+    animation: none;
+  }
 }
 
 @keyframes fp-spin {

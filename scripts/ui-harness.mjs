@@ -775,7 +775,9 @@ function merchantSessionContext() {
         // Harness shows the sealed-price markup but keeps the bargain
         // button enabled so the layout audit can exercise every control.
         bargainLocked: false,
-        sealLabel: "crit-success -20%",
+        bargainPending: false,
+        sealLabel: "Great deal -20%",
+        haggleLabel: "Charm discount",
         cannotBuy: false,
         cannotBuyReason: "",
         maxQty: 5,
@@ -796,7 +798,9 @@ function merchantSessionContext() {
         deltaClass: "down",
         passiveActive: true,
         bargainLocked: false,
+        bargainPending: false,
         sealLabel: "",
+        haggleLabel: "Charm discount",
         cannotBuy: false,
         cannotBuyReason: "",
         maxQty: 99,
@@ -815,17 +819,21 @@ function merchantSessionContext() {
         ownedQty: 1,
         maxSellQty: 1,
         cannotSell: false,
+        goldLimited: false,
+        affordLabel: "",
         baseLabel: "7.50 gp",
         finalLabel: "9.00 gp",
         priceDeltaLabel: "+20%",
         deltaClass: "down",
         bargainLocked: false,
-        sealLabel: "crit-success +20%",
+        bargainPending: false,
+        sealLabel: "Great deal +20%",
+        haggleLabel: "Charm bonus",
       },
     ],
     log: [
       { kind: "buy", text: "Bought 1× Potion of Healing for 48.00 gp" },
-      { kind: "bargain", text: "Bargain crit-success · -20%" },
+      { kind: "bargain", text: "Bargain: Great deal · -20%" },
     ],
     sessionSpentLabel: "48.00 gp",
     sessionEarnedLabel: "9.00 gp",
@@ -844,6 +852,7 @@ function shopPickerContext() {
         art: iconDataUri("#5a7a3f", "BW"),
         description: "Dusty oddments and salvaged gear.",
         knock: false,
+        pending: false,
       },
       {
         id: "m-iron",
@@ -851,6 +860,7 @@ function shopPickerContext() {
         art: iconDataUri("#6b7480", "IR"),
         description: "Arms & armor, fairly priced.",
         knock: true,
+        pending: true,
       },
       {
         id: "m-arc",
@@ -858,6 +868,7 @@ function shopPickerContext() {
         art: iconDataUri("#7a4f8c", "AS"),
         description: "",
         knock: false,
+        pending: false,
       },
     ],
   };
@@ -876,7 +887,7 @@ function resourceManagerContext() {
       scopeIsParty: false,
       keywords: "ration, rations, food",
       flagTag: "food",
-      itemUuids: [],
+      tags: [],
     },
     {
       id: "water",
@@ -885,7 +896,7 @@ function resourceManagerContext() {
       scopeIsParty: false,
       keywords: "waterskin, water ration",
       flagTag: "water",
-      itemUuids: [],
+      tags: [],
     },
     {
       id: "light",
@@ -894,22 +905,28 @@ function resourceManagerContext() {
       scopeIsParty: true,
       keywords: "torch, torches",
       flagTag: "light",
-      itemUuids: ["Compendium.dnd5e.items.Item.torch0000000001"],
+      tags: [
+        {
+          uuid: "Compendium.dnd5e.items.Item.torch0000000001",
+          name: "Torch",
+          missing: false,
+        },
+      ],
     },
   ];
   const counts = (food, water, light) => [
-    { id: "food", label: "Food (Rations)", total: food },
-    { id: "water", label: "Water", total: water },
-    { id: "light", label: "Light (Torches)", total: light },
+    { id: "food", label: "Food (Rations)", total: food, detail: "Rations ×" + food },
+    { id: "water", label: "Water", total: water, detail: "Waterskin ×" + water },
+    { id: "light", label: "Light (Torches)", total: light, detail: "Torch ×" + light },
   ];
   return {
     isAuthoritative: true,
     environments: [
-      { id: "abundant", label: "Abundant (forest, coast, grassland)", selected: false },
-      { id: "limited", label: "Limited (hills, farmland, woods)", selected: true },
-      { id: "sparse", label: "Sparse (desert, tundra, badlands)", selected: false },
-      { id: "settlement", label: "Settlement (buy supplies - no foraging)", selected: false },
-      { id: "underground", label: "Underground (dungeon - no foraging)", selected: false },
+      { id: "abundant", optionLabel: "Abundant", selected: false },
+      { id: "limited", optionLabel: "Limited", selected: true },
+      { id: "sparse", optionLabel: "Sparse", selected: false },
+      { id: "settlement", optionLabel: "Settlement", selected: false },
+      { id: "underground", optionLabel: "Underground", selected: false },
     ],
     currentEnvLabel: "Limited",
     currentEnvForageable: true,
@@ -934,6 +951,7 @@ function resourceManagerContext() {
       days: 1,
       environmentLabel: "Limited",
       hasSuggestions: true,
+      lightShortfall: 2,
       rows: [
         {
           name: "Aric the Ranger",

@@ -506,3 +506,28 @@
     animation: none;
   }
 }
+
+/* Bigger tap targets for the player's financial controls (icon buttons get a
+   touch-friendly size on the pushed-to-clients session window). */
+.infinity-dnd5e.infinity-merchant-session .ms-row__actions .mw-btn--icon {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+/* Narrow / phone reflow: drop price + the 4-control action cluster to a full
+   width row beneath the item so nothing overflows or clips. */
+@media (max-width: 480px) {
+  .infinity-dnd5e.infinity-merchant-session .ms-row {
+    grid-template-columns: 44px 1fr;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-row__price,
+  .infinity-dnd5e.infinity-merchant-session .ms-row__actions {
+    grid-column: 1 / -1;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-row__price {
+    min-width: 0;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-row__actions {
+    flex-wrap: wrap;
+  }
+}

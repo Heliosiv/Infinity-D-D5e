@@ -104,7 +104,7 @@ export class HoardLootApp extends BaseLootApp {
     },
     position: { width: 760, height: 720 },
     actions: {
-      ...BaseLootApp.SHARED_ACTIONS,
+      ...BaseLootApp.sharedActionsExcept("toggleLock"),
       generate: HoardLootApp._onGenerate,
       depositHaul: HoardLootApp._onDepositHaul,
       tierSelect: HoardLootApp._onTierSelect,
@@ -524,6 +524,8 @@ export class HoardLootApp extends BaseLootApp {
 
   async _generate() {
     if (this._loadingItems) return;
+    // Make a fresh roll undoable (protects a hand-edited haul from a stray Enter/R).
+    if (this._lastResult) this._pushUndo();
     let generatedResult = null;
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {

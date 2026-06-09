@@ -308,8 +308,15 @@
   font-size: 0.82rem;
   cursor: pointer;
 }
+/* Visually hide the checkbox but keep it in the tab order + focusable, so
+   these filters are reachable by keyboard (display:none would drop them). */
 .mw-chip input {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
 }
 /* Highlight off the live :checked state (not a render-time class) so a
    click flips the chip instantly without waiting on a re-render — the
@@ -318,6 +325,10 @@
   background: var(--lf-accent);
   color: var(--lf-accent-contrast);
   border-color: var(--lf-accent);
+}
+.mw-chip:has(input:focus-visible) {
+  outline: 2px solid var(--lf-accent);
+  outline-offset: 2px;
 }
 .mw-chip--sm {
   padding: 3px 8px;
@@ -735,4 +746,18 @@
 .mw-no-anim .mw-chip,
 .mw-no-anim .mw-list__btn {
   transition: none;
+}
+
+/* Narrow / phone: give the editor pane full width (the merchant-list rail no
+   longer reserves 220–280px) and tighten the inventory grid so the qty / price
+   inputs don't clip or push horizontal overflow. */
+@media (max-width: 720px) {
+  .mw-body {
+    grid-template-columns: 1fr;
+  }
+  .mw-inv__head,
+  .mw-inv__row {
+    grid-template-columns: 1.3fr 48px 48px 60px 24px 24px;
+    gap: 6px;
+  }
 }

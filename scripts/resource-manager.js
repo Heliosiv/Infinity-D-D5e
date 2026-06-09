@@ -111,6 +111,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
     const environments = config.environments.map((env) => ({
       ...env,
+      // Plain short name for the dropdown; the status pill carries forageability.
+      optionLabel: prettyEnvironment(env.id) || env.label,
       selected: env.id === currentEnvId,
     }));
     const currentEnv =
@@ -119,11 +121,15 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const party = discoverPartyActors();
     const partyRows = party.map((actor) => {
       const snaps = actorItemSnapshots(actor);
-      const counts = config.resources.map((res) => ({
-        id: res.id,
-        label: res.label,
-        total: sumMatches(matchResourceItems(snaps, res)),
-      }));
+      const counts = config.resources.map((res) => {
+        const matches = matchResourceItems(snaps, res);
+        // Tooltip: which items were counted (helps debug a 0 or an over-match).
+        const detail =
+          matches.length > 0
+            ? matches.map((m) => `${m.name} ×${m.quantity}`).join(", ")
+            : "No items match this resource";
+        return { id: res.id, label: res.label, total: sumMatches(matches), detail };
+      });
       return {
         actorId: actor.id,
         name: actor.name,
@@ -132,15 +138,37 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       };
     });
 
-    const resources = config.resources.map((res) => ({
-      id: res.id,
-      label: res.label,
-      perDay: res.perDay,
-      scopeIsParty: res.scope === "party",
-      keywords: (res.matching.nameKeywords ?? []).join(", "),
-      flagTag: res.matching.flagTag ?? "",
-      itemUuids: res.matching.itemUuids ?? [],
-    }));
+    // Resolve each bound item UUID to a readable name (falls back to the raw
+    // UUID, flagged, when it no longer resolves) so the GM can see what's tagged.
+    const resources = await Promise.all(
+      config.resources.map(async (res) => {
+        const tags = await Promise.all(
+          (res.matching.itemUuids ?? []).map(async (uuid) => {
+            let name = uuid;
+            let missing = true;
+            try {
+              const doc = await fromUuid(uuid);
+              if (doc?.name) {
+                name = doc.name;
+                missing = false;
+              }
+            } catch {
+              /* keep raw uuid + missing flag */
+            }
+            return { uuid, name, missing };
+          }),
+        );
+        return {
+          id: res.id,
+          label: res.label,
+          perDay: res.perDay,
+          scopeIsParty: res.scope === "party",
+          keywords: (res.matching.nameKeywords ?? []).join(", "),
+          flagTag: res.matching.flagTag ?? "",
+          tags,
+        };
+      }),
+    );
 
     return {
       resources,
@@ -242,6 +270,18 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAdvanceDay(_event, _target) {
+    // Advancing a day consumes real supplies off character sheets and prompts
+    // players to forage — confirm first (it's separate from the world clock).
+    const party = discoverPartyActors();
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (party.length > 0 && typeof DialogV2?.confirm === "function") {
+      const ok = await DialogV2.confirm({
+        window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
+        content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s) and prompt online players to forage?</p><p style="opacity:0.8;">This is a manual day tick — it doesn't change the world clock, and runs even if auto-upkeep is off.</p>`,
+        rejectClose: false,
+      }).catch(() => false);
+      if (!ok) return;
+    }
     playModuleSound(SOUND_EVENTS.ROLL_START);
     await advanceDayNow();
     this.render(false);
@@ -351,6 +391,7 @@ function actorItemSnapshots(actor) {
 function summarizeReport(result) {
   if (!result || typeof result !== "object") return null;
   const perActor = Array.isArray(result.perActor) ? result.perActor : [];
+  const lightShortfall = Math.max(0, Number(result.party?.light?.shortfall) || 0);
   return {
     days: result.days ?? 1,
     environmentLabel: result.environmentId
@@ -364,6 +405,7 @@ function summarizeReport(result) {
       foragedWater: r.foraged?.water ?? 0,
       ok: !(r.shortfalls?.food > 0 || r.shortfalls?.water > 0),
     })),
+    lightShortfall,
     hasSuggestions: Array.isArray(result.suggestions) && result.suggestions.length > 0,
   };
 }

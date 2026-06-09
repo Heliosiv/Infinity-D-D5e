@@ -26,12 +26,14 @@
   <p class="rm-note rm-note--warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Another GM is the active one — daily upkeep runs on their client.</p>
   {{/unless}}
 
+  <p class="rm-note">Set where the party is, check supplies below, then <strong>Advance Day</strong> — or turn on Auto-run to do it automatically as in-game days pass.</p>
+
   <section class="rm-section rm-environment">
     <h3>Where is the party?</h3>
     <div class="rm-environment__row">
       <select class="mw-input" data-role="environment" aria-label="Current environment">
         {{#each environments}}
-        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{optionLabel}}</option>
         {{/each}}
       </select>
       <span class="rm-environment__status">
@@ -88,15 +90,15 @@
           <input class="mw-input" type="text" value="{{keywords}}" data-config-path="resource:{{id}}:keywords" placeholder="e.g. ration, rations" />
         </label>
         <label class="rm-field rm-field--narrow">
-          <span>Tag</span>
-          <input class="mw-input" type="text" value="{{flagTag}}" data-config-path="resource:{{id}}:flagTag" />
+          <span>Tag (advanced)</span>
+          <input class="mw-input" type="text" value="{{flagTag}}" data-config-path="resource:{{id}}:flagTag" title="Internal marker auto-applied to foraged/created items. Most GMs can leave this alone." />
         </label>
       </div>
       <div class="rm-resource__tags" data-drop-resource="{{id}}">
-        <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here to bind it exactly</span>
-        {{#each itemUuids}}
-        <span class="rm-tag">{{this}}
-          <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{this}}" title="Remove">×</button>
+        <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here (from a sheet or compendium) to match it exactly — more reliable than keywords.</span>
+        {{#each tags}}
+        <span class="rm-tag {{#if missing}}rm-tag--missing{{/if}}" title="{{uuid}}">{{name}}{{#if missing}} (missing){{/if}}
+          <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove this item">×</button>
         </span>
         {{/each}}
       </div>
@@ -119,14 +121,14 @@
         {{#each partyRows}}
         <tr>
           <td>{{name}}</td>
-          {{#each counts}}<td class="rm-num">{{total}}</td>{{/each}}
+          {{#each counts}}<td class="rm-num" title="{{detail}}">{{total}}</td>{{/each}}
           <td class="rm-num">{{exhaustion}}</td>
         </tr>
         {{/each}}
       </tbody>
     </table>
     {{else}}
-    <p class="rm-note">No player-owned characters found yet.</p>
+    <p class="rm-note">No player-owned characters found — assign a player as Owner on a character sheet and they'll appear here.</p>
     {{/if}}
   </section>
 
@@ -141,6 +143,7 @@
         {{#if foragedFood}} · foraged +{{foragedFood}} food{{/if}}{{#if foragedWater}} / +{{foragedWater}} water{{/if}}
       </li>
       {{/each}}
+      {{#if report.lightShortfall}}<li class="is-short">Light: {{report.lightShortfall}} short of torches</li>{{/if}}
     </ul>
   </section>
   {{/if}}

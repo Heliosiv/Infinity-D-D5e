@@ -93,6 +93,70 @@ export function prettyEnvironment(value) {
   return ENVIRONMENT_LABELS[key] ?? titleCase(key.replace(/[-_]/g, " "));
 }
 
+/**
+ * Plain-language outcome name for an internal bargain tier id. Internal ids
+ * (success/failure/crit-*) stay stable; this is display-only. Unknown/empty in
+ * -> "Bargained" so a raw key never reaches a player.
+ */
+export const BARGAIN_TIER_LABELS = Object.freeze({
+  "crit-success": "Great deal",
+  success: "Good deal",
+  failure: "No luck",
+  "crit-failure": "Bad deal",
+});
+
+export function prettyBargainTier(value) {
+  const key = String(value ?? "").trim();
+  return BARGAIN_TIER_LABELS[key] ?? "Bargained";
+}
+
+/**
+ * Plain-language label for a dashboard tool category. Unknown keys fall back to
+ * title-case so the registry keys stay stable.
+ */
+export const CATEGORY_LABELS = Object.freeze({
+  loot: "Treasure & Loot",
+  merchants: "Shops & Merchants",
+  party: "Travel & Supplies",
+});
+
+export function prettyCategory(value) {
+  const key = String(value ?? "").trim();
+  if (!key) return "Tools";
+  return CATEGORY_LABELS[key] ?? titleCase(key.replace(/[-_]/g, " "));
+}
+
+/**
+ * Friendly, plain-English message for an internal transaction / bargain reason
+ * code, so a player never sees a raw dev slug. Falls back to a generic sentence.
+ */
+export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
+  "no-actor": "Pick a character first.",
+  "no-target": "That item isn't available anymore.",
+  "out-of-stock": "That item just sold out.",
+  "no-price": "That item has no price set.",
+  "no-value": "That item has no resale value.",
+  "bad-item": "That item couldn't be added — try again.",
+  "create-failed": "That item couldn't be added to your sheet.",
+  "payment-failed": "Payment didn't go through — nothing was charged.",
+  "payout-failed": "The payout didn't go through — your item was kept.",
+  "remove-failed": "That item couldn't be removed from your sheet.",
+  "insufficient-funds": "You can't afford that.",
+  "not-sellable": "That item can't be sold.",
+  "not-bought-here": "This merchant won't buy that.",
+  "not-enough": "You don't have that many to sell.",
+  "no-skill": "Pick a skill to haggle with.",
+  "skill-roll-failed": "The haggle roll didn't go through — try again.",
+  cancelled: "Cancelled.",
+});
+
+export function friendlyTransactionError(reason) {
+  const key = String(reason ?? "").trim();
+  return (
+    TRANSACTION_ERROR_MESSAGES[key] ?? "That didn't go through — try again."
+  );
+}
+
 /** "very-rare" -> "Very Rare" for rarity badges. Empty in -> empty out. */
 export function prettyRarity(value) {
   return String(value ?? "")

@@ -13,6 +13,8 @@
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { getTool, getTools } from "./tool-registry.js";
+import { prettyCategory } from "./ui-util.js";
+import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/dashboard.hbs`;
@@ -24,20 +26,36 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 ) {
   static _instance = null;
 
-  /** Session-scoped most-recently-launched tool ids (newest first). */
+  /** Most-recently-launched tool ids (newest first). Persisted client-side so
+   *  the quick-launch row survives reloads (hydrated once per session). */
   static _recentToolIds = [];
+  static _recentsHydrated = false;
   /** How many recent tools to pin above the category grid. */
   static RECENT_LIMIT = 3;
 
-  /** Record a tool launch; moves it to the front, dedupes, caps the list. */
+  /** Load the persisted recents once (after a reload the static array is empty). */
+  static _hydrateRecents() {
+    if (InfinityDashboardApp._recentsHydrated) return;
+    const stored = getSetting(SETTING_KEYS.RECENT_TOOLS);
+    InfinityDashboardApp._recentToolIds = Array.isArray(stored)
+      ? stored.map((x) => String(x)).filter(Boolean)
+      : [];
+    InfinityDashboardApp._recentsHydrated = true;
+  }
+
+  /** Record a tool launch; moves it to the front, dedupes, caps, persists. */
   static _recordRecent(id) {
     if (!id) return;
+    InfinityDashboardApp._hydrateRecents();
     const next = InfinityDashboardApp._recentToolIds.filter((x) => x !== id);
     next.unshift(id);
     InfinityDashboardApp._recentToolIds = next.slice(
       0,
       InfinityDashboardApp.RECENT_LIMIT,
     );
+    void setSetting(SETTING_KEYS.RECENT_TOOLS, [
+      ...InfinityDashboardApp._recentToolIds,
+    ]);
   }
 
   static DEFAULT_OPTIONS = {
@@ -75,6 +93,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   }
 
   async _prepareContext() {
+    InfinityDashboardApp._hydrateRecents();
     const tools = getTools();
     const moduleVersion = String(
       game.modules?.get?.(MODULE_ID)?.version ?? "0.0.0",
@@ -112,10 +131,10 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   /** @this {InfinityDashboardApp} */
   static _onOpenSettings(_event, _target) {
-    // Foundry's Configure Settings dialog scrolled to the Module
-    // Settings tab. Best-effort across V12/V13 — both ship a
-    // `SettingsConfig` form application. Fall back to a notification
-    // if we can't reach it.
+    // Open Foundry's Configure Settings dialog (the module's options live under
+    // its Module Settings section). Best-effort across V12/V13 — both ship a
+    // `SettingsConfig` form application. Fall back to a notification if we
+    // can't reach it.
     try {
       const SC =
         globalThis.foundry?.applications?.settings?.SettingsConfig ??
@@ -208,8 +227,3 @@ function groupByCategory(tools) {
   }));
 }
 
-function prettyCategory(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "Tools";
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}

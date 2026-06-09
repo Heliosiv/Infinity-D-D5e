@@ -28,16 +28,16 @@
   {{/if}}
 
   <nav class="ms-tabs" role="tablist">
-    <button type="button" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="tab" data-tab="buy" role="tab">
+    <button type="button" id="ms-tab-buy" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="tab" data-tab="buy" role="tab" aria-selected="{{#if buyActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-buy">
       <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Buy
     </button>
-    <button type="button" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="tab" data-tab="sell" role="tab">
+    <button type="button" id="ms-tab-sell" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="tab" data-tab="sell" role="tab" aria-selected="{{#if sellActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-sell">
       <i class="fa-solid fa-coins" aria-hidden="true"></i> Sell
     </button>
   </nav>
 
   {{#if buyActive}}
-  <section class="ms-rows" aria-label="Goods for sale">
+  <section class="ms-rows" id="ms-panel-buy" role="tabpanel" aria-labelledby="ms-tab-buy" aria-label="Goods for sale">
     {{#if buyRows.length}}
       {{#each buyRows}}
       <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
@@ -48,7 +48,7 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             {{stockLabel}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained price">{{sealLabel}}</span>{{/if}}
-            {{#if passiveActive}}<span class="ms-haggle" title="Your passive haggling adjusted this price">haggle</span>{{/if}}
+            {{#if passiveActive}}<span class="ms-haggle" title="Automatic price change from your character's people skills — bargain to roll for more.">{{haggleLabel}}</span>{{/if}}
             {{#if cannotBuyReason}}<span class="ms-row__warn">{{cannotBuyReason}}</span>{{/if}}
           </span>
         </div>
@@ -62,8 +62,11 @@
           {{/if}}
         </div>
         <div class="ms-row__actions">
-          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainBuy" data-uuid="{{uuid}}" {{#if bargainLocked}}disabled{{/if}} title="Bargain (one attempt per item)">
-            <i class="fa-solid fa-comments-dollar" aria-hidden="true"></i>
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openItem" data-uuid="{{uuid}}" title="View item details">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainBuy" data-uuid="{{uuid}}" {{#if bargainLocked}}disabled{{/if}} title="{{#if bargainPending}}Haggling…{{else}}Bargain — one attempt; failing raises the price{{/if}}">
+            <i class="fa-solid {{#if bargainPending}}fa-hourglass-half{{else}}fa-comments-dollar{{/if}}" aria-hidden="true"></i>
           </button>
           <button type="button" class="mw-btn" data-action="buyOne" data-uuid="{{uuid}}" {{#if cannotBuy}}disabled{{/if}}>
             Buy 1
@@ -82,7 +85,7 @@
   {{/if}}
 
   {{#if sellActive}}
-  <section class="ms-rows" aria-label="Your sellable items">
+  <section class="ms-rows" id="ms-panel-sell" role="tabpanel" aria-labelledby="ms-tab-sell" aria-label="Your sellable items">
     {{#if sellRows.length}}
       {{#each sellRows}}
       <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
@@ -93,8 +96,9 @@
             {{#if rarityLabel}}<span class="ms-rarity ms-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}
             You have {{ownedQty}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
-            {{#if passiveActive}}<span class="ms-haggle" title="Your passive haggling adjusted this payout">haggle</span>{{/if}}
+            {{#if passiveActive}}<span class="ms-haggle" title="Automatic payout change from your character's people skills — bargain to roll for more.">{{haggleLabel}}</span>{{/if}}
             {{#if cannotSell}}<span class="ms-row__warn">merchant low on gold</span>{{/if}}
+            {{#if goldLimited}}<span class="ms-row__warn">{{affordLabel}}</span>{{/if}}
           </span>
         </div>
         <div class="ms-row__price">
@@ -107,8 +111,11 @@
           {{/if}}
         </div>
         <div class="ms-row__actions">
-          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainSell" data-item-id="{{itemId}}" {{#if bargainLocked}}disabled{{/if}} title="Bargain">
-            <i class="fa-solid fa-comments-dollar" aria-hidden="true"></i>
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openItem" data-uuid="{{uuid}}" title="View item details">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainSell" data-item-id="{{itemId}}" {{#if bargainLocked}}disabled{{/if}} title="{{#if bargainPending}}Haggling…{{else}}Bargain — one attempt; failing lowers the payout{{/if}}">
+            <i class="fa-solid {{#if bargainPending}}fa-hourglass-half{{else}}fa-comments-dollar{{/if}}" aria-hidden="true"></i>
           </button>
           <button type="button" class="mw-btn" data-action="sellOne" data-item-id="{{itemId}}" {{#if cannotSell}}disabled{{/if}}>Sell 1</button>
           <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{maxSellQty}}" value="1" title="Quantity to sell" {{#if cannotSell}}disabled{{/if}} />

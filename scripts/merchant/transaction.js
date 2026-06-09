@@ -25,6 +25,7 @@ import {
   formatCoinBreakdown,
 } from "../loot/hoard-budget.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
+import { prettyBargainTier } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -404,7 +405,7 @@ export async function postTransactionReceipt({
 
   const verb = side === "sell" ? "Sold" : "Bought";
   const bargainLine = bargainTier
-    ? `<div class="mw-receipt__bargain">${escapeText(bargainTier.id)} (${rollTotal} vs DC ${dc})</div>`
+    ? `<div class="mw-receipt__bargain">${escapeText(prettyBargainTier(bargainTier.id))} (${rollTotal} vs DC ${dc})</div>`
     : "";
   const subtotal = `${qty}× @ ${unitGp.toFixed(2)} gp = ${totalGp.toFixed(2)} gp`;
   const content = `

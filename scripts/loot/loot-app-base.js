@@ -167,6 +167,15 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  /** SHARED_ACTIONS minus the named keys — used by tools that don't expose a
+   *  given control (e.g. Hoard/Per-Creature omit `toggleLock`, which only does
+   *  something on Per-Encounter's Re-roll Unlocked). */
+  static sharedActionsExcept(...omit) {
+    const actions = { ...this.SHARED_ACTIONS };
+    for (const key of omit) delete actions[key];
+    return actions;
+  }
+
   /* ------------------- singleton ------------------- */
 
   /** Open (or focus) the per-subclass singleton instance. */

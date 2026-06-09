@@ -78,7 +78,7 @@
       {{> slider magicBias}}
 
       <label class="lf-field lf-field--inline">
-        <span class="lf-field__label">Budget Override <small>(0 = use curve)</small></span>
+        <span class="lf-field__label">Set exact budget <small>(0 = auto)</small></span>
         <input class="lf-input" type="number" name="budgetOverride" min="0" step="50" value="{{form.budgetOverride}}" />
       </label>
 
@@ -175,9 +175,9 @@
           <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
           <span>Copy</span>
         </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="distributeBundle" title="Send every item to one actor">
+        <button type="button" class="lf-btn lf-btn--small" data-action="distributeBundle" title="Give every item to one character">
           <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
-          <span>Distribute Bundle</span>
+          <span>Give to Character</span>
         </button>
         <button type="button" class="lf-btn lf-btn--small" data-action="distributeSplit" title="Split the haul across multiple characters">
           <i class="fa-solid fa-users" aria-hidden="true"></i>

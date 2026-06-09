@@ -52,6 +52,9 @@ export const SETTING_KEYS = Object.freeze({
   // Hidden resource stores (no config UI) — edited via the Resource Manager.
   RESOURCE_CONFIG: "resourceConfig",
   RESOURCE_RUNSTATE: "resourceRunState",
+  // Dashboard "Recently Used" — client-scoped list of recent tool ids so the
+  // hub's quick-launch row survives reloads.
+  RECENT_TOOLS: "recentTools",
   // Hidden stores (no config UI) — keyed-by-tool blobs of saved presets
   // and recent roll history. Managed by scripts/loot/loot-store.js.
   SAVED_PRESETS: "savedPresets",
@@ -445,6 +448,15 @@ export const SETTINGS = Object.freeze([
     config: false,
     type: Object,
     default: {},
+  },
+  {
+    key: SETTING_KEYS.RECENT_TOOLS,
+    name: "Recently Used Tools",
+    hint: "Internal store for the dashboard's recent-tools row. Not shown in the UI.",
+    scope: "client",
+    config: false,
+    type: Array,
+    default: [],
   },
   {
     key: SETTING_KEYS.SAVED_PRESETS,

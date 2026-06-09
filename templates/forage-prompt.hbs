@@ -34,7 +34,12 @@
   </section>
   {{else if isDone}}
   <section class="fp-body fp-body--done">
-    {{#if result.success}}
+    {{#if result.timedOut}}
+    <p class="fp-result fp-result--fail">
+      <i class="fa-solid fa-clock" aria-hidden="true"></i>
+      Foraging wrapped up — check the chat log for the day's results.
+    </p>
+    {{else if result.success}}
     <p class="fp-result fp-result--win">
       <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
       You foraged <strong>+{{result.food}}</strong> food and <strong>+{{result.water}}</strong> water.

@@ -28,6 +28,7 @@ import {
   livePartySize,
   resultImageForEntry,
   setText,
+  tierLabel,
   toDistributableEntry,
 } from "./loot/loot-app-shared.js";
 import {
@@ -75,7 +76,7 @@ export class PerCreatureLootApp extends BaseLootApp {
     },
     position: { width: 820, height: 800 },
     actions: {
-      ...BaseLootApp.SHARED_ACTIONS,
+      ...BaseLootApp.sharedActionsExcept("toggleLock"),
       generate: PerCreatureLootApp._onGenerate,
       addCreature: PerCreatureLootApp._onAddCreature,
       addFive: PerCreatureLootApp._onAddFive,
@@ -196,11 +197,17 @@ export class PerCreatureLootApp extends BaseLootApp {
         name: c.name,
         tier: c.tier,
         budgetLabel: formatGp(
-          computeLootBudget({ tier: c.tier, scale: "trivial", partySize: 4 }),
+          computeLootBudget({
+            tier: c.tier,
+            scale: "trivial",
+            partySize: livePartySize() || 4,
+          }),
         ),
         tierOptions: TIERS.map((tier) => ({
           value: tier,
-          label: tier.toUpperCase(),
+          // Show the level band (e.g. "T2 — Lvl 5–10") for parity with the
+          // other two tools, not a bare "T2".
+          label: tierLabel(tier),
           selected: tier === c.tier,
         })),
       })),
@@ -496,6 +503,8 @@ export class PerCreatureLootApp extends BaseLootApp {
       );
       return;
     }
+    // Make a fresh roll undoable (protects a hand-edited roster haul from Enter/R).
+    if (this._lastResult) this._pushUndo();
     const needsLoad = !this._isItemCacheFresh();
     if (needsLoad) {
       this._loadingItems = true;

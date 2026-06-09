@@ -71,12 +71,12 @@
 
         <div class="mw-form__grid">
           <label class="mw-field">
-            <span class="mw-field__label">Buy Price ×</span>
-            <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" />
+            <span class="mw-field__label">Buy price ×</span>
+            <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" title="Multiplier on the listed price players pay. 1.0 = list price, 1.2 = +20%, 2.0 = double." />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Sell-Back ×</span>
-            <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" />
+            <span class="mw-field__label">Sell-back ×</span>
+            <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" title="Fraction of an item's value players get when selling to this merchant. 0.5 = half (standard 5e)." />
           </label>
           <label class="mw-field">
             <span class="mw-field__label">Bargain DC</span>
@@ -88,7 +88,7 @@
           </label>
           <label class="mw-field">
             <span class="mw-field__label">Gold on Hand</span>
-            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" />
+            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" title="Blank = unlimited purse. A literal 0 means the merchant can't buy anything from players." />
           </label>
           <label class="mw-field">
             <span class="mw-field__label">Discount if Bargain Succeeds</span>
@@ -99,18 +99,21 @@
             <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
           </label>
           <label class="mw-field mw-field--toggle">
-            <span class="mw-field__label">Passive Haggle</span>
-            <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} />
+            <span class="mw-field__label">Charm affects prices</span>
+            <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} title="On by default: a charismatic shopper automatically shifts prices before any bargain roll." />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Passive % per Point</span>
-            <input class="mw-input" type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{selected.passivePctPerPoint}}" title="Price shift per point of passive skill above/below 10" />
+            <span class="mw-field__label">Price shift per skill point</span>
+            <input class="mw-input" type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{selected.passivePctPerPoint}}" title="Price shift per point of passive social skill above/below the commoner baseline of 10." />
           </label>
           <label class="mw-field">
-            <span class="mw-field__label">Passive Cap %</span>
-            <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Maximum passive price shift in either direction" />
+            <span class="mw-field__label">Most a price can shift</span>
+            <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Cap on the automatic passive price shift, in either direction." />
           </label>
         </div>
+        <p class="mw-hint">
+          <strong>Buy price</strong> is what players pay; <strong>sell-back</strong> is what they get selling to this merchant. <strong>Charm affects prices</strong> is on by default — a charismatic shopper sees prices shift before any haggle roll.
+        </p>
 
         <fieldset class="mw-fieldset">
           <legend>Allowed Skills</legend>
@@ -279,10 +282,10 @@
           {{/if}}
           <div class="mw-inv__head">
             <span>Item</span>
-            <span>Qty</span>
-            <span>Start</span>
-            <span>Override gp</span>
-            <span class="mw-inv__head-flag">∞</span>
+            <span title="Current quantity in stock right now.">Qty</span>
+            <span title="Restock amount — what 'Restock' resets this item's quantity back to.">Restock to</span>
+            <span title="Custom price in gp for this item. Leave blank to use Buy price ×.">Custom gp</span>
+            <span class="mw-inv__head-flag" title="Never runs out — unlimited stock.">∞</span>
             <span></span>
           </div>
           <div class="mw-inv__drop" data-drop-zone="inventory">
@@ -334,13 +337,13 @@
             <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
             </button>
-            <button type="button" class="mw-btn" data-action="save">
-              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save
+            <button type="button" class="mw-btn" data-action="save" title="Changes save automatically as you edit — this just saves right now.">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save now
             </button>
             <button type="button" class="mw-btn" data-action="previewSession" title="Open a sandbox shop window to see how buying, selling, and bargaining work — nothing real changes">
               <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
             </button>
-            <button type="button" class="mw-btn mw-btn--primary" data-action="openSession" {{#unless canOpenSession}}disabled{{/unless}}>
+            <button type="button" class="mw-btn mw-btn--primary" data-action="openSession" {{#unless canOpenSession}}disabled{{/unless}} title="{{#if canOpenSession}}Open a live shop session for the allowed player(s){{else}}{{openSessionReason}}{{/if}}">
               <i class="fa-solid fa-store" aria-hidden="true"></i> Open Session
             </button>
           </div>

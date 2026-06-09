@@ -304,6 +304,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         Boolean(selected) &&
         selected.allowedUserIds.length > 0 &&
         Boolean(globalThis.game?.users?.activeGM),
+      // Why the Open Session button is disabled, so the button can say so.
+      openSessionReason: !selected
+        ? "Select a merchant first."
+        : selected.allowedUserIds.length === 0
+          ? "Add at least one Allowed Player to open a session."
+          : !globalThis.game?.users?.activeGM
+            ? "An active GM must be online to host."
+            : "",
     };
   }
 
@@ -782,8 +790,24 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
     const items = await loadCompendiumItems().catch(() => []);
     if (items.length === 0) {
-      ui.notifications?.warn(`${MODULE_ID}: no items in compendium.`);
+      ui.notifications?.warn("No items found in the compendium.");
       return;
+    }
+    // Re-Generate clears the whole shelf first — confirm if there's curated
+    // stock to lose (Generate, which appends, never needs this).
+    if (replace && merchant.items.length > 0) {
+      const DialogV2 = foundry?.applications?.api?.DialogV2;
+      const confirmed = DialogV2
+        ? await DialogV2.confirm({
+            window: {
+              title: "Replace all stock?",
+              icon: "fa-solid fa-arrows-rotate",
+            },
+            content: `<p>Clear all <strong>${merchant.items.length}</strong> current item(s) from <strong>${escapeText(merchant.name)}</strong> and roll a fresh shelf? (Use <em>Generate</em> instead to add without clearing.)</p>`,
+            rejectClose: false,
+          })
+        : true;
+      if (!confirmed) return;
     }
     if (replace) merchant = clearInventory(merchant);
     const exclude = new Set(merchant.items.map((r) => r.uuid));
@@ -885,10 +909,26 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
+    // Confirm before overwriting hand-tuned quantities (mirrors Clear All).
+    const finiteRows = merchant.items.filter((r) => !r.unlimited);
+    if (finiteRows.length > 0) {
+      const DialogV2 = foundry?.applications?.api?.DialogV2;
+      const confirmed = DialogV2
+        ? await DialogV2.confirm({
+            window: {
+              title: "Restock all items?",
+              icon: "fa-solid fa-boxes-stacked",
+            },
+            content: `<p>Reset every item's current quantity back to its starting amount for <strong>${escapeText(merchant.name)}</strong>? This discards any current-stock changes.</p>`,
+            rejectClose: false,
+          })
+        : true;
+      if (!confirmed) return;
+    }
     const next = restockAll(merchant);
     await upsertMerchant(next);
     playModuleSound(SOUND_EVENTS.ROLL_START);
-    ui.notifications?.info(`${MODULE_ID}: ${merchant.name} restocked.`);
+    ui.notifications?.info(`${merchant.name} restocked.`);
     this.render(false);
   }
 
@@ -915,14 +955,21 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     if (!merchant.allowedUserIds.length) {
-      ui.notifications?.warn(`${MODULE_ID}: tag at least one allowed player.`);
+      ui.notifications?.warn(
+        "Tag at least one Allowed Player before opening a session.",
+      );
       return;
     }
     if (!globalThis.game?.users?.activeGM) {
-      ui.notifications?.warn(`${MODULE_ID}: needs an active GM to host.`);
+      ui.notifications?.warn("An active GM must be online to host a session.");
       return;
     }
-    const picked = await promptPlayerPicker(merchant);
+    // Single allowed player: skip the redundant re-pick (mirrors the skill
+    // picker's single-option short-circuit).
+    const picked =
+      merchant.allowedUserIds.length === 1
+        ? [merchant.allowedUserIds[0]]
+        : await promptPlayerPicker(merchant);
     if (!picked || picked.length === 0) return;
     pushOpenSession({ merchant, targetUserIds: picked });
     playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);

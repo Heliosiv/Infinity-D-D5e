@@ -374,6 +374,9 @@ export function createBlankMerchant(overrides = {}) {
     allowedSkills: [...DEFAULT_ALLOWED_SKILLS],
     allowedUserIds: [],
     items: [],
+    // Seed a usable pool so "Generate Stock" produces a believable starter
+    // shelf on the first click instead of warning about an empty pool.
+    pool: { rarities: ["common", "uncommon"], count: DEFAULT_POOL_COUNT },
     ...overrides,
   });
 }

@@ -22,6 +22,7 @@ import {
 } from "./resource/roll.js";
 import { prettyEnvironment } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
+import { SETTING_KEYS, getSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
@@ -98,7 +99,15 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onClose(options) {
     super._onClose?.(options);
+    this._clearWaitTimer();
     instances.delete(this._runId);
+  }
+
+  _clearWaitTimer() {
+    if (this._waitTimer != null) {
+      globalThis.clearTimeout?.(this._waitTimer);
+      this._waitTimer = null;
+    }
   }
 
   async _prepareContext() {
@@ -123,12 +132,20 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender?.(context, options);
+    const root = this.element;
+    if (root) {
+      root.classList.toggle(
+        "fp-no-anim",
+        getSetting(SETTING_KEYS.ANIMATIONS) === false,
+      );
+    }
     if (this._state === "prompt") {
       playModuleSound(SOUND_EVENTS.UI_OPEN);
     }
   }
 
   _onAck(payload) {
+    this._clearWaitTimer();
     this._state = "done";
     this._result = {
       success: payload?.success === true,
@@ -148,7 +165,9 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const actor = resolvePlayerActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.warn(`${MODULE_ID}: no character assigned to forage with.`);
+      ui.notifications?.warn(
+        "No character is assigned to you — ask your GM to assign one.",
+      );
       return;
     }
     playModuleSound(SOUND_EVENTS.ROLL_START);
@@ -166,6 +185,15 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
     this._state = "waiting";
     this.render(false);
+    // Fallback: if the GM never sends an ack (e.g. they disconnect mid-run),
+    // don't spin forever — settle into a neutral "wrapped up" state.
+    this._clearWaitTimer();
+    this._waitTimer = globalThis.setTimeout?.(() => {
+      if (this._state !== "waiting") return;
+      this._state = "done";
+      this._result = { success: false, food: 0, water: 0, timedOut: true };
+      this.render(false);
+    }, 130000);
   }
 
   /** @this {ForagePromptApp} */

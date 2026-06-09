@@ -7,7 +7,7 @@
   <header class="id-head">
     <div class="id-head__title">
       <h2>Infinity D&amp;D5e</h2>
-      <p class="id-head__hint">Pick a tool to launch. New entries appear automatically as they're built.</p>
+      <p class="id-head__hint">Roll treasure, run shops, and track travel supplies — pick a tool below. Reopen this hub anytime with Shift+I.</p>
     </div>
     <span class="id-head__version">v{{moduleVersion}}</span>
   </header>
@@ -47,7 +47,8 @@
           class="id-tile__btn"
           data-action="launch"
           data-tool-id="{{id}}"
-          {{#if isComingSoon}}aria-disabled="true"{{/if}}
+          aria-label="{{title}}{{#if statusLabel}} — {{statusLabel}}{{/if}}"
+          {{#if isComingSoon}}aria-disabled="true" tabindex="-1"{{/if}}
         >
           <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
           <span class="id-tile__copy">
@@ -66,9 +67,9 @@
   {{/if}}
 
   <footer class="id-foot">
-    <button type="button" class="id-foot__btn" data-action="openSettings" title="Edit module defaults">
+    <button type="button" class="id-foot__btn" data-action="openSettings" title="Open this module's settings (loot, merchants, sounds, travel & more)">
       <i class="fa-solid fa-sliders" aria-hidden="true"></i>
-      <span>Configure Defaults</span>
+      <span>Module Settings</span>
     </button>
   </footer>
 </div>

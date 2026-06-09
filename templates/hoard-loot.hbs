@@ -27,7 +27,7 @@
 
     {{!-- Tier --}}
     <fieldset class="lf-fieldset">
-      <legend class="lf-fieldset__legend">Threat Tier</legend>
+      <legend class="lf-fieldset__legend">Tier</legend>
       <div class="lf-segment" role="group" aria-label="Tier">
         {{#each tierOptions}}
         <button
@@ -163,7 +163,7 @@
     {{> marketFilter}}
 
     <div class="lf-form__actions">
-      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Roll the Hoard (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
         <i class="fa-solid fa-sack-dollar" aria-hidden="true"></i>
         <span>Roll the Hoard</span>
       </button>
@@ -194,9 +194,9 @@
         Total — {{result.totalGpLabel}}
       </h3>
       <div class="lf-result__actions">
-        <button type="button" class="lf-btn lf-btn--small" data-action="depositHaul" title="Send items + coins to one actor">
+        <button type="button" class="lf-btn lf-btn--small" data-action="depositHaul" title="Give items + coins to one character">
           <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
-          <span>Deposit to Actor</span>
+          <span>Give to Character</span>
         </button>
         <button type="button" class="lf-btn lf-btn--small" data-action="sendToChat" title="Post this hoard to chat">
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
@@ -311,16 +311,6 @@
   data-search-text="{{displayName}} {{rarity}}"
   title="Double-click to open sheet"
 >
-  <button
-    type="button"
-    class="lf-result__lock"
-    data-action="toggleLock"
-    data-entry-id="{{entryId}}"
-    aria-pressed="{{#if locked}}true{{else}}false{{/if}}"
-    title="{{#if locked}}Locked — won't be re-rolled{{else}}Lock this item{{/if}}"
-  >
-    <i class="fa-solid {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}" aria-hidden="true"></i>
-  </button>
   <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
     <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
     <div class="lf-result__copy">

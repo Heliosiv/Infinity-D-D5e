@@ -213,17 +213,26 @@ for (const [name, Cls] of [
   // Every action referenced in DEFAULT_OPTIONS must resolve to a function,
   // including the spread-in shared handlers.
   const actions = Cls.DEFAULT_OPTIONS.actions ?? {};
-  for (const shared of [
-    "reset",
-    "clear",
-    "toggleLock",
-    "rerollOne",
-    "deleteItem",
-  ]) {
+  for (const shared of ["reset", "clear", "rerollOne", "deleteItem"]) {
     assert.equal(
       typeof actions[shared],
       "function",
       `${name} must inherit shared action "${shared}"`,
+    );
+  }
+  // Lock only does something on Per-Encounter (its Re-roll Unlocked path);
+  // Hoard and Per-Creature deliberately omit the otherwise no-op control.
+  if (name === "PerEncounterLootApp") {
+    assert.equal(
+      typeof actions.toggleLock,
+      "function",
+      `${name} should keep the working toggleLock action`,
+    );
+  } else {
+    assert.equal(
+      actions.toggleLock,
+      undefined,
+      `${name} should omit the no-op toggleLock action`,
     );
   }
   for (const [action, handler] of Object.entries(actions)) {

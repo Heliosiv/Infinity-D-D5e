@@ -595,6 +595,9 @@ export class PerEncounterLootApp extends BaseLootApp {
 
   async _generate({ preserveLocked = false } = {}) {
     if (this._loadingItems) return; // re-entrant click guard
+    // Snapshot the current haul so a fresh roll (incl. a stray Enter/R) is
+    // undoable — Undo already appears in the menu when canUndo.
+    if (this._lastResult) this._pushUndo();
     let generatedResult = null;
 
     const lockedEntries =

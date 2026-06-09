@@ -46,7 +46,11 @@ import {
   openItemByUuid,
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
-import { prettyRarity } from "./ui-util.js";
+import {
+  prettyRarity,
+  prettyBargainTier,
+  friendlyTransactionError,
+} from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import {
@@ -86,6 +90,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     position: { width: 720, height: 600 },
     actions: {
       tab: MerchantSessionApp._onTab,
+      openItem: MerchantSessionApp._onOpenItem,
       buyOne: MerchantSessionApp._onBuyOne,
       buyN: MerchantSessionApp._onBuyN,
       sellOne: MerchantSessionApp._onSellOne,
@@ -245,7 +250,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     }
     this._appendLog(
       "bargain",
-      `Bargain ${payload.tier?.id ?? "result"} · ${formatDelta(payload.deltaPct)}`,
+      `Bargain: ${prettyBargainTier(payload.tier?.id)} · ${formatDelta(payload.deltaPct)}`,
     );
     // Flag the row for a one-shot celebration on the next render.
     this._justBargained = {
@@ -387,7 +392,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       // Distinguish the always-on passive nudge from a rolled bargain seal.
       passiveActive: !seal && showDelta,
       bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
+      bargainPending: !seal && this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
+      haggleLabel: effectiveDeltaPct < 0 ? "Charm discount" : "Tough seller",
       cannotBuy,
       cannotBuyReason,
       maxQty,
@@ -434,6 +441,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       : Math.floor((Number(merchantGold) || 0) / Math.max(0.01, finalGp));
     const sellableQty = Math.max(0, Math.min(ownedQty, affordableQty));
     const cannotSell = sellableQty < 1;
+    // Partly-sellable: the merchant can afford some but not the whole stack.
+    const goldLimited = !cannotSell && sellableQty < ownedQty;
     return {
       itemId: doc.id,
       // Full embedded-item uuid so the shared double-click-to-open works
@@ -446,6 +455,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ownedQty,
       maxSellQty: Math.max(1, sellableQty),
       cannotSell,
+      goldLimited,
+      affordLabel: goldLimited ? `Shop can afford ${sellableQty}` : "",
       baseLabel: `${listGp.toFixed(2)} gp`,
       finalLabel: `${finalGp.toFixed(2)} gp`,
       // Sell payout: a negative delta is a BONUS, so flip the sign for display.
@@ -453,7 +464,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       deltaClass: effectiveDeltaPct < 0 ? "down" : "up",
       passiveActive: !seal && showDelta,
       bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
+      bargainPending: !seal && this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
+      haggleLabel: effectiveDeltaPct < 0 ? "Charm bonus" : "Tough seller",
     };
   }
 
@@ -576,6 +589,15 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this.render(false);
   }
 
+  /** Keyboard/touch-friendly "open item sheet" (double-click still works too). */
+  static async _onOpenItem(_event, target) {
+    const uuid = target?.dataset?.uuid;
+    if (!uuid) return;
+    await openItemByUuid(uuid, {
+      onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+    });
+  }
+
   static _onBuyOne(_event, target) {
     return this._performBuy(target?.dataset?.uuid, 1);
   }
@@ -593,12 +615,16 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (!row) return;
     const item = await fromUuid(uuid).catch(() => null);
     if (!item) {
-      ui.notifications?.warn(`${MODULE_ID}: item no longer available.`);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn("That item isn't available anymore.");
       return;
     }
     const actor = resolvePlayerActor();
     if (!actor) {
-      ui.notifications?.warn(`${MODULE_ID}: no character assigned.`);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "Pick a character first — ask your GM to assign you one.",
+      );
       return;
     }
     const sealKey = `${uuid}::buy`;
@@ -631,11 +657,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       qty,
       seal,
       passivePct,
+      notify: false,
     });
     if (!result.ok) {
-      ui.notifications?.warn(`${MODULE_ID}: buy failed — ${result.reason}.`);
+      const message = friendlyTransactionError(result.reason);
+      ui.notifications?.warn(message);
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      this._appendLog("fail", `Buy failed: ${result.reason}`);
+      this._appendLog("fail", `Couldn't buy — ${message}`);
       this.render(false);
       return;
     }
@@ -682,10 +710,18 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   async _performSell(itemId, qty) {
     if (this._previewMode) return this._previewSell(itemId, qty);
     const actor = resolvePlayerActor();
-    if (!actor || !itemId) return;
+    if (!actor) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "Pick a character first — ask your GM to assign you one.",
+      );
+      return;
+    }
+    if (!itemId) return;
     const ownedItem = actor.items?.get?.(itemId);
     if (!ownedItem) {
-      ui.notifications?.warn(`${MODULE_ID}: item not on your sheet.`);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn("That item isn't on your sheet anymore.");
       return;
     }
     const sealKey = `${itemId}::sell`;
@@ -703,7 +739,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (!merchantCanAfford(this._merchant, unitGp * Math.max(1, qty))) {
       const gold = Number(this._merchant.goldOnHand) || 0;
       ui.notifications?.warn(
-        `${MODULE_ID}: the merchant only has ${gold.toFixed(0)} gp on hand.`,
+        `The merchant only has ${gold.toFixed(0)} gp on hand.`,
       );
       this._appendLog("fail", "Sell blocked — merchant is low on gold");
       this.render(false);
@@ -725,9 +761,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       qty,
       seal,
       passivePct,
+      notify: false,
     });
     if (!result.ok) {
-      this._appendLog("fail", `Sell failed: ${result.reason}`);
+      const message = friendlyTransactionError(result.reason);
+      ui.notifications?.warn(message);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      this._appendLog("fail", `Couldn't sell — ${message}`);
       this.render(false);
       return;
     }
@@ -775,10 +815,16 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (this._seals.has(sealKey) || this._bargainPending.has(sealKey)) return;
     const actor = resolvePlayerActor();
     if (!actor) {
-      ui.notifications?.warn(`${MODULE_ID}: no character assigned.`);
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "Pick a character first — ask your GM to assign you one.",
+      );
       return;
     }
-    const skillId = await promptSkillPicker(this._merchant.allowedSkills);
+    const skillId = await promptSkillPicker(this._merchant.allowedSkills, {
+      dc: this._merchant.bargainDC,
+      failPct: this._merchant.bargainFailPct,
+    });
     if (!skillId) return;
     this._bargainPending.add(sealKey);
     this.render(false);
@@ -792,7 +838,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (!outcome.ok) {
       this._bargainPending.delete(sealKey);
       ui.notifications?.warn(
-        `${MODULE_ID}: bargain ${outcome.reason ?? "cancelled"}.`,
+        friendlyTransactionError(outcome.reason ?? "cancelled"),
       );
       this.render(false);
       return;
@@ -905,11 +951,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const actor = this._previewActor;
     if (!actor) {
       ui.notifications?.info(
-        `${MODULE_ID}: pick a character when opening the preview to try bargaining.`,
+        "Pick a character when opening the preview to try bargaining.",
       );
       return;
     }
-    const skillId = await promptSkillPicker(this._merchant.allowedSkills);
+    const skillId = await promptSkillPicker(this._merchant.allowedSkills, {
+      dc: this._merchant.bargainDC,
+      failPct: this._merchant.bargainFailPct,
+    });
     if (!skillId) return;
     this._bargainPending.add(sealKey);
     this.render(false);
@@ -923,7 +972,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._bargainPending.delete(sealKey);
     if (!outcome.ok) {
       ui.notifications?.warn(
-        `${MODULE_ID}: bargain ${outcome.reason ?? "cancelled"}.`,
+        friendlyTransactionError(outcome.reason ?? "cancelled"),
       );
       this.render(false);
       return;
@@ -947,7 +996,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     );
     this._appendLog(
       "bargain",
-      `Preview bargain ${result.tier?.id ?? "result"} · ${formatDelta(result.deltaPct)}`,
+      `Preview bargain: ${prettyBargainTier(result.tier?.id)} · ${formatDelta(result.deltaPct)}`,
     );
     this._justBargained = { refId, side, win: Number(result.deltaPct) <= 0 };
     this.render(false);
@@ -1052,8 +1101,7 @@ function formatMerchantGold(gold) {
 
 function sealLabel(seal) {
   if (!seal) return "";
-  const tierName = seal.tier?.id ?? "seal";
-  return `${tierName} ${formatDelta(seal.deltaPct)}`;
+  return `${prettyBargainTier(seal.tier?.id)} ${formatDelta(seal.deltaPct)}`;
 }
 
 function cssEscape(value) {
@@ -1097,7 +1145,7 @@ async function confirmTransaction({ side, name, qty, totalGp }) {
   }
 }
 
-async function promptSkillPicker(allowedSkills) {
+async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
   const DialogV2 = foundry?.applications?.api?.DialogV2;
   const labels = {
     per: "Persuasion",
@@ -1113,6 +1161,14 @@ async function promptSkillPicker(allowedSkills) {
   const options = allowed
     .map((id) => `<option value="${id}">${labels[id] ?? id}</option>`)
     .join("");
+  // Set expectations: haggling is a gamble — failing raises the price, and
+  // it's one attempt per item. dc/failPct come from the merchant.
+  const dcNum = Number(dc);
+  const failNum = Number(failPct);
+  const riskLine =
+    Number.isFinite(dcNum) && Number.isFinite(failNum)
+      ? `<p style="opacity:0.85;">Beat <strong>DC ${dcNum}</strong> to lower the price. Fail and it rises about <strong>${failNum}%</strong> — one attempt per item.</p>`
+      : `<p style="opacity:0.85;">Haggling is a gamble: succeed to lower the price, fail and it rises — one attempt per item.</p>`;
   let picked = null;
   try {
     picked = await DialogV2.prompt({
@@ -1122,6 +1178,7 @@ async function promptSkillPicker(allowedSkills) {
       },
       content: `
         <p>Choose how you want to haggle:</p>
+        ${riskLine}
         <label style="display:grid;gap:4px;">
           <span>Skill</span>
           <select name="skillId">${options}</select>

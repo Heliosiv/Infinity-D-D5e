@@ -291,8 +291,12 @@ class CdpClient {
 
 async function auditPage() {
   const issues = [];
+  // Disabled buttons are intentionally inert (e.g. a pending shop row, a
+  // gated Open Session) — don't count them as "should be clickable".
   const buttons = [
-    ...document.querySelectorAll("[data-harness-window] button[data-action]"),
+    ...document.querySelectorAll(
+      "[data-harness-window] button[data-action]:not([disabled])",
+    ),
   ];
   const windows = [...document.querySelectorAll("[data-harness-window]")];
 
@@ -300,7 +304,7 @@ async function auditPage() {
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
-      ".lf-shell, .hl-shell, .pc-shell, .id-shell",
+      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell",
     );
     for (const element of [content, shell].filter(Boolean)) {
       if (element.scrollWidth > element.clientWidth + 2) {

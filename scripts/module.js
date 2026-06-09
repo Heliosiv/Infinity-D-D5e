@@ -235,7 +235,7 @@ function registerBuiltinTools() {
     id: "merchant-workspace",
     title: "Merchant Workspace",
     description:
-      "Curate merchants — inventory, markup, bargain DC, allowed players — then open shopping sessions on demand.",
+      "Curate merchants — inventory, markup, bargain DC, allowed players — then open shopping sessions yourself, or mark shops self-service so players browse them from their own Shops door (Shift+O).",
     icon: "fa-solid fa-store",
     category: "merchants",
     status: "available",
