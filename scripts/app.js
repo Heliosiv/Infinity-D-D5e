@@ -236,6 +236,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       projectedBudgetLabel: formatGp(projectedBudget),
       candidateCount: candidates,
       candidateLabel: this._candidateLabel(candidates, stats.totalItems),
+      noCandidates: candidates === 0 && !this._loadingItems,
       loadingItems: this._loadingItems,
       partyAutofillSize: livePartySize(),
 

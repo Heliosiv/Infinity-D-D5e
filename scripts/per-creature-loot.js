@@ -187,6 +187,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       moduleId: MODULE_ID,
       loadingItems: this._loadingItems,
       candidateLabel: this._candidateLabel(candidates, stats.totalItems),
+      noCandidates: candidates === 0 && !this._loadingItems,
       rosterTotalBudgetLabel: formatGp(this._rosterTotalBudget()),
       rosterFull: this._form.roster.length >= ROSTER_LIMIT,
 

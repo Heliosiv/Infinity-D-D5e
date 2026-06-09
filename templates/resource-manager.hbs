@@ -96,6 +96,7 @@
       </div>
       <div class="rm-resource__tags" data-drop-resource="{{id}}">
         <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here (from a sheet or compendium) to match it exactly — more reliable than keywords.</span>
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Add an item by UUID (keyboard)"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
         {{#each tags}}
         <span class="rm-tag {{#if missing}}rm-tag--missing{{/if}}" title="{{uuid}}">{{name}}{{#if missing}} (missing){{/if}}
           <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove this item">×</button>
@@ -140,7 +141,7 @@
       <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
         <strong>{{name}}</strong>
         {{#if ok}}supplied{{else}}short {{shortFood}} food / {{shortWater}} water{{/if}}
-        {{#if foragedFood}} · foraged +{{foragedFood}} food{{/if}}{{#if foragedWater}} / +{{foragedWater}} water{{/if}}
+        {{#if forageNote}} · {{forageNote}}{{/if}}
       </li>
       {{/each}}
       {{#if report.lightShortfall}}<li class="is-short">Light: {{report.lightShortfall}} short of torches</li>{{/if}}

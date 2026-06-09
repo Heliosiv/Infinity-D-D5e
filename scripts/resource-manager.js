@@ -53,6 +53,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       advanceDay: ResourceManagerApp._onAdvanceDay,
       addResource: ResourceManagerApp._onAddResource,
       removeResource: ResourceManagerApp._onRemoveResource,
+      addTag: ResourceManagerApp._onAddTag,
       removeTag: ResourceManagerApp._onRemoveTag,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
@@ -200,6 +201,21 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       getSetting(SETTING_KEYS.ANIMATIONS) === false,
     );
 
+    // Enter = primary action (Advance Day), matching the loot tools. Bound once;
+    // skips form fields and respects the keyboard-shortcuts setting. Advance Day
+    // confirms first, so an accidental Enter can't blow through.
+    if (root.dataset.idxKeydownBound !== "true") {
+      root.dataset.idxKeydownBound = "true";
+      root.addEventListener("keydown", (event) => {
+        if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) === false) return;
+        if (event.key !== "Enter" || event.defaultPrevented) return;
+        const tag = event.target?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "select" || tag === "textarea") return;
+        event.preventDefault();
+        void this.constructor._onAdvanceDay.call(this);
+      });
+    }
+
     // Environment select.
     const envSelect = root.querySelector("[data-role='environment']");
     if (envSelect) {
@@ -319,6 +335,42 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
+  /** Keyboard-friendly alternative to drag-to-tag: paste an item UUID. */
+  static async _onAddTag(_event, target) {
+    const id = target?.dataset?.resourceId;
+    if (!id) return;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.prompt !== "function") return;
+    let uuid = null;
+    try {
+      uuid = await DialogV2.prompt({
+        window: { title: "Add item by UUID", icon: "fa-solid fa-link" },
+        content:
+          "<p>Paste an item's UUID to match it exactly (right-click an item, then Copy Document UUID).</p>" +
+          '<label style="display:grid;gap:4px;"><span>Item UUID</span><input type="text" name="uuid" placeholder="Compendium.…Item.…" /></label>',
+        ok: {
+          label: "Add",
+          callback: (_e, button) =>
+            button?.form?.elements?.uuid?.value?.trim() ?? null,
+        },
+        rejectClose: false,
+      });
+    } catch {
+      uuid = null;
+    }
+    if (!uuid) return;
+    const config = loadResourceConfig();
+    const res = config.resources.find((r) => r.id === id);
+    if (!res) return;
+    const uuids = new Set(res.matching.itemUuids ?? []);
+    uuids.add(uuid);
+    res.matching.itemUuids = [...uuids];
+    await saveResourceConfig(config);
+    playModuleSound(SOUND_EVENTS.DEPOSIT);
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
   static async _onRemoveTag(_event, target) {
     const id = target?.dataset?.resourceId;
     const uuid = target?.dataset?.uuid;
@@ -388,6 +440,22 @@ function actorItemSnapshots(actor) {
   return list.map((i) => (typeof i?.toObject === "function" ? i.toObject() : i));
 }
 
+/** Plain-language foraging note for a per-actor report row. Distinguishes
+ *  "foraged nothing" (was prompted, no haul) from "" (never foraged). */
+function forageNote(foraged) {
+  const f = foraged ?? {};
+  if (!f.attempted) return "";
+  const food = Number(f.food) || 0;
+  const water = Number(f.water) || 0;
+  if (f.success && (food > 0 || water > 0)) {
+    const parts = [];
+    if (food > 0) parts.push(`+${food} food`);
+    if (water > 0) parts.push(`+${water} water`);
+    return `foraged ${parts.join(" / ")}`;
+  }
+  return "foraged nothing";
+}
+
 function summarizeReport(result) {
   if (!result || typeof result !== "object") return null;
   const perActor = Array.isArray(result.perActor) ? result.perActor : [];
@@ -401,8 +469,7 @@ function summarizeReport(result) {
       name: r.name,
       shortFood: r.shortfalls?.food ?? 0,
       shortWater: r.shortfalls?.water ?? 0,
-      foragedFood: r.foraged?.food ?? 0,
-      foragedWater: r.foraged?.water ?? 0,
+      forageNote: forageNote(r.foraged),
       ok: !(r.shortfalls?.food > 0 || r.shortfalls?.water > 0),
     })),
     lightShortfall,

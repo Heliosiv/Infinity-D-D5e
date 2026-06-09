@@ -216,6 +216,7 @@ export class HoardLootApp extends BaseLootApp {
       coinPileLabel: formatGp(coinPileGp),
       itemBudgetLabel: formatGp(itemBudget),
       candidateLabel: this._candidateLabel(candidates, stats.totalItems),
+      noCandidates: candidates === 0 && !this._loadingItems,
       loadingItems: this._loadingItems,
 
       tierOptions: TIERS.map((tier) => ({

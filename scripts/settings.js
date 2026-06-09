@@ -99,8 +99,8 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.DEFAULT_COUNT,
-    name: "Default Item Limit",
-    hint: "0 = automatic budget fill. 1-20 caps the number of items in a fresh bundle.",
+    name: "Default Max Items",
+    hint: "0 = fill automatically. 1-20 caps the number of items in a fresh bundle.",
     scope: "world",
     config: true,
     type: Number,

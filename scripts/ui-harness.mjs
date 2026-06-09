@@ -395,6 +395,7 @@ function perEncounterContext() {
     },
     projectedBudgetLabel: "450 gp",
     candidateLabel: "644 items match current filters",
+    noCandidates: false,
     quickPresets: [
       ["easy", "Easy", "fa-solid fa-feather"],
       ["standard", "Standard", "fa-solid fa-shield"],
@@ -459,6 +460,7 @@ function perEncounterContext() {
       budgetGpLabel: "450 gp",
       droppedForBudget: 0,
       warnings: [],
+      lockedCount: 1,
     },
   };
 }
@@ -472,6 +474,7 @@ function hoardContext() {
     coinPileLabel: "900 gp",
     itemBudgetLabel: "1,500 gp",
     candidateLabel: "711 items match current filters",
+    noCandidates: false,
     tierOptions: tierOptions("t3"),
     scaleOptions: [
       ["cache", "Cache", "0.5", false],
@@ -549,6 +552,7 @@ function perCreatureContext() {
     rosterFull: false,
     rosterTotalBudgetLabel: "303 gp",
     candidateLabel: "644 items match current filters",
+    noCandidates: false,
     itemsPerCreature: slider(
       "itemsPerCreature",
       "Items Per Creature",
@@ -958,16 +962,14 @@ function resourceManagerContext() {
           ok: true,
           shortFood: 0,
           shortWater: 0,
-          foragedFood: 5,
-          foragedWater: 4,
+          forageNote: "foraged +5 food / +4 water",
         },
         {
           name: "Mira Quickstep",
           ok: false,
           shortFood: 1,
           shortWater: 0,
-          foragedFood: 0,
-          foragedWater: 0,
+          forageNote: "foraged nothing",
         },
       ],
     },

@@ -14,7 +14,7 @@
         </p>
       </div>
       <div class="pc-form__budget" aria-live="polite">
-        <span class="pc-form__budget-label">Roster Budget</span>
+        <span class="pc-form__budget-label">Total Treasure</span>
         <strong data-roster-budget>{{rosterTotalBudgetLabel}}</strong>
         <span class="pc-form__budget-sub" data-candidates>{{candidateLabel}}</span>
       </div>
@@ -120,7 +120,7 @@
     {{> marketFilter}}
 
     <div class="lf-form__actions">
-      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Roll All (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Roll All (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}{{#if noCandidates}} disabled{{/if}}>
         <i class="fa-solid fa-dice" aria-hidden="true"></i>
         <span>Roll All</span>
       </button>

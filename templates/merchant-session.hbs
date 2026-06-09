@@ -68,10 +68,7 @@
           <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainBuy" data-uuid="{{uuid}}" {{#if bargainLocked}}disabled{{/if}} title="{{#if bargainPending}}Haggling…{{else}}Bargain — one attempt; failing raises the price{{/if}}">
             <i class="fa-solid {{#if bargainPending}}fa-hourglass-half{{else}}fa-comments-dollar{{/if}}" aria-hidden="true"></i>
           </button>
-          <button type="button" class="mw-btn" data-action="buyOne" data-uuid="{{uuid}}" {{#if cannotBuy}}disabled{{/if}}>
-            Buy 1
-          </button>
-          <input class="mw-input mw-input--num" type="number" data-role="buyQty" data-uuid="{{uuid}}" min="1" max="{{maxQty}}" value="1" {{#if cannotBuy}}disabled{{/if}} title="Quantity to buy" />
+          <input class="mw-input mw-input--num" type="number" data-role="buyQty" data-uuid="{{uuid}}" min="1" max="{{maxQty}}" value="1" {{#if cannotBuy}}disabled{{/if}} title="Quantity to buy" aria-label="Quantity to buy" />
           <button type="button" class="mw-btn mw-btn--primary" data-action="buyN" data-uuid="{{uuid}}" {{#if cannotBuy}}disabled{{/if}}>
             Buy
           </button>
@@ -117,8 +114,7 @@
           <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="bargainSell" data-item-id="{{itemId}}" {{#if bargainLocked}}disabled{{/if}} title="{{#if bargainPending}}Haggling…{{else}}Bargain — one attempt; failing lowers the payout{{/if}}">
             <i class="fa-solid {{#if bargainPending}}fa-hourglass-half{{else}}fa-comments-dollar{{/if}}" aria-hidden="true"></i>
           </button>
-          <button type="button" class="mw-btn" data-action="sellOne" data-item-id="{{itemId}}" {{#if cannotSell}}disabled{{/if}}>Sell 1</button>
-          <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{maxSellQty}}" value="1" title="Quantity to sell" {{#if cannotSell}}disabled{{/if}} />
+          <input class="mw-input mw-input--num" type="number" data-role="sellQty" data-item-id="{{itemId}}" min="1" max="{{maxSellQty}}" value="1" title="Quantity to sell" aria-label="Quantity to sell" {{#if cannotSell}}disabled{{/if}} />
           <button type="button" class="mw-btn mw-btn--primary" data-action="sellN" data-item-id="{{itemId}}" {{#if cannotSell}}disabled{{/if}}>Sell</button>
         </div>
       </article>

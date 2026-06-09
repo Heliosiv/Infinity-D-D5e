@@ -91,9 +91,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     actions: {
       tab: MerchantSessionApp._onTab,
       openItem: MerchantSessionApp._onOpenItem,
-      buyOne: MerchantSessionApp._onBuyOne,
       buyN: MerchantSessionApp._onBuyN,
-      sellOne: MerchantSessionApp._onSellOne,
       sellN: MerchantSessionApp._onSellN,
       bargainBuy: MerchantSessionApp._onBargainBuy,
       bargainSell: MerchantSessionApp._onBargainSell,

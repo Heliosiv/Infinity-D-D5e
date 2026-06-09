@@ -218,12 +218,19 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
   // 3) Consume the day's supplies across the party.
   const report = await applyConsumption({ party, cfg, days });
 
-  // Fold foraging into the per-actor report.
+  // Fold foraging into the per-actor report. `attempted` is true for actors who
+  // were actually prompted (online owners), so the report can tell "foraged
+  // nothing" apart from "didn't forage".
   for (const row of report.perActor) {
     const yld = foragedByActor.get(row.actorId);
     row.foraged = yld
-      ? { food: yld.food ?? 0, water: yld.water ?? 0, success: yld.success }
-      : { food: 0, water: 0, success: false };
+      ? {
+          food: yld.food ?? 0,
+          water: yld.water ?? 0,
+          success: yld.success,
+          attempted: true,
+        }
+      : { food: 0, water: 0, success: false, attempted: false };
   }
 
   // 4) Suggest exhaustion from shortfalls (GM applies).

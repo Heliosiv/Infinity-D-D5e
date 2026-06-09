@@ -15,7 +15,7 @@
         </p>
       </div>
       <div class="lf-form__budget" aria-live="polite">
-        <span class="lf-form__budget-label">Projected Budget</span>
+        <span class="lf-form__budget-label">Estimated Treasure</span>
         <strong data-projected-budget>{{projectedBudgetLabel}}</strong>
         <span class="lf-form__budget-sub" data-candidates>{{candidateLabel}}</span>
       </div>
@@ -66,7 +66,7 @@
       {{> slider generosity}}
       {{> slider partySize}}
       <label class="lf-field lf-field--toggle lf-field--cap">
-        <span class="lf-field__label">Item Limit</span>
+        <span class="lf-field__label">Max items</span>
         <span class="lf-toggle">
           <input type="checkbox" name="itemLimitEnabled" {{#if form.itemLimitEnabled}}checked{{/if}} />
           <span data-item-limit-label>{{itemLimitLabel}}</span>
@@ -132,7 +132,7 @@
     {{> marketFilter}}
 
     <div class="lf-form__actions">
-      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Generate (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}>
+      <button type="button" class="lf-btn lf-btn--primary" data-action="generate" title="Generate (Enter or R)" {{#if loadingItems}}disabled aria-busy="true"{{/if}}{{#if noCandidates}} disabled{{/if}}>
         <i class="fa-solid fa-dice" aria-hidden="true"></i>
         <span>Generate Loot</span>
       </button>
@@ -160,7 +160,7 @@
     {{else if hasResult}}
     <header class="lf-result__head">
       <h3 class="lf-result__title">
-        {{result.items.length}} item(s) — {{result.totalGpLabel}}{{#if result.budgetGp}} / {{result.budgetGpLabel}} budget{{/if}}
+        {{result.items.length}} item(s) — {{result.totalGpLabel}}{{#if result.budgetGp}} / {{result.budgetGpLabel}} budget{{/if}}{{#if result.lockedCount}} · {{result.lockedCount}} locked{{/if}}
       </h3>
       <div class="lf-result__actions">
         <button type="button" class="lf-btn lf-btn--small" data-action="rerollUnlocked" title="Re-roll only unlocked items">
@@ -183,7 +183,7 @@
           <i class="fa-solid fa-users" aria-hidden="true"></i>
           <span>Split</span>
         </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="distributeToSelected" title="Split the haul across the selected canvas tokens' characters">
+        <button type="button" class="lf-btn lf-btn--small" data-action="distributeToSelected" title="Select party tokens on the canvas first, then this splits the haul to them with no dialog">
           <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
           <span>To Selected</span>
         </button>

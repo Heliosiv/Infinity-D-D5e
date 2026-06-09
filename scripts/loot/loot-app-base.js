@@ -854,7 +854,16 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const max = Math.max(1, getItemMaxQty(entry.item));
     const current = Math.max(1, Math.floor(Number(entry.quantity) || 1));
     const next = Math.min(max, Math.max(1, current + delta));
-    if (next === current) return;
+    if (next === current) {
+      // At a limit — acknowledge instead of a silent dead click.
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      if (delta > 0 && current >= max) {
+        ui.notifications?.info(
+          `${entry.displayName ?? entry.item?.name ?? "This item"} is at its max quantity (${max}).`,
+        );
+      }
+      return;
+    }
     this._pushUndo();
     const unit = entry.gpUnit ?? (current > 0 ? entry.gpTotal / current : 0);
     entry.gpUnit = unit;
