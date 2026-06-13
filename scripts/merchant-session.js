@@ -1062,12 +1062,18 @@ export function registerMerchantSessionAutoOpen() {
   autoOpenRegistered = true;
   subscribe(MERCHANT_EVENTS.SESSION_OPEN, (payload) => {
     if (!payload) return;
-    // GMs never auto-open a live (data-mutating) player session — they use
-    // the GM Preview button instead. And the target must match THIS user
-    // explicitly; a missing/blank target is ignored rather than opening for
-    // everyone.
-    if (globalThis.game?.user?.isGM) return;
+    // Open only on the client the GM explicitly targeted. Keying purely on the
+    // target id (NOT on "is this user a GM") is deliberate: Foundry's
+    // user.isGM is true for Assistant GMs, so the old `isGM` skip silently
+    // blocked any allowed player who held an assistant/elevated role from ever
+    // receiving their pushed shop. The GM who pushed to a player has
+    // target !== self, so this never pops the player's window on the GM screen;
+    // only the targeted user opens it. A missing/blank target matches no real
+    // user id, so it's ignored.
     if (payload.targetUserId !== globalThis.game?.user?.id) return;
+    console.log(
+      `${MODULE_ID} | received pushed merchant session "${payload.sessionId}" — opening`,
+    );
     // Chime only when the window is genuinely new (not a re-pop from a repeat
     // request), and here — when the session truly opens — rather than
     // optimistically on the player's click.

@@ -24,7 +24,6 @@ import {
   decrementInventory,
   findMerchant,
   getSelfServiceMode,
-  isUserAllowed,
   loadMerchants,
   merchantCanAfford,
   normalizeMerchant,
@@ -604,9 +603,21 @@ export function pushOpenSession({ merchant, targetUserIds }) {
   if (!merchant) throw new Error("pushOpenSession needs merchant");
   const ids = Array.isArray(targetUserIds) ? targetUserIds : [];
   if (ids.length === 0) return [];
+  const allowed = Array.isArray(merchant.allowedUserIds)
+    ? merchant.allowedUserIds
+    : [];
   const sessionDescriptors = [];
+  const skipped = [];
   for (const userId of ids) {
-    if (!isUserAllowed(merchant, userId)) continue;
+    // Push to any user on the merchant's allow-list — INCLUDING one holding an
+    // Assistant-GM / elevated role. We deliberately do NOT reuse isUserAllowed
+    // here (it rejects every Foundry GM-role user as a non-shopper): this is an
+    // explicit GM-initiated push to a player the GM picked, and the receiving
+    // client only opens the window for the user it's actually targeted at.
+    if (!allowed.includes(userId)) {
+      skipped.push(userId);
+      continue;
+    }
     const record = openSession({
       merchantId: merchant.id,
       viewerUserId: userId,
@@ -624,6 +635,12 @@ export function pushOpenSession({ merchant, targetUserIds }) {
       targetUserId: descriptor.viewerUserId,
     });
   }
+  console.log(
+    `${MODULE_ID} | pushOpenSession "${merchant.name}": opened ${sessionDescriptors.length}/${ids.length}` +
+      (skipped.length > 0
+        ? ` (skipped not-allowed: ${skipped.join(", ")})`
+        : ""),
+  );
   return sessionDescriptors;
 }
 

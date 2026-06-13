@@ -5,6 +5,7 @@ import {
   subscribe,
   emitMerchantEvent,
   receiveMerchantPayload,
+  pushOpenSession,
 } from "./merchant/socket.js";
 
 /**
@@ -105,6 +106,40 @@ try {
       "dispatch is target-agnostic; handlers filter",
     );
     assert.equal(seen[0].targetUserId, "someone-else");
+  }
+  /* pushOpenSession emits SESSION_OPEN for every ALLOWED target — including a
+     player who holds an elevated (assistant-GM) role — and skips users who
+     aren't on the merchant's allow-list. Regression: it used to drop any
+     GM-role user, so an assistant-GM player silently received nothing. */
+  {
+    emitted.length = 0;
+    const seen = [];
+    const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
+    const merchant = {
+      id: "m-shop",
+      name: "Sundries",
+      allowedUserIds: ["player1", "assistant-gm"],
+      items: [],
+    };
+    const opened = pushOpenSession({
+      merchant,
+      targetUserIds: ["player1", "assistant-gm", "stranger"],
+    });
+    off();
+    assert.deepEqual(
+      opened.map((d) => d.viewerUserId).sort(),
+      ["assistant-gm", "player1"],
+      "opens for allowed users (incl. assistant-GM); skips the non-allowed stranger",
+    );
+    assert.deepEqual(
+      seen.map((p) => p.targetUserId).sort(),
+      ["assistant-gm", "player1"],
+      "emits exactly one SESSION_OPEN per opened target",
+    );
+    assert.ok(
+      seen.every((p) => p.merchantId === "m-shop"),
+      "each SESSION_OPEN carries the merchant id",
+    );
   }
 } finally {
   if (savedGame === undefined) delete globalThis.game;
