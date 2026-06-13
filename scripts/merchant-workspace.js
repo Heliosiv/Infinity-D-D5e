@@ -993,11 +993,39 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         ? [merchant.allowedUserIds[0]]
         : await promptPlayerPicker(merchant);
     if (!picked || picked.length === 0) return;
-    pushOpenSession({ merchant, targetUserIds: picked });
+    // Report what ACTUALLY happened, not just that we tried. pushOpenSession
+    // silently skips users it can't open for (not on the allow-list, or a
+    // GM/assistant — who use Preview, not a live session), so a blanket
+    // "opened for N" toast would claim success when the player sees nothing.
+    const opened = pushOpenSession({ merchant, targetUserIds: picked });
     playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+    if (opened.length === 0) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: couldn't open ${merchant.name} for anyone — the picked player(s) aren't on the allow-list, or are a GM/assistant (use Preview for those).`,
+      );
+      this.render(false);
+      return;
+    }
+    const users = globalThis.game?.users;
+    const names = opened.map((d) => lookupUserName(d.viewerUserId));
     ui.notifications?.info(
-      `${MODULE_ID}: opened ${merchant.name} for ${picked.length} player(s).`,
+      `${MODULE_ID}: opened ${merchant.name} for ${names.join(", ")}.`,
     );
+    // A session pushed to an offline player won't pop until they reconnect —
+    // call that out so it doesn't read as "pushed but broken".
+    const offline = opened
+      .filter((d) => users?.get?.(d.viewerUserId)?.active !== true)
+      .map((d) => lookupUserName(d.viewerUserId));
+    if (offline.length > 0) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: ${offline.join(", ")} ${offline.length === 1 ? "is" : "are"} offline — the shop opens for them when they reconnect.`,
+      );
+    }
+    if (opened.length < picked.length) {
+      ui.notifications?.warn(
+        `${MODULE_ID}: skipped ${picked.length - opened.length} picked player(s) — not on the allow-list or a GM/assistant.`,
+      );
+    }
     this.render(false);
   }
 

@@ -93,7 +93,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     },
     position: { width: 720, height: 600 },
     actions: {
-      tab: MerchantSessionApp._onTab,
+      // NB: not "tab" — that's a reserved ApplicationV2 action in Foundry v13
+      // (routes to the built-in _onClickTab/changeTab, which needs a tab group
+      // and throws "must pass both the tab and tab group identifier"). We drive
+      // the buy/sell panels with our own re-render, so use a distinct name.
+      selectTab: MerchantSessionApp._onTab,
       openItem: MerchantSessionApp._onOpenItem,
       buyN: MerchantSessionApp._onBuyN,
       sellN: MerchantSessionApp._onSellN,

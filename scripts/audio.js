@@ -189,9 +189,21 @@ export function playResultSound(result, options = {}) {
   return sound;
 }
 
+/**
+ * Foundry's AudioHelper — namespaced under `foundry.audio.AudioHelper` in v13+.
+ * Resolve that first, falling back to the legacy global only if needed, so we
+ * don't trip the (noisy, v14-removed) "accessing the global AudioHelper"
+ * deprecation warning on every single play.
+ */
+function audioHelper() {
+  return (
+    globalThis.foundry?.audio?.AudioHelper ?? globalThis.AudioHelper ?? null
+  );
+}
+
 export async function preloadModuleSounds() {
   const sources = Object.values(SOUND_REGISTRY).map((entry) => entry.src);
-  const helper = globalThis.AudioHelper;
+  const helper = audioHelper();
   for (const src of sources) {
     try {
       if (typeof helper?.preloadSound === "function") {
@@ -220,7 +232,7 @@ function playFoundrySound(entry, options) {
   };
 
   try {
-    const helper = globalThis.AudioHelper;
+    const helper = audioHelper();
     if (typeof helper?.play === "function") {
       return helper.play(data, false);
     }

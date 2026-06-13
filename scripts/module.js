@@ -354,14 +354,26 @@ Hooks.once("ready", () => {
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
     if (mod && !mod.api) mod.api = buildApi();
-    registerSoundSocket();
-    registerSoundAutomation();
-    registerMerchantSocket();
-    registerMerchantSessionAutoOpen();
+    // Register each subsystem in isolation: a throw in one (e.g. a sound hook)
+    // must NOT skip the rest. Previously these ran bare in one try/catch, so a
+    // single failing init silently disabled every registration after it —
+    // including the merchant socket + session auto-open, which left players
+    // unable to receive a pushed shop session.
+    const safeInit = (label, fn) => {
+      try {
+        fn();
+      } catch (error) {
+        console.error(`${MODULE_ID} | ${label} init failed`, error);
+      }
+    };
+    safeInit("sound socket", registerSoundSocket);
+    safeInit("sound automation", registerSoundAutomation);
+    safeInit("merchant socket", registerMerchantSocket);
+    safeInit("merchant session auto-open", registerMerchantSessionAutoOpen);
     // Quartermaster / party-resource feature.
-    registerResourceSocket();
-    registerForagePromptAutoOpen();
-    registerResourceCalendarWatcher();
+    safeInit("resource socket", registerResourceSocket);
+    safeInit("forage prompt auto-open", registerForagePromptAutoOpen);
+    safeInit("resource calendar watcher", registerResourceCalendarWatcher);
     // GC merchant session records when a player disconnects so the GM's
     // "Active Sessions" list and seal maps don't leak across a session.
     Hooks.on("userConnected", (user, connected) => {

@@ -28,10 +28,10 @@
   {{/if}}
 
   <nav class="ms-tabs" role="tablist">
-    <button type="button" id="ms-tab-buy" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="tab" data-tab="buy" role="tab" aria-selected="{{#if buyActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-buy">
+    <button type="button" id="ms-tab-buy" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="selectTab" data-tab="buy" role="tab" aria-selected="{{#if buyActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-buy">
       <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Buy
     </button>
-    <button type="button" id="ms-tab-sell" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="tab" data-tab="sell" role="tab" aria-selected="{{#if sellActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-sell">
+    <button type="button" id="ms-tab-sell" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="selectTab" data-tab="sell" role="tab" aria-selected="{{#if sellActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-sell">
       <i class="fa-solid fa-coins" aria-hidden="true"></i> Sell
     </button>
   </nav>
