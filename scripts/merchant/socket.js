@@ -449,6 +449,7 @@ function handleShopListRequest(payload) {
     .map(sanitizeMerchantForList);
   emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REPLY, {
     targetUserId: userId,
+    requestId: payload.requestId ?? null,
     shops,
   });
 }

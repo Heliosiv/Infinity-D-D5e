@@ -24,6 +24,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/shop-picker.hbs`;
 const FALLBACK_ART = "icons/svg/shop.svg";
+const SHOP_LIST_TIMEOUT_MS = 5000;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -73,6 +74,9 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super(options);
     this._shops = []; // sanitized projections from the GM
     this._loading = true;
+    this._requestFailed = false;
+    this._requestId = null;
+    this._requestTimer = null;
     this._unsubs = [
       subscribe(MERCHANT_EVENTS.SHOP_LIST_REPLY, (payload) =>
         this._onShopList(payload),
@@ -95,6 +99,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onClose(options) {
     super._onClose?.(options);
+    this._clearRequestTimer();
     for (const fn of this._unsubs ?? []) {
       try {
         fn();
@@ -117,12 +122,27 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Ask the GM for the player's allowed self-service shops. */
   _requestList() {
+    this._clearRequestTimer();
+    this._requestFailed = false;
     if (!this._hasActiveGM) {
       this._loading = false;
       return;
     }
     this._loading = true;
-    emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
+    const userId = globalThis.game?.user?.id ?? "local";
+    this._requestId = `${userId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {
+      requestId: this._requestId,
+    });
+    this._requestTimer = globalThis.setTimeout?.(() => {
+      this._requestTimer = null;
+      this._loading = false;
+      this._requestFailed = true;
+      this._shops = [];
+      if (this.rendered) this.render(false);
+    }, SHOP_LIST_TIMEOUT_MS);
   }
 
   _onShopList(payload) {
@@ -133,8 +153,17 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     ) {
       return;
     }
+    if (
+      payload.requestId &&
+      this._requestId &&
+      payload.requestId !== this._requestId
+    ) {
+      return;
+    }
+    this._clearRequestTimer();
     this._shops = Array.isArray(payload.shops) ? payload.shops : [];
     this._loading = false;
+    this._requestFailed = false;
     if (this.rendered) this.render(false);
   }
 
@@ -165,6 +194,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       noGm,
       loading: this._loading && !noGm,
+      requestFailed: this._requestFailed && !noGm,
       shops,
       hasShops: shops.length > 0,
     };
@@ -205,5 +235,12 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static _onRefresh() {
     this._requestList();
     this.render(false);
+  }
+
+  _clearRequestTimer() {
+    if (this._requestTimer != null) {
+      globalThis.clearTimeout?.(this._requestTimer);
+      this._requestTimer = null;
+    }
   }
 }
