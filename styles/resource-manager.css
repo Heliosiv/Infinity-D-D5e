@@ -220,6 +220,42 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Roster controls — stash checkbox column centers; draw-from select stays
+   compact; the muted span keeps "Self" visually quiet next to a real <select>. */
+.infinity-dnd5e .rm-roster td:nth-last-child(2),
+.infinity-dnd5e .rm-roster th:nth-last-child(2) {
+  text-align: left;
+}
+
+.infinity-dnd5e .rm-drawfrom select {
+  max-width: 12rem;
+  font-size: 0.85rem;
+}
+
+.infinity-dnd5e .rm-muted {
+  color: var(--lf-muted);
+}
+
+.infinity-dnd5e .rm-roster-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.infinity-dnd5e .rm-roster-add select {
+  max-width: 16rem;
+}
+
+.infinity-dnd5e .rm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .infinity-dnd5e .rm-report__list {
   margin: 0;
   padding-left: 18px;

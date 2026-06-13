@@ -109,13 +109,19 @@
 
   <section class="rm-section rm-party">
     <h3>Party supplies</h3>
+    {{#if rosterIsImplicit}}
+    <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong> or change <strong>Draws from</strong> to start curating the roster — or remove anyone who shouldn't be tracked.</p>
+    {{/if}}
     {{#if hasParty}}
-    <table class="rm-table">
+    <table class="rm-table rm-roster">
       <thead>
         <tr>
           <th>Character</th>
           {{#each resources}}<th>{{label}}</th>{{/each}}
           <th>Exhaustion</th>
+          <th title="This character's pack is a shared source the party can draw from">Stash</th>
+          <th>Draws from</th>
+          <th><span class="rm-sr">Remove</span></th>
         </tr>
       </thead>
       <tbody>
@@ -124,12 +130,37 @@
           <td>{{name}}</td>
           {{#each counts}}<td class="rm-num" title="{{detail}}">{{total}}</td>{{/each}}
           <td class="rm-num">{{exhaustion}}</td>
+          <td class="rm-num">
+            <input type="checkbox" data-config-path="roster:{{actorId}}:isStash" {{#if isStash}}checked{{/if}} aria-label="Mark {{name}} as a shared stash" />
+          </td>
+          <td class="rm-drawfrom">
+            {{#if isStash}}
+            <span class="rm-muted" title="A stash holds its own supplies">Self (stash)</span>
+            {{else if canDrawFromStash}}
+            <select data-config-path="roster:{{actorId}}:drawFrom" aria-label="Where {{name}} draws supplies from">
+              {{#each drawFromOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+            {{else}}
+            <span class="rm-muted">Self</span>
+            {{/if}}
+          </td>
+          <td>
+            <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeRosterMember" data-actor-id="{{actorId}}" title="Remove {{name}} from the roster" aria-label="Remove {{name}} from the roster">×</button>
+          </td>
         </tr>
         {{/each}}
       </tbody>
     </table>
     {{else}}
     <p class="rm-note">No player-owned characters found — assign a player as Owner on a character sheet and they'll appear here.</p>
+    {{/if}}
+    {{#if hasAvailableToAdd}}
+    <div class="rm-roster-add">
+      <select data-role="add-roster" aria-label="Character to add to the roster">
+        {{#each availableToAdd}}<option value="{{id}}">{{name}}</option>{{/each}}
+      </select>
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="addRosterMember"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add character</button>
+    </div>
     {{/if}}
   </section>
 

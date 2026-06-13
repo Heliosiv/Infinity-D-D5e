@@ -18,7 +18,12 @@ import {
   createDefaultResourceConfig,
   normalizeResource,
 } from "./resource/store.js";
-import { advanceDayNow, discoverPartyActors } from "./resource/calendar-watcher.js";
+import {
+  advanceDayNow,
+  discoverPartyActors,
+  discoverPlayerCharacters,
+  getPartyRoster,
+} from "./resource/calendar-watcher.js";
 import { matchResourceItems } from "./resource/consumption.js";
 import {
   RESOURCE_EVENTS,
@@ -55,6 +60,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       removeResource: ResourceManagerApp._onRemoveResource,
       addTag: ResourceManagerApp._onAddTag,
       removeTag: ResourceManagerApp._onRemoveTag,
+      addRosterMember: ResourceManagerApp._onAddRosterMember,
+      removeRosterMember: ResourceManagerApp._onRemoveRosterMember,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
     },
@@ -119,8 +126,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const currentEnv =
       config.environments.find((e) => e.id === currentEnvId) ?? null;
 
-    const party = discoverPartyActors();
-    const partyRows = party.map((actor) => {
+    const roster = getPartyRoster(config);
+    const rosterIsImplicit = (config.roster ?? []).length === 0;
+    const nameById = new Map(roster.map((r) => [r.actor.id, r.actor.name]));
+    const stashRows = roster.filter((r) => r.isStash);
+    const partyRows = roster.map(({ actor, isStash, drawFromId }) => {
       const snaps = actorItemSnapshots(actor);
       const counts = config.resources.map((res) => {
         const matches = matchResourceItems(snaps, res);
@@ -129,15 +139,43 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           matches.length > 0
             ? matches.map((m) => `${m.name} ×${m.quantity}`).join(", ")
             : "No items match this resource";
-        return { id: res.id, label: res.label, total: sumMatches(matches), detail };
+        return {
+          id: res.id,
+          label: res.label,
+          total: sumMatches(matches),
+          detail,
+        };
       });
+      const drawsFromSelf = drawFromId === actor.id;
+      // A member can draw from itself or any OTHER nominated stash.
+      const drawFromOptions = [
+        { value: "self", label: "Self", selected: drawsFromSelf },
+        ...stashRows
+          .filter((s) => s.actor.id !== actor.id)
+          .map((s) => ({
+            value: s.actor.id,
+            label: s.actor.name,
+            selected: !drawsFromSelf && drawFromId === s.actor.id,
+          })),
+      ];
       return {
         actorId: actor.id,
         name: actor.name,
+        isStash,
+        drawsFromSelf,
+        drawFromLabel: drawsFromSelf
+          ? "Self"
+          : (nameById.get(drawFromId) ?? "Self"),
+        drawFromOptions,
+        canDrawFromStash: drawFromOptions.length > 1,
         exhaustion: Number(actor.system?.attributes?.exhaustion) || 0,
         counts,
       };
     });
+    const onRoster = new Set(roster.map((r) => r.actor.id));
+    const availableToAdd = discoverPlayerCharacters()
+      .filter((actor) => !onRoster.has(actor.id))
+      .map((actor) => ({ id: actor.id, name: actor.name }));
 
     // Resolve each bound item UUID to a readable name (falls back to the raw
     // UUID, flagged, when it no longer resolves) so the GM can see what's tagged.
@@ -177,7 +215,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       currentEnvLabel: currentEnv
         ? prettyEnvironment(currentEnv.id) || currentEnv.label
         : "—",
-      currentEnvForageable: currentEnv ? currentEnv.forageable !== false : false,
+      currentEnvForageable: currentEnv
+        ? currentEnv.forageable !== false
+        : false,
       currentEnvDc: currentEnv?.dc ?? null,
       forageMode: config.forageMode,
       forageModeEach: config.forageMode === "each",
@@ -187,6 +227,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       isAuthoritative: isAuthoritativeGM(),
       partyRows,
       hasParty: partyRows.length > 0,
+      rosterIsImplicit,
+      availableToAdd,
+      hasAvailableToAdd: availableToAdd.length > 0,
       report: summarizeReport(state.lastUpkeepResult),
     };
   }
@@ -248,7 +291,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const value =
       input.type === "checkbox" ? input.checked : String(input.value ?? "");
 
-    if (path === "forageMode") config.forageMode = value === "best" ? "best" : "each";
+    if (path === "forageMode")
+      config.forageMode = value === "best" ? "best" : "each";
     else if (path === "halfRations") config.halfRations = Boolean(value);
     else if (path === "waterEnabled") config.waterEnabled = Boolean(value);
     else if (path === "autoTrigger") {
@@ -259,6 +303,16 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       const [, id, field] = path.split(":");
       const res = config.resources.find((r) => r.id === id);
       if (res) applyResourceField(res, field, value);
+    } else if (path.startsWith("roster:")) {
+      // Editing any roster row materializes the implicit "all PCs" roster first,
+      // so a stash/draw toggle turns auto-tracking into an explicit roster.
+      const [, actorId, field] = path.split(":");
+      seedRosterIfEmpty(config);
+      const entry = config.roster.find((r) => r.actorId === actorId);
+      if (entry) {
+        if (field === "isStash") entry.isStash = Boolean(value);
+        else if (field === "drawFrom") entry.drawFrom = String(value || "self");
+      }
     }
 
     await saveResourceConfig(config);
@@ -386,12 +440,44 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
+  static async _onAddRosterMember(_event, _target) {
+    const select = this.element?.querySelector("[data-role='add-roster']");
+    const actorId = String(select?.value ?? "").trim();
+    if (!actorId) return;
+    // Only player-owned characters are eligible for the roster.
+    if (!discoverPlayerCharacters().some((a) => a.id === actorId)) return;
+    const config = loadResourceConfig();
+    seedRosterIfEmpty(config);
+    if (!config.roster.some((r) => r.actorId === actorId)) {
+      config.roster.push({ actorId, isStash: false, drawFrom: "self" });
+    }
+    await saveResourceConfig(config);
+    playModuleSound(SOUND_EVENTS.ROSTER_ADD);
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onRemoveRosterMember(_event, target) {
+    const actorId = target?.dataset?.actorId;
+    if (!actorId) return;
+    const config = loadResourceConfig();
+    seedRosterIfEmpty(config);
+    config.roster = config.roster.filter((r) => r.actorId !== actorId);
+    await saveResourceConfig(config);
+    playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
   static async _onResetConfig(_event, _target) {
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     let ok = true;
     if (typeof DialogV2?.confirm === "function") {
       ok = await DialogV2.confirm({
-        window: { title: "Reset Quartermaster?", icon: "fa-solid fa-rotate-left" },
+        window: {
+          title: "Reset Quartermaster?",
+          icon: "fa-solid fa-rotate-left",
+        },
         content:
           "<p>Reset all resource definitions and environments to the defaults? Your day-tracking is kept.</p>",
         rejectClose: false,
@@ -413,12 +499,27 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
  * Helpers
  * ------------------------------------------------------------------ */
 
+/**
+ * Materialize the implicit "auto-track every player character" roster into an
+ * explicit one so a per-row edit (stash / draws-from / remove) has a concrete
+ * entry to change. No-op once the roster is already curated.
+ */
+function seedRosterIfEmpty(config) {
+  if (Array.isArray(config.roster) && config.roster.length > 0) return;
+  config.roster = discoverPlayerCharacters().map((actor) => ({
+    actorId: actor.id,
+    isStash: false,
+    drawFrom: "self",
+  }));
+}
+
 function applyResourceField(res, field, value) {
   if (field === "label") res.label = String(value ?? "").trim() || res.id;
   else if (field === "perDay") res.perDay = Math.max(0, Number(value) || 0);
   else if (field === "scope")
     res.scope = value === "party" ? "party" : "per-character";
-  else if (field === "flagTag") res.matching.flagTag = String(value ?? "").trim();
+  else if (field === "flagTag")
+    res.matching.flagTag = String(value ?? "").trim();
   else if (field === "keywords") {
     res.matching.nameKeywords = String(value ?? "")
       .split(",")
@@ -437,7 +538,9 @@ function sumMatches(matches) {
 function actorItemSnapshots(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
   const list = Array.isArray(items) ? items : Array.from(items ?? []);
-  return list.map((i) => (typeof i?.toObject === "function" ? i.toObject() : i));
+  return list.map((i) =>
+    typeof i?.toObject === "function" ? i.toObject() : i,
+  );
 }
 
 /** Plain-language foraging note for a per-actor report row. Distinguishes
@@ -459,7 +562,10 @@ function forageNote(foraged) {
 function summarizeReport(result) {
   if (!result || typeof result !== "object") return null;
   const perActor = Array.isArray(result.perActor) ? result.perActor : [];
-  const lightShortfall = Math.max(0, Number(result.party?.light?.shortfall) || 0);
+  const lightShortfall = Math.max(
+    0,
+    Number(result.party?.light?.shortfall) || 0,
+  );
   return {
     days: result.days ?? 1,
     environmentLabel: result.environmentId
@@ -473,7 +579,8 @@ function summarizeReport(result) {
       ok: !(r.shortfalls?.food > 0 || r.shortfalls?.water > 0),
     })),
     lightShortfall,
-    hasSuggestions: Array.isArray(result.suggestions) && result.suggestions.length > 0,
+    hasSuggestions:
+      Array.isArray(result.suggestions) && result.suggestions.length > 0,
   };
 }
 

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   RESOURCE_CONFIG_VERSION,
+  DRAW_FROM_SELF,
   normalizeResource,
   normalizeResourceConfig,
+  normalizeRoster,
+  resolveDrawSourceId,
   normalizeRunState,
   createDefaultResourceConfig,
   loadResourceConfig,
@@ -21,7 +24,11 @@ import {
   assert.equal(r.id, "food");
   assert.equal(r.scope, "per-character", "bad scope → per-character");
   assert.equal(r.perDay, 0, "negative perDay clamps to 0");
-  assert.deepEqual(r.matching, { nameKeywords: [], flagTag: "", itemUuids: [] });
+  assert.deepEqual(r.matching, {
+    nameKeywords: [],
+    flagTag: "",
+    itemUuids: [],
+  });
   assert.equal(r.forageYields, null);
 
   const party = normalizeResource({
@@ -29,7 +36,11 @@ import {
     scope: "party",
     perDay: 2,
     forageYields: "food",
-    matching: { nameKeywords: ["torch"], flagTag: "light", itemUuids: ["x", "x"] },
+    matching: {
+      nameKeywords: ["torch"],
+      flagTag: "light",
+      itemUuids: ["x", "x"],
+    },
   });
   assert.equal(party.scope, "party");
   assert.equal(party.forageYields, "food");
@@ -64,7 +75,95 @@ import {
   assert.ok(fixed.resources.length >= 3, "all-malformed list → defaults");
 
   // waterEnabled:false respected.
-  assert.equal(normalizeResourceConfig({ waterEnabled: false }).waterEnabled, false);
+  assert.equal(
+    normalizeResourceConfig({ waterEnabled: false }).waterEnabled,
+    false,
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * normalizeRoster — dedupe, drop malformed, validate drawFrom
+ * ------------------------------------------------------------------ */
+{
+  assert.deepEqual(normalizeRoster(undefined), [], "no roster → empty");
+  assert.deepEqual(
+    normalizeRoster([null, {}, { actorId: "" }]),
+    [],
+    "malformed dropped",
+  );
+
+  const roster = normalizeRoster([
+    { actorId: "a", isStash: true },
+    { actorId: "a", isStash: false }, // duplicate id → dropped
+    { actorId: "b", drawFrom: "a" }, // draws from stash a → kept
+    { actorId: "c", drawFrom: "ghost" }, // unknown target → self
+    { actorId: "d", drawFrom: "d" }, // self-reference → self
+  ]);
+  assert.deepEqual(
+    roster.map((e) => e.actorId),
+    ["a", "b", "c", "d"],
+    "deduped, order preserved",
+  );
+  assert.equal(roster[0].isStash, true);
+  assert.equal(
+    roster[0].drawFrom,
+    DRAW_FROM_SELF,
+    "a stash always draws from self",
+  );
+  assert.equal(roster[1].drawFrom, "a", "member draws from a real stash");
+  assert.equal(
+    roster[2].drawFrom,
+    DRAW_FROM_SELF,
+    "unknown target falls back to self",
+  );
+  assert.equal(
+    roster[3].drawFrom,
+    DRAW_FROM_SELF,
+    "self-reference falls back to self",
+  );
+
+  // A member can't draw from a non-stash member.
+  const nonStash = normalizeRoster([
+    { actorId: "x", isStash: false },
+    { actorId: "y", drawFrom: "x" },
+  ]);
+  assert.equal(
+    nonStash[1].drawFrom,
+    DRAW_FROM_SELF,
+    "can't draw from a non-stash",
+  );
+
+  // resolveDrawSourceId
+  assert.equal(resolveDrawSourceId({ actorId: "b", drawFrom: "a" }), "a");
+  assert.equal(
+    resolveDrawSourceId({ actorId: "b", drawFrom: DRAW_FROM_SELF }),
+    "b",
+  );
+  assert.equal(
+    resolveDrawSourceId({ actorId: "b" }),
+    "b",
+    "missing drawFrom → self",
+  );
+  assert.equal(resolveDrawSourceId(null), null);
+
+  // Config carries a normalized roster and stays idempotent with it.
+  const cfg = normalizeResourceConfig({
+    roster: [
+      { actorId: "a", isStash: true },
+      { actorId: "b", drawFrom: "a" },
+    ],
+  });
+  assert.equal(cfg.roster.length, 2);
+  assert.deepEqual(
+    normalizeResourceConfig(cfg).roster,
+    cfg.roster,
+    "roster idempotent",
+  );
+  assert.deepEqual(
+    normalizeResourceConfig({}).roster,
+    [],
+    "default roster empty",
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -129,7 +228,8 @@ import {
       settings: {
         get(moduleId, key) {
           if (moduleId !== "infinity-dnd5e") return undefined;
-          if (key === "resourceConfig") return { forageMode: "best", waterEnabled: false };
+          if (key === "resourceConfig")
+            return { forageMode: "best", waterEnabled: false };
           return undefined;
         },
       },

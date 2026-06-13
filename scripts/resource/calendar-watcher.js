@@ -20,6 +20,7 @@ import {
 import {
   loadResourceConfig,
   loadRunState,
+  resolveDrawSourceId,
   setLastSeenDay,
   setLastUpkeepResult,
 } from "./store.js";
@@ -90,7 +91,10 @@ function currentAbsoluteDay() {
         });
       }
     } catch (error) {
-      console.warn(`${MODULE_ID} | Simple Calendar read failed; using core time`, error);
+      console.warn(
+        `${MODULE_ID} | Simple Calendar read failed; using core time`,
+        error,
+      );
     }
   }
   const t = globalThis.game?.time;
@@ -188,7 +192,8 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
   const days = Math.max(1, Math.floor(Number(elapsedDays) || 1));
   const state = loadRunState();
   const env = resolveCurrentEnvironment(cfg, state);
-  const party = discoverPartyActors();
+  const roster = getPartyRoster(cfg);
+  const party = roster.map((r) => r.actor);
 
   if (party.length === 0) {
     globalThis.ui?.notifications?.info(
@@ -197,26 +202,34 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     return null;
   }
 
+  // Resolve each member's draw source actor once (own sheet, or a nominated stash).
+  const actorById = new Map(party.map((a) => [a.id, a]));
+  const sourceForMember = new Map(
+    roster.map((r) => [r.actor.id, actorById.get(r.drawFromId) ?? r.actor]),
+  );
+
   // 1) Foraging window (only when the environment allows it).
   let foragedByActor = new Map();
   if (isForageable(env)) {
     foragedByActor = await runForagingWindow({ env, party, cfg });
   }
 
-  // 2) Deposit foraged yield to each forager's sheet.
+  // 2) Deposit foraged yield onto each forager's DRAW SOURCE — the same sheet
+  //    they consume from — so foraging actually tops up the stash they rely on.
   const foodRes = cfg.resources.find((r) => r.forageYields === "food");
   const waterRes = cfg.resources.find((r) => r.forageYields === "water");
   for (const actor of party) {
     const yld = foragedByActor.get(actor.id);
     if (!yld || !yld.success) continue;
-    if (foodRes && yld.food > 0) await depositResource(actor, foodRes, yld.food);
+    const sink = sourceForMember.get(actor.id) ?? actor;
+    if (foodRes && yld.food > 0) await depositResource(sink, foodRes, yld.food);
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
-      await depositResource(actor, waterRes, yld.water);
+      await depositResource(sink, waterRes, yld.water);
     }
   }
 
-  // 3) Consume the day's supplies across the party.
-  const report = await applyConsumption({ party, cfg, days });
+  // 3) Consume the day's supplies across the roster.
+  const report = await applyConsumption({ roster, sourceForMember, cfg, days });
 
   // Fold foraging into the per-actor report. `attempted` is true for actors who
   // were actually prompted (online owners), so the report can tell "foraged
@@ -385,9 +398,10 @@ async function handleForageResult(payload) {
  * Consumption + deposit
  * ------------------------------------------------------------------ */
 
-async function applyConsumption({ party, cfg, days }) {
+async function applyConsumption({ roster, sourceForMember, cfg, days }) {
   const perActorMap = new Map();
-  const ensureRow = (actor) => {
+  const ensureRow = (member) => {
+    const actor = member.actor;
     let row = perActorMap.get(actor.id);
     if (!row) {
       row = {
@@ -400,12 +414,15 @@ async function applyConsumption({ party, cfg, days }) {
     }
     return row;
   };
+  const sourceFor = (member) =>
+    sourceForMember?.get(member.actor.id) ?? member.actor;
 
   const partyReport = {};
 
   for (const resource of cfg.resources) {
     if (resource.id === "water" && cfg.waterEnabled === false) continue;
-    if (resource.forageYields === "water" && cfg.waterEnabled === false) continue;
+    if (resource.forageYields === "water" && cfg.waterEnabled === false)
+      continue;
 
     const base = Math.max(0, resource.perDay * days);
     // Half rations stretch food; savings accrue across multi-day advances.
@@ -415,12 +432,15 @@ async function applyConsumption({ party, cfg, days }) {
     if (amount <= 0) continue;
 
     if (resource.scope === "party") {
-      const res = await consumePartyResource(party, resource, amount);
+      const res = await consumePartyResource(roster, resource, amount);
       partyReport[resource.id] = res;
     } else {
-      for (const actor of party) {
-        const res = await consumeFromActor(actor, resource, amount);
-        const row = ensureRow(actor);
+      // Each member draws from its nominated source (own sheet or a shared
+      // stash). Sequential awaits mean members sharing a stash deplete it in
+      // roster order — whoever's last comes up short if the stash runs dry.
+      for (const member of roster) {
+        const res = await consumeFromActor(sourceFor(member), resource, amount);
+        const row = ensureRow(member);
         row.consumed[resource.id] = res.consumed;
         row.shortfalls[resource.id] = res.shortfall;
         // Normalize the canonical food/water keys the report/exhaustion expect.
@@ -436,8 +456,8 @@ async function applyConsumption({ party, cfg, days }) {
     }
   }
 
-  // Make sure every party actor has a row even if they matched no resources.
-  for (const actor of party) ensureRow(actor);
+  // Make sure every roster member has a row even if they matched no resources.
+  for (const member of roster) ensureRow(member);
 
   return { perActor: [...perActorMap.values()], party: partyReport };
 }
@@ -449,11 +469,29 @@ async function consumeFromActor(actor, resourceDef, amount) {
   return { consumed: plan.consumed, shortfall: plan.shortfall };
 }
 
-/** Party-scope draw (e.g. torches): drain from each carrier in turn. */
-async function consumePartyResource(party, resourceDef, amount) {
+/**
+ * Party-scope draw (e.g. torches): drain from the nominated stash carriers
+ * first, then everyone else, in turn. With no stash flagged this is just the
+ * whole roster in order (the original behavior).
+ */
+async function consumePartyResource(roster, resourceDef, amount) {
+  const seen = new Set();
+  const order = [];
+  for (const r of roster) {
+    if (r.isStash && !seen.has(r.actor.id)) {
+      seen.add(r.actor.id);
+      order.push(r.actor);
+    }
+  }
+  for (const r of roster) {
+    if (!seen.has(r.actor.id)) {
+      seen.add(r.actor.id);
+      order.push(r.actor);
+    }
+  }
   let remaining = amount;
   let consumed = 0;
-  for (const actor of party) {
+  for (const actor of order) {
     if (remaining <= 0) break;
     const res = await consumeFromActor(actor, resourceDef, remaining);
     consumed += res.consumed;
@@ -475,7 +513,10 @@ async function applyConsumptionOps(actor, ops) {
       await actor.deleteEmbeddedDocuments("Item", deletes);
     }
   } catch (error) {
-    console.error(`${MODULE_ID} | consumption write failed on ${actor?.name}`, error);
+    console.error(
+      `${MODULE_ID} | consumption write failed on ${actor?.name}`,
+      error,
+    );
   }
 }
 
@@ -495,7 +536,9 @@ async function depositResource(actor, resourceDef, amount) {
   const plan = planDeposit({ matches, amount, templateItem: template });
   try {
     if (plan.op === "bump") {
-      await actor.items?.get?.(plan.id)?.update?.({ "system.quantity": plan.to });
+      await actor.items
+        ?.get?.(plan.id)
+        ?.update?.({ "system.quantity": plan.to });
       return amount;
     }
     if (plan.op === "create") {
@@ -558,7 +601,9 @@ async function postUpkeepReport({ env, result }) {
       ${lightLine}
     </div>`;
 
-  const speaker = globalThis.ChatMessage.getSpeaker?.({ alias: "Quartermaster" });
+  const speaker = globalThis.ChatMessage.getSpeaker?.({
+    alias: "Quartermaster",
+  });
   const messageData = { content, speaker };
   const whisper = resolveReportWhisper(result);
   if (whisper !== null) messageData.whisper = whisper;
@@ -571,7 +616,9 @@ async function postUpkeepReport({ env, result }) {
 }
 
 function resolveReportWhisper(result) {
-  const mode = String(getSetting(SETTING_KEYS.RESOURCE_REPORT_MODE) ?? "whisper-gm");
+  const mode = String(
+    getSetting(SETTING_KEYS.RESOURCE_REPORT_MODE) ?? "whisper-gm",
+  );
   if (mode === "public") return null;
   const users = globalThis.game?.users;
   if (!users) return [];
@@ -625,7 +672,10 @@ async function applyExhaustion(actor, delta) {
     if (next === current) return;
     await actor.update({ "system.attributes.exhaustion": next });
   } catch (error) {
-    console.error(`${MODULE_ID} | exhaustion update failed on ${actor?.name}`, error);
+    console.error(
+      `${MODULE_ID} | exhaustion update failed on ${actor?.name}`,
+      error,
+    );
   }
 }
 
@@ -633,13 +683,53 @@ async function applyExhaustion(actor, delta) {
  * Party discovery + small helpers
  * ------------------------------------------------------------------ */
 
-/** Player-owned character actors (the party). */
-export function discoverPartyActors() {
+/** Every player-owned character actor (the pool the roster is curated from). */
+export function discoverPlayerCharacters() {
   const actors = globalThis.game?.actors;
   if (typeof actors?.filter !== "function") return [];
   return actors.filter(
     (actor) => actor?.type === "character" && actor?.hasPlayerOwner === true,
   );
+}
+
+/**
+ * The tracked party as roster entries with their resolved draw source:
+ * `[{ actor, isStash, drawFromId }]`, where `drawFromId` is the actor id each
+ * member's per-character supplies are drawn from (its own id for "self"). When
+ * the GM hasn't curated a roster, auto-tracks every player-owned character (each
+ * drawing from self), so the feature degrades to the original behavior. Curated
+ * entries that no longer resolve to a player character are dropped, and a draw
+ * source that's gone (or no longer a stash) falls back to self.
+ */
+export function getPartyRoster(config = null) {
+  const all = discoverPlayerCharacters();
+  const byId = new Map(all.map((actor) => [actor.id, actor]));
+  const cfg = config ?? loadResourceConfig();
+  const roster = Array.isArray(cfg.roster) ? cfg.roster : [];
+  if (roster.length === 0) {
+    return all.map((actor) => ({
+      actor,
+      isStash: false,
+      drawFromId: actor.id,
+    }));
+  }
+  const resolved = roster
+    .map((entry) => ({ entry, actor: byId.get(entry.actorId) }))
+    .filter((r) => r.actor);
+  const presentStash = new Set(
+    resolved.filter((r) => r.entry.isStash).map((r) => r.actor.id),
+  );
+  return resolved.map(({ entry, actor }) => {
+    const wanted = resolveDrawSourceId(entry);
+    const drawFromId =
+      wanted !== actor.id && presentStash.has(wanted) ? wanted : actor.id;
+    return { actor, isStash: entry.isStash === true, drawFromId };
+  });
+}
+
+/** Tracked party actors (honors the curated roster). */
+export function discoverPartyActors() {
+  return getPartyRoster().map((r) => r.actor);
 }
 
 /** The online non-GM user who owns this actor (assigned char first), or null. */
@@ -649,7 +739,7 @@ function owningOnlineUserId(actor) {
   const online = users.filter((u) => u && !u.isGM && u.active);
   const assigned = online.find((u) => {
     const charId =
-      typeof u.character === "string" ? u.character : u.character?.id ?? null;
+      typeof u.character === "string" ? u.character : (u.character?.id ?? null);
     return charId === actor.id;
   });
   if (assigned) return assigned.id;
@@ -660,7 +750,9 @@ function owningOnlineUserId(actor) {
 function actorItemSnapshots(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
   const list = Array.isArray(items) ? items : Array.from(items ?? []);
-  return list.map((i) => (typeof i?.toObject === "function" ? i.toObject() : i));
+  return list.map((i) =>
+    typeof i?.toObject === "function" ? i.toObject() : i,
+  );
 }
 
 /** Evaluate a yield die formula ("1d6", "0", "2") to a number; 0 on failure. */

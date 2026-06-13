@@ -26,6 +26,9 @@ export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
 
 const FORAGE_MODES = Object.freeze(["each", "best"]);
 
+/** `drawFrom` sentinel: a member draws from their own sheet. */
+export const DRAW_FROM_SELF = "self";
+
 function toStr(value, fallback = "") {
   const s = String(value ?? "").trim();
   return s || fallback;
@@ -104,8 +107,11 @@ export function normalizeResource(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = toStr(raw.id);
   if (!id) return null;
-  const scope = RESOURCE_SCOPES.includes(raw.scope) ? raw.scope : "per-character";
-  const matching = raw.matching && typeof raw.matching === "object" ? raw.matching : {};
+  const scope = RESOURCE_SCOPES.includes(raw.scope)
+    ? raw.scope
+    : "per-character";
+  const matching =
+    raw.matching && typeof raw.matching === "object" ? raw.matching : {};
   const forageYields =
     raw.forageYields === "food" || raw.forageYields === "water"
       ? raw.forageYields
@@ -125,6 +131,67 @@ export function normalizeResource(raw) {
 }
 
 /**
+ * Normalize one roster entry — a tracked party character and where it draws its
+ * per-character supplies from. Drops entries with no actorId (returns null).
+ *   - actorId : the tracked character's id.
+ *   - isStash : the character's pack is a shared source other members can draw from.
+ *   - drawFrom: "self" (own sheet) or another roster member's actorId. Cross-entry
+ *               validity (must point at a real stash) is enforced in normalizeRoster.
+ */
+export function normalizeRosterEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const actorId = toStr(raw.actorId);
+  if (!actorId) return null;
+  return {
+    actorId,
+    isStash: raw.isStash === true,
+    drawFrom: toStr(raw.drawFrom) || DRAW_FROM_SELF,
+  };
+}
+
+/**
+ * Normalize the curated roster: dedupe by actorId, drop malformed entries, and
+ * resolve each `drawFrom` to a valid target. A stash is always its own source
+ * (so stashes are roots and no draw-from cycle is possible); a member may draw
+ * from any *other* stash, and falls back to "self" when its target isn't a real
+ * stash in the roster. An empty roster means "auto-track every player character"
+ * — the Foundry layer fills that in; this stays pure.
+ */
+export function normalizeRoster(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const entries = [];
+  for (const e of list) {
+    const n = normalizeRosterEntry(e);
+    if (!n || seen.has(n.actorId)) continue;
+    seen.add(n.actorId);
+    entries.push(n);
+  }
+  const stashIds = new Set(
+    entries.filter((e) => e.isStash).map((e) => e.actorId),
+  );
+  for (const e of entries) {
+    if (e.isStash) {
+      e.drawFrom = DRAW_FROM_SELF;
+    } else if (
+      e.drawFrom !== DRAW_FROM_SELF &&
+      (e.drawFrom === e.actorId || !stashIds.has(e.drawFrom))
+    ) {
+      e.drawFrom = DRAW_FROM_SELF;
+    }
+  }
+  return entries;
+}
+
+/** The source actor id a roster entry actually draws from ("self" → own id). */
+export function resolveDrawSourceId(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  return entry.drawFrom && entry.drawFrom !== DRAW_FROM_SELF
+    ? entry.drawFrom
+    : entry.actorId;
+}
+
+/**
  * Normalize the whole config. Idempotent; fills missing fields, drops malformed
  * resources, and guarantees a non-empty environment catalog + resource list.
  */
@@ -140,6 +207,7 @@ export function normalizeResourceConfig(input) {
     maxCatchUpDays: Math.max(1, toInt(raw.maxCatchUpDays, 7)),
     forageTimeoutSeconds: Math.max(0, toInt(raw.forageTimeoutSeconds, 120)),
     resources: resources.length > 0 ? resources : defaultResources(),
+    roster: normalizeRoster(raw.roster),
     environments: normalizeEnvironmentCatalog(raw.environments),
   };
 }
@@ -198,7 +266,9 @@ export async function saveRunState(state) {
 export async function setLastSeenDay(day) {
   const state = loadRunState();
   state.lastSeenDay =
-    day == null || !Number.isFinite(Number(day)) ? null : Math.floor(Number(day));
+    day == null || !Number.isFinite(Number(day))
+      ? null
+      : Math.floor(Number(day));
   return saveRunState(state);
 }
 
@@ -210,7 +280,6 @@ export async function setCurrentEnvironment(environmentId) {
 
 export async function setLastUpkeepResult(result) {
   const state = loadRunState();
-  state.lastUpkeepResult =
-    result && typeof result === "object" ? result : null;
+  state.lastUpkeepResult = result && typeof result === "object" ? result : null;
   return saveRunState(state);
 }
