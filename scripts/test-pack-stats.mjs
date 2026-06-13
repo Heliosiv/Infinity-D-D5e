@@ -168,4 +168,42 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
   assert.equal(tierStats.byLootType["loot.consumable"], 2);
 }
 
+/* variable gem/art — synthetic loot.gem / loot.art buckets count treasure
+   that ships tagged loot.loot, matching what selecting those chips returns */
+{
+  const gem = fakeItem({
+    _id: "gem",
+    name: "Star Sapphire",
+    type: "loot",
+    tier: "t2",
+    lootType: "loot.loot",
+    keywords: ["loot", "loot.loot", "loot.variable.gem", "treasure.gem"],
+  });
+  const art = fakeItem({
+    _id: "art",
+    name: "Court Tapestry",
+    type: "loot",
+    tier: "t2",
+    lootType: "loot.loot",
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.wall-art",
+    ],
+  });
+
+  const stats = computePackStats([gem, art]);
+  // Both also land in the trade-good count (loot.loot → loot.trade-good).
+  assert.equal(stats.byLootType["loot.trade-good"], 2);
+  assert.equal(stats.byLootType["loot.gem"], 1, "Gem chip count is non-zero");
+  assert.equal(stats.byLootType["loot.art"], 1, "Art chip count is non-zero");
+
+  const tierStats = computeTierFilteredStats([gem, art], ["t2"]);
+  assert.equal(tierStats.byLootType["loot.gem"], 1);
+  assert.equal(tierStats.byLootType["loot.art"], 1);
+  assert.equal(tierStats.byLootType["loot.trade-good"], 2);
+}
+
 process.stdout.write("pack-stats validation passed\n");

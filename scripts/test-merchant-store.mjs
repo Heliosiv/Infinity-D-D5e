@@ -684,6 +684,40 @@ import {
     false,
     "common longsword fails the rare filter",
   );
+
+  // A PACK-TAGGED mundane weapon (system.rarity "common" is dnd5e's magic
+  // marker, but the curated tag says mundane) must NOT gain the magic chip,
+  // so a magic-only buyer rejects it. Regression: the dnd5e fallback used to
+  // run unconditionally and add loot.weapon.magic on top of the tag.
+  const taggedMundaneSword = {
+    type: "weapon",
+    system: { type: { value: "martial" }, rarity: "common" },
+    flags: { "infinity-dnd5e": { lootType: "loot.weapon" } },
+  };
+  const cats = itemBuyCategories(taggedMundaneSword);
+  assert.ok(
+    cats.has("loot.weapon.mundane"),
+    "tagged mundane weapon stays mundane",
+  );
+  assert.ok(
+    !cats.has("loot.weapon.magic"),
+    "tagged mundane weapon does not also classify as magic",
+  );
+  assert.equal(
+    itemMatchesBuyFilter(
+      { lootTypes: ["loot.weapon.magic"] },
+      taggedMundaneSword,
+    ),
+    false,
+    "magic-only buyer refuses a tagged mundane weapon",
+  );
+  // An untagged sheet weapon with a real rarity still classifies as magic.
+  assert.ok(
+    itemBuyCategories({ type: "weapon", system: { rarity: "rare" } }).has(
+      "loot.weapon.magic",
+    ),
+    "untagged magic weapon still uses the dnd5e fallback",
+  );
 }
 
 /* ------------------------------------------------------------------ *

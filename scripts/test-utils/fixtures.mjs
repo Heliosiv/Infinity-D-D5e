@@ -28,6 +28,24 @@ export function fakeItem(overrides = {}) {
     lootType,
   ];
 
+  const flags = {
+    keywords,
+    lootType,
+    tier: `tier.${tier}`,
+    rarityNormalized: rarity,
+    valueBand: `value.${valueBand}`,
+    gpValue,
+    lootWeight,
+    maxRecommendedQty,
+    lootEligible: overrides.lootEligible ?? true,
+    tagSchema: "po-loot-v3",
+  };
+  // Only emit the variable-treasure flag when a test sets it, so the common
+  // fixture stays close to a plain rollable item.
+  if (overrides.variableTreasureKind !== undefined) {
+    flags.variableTreasureKind = overrides.variableTreasureKind;
+  }
+
   return {
     _id: id,
     name: overrides.name ?? `Item ${id}`,
@@ -38,18 +56,7 @@ export function fakeItem(overrides = {}) {
       price: { value: gpValue, denomination: "gp" },
     },
     flags: {
-      "party-operations": {
-        keywords,
-        lootType,
-        tier: `tier.${tier}`,
-        rarityNormalized: rarity,
-        valueBand: `value.${valueBand}`,
-        gpValue,
-        lootWeight,
-        maxRecommendedQty,
-        lootEligible: overrides.lootEligible ?? true,
-        tagSchema: "po-loot-v3",
-      },
+      "party-operations": flags,
     },
   };
 }

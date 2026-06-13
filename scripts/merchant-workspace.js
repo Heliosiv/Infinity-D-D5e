@@ -168,12 +168,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     const merchants = loadMerchants();
-    if (!this._selectedId && merchants.length > 0) {
-      this._selectedId = merchants[0].id;
-    }
-    const selected = this._selectedId
+    // Resolve the selection, re-anchoring to the first merchant when the stored
+    // id no longer exists (e.g. another GM client / external settings edit
+    // deleted the selected merchant, then an unrelated broadcast re-rendered
+    // this workspace). Without this, a dangling _selectedId stays truthy, so the
+    // auto-select guard never fires again and the editor is permanently blank.
+    let selected = this._selectedId
       ? (merchants.find((m) => m.id === this._selectedId) ?? null)
       : null;
+    if (!selected && merchants.length > 0) {
+      selected = merchants[0];
+      this._selectedId = selected.id;
+    } else if (!selected) {
+      this._selectedId = null;
+    }
 
     await this._refreshItemCache(merchants);
 

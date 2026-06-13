@@ -63,6 +63,10 @@ const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-session.hbs`;
 const FALLBACK_ART = "icons/svg/shop.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
+// How long a live bargain waits for the GM's seal before giving up and
+// re-enabling the row, so a never-returning seal (GM offline / session expired)
+// can't leave the bargain button disabled forever.
+const BARGAIN_SEAL_TIMEOUT_MS = 15000;
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
@@ -127,9 +131,19 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       instances.set(sessionId, app);
     } else {
       app._merchant = normalizeMerchant(merchant);
+      // Re-opening a GM preview re-runs the character chooser, so refresh the
+      // preview actor on the reused instance — otherwise it keeps simulating
+      // sell/bargain/passive-haggle against the originally chosen character.
+      // Live sessions re-render off socket STATE_UPDATE broadcasts; the preview
+      // sandbox has no socket, so force a re-render to reflect the new pick.
+      if (previewMode) {
+        app._previewActor = previewActor ?? app._previewActor;
+      }
     }
-    if (app.rendered) app.bringToFront();
-    else app.render(true);
+    if (app.rendered) {
+      app.bringToFront();
+      if (previewMode) app.render(false);
+    } else app.render(true);
     return app;
   }
 
@@ -160,6 +174,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._spentGp = 0; // running total spent this session
     this._earnedGp = 0; // running total earned this session
     this._bargainPending = new Set();
+    this._bargainTimers = new Map(); // sealKey → timeout id (seal-wait watchdog)
     this._closingFromExternal = false;
 
     this._title = `${this._previewMode ? "[Preview] " : ""}${this._merchant?.name ?? "Merchant"} — Shop`;
@@ -206,6 +221,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       } catch {}
     }
     this._unsubscribers = [];
+    // Drop any in-flight bargain watchdogs so they can't fire after close.
+    for (const timer of this._bargainTimers.values()) {
+      try {
+        globalThis.clearTimeout?.(timer);
+      } catch {}
+    }
+    this._bargainTimers.clear();
     instances.delete(this._sessionId);
     // Voluntary player close (not a sandbox preview, not a GM-pushed close):
     // tell the GM to drop the session record so its Active Sessions list stays
@@ -241,6 +263,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       dc: payload.dc,
     });
     this._bargainPending.delete(key);
+    const watchdog = this._bargainTimers.get(key);
+    if (watchdog != null) {
+      globalThis.clearTimeout?.(watchdog);
+      this._bargainTimers.delete(key);
+    }
     if (payload.deltaPct <= 0) {
       playModuleSound(SOUND_EVENTS.MERCHANT_BARGAIN_WIN);
     } else {
@@ -848,7 +875,21 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       skillId,
       rollTotal: outcome.rollTotal,
     });
-    // Seal will arrive on the bargain-seal event handler.
+    // Seal normally arrives on the bargain-seal event handler. Guard against it
+    // never coming back (GM reloaded the world, session expired, no active GM):
+    // re-enable the row after a timeout so the player isn't stuck. _onBargainSeal
+    // deletes the key first, so a seal that does arrive cancels this watchdog.
+    const watchdog = globalThis.setTimeout?.(() => {
+      this._bargainTimers.delete(sealKey);
+      if (this._bargainPending.delete(sealKey)) {
+        this._appendLog(
+          "fail",
+          "Bargain timed out — no response from the GM. Try again.",
+        );
+        if (this.rendered) this.render(false);
+      }
+    }, BARGAIN_SEAL_TIMEOUT_MS);
+    if (watchdog != null) this._bargainTimers.set(sealKey, watchdog);
   }
 
   /* -------------------- GM preview (sandbox) -------------------- *

@@ -337,6 +337,24 @@ export function getItemMagicNature(item) {
   return "neutral";
 }
 
+/**
+ * True only for genuine *mundane* treasure base items — the source compendium
+ * uses the `loot` item type for every sundries gem / art object / trade good.
+ *
+ * This is the gate that keeps the variable-treasure detectors honest. The pack
+ * over-applies the `variableTreasureKind` flag and the `treasure.gem` /
+ * `treasure.art` keywords: magic consumables ("Pearl of Power", "Gem of
+ * Seeing", lanterns, censers), magic equipment, and even a spell ("Spirit
+ * Guardians") inherit those treasure-adjacent tags from their flavor. Those
+ * items are NOT variable treasure — they must never be pulled onto the Gem /
+ * Art filter chips, nor renamed into appraised art objects by the loot roller.
+ * Gating on `type === "loot"` cleanly separates the two: every real gem/art
+ * base is `loot`, every false positive is `consumable` / `equipment` / `spell`.
+ */
+export function isVariableTreasureBase(item) {
+  return String(item?.type ?? "").trim() === "loot";
+}
+
 /** Is the item eligible to appear in a loot roll at all? */
 export function isLootEligible(item) {
   const eligible =

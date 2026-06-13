@@ -33,7 +33,7 @@ import {
 import { buildJournalEntry } from "./journal.js";
 import { loadCompendiumItems } from "./pack.js";
 import { computePackStats } from "./pack-stats.js";
-import { filterCandidates, rerollOne } from "./roller.js";
+import { filterCandidates, itemIdentity, rerollOne } from "./roller.js";
 import {
   getItemMaxQty,
   getItemRarity,
@@ -895,17 +895,21 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const items = await this._loadItems();
     const candidates = filterCandidates(items, this._rerollFilterSpec(old));
 
-    // Budget freed by this slot = the result budget minus everything else.
-    const allEntries = this._eachEntryList().flat();
-    const otherGp = allEntries
+    // Scope the freed budget and the dedup set to the SAME entry-list the slot
+    // lives in. For flat tools (Hoard / Per-Encounter) that list is the whole
+    // table, so this is unchanged; for Per-Creature it is just the owning
+    // creature's drops, so a goblin's reroll can't be charged against — or
+    // deduped against — another creature's loot.
+    const otherGp = list
       .filter((e) => e !== old)
       .reduce((sum, e) => sum + (e.gpTotal ?? 0), 0);
-    const budgetGp = Math.max(0, (this._lastResult?.budgetGp ?? 0) - otherGp);
-    // Exclude every item already on the table so we don't duplicate.
+    // Budget freed by this slot = the list's budget minus everything else in it.
+    const budgetGp = Math.max(0, this._rerollBudgetForList(list) - otherGp);
+    // Exclude the other items in this list so the swap doesn't duplicate them.
+    // Use the shared uuid-first identity so dedup still works after a history
+    // entry is restored (slimResult keeps uuid but drops _id/id).
     const excludeIds = new Set(
-      allEntries
-        .filter((e) => e !== old)
-        .map((e) => String(e.item?._id ?? e.item?.id ?? "")),
+      list.filter((e) => e !== old).map((e) => itemIdentity(e.item)),
     );
 
     const replacement = rerollOne(candidates, {
@@ -933,6 +937,17 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** Filter spec for a single-slot reroll; defaults to the form spec. */
   _rerollFilterSpec(_oldEntry) {
     return this._filterSpec();
+  }
+
+  /**
+   * The gp budget a single-slot reroll should fit within for the given
+   * entry-list. Flat tools store one budget on `_lastResult`; Per-Creature
+   * overrides this to return the owning creature's per-creature budget. A 0
+   * (or absent) budget leaves the reroll unbounded, matching the roll that
+   * produced the slot.
+   */
+  _rerollBudgetForList(_list) {
+    return this._lastResult?.budgetGp ?? 0;
   }
 
   /** Decorate a raw rolled entry for display + item controls. */

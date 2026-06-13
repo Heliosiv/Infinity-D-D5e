@@ -19,7 +19,8 @@ import {
   isBareSpellLootItem,
   isLootEligible,
 } from "./tag-vocabulary.js";
-import { getEffectiveRarity } from "./roller.js";
+import { getEffectiveRarity, isVariableGemItem } from "./roller.js";
+import { isVariableArtItem } from "./art-variants.js";
 
 /**
  * Build a stats snapshot for a candidate pool.
@@ -67,6 +68,16 @@ export function computePackStats(items) {
     if (isAmmunitionItem(item))
       stats.byLootType["loot.ammunition"] =
         (stats.byLootType["loot.ammunition"] ?? 0) + 1;
+    // Synthetic gem/art chips: variable treasure ships tagged loot.loot (→
+    // loot.trade-good), but selecting the Gem/Art chip resolves it via the
+    // variable-treasure detectors (see matchesLootTypes). Count it under those
+    // chips too so the count matches what selecting them returns — without this
+    // the Gem/Art chips read 0 while a roll yields dozens. (Like ammo, this is
+    // an additive overlap: the items also stay in the loot.trade-good count.)
+    if (isVariableGemItem(item))
+      stats.byLootType["loot.gem"] = (stats.byLootType["loot.gem"] ?? 0) + 1;
+    if (isVariableArtItem(item))
+      stats.byLootType["loot.art"] = (stats.byLootType["loot.art"] ?? 0) + 1;
 
     const nature = getItemMagicNature(item);
     stats.byMagicNature[nature] += 1;
@@ -130,6 +141,13 @@ export function computeTierFilteredStats(items, tiers = null) {
     if (lootType) byLootType[lootType] = (byLootType[lootType] ?? 0) + 1;
     if (isAmmunitionItem(item))
       byLootType["loot.ammunition"] = (byLootType["loot.ammunition"] ?? 0) + 1;
+    // Synthetic gem/art chips — mirror computePackStats so the tier-windowed
+    // chip counts match what selecting Gem/Art returns (variable treasure
+    // ships as loot.loot but resolves via the variable-treasure detectors).
+    if (isVariableGemItem(item))
+      byLootType["loot.gem"] = (byLootType["loot.gem"] ?? 0) + 1;
+    if (isVariableArtItem(item))
+      byLootType["loot.art"] = (byLootType["loot.art"] ?? 0) + 1;
   }
   return { byRarity, byLootType, total };
 }

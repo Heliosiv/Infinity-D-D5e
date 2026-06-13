@@ -146,6 +146,23 @@ const rarityRank = (r) => RARITY_ORDER.indexOf(r);
     breakdown.pp * 10 + breakdown.gp + breakdown.sp / 10 + breakdown.cp / 100;
   assert.ok(Math.abs(reconstructed - 1000) <= 1);
 
+  // Value conservation holds for NON-round totals too — the deposited coins
+  // (pp/gp/sp/cp) must add back up to the advertised pile, not lose up to
+  // ~10 gp to a platinum floor. splitCoinPile almost never yields a multiple
+  // of 100, so this is the common case in real hoards.
+  for (const total of [1, 5, 49, 95, 99, 250, 333, 1775, 12345, 99999]) {
+    const b = coinDenominationBreakdown(total);
+    const value = b.pp * 10 + b.gp + b.sp / 10 + b.cp / 100;
+    assert.ok(
+      Math.abs(value - total) <= 1,
+      `coin breakdown for ${total} gp conserves value (got ${value})`,
+    );
+    assert.ok(
+      b.pp >= 0 && b.gp >= 0 && b.sp >= 0 && b.cp >= 0,
+      `coin breakdown for ${total} gp has no negative columns`,
+    );
+  }
+
   // Guards
   assert.deepEqual(coinDenominationBreakdown(0), {
     pp: 0,

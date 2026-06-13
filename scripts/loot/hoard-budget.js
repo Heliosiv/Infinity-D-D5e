@@ -183,25 +183,41 @@ export function splitCoinPile(totalBudget, pileBias) {
 
 /**
  * Convert a gp value into a stylized D&D coin breakdown.
- * Ratios: 10% as pp (÷10), 50% as gp, 30% as sp (×10), 10% as cp (×100).
- * Total value preserved within ±1 gp (rounding noise).
+ * Ratios: ~10% as pp (÷10), ~50% as gp, ~30% as sp (×10), ~10% as cp (×100).
+ *
+ * Value is genuinely conserved: pp / sp / cp are floored to whole coins first,
+ * then gp absorbs whatever is left over, so `pp*10 + gp + sp/10 + cp/100`
+ * equals `total` within sub-gp rounding (≤1 gp). Previously gp was an
+ * independent `floor(total*0.5)` while pp could only land on whole 100-gp
+ * steps (`floor(total/100)*10` gp), which silently discarded up to ~10 gp of
+ * every non-round pile — coins the deposit path (hoard-loot → distribute) then
+ * never handed the players, even though the chat card advertised the full
+ * value. Round totals (e.g. 1000) are unaffected and still split identically.
  */
 export function coinDenominationBreakdown(gpValue) {
   const total = Math.max(0, Math.round(Number(gpValue) || 0));
   if (total <= 0) return { pp: 0, gp: 0, sp: 0, cp: 0 };
-  return {
-    pp: Math.floor((total * 0.1) / 10),
-    gp: Math.floor(total * 0.5),
-    sp: Math.floor(total * 0.3 * 10),
-    cp: Math.floor(total * 0.1 * 100),
-  };
+  const pp = Math.floor((total * 0.1) / 10);
+  const sp = Math.floor(total * 0.3 * 10);
+  const cp = Math.floor(total * 0.1 * 100);
+  // gp takes the residual so no whole gp is lost to the pp/sp/cp floors.
+  const gp = Math.max(0, Math.round(total - pp * 10 - sp / 10 - cp / 100));
+  return { pp, gp, sp, cp };
 }
 
-/** Render a coin breakdown to a single-line label, skipping zero columns. */
+/**
+ * Render a coin breakdown to a single-line label, skipping zero columns.
+ * Includes the electrum (ep) column in value order (pp > gp > ep > sp > cp):
+ * hoard/distribute breakdowns never carry ep, but this is also the only
+ * coin-formatter and merchant-session labels real actor wallets through it
+ * (sanitizeWallet populates ep), so omitting ep silently understated wallets
+ * holding electrum alongside another denomination.
+ */
 export function formatCoinBreakdown(breakdown) {
   const parts = [];
   if (breakdown?.pp > 0) parts.push(`${breakdown.pp.toLocaleString()} pp`);
   if (breakdown?.gp > 0) parts.push(`${breakdown.gp.toLocaleString()} gp`);
+  if (breakdown?.ep > 0) parts.push(`${breakdown.ep.toLocaleString()} ep`);
   if (breakdown?.sp > 0) parts.push(`${breakdown.sp.toLocaleString()} sp`);
   if (breakdown?.cp > 0) parts.push(`${breakdown.cp.toLocaleString()} cp`);
   return parts.join(" · ");

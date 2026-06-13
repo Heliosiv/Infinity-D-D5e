@@ -262,6 +262,114 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
+ * filterCandidates - magic items mis-tagged as treasure stay off the
+ *   Gem / Art chips (regression: the source over-applies treasure.gem /
+ *   treasure.art and variableTreasureKind to magic consumables).
+ * ------------------------------------------------------------------ */
+{
+  // A "Gem of Seeing"-shaped consumable: carries gem treasure tags + flag but
+  // is a magic consumable, not a sellable gemstone.
+  const fauxGem = fakeItem({
+    _id: "faux-gem",
+    name: "Gem of Seeing",
+    type: "consumable",
+    rarity: "",
+    valueBand: "v4",
+    lootType: "loot.consumable",
+    variableTreasureKind: "gem",
+    keywords: [
+      "loot",
+      "loot.consumable",
+      "loot.variable",
+      "loot.variable.gem",
+      "treasure.gem",
+      "merchant.gem",
+      "value.v4",
+    ],
+  });
+  // A "Lantern of Revealing"-shaped consumable mis-flagged as art treasure.
+  const fauxArt = fakeItem({
+    _id: "faux-art",
+    name: "Lantern of Revealing",
+    type: "consumable",
+    rarity: "",
+    valueBand: "v4",
+    lootType: "loot.consumable",
+    variableTreasureKind: "art",
+    keywords: [
+      "loot",
+      "loot.consumable",
+      "loot.variable",
+      "loot.variable.art",
+      "treasure.art",
+      "merchant.art",
+      "value.v4",
+    ],
+  });
+  // The genuine treasure bases (type "loot") that SHOULD match.
+  const realGem = fakeItem({
+    _id: "real-gem",
+    name: "Star Sapphire",
+    type: "loot",
+    lootType: "loot.loot",
+    keywords: ["loot", "loot.loot", "loot.variable.gem", "treasure.gem"],
+  });
+  const realArt = fakeItem({
+    _id: "real-art",
+    name: "Court Tapestry",
+    type: "loot",
+    lootType: "loot.loot",
+    keywords: [
+      "loot",
+      "loot.loot",
+      "loot.variable.art",
+      "treasure.art",
+      "folder.path.sundries.art-objects.wall-art",
+    ],
+  });
+  const pool = [fauxGem, fauxArt, realGem, realArt];
+
+  assert.deepEqual(
+    filterCandidates(pool, { lootTypes: ["loot.gem"] }).map((i) => i._id),
+    ["real-gem"],
+    "Gem chip excludes magic consumables mis-tagged as gem treasure",
+  );
+  assert.deepEqual(
+    filterCandidates(pool, { lootTypes: ["loot.art"] }).map((i) => i._id),
+    ["real-art"],
+    "Art chip excludes magic consumables mis-tagged as art treasure",
+  );
+
+  // The mis-tagged consumable floors to common (its real, unrarited self),
+  // NOT to the v4-band "rare" the variable-treasure path would have assigned.
+  assert.equal(
+    getEffectiveRarity(fauxGem),
+    "common",
+    "mis-tagged magic consumable is not rarity-promoted via its value band",
+  );
+
+  // Rolling the mis-tagged art consumable must NOT rename it into an appraised
+  // art piece — the displayName stays the item's own name and no variant is set.
+  const rolled = rollLoot([fauxArt], {
+    count: 1,
+    budgetGp: 0,
+    artVariants: true,
+    rng: () => 0,
+  });
+  assert.equal(rolled.items.length, 1);
+  assert.equal(
+    rolled.items[0].displayName,
+    "Lantern of Revealing",
+    "mis-tagged magic consumable keeps its name under artVariants",
+  );
+  assert.equal(
+    rolled.items[0].variant,
+    null,
+    "mis-tagged magic consumable produces no art variant",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * filterCandidates - variable treasure uses value band as roll rarity
  * ------------------------------------------------------------------ */
 {

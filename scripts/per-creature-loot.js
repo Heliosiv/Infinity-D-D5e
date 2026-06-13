@@ -180,6 +180,10 @@ export class PerCreatureLootApp extends BaseLootApp {
   async _prepareContext() {
     const stats = this._packStats ?? computePackStats([]);
     const candidates = this._countCandidates();
+    // Same live party size the roll (_rollForCreature) and the roster total
+    // (_rosterTotalBudget) use, so the per-row budget preview can't disagree
+    // with them for a party that isn't exactly 4 PCs.
+    const partySize = livePartySize() || 4;
     return {
       ...this._basePresetContext(),
       ...this._marketContext(),
@@ -198,11 +202,7 @@ export class PerCreatureLootApp extends BaseLootApp {
         name: c.name,
         tier: c.tier,
         budgetLabel: formatGp(
-          computeLootBudget({
-            tier: c.tier,
-            scale: "trivial",
-            partySize: livePartySize() || 4,
-          }),
+          computeLootBudget({ tier: c.tier, scale: "trivial", partySize }),
         ),
         tierOptions: TIERS.map((tier) => ({
           value: tier,
@@ -483,6 +483,35 @@ export class PerCreatureLootApp extends BaseLootApp {
     };
   }
 
+  /** The creature whose drops contain this rolled entry, or null. */
+  _creatureForEntry(entry) {
+    return (
+      (this._lastResult?.creatures ?? []).find((c) =>
+        (c.items ?? []).includes(entry),
+      ) ?? null
+    );
+  }
+
+  /**
+   * A single-slot reroll must stay inside the owning creature's tier window —
+   * the per-creature tier lives on each row, not on the shared form, so the
+   * base `_filterSpec()` (which omits `tiers`) would otherwise let the swap
+   * pull any-tier items. Mirror `_rollForCreature`'s tier window here.
+   */
+  _rerollFilterSpec(oldEntry) {
+    const spec = this._filterSpec();
+    const creature = this._creatureForEntry(oldEntry);
+    return creature ? { ...spec, tiers: tierWindow(creature.tier) } : spec;
+  }
+
+  /** Reroll budget = the owning creature's budget (not a global one). */
+  _rerollBudgetForList(list) {
+    const creature = (this._lastResult?.creatures ?? []).find(
+      (c) => (c.items ?? []) === list,
+    );
+    return creature?.budgetGp ?? 0;
+  }
+
   _rosterTotalBudget() {
     const partySize = livePartySize() || 4;
     return this._form.roster.reduce(
@@ -561,6 +590,9 @@ export class PerCreatureLootApp extends BaseLootApp {
       items: decoratedItems,
       totalGp: raw.totalGp,
       totalGpLabel: formatGp(raw.totalGp),
+      // Numeric budget kept alongside the label so a single-slot reroll can
+      // re-bound the replacement to this creature (see _rerollBudgetForList).
+      budgetGp: budget,
       budgetLabel: formatGp(budget),
       warnings: raw.warnings ?? [],
     };

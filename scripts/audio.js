@@ -51,11 +51,23 @@ export const SOUND_REGISTRY = Object.freeze({
   [SOUND_EVENTS.DEPOSIT]: sound("deposit.wav", 0.5, 350),
   [SOUND_EVENTS.CLEAR_RESET]: sound("clear-reset.wav", 0.34, 200),
   [SOUND_EVENTS.WARNING_MUTED]: sound("warning-muted.wav", 0.36, 350),
-  [SOUND_EVENTS.MERCHANT_SESSION_OPEN]: sound("merchant-session-open.wav", 0.4, 250),
+  [SOUND_EVENTS.MERCHANT_SESSION_OPEN]: sound(
+    "merchant-session-open.wav",
+    0.4,
+    250,
+  ),
   [SOUND_EVENTS.MERCHANT_PURCHASE]: sound("merchant-purchase.wav", 0.45, 300),
   [SOUND_EVENTS.MERCHANT_SALE]: sound("merchant-sale.wav", 0.45, 300),
-  [SOUND_EVENTS.MERCHANT_BARGAIN_WIN]: sound("merchant-bargain-win.wav", 0.45, 400),
-  [SOUND_EVENTS.MERCHANT_BARGAIN_FAIL]: sound("merchant-bargain-fail.wav", 0.45, 400),
+  [SOUND_EVENTS.MERCHANT_BARGAIN_WIN]: sound(
+    "merchant-bargain-win.wav",
+    0.45,
+    400,
+  ),
+  [SOUND_EVENTS.MERCHANT_BARGAIN_FAIL]: sound(
+    "merchant-bargain-fail.wav",
+    0.45,
+    400,
+  ),
 });
 
 const lastPlayedAt = new Map();
@@ -91,6 +103,7 @@ export function playModuleSound(eventKey, options = {}) {
   const previous = lastPlayedAt.get(cooldownKey) ?? 0;
   if (cooldownMs > 0 && now - previous < cooldownMs) return null;
   lastPlayedAt.set(cooldownKey, now);
+  pruneCooldownMap(now);
 
   const delayMs = Math.max(0, Number(options.delayMs ?? 0));
   const play = () => playFoundrySound(entry, options);
@@ -232,6 +245,21 @@ function soundCooldownKey(eventKey, options) {
   const phase = cleanSocketString(options.phase);
   if (!contextKey && !phase) return eventKey;
   return [eventKey, contextKey, phase].filter(Boolean).join(":");
+}
+
+/**
+ * Bound the cooldown map. Automation sounds key on contextKey (actor/item/
+ * message — see compat/sound-automation.js), so without eviction `lastPlayedAt`
+ * would grow for the life of a session. Every cooldown is sub-second, so any
+ * entry older than the threshold can never block a future play and is safe to
+ * drop. Mirrors the prune in rememberAutomationSound.
+ */
+function pruneCooldownMap(now) {
+  if (lastPlayedAt.size <= 300) return;
+  for (const [key, timestamp] of lastPlayedAt) {
+    if (now - timestamp > 30_000) lastPlayedAt.delete(key);
+    if (lastPlayedAt.size <= 240) break;
+  }
 }
 
 function sanitizeSocketSoundOptions(options) {

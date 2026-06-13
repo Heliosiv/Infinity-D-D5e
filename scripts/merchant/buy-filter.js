@@ -68,14 +68,24 @@ export function itemBuyCategories(item) {
     .toLowerCase();
   const isMagic = rarity !== "" && rarity !== "common";
 
+  // The magic/mundane fallback is ONLY for untagged sheet items. When the
+  // curated pack has already committed an item to a weapon/armor/equipment
+  // family, trust that tag and skip the fallback's magic/mundane guess —
+  // otherwise a pack-tagged mundane longsword (which carries
+  // system.rarity:"common", read as "magic" by `isMagic`) would also gain the
+  // .magic chip, letting a magic-only buy filter purchase plain gear.
+  const taggedFamily = tagged.replace(/\.(magic|mundane)$/, "");
+
   switch (type) {
     case "weapon":
-      out.add(isMagic ? "loot.weapon.magic" : "loot.weapon.mundane");
+      if (taggedFamily !== "loot.weapon")
+        out.add(isMagic ? "loot.weapon.magic" : "loot.weapon.mundane");
       break;
     case "equipment":
       if (ARMOR_SUBTYPES.has(subtype)) {
-        out.add(isMagic ? "loot.armor.magic" : "loot.armor.mundane");
-      } else {
+        if (taggedFamily !== "loot.armor")
+          out.add(isMagic ? "loot.armor.magic" : "loot.armor.mundane");
+      } else if (taggedFamily !== "loot.equipment") {
         out.add(isMagic ? "loot.equipment.magic" : "loot.equipment");
       }
       break;

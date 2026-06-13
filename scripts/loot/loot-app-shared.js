@@ -41,7 +41,13 @@ export function mintEntryId() {
 export function decorateEntry(entry, { imageSrc, rarity, isAmmo } = {}) {
   const quantity = Math.max(1, Math.floor(Number(entry.quantity) || 1));
   const gpTotal = Number(entry.gpTotal ?? 0);
-  const entryId = entry.entryId ?? entry.variant?.id ?? mintEntryId();
+  // Always mint a unique tracking id. `variant.id` is NOT unique — it is a
+  // deterministic condition/provenance/detail/market signature, so two units
+  // of the same art base (maxRecommendedQty up to 12, artVariants on) can share
+  // it and collide, making per-item lock/qty/reroll/delete target the wrong
+  // tile. The variant's own identity is preserved separately as
+  // flags["infinity-dnd5e"].generatedTreasure.variantId.
+  const entryId = entry.entryId ?? mintEntryId();
   return {
     ...entry,
     entryId,

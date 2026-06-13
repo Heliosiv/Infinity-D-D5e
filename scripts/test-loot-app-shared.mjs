@@ -22,6 +22,7 @@ import {
   tierLabel,
   toDistributableEntry,
 } from "./loot/loot-app-shared.js";
+import { tierWindow } from "./loot/tag-vocabulary.js";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers
@@ -247,6 +248,56 @@ for (const [name, Cls] of [
   assert.ok(
     context && context.form,
     `${name}._prepareContext() returns context`,
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Per-Creature single-slot reroll stays inside the owning creature's
+ * tier window and budget. Regression: the shared handler read a global
+ * `_lastResult.budgetGp` (never set by Per-Creature → unbounded value)
+ * and a tier-less `_filterSpec()` (→ any-tier swaps).
+ * ------------------------------------------------------------------ */
+{
+  const app = new PerCreatureLootApp();
+  const t1Entry = { entryId: "e1", item: { _id: "i1" }, gpTotal: 5 };
+  const t4Entry = { entryId: "e2", item: { _id: "i2" }, gpTotal: 9000 };
+  const t1List = [t1Entry];
+  const t4List = [t4Entry];
+  app._lastResult = {
+    creatures: [
+      { id: "c1", tier: "t1", items: t1List, budgetGp: 120 },
+      { id: "c2", tier: "t4", items: t4List, budgetGp: 18000 },
+    ],
+  };
+
+  // A reroll's candidate filter carries the OWNING creature's tier window.
+  assert.deepEqual(
+    app._rerollFilterSpec(t1Entry).tiers,
+    tierWindow("t1"),
+    "per-creature reroll filter uses the owning creature's tier window",
+  );
+  assert.deepEqual(app._rerollFilterSpec(t4Entry).tiers, tierWindow("t4"));
+
+  // A reroll's budget = the owning creature's budget (resolved by list identity).
+  assert.equal(app._rerollBudgetForList(t1List), 120);
+  assert.equal(app._rerollBudgetForList(t4List), 18000);
+
+  // Unknown entry / unowned list degrade safely: no tier window, zero budget.
+  assert.equal(app._rerollFilterSpec({ entryId: "x" }).tiers, undefined);
+  assert.equal(app._rerollBudgetForList([]), 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * Flat tools (Hoard / Per-Encounter) keep the original base behavior:
+ * the single global `_lastResult.budgetGp` bounds the reroll.
+ * ------------------------------------------------------------------ */
+{
+  const hoard = new HoardLootApp();
+  hoard._lastResult = { items: [], budgetGp: 777 };
+  assert.equal(
+    hoard._rerollBudgetForList(hoard._lastResult.items),
+    777,
+    "flat tool reroll budget reads _lastResult.budgetGp",
   );
 }
 

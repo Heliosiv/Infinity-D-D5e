@@ -33,6 +33,7 @@ import {
   isAmmunitionItem,
   isBareSpellLootItem,
   isLootEligible,
+  isVariableTreasureBase,
   normalizeRarity,
 } from "./tag-vocabulary.js";
 import {
@@ -349,7 +350,7 @@ export function rerollOne(candidates, opts = {}) {
       ? opts.excludeIds
       : new Set(opts.excludeIds ?? []);
   const pool = (Array.isArray(candidates) ? candidates : []).filter(
-    (item) => !exclude.has(String(item?._id ?? item?.id ?? "")),
+    (item) => !exclude.has(itemIdentity(item)),
   );
   if (pool.length === 0) return null;
   const budgetGp = Number(opts.budgetGp ?? 0);
@@ -368,6 +369,17 @@ function clampFraction(raw, fallback) {
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.max(0.01, value);
+}
+
+/**
+ * Stable identity for an item used by reroll de-duplication. Prefers `uuid`
+ * because history storage (`slimResult`) drops `_id`/`id` down to `{uuid, name,
+ * img}` — keying on `_id` alone collapses every history-restored entry to "",
+ * silently disabling dedup so a reroll could re-draw an item already on the
+ * table. Falls back to `_id`/`id` for raw fixtures / items without a uuid.
+ */
+export function itemIdentity(item) {
+  return String(item?.uuid ?? item?._id ?? item?.id ?? "");
 }
 
 /* ------------------------------------------------------------------ *
@@ -432,7 +444,14 @@ function matchesRarities(item, rarities) {
   return rarities.has(getEffectiveRarity(item));
 }
 
-function isVariableGemItem(item) {
+export function isVariableGemItem(item) {
+  // Gate on a real mundane-treasure base first: magic items such as "Pearl of
+  // Power" and "Gem of Seeing" carry `treasure.gem` / `variableTreasureKind:
+  // gem` tags copied from their flavor, but they are consumables — not gems —
+  // and must not surface on the Gem chip. (isVariableArtItem applies the same
+  // gate; see tag-vocabulary.isVariableTreasureBase.)
+  if (!isVariableTreasureBase(item)) return false;
+
   const kind = getVariableTreasureKind(item);
   if (kind === "gem") return true;
   if (kind && kind !== "gem") return false;

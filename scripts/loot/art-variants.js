@@ -7,7 +7,11 @@
  * base market gp value.
  */
 
-import { getItemGpValue, getItemKeywords } from "./tag-vocabulary.js";
+import {
+  getItemGpValue,
+  getItemKeywords,
+  isVariableTreasureBase,
+} from "./tag-vocabulary.js";
 
 const ART_CONDITIONS = Object.freeze([
   {
@@ -193,9 +197,14 @@ const ART_DETAILS_BY_CATEGORY = Object.freeze({
  * Does this item represent a variable art-object base.
  *
  * Spell scrolls and magic consumables sometimes carry treasure-adjacent
- * tags, so we only promote actual loot/art-object entries.
+ * tags (and an over-broad `variableTreasureKind` flag), so we first gate on
+ * the item being a genuine mundane-treasure base — see isVariableTreasureBase.
+ * Without that gate, a "Lantern of Revealing" flagged `variableTreasureKind:
+ * art` would short-circuit to true and get renamed into an appraised art piece.
  */
 export function isVariableArtItem(item) {
+  if (!isVariableTreasureBase(item)) return false;
+
   const kind = getVariableTreasureKind(item);
   if (kind === "art") return true;
   if (kind && kind !== "art") return false;

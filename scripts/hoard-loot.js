@@ -272,7 +272,15 @@ export class HoardLootApp extends BaseLootApp {
         selected: this._form.lootTypes.includes(lootType),
       })),
 
-      hasResult: Boolean(this._lastResult && this._lastResult.items?.length),
+      // A hoard can roll a coins-only result (e.g. a Min-gp filter that empties
+      // the item pool) — the coin pile is still real, depositable value, so the
+      // result panel (coin article + Deposit/Send/Split actions) must render
+      // even with zero items. The item list itself stays guarded by
+      // `{{#if result.items.length}}` in the template.
+      hasResult: Boolean(
+        this._lastResult &&
+        (this._lastResult.items?.length || this._lastResult.coinPileGp),
+      ),
       hasCoinPile: Boolean(this._lastResult?.coinPileGp),
       result: resultContext(this._lastResult),
     };
