@@ -118,6 +118,17 @@ export function playSoundEvent(eventKey, options = {}) {
   const entry = SOUND_REGISTRY[eventKey];
   if (!entry) return null;
 
+  // Automation cues (combat / activity / MIDI / animation) are opt-in. When
+  // disabled, don't play locally AND don't broadcast — so a table running its
+  // own combat audio and animation soundtracks gets zero interference and zero
+  // socket noise, rather than just muting the local copy after the fact.
+  if (
+    options.automation === true &&
+    getSetting(SETTING_KEYS.AUTOMATION_SOUNDS_ENABLED) === false
+  ) {
+    return null;
+  }
+
   const audience = options.audience ?? SOUND_AUDIENCE_LOCAL;
   const playbackOptions = {
     ...options,

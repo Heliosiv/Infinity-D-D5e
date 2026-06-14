@@ -188,12 +188,12 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.AUTOMATION_SOUNDS_ENABLED,
-    name: "Automation Sounds",
-    hint: "Play Infinity D&D5e sounds triggered by D&D5e activities, MIDI-QOL workflows, and animation-adjacent actions.",
+    name: "Combat & Activity Sounds (opt-in)",
+    hint: "Also play module cues on D&D5e activities, MIDI-QOL workflows, and animation-adjacent actions. OFF by default so it never layers on top of your own combat audio or animation soundtracks — enable it only if you want the extra cues. (The module's own tool/merchant/dashboard sounds are controlled by 'Module Sounds' above.)",
     scope: "client",
     config: true,
     type: Boolean,
-    default: true,
+    default: false,
   },
   {
     key: SETTING_KEYS.SOUND_VOLUME,
