@@ -173,6 +173,9 @@ export function planForageDriveDeposits({
       name: entry.name,
       attempted: true,
       success,
+      // "best" mode: a successful forager whose haul lost to a bigger one — they
+      // gathered but contribute nothing, so the report shouldn't trumpet "+0".
+      suppressed: success && y.suppressed === true,
       food,
       water,
     });

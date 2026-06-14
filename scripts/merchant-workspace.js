@@ -1088,8 +1088,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 function listActivePlayerUsers() {
   const users = globalThis.game?.users;
   if (!users) return [];
+  // Exclude only FULL Game Masters (role 4), not every isGM user: an Assistant
+  // GM (role 3) is a common co-DM/helper who plays a PC, and the session push
+  // layer already supports them — so they must be tickable on a merchant's
+  // allow-list (the old `!u.isGM` dropped them, leaving that path dead).
+  const GM_ROLE = globalThis.CONST?.USER_ROLES?.GAMEMASTER ?? 4;
   return users
-    .filter((u) => !u.isGM)
+    .filter((u) => Number(u.role) < GM_ROLE)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 

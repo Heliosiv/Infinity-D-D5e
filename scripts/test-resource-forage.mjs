@@ -242,6 +242,25 @@ const TOWN = {
     assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 0 }]);
   }
 
+  /* "best" mode: a suppressed (losing) forager is flagged so the report can show
+     them neutrally rather than as a green "+0" success, and contributes nothing. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged: [
+        { actorId: "A", food: 6, water: 4, success: true },
+        { actorId: "B", food: 0, water: 0, success: true, suppressed: true },
+      ],
+      partyStashId: "S",
+    });
+    const byId = Object.fromEntries(plan.perForager.map((f) => [f.actorId, f]));
+    assert.equal(byId.B.suppressed, true, "losing forager flagged suppressed");
+    assert.equal(byId.A.suppressed, false, "winner is not suppressed");
+    assert.equal(plan.totalFood, 6, "only the winner's haul counts");
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 4 }]);
+  }
+
   /* A selection not in the roster is ignored (no phantom deposit). */
   {
     const plan = planForageDriveDeposits({

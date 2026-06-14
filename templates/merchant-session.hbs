@@ -38,6 +38,9 @@
 
   {{#if buyActive}}
   <section class="ms-rows" id="ms-panel-buy" role="tabpanel" aria-labelledby="ms-tab-buy" aria-label="Goods for sale">
+    {{#unless previewMode}}{{#if noActor}}
+    <p class="mw-empty">No character selected — ask your GM to assign you one before buying. (Prices shown below.)</p>
+    {{/if}}{{/unless}}
     {{#if buyRows.length}}
       {{#each buyRows}}
       <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if outOfStock}}is-out{{/if}} {{#if missing}}is-missing{{/if}}" data-uuid="{{uuid}}" title="Double-click to open sheet">

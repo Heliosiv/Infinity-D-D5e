@@ -39,6 +39,16 @@
       <i class="fa-solid fa-clock" aria-hidden="true"></i>
       Foraging wrapped up — check the chat log for the day's results.
     </p>
+    {{else if result.noResponse}}
+    <p class="fp-result fp-result--fail">
+      <i class="fa-solid fa-clock" aria-hidden="true"></i>
+      Foraging wrapped up before you decided — check the chat log for the day's results.
+    </p>
+    {{else if result.suppressed}}
+    <p class="fp-result">
+      <i class="fa-solid fa-people-group" aria-hidden="true"></i>
+      You gathered today, but another forager brought in the best haul for the party.
+    </p>
     {{else if result.success}}
     <p class="fp-result fp-result--win">
       <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>

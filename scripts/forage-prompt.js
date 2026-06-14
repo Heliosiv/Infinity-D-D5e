@@ -29,8 +29,17 @@ const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
-/** Map<runId, ForagePromptApp> */
+/** Map<"runId::actorId", ForagePromptApp> — one window per GM-targeted actor.
+ *  The GM emits a DAY_PROMPT per tracked actor (a player who owns several gets
+ *  several), all sharing a runId, so keying by runId alone would collapse them
+ *  into one window and strand the other actors' results. */
 const instances = new Map();
+
+/** Composite window key. Falls back to the bare runId when no actor is named. */
+function instanceKey(runId, actorId) {
+  const a = String(actorId ?? "").trim();
+  return a ? `${runId}::${a}` : String(runId);
+}
 
 export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
@@ -54,19 +63,21 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     body: { template: TEMPLATE_PATH },
   };
 
-  /** Open (or focus) the window for a forage run. */
-  static open({ runId, environment, actorName, day } = {}) {
+  /** Open (or focus) the window for a forage run + a specific tracked actor. */
+  static open({ runId, environment, actorName, day, actorId } = {}) {
     if (!runId) return null;
-    let app = instances.get(runId);
+    const key = instanceKey(runId, actorId);
+    let app = instances.get(key);
     if (!app) {
       app = new ForagePromptApp({
-        id: `infinity-dnd5e-forage-prompt-${runId}`,
+        id: `infinity-dnd5e-forage-prompt-${String(key).replace(/[^a-z0-9_-]/gi, "-")}`,
         runId,
         environment,
         actorName,
         day,
+        actorId,
       });
-      instances.set(runId, app);
+      instances.set(key, app);
     } else {
       app._environment = environment ?? app._environment;
     }
@@ -75,20 +86,37 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return app;
   }
 
-  /** Route a GM FORAGE_ACK to the matching window. */
+  /** Route a GM FORAGE_ACK to the matching window (by run + actor). */
   static handleAck(payload) {
-    const app = instances.get(payload?.runId);
+    const app =
+      instances.get(instanceKey(payload?.runId, payload?.actorId)) ??
+      instances.get(String(payload?.runId));
     if (app) app._onAck(payload);
   }
 
   constructor(options = {}) {
     super(options);
     this._runId = options.runId;
+    this._actorId = options.actorId ?? null; // the GM-targeted tracked actor
+    this._instanceKey = instanceKey(options.runId, options.actorId);
     this._environment = options.environment ?? null;
     this._actorName = options.actorName ?? null;
     this._day = options.day ?? null;
     this._state = "prompt"; // prompt | waiting | done
     this._result = null;
+  }
+
+  /** The actor this prompt forages as: the GM-targeted one if this user owns
+   *  it, else the user's assigned/owned character (legacy single-actor path). */
+  _resolveActor() {
+    const byId = this._actorId
+      ? globalThis.game?.actors?.get?.(this._actorId)
+      : null;
+    const user = globalThis.game?.user;
+    if (byId && (!user || byId.testUserPermission?.(user, "OWNER") !== false)) {
+      return byId;
+    }
+    return resolvePlayerActor();
   }
 
   get title() {
@@ -100,7 +128,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _onClose(options) {
     super._onClose?.(options);
     this._clearWaitTimer();
-    instances.delete(this._runId);
+    instances.delete(this._instanceKey);
   }
 
   _clearWaitTimer() {
@@ -111,7 +139,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
-    const actor = resolvePlayerActor();
+    const actor = this._resolveActor();
     const env = this._environment ?? {};
     const passive = getSurvivalPassive(actor);
     const wisMod = actor ? getWisMod(actor) : 0;
@@ -146,11 +174,17 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onAck(payload) {
     this._clearWaitTimer();
+    // The GM resolved the run without our input (timeout) while we were still
+    // deciding — show a neutral "wrapped up" note, not "came up empty-handed".
+    const noResponse = payload?.noResponse === true && this._state === "prompt";
     this._state = "done";
     this._result = {
       success: payload?.success === true,
       food: Number(payload?.food) || 0,
       water: Number(payload?.water) || 0,
+      noResponse,
+      // "best" mode: this forager gathered but a bigger haul was kept for the party.
+      suppressed: payload?.suppressed === true,
     };
     playModuleSound(
       this._result.success ? SOUND_EVENTS.DEPOSIT : SOUND_EVENTS.WARNING_MUTED,
@@ -162,7 +196,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {ForagePromptApp} */
   static async _onRoll(_event, _target) {
-    const actor = resolvePlayerActor();
+    const actor = this._resolveActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(
@@ -178,7 +212,9 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
       runId: this._runId,
-      actorId: actor.id,
+      // Report the GM-targeted actor id so the right run entry resolves, even
+      // when this user's assigned character differs from the tracked actor.
+      actorId: this._actorId ?? actor.id,
       rollTotal: rolled.total,
       wisMod: getWisMod(actor),
       skipped: false,
@@ -198,10 +234,12 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {ForagePromptApp} */
   static _onSkip(_event, _target) {
-    const actor = resolvePlayerActor();
+    const actor = this._resolveActor();
     emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
       runId: this._runId,
-      actorId: actor?.id ?? null,
+      // Prefer the GM-targeted id so a skip always resolves the right run entry
+      // (a null id would be dropped and stall the GM's window on the timeout).
+      actorId: this._actorId ?? actor?.id ?? null,
       rollTotal: 0,
       wisMod: 0,
       skipped: true,
@@ -231,7 +269,9 @@ export function registerForagePromptAutoOpen() {
 
   subscribe(RESOURCE_EVENTS.DAY_PROMPT, (payload) => {
     if (!payload) return;
-    if (globalThis.game?.user?.isGM) return;
+    // Target by user id, NOT by isGM: an Assistant-GM (role 3) who owns a tracked
+    // character should still be prompted to forage. The active GM that drives the
+    // run never targets itself, so this won't pop on the driving GM's screen.
     if (payload.targetUserId !== globalThis.game?.user?.id) return;
     if (payload.environment?.forageable === false) return;
     ForagePromptApp.open({
@@ -239,12 +279,16 @@ export function registerForagePromptAutoOpen() {
       environment: payload.environment,
       actorName: payload.actorName,
       day: payload.day,
+      actorId: payload.actorId,
     });
   });
 
   subscribe(RESOURCE_EVENTS.FORAGE_ACK, (payload) => {
     if (!payload) return;
-    if (payload.targetUserId && payload.targetUserId !== globalThis.game?.user?.id) {
+    if (
+      payload.targetUserId &&
+      payload.targetUserId !== globalThis.game?.user?.id
+    ) {
       return;
     }
     ForagePromptApp.handleAck(payload);

@@ -30,6 +30,7 @@ import {
   combineYields,
   planForageDriveDeposits,
 } from "./forage.js";
+import { getWisMod } from "./roll.js";
 import {
   matchResourceItems,
   planConsumption,
@@ -314,6 +315,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
       food: y.food,
       water: y.water,
       success: y.success,
+      suppressed: y.suppressed,
     })),
     partyStashId: cfg.partyStashId,
     waterEnabled: cfg.waterEnabled && Boolean(waterRes),
@@ -363,6 +365,9 @@ async function postForageDriveReport({
       const name = `<strong>${escapeText(f.name)}</strong>`;
       if (!f.attempted) {
         return `<li>${name} — <span style="opacity:0.7;">no online owner to roll</span></li>`;
+      }
+      if (f.suppressed) {
+        return `<li>${name} — <span style="opacity:0.7;">gathered, but the best haul was kept</span></li>`;
       }
       if (!f.success) {
         return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
@@ -514,12 +519,26 @@ async function runForagingWindow({ env, party, cfg }) {
 
   const runId = generateRunId();
   const expected = new Set(targets.map((t) => t.actor.id));
+  // userId -> [expected actorIds], so a result with a missing/mismatched actor
+  // id (e.g. a skip after the forager lost their assigned char) can still be
+  // attributed when the user has exactly one outstanding actor.
+  const expectedByUser = new Map();
+  for (const t of targets) {
+    const list = expectedByUser.get(t.userId) ?? [];
+    list.push(t.actor.id);
+    expectedByUser.set(t.userId, list);
+  }
   const results = new Map();
   let resolveFn = () => {};
   const done = new Promise((res) => {
     resolveFn = res;
   });
-  pendingRuns.set(runId, { expected, results, resolve: resolveFn });
+  pendingRuns.set(runId, {
+    expected,
+    results,
+    resolve: resolveFn,
+    expectedByUser,
+  });
 
   const state = loadRunState();
   for (const t of targets) {
@@ -575,6 +594,10 @@ async function runForagingWindow({ env, party, cfg }) {
       food: entry.food ?? 0,
       water: entry.water ?? 0,
       success: Boolean(entry.success),
+      // "best" mode zeroes the losing foragers but keeps success=true; carry the
+      // suppressed marker so the report can say "gathered, best haul kept" rather
+      // than greet a loser with a green "+0 food / +0 water".
+      suppressed: Boolean(entry.suppressed),
     });
     const userId = targets.find((t) => t.actor.id === entry.actorId)?.userId;
     if (userId) {
@@ -584,6 +607,9 @@ async function runForagingWindow({ env, party, cfg }) {
         food: entry.food ?? 0,
         water: entry.water ?? 0,
         success: Boolean(entry.success),
+        // The forager never answered (GM timed the run out) vs actively skipped —
+        // lets their prompt say "wrapped up before you decided", not "empty-handed".
+        noResponse: !results.has(entry.actorId),
         targetUserId: userId,
       });
     }
@@ -593,16 +619,29 @@ async function runForagingWindow({ env, party, cfg }) {
 
 /** GM-side: record a player's Survival total; resolve the window when complete. */
 async function handleForageResult(payload) {
-  const { runId, actorId } = payload ?? {};
+  const { runId } = payload ?? {};
   const run = pendingRuns.get(runId);
-  if (!run || !run.expected.has(actorId)) return;
+  if (!run) return;
+  let actorId = payload?.actorId;
+  // Tolerate a missing/mismatched actor id (a skip after the forager lost their
+  // assigned character, or an older client): if this user has exactly one actor
+  // still outstanding, attribute the result to it rather than dropping it (which
+  // would stall the whole run on the timeout).
+  if (!actorId || !run.expected.has(actorId)) {
+    const mine = run.expectedByUser?.get(payload?.originUserId) ?? [];
+    const pending = mine.filter((id) => !run.results.has(id));
+    if (pending.length === 1) actorId = pending[0];
+    else return;
+  }
   const actor = globalThis.game?.actors?.get?.(actorId);
   const user = globalThis.game?.users?.get?.(payload.originUserId);
   // Trust the report only when the claiming user actually owns that character.
   if (!actor || !user || !actor.testUserPermission?.(user, "OWNER")) return;
   run.results.set(actorId, {
     rollTotal: Number(payload.rollTotal) || 0,
-    wisMod: Number(payload.wisMod) || 0,
+    // Recompute the Wisdom modifier from the GM-owned actor — never trust the
+    // client's self-reported wisMod (it feeds the yield + success margin).
+    wisMod: getWisMod(actor),
     skipped: payload.skipped === true,
   });
   if (run.results.size >= run.expected.size) run.resolve();
@@ -1009,11 +1048,14 @@ export function discoverPartyActors() {
   return getPartyRoster().map((r) => r.actor);
 }
 
-/** The online non-GM user who owns this actor (assigned char first), or null. */
+/** The online user who owns this actor (assigned char first), or null. Includes
+ *  Assistant-GMs (role 3) who play a PC — only the local driving GM is excluded,
+ *  so we never pop a forage prompt on the GM running the upkeep. */
 function owningOnlineUserId(actor) {
   const users = globalThis.game?.users;
   if (!users?.filter) return null;
-  const online = users.filter((u) => u && !u.isGM && u.active);
+  const localId = globalThis.game?.user?.id ?? null;
+  const online = users.filter((u) => u && u.active && u.id !== localId);
   const assigned = online.find((u) => {
     const charId =
       typeof u.character === "string" ? u.character : (u.character?.id ?? null);

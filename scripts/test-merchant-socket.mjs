@@ -217,6 +217,101 @@ try {
     );
     clearAllSessions();
   }
+  /* COMMIT ack: a buy/sell whose session is gone (e.g. the GM reloaded the world
+     and the in-memory session map was wiped) must tell the buyer via COMMIT_RESULT
+     ok:false — not silently swallow it, leaving the actor changed but the shop not. */
+  {
+    clearAllSessions();
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      socket: { emit() {}, on() {} },
+    };
+    for (const type of [
+      MERCHANT_EVENTS.COMMIT_PURCHASE,
+      MERCHANT_EVENTS.COMMIT_SALE,
+    ]) {
+      const seen = [];
+      const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => seen.push(p));
+      await receiveMerchantPayload({
+        type,
+        originUserId: "player1",
+        sessionId: "ghost-session",
+        commitId: "cx1",
+        itemUuid: "Compendium.x.Item.y",
+        qty: 1,
+        totalGp: 5,
+      });
+      off();
+      assert.equal(seen.length, 1, `${type}: a no-session commit is acked`);
+      assert.equal(seen[0].ok, false, "ack reports failure");
+      assert.equal(seen[0].reason, "no-session");
+      assert.equal(seen[0].targetUserId, "player1", "acked to the buyer");
+      assert.equal(seen[0].commitId, "cx1", "correlates by commitId");
+    }
+    globalThis.game = savedInner;
+  }
+
+  /* COMMIT_SALE recompute: the GM ignores the client's claimed totalGp and
+     re-derives the payout from the item snapshot, then spends merchant gold by
+     the SERVER figure — so a buggy/forged client can't set the coffer wrong. */
+  {
+    clearAllSessions();
+    const rec = openSession({ merchantId: "m-sell", viewerUserId: "player1" });
+    let savedList = [
+      {
+        id: "m-sell",
+        name: "Pawn",
+        sellRatio: 0.5,
+        goldOnHand: 1000,
+        allowedUserIds: ["player1"],
+        items: [],
+      },
+    ];
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      settings: {
+        get: () => savedList,
+        set: (_m, _k, v) => {
+          savedList = v;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.COMMIT_SALE,
+      originUserId: "player1",
+      sessionId: rec.sessionId,
+      commitId: "cs1",
+      itemUuid: "owned-item-id",
+      qty: 1,
+      totalGp: 9999, // forged/wrong — must be ignored
+      itemSnapshot: {
+        name: "Longsword",
+        type: "weapon",
+        system: { price: { value: 100, denomination: "gp" } },
+      },
+    });
+    off();
+    const merchant = savedList.find((m) => m.id === "m-sell");
+    // base 100 gp × sellRatio 0.5 = 50 server payout → 1000 − 50 = 950 (NOT 0).
+    assert.equal(
+      merchant.goldOnHand,
+      950,
+      "merchant gold spent by the SERVER-recomputed payout, not the client's 9999",
+    );
+    assert.ok(
+      acks.some((a) => a.commitId === "cs1" && a.ok === true),
+      "a successful sale is acked ok:true",
+    );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
 } finally {
   if (savedGame === undefined) delete globalThis.game;
   else globalThis.game = savedGame;

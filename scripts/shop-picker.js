@@ -92,12 +92,14 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       }),
     ];
-    // Self-heal the "no GM online" state when a GM connects (and re-check on
-    // disconnect). Mirrors module.js's existing userConnected hook.
+    // Self-heal the "no GM online" state when a GM connects. Gate to GM
+    // connect/disconnect events: a stray *player* login shouldn't blanket-clear
+    // this player's live knock state (see _requestList) and flash the spinner.
     this._userConnHook =
-      globalThis.Hooks?.on?.("userConnected", () => {
+      globalThis.Hooks?.on?.("userConnected", (user, _connected) => {
+        if (!user?.isGM) return;
         if (this.rendered) {
-          this._requestList();
+          this._requestList({ clearPending: true });
           this.render(false);
         }
       }) ?? null;
@@ -130,18 +132,20 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return Boolean(globalThis.game?.users?.activeGM);
   }
 
-  /** Ask the GM for the player's allowed self-service shops. */
-  _requestList() {
+  /** Ask the GM for the player's allowed self-service shops. `clearPending` wipes
+   *  any "waiting for the GM" knock rows — only do that on a genuine recovery
+   *  point (user Refresh, or a GM (re)connecting), NOT on every routine resync
+   *  (e.g. one shop's denial self-heal), which would prematurely re-enable other
+   *  shops the player is still legitimately waiting on. */
+  _requestList({ clearPending = false } = {}) {
     if (this._loadTimer != null) {
       globalThis.clearTimeout?.(this._loadTimer);
       this._loadTimer = null;
     }
-    // Re-syncing the list also clears any stuck "waiting for the GM" rows: a
-    // knock whose GM disconnected (or reloaded) before answering would otherwise
-    // stay disabled forever, since no SESSION_OPEN/SHOP_RESULT ever arrives.
-    // Refresh and the GM-reconnect self-heal both route through here, so this
-    // gives those rows a recovery path; a still-valid knock just re-sends.
-    this._pending.clear();
+    // A knock whose GM disconnected/reloaded before answering would otherwise
+    // stay disabled forever (no SESSION_OPEN/SHOP_RESULT ever arrives); the
+    // recovery callers clear it so those rows become clickable again.
+    if (clearPending) this._pending.clear();
     if (!this._hasActiveGM) {
       this._loading = false;
       return;
@@ -247,7 +251,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static _onRefresh() {
-    this._requestList();
+    this._requestList({ clearPending: true });
     this.render(false);
   }
 }

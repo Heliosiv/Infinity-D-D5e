@@ -31,7 +31,7 @@ import {
   sanitizeMerchantForList,
   upsertMerchant,
 } from "./store.js";
-import { resolveUnitBuyPrice } from "./transaction.js";
+import { resolveUnitBuyPrice, resolveUnitSellPrice } from "./transaction.js";
 import { computeBargainOutcome, computePassiveBargainPct } from "./bargain.js";
 import {
   closeSession,
@@ -59,6 +59,10 @@ export const MERCHANT_EVENTS = Object.freeze({
   BARGAIN_SEAL: "merchant:bargain-seal",
   COMMIT_PURCHASE: "merchant:commit-purchase",
   COMMIT_SALE: "merchant:commit-sale",
+  // GM→player acknowledgement of a commit. Lets the buyer/seller know the trade
+  // was actually recorded (or wasn't, e.g. the session was gone after a GM
+  // reload) instead of the actor mutating while the shop silently never updates.
+  COMMIT_RESULT: "merchant:commit-result",
   STATE_UPDATE: "merchant:state-update",
   // Player-initiated shop access (the "storefront door"). REQUEST events go
   // player→GM and are handled only on the authoritative GM; REPLY goes back
@@ -293,7 +297,12 @@ async function handleBargainResult(payload) {
 async function handleCommitPurchase(payload) {
   const { sessionId, itemUuid, qty, sealId } = payload;
   const session = getSession(sessionId);
-  if (!session) return;
+  if (!session) {
+    // Most common after a GM world reload (the in-memory session map is wiped):
+    // tell the buyer so they don't sit on a silently-unrecorded purchase.
+    emitCommitResult(payload, false, "no-session");
+    return;
+  }
   if (session.viewerUserId !== payload.originUserId) return;
   const requested = Math.max(1, Math.floor(Number(qty) || 1));
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
@@ -304,10 +313,14 @@ async function handleCommitPurchase(payload) {
       console.warn(
         `${MODULE_ID} | commit-purchase: merchant ${session.merchantId} is gone`,
       );
+      emitCommitResult(payload, false, "merchant-gone");
       return;
     }
     const row = merchant.items.find((r) => r.uuid === itemUuid);
-    if (!row) return;
+    if (!row) {
+      emitCommitResult(payload, false, "item-unavailable");
+      return;
+    }
     // Verify + burn the bargain seal here (inside the mutex) and keep its
     // delta for the GM-side reprice. A missing/expired seal simply prices at
     // base (resolveUnitBuyPrice ignores a null seal) — but say so.
@@ -370,15 +383,20 @@ async function handleCommitPurchase(payload) {
     updated = adjustMerchantGold(updated, trueTotal);
     await upsertMerchant(updated);
     await broadcastState(updated);
+    emitCommitResult(payload, true);
   });
 }
 
 async function handleCommitSale(payload) {
   const { sessionId, sealId, itemUuid } = payload;
   const session = getSession(sessionId);
-  if (!session) return;
+  if (!session) {
+    emitCommitResult(payload, false, "no-session");
+    return;
+  }
   if (session.viewerUserId !== payload.originUserId) return;
-  const totalGp = Math.max(0, Number(payload.totalGp) || 0);
+  const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
+  const requested = Math.max(1, Math.floor(Number(payload.qty) || 1));
   // Sales don't change stock, but the merchant pays out — spend its gold
   // (clamped at 0; no-op if the purse is unlimited). Seal consumption runs
   // inside the mutex too, matching the buy path.
@@ -388,27 +406,56 @@ async function handleCommitSale(payload) {
       console.warn(
         `${MODULE_ID} | commit-sale: merchant ${session.merchantId} is gone`,
       );
+      emitCommitResult(payload, false, "merchant-gone");
       return;
     }
-    if (sealId) {
-      const seal = consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
-      if (!seal) {
-        console.warn(
-          `${MODULE_ID} | commit-sale: seal "${sealId}" not found/expired`,
-        );
-      }
-    }
-    // The player already pocketed the coin client-side. If the merchant can't
-    // cover it (two players cashed out at once / stale view), its gold floors
-    // at 0 — surface that rather than hide the shortfall.
-    if (!merchantCanAfford(merchant, totalGp)) {
+    const seal = sealId
+      ? consumeSeal(sessionId, sealId, { itemUuid, side: "sell" })
+      : null;
+    if (sealId && !seal) {
       console.warn(
-        `${MODULE_ID} | commit-sale: payout ${totalGp} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — floored at 0`,
+        `${MODULE_ID} | commit-sale: seal "${sealId}" not found/expired`,
       );
     }
-    const updated = adjustMerchantGold(merchant, -totalGp);
+    // Recompute the payout from the item snapshot the player sent (the item is
+    // already removed from their sheet, so we can't fromUuid it). The sold item
+    // is inherently player-side data, but recomputing catches display drift /
+    // honest client bugs, and adjustMerchantGold floors the purse at 0 so a
+    // stale/forged total can't drive the coffer to a wrong value. Falls back to
+    // the client total only when no usable snapshot was sent.
+    let trueTotal = clientTotalGp;
+    const snap = payload.itemSnapshot;
+    if (snap && typeof snap === "object") {
+      try {
+        const passivePct = computePassiveBargainPct(
+          merchant,
+          resolveSessionActor(session),
+        );
+        const unitGp = resolveUnitSellPrice({
+          merchant,
+          item: snap,
+          seal,
+          passivePct,
+        });
+        if (unitGp > 0) trueTotal = roundGp(unitGp * requested);
+      } catch (error) {
+        console.warn(`${MODULE_ID} | commit-sale reprice failed`, error);
+      }
+    }
+    if (Math.abs(trueTotal - clientTotalGp) > 0.01) {
+      console.warn(
+        `${MODULE_ID} | commit-sale price mismatch (client ${clientTotalGp}, server ${trueTotal}) — using server price`,
+      );
+    }
+    if (!merchantCanAfford(merchant, trueTotal)) {
+      console.warn(
+        `${MODULE_ID} | commit-sale: payout ${trueTotal} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — floored at 0`,
+      );
+    }
+    const updated = adjustMerchantGold(merchant, -trueTotal);
     await upsertMerchant(updated);
     await broadcastState(updated);
+    emitCommitResult(payload, true);
   });
 }
 
@@ -437,6 +484,20 @@ async function broadcastState(merchant) {
   emitMerchantEvent(MERCHANT_EVENTS.STATE_UPDATE, {
     merchantId: merchant.id,
     merchant: normalizeMerchant(merchant),
+  });
+}
+
+/** Acknowledge a commit back to the buyer/seller so a trade can't silently
+ *  half-complete (actor mutated, shop never updated) without the player knowing.
+ *  Scoped to the originating user; correlated by the player's commitId. */
+function emitCommitResult(commitPayload, ok, reason = "") {
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, {
+    targetUserId: commitPayload.originUserId,
+    sessionId: commitPayload.sessionId,
+    commitId: commitPayload.commitId ?? null,
+    side: commitPayload.type === MERCHANT_EVENTS.COMMIT_SALE ? "sell" : "buy",
+    ok: ok === true,
+    reason,
   });
 }
 
@@ -629,6 +690,9 @@ function handleSessionResumeRequest(payload) {
       merchantId: merchant.id,
       merchant: normalizeMerchant(merchant),
       targetUserId: userId,
+      // A resume re-pop, not a fresh GM push — the player UI uses this to skip
+      // replaying the shop-open chime on every reload/relog.
+      resume: true,
     });
     resumed++;
   }

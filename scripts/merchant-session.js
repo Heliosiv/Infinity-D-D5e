@@ -68,6 +68,16 @@ const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 // re-enabling the row, so a never-returning seal (GM offline / session expired)
 // can't leave the bargain button disabled forever.
 const BARGAIN_SEAL_TIMEOUT_MS = 15000;
+// How long to wait for the GM's commit acknowledgement before warning the player
+// that a buy/sell may not have been recorded (e.g. the GM reloaded mid-trade).
+const COMMIT_ACK_TIMEOUT_MS = 12000;
+
+let commitCounterSeed = 0;
+/** A short, unique id correlating a commit emit with its GM acknowledgement. */
+function newCommitId() {
+  commitCounterSeed += 1;
+  return `c${commitCounterSeed}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
@@ -180,6 +190,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._earnedGp = 0; // running total earned this session
     this._bargainPending = new Set();
     this._bargainTimers = new Map(); // sealKey → timeout id (seal-wait watchdog)
+    this._pendingCommits = new Map(); // commitId → { side, itemName, timer }
     this._closingFromExternal = false;
 
     this._title = `${this._previewMode ? "[Preview] " : ""}${this._merchant?.name ?? "Merchant"} — Shop`;
@@ -196,6 +207,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this._unsubscribers.push(
         subscribe(MERCHANT_EVENTS.BARGAIN_SEAL, (payload) =>
           this._onBargainSeal(payload),
+        ),
+      );
+      this._unsubscribers.push(
+        subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) =>
+          this._onCommitResult(payload),
         ),
       );
       this._unsubscribers.push(
@@ -233,6 +249,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       } catch {}
     }
     this._bargainTimers.clear();
+    // …and any pending commit-ack watchdogs.
+    for (const ctx of this._pendingCommits.values()) {
+      try {
+        globalThis.clearTimeout?.(ctx.timer);
+      } catch {}
+    }
+    this._pendingCommits.clear();
     instances.delete(this._sessionId);
     // Voluntary player close (not a sandbox preview, not a GM-pushed close):
     // tell the GM to drop the session record so its Active Sessions list stays
@@ -273,7 +296,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       globalThis.clearTimeout?.(watchdog);
       this._bargainTimers.delete(key);
     }
-    if (payload.deltaPct <= 0) {
+    // A strictly negative delta is a win; 0 ("no change") is not celebrated.
+    if (Number(payload.deltaPct) < 0) {
       playModuleSound(SOUND_EVENTS.MERCHANT_BARGAIN_WIN);
     } else {
       playModuleSound(SOUND_EVENTS.MERCHANT_BARGAIN_FAIL);
@@ -286,9 +310,60 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._justBargained = {
       refId: payload.itemUuid,
       side: payload.side,
-      win: Number(payload.deltaPct) <= 0,
+      win: Number(payload.deltaPct) < 0,
     };
     this.render(false);
+  }
+
+  /**
+   * GM acknowledged (or couldn't record) a buy/sell. On an explicit failure or a
+   * timeout the player is told plainly, so a trade can't half-complete silently
+   * (their sheet changed, the shop didn't). We deliberately do NOT auto-undo the
+   * actor mutation: a merely-slow ack would otherwise double-revert. The GM and
+   * player reconcile manually — rare (mostly a GM reload mid-trade).
+   */
+  _onCommitResult(payload) {
+    if (!payload || payload.sessionId !== this._sessionId) return;
+    if (
+      payload.targetUserId &&
+      payload.targetUserId !== globalThis.game?.user?.id
+    ) {
+      return;
+    }
+    const ctx = this._pendingCommits.get(payload.commitId);
+    if (!ctx) return;
+    globalThis.clearTimeout?.(ctx.timer);
+    this._pendingCommits.delete(payload.commitId);
+    if (payload.ok) return; // recorded cleanly — nothing to surface
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+    const verb = ctx.side === "sell" ? "sale" : "purchase";
+    this._appendLog(
+      "fail",
+      `The shop didn't record your ${verb} of ${ctx.itemName} — your sheet changed, so check with your GM.`,
+    );
+    ui.notifications?.warn(
+      `${MODULE_ID}: the shop couldn't record that ${verb}${payload.reason ? ` (${payload.reason})` : ""}. Your character sheet was already updated — ask your GM to reconcile.`,
+    );
+    if (this.rendered) this.render(false);
+  }
+
+  /** Arm a watchdog for a just-emitted commit; if no GM ack lands, warn the
+   *  player rather than leave a silently-unrecorded trade. */
+  _trackCommit(commitId, ctx) {
+    const timer = globalThis.setTimeout?.(() => {
+      if (!this._pendingCommits.delete(commitId)) return;
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      const verb = ctx.side === "sell" ? "sale" : "purchase";
+      this._appendLog(
+        "fail",
+        `No response from the GM on your ${verb} of ${ctx.itemName} — it may not have reached the shop.`,
+      );
+      ui.notifications?.warn(
+        `${MODULE_ID}: no response from the GM on that ${verb}. Your sheet changed; confirm with your GM that the shop updated.`,
+      );
+      if (this.rendered) this.render(false);
+    }, COMMIT_ACK_TIMEOUT_MS);
+    this._pendingCommits.set(commitId, { ...ctx, timer });
   }
 
   /* -------------------- context -------------------- */
@@ -628,10 +703,6 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     });
   }
 
-  static _onBuyOne(_event, target) {
-    return this._performBuy(target?.dataset?.uuid, 1);
-  }
-
   static _onBuyN(_event, target) {
     const uuid = target?.dataset?.uuid;
     const qty = Math.max(1, Math.floor(Number(this._buyQty.get(uuid) ?? 1)));
@@ -697,14 +768,18 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this.render(false);
       return;
     }
-    // Tell the GM to update stock + burn seal.
+    // Tell the GM to update stock + burn seal, and watch for the acknowledgement
+    // so a trade can't silently half-complete if the GM didn't record it.
+    const commitId = newCommitId();
     emitMerchantEvent(MERCHANT_EVENTS.COMMIT_PURCHASE, {
       sessionId: this._sessionId,
       itemUuid: uuid,
       qty,
       sealId: result.sealId,
       totalGp: result.totalGp,
+      commitId,
     });
+    this._trackCommit(commitId, { side: "buy", itemName: result.itemName });
     this._seals.delete(sealKey);
     this._spentGp = roundGp(this._spentGp + result.totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
@@ -725,10 +800,6 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       dc: seal?.dc ?? null,
     });
     this.render(false);
-  }
-
-  static _onSellOne(_event, target) {
-    return this._performSell(target?.dataset?.itemId, 1);
   }
 
   static _onSellN(_event, target) {
@@ -801,13 +872,18 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this.render(false);
       return;
     }
+    const commitId = newCommitId();
     emitMerchantEvent(MERCHANT_EVENTS.COMMIT_SALE, {
       sessionId: this._sessionId,
       itemUuid: itemId,
       qty,
       sealId: result.sealId,
       totalGp: result.totalGp,
+      commitId,
+      // Lets the GM recompute the payout server-side (the item is gone now).
+      itemSnapshot: result.itemSnapshot,
     });
+    this._trackCommit(commitId, { side: "sell", itemName: result.itemName });
     this._seals.delete(sealKey);
     this._earnedGp = roundGp(this._earnedGp + result.totalGp);
     playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
@@ -1034,7 +1110,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       dc: this._merchant.bargainDC,
     });
     playModuleSound(
-      result.deltaPct <= 0
+      Number(result.deltaPct) < 0
         ? SOUND_EVENTS.MERCHANT_BARGAIN_WIN
         : SOUND_EVENTS.MERCHANT_BARGAIN_FAIL,
     );
@@ -1042,7 +1118,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       "bargain",
       `Preview bargain: ${prettyBargainTier(result.tier?.id)} · ${formatDelta(result.deltaPct)}`,
     );
-    this._justBargained = { refId, side, win: Number(result.deltaPct) <= 0 };
+    this._justBargained = { refId, side, win: Number(result.deltaPct) < 0 };
     this.render(false);
   }
 }
@@ -1083,7 +1159,10 @@ export function registerMerchantSessionAutoOpen() {
       sessionId: payload.sessionId,
       merchant: payload.merchant,
     });
-    if (!wasOpen) playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+    // Chime only for a genuinely new GM push — not a resume re-pop on reload/relog.
+    if (!wasOpen && !payload.resume) {
+      playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+    }
   });
   // A pushed session is a one-shot broadcast, so a player who reloads/relogs
   // after the GM opened it would lose the window. Now that the SESSION_OPEN

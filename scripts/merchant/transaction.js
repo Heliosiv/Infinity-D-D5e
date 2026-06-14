@@ -375,6 +375,14 @@ export async function executeSell({
     totalGp,
     sealId: seal?.sealId ?? null,
     coinBreakdown: add,
+    // Minimal pricing snapshot of the sold item so the GM can recompute the
+    // payout server-side (the embedded item is gone from the sheet by now).
+    itemSnapshot: {
+      name: itemData.name,
+      type: itemData.type,
+      system: { price: itemData.system?.price ?? {} },
+      flags: itemData.flags ?? {},
+    },
   };
 }
 
