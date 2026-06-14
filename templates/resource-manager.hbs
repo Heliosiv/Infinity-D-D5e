@@ -112,6 +112,15 @@
     {{#if rosterIsImplicit}}
     <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong> or change <strong>Draws from</strong> to start curating the roster — or remove anyone who shouldn't be tracked.</p>
     {{/if}}
+    {{#if hasRosterMembers}}
+    <div class="rm-stash-pick">
+      <label for="rm-party-stash">Food &amp; water stash</label>
+      <select id="rm-party-stash" data-config-path="partyStashId" aria-label="Single stash the whole party draws food and water from">
+        {{#each partyStashOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+      </select>
+      {{#if partyStashActive}}<span class="rm-muted">Everyone draws food &amp; water from {{partyStashName}}'s pack.</span>{{else}}<span class="rm-muted">Or set each character's source per-row below.</span>{{/if}}
+    </div>
+    {{/if}}
     {{#if hasParty}}
     <table class="rm-table rm-roster">
       <thead>
@@ -134,7 +143,9 @@
             <input type="checkbox" data-config-path="roster:{{actorId}}:isStash" {{#if isStash}}checked{{/if}} aria-label="Mark {{name}} as a shared stash" />
           </td>
           <td class="rm-drawfrom">
-            {{#if isStash}}
+            {{#if @root.partyStashActive}}
+            <span class="rm-muted" title="The whole party draws food &amp; water from the party stash">→ {{@root.partyStashName}}</span>
+            {{else if isStash}}
             <span class="rm-muted" title="A stash holds its own supplies">Self (stash)</span>
             {{else if canDrawFromStash}}
             <select data-config-path="roster:{{actorId}}:drawFrom" aria-label="Where {{name}} draws supplies from">

@@ -79,6 +79,13 @@ import {
     normalizeResourceConfig({ waterEnabled: false }).waterEnabled,
     false,
   );
+
+  // partyStashId defaults to "" and round-trips a set value.
+  assert.equal(normalizeResourceConfig({}).partyStashId, "");
+  assert.equal(
+    normalizeResourceConfig({ partyStashId: "actor-7" }).partyStashId,
+    "actor-7",
+  );
 }
 
 /* ------------------------------------------------------------------ *

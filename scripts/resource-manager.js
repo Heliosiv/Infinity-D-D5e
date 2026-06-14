@@ -177,6 +177,28 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       .filter((actor) => !onRoster.has(actor.id))
       .map((actor) => ({ id: actor.id, name: actor.name }));
 
+    // Single party-wide food & water stash. When set, every member draws those
+    // supplies from one pile (see getPartyRoster), so the per-row "Draws from"
+    // is overridden — the dropdown below is the one control.
+    const partyStashId = String(config.partyStashId ?? "").trim();
+    const partyStashActive =
+      partyStashId !== "" && roster.some((r) => r.actor.id === partyStashId);
+    const partyStashName = partyStashActive
+      ? (nameById.get(partyStashId) ?? "")
+      : "";
+    const partyStashOptions = [
+      {
+        value: "",
+        label: "Each carries their own pack",
+        selected: !partyStashActive,
+      },
+      ...roster.map((r) => ({
+        value: r.actor.id,
+        label: r.actor.name,
+        selected: partyStashActive && r.actor.id === partyStashId,
+      })),
+    ];
+
     // Resolve each bound item UUID to a readable name (falls back to the raw
     // UUID, flagged, when it no longer resolves) so the GM can see what's tagged.
     const resources = await Promise.all(
@@ -230,6 +252,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       rosterIsImplicit,
       availableToAdd,
       hasAvailableToAdd: availableToAdd.length > 0,
+      partyStashOptions,
+      partyStashActive,
+      partyStashName,
+      hasRosterMembers: roster.length > 0,
       report: summarizeReport(state.lastUpkeepResult),
     };
   }
@@ -303,6 +329,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       const [, id, field] = path.split(":");
       const res = config.resources.find((r) => r.id === id);
       if (res) applyResourceField(res, field, value);
+    } else if (path === "partyStashId") {
+      // The single party food/water stash. References a tracked actor (or "" to
+      // turn it off) — no roster seeding needed; getPartyRoster resolves it
+      // against the live/auto-discovered party.
+      config.partyStashId = String(value || "");
     } else if (path.startsWith("roster:")) {
       // Editing any roster row materializes the implicit "all PCs" roster first,
       // so a stash/draw toggle turns auto-tracking into an explicit roster.

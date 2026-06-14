@@ -124,6 +124,56 @@ try {
     );
   }
 
+  /* Single party stash: the whole party draws food/water from one actor,
+     overriding per-member draws; the stash actor is marked a stash. */
+  {
+    globalThis.game = mockGame([A, B, C]);
+    const cfg = normalizeResourceConfig({
+      roster: [
+        { actorId: "A" },
+        { actorId: "B", isStash: true }, // a per-member stash...
+        { actorId: "C", drawFrom: "B" }, // ...C points at it
+      ],
+      partyStashId: "A", // ...but the party stash overrides everyone to A
+    });
+    const roster = getPartyRoster(cfg);
+    const byId = Object.fromEntries(roster.map((r) => [r.actor.id, r]));
+    assert.equal(byId.A.drawFromId, "A", "stash draws from itself");
+    assert.equal(byId.A.isStash, true, "party stash is marked a stash");
+    assert.equal(
+      byId.B.drawFromId,
+      "A",
+      "everyone overridden to the party stash",
+    );
+    assert.equal(
+      byId.C.drawFromId,
+      "A",
+      "overrides a per-member nomination too",
+    );
+  }
+
+  /* Party stash works with an auto-discovered (uncurated) roster too. */
+  {
+    globalThis.game = mockGame([A, B, C]);
+    const cfg = normalizeResourceConfig({ partyStashId: "B" });
+    const roster = getPartyRoster(cfg);
+    assert.ok(
+      roster.every((r) => r.drawFromId === "B"),
+      "auto roster honors the party stash",
+    );
+  }
+
+  /* A stale party stash (actor not tracked) is ignored — per-member draws stand. */
+  {
+    globalThis.game = mockGame([A, B]);
+    const cfg = normalizeResourceConfig({ partyStashId: "ghost" });
+    const roster = getPartyRoster(cfg);
+    assert.ok(
+      roster.every((r) => r.drawFromId === r.actor.id),
+      "unknown party stash falls back to per-member self",
+    );
+  }
+
   /* No game world → empty, no throw */
   {
     delete globalThis.game;

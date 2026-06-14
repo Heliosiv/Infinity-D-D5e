@@ -208,6 +208,11 @@ export function normalizeResourceConfig(input) {
     forageTimeoutSeconds: Math.max(0, toInt(raw.forageTimeoutSeconds, 120)),
     resources: resources.length > 0 ? resources : defaultResources(),
     roster: normalizeRoster(raw.roster),
+    // A single shared stash the WHOLE party draws per-character supplies (food
+    // & water) from — the quartermaster's pack. "" = each member draws from
+    // their own sheet (or their per-row nomination). When set, it overrides the
+    // per-member `drawFrom` so the GM can run one communal pile with one pick.
+    partyStashId: toStr(raw.partyStashId),
     environments: normalizeEnvironmentCatalog(raw.environments),
   };
 }

@@ -243,6 +243,22 @@
   margin-top: 8px;
 }
 
+.infinity-dnd5e .rm-stash-pick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.infinity-dnd5e .rm-stash-pick label {
+  font-weight: 600;
+}
+
+.infinity-dnd5e .rm-stash-pick select {
+  max-width: 16rem;
+}
+
 .infinity-dnd5e .rm-roster-add select {
   max-width: 16rem;
 }

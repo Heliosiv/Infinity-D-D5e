@@ -706,25 +706,42 @@ export function getPartyRoster(config = null) {
   const byId = new Map(all.map((actor) => [actor.id, actor]));
   const cfg = config ?? loadResourceConfig();
   const roster = Array.isArray(cfg.roster) ? cfg.roster : [];
+
+  let entries;
   if (roster.length === 0) {
-    return all.map((actor) => ({
+    entries = all.map((actor) => ({
       actor,
       isStash: false,
       drawFromId: actor.id,
     }));
+  } else {
+    const resolved = roster
+      .map((entry) => ({ entry, actor: byId.get(entry.actorId) }))
+      .filter((r) => r.actor);
+    const presentStash = new Set(
+      resolved.filter((r) => r.entry.isStash).map((r) => r.actor.id),
+    );
+    entries = resolved.map(({ entry, actor }) => {
+      const wanted = resolveDrawSourceId(entry);
+      const drawFromId =
+        wanted !== actor.id && presentStash.has(wanted) ? wanted : actor.id;
+      return { actor, isStash: entry.isStash === true, drawFromId };
+    });
   }
-  const resolved = roster
-    .map((entry) => ({ entry, actor: byId.get(entry.actorId) }))
-    .filter((r) => r.actor);
-  const presentStash = new Set(
-    resolved.filter((r) => r.entry.isStash).map((r) => r.actor.id),
-  );
-  return resolved.map(({ entry, actor }) => {
-    const wanted = resolveDrawSourceId(entry);
-    const drawFromId =
-      wanted !== actor.id && presentStash.has(wanted) ? wanted : actor.id;
-    return { actor, isStash: entry.isStash === true, drawFromId };
-  });
+
+  // Single shared party stash: when it's set to a tracked actor, the WHOLE
+  // party draws its per-character supplies (food & water) from that one pile —
+  // overriding every per-member nomination — and it counts as a stash for
+  // party-scope pooling (light) too. An unset/stale id leaves per-member draws.
+  const partyStashId = String(cfg.partyStashId ?? "").trim();
+  if (partyStashId && entries.some((e) => e.actor.id === partyStashId)) {
+    for (const e of entries) {
+      e.drawFromId = partyStashId;
+      if (e.actor.id === partyStashId) e.isStash = true;
+    }
+  }
+
+  return entries;
 }
 
 /** Tracked party actors (honors the curated roster). */
