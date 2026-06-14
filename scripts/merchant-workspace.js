@@ -19,6 +19,7 @@ import {
   loadMerchants,
   normalizeInventoryRow,
   normalizeMerchant,
+  promoteSelfServiceMode,
   removeInventoryRow,
   resolveStockQty,
   restockAll,
@@ -215,6 +216,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       label: SELF_SERVICE_LABELS[value] ?? value,
       selected: value === selfServiceMode,
     }));
+    // Warn when a shop has allowed players but is still GM-pull-only ("off"):
+    // those players will NOT see it in their Shops door. Surfaces the silent
+    // "players can't open any shops" state on existing shops.
+    const selfServiceOffWithPlayers =
+      Boolean(selected) &&
+      selfServiceMode === "off" &&
+      selected.allowedUserIds.length > 0;
 
     const pool = selected?.pool ?? {
       lootTypes: [],
@@ -291,6 +299,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       hasPlayers: players.length > 0,
       playerOptions,
       selfServiceOptions,
+      selfServiceOffWithPlayers,
       skillOptions,
       poolLootTypeOptions,
       poolRarityOptions,
@@ -597,6 +606,16 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     const data = readFormFields(form);
+    // First time a shop gains an allowed player, flip it from the default
+    // "off" to "open" so it actually appears in that player's Shops door —
+    // otherwise GMs tick a player, see nothing happen, and conclude "players
+    // can't open shops". Only auto-promote on the no-players → has-players
+    // step; a GM who wants a GM-pull-only shop can still set "off"/"knock".
+    const selfServiceMode = promoteSelfServiceMode(
+      data.selfServiceMode,
+      (merchant.allowedUserIds?.length ?? 0) > 0,
+      (data.allowedUserIds?.length ?? 0) > 0,
+    );
     const next = normalizeMerchant({
       ...merchant,
       name: data.name ?? merchant.name,
@@ -618,7 +637,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       goldOnHand: data.goldOnHand,
       allowedSkills: data.allowedSkills,
       allowedUserIds: data.allowedUserIds,
-      selfServiceMode: data.selfServiceMode,
+      selfServiceMode,
       pool: {
         lootTypes: data.poolLootTypes,
         rarities: data.poolRarities,

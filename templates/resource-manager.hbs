@@ -163,14 +163,14 @@
       </tbody>
     </table>
     {{else}}
-    <p class="rm-note">No player-owned characters found — assign a player as Owner on a character sheet and they'll appear here.</p>
+    <p class="rm-note">No player-owned characters auto-detected. Add any actor — character or NPC — from the picker below to start tracking its food &amp; water. (Player characters auto-appear when a non-GM user owns them or has them assigned.)</p>
     {{/if}}
     {{#if hasAvailableToAdd}}
     <div class="rm-roster-add">
-      <select data-role="add-roster" aria-label="Character to add to the roster">
-        {{#each availableToAdd}}<option value="{{id}}">{{name}}</option>{{/each}}
+      <select data-role="add-roster" aria-label="Actor to add to the roster">
+        {{#each availableToAdd}}<option value="{{id}}">{{name}}{{kindLabel}}</option>{{/each}}
       </select>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="addRosterMember"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add character</button>
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="addRosterMember"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add to roster</button>
     </div>
     {{/if}}
   </section>

@@ -20,6 +20,7 @@ import {
 } from "./resource/store.js";
 import {
   advanceDayNow,
+  discoverAllActors,
   discoverPartyActors,
   discoverPlayerCharacters,
   getPartyRoster,
@@ -173,9 +174,23 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       };
     });
     const onRoster = new Set(roster.map((r) => r.actor.id));
-    const availableToAdd = discoverPlayerCharacters()
+    // The Add picker offers EVERY actor (NPCs, vehicles, group, unowned) — not
+    // just player characters — so the GM can track any actor for food/water.
+    // Player characters sort first; others get a kind tag so they're distinct.
+    const kindRank = { character: 0, group: 1, vehicle: 2, npc: 3 };
+    const availableToAdd = discoverAllActors()
       .filter((actor) => !onRoster.has(actor.id))
-      .map((actor) => ({ id: actor.id, name: actor.name }));
+      .map((actor) => {
+        const type = String(actor.type ?? "");
+        return {
+          id: actor.id,
+          name: actor.name,
+          kindLabel:
+            type && type !== "character" ? ` (${titleCaseWord(type)})` : "",
+          rank: kindRank[type] ?? 4,
+        };
+      })
+      .sort((a, b) => a.rank - b.rank || String(a.name).localeCompare(b.name));
 
     // Single party-wide food & water stash. When set, every member draws those
     // supplies from one pile (see getPartyRoster), so the per-row "Draws from"
@@ -475,8 +490,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const select = this.element?.querySelector("[data-role='add-roster']");
     const actorId = String(select?.value ?? "").trim();
     if (!actorId) return;
-    // Only player-owned characters are eligible for the roster.
-    if (!discoverPlayerCharacters().some((a) => a.id === actorId)) return;
+    // Any real actor is eligible — the GM may add NPCs / unowned actors as
+    // supply sources, not just player characters.
+    if (!discoverAllActors().some((a) => a.id === actorId)) return;
     const config = loadResourceConfig();
     seedRosterIfEmpty(config);
     if (!config.roster.some((r) => r.actorId === actorId)) {
@@ -537,11 +553,19 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
  */
 function seedRosterIfEmpty(config) {
   if (Array.isArray(config.roster) && config.roster.length > 0) return;
+  // Auto-seed stays player-characters-only by design (least surprise); the GM
+  // then explicitly adds NPCs / other actors through the Add picker.
   config.roster = discoverPlayerCharacters().map((actor) => ({
     actorId: actor.id,
     isStash: false,
     drawFrom: "self",
   }));
+}
+
+/** "npc" -> "Npc", "vehicle" -> "Vehicle" for the Add-picker kind tag. */
+function titleCaseWord(value) {
+  const s = String(value ?? "");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function applyResourceField(res, field, value) {

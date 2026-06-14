@@ -2,15 +2,21 @@ import assert from "node:assert/strict";
 
 import { normalizeResourceConfig } from "./resource/store.js";
 import {
+  discoverAllActors,
   discoverPlayerCharacters,
   discoverPartyActors,
   getPartyRoster,
+  isPlayerOwnedCharacter,
 } from "./resource/calendar-watcher.js";
 
-/** Build a fake game world. `raw` is the un-normalized resourceConfig. */
-function mockGame(actors, raw = {}) {
+/** Build a fake game world. `raw` is the un-normalized resourceConfig; `users`
+ *  is a list of {id, isGM, character?} so ownership detection can be exercised. */
+function mockGame(actors, raw = {}, users = []) {
+  const userColl = users.slice();
+  userColl.get = (id) => users.find((u) => u.id === id) ?? null;
   return {
     actors,
+    users: userColl,
     settings: {
       get(moduleId, key) {
         if (moduleId !== "infinity-dnd5e") return undefined;
@@ -174,11 +180,122 @@ try {
     );
   }
 
+  /* isPlayerOwnedCharacter — broader than bare hasPlayerOwner */
+  {
+    const users = [
+      { id: "gm", isGM: true },
+      { id: "alice", isGM: false, character: "PA" },
+      { id: "bob", isGM: false },
+      { id: "asst", isGM: true },
+    ];
+    const PA = {
+      id: "PA",
+      name: "Assigned",
+      type: "character",
+      hasPlayerOwner: false,
+      ownership: {},
+    };
+    const PB = {
+      id: "PB",
+      name: "Owned",
+      type: "character",
+      hasPlayerOwner: false,
+      ownership: { bob: 3 },
+    };
+    const PG = {
+      id: "PG",
+      name: "AsstOnly",
+      type: "character",
+      hasPlayerOwner: false,
+      ownership: { asst: 3 },
+    };
+    const PD = {
+      id: "PD",
+      name: "Default",
+      type: "character",
+      hasPlayerOwner: true,
+      ownership: { default: 0 },
+    };
+    globalThis.game = mockGame([PA, PB, PG, PD], {}, users);
+    assert.ok(
+      isPlayerOwnedCharacter(PA),
+      "assigned char of a non-GM user counts",
+    );
+    assert.ok(isPlayerOwnedCharacter(PB), "explicit non-GM OWNER entry counts");
+    assert.ok(
+      !isPlayerOwnedCharacter(PG),
+      "owned only by an assistant-GM is NOT player-owned",
+    );
+    assert.ok(
+      isPlayerOwnedCharacter(PD),
+      "default-owned PC still counts (unconditional hasPlayerOwner fallback — no regression)",
+    );
+    assert.deepEqual(
+      discoverPlayerCharacters()
+        .map((a) => a.id)
+        .sort(),
+      ["PA", "PB", "PD"],
+      "discovery picks up assigned + owned + default, drops assistant-GM-only",
+    );
+  }
+
+  /* discoverAllActors — the full Add-picker pool (any type, any ownership) */
+  {
+    globalThis.game = mockGame([A, B, C, NPC, UNOWNED]);
+    assert.deepEqual(
+      discoverAllActors()
+        .map((a) => a.id)
+        .sort(),
+      ["A", "B", "C", "N", "U"],
+      "every actor regardless of type/ownership",
+    );
+    // Auto-discovery still defaults to player characters only (least surprise).
+    assert.deepEqual(
+      getPartyRoster(normalizeResourceConfig({}))
+        .map((r) => r.actor.id)
+        .sort(),
+      ["A", "B", "C"],
+      "empty roster auto-tracks only PCs even with NPCs present",
+    );
+  }
+
+  /* A curated roster can now include a non-PC actor (NPC supply source) */
+  {
+    globalThis.game = mockGame([A, NPC]);
+    const roster = getPartyRoster(
+      normalizeResourceConfig({ roster: [{ actorId: "A" }, { actorId: "N" }] }),
+    );
+    assert.deepEqual(
+      roster.map((r) => r.actor.id).sort(),
+      ["A", "N"],
+      "a curated NPC entry resolves (any actor can be tracked)",
+    );
+    assert.equal(roster.find((r) => r.actor.id === "N").drawFromId, "N");
+  }
+
+  /* A non-PC actor can be the single party food/water stash */
+  {
+    globalThis.game = mockGame([A, NPC]);
+    const roster = getPartyRoster(
+      normalizeResourceConfig({
+        roster: [{ actorId: "A" }, { actorId: "N" }],
+        partyStashId: "N",
+      }),
+    );
+    assert.ok(
+      roster.every((r) => r.drawFromId === "N"),
+      "an NPC can serve as the party stash everyone draws from",
+    );
+    assert.equal(roster.find((r) => r.actor.id === "N").isStash, true);
+  }
+
   /* No game world → empty, no throw */
   {
     delete globalThis.game;
     assert.deepEqual(getPartyRoster(normalizeResourceConfig({})), []);
     assert.deepEqual(discoverPartyActors(), []);
+    assert.deepEqual(discoverAllActors(), []);
+    assert.equal(isPlayerOwnedCharacter({ type: "character" }), false);
   }
 } finally {
   if (savedGame === undefined) delete globalThis.game;

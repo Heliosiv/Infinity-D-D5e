@@ -73,6 +73,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super(options);
     this._shops = []; // sanitized projections from the GM
     this._loading = true;
+    this._loadTimer = null; // watchdog so the loading spinner can't hang forever
     this._pending = new Set(); // merchantIds the player is waiting on (knock/entering)
     this._unsubs = [
       subscribe(MERCHANT_EVENTS.SHOP_LIST_REPLY, (payload) =>
@@ -105,6 +106,10 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onClose(options) {
     super._onClose?.(options);
+    if (this._loadTimer != null) {
+      globalThis.clearTimeout?.(this._loadTimer);
+      this._loadTimer = null;
+    }
     for (const fn of this._unsubs ?? []) {
       try {
         fn();
@@ -127,12 +132,32 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Ask the GM for the player's allowed self-service shops. */
   _requestList() {
+    if (this._loadTimer != null) {
+      globalThis.clearTimeout?.(this._loadTimer);
+      this._loadTimer = null;
+    }
+    // Re-syncing the list also clears any stuck "waiting for the GM" rows: a
+    // knock whose GM disconnected (or reloaded) before answering would otherwise
+    // stay disabled forever, since no SESSION_OPEN/SHOP_RESULT ever arrives.
+    // Refresh and the GM-reconnect self-heal both route through here, so this
+    // gives those rows a recovery path; a still-valid knock just re-sends.
+    this._pending.clear();
     if (!this._hasActiveGM) {
       this._loading = false;
       return;
     }
     this._loading = true;
     emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
+    // Don't spin forever if no reply lands (GM disconnects mid-request, the GM
+    // handler throws, or the GM's socket isn't ready yet): fall back to the
+    // resolved empty/list state after a short wait.
+    this._loadTimer = globalThis.setTimeout?.(() => {
+      this._loadTimer = null;
+      if (this._loading) {
+        this._loading = false;
+        if (this.rendered) this.render(false);
+      }
+    }, 5000);
   }
 
   _onShopList(payload) {
@@ -142,6 +167,10 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       payload.targetUserId !== globalThis.game?.user?.id
     ) {
       return;
+    }
+    if (this._loadTimer != null) {
+      globalThis.clearTimeout?.(this._loadTimer);
+      this._loadTimer = null;
     }
     this._shops = Array.isArray(payload.shops) ? payload.shops : [];
     this._loading = false;

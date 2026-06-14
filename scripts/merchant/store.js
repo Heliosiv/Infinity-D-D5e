@@ -636,6 +636,18 @@ export function canSelfOpen(merchant, userId) {
 }
 
 /**
+ * The self-service mode to persist when a shop's allow-list changes on save.
+ * The first time a shop gains an allowed player it auto-promotes from the
+ * default "off" (GM-pull only, invisible to players) to "open", so ticking a
+ * player actually makes the shop appear in their Shops door. Every other case
+ * keeps the GM's explicit choice (including a deliberate "off" with players for
+ * a GM-pull shop, and any later allow-list edits). Pure; tested.
+ */
+export function promoteSelfServiceMode(mode, hadAllowed, nowAllowed) {
+  return !hadAllowed && nowAllowed && mode === "off" ? "open" : mode;
+}
+
+/**
  * Project a merchant to the minimal, safe shape a player may see in the Shops
  * picker. The MERCHANTS setting is world-scoped (every client can read the raw
  * records), so the GM-side list reply MUST strip economy + permission internals

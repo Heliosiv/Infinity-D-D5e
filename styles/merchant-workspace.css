@@ -342,6 +342,19 @@
   opacity: 0.75;
   line-height: 1.4;
 }
+.mw-warn {
+  margin: 4px 0 8px;
+  padding: 6px 9px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  border-radius: 6px;
+  color: var(--lf-warning, #ffce6b);
+  background: rgba(255, 196, 87, 0.12);
+  border: 1px solid rgba(255, 196, 87, 0.35);
+}
+.mw-warn i {
+  margin-right: 5px;
+}
 .mw-pool {
   display: grid;
   grid-template-columns: 1fr 1fr;

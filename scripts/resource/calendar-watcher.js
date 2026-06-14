@@ -683,13 +683,49 @@ async function applyExhaustion(actor, delta) {
  * Party discovery + small helpers
  * ------------------------------------------------------------------ */
 
-/** Every player-owned character actor (the pool the roster is curated from). */
+/** The non-GM user whose assigned character is this actor, or any non-GM user
+ *  holding an explicit OWNER permission on it — the real "a player owns this"
+ *  test. Bare `hasPlayerOwner` misses characters owned only by an Assistant-GM
+ *  (user.isGM is true for role 3) and is the kept-as-fallback last resort. */
+export function isPlayerOwnedCharacter(actor) {
+  if (actor?.type !== "character") return false;
+  const users = globalThis.game?.users;
+  const list =
+    typeof users?.filter === "function"
+      ? users.filter(() => true)
+      : Array.from(users ?? []);
+  const charId = (u) =>
+    typeof u?.character === "string" ? u.character : (u?.character?.id ?? null);
+  // (a) a non-GM user has this as their assigned character.
+  if (list.some((u) => u && !u.isGM && charId(u) === actor.id)) return true;
+  // (b) a non-GM user holds an explicit per-user OWNER permission.
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  const ownerById = (id) =>
+    list.find((u) => u?.id === id) ?? users?.get?.(id) ?? null;
+  const ownership = actor?.ownership ?? {};
+  for (const [userId, level] of Object.entries(ownership)) {
+    if (userId === "default") continue;
+    if (Number(level) >= OWNER && ownerById(userId)?.isGM === false)
+      return true;
+  }
+  // (c) fallback — UNCONDITIONAL, so default-owned PCs still count (do NOT gate
+  //     this on users.length === 0 the way the TokenBar compat does).
+  return actor?.hasPlayerOwner === true;
+}
+
+/** Player-owned character actors (the roster's auto-discovery default). */
 export function discoverPlayerCharacters() {
   const actors = globalThis.game?.actors;
   if (typeof actors?.filter !== "function") return [];
-  return actors.filter(
-    (actor) => actor?.type === "character" && actor?.hasPlayerOwner === true,
-  );
+  return actors.filter((actor) => isPlayerOwnedCharacter(actor));
+}
+
+/** Every actor in the world — the pool the GM can manually add to the roster
+ *  (NPCs, vehicles, group actors, unowned actors), not just player characters. */
+export function discoverAllActors() {
+  const actors = globalThis.game?.actors;
+  if (typeof actors?.filter !== "function") return [];
+  return actors.filter((actor) => actor && typeof actor.id === "string");
 }
 
 /**
@@ -702,14 +738,16 @@ export function discoverPlayerCharacters() {
  * source that's gone (or no longer a stash) falls back to self.
  */
 export function getPartyRoster(config = null) {
-  const all = discoverPlayerCharacters();
-  const byId = new Map(all.map((actor) => [actor.id, actor]));
   const cfg = config ?? loadResourceConfig();
   const roster = Array.isArray(cfg.roster) ? cfg.roster : [];
+  // Auto-discovery (no curated roster) defaults to player-owned characters for
+  // least surprise; a CURATED roster resolves against every actor, so the GM
+  // can pin NPCs / unowned / non-player actors as supply sources too.
+  const byId = new Map(discoverAllActors().map((actor) => [actor.id, actor]));
 
   let entries;
   if (roster.length === 0) {
-    entries = all.map((actor) => ({
+    entries = discoverPlayerCharacters().map((actor) => ({
       actor,
       isStash: false,
       drawFromId: actor.id,

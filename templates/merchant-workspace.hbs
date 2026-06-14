@@ -149,6 +149,9 @@
               {{/each}}
             </select>
           </label>
+          {{#if selfServiceOffWithPlayers}}
+          <p class="mw-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> This shop has allowed players but Self-Service is <strong>Off</strong>, so it will <strong>not</strong> appear in their Shops door. Set it to <strong>Open</strong> or <strong>Knock</strong> for players to open it themselves (you can still push a session either way).</p>
+          {{/if}}
           <p class="mw-hint">With <strong>Knock</strong>, when a player asks to enter you'll get an Approve / Deny prompt on your screen.</p>
         </fieldset>
 

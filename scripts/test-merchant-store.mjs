@@ -18,6 +18,7 @@ import {
   getSelfServiceMode,
   isSelfServiceReachable,
   isUserAllowed,
+  promoteSelfServiceMode,
   mergeStockRows,
   sanitizeMerchantForList,
   SELF_SERVICE_MODES,
@@ -829,6 +830,34 @@ import {
   assert.equal(isSelfServiceReachable({ selfServiceMode: "off" }), false);
   assert.equal(isSelfServiceReachable({ selfServiceMode: "open" }), true);
   assert.equal(isSelfServiceReachable({ selfServiceMode: "knock" }), true);
+
+  // promoteSelfServiceMode — first allowed player flips a default-"off" shop to
+  // "open" so players can actually open it; everything else keeps the GM's mode.
+  assert.equal(
+    promoteSelfServiceMode("off", false, true),
+    "open",
+    "first allowed player promotes off → open",
+  );
+  assert.equal(
+    promoteSelfServiceMode("off", true, true),
+    "off",
+    "a shop that already had players keeps its explicit off (GM-pull)",
+  );
+  assert.equal(
+    promoteSelfServiceMode("off", false, false),
+    "off",
+    "no players → stays off",
+  );
+  assert.equal(
+    promoteSelfServiceMode("knock", false, true),
+    "knock",
+    "an explicit knock is never overridden",
+  );
+  assert.equal(
+    promoteSelfServiceMode("open", false, true),
+    "open",
+    "already open stays open",
+  );
 
   // sanitizeMerchantForList strips every economy + permission internal.
   const rich = normalizeMerchant({
