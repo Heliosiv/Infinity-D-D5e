@@ -161,589 +161,574 @@ export function validateSoundAssets() {
 }
 
 function renderLoadingShimmer(buffer, rng) {
-  addFilteredNoise(buffer, rng, {
-    start: 0,
-    duration: 0.95,
-    amp: 0.018,
-    pan: -0.08,
-    panEnd: 0.14,
-    color: "shimmer",
-    attack: 0.08,
-    release: 1.7,
+  // A satchel of magic opened: parchment unfurling + leather, a faint glimmer.
+  addParchment(buffer, rng, {
+    start: 0.0,
+    duration: 0.72,
+    amp: 0.07,
+    pan: -0.12,
+    panEnd: 0.18,
   });
-  addBell(buffer, {
-    start: 0.02,
-    duration: 0.82,
-    freq: 740,
-    amp: 0.09,
-    pan: -0.32,
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.5,
+    amp: 0.055,
+    pan: -0.22,
+    panEnd: 0.1,
   });
-  addBell(buffer, {
-    start: 0.14,
-    duration: 0.66,
-    freq: 1110,
-    amp: 0.062,
+  addStruckMetal(buffer, rng, {
+    start: 0.05,
+    freq: 742,
+    amp: 0.05,
+    pan: -0.3,
+    decay: 4.6,
+  });
+  addStruckMetal(buffer, rng, {
+    start: 0.26,
+    freq: 1116,
+    amp: 0.032,
     pan: 0.28,
-  });
-  addBell(buffer, {
-    start: 0.31,
-    duration: 0.42,
-    freq: 1480,
-    amp: 0.042,
-    pan: 0.05,
+    decay: 5.4,
   });
   addGlints(buffer, rng, {
-    count: 6,
-    start: 0.12,
-    spread: 0.65,
-    baseFreq: 1560,
-    amp: 0.026,
+    count: 5,
+    start: 0.2,
+    spread: 0.5,
+    baseFreq: 1500,
+    amp: 0.016,
   });
-  addRoomTail(buffer, { amount: 0.12, delayMs: 45, feedback: 0.2 });
+  addRoomTail(buffer, { amount: 0.14 });
 }
 
 function renderRollStart(buffer, rng) {
-  addImpact(buffer, rng, {
-    start: 0.015,
-    duration: 0.18,
-    freq: 148,
-    amp: 0.18,
-    pan: -0.08,
-    color: "wood",
+  // Dice/bones shaken in a leather cup, then the cup set down on wood.
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.16,
+    amp: 0.07,
+    pan: -0.2,
+    panEnd: 0.2,
   });
-  addPitchSweep(buffer, {
-    start: 0.04,
-    duration: 0.5,
-    fromFreq: 170,
-    toFreq: 245,
-    amp: 0.048,
-    pan: 0,
-    attack: 0.025,
-    release: 1.35,
-  });
-  for (const start of [0.055, 0.12, 0.19, 0.29, 0.43]) {
-    addCoinClick(buffer, rng, {
-      start: start + rng() * 0.012,
-      amp: 0.19 + rng() * 0.045,
-      freq: 620 + rng() * 260,
-      pan: -0.55 + rng() * 1.1,
+  for (const start of [0.02, 0.07, 0.13, 0.2]) {
+    addWoodKnock(buffer, rng, {
+      start: start + rng() * 0.01,
+      freq: 220 + rng() * 180,
+      amp: 0.07 + rng() * 0.03,
+      pan: -0.5 + rng() * 1.0,
+      decay: 34,
     });
   }
-  addRoomTail(buffer, { amount: 0.08, delayMs: 32, feedback: 0.12 });
+  addWoodKnock(buffer, rng, {
+    start: 0.3,
+    freq: 150,
+    amp: 0.16,
+    pan: -0.05,
+    decay: 22,
+  });
+  addParchment(buffer, rng, {
+    start: 0.32,
+    duration: 0.26,
+    amp: 0.03,
+    pan: 0.18,
+  });
+  addRoomTail(buffer, { amount: 0.1 });
 }
 
 function renderResultCascade(buffer, rng) {
+  // Coins and trinkets tipped out onto a cloth-covered table.
   addFilteredNoise(buffer, rng, {
     start: 0.0,
-    duration: 0.42,
-    amp: 0.032,
-    pan: -0.42,
-    panEnd: 0.48,
-    color: "paper",
-    attack: 0.015,
-    release: 1.25,
+    duration: 0.18,
+    amp: 0.05,
+    pan: -0.3,
+    panEnd: 0.3,
+    color: "cloth",
+    attack: 0.004,
+    release: 1.1,
   });
-  for (const [index, start] of [
-    0.035, 0.095, 0.17, 0.245, 0.35, 0.47,
-  ].entries()) {
+  for (const [index, start] of [0.03, 0.09, 0.16, 0.24, 0.34, 0.45].entries()) {
     addCoinClick(buffer, rng, {
-      start: start + rng() * 0.01,
-      amp: 0.125 + index * 0.012,
-      freq: 690 + index * 58 + rng() * 100,
-      pan: index % 2 === 0 ? -0.34 : 0.34,
+      start: start + rng() * 0.012,
+      amp: 0.12 + index * 0.012,
+      freq: 660 + index * 60 + rng() * 120,
+      pan: index % 2 === 0 ? -0.32 : 0.32,
     });
   }
-  addBell(buffer, {
-    start: 0.24,
-    duration: 0.34,
-    freq: 520,
-    amp: 0.042,
+  addStruckMetal(buffer, rng, {
+    start: 0.26,
+    freq: 560,
+    amp: 0.03,
     pan: 0.08,
+    decay: 6,
   });
-  addRoomTail(buffer, { amount: 0.09, delayMs: 39, feedback: 0.14 });
+  addParchment(buffer, rng, {
+    start: 0.0,
+    duration: 0.3,
+    amp: 0.022,
+    pan: 0.1,
+  });
+  addRoomTail(buffer, { amount: 0.11 });
 }
 
 function renderHoardCascade(buffer, rng) {
+  // A heavy chest of coins poured out onto wood.
   addImpact(buffer, rng, {
     start: 0,
-    duration: 0.32,
-    freq: 86,
-    amp: 0.25,
-    pan: -0.12,
+    duration: 0.3,
+    freq: 84,
+    amp: 0.24,
+    pan: -0.1,
     color: "wood",
   });
   addFilteredNoise(buffer, rng, {
-    start: 0.1,
-    duration: 0.62,
-    amp: 0.045,
+    start: 0.08,
+    duration: 0.6,
+    amp: 0.05,
     pan: -0.35,
     panEnd: 0.42,
     color: "coin",
-    attack: 0.025,
-    release: 1.8,
+    attack: 0.02,
+    release: 1.7,
   });
-  for (const start of [
-    0.085, 0.13, 0.19, 0.25, 0.335, 0.43, 0.55, 0.69, 0.82,
-  ]) {
+  for (const start of [0.08, 0.13, 0.19, 0.26, 0.34, 0.44, 0.56, 0.7, 0.83]) {
     addCoinClick(buffer, rng, {
-      start: start + rng() * 0.018,
-      amp: 0.18 + rng() * 0.09,
-      freq: 700 + rng() * 460,
+      start: start + rng() * 0.02,
+      amp: 0.16 + rng() * 0.09,
+      freq: 680 + rng() * 480,
       pan: -0.7 + rng() * 1.4,
     });
   }
-  addBell(buffer, {
-    start: 0.36,
-    duration: 0.44,
+  addStruckMetal(buffer, rng, {
+    start: 0.34,
     freq: 330,
     amp: 0.04,
     pan: 0.2,
+    decay: 4.4,
   });
-  addRoomTail(buffer, { amount: 0.13, delayMs: 52, feedback: 0.2 });
+  addRoomTail(buffer, { amount: 0.16 });
 }
 
 function renderRareChime(buffer, rng) {
-  addBell(buffer, {
+  // A single struck bronze bell.
+  addStruckMetal(buffer, rng, {
     start: 0.0,
-    duration: 0.76,
     freq: 880,
-    amp: 0.13,
-    pan: -0.16,
+    amp: 0.14,
+    pan: -0.12,
+    decay: 3.4,
   });
-  addBell(buffer, {
-    start: 0.045,
-    duration: 0.64,
+  addStruckMetal(buffer, rng, {
+    start: 0.05,
     freq: 1320,
-    amp: 0.078,
-    pan: 0.24,
-  });
-  addBell(buffer, {
-    start: 0.16,
-    duration: 0.43,
-    freq: 1760,
-    amp: 0.046,
-    pan: 0.04,
+    amp: 0.06,
+    pan: 0.22,
+    decay: 4.6,
   });
   addFilteredNoise(buffer, rng, {
     start: 0.02,
-    duration: 0.68,
-    amp: 0.011,
+    duration: 0.5,
+    amp: 0.01,
     pan: 0.2,
     panEnd: -0.15,
     color: "shimmer",
     attack: 0.04,
-    release: 2.1,
+    release: 2.0,
   });
-  addRoomTail(buffer, { amount: 0.16, delayMs: 57, feedback: 0.24 });
+  addRoomTail(buffer, { amount: 0.18 });
 }
 
 function renderLegendaryChime(buffer, rng) {
-  addPitchSweep(buffer, {
+  // A struck temple bell — root / fifth / octave — over a low bronze body.
+  addDecayTone(buffer, {
     start: 0.0,
-    duration: 0.5,
-    fromFreq: 130.81,
-    toFreq: 146.83,
-    amp: 0.048,
+    freq: 130.81,
+    amp: 0.06,
     pan: 0,
-    attack: 0.09,
-    release: 1.8,
+    attack: 0.01,
+    decayRate: 2.2,
   });
-  addBell(buffer, {
-    start: 0.02,
-    duration: 1.02,
+  addStruckMetal(buffer, rng, {
+    start: 0.0,
     freq: 523.25,
-    amp: 0.108,
-    pan: -0.24,
+    amp: 0.125,
+    pan: -0.22,
+    decay: 2.6,
   });
-  addBell(buffer, {
-    start: 0.09,
-    duration: 0.9,
+  addStruckMetal(buffer, rng, {
+    start: 0.07,
     freq: 783.99,
-    amp: 0.09,
+    amp: 0.085,
     pan: 0.18,
+    decay: 3.0,
   });
-  addBell(buffer, {
-    start: 0.19,
-    duration: 0.76,
+  addStruckMetal(buffer, rng, {
+    start: 0.16,
     freq: 1046.5,
-    amp: 0.062,
+    amp: 0.055,
     pan: 0.36,
-  });
-  addBell(buffer, {
-    start: 0.35,
-    duration: 0.52,
-    freq: 1567.98,
-    amp: 0.033,
-    pan: -0.05,
+    decay: 3.6,
   });
   addGlints(buffer, rng, {
-    count: 7,
+    count: 6,
     start: 0.24,
-    spread: 0.58,
-    baseFreq: 1750,
-    amp: 0.019,
+    spread: 0.5,
+    baseFreq: 1700,
+    amp: 0.016,
   });
   addFilteredNoise(buffer, rng, {
     start: 0.1,
-    duration: 0.88,
-    amp: 0.014,
+    duration: 0.85,
+    amp: 0.013,
     pan: -0.18,
     panEnd: 0.2,
     color: "shimmer",
     attack: 0.08,
-    release: 2.4,
+    release: 2.3,
   });
-  addRoomTail(buffer, { amount: 0.18, delayMs: 64, feedback: 0.26 });
+  addRoomTail(buffer, { amount: 0.2 });
 }
 
-function renderUiOpen(buffer) {
-  addBell(buffer, {
+function renderUiOpen(buffer, rng) {
+  // A leather-bound ledger opening.
+  addLeather(buffer, rng, {
     start: 0.0,
-    duration: 0.17,
-    freq: 520,
+    duration: 0.18,
     amp: 0.09,
     pan: -0.18,
+    panEnd: 0.16,
   });
-  addBell(buffer, {
-    start: 0.075,
-    duration: 0.16,
-    freq: 780,
-    amp: 0.064,
-    pan: 0.2,
+  addParchment(buffer, rng, {
+    start: 0.04,
+    duration: 0.2,
+    amp: 0.05,
+    pan: 0.1,
   });
-  addRoomTail(buffer, { amount: 0.06, delayMs: 31, feedback: 0.08 });
+  addWoodKnock(buffer, rng, {
+    start: 0.0,
+    freq: 240,
+    amp: 0.05,
+    pan: -0.12,
+    decay: 40,
+  });
+  addRoomTail(buffer, { amount: 0.08 });
 }
 
 function renderItemOpen(buffer, rng) {
-  addFilteredNoise(buffer, rng, {
+  // A single parchment page turned.
+  addParchment(buffer, rng, {
     start: 0.0,
-    duration: 0.22,
-    amp: 0.04,
-    pan: -0.28,
-    panEnd: 0.34,
-    color: "paper",
-    attack: 0.008,
-    release: 1.1,
+    duration: 0.26,
+    amp: 0.075,
+    pan: -0.26,
+    panEnd: 0.3,
   });
-  addBell(buffer, {
-    start: 0.13,
-    duration: 0.22,
-    freq: 660,
-    amp: 0.047,
-    pan: 0.18,
+  addWoodKnock(buffer, rng, {
+    start: 0.16,
+    freq: 300,
+    amp: 0.035,
+    pan: 0.16,
+    decay: 44,
   });
-  addRoomTail(buffer, { amount: 0.06, delayMs: 34, feedback: 0.08 });
+  addRoomTail(buffer, { amount: 0.07 });
 }
 
 function renderPresetApply(buffer, rng) {
-  addWoodClick(buffer, rng, {
+  // A wax seal pressed onto parchment.
+  addWoodKnock(buffer, rng, {
     start: 0.006,
-    duration: 0.045,
-    freq: 430,
-    amp: 0.13,
+    freq: 300,
+    amp: 0.16,
     pan: -0.1,
+    decay: 30,
   });
-  addBell(buffer, {
-    start: 0.04,
-    duration: 0.16,
-    freq: 590,
-    amp: 0.064,
-    pan: -0.16,
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.12,
+    amp: 0.04,
+    pan: 0.1,
   });
-  addBell(buffer, {
-    start: 0.12,
-    duration: 0.16,
-    freq: 790,
-    amp: 0.048,
-    pan: 0.18,
+  addStruckMetal(buffer, rng, {
+    start: 0.06,
+    freq: 620,
+    amp: 0.035,
+    pan: 0.16,
+    decay: 7,
   });
-  addRoomTail(buffer, { amount: 0.05, delayMs: 29, feedback: 0.07 });
+  addRoomTail(buffer, { amount: 0.06 });
 }
 
 function renderRosterAdd(buffer, rng) {
-  addWoodClick(buffer, rng, {
-    start: 0.004,
-    duration: 0.05,
-    freq: 360,
-    amp: 0.12,
-    pan: -0.18,
+  // A token dropped into a leather pouch.
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.12,
+    amp: 0.07,
+    pan: -0.16,
   });
-  addBell(buffer, {
-    start: 0.055,
-    duration: 0.14,
-    freq: 520,
-    amp: 0.058,
-    pan: 0.14,
+  addCoinClick(buffer, rng, {
+    start: 0.03,
+    amp: 0.1,
+    freq: 560,
+    pan: 0.12,
   });
-  addRoomTail(buffer, { amount: 0.045, delayMs: 28, feedback: 0.06 });
+  addRoomTail(buffer, { amount: 0.05 });
 }
 
 function renderRosterRemove(buffer, rng) {
-  addWoodClick(buffer, rng, {
-    start: 0.004,
-    duration: 0.045,
-    freq: 320,
-    amp: 0.105,
+  // Drawn back out of the pouch — soft, downward.
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.14,
+    amp: 0.07,
     pan: 0.16,
+    panEnd: -0.16,
   });
   addPitchSweep(buffer, {
-    start: 0.045,
-    duration: 0.18,
+    start: 0.03,
+    duration: 0.16,
     fromFreq: 360,
-    toFreq: 250,
-    amp: 0.05,
-    pan: -0.08,
+    toFreq: 240,
+    amp: 0.04,
+    pan: -0.06,
     attack: 0.008,
-    release: 1.9,
+    release: 1.8,
   });
-  addFilteredNoise(buffer, rng, {
-    start: 0.02,
-    duration: 0.12,
-    amp: 0.022,
-    pan: 0.2,
-    panEnd: -0.2,
-    color: "cloth",
-    attack: 0.006,
-    release: 1.1,
-  });
-  addRoomTail(buffer, { amount: 0.035, delayMs: 25, feedback: 0.05 });
+  addRoomTail(buffer, { amount: 0.045 });
 }
 
 function renderLockToggle(buffer, rng) {
-  addWoodClick(buffer, rng, {
+  // A wooden/iron clasp snapping shut.
+  addWoodKnock(buffer, rng, {
     start: 0.005,
-    duration: 0.07,
-    freq: 390,
-    amp: 0.26,
-    pan: -0.2,
+    freq: 360,
+    amp: 0.2,
+    pan: -0.18,
+    decay: 30,
   });
-  addWoodClick(buffer, rng, {
-    start: 0.065,
-    duration: 0.08,
-    freq: 220,
-    amp: 0.17,
+  addStruckMetal(buffer, rng, {
+    start: 0.05,
+    freq: 540,
+    amp: 0.06,
     pan: 0.16,
+    decay: 9,
   });
-  addRoomTail(buffer, { amount: 0.045, delayMs: 24, feedback: 0.06 });
+  addRoomTail(buffer, { amount: 0.05 });
 }
 
 function renderChatSend(buffer, rng) {
-  addFilteredNoise(buffer, rng, {
-    start: 0.0,
-    duration: 0.26,
-    amp: 0.05,
-    pan: -0.5,
-    panEnd: 0.28,
-    color: "paper",
-    attack: 0.012,
-    release: 1.15,
-  });
-  addBell(buffer, {
-    start: 0.18,
-    duration: 0.24,
-    freq: 940,
-    amp: 0.039,
-    pan: 0.26,
-  });
-  addWoodClick(buffer, rng, {
-    start: 0.31,
-    duration: 0.055,
-    freq: 500,
-    amp: 0.11,
-    pan: 0.06,
-  });
-  addRoomTail(buffer, { amount: 0.07, delayMs: 33, feedback: 0.1 });
-}
-
-function renderDeposit(buffer, rng) {
-  addImpact(buffer, rng, {
-    start: 0.0,
-    duration: 0.2,
-    freq: 118,
-    amp: 0.19,
-    pan: -0.12,
-    color: "cloth",
-  });
-  for (const start of [0.09, 0.16, 0.27, 0.39, 0.48]) {
-    addCoinClick(buffer, rng, {
-      start: start + rng() * 0.012,
-      amp: 0.13 + rng() * 0.065,
-      freq: 660 + rng() * 360,
-      pan: -0.45 + rng() * 0.9,
-    });
-  }
-  addRoomTail(buffer, { amount: 0.08, delayMs: 36, feedback: 0.13 });
-}
-
-function renderClearReset(buffer, rng) {
-  addFilteredNoise(buffer, rng, {
+  // A quill stroke across parchment, then set down.
+  addParchment(buffer, rng, {
     start: 0.0,
     duration: 0.28,
     amp: 0.07,
+    pan: -0.45,
+    panEnd: 0.3,
+  });
+  addWoodKnock(buffer, rng, {
+    start: 0.3,
+    freq: 380,
+    amp: 0.08,
+    pan: 0.06,
+    decay: 36,
+  });
+  addRoomTail(buffer, { amount: 0.08 });
+}
+
+function renderDeposit(buffer, rng) {
+  // A coin pouch set down, coins settling inside.
+  addImpact(buffer, rng, {
+    start: 0.0,
+    duration: 0.2,
+    freq: 116,
+    amp: 0.18,
+    pan: -0.12,
+    color: "cloth",
+  });
+  addLeather(buffer, rng, {
+    start: 0.0,
+    duration: 0.16,
+    amp: 0.05,
+    pan: 0.0,
+  });
+  for (const start of [0.09, 0.16, 0.27, 0.39]) {
+    addCoinClick(buffer, rng, {
+      start: start + rng() * 0.012,
+      amp: 0.12 + rng() * 0.06,
+      freq: 640 + rng() * 340,
+      pan: -0.4 + rng() * 0.8,
+    });
+  }
+  addRoomTail(buffer, { amount: 0.1 });
+}
+
+function renderClearReset(buffer, rng) {
+  // A parchment swept off the table — airy, downward.
+  addParchment(buffer, rng, {
+    start: 0.0,
+    duration: 0.3,
+    amp: 0.08,
     pan: 0.45,
-    panEnd: -0.38,
-    color: "paper",
-    attack: 0.018,
-    release: 1.05,
+    panEnd: -0.4,
   });
   addPitchSweep(buffer, {
-    start: 0.055,
+    start: 0.05,
     duration: 0.22,
     fromFreq: 240,
-    toFreq: 145,
-    amp: 0.055,
+    toFreq: 140,
+    amp: 0.05,
     pan: -0.08,
     attack: 0.02,
     release: 1.35,
   });
-  addRoomTail(buffer, { amount: 0.045, delayMs: 29, feedback: 0.08 });
+  addRoomTail(buffer, { amount: 0.06 });
 }
 
 function renderWarningMuted(buffer, rng) {
-  addImpact(buffer, rng, {
+  // A dull, dead wooden thud — clearly "no".
+  addWoodKnock(buffer, rng, {
     start: 0.0,
-    duration: 0.27,
     freq: 104,
-    amp: 0.25,
+    amp: 0.22,
+    pan: 0,
+    decay: 30,
+  });
+  addFilteredNoise(buffer, rng, {
+    start: 0.0,
+    duration: 0.16,
+    amp: 0.05,
     pan: 0,
     color: "cloth",
+    attack: 0.002,
+    release: 1.2,
   });
-  addWoodClick(buffer, rng, {
-    start: 0.035,
-    duration: 0.08,
-    freq: 115,
-    amp: 0.08,
-    pan: -0.04,
-  });
-  addRoomTail(buffer, { amount: 0.035, delayMs: 27, feedback: 0.05 });
+  addRoomTail(buffer, { amount: 0.035 });
 }
 
 function renderMerchantSessionOpen(buffer, rng) {
-  addWoodClick(buffer, rng, {
+  // A shop counter knock and a small brass shop bell.
+  addWoodKnock(buffer, rng, {
     start: 0.005,
-    duration: 0.06,
-    freq: 280,
-    amp: 0.18,
+    freq: 260,
+    amp: 0.16,
     pan: -0.18,
+    decay: 26,
   });
-  addBell(buffer, {
-    start: 0.06,
-    duration: 0.22,
-    freq: 540,
-    amp: 0.09,
-    pan: -0.1,
+  addStruckMetal(buffer, rng, {
+    start: 0.07,
+    freq: 720,
+    amp: 0.07,
+    pan: -0.06,
+    decay: 5,
   });
-  addBell(buffer, {
-    start: 0.14,
-    duration: 0.22,
-    freq: 810,
-    amp: 0.062,
+  addStruckMetal(buffer, rng, {
+    start: 0.16,
+    freq: 1080,
+    amp: 0.045,
     pan: 0.22,
+    decay: 6,
   });
-  addRoomTail(buffer, { amount: 0.07, delayMs: 34, feedback: 0.12 });
+  addRoomTail(buffer, { amount: 0.1 });
 }
 
 function renderMerchantPurchase(buffer, rng) {
-  addImpact(buffer, rng, {
+  // Coins paid onto a wooden counter.
+  addWoodKnock(buffer, rng, {
     start: 0.0,
-    duration: 0.18,
-    freq: 132,
-    amp: 0.16,
+    freq: 150,
+    amp: 0.12,
     pan: -0.1,
-    color: "cloth",
+    decay: 30,
   });
-  for (const start of [0.08, 0.16, 0.27, 0.38]) {
+  for (const start of [0.06, 0.14, 0.24, 0.35]) {
     addCoinClick(buffer, rng, {
       start: start + rng() * 0.012,
       amp: 0.16 + rng() * 0.06,
-      freq: 680 + rng() * 320,
+      freq: 700 + rng() * 320,
       pan: -0.4 + rng() * 0.8,
     });
   }
-  addBell(buffer, {
+  addStruckMetal(buffer, rng, {
     start: 0.45,
-    duration: 0.12,
-    freq: 720,
+    freq: 760,
     amp: 0.04,
     pan: 0.1,
+    decay: 7,
   });
-  addRoomTail(buffer, { amount: 0.08, delayMs: 36, feedback: 0.13 });
+  addRoomTail(buffer, { amount: 0.1 });
 }
 
 function renderMerchantSale(buffer, rng) {
+  // Coins counted out into your hand — rising.
   for (const start of [0.02, 0.1, 0.19, 0.3]) {
     addCoinClick(buffer, rng, {
       start: start + rng() * 0.01,
       amp: 0.13 + rng() * 0.05,
-      freq: 540 + rng() * 280,
+      freq: 560 + rng() * 280,
       pan: -0.35 + rng() * 0.7,
     });
   }
-  addPitchSweep(buffer, {
+  addStruckMetal(buffer, rng, {
     start: 0.34,
-    duration: 0.2,
-    fromFreq: 360,
-    toFreq: 520,
-    amp: 0.06,
+    freq: 660,
+    amp: 0.05,
     pan: 0.08,
-    attack: 0.012,
-    release: 1.4,
+    decay: 6,
   });
-  addRoomTail(buffer, { amount: 0.06, delayMs: 30, feedback: 0.1 });
+  addRoomTail(buffer, { amount: 0.08 });
 }
 
 function renderMerchantBargainWin(buffer, rng) {
-  addBell(buffer, {
+  // A bright flourish of struck coins — a deal struck.
+  addStruckMetal(buffer, rng, {
     start: 0.0,
-    duration: 0.55,
     freq: 660,
     amp: 0.11,
     pan: -0.18,
+    decay: 4,
   });
-  addBell(buffer, {
-    start: 0.06,
-    duration: 0.5,
-    freq: 990,
-    amp: 0.072,
-    pan: 0.24,
+  addStruckMetal(buffer, rng, {
+    start: 0.08,
+    freq: 880,
+    amp: 0.08,
+    pan: 0.1,
+    decay: 4.6,
   });
-  addBell(buffer, {
+  addStruckMetal(buffer, rng, {
     start: 0.18,
-    duration: 0.4,
     freq: 1320,
-    amp: 0.045,
-    pan: 0.0,
+    amp: 0.05,
+    pan: 0.28,
+    decay: 5.4,
   });
-  addGlints(buffer, rng, {
-    count: 4,
-    start: 0.12,
-    spread: 0.45,
-    baseFreq: 1500,
-    amp: 0.02,
+  addCoinClick(buffer, rng, {
+    start: 0.05,
+    amp: 0.1,
+    freq: 900,
+    pan: -0.2,
   });
-  addRoomTail(buffer, { amount: 0.12, delayMs: 45, feedback: 0.2 });
+  addRoomTail(buffer, { amount: 0.13 });
 }
 
 function renderMerchantBargainFail(buffer, rng) {
-  addImpact(buffer, rng, {
+  // A flat wooden thud and a sour downward slide — no deal.
+  addWoodKnock(buffer, rng, {
     start: 0.0,
-    duration: 0.24,
     freq: 96,
     amp: 0.2,
     pan: 0.04,
-    color: "wood",
+    decay: 26,
   });
   addPitchSweep(buffer, {
     start: 0.05,
     duration: 0.28,
-    fromFreq: 280,
-    toFreq: 160,
-    amp: 0.055,
+    fromFreq: 300,
+    toFreq: 150,
+    amp: 0.05,
     pan: -0.06,
     attack: 0.018,
     release: 1.3,
   });
-  addRoomTail(buffer, { amount: 0.04, delayMs: 26, feedback: 0.07 });
+  addRoomTail(buffer, { amount: 0.045 });
 }
 
 function createBuffer(duration) {
@@ -757,9 +742,176 @@ function createBuffer(duration) {
 function finishBuffer(buffer, peak) {
   removeDc(buffer.left);
   removeDc(buffer.right);
-  fadeEdges(buffer, 0.004);
-  softLimit(buffer, 1.18);
+  // Gentle high-frequency roll-off to take the digital fizz / harsh edge off
+  // the noise + soft-limiter before normalizing.
+  lowPass(buffer.left, 13_500);
+  lowPass(buffer.right, 13_500);
+  fadeEdges(buffer, 0.005);
+  softLimit(buffer, 1.12);
   normalize(buffer, peak);
+}
+
+function lowPass(samples, cutoffHz) {
+  const dt = 1 / SAMPLE_RATE;
+  const rc = 1 / (TAU * cutoffHz);
+  const alpha = dt / (rc + dt);
+  let previous = samples[0] ?? 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    previous += alpha * (samples[i] - previous);
+    samples[i] = previous;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Tactile-fantasy primitives — physical materials over clean UI tones:
+ * struck metal, resonant wood, parchment crinkle, leather creak.
+ * ------------------------------------------------------------------ */
+
+/** A single decaying sine with a click-free attack and exponential tail —
+ *  the building block for struck/plucked resonances (vs. addTone's power
+ *  envelope). Stops early once inaudible so partials stay cheap. */
+function addDecayTone(
+  buffer,
+  {
+    start,
+    freq,
+    amp,
+    pan = 0,
+    attack = 0.001,
+    decayRate = 8,
+    maxDuration = 1.15,
+  },
+) {
+  const startIndex = Math.max(0, Math.floor(start * SAMPLE_RATE));
+  const endIndex = Math.min(
+    buffer.left.length,
+    startIndex + Math.ceil(maxDuration * SAMPLE_RATE),
+  );
+  const [leftGain, rightGain] = panGains(pan);
+  for (let i = startIndex; i < endIndex; i += 1) {
+    const t = (i - startIndex) / SAMPLE_RATE;
+    const a = Math.min(1, t / Math.max(attack, 0.0003));
+    const env = a * a * (3 - 2 * a) * Math.exp(-decayRate * t);
+    if (t > attack && env < 0.00015) break;
+    const sample = Math.sin(TAU * freq * t) * amp * env;
+    buffer.left[i] += sample * leftGain;
+    buffer.right[i] += sample * rightGain;
+  }
+}
+
+/** Struck metal (bell / chime / coin ring): a bright noise strike transient
+ *  plus inharmonic partials that decay faster the higher they are — the
+ *  signature of a real struck bar, not a pure sine. */
+function addStruckMetal(
+  buffer,
+  rng,
+  { start, freq, amp, pan = 0, decay = 6, partials },
+) {
+  addFilteredNoise(buffer, rng, {
+    start,
+    duration: 0.013,
+    amp: amp * 0.45,
+    pan,
+    color: "coin",
+    attack: 0.0005,
+    release: 0.7,
+  });
+  const set = partials ?? [
+    [1.0, 1.0, 1.0],
+    [2.76, 0.52, 1.7],
+    [5.4, 0.3, 2.7],
+    [8.93, 0.16, 4.0],
+    [13.34, 0.07, 5.6],
+  ];
+  for (const [ratio, partialAmp, decMul] of set) {
+    const detune = 1 + (rng() * 2 - 1) * 0.004;
+    addDecayTone(buffer, {
+      start,
+      freq: freq * ratio * detune,
+      amp: amp * partialAmp,
+      pan: clamp(pan + Math.log2(ratio) * 0.05, -0.85, 0.85),
+      attack: 0.0008,
+      decayRate: decay * decMul,
+    });
+  }
+}
+
+/** A resonant wooden knock: a short woody noise tap with a couple of hollow
+ *  body modes — a cup on a table, a clasp, a stamp. */
+function addWoodKnock(buffer, rng, { start, freq, amp, pan = 0, decay = 26 }) {
+  addFilteredNoise(buffer, rng, {
+    start,
+    duration: 0.02,
+    amp: amp * 0.62,
+    pan,
+    color: "wood",
+    attack: 0.0005,
+    release: 0.85,
+  });
+  for (const [ratio, partialAmp, decMul] of [
+    [1.0, 1.0, 1.0],
+    [2.42, 0.5, 1.5],
+    [3.9, 0.22, 2.3],
+  ]) {
+    addDecayTone(buffer, {
+      start,
+      freq: freq * ratio,
+      amp: amp * partialAmp,
+      pan,
+      attack: 0.0008,
+      decayRate: decay * decMul,
+      maxDuration: 0.35,
+    });
+  }
+}
+
+/** Parchment / paper handling: a soft dry rustle plus a scatter of tiny
+ *  crinkle cracks across the window. */
+function addParchment(
+  buffer,
+  rng,
+  { start, duration, amp, pan = 0, panEnd = pan },
+) {
+  addFilteredNoise(buffer, rng, {
+    start,
+    duration,
+    amp: amp * 0.5,
+    pan,
+    panEnd,
+    color: "parchment",
+    attack: 0.02,
+    release: 1.2,
+  });
+  const cracks = 4 + Math.floor(rng() * 5);
+  for (let i = 0; i < cracks; i += 1) {
+    addFilteredNoise(buffer, rng, {
+      start: start + rng() * duration * 0.92,
+      duration: 0.005 + rng() * 0.009,
+      amp: amp * (0.35 + rng() * 0.6),
+      pan: pan + (panEnd - pan) * rng(),
+      color: "parchment",
+      attack: 0.0006,
+      release: 0.95,
+    });
+  }
+}
+
+/** Leather creak / soft pouch handling: low-mid grain with a gentle attack. */
+function addLeather(
+  buffer,
+  rng,
+  { start, duration, amp, pan = 0, panEnd = pan },
+) {
+  addFilteredNoise(buffer, rng, {
+    start,
+    duration,
+    amp,
+    pan,
+    panEnd,
+    color: "leather",
+    attack: 0.014,
+    release: 1.05,
+  });
 }
 
 function addBell(buffer, { start, duration, freq, amp, pan = 0 }) {
@@ -865,27 +1017,6 @@ function addImpact(buffer, rng, { start, duration, freq, amp, pan, color }) {
   });
 }
 
-function addWoodClick(buffer, rng, { start, duration, freq, amp, pan }) {
-  addFilteredNoise(buffer, rng, {
-    start,
-    duration: duration * 0.52,
-    amp: amp * 0.48,
-    pan,
-    color: "wood",
-    attack: 0.001,
-    release: 0.92,
-  });
-  addTone(buffer, {
-    start: start + 0.002,
-    duration,
-    freq,
-    amp: amp * 0.46,
-    pan,
-    attack: 0.001,
-    release: 4.8,
-  });
-}
-
 function addTone(
   buffer,
   {
@@ -987,6 +1118,10 @@ function addFilteredNoise(
     if (color === "coin") colored = high * 0.72 + snap * 0.22 + low * 0.06;
     else if (color === "wood") colored = low * 0.72 + high * 0.18;
     else if (color === "cloth") colored = lowSlow * 0.88 + low * 0.12;
+    else if (color === "leather")
+      colored = lowSlow * 0.52 + low * 0.42 + snap * 0.06;
+    else if (color === "parchment")
+      colored = high * 0.46 + snap * 0.36 + low * 0.18;
     else if (color === "shimmer") colored = high * 0.58 + low * 0.3;
     else colored = high * 0.34 + low * 0.66;
 
@@ -999,19 +1134,45 @@ function addFilteredNoise(
   }
 }
 
-function addRoomTail(buffer, { amount, delayMs, feedback }) {
-  const delayLeft = Math.max(1, Math.round((delayMs / 1000) * SAMPLE_RATE));
-  const delayRight = Math.max(
-    1,
-    Math.round(((delayMs * 1.31) / 1000) * SAMPLE_RATE),
-  );
-  for (let i = delayLeft; i < buffer.left.length; i += 1) {
-    buffer.left[i] += buffer.right[i - delayLeft] * amount;
-    buffer.left[i] += buffer.left[i - delayLeft] * feedback * 0.18;
-  }
-  for (let i = delayRight; i < buffer.right.length; i += 1) {
-    buffer.right[i] += buffer.left[i - delayRight] * amount * 0.9;
-    buffer.right[i] += buffer.right[i - delayRight] * feedback * 0.16;
+/**
+ * Diffuse room tail — a spray of decaying, cross-fed early reflections instead
+ * of one feedback echo. Several incommensurate tap times blur into a small
+ * stone-hall ambience without the metallic slap-back ring the old single tap
+ * produced. `amount` is the wet level; `room` scales the tap spacing.
+ */
+function addRoomTail(buffer, { amount = 0.1, room = 1 }) {
+  const taps = [
+    [9, 0.72],
+    [17, 0.52],
+    [26, 0.38],
+    [37, 0.27],
+    [50, 0.18],
+    [65, 0.12],
+    [83, 0.08],
+  ];
+  const srcLeft = buffer.left.slice();
+  const srcRight = buffer.right.slice();
+  const length = buffer.left.length;
+  for (const [ms, gain] of taps) {
+    const wet = gain * amount;
+    const delayLeft = Math.max(
+      1,
+      Math.round(((ms * room) / 1000) * SAMPLE_RATE),
+    );
+    const delayRight = Math.max(
+      1,
+      Math.round(((ms * room * 1.18) / 1000) * SAMPLE_RATE),
+    );
+    // Cross-feed (left tail fed from the right source and vice versa) widens
+    // the image, mixing a little same-side energy for body.
+    for (let i = delayLeft; i < length; i += 1) {
+      buffer.left[i] += srcRight[i - delayLeft] * wet * 0.7;
+      buffer.left[i] += srcLeft[i - delayLeft] * wet * 0.4;
+    }
+    for (let i = delayRight; i < length; i += 1) {
+      buffer.right[i] += srcLeft[i - delayRight] * wet * 0.7;
+      buffer.right[i] += srcRight[i - delayRight] * wet * 0.4;
+    }
   }
 }
 
