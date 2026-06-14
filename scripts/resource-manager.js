@@ -20,10 +20,12 @@ import {
 } from "./resource/store.js";
 import {
   advanceDayNow,
+  describeForageDrive,
   discoverAllActors,
   discoverPartyActors,
   discoverPlayerCharacters,
   getPartyRoster,
+  runForageDrive,
 } from "./resource/calendar-watcher.js";
 import { matchResourceItems } from "./resource/consumption.js";
 import {
@@ -57,6 +59,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     position: { width: 880, height: 700 },
     actions: {
       advanceDay: ResourceManagerApp._onAdvanceDay,
+      forageDrive: ResourceManagerApp._onForageDrive,
       addResource: ResourceManagerApp._onAddResource,
       removeResource: ResourceManagerApp._onRemoveResource,
       addTag: ResourceManagerApp._onAddTag,
@@ -404,6 +407,82 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
+  static async _onForageDrive(_event, _target) {
+    // Push a one-off Survival check (GM-set DC) to chosen party members and
+    // deposit what they gather — no consumption, no day tick.
+    const { defaultDc, stashName, candidates } = describeForageDrive();
+    if (candidates.length === 0) {
+      ui.notifications?.info(
+        `${MODULE_ID}: add party members before running a forage drive.`,
+      );
+      return;
+    }
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.prompt !== "function") return;
+
+    const anyOnline = candidates.some((c) => c.online);
+    const rows = candidates
+      .map((c) => {
+        const dis = c.online ? "" : " disabled";
+        const tag = c.online
+          ? ""
+          : ' <span style="opacity:0.6;">(offline)</span>';
+        return `<label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" name="forager" value="${escapeAttr(c.actorId)}" ${c.online ? "checked" : ""}${dis} />
+          <span>${escapeHtml(c.name)}${tag}</span>
+        </label>`;
+      })
+      .join("");
+    const destLine = stashName
+      ? `Gathered supplies go to <strong>${escapeHtml(stashName)}</strong>'s stash.`
+      : `No party stash set — each forager keeps their own haul.`;
+    const content = `
+      <p>Send a Wisdom (Survival) check to the selected players. Those who meet the DC add food &amp; water to the party's supplies.</p>
+      <label class="rm-field" style="display:grid; gap:4px; margin-bottom:8px;">
+        <span>Survival DC</span>
+        <input type="number" name="dc" min="1" step="1" value="${Number(defaultDc) || 15}" />
+      </label>
+      <fieldset style="border:1px solid var(--color-border-light-tertiary,#5553); border-radius:6px; padding:6px 10px;">
+        <legend>Foragers</legend>
+        ${rows || "<p>No party members.</p>"}
+      </fieldset>
+      <p style="opacity:0.8; margin:8px 0 0;">${destLine}</p>
+      ${anyOnline ? "" : '<p style="color:#ef6f74; margin:6px 0 0;">No selected player is online to roll right now.</p>'}`;
+
+    let result = null;
+    try {
+      result = await DialogV2.prompt({
+        window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
+        content,
+        ok: {
+          label: "Send check",
+          icon: "fa-solid fa-paper-plane",
+          callback: (_e, button) => {
+            const form = button?.form;
+            if (!form) return null;
+            const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
+            const ids = Array.from(
+              form.querySelectorAll('input[name="forager"]:checked'),
+            ).map((el) => el.value);
+            return { dc, ids };
+          },
+        },
+        rejectClose: false,
+      });
+    } catch {
+      result = null;
+    }
+    if (!result) return;
+    if (!Array.isArray(result.ids) || result.ids.length === 0) {
+      ui.notifications?.info(`${MODULE_ID}: select at least one forager.`);
+      return;
+    }
+    playModuleSound(SOUND_EVENTS.ROLL_START);
+    await runForageDrive({ dc: result.dc, targetActorIds: result.ids });
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
   static async _onAddResource(_event, _target) {
     const config = loadResourceConfig();
     const used = new Set(config.resources.map((r) => r.id));
@@ -566,6 +645,19 @@ function seedRosterIfEmpty(config) {
 function titleCaseWord(value) {
   const s = String(value ?? "");
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+/** Escape text for safe interpolation into the forage-drive dialog markup. */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Escape a value for use inside a double-quoted HTML attribute. */
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
 function applyResourceField(res, field, value) {

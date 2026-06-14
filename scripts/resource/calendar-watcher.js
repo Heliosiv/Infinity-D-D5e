@@ -25,7 +25,11 @@ import {
   setLastUpkeepResult,
 } from "./store.js";
 import { findEnvironment, isForageable } from "./environment.js";
-import { computeForageYield, combineYields } from "./forage.js";
+import {
+  computeForageYield,
+  combineYields,
+  planForageDriveDeposits,
+} from "./forage.js";
 import {
   matchResourceItems,
   planConsumption,
@@ -180,6 +184,216 @@ export async function advanceDayNow() {
     return await runDailyUpkeep({ elapsedDays: 1, manual: true });
   } finally {
     upkeepInFlight = false;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Forage drive (GM-pushed Survival check, gather-only)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Describe a forage drive for the dialog: the suggested DC (the current
+ * environment's, falling back to 15) and the roster members that can be sent the
+ * check, each flagged with whether an owner is online to actually roll. GM-side.
+ */
+export function describeForageDrive(config = null) {
+  const cfg = config ?? loadResourceConfig();
+  const state = loadRunState();
+  const env = resolveCurrentEnvironment(cfg, state);
+  const dc = Number(env?.dc);
+  const roster = getPartyRoster(cfg);
+  return {
+    defaultDc: Number.isFinite(dc) && dc > 0 ? dc : 15,
+    stashName: resolveDriveStashActor(cfg, roster)?.name ?? null,
+    candidates: roster.map(({ actor }) => ({
+      actorId: actor.id,
+      name: actor.name,
+      online: Boolean(owningOnlineUserId(actor)),
+    })),
+  };
+}
+
+/**
+ * The single actor a forage drive deposits the whole haul onto: the configured
+ * party food/water stash, else the first roster member flagged as a stash, else
+ * null (meaning "no shared pile — give each forager their own haul"). Mirrors the
+ * draw-source model the daily upkeep already uses.
+ */
+function resolveDriveStashActor(cfg, roster) {
+  const byId = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  const partyStashId = String(cfg.partyStashId ?? "").trim();
+  if (partyStashId && byId.has(partyStashId)) return byId.get(partyStashId);
+  return roster.find((r) => r.isStash)?.actor ?? null;
+}
+
+/**
+ * Run a GM-initiated forage drive: push a Survival check at a GM-set DC to the
+ * selected party members, then deposit what they gather — filling the party's
+ * water sources and adding rations to the designated stash. Unlike Advance Day
+ * this is gather-only: it consumes nothing and doesn't tick the day. GM-only.
+ *
+ * @param {object} args
+ * @param {number} args.dc - the Survival DC the GM set for this drive.
+ * @param {string[]} args.targetActorIds - roster actor ids to send the check to.
+ */
+export async function runForageDrive({ dc, targetActorIds } = {}) {
+  if (!isAuthoritativeGM()) {
+    globalThis.ui?.notifications?.warn(
+      `${MODULE_ID}: only the active GM can run a forage drive.`,
+    );
+    return null;
+  }
+  if (upkeepInFlight) return null;
+  upkeepInFlight = true;
+  try {
+    return await runForageDriveInner({ dc, targetActorIds });
+  } finally {
+    upkeepInFlight = false;
+  }
+}
+
+async function runForageDriveInner({ dc, targetActorIds }) {
+  const cfg = loadResourceConfig();
+  const state = loadRunState();
+  const roster = getPartyRoster(cfg);
+
+  // The drive only forages tracked members; resolve the GM's selection to them.
+  const wanted = new Set(
+    (Array.isArray(targetActorIds) ? targetActorIds : []).map((id) =>
+      String(id),
+    ),
+  );
+  const selected = roster.filter((r) => wanted.has(r.actor.id));
+  if (selected.length === 0) {
+    globalThis.ui?.notifications?.info(
+      `${MODULE_ID}: no foragers selected for the drive.`,
+    );
+    return null;
+  }
+  const party = selected.map((r) => r.actor);
+
+  // Build the drive environment: the GM-set DC overrides the region DC, but keep
+  // the current region's yield dice (defaulting to 1d6 when the party is somewhere
+  // that normally can't be foraged — the GM is explicitly overriding that here).
+  const baseEnv = resolveCurrentEnvironment(cfg, state);
+  const baseForageable = isForageable(baseEnv);
+  const gmDc = Math.floor(Number(dc));
+  const driveEnv = {
+    id: baseEnv?.id ?? "forage-drive",
+    label: baseEnv?.label ?? "Foraging drive",
+    dc: Number.isFinite(gmDc) && gmDc >= 0 ? gmDc : (baseEnv?.dc ?? 15),
+    forageable: true,
+    yieldFood: baseForageable ? baseEnv.yieldFood : "1d6",
+    yieldWater: baseForageable ? baseEnv.yieldWater : "1d6",
+  };
+
+  const foragedByActor = await runForagingWindow({
+    env: driveEnv,
+    party,
+    cfg,
+  });
+
+  const foodRes = cfg.resources.find((r) => r.forageYields === "food");
+  const waterRes = cfg.resources.find((r) => r.forageYields === "water");
+
+  // Decide where every haul lands with the pure planner (no Foundry objects):
+  // one communal pile when a stash is set (rations to the stash; water tops up —
+  // "fills" — its water source), else each forager keeps their own haul on their
+  // draw source. Water only counts when both the toggle is on and a water
+  // resource exists to receive it.
+  const plan = planForageDriveDeposits({
+    roster: roster.map((r) => ({
+      actorId: r.actor.id,
+      name: r.actor.name,
+      isStash: r.isStash,
+      drawFromId: r.drawFromId,
+    })),
+    selectedIds: selected.map((r) => r.actor.id),
+    foraged: [...foragedByActor.entries()].map(([actorId, y]) => ({
+      actorId,
+      food: y.food,
+      water: y.water,
+      success: y.success,
+    })),
+    partyStashId: cfg.partyStashId,
+    waterEnabled: cfg.waterEnabled && Boolean(waterRes),
+  });
+
+  // Apply the planned deposits against the real actors.
+  const actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  for (const dep of plan.deposits) {
+    const sink = actorById.get(dep.actorId);
+    if (!sink) continue;
+    if (foodRes && dep.food > 0) await depositResource(sink, foodRes, dep.food);
+    if (waterRes && dep.water > 0) {
+      await depositResource(sink, waterRes, dep.water);
+    }
+  }
+
+  const stashActor = plan.stashActorId
+    ? (actorById.get(plan.stashActorId) ?? null)
+    : null;
+  emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
+  await postForageDriveReport({
+    env: driveEnv,
+    perForager: plan.perForager,
+    stashActor,
+    totalFood: plan.totalFood,
+    totalWater: plan.totalWater,
+  });
+  return {
+    dc: driveEnv.dc,
+    perForager: plan.perForager,
+    totalFood: plan.totalFood,
+    totalWater: plan.totalWater,
+    stashActor,
+  };
+}
+
+async function postForageDriveReport({
+  env,
+  perForager,
+  stashActor,
+  totalFood,
+  totalWater,
+}) {
+  if (typeof globalThis.ChatMessage?.create !== "function") return null;
+  const rows = perForager
+    .map((f) => {
+      const name = `<strong>${escapeText(f.name)}</strong>`;
+      if (!f.attempted) {
+        return `<li>${name} — <span style="opacity:0.7;">no online owner to roll</span></li>`;
+      }
+      if (!f.success) {
+        return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
+      }
+      return `<li>${name} — <span style="color:#6dd5a2;">+${f.food} food / +${f.water} water</span></li>`;
+    })
+    .join("");
+  const dest = stashActor
+    ? `Added to <strong>${escapeText(stashActor.name)}</strong>'s stash`
+    : "Added to each forager's pack";
+  const content = `
+    <div class="infinity-dnd5e infinity-quartermaster-receipt">
+      <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeText(env.dc)}</h3>
+      <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
+      <div>${dest}: <strong>+${totalFood} food / +${totalWater} water</strong> total.</div>
+    </div>`;
+  const speaker = globalThis.ChatMessage.getSpeaker?.({
+    alias: "Quartermaster",
+  });
+  const messageData = { content, speaker };
+  const whisper = resolveWhisperForActors(
+    perForager
+      .map((f) => f.actorId)
+      .filter((id) => typeof id === "string" && id),
+  );
+  if (whisper !== null) messageData.whisper = whisper;
+  try {
+    return await globalThis.ChatMessage.create(messageData);
+  } catch (error) {
+    console.warn(`${MODULE_ID} | forage-drive report failed`, error);
+    return null;
   }
 }
 
@@ -616,6 +830,14 @@ async function postUpkeepReport({ env, result }) {
 }
 
 function resolveReportWhisper(result) {
+  return resolveWhisperForActors(
+    (result?.perActor ?? []).map((r) => r.actorId),
+  );
+}
+
+/** Whisper recipient ids for the configured report mode, over a set of affected
+ *  actors. Returns null for the public mode (no whisper). */
+function resolveWhisperForActors(actorIds) {
   const mode = String(
     getSetting(SETTING_KEYS.RESOURCE_REPORT_MODE) ?? "whisper-gm",
   );
@@ -626,8 +848,8 @@ function resolveReportWhisper(result) {
   if (mode === "whisper-gm") return gmIds;
   // whisper-gm-owner: GMs + each affected character's owner.
   const out = new Set(gmIds);
-  for (const row of result.perActor) {
-    const actor = globalThis.game?.actors?.get?.(row.actorId);
+  for (const actorId of actorIds ?? []) {
+    const actor = globalThis.game?.actors?.get?.(actorId);
     if (!actor) continue;
     for (const u of users) {
       if (!u.isGM && actor.testUserPermission?.(u, "OWNER")) out.add(u.id);

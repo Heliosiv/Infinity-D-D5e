@@ -1,9 +1,25 @@
 import assert from "node:assert/strict";
 
-import { computeForageYield, combineYields } from "./resource/forage.js";
+import {
+  computeForageYield,
+  combineYields,
+  planForageDriveDeposits,
+} from "./resource/forage.js";
 
-const ABUNDANT = { id: "abundant", dc: 10, forageable: true, yieldFood: "1d6", yieldWater: "1d6" };
-const TOWN = { id: "town", dc: 0, forageable: false, yieldFood: "0", yieldWater: "0" };
+const ABUNDANT = {
+  id: "abundant",
+  dc: 10,
+  forageable: true,
+  yieldFood: "1d6",
+  yieldWater: "1d6",
+};
+const TOWN = {
+  id: "town",
+  dc: 0,
+  forageable: false,
+  yieldFood: "0",
+  yieldWater: "0",
+};
 
 /* ------------------------------------------------------------------ *
  * computeForageYield — success / failure by margin
@@ -25,7 +41,8 @@ const TOWN = { id: "town", dc: 0, forageable: false, yieldFood: "0", yieldWater:
 
   // Exactly meeting the DC succeeds.
   assert.equal(
-    computeForageYield({ rollTotal: 10, dc: 10, foodDie: 1, env: ABUNDANT }).success,
+    computeForageYield({ rollTotal: 10, dc: 10, foodDie: 1, env: ABUNDANT })
+      .success,
     true,
   );
 
@@ -131,6 +148,112 @@ const TOWN = { id: "town", dc: 0, forageable: false, yieldFood: "0", yieldWater:
     "best",
   );
   assert.equal(noneSucceed[0].food, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * planForageDriveDeposits — GM forage drive deposit targeting
+ * ------------------------------------------------------------------ */
+{
+  const roster = [
+    { actorId: "A", name: "Aria", isStash: false, drawFromId: "A" },
+    { actorId: "B", name: "Brom", isStash: false, drawFromId: "A" },
+    { actorId: "S", name: "Mule", isStash: true, drawFromId: "S" },
+  ];
+  const foraged = [
+    { actorId: "A", food: 4, water: 3, success: true },
+    { actorId: "B", food: 2, water: 1, success: true },
+  ];
+
+  /* Configured party stash → whole haul lands on that one actor. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged,
+      partyStashId: "S",
+    });
+    assert.equal(plan.stashActorId, "S");
+    assert.equal(plan.totalFood, 6, "4 + 2 food pooled");
+    assert.equal(plan.totalWater, 4, "3 + 1 water pooled");
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 4 }]);
+    assert.equal(plan.perForager.length, 2);
+    assert.ok(plan.perForager.every((f) => f.attempted && f.success));
+  }
+
+  /* No configured stash → falls back to the first roster entry flagged isStash. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged,
+      partyStashId: "",
+    });
+    assert.equal(plan.stashActorId, "S", "first isStash member is the sink");
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 4 }]);
+  }
+
+  /* No stash anywhere → each forager's haul goes to their own draw source. */
+  {
+    const noStash = [
+      { actorId: "A", name: "Aria", isStash: false, drawFromId: "A" },
+      { actorId: "B", name: "Brom", isStash: false, drawFromId: "A" }, // B draws from A
+    ];
+    const plan = planForageDriveDeposits({
+      roster: noStash,
+      selectedIds: ["A", "B"],
+      foraged,
+    });
+    assert.equal(plan.stashActorId, null);
+    // A's own haul (4/3) + B's haul routed to its draw source A (2/1) = A gets 6/4.
+    assert.deepEqual(plan.deposits, [{ actorId: "A", food: 6, water: 4 }]);
+  }
+
+  /* Failed + offline foragers contribute nothing; rows still report them. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged: [
+        { actorId: "A", food: 5, water: 2, success: false }, // failed the check
+        // B never reported (offline) → not in `foraged`
+      ],
+      partyStashId: "S",
+    });
+    assert.equal(plan.totalFood, 0);
+    assert.equal(plan.totalWater, 0);
+    assert.deepEqual(plan.deposits, [], "nothing to deposit");
+    const byId = Object.fromEntries(plan.perForager.map((f) => [f.actorId, f]));
+    assert.equal(byId.A.attempted, true);
+    assert.equal(byId.A.success, false);
+    assert.equal(byId.B.attempted, false, "offline forager wasn't prompted");
+  }
+
+  /* Water toggle off → water zeroed, food still deposited. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged,
+      partyStashId: "S",
+      waterEnabled: false,
+    });
+    assert.equal(plan.totalWater, 0, "water suppressed");
+    assert.equal(plan.totalFood, 6, "food unaffected");
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 0 }]);
+  }
+
+  /* A selection not in the roster is ignored (no phantom deposit). */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "ghost"],
+      foraged: [{ actorId: "ghost", food: 9, water: 9, success: true }],
+      partyStashId: "S",
+    });
+    assert.equal(plan.totalFood, 0, "untracked selection contributes nothing");
+    assert.equal(plan.perForager.length, 1, "only the tracked selection rows");
+    assert.equal(plan.perForager[0].actorId, "A");
+  }
 }
 
 process.stdout.write("resource-forage validation passed\n");

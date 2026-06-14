@@ -45,7 +45,9 @@ export function computeForageYield({
   const wantsFood = !env || String(env.yieldFood ?? "1d6") !== "0";
   const wantsWater =
     waterEnabled && (!env || String(env.yieldWater ?? "1d6") !== "0");
-  const food = wantsFood ? Math.max(0, Math.floor(Number(foodDie) || 0) + mod) : 0;
+  const food = wantsFood
+    ? Math.max(0, Math.floor(Number(foodDie) || 0) + mod)
+    : 0;
   const water = wantsWater
     ? Math.max(0, Math.floor(Number(waterDie) || 0) + mod)
     : 0;
@@ -84,4 +86,105 @@ export function combineYields(perForager, mode = "each") {
       ? { ...entry }
       : { ...entry, food: 0, water: 0, suppressed: entry.success },
   );
+}
+
+/**
+ * Plan a forage drive's deposits (pure). Given the curated roster, the GM's
+ * selection, and the foragers' resolved yields, decide where each haul lands:
+ *   - a single shared stash (the configured party stash, else the first roster
+ *     entry flagged `isStash`) receives the whole party's food & water, OR
+ *   - with no stash, each successful forager's haul goes to their own draw source.
+ * Failed/offline foragers contribute nothing; water is zeroed when the global
+ * water toggle is off. Returns the report rows plus the merged deposit list.
+ *
+ * @param {object} args
+ * @param {Array<{actorId,name,isStash,drawFromId}>} args.roster
+ * @param {string[]} args.selectedIds  - actor ids the GM sent the check to
+ * @param {Array<{actorId,food,water,success}>} args.foraged - online foragers' results
+ * @param {string} [args.partyStashId] - the configured single stash id ("" = none)
+ * @param {boolean} [args.waterEnabled=true]
+ * @returns {{ stashActorId:string|null,
+ *             perForager:Array<{actorId,name,attempted,success,food,water}>,
+ *             deposits:Array<{actorId,food,water}>,
+ *             totalFood:number, totalWater:number }}
+ */
+export function planForageDriveDeposits({
+  roster = [],
+  selectedIds = [],
+  foraged = [],
+  partyStashId = "",
+  waterEnabled = true,
+} = {}) {
+  const rosterById = new Map(
+    (Array.isArray(roster) ? roster : []).map((r) => [String(r.actorId), r]),
+  );
+  const yieldById = new Map(
+    (Array.isArray(foraged) ? foraged : []).map((y) => [String(y.actorId), y]),
+  );
+  const wantWater = waterEnabled !== false;
+
+  // Resolve the single shared stash: configured party stash → first flagged
+  // stash → none (each forager keeps their own haul).
+  const configured = String(partyStashId ?? "").trim();
+  let stashActorId =
+    configured && rosterById.has(configured) ? configured : null;
+  if (!stashActorId) {
+    const flagged = (Array.isArray(roster) ? roster : []).find(
+      (r) => r.isStash,
+    );
+    stashActorId = flagged ? String(flagged.actorId) : null;
+  }
+
+  const perForager = [];
+  let totalFood = 0;
+  let totalWater = 0;
+  const bySource = new Map();
+  const addToSource = (sourceId, food, water) => {
+    const prev = bySource.get(sourceId) ?? { food: 0, water: 0 };
+    prev.food += food;
+    prev.water += water;
+    bySource.set(sourceId, prev);
+  };
+
+  for (const rawId of Array.isArray(selectedIds) ? selectedIds : []) {
+    const actorId = String(rawId);
+    const entry = rosterById.get(actorId);
+    if (!entry) continue; // a selection that isn't tracked — ignore
+    const y = yieldById.get(actorId);
+    if (!y) {
+      perForager.push({
+        actorId,
+        name: entry.name,
+        attempted: false,
+        success: false,
+        food: 0,
+        water: 0,
+      });
+      continue;
+    }
+    const success = y.success === true;
+    const food = success ? Math.max(0, Math.floor(Number(y.food) || 0)) : 0;
+    const water =
+      success && wantWater ? Math.max(0, Math.floor(Number(y.water) || 0)) : 0;
+    totalFood += food;
+    totalWater += water;
+    perForager.push({
+      actorId,
+      name: entry.name,
+      attempted: true,
+      success,
+      food,
+      water,
+    });
+    if (success && (food > 0 || water > 0)) {
+      const sourceId = stashActorId ?? String(entry.drawFromId ?? actorId);
+      addToSource(sourceId, food, water);
+    }
+  }
+
+  const deposits = [...bySource.entries()]
+    .map(([actorId, v]) => ({ actorId, food: v.food, water: v.water }))
+    .filter((d) => d.food > 0 || d.water > 0);
+
+  return { stashActorId, perForager, deposits, totalFood, totalWater };
 }

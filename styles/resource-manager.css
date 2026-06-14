@@ -21,6 +21,9 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  /* Let the action cluster drop below the title on narrow viewports rather
+     than forcing horizontal overflow (two labelled buttons + the icons). */
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--lf-border);
   padding-bottom: 10px;
 }
@@ -40,6 +43,7 @@
 .infinity-dnd5e .rm-head__actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
