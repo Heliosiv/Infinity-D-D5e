@@ -29,7 +29,6 @@ import {
   advanceDayNow,
 } from "./resource/calendar-watcher.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
-import { closeViewerSessions } from "./merchant/session-state.js";
 import {
   SOUND_EVENTS,
   SOUND_REGISTRY,
@@ -374,20 +373,12 @@ Hooks.once("ready", () => {
     safeInit("resource socket", registerResourceSocket);
     safeInit("forage prompt auto-open", registerForagePromptAutoOpen);
     safeInit("resource calendar watcher", registerResourceCalendarWatcher);
-    // GC merchant session records when a player disconnects so the GM's
-    // "Active Sessions" list and seal maps don't leak across a session.
-    Hooks.on("userConnected", (user, connected) => {
-      try {
-        if (!connected && game.user?.isGM && user?.id) {
-          closeViewerSessions(user.id);
-        }
-      } catch (error) {
-        console.warn(
-          `${MODULE_ID} | merchant session cleanup on disconnect failed`,
-          error,
-        );
-      }
-    });
+    // NOTE: merchant sessions deliberately SURVIVE a player disconnect now, so a
+    // reload/relog can resume the pushed buy/sell window (the player re-requests
+    // it on ready — see registerMerchantSessionAutoOpen). Previously we GC'd a
+    // viewer's sessions on disconnect, which silently dropped the session a
+    // reloading player needed to recover. Sessions now clear on a clean player
+    // close, a GM close, merchant delete, or world reload.
     void registerMonksTokenbarCompat().catch((error) => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });

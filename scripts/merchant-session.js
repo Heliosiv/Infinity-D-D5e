@@ -31,6 +31,7 @@ import {
   MERCHANT_EVENTS,
   emitMerchantEvent,
   subscribe,
+  requestMerchantSessionResume,
 } from "./merchant/socket.js";
 import {
   computeBargainOutcome,
@@ -1083,6 +1084,15 @@ export function registerMerchantSessionAutoOpen() {
       merchant: payload.merchant,
     });
     if (!wasOpen) playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+  });
+  // A pushed session is a one-shot broadcast, so a player who reloads/relogs
+  // after the GM opened it would lose the window. Now that the SESSION_OPEN
+  // subscriber above is bound, ask the GM to re-send anything still open for us
+  // (race-free). If no GM was online to answer (player loaded first), re-ask
+  // when a GM connects — requestMerchantSessionResume self-guards on activeGM.
+  requestMerchantSessionResume();
+  globalThis.Hooks?.on?.("userConnected", (user, connected) => {
+    if (connected && user?.isGM) requestMerchantSessionResume();
   });
 }
 

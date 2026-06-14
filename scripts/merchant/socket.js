@@ -50,6 +50,11 @@ const SOCKET_NAME = `module.${MODULE_ID}`;
 export const MERCHANT_EVENTS = Object.freeze({
   SESSION_OPEN: "merchant:session-open",
   SESSION_CLOSE: "merchant:session-close",
+  // Player→GM on (re)connect: "re-send any sessions still open for me".
+  // SESSION_OPEN is a one-shot broadcast with no replay, so without this a
+  // reload/relog would silently lose the pushed buy/sell window even though the
+  // GM still holds the session. The GM answers by re-emitting SESSION_OPEN.
+  SESSION_RESUME_REQUEST: "merchant:session-resume-request",
   BARGAIN_RESULT: "merchant:bargain-result",
   BARGAIN_SEAL: "merchant:bargain-seal",
   COMMIT_PURCHASE: "merchant:commit-purchase",
@@ -213,6 +218,15 @@ export async function receiveMerchantPayload(payload) {
           closeSession(payload.sessionId);
         } catch (error) {
           console.warn(`${MODULE_ID} | session-close cleanup`, error);
+        }
+      }
+      break;
+    case MERCHANT_EVENTS.SESSION_RESUME_REQUEST:
+      if (isAuthoritativeGM()) {
+        try {
+          handleSessionResumeRequest(payload);
+        } catch (error) {
+          console.error(`${MODULE_ID} | session-resume handler`, error);
         }
       }
       break;
@@ -590,6 +604,41 @@ function escapeText(value) {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * A (re)connecting player asked us to re-send whatever sessions are still open
+ * for them. SESSION_OPEN is a one-shot broadcast with no replay, so a reload or
+ * relog would otherwise lose the pushed buy/sell window even though the GM still
+ * holds the session. Re-emit SESSION_OPEN for each of the requester's live
+ * sessions — race-free, because the player only asks AFTER its own auto-open
+ * subscriber is bound. A session whose merchant has since been deleted is
+ * dropped instead of resurrecting a window for a shop that no longer exists.
+ */
+function handleSessionResumeRequest(payload) {
+  const userId = payload.originUserId;
+  if (!isActiveNonGm(userId)) return;
+  let resumed = 0;
+  for (const session of listSessions()) {
+    if (session.viewerUserId !== userId) continue;
+    const merchant = findMerchant(session.merchantId);
+    if (!merchant) {
+      closeSession(session.sessionId);
+      continue;
+    }
+    emitMerchantEvent(MERCHANT_EVENTS.SESSION_OPEN, {
+      sessionId: session.sessionId,
+      merchantId: merchant.id,
+      merchant: normalizeMerchant(merchant),
+      targetUserId: userId,
+    });
+    resumed++;
+  }
+  if (resumed > 0) {
+    console.log(
+      `${MODULE_ID} | resumed ${resumed} session(s) for ${lookupUserName(userId)} on reconnect`,
+    );
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * GM-initiated session pushes
  * ------------------------------------------------------------------ */
@@ -642,6 +691,20 @@ export function pushOpenSession({ merchant, targetUserIds }) {
         : ""),
   );
   return sessionDescriptors;
+}
+
+/**
+ * Player→GM: ask the authoritative GM to re-send any sessions still open for
+ * this user, so a reload/relog re-pops the buy/sell window. A no-op for a GM
+ * (they don't auto-open live sessions) or when no GM is online to answer. Call
+ * this only after the SESSION_OPEN subscriber is bound so the reply can't race
+ * the listener.
+ */
+export function requestMerchantSessionResume() {
+  const game = globalThis.game;
+  if (!game?.user || game.user.isGM) return;
+  if (!game.users?.activeGM) return;
+  emitMerchantEvent(MERCHANT_EVENTS.SESSION_RESUME_REQUEST, {});
 }
 
 /** Close a session and notify the player. */

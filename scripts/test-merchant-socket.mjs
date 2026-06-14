@@ -6,7 +6,9 @@ import {
   emitMerchantEvent,
   receiveMerchantPayload,
   pushOpenSession,
+  requestMerchantSessionResume,
 } from "./merchant/socket.js";
+import { openSession, clearAllSessions } from "./merchant/session-state.js";
 
 /**
  * The socket receive→dispatch path is what makes a GM-pushed session pop on the
@@ -140,6 +142,80 @@ try {
       seen.every((p) => p.merchantId === "m-shop"),
       "each SESSION_OPEN carries the merchant id",
     );
+  }
+
+  /* requestMerchantSessionResume: a player asks the GM to re-send open sessions
+     (covers the reload/relog case where the one-shot SESSION_OPEN was missed).
+     Silent when no GM is online to answer. */
+  {
+    emitted.length = 0;
+    const seen = [];
+    const off = subscribe(MERCHANT_EVENTS.SESSION_RESUME_REQUEST, (p) =>
+      seen.push(p),
+    );
+    requestMerchantSessionResume(); // player1 + activeGM present → requests
+    assert.equal(seen.length, 1, "player with a GM online requests a resume");
+    assert.equal(
+      emitted.at(-1)?.payload?.type,
+      MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+      "resume request is broadcast to the GM",
+    );
+
+    const savedUsers = globalThis.game.users;
+    globalThis.game.users = { activeGM: null };
+    seen.length = 0;
+    requestMerchantSessionResume();
+    assert.equal(seen.length, 0, "no GM online → no resume request");
+    globalThis.game.users = savedUsers;
+    off();
+  }
+
+  /* SESSION_RESUME_REQUEST (GM side): the authoritative GM re-emits SESSION_OPEN
+     for ONLY the requesting user's still-open sessions, and drops a session whose
+     merchant has been deleted rather than resurrecting a dead window. */
+  {
+    clearAllSessions();
+    openSession({ merchantId: "m-shop", viewerUserId: "player1" });
+    openSession({ merchantId: "m-shop", viewerUserId: "player2" }); // other user
+    openSession({ merchantId: "gone", viewerUserId: "player1" }); // deleted shop
+    const merchants = [
+      {
+        id: "m-shop",
+        name: "Sundries",
+        allowedUserIds: ["player1", "player2"],
+        items: [],
+      },
+    ];
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: {
+        activeGM: { id: "gm" },
+        get: (id) => ({ id, active: true, isGM: false, name: id }),
+      },
+      settings: { get: () => merchants },
+      socket: { emit() {}, on() {} },
+    };
+    const seen = [];
+    const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+      originUserId: "player1",
+    });
+    off();
+    globalThis.game = savedInner;
+    assert.equal(
+      seen.length,
+      1,
+      "resume re-emits exactly one SESSION_OPEN for the requester's live session",
+    );
+    assert.equal(seen[0].targetUserId, "player1");
+    assert.equal(
+      seen[0].merchantId,
+      "m-shop",
+      "only the existing-merchant session resumes; the orphaned one is dropped",
+    );
+    clearAllSessions();
   }
 } finally {
   if (savedGame === undefined) delete globalThis.game;
