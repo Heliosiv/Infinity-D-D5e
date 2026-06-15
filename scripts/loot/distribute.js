@@ -29,6 +29,7 @@ import {
 } from "./hoard-budget.js";
 import { DEFAULT_ITEM_PACK_ID, loadCompendiumItems } from "./pack.js";
 import { isBareSpellLootItem } from "./tag-vocabulary.js";
+import { escapeHtml } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -140,18 +141,18 @@ export async function promptDistributeItems(items, opts = {}) {
   const options = candidates
     .map(
       (actor) =>
-        `<option value="${escapeAttr(actor.id)}">${escapeText(actor.name)}</option>`,
+        `<option value="${escapeHtml(actor.id)}">${escapeHtml(actor.name)}</option>`,
     )
     .join("");
 
   const coinNote =
     hasCurrency && coinLabel
-      ? `<p style="opacity:0.8;">Plus the coin pile: <strong>${escapeText(coinLabel)}</strong>.</p>`
+      ? `<p style="opacity:0.8;">Plus the coin pile: <strong>${escapeHtml(coinLabel)}</strong>.</p>`
       : "";
 
   const content = `
     <div class="infinity-dnd5e-distribute">
-      <p>${escapeText(hint)}</p>
+      <p>${escapeHtml(hint)}</p>
       ${coinNote}
       <label style="display:grid;gap:4px;">
         <span>Actor</span>
@@ -340,12 +341,12 @@ export async function promptDistributeSplit(items, opts = {}) {
   const checkboxes = candidates
     .map(
       (actor) =>
-        `<label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" name="actor" value="${escapeAttr(actor.id)}" checked /> <span>${escapeText(actor.name)}</span></label>`,
+        `<label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" name="actor" value="${escapeHtml(actor.id)}" checked /> <span>${escapeHtml(actor.name)}</span></label>`,
     )
     .join("");
   const content = `
     <div class="infinity-dnd5e-distribute">
-      <p>${escapeText(opts.hint ?? "Choose characters and how to split the haul.")}</p>
+      <p>${escapeHtml(opts.hint ?? "Choose characters and how to split the haul.")}</p>
       <label style="display:grid;gap:4px;">
         <span>Split mode</span>
         <select name="mode">
@@ -817,13 +818,3 @@ function cloneItemData(itemData) {
   return JSON.parse(JSON.stringify(itemData));
 }
 
-function escapeText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value) {
-  return escapeText(value).replace(/"/g, "&quot;");
-}

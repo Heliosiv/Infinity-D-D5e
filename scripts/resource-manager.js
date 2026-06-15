@@ -34,7 +34,7 @@ import {
   isAuthoritativeGM,
 } from "./resource/socket.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
-import { prettyEnvironment } from "./ui-util.js";
+import { escapeHtml, prettyEnvironment } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -428,7 +428,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           ? ""
           : ' <span style="opacity:0.6;">(offline)</span>';
         return `<label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" name="forager" value="${escapeAttr(c.actorId)}" ${c.online ? "checked" : ""}${dis} />
+          <input type="checkbox" name="forager" value="${escapeHtml(c.actorId)}" ${c.online ? "checked" : ""}${dis} />
           <span>${escapeHtml(c.name)}${tag}</span>
         </label>`;
       })
@@ -645,19 +645,6 @@ function seedRosterIfEmpty(config) {
 function titleCaseWord(value) {
   const s = String(value ?? "");
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
-
-/** Escape text for safe interpolation into the forage-drive dialog markup. */
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-/** Escape a value for use inside a double-quoted HTML attribute. */
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
 function applyResourceField(res, field, value) {

@@ -43,6 +43,7 @@ import {
   recordBargain,
   runWithMerchantMutex,
 } from "./session-state.js";
+import { escapeHtml } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
@@ -714,7 +715,7 @@ async function requestKnockApproval(merchant, userId) {
         title: `${merchant.name} — Entry Request`,
         icon: "fa-solid fa-hand",
       },
-      content: `<p><strong>${escapeText(who)}</strong> is knocking at <strong>${escapeText(merchant.name)}</strong>. Open a shopping session for them?</p>`,
+      content: `<p><strong>${escapeHtml(who)}</strong> is knocking at <strong>${escapeHtml(merchant.name)}</strong>. Open a shopping session for them?</p>`,
       rejectClose: false,
     });
   } catch {
@@ -743,13 +744,6 @@ async function requestKnockApproval(merchant, userId) {
 
 function lookupUserName(userId) {
   return globalThis.game?.users?.get?.(userId)?.name ?? "A player";
-}
-
-function escapeText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 /**

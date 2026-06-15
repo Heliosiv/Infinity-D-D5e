@@ -44,7 +44,7 @@ import {
   isAuthoritativeGM,
 } from "./socket.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
-import { prettyEnvironment } from "../ui-util.js";
+import { escapeHtml, prettyEnvironment } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -362,7 +362,7 @@ async function postForageDriveReport({
   if (typeof globalThis.ChatMessage?.create !== "function") return null;
   const rows = perForager
     .map((f) => {
-      const name = `<strong>${escapeText(f.name)}</strong>`;
+      const name = `<strong>${escapeHtml(f.name)}</strong>`;
       if (!f.attempted) {
         return `<li>${name} — <span style="opacity:0.7;">no online owner to roll</span></li>`;
       }
@@ -376,11 +376,11 @@ async function postForageDriveReport({
     })
     .join("");
   const dest = stashActor
-    ? `Added to <strong>${escapeText(stashActor.name)}</strong>'s stash`
+    ? `Added to <strong>${escapeHtml(stashActor.name)}</strong>'s stash`
     : "Added to each forager's pack";
   const content = `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeText(env.dc)}</h3>
+      <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeHtml(env.dc)}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
       <div>${dest}: <strong>+${totalFood} food / +${totalWater} water</strong> total.</div>
     </div>`;
@@ -839,7 +839,7 @@ async function postUpkeepReport({ env, result }) {
           ? `<span style="color:#ef6f74;">short ${short.join(", ")}</span>`
           : `<span style="color:#6dd5a2;">supplied</span>`;
       const forageLabel = parts.length > 0 ? ` · ${parts.join(", ")}` : "";
-      return `<li><strong>${escapeText(r.name)}</strong> — ${shortLabel}${forageLabel}</li>`;
+      return `<li><strong>${escapeHtml(r.name)}</strong> — ${shortLabel}${forageLabel}</li>`;
     })
     .join("");
   const lightLine =
@@ -849,7 +849,7 @@ async function postUpkeepReport({ env, result }) {
   const daysLabel = result.days > 1 ? ` (${result.days} days)` : "";
   const content = `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeText(envLabel)}${daysLabel}</h3>
+      <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeHtml(envLabel)}${daysLabel}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
       ${lightLine}
     </div>`;
@@ -900,7 +900,7 @@ function resolveWhisperForActors(actorIds) {
 async function promptApplyExhaustion(suggestions) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   const names = suggestions
-    .map((s) => `${escapeText(s.name)} (+${s.suggestDelta})`)
+    .map((s) => `${escapeHtml(s.name)} (+${s.suggestDelta})`)
     .join(", ");
   if (typeof DialogV2?.confirm !== "function") {
     globalThis.ui?.notifications?.warn(
@@ -1119,9 +1119,3 @@ function generateRunId() {
   return `qm-${part()}${part()}`;
 }
 
-function escapeText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}

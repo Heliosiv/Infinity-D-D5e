@@ -12,6 +12,7 @@ import {
   getItemKeywords,
   isVariableTreasureBase,
 } from "./tag-vocabulary.js";
+import { escapeHtml } from "../ui-util.js";
 
 const ART_CONDITIONS = Object.freeze([
   {
@@ -346,15 +347,6 @@ function appendAppraisalHtml(existingHtml, variant) {
 function clonePlain(value) {
   if (!value || typeof value !== "object") return {};
   return JSON.parse(JSON.stringify(value));
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function inferArtCategory(item) {

@@ -45,7 +45,12 @@ import {
 } from "./loot/rarity-balance.js";
 import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
-import { formatMultiplier, prettyLootType, prettyRarity } from "./ui-util.js";
+import {
+  escapeHtml,
+  formatMultiplier,
+  prettyLootType,
+  prettyRarity,
+} from "./ui-util.js";
 import {
   commitMerchantWrite,
   MERCHANT_EVENTS,
@@ -725,7 +730,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         title: `Delete "${merchant.name}"?`,
         icon: "fa-solid fa-trash",
       },
-      content: `<p>This will remove <strong>${escapeText(merchant.name)}</strong> and close any open sessions for them. Item compendium entries are untouched.</p>`,
+      content: `<p>This will remove <strong>${escapeHtml(merchant.name)}</strong> and close any open sessions for them. Item compendium entries are untouched.</p>`,
       rejectClose: false,
     });
     if (!confirmed) return;
@@ -763,7 +768,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       .slice(0, 300)
       .map(
         (item) =>
-          `<option value="${escapeAttr(item.uuid)}">${escapeText(item.name)}</option>`,
+          `<option value="${escapeHtml(item.uuid)}">${escapeHtml(item.name)}</option>`,
       )
       .join("");
 
@@ -858,7 +863,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
               title: "Replace all stock?",
               icon: "fa-solid fa-arrows-rotate",
             },
-            content: `<p>Clear all <strong>${merchant.items.length}</strong> current item(s) from <strong>${escapeText(merchant.name)}</strong> and roll a fresh shelf? (Use <em>Generate</em> instead to add without clearing.)</p>`,
+            content: `<p>Clear all <strong>${merchant.items.length}</strong> current item(s) from <strong>${escapeHtml(merchant.name)}</strong> and roll a fresh shelf? (Use <em>Generate</em> instead to add without clearing.)</p>`,
             rejectClose: false,
           })
         : true;
@@ -937,7 +942,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const confirmed = DialogV2
       ? await DialogV2.confirm({
           window: { title: "Clear inventory?", icon: "fa-solid fa-trash" },
-          content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeText(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
+          content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeHtml(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
           rejectClose: false,
         })
       : true;
@@ -988,7 +993,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
               title: "Restock all items?",
               icon: "fa-solid fa-boxes-stacked",
             },
-            content: `<p>Reset every item's current quantity back to its starting amount for <strong>${escapeText(merchant.name)}</strong>? This discards any current-stock changes.</p>`,
+            content: `<p>Reset every item's current quantity back to its starting amount for <strong>${escapeHtml(merchant.name)}</strong>? This discards any current-stock changes.</p>`,
             rejectClose: false,
           })
         : true;
@@ -1225,7 +1230,7 @@ async function promptPreviewActor() {
     `<option value="">None — just browse the window</option>`,
     ...characters.map(
       (a) =>
-        `<option value="${escapeAttr(a.id)}" ${a.id === defaultId ? "selected" : ""}>${escapeText(a.name)}</option>`,
+        `<option value="${escapeHtml(a.id)}" ${a.id === defaultId ? "selected" : ""}>${escapeHtml(a.name)}</option>`,
     ),
   ].join("");
   let picked;
@@ -1263,7 +1268,7 @@ async function promptPlayerPicker(merchant) {
   const options = merchant.allowedUserIds
     .map((id) => {
       const name = lookupUserName(id);
-      return `<label class="mw-pick__opt"><input type="checkbox" name="userIds" value="${escapeAttr(id)}" checked /> ${escapeText(name)}</label>`;
+      return `<label class="mw-pick__opt"><input type="checkbox" name="userIds" value="${escapeHtml(id)}" checked /> ${escapeHtml(name)}</label>`;
     })
     .join("");
   let picked = [];
@@ -1298,13 +1303,3 @@ async function promptPlayerPicker(merchant) {
   return picked;
 }
 
-function escapeText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value) {
-  return escapeText(value).replace(/"/g, "&quot;");
-}

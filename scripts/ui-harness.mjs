@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
+import { escapeHtml } from "./ui-util.js";
 
 /** Market-filter context (mirrors BaseLootApp._marketContext) for the harness. */
 function marketContext(minItemGp = 0, maxItemGp = 0) {
@@ -291,11 +292,11 @@ function view(id, label, rootClass, template, context, size) {
 }
 
 function renderHarnessWindow(entry) {
-  return `<section data-harness-section="${escapeAttr(entry.id)}">
+  return `<section data-harness-section="${escapeHtml(entry.id)}">
     <h2 class="ui-harness__label">${escapeHtml(entry.label)}</h2>
     <section
-      class="window-app application infinity-dnd5e ${escapeAttr(entry.rootClass)} ui-harness__window"
-      data-harness-window="${escapeAttr(entry.id)}"
+      class="window-app application infinity-dnd5e ${escapeHtml(entry.rootClass)} ui-harness__window"
+      data-harness-window="${escapeHtml(entry.id)}"
       style="--harness-width: ${entry.width}px; --harness-height: ${entry.height}px;"
     >
       <header class="window-header">
@@ -1128,14 +1129,3 @@ function iconDataUri(color, label) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replaceAll("'", "&#39;");
-}

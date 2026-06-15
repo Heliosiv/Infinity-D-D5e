@@ -48,6 +48,7 @@ import {
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
 import {
+  escapeHtml,
   prettyRarity,
   prettyBargainTier,
   friendlyTransactionError,
@@ -1274,12 +1275,6 @@ function cssEscape(value) {
   return String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
 
-function escapeText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 /**
  * Ask the player to confirm a buy/sell before it commits. Gated by the
@@ -1300,7 +1295,7 @@ async function confirmTransaction({ side, name, qty, totalGp }) {
         icon:
           side === "sell" ? "fa-solid fa-coins" : "fa-solid fa-cart-shopping",
       },
-      content: `<p>${verb} <strong>${escapeText(qtyLabel)}${escapeText(name)}</strong> for <strong>${price.toFixed(2)} gp</strong>?</p>`,
+      content: `<p>${verb} <strong>${escapeHtml(qtyLabel)}${escapeHtml(name)}</strong> for <strong>${price.toFixed(2)} gp</strong>?</p>`,
       rejectClose: false,
     });
   } catch {

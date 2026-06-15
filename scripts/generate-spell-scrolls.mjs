@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { escapeHtml } from "./ui-util.js";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const GENERATED_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -731,14 +732,6 @@ function slugify(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function clone(value) {
