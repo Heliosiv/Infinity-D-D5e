@@ -27,13 +27,29 @@
   padding: 0;
 }
 
-/* Promote the content to its own GPU compositing layer. Foundry's WebGL canvas
-   sits behind these windows; without an explicit layer, Chrome can fail to
-   repaint the lower region after this window rebuilds its DOM on a click,
-   leaving a black void (and the window looking like it "blacks out"). A stable
-   translateZ(0) forces an own-layer that composites cleanly over the canvas. */
+/* A framed ApplicationV2 is a flex column whose .window-content fills the
+   frame, but these windows use tag:"section" for the app root and the content
+   box can intermittently collapse to a short height on re-render — leaving the
+   lower frame as an empty dark band. Re-assert the column fill so the editor
+   always spans the full window height. */
+.infinity-dnd5e.infinity-merchant-workspace {
+  display: flex;
+  flex-direction: column;
+}
 .infinity-dnd5e.infinity-merchant-workspace .window-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The scrollable panes paint over Foundry's WebGL canvas. Without their own GPU
+   compositing layer, Chrome can skip repainting the lower part of a pane after
+   a scroll or re-render, leaving a black void (the window appears to "black
+   out" on clicks). Promote each scroller to a stable own-layer so it always
+   composites cleanly over the canvas. */
+.infinity-dnd5e.infinity-merchant-workspace .mw-list,
+.infinity-dnd5e.infinity-merchant-workspace .mw-edit {
   transform: translateZ(0);
+  will-change: transform;
 }
 
 .mw-shell {
