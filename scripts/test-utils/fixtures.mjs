@@ -56,9 +56,24 @@ export function fakeItem(overrides = {}) {
       price: { value: gpValue, denomination: "gp" },
     },
     flags: {
-      "party-operations": flags,
+      // Use the PRIMARY namespace that 100% of shipped items carry, so tests
+      // exercise the real read path rather than the legacy party-operations
+      // fallback. (Fallback coverage lives in legacyNamespaceItem below.)
+      "infinity-dnd5e": flags,
     },
   };
+}
+
+/**
+ * Same shape as makeItem but tagged under the legacy `party-operations`
+ * namespace, so the fallback read path in tag-vocabulary keeps a test.
+ */
+export function legacyNamespaceItem(overrides = {}) {
+  const item = makeItem(overrides);
+  const flags = item.flags["infinity-dnd5e"];
+  delete item.flags["infinity-dnd5e"];
+  item.flags["party-operations"] = flags;
+  return item;
 }
 
 /**

@@ -49,7 +49,7 @@ const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
     allCandidates.some(
       (item) =>
         item.type === "spell" ||
-        item.flags?.["party-operations"]?.lootType === "loot.spell",
+        item.flags?.["infinity-dnd5e"]?.lootType === "loot.spell",
     ),
     false,
     "all-loot rolls must not include bare spell documents",

@@ -74,7 +74,7 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
   const pool = smallPool();
   const byType = countBy(
     pool,
-    (item) => item.flags["party-operations"].lootType,
+    (item) => item.flags["infinity-dnd5e"].lootType,
   );
   assert.equal(byType["loot.weapon.mundane"], 1);
   assert.equal(byType["loot.wondrous"], 1);

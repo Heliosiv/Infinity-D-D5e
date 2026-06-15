@@ -5,7 +5,7 @@
   "version": "0.2.54",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
-    "minimum": "12",
+    "minimum": "13",
     "verified": "13.351"
   },
   "esmodules": ["scripts/module.js"],
@@ -49,7 +49,7 @@
       {
         "id": "dnd5e",
         "type": "system",
-        "compatibility": { "verified": "5.3.3" }
+        "compatibility": { "minimum": "4.0.0", "verified": "5.3.3" }
       }
     ]
   },

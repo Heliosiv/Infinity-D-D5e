@@ -518,7 +518,7 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     entry.itemData.flags["infinity-dnd5e"].generatedTreasure.baseGp,
     1000,
   );
-  assert.equal(entry.itemData.flags["party-operations"].gpValue, entry.gpValue);
+  assert.equal(entry.itemData.flags["infinity-dnd5e"].gpValue, entry.gpValue);
   assert.ok(
     entry.itemData.system.description.value.includes("Generated appraisal"),
   );
