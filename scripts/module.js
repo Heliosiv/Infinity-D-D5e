@@ -18,7 +18,10 @@ import {
   registerMerchantSessionAutoOpen,
 } from "./merchant-session.js";
 import { ShopPickerApp } from "./shop-picker.js";
+import { ReputationWorkspaceApp } from "./reputation-workspace.js";
+import { ReputationViewApp } from "./reputation-view.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
+import { registerReputationSocket } from "./reputation/socket.js";
 import { closeViewerSessions } from "./merchant/session-state.js";
 import {
   SOUND_EVENTS,
@@ -69,6 +72,8 @@ function buildApi() {
     openPerCreatureLoot: () => PerCreatureLootApp.open(),
     openMerchantWorkspace: () => MerchantWorkspaceApp.open(),
     openShops: () => ShopPickerApp.open(),
+    openReputation: () => ReputationWorkspaceApp.open(),
+    openReputationView: () => ReputationViewApp.open(),
     MerchantSessionApp,
     SOUND_EVENTS,
     SOUND_REGISTRY,
@@ -203,6 +208,17 @@ function registerBuiltinTools() {
     status: "available",
     open: () => MerchantWorkspaceApp.open(),
   });
+
+  registerTool({
+    id: "reputation",
+    title: "Reputation & Factions",
+    description:
+      "Track how each faction leans toward the party. Raise or lower standings with a logged reason, and reveal factions to players.",
+    icon: "fa-solid fa-handshake",
+    category: "party",
+    status: "available",
+    open: () => ReputationWorkspaceApp.open(),
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -274,6 +290,18 @@ function registerKeybindings() {
       },
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
+    // Reputation view — players see where they stand; a GM gets a preview of
+    // the same read-only view. Not restricted, so players can rebind it.
+    game.keybindings.register(MODULE_ID, "openReputation", {
+      name: "Open Infinity D&D5e Reputation",
+      hint: "See the party's standing with revealed factions.",
+      editable: [{ key: "KeyR", modifiers: ["Shift"] }],
+      onDown: () => {
+        ReputationViewApp.open();
+        return true;
+      },
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to register keybindings`, error);
   }
@@ -303,6 +331,7 @@ Hooks.once("ready", () => {
     registerSoundSocket();
     registerSoundAutomation();
     registerMerchantSocket();
+    registerReputationSocket();
     registerMerchantSessionAutoOpen();
     // GC merchant session records when a player disconnects so the GM's
     // "Active Sessions" list and seal maps don't leak across a session.
@@ -485,17 +514,50 @@ function registerPlayerSceneControls(controls) {
     tools,
   });
 
+  // Reputation launcher — a separate category opening the read-only view.
+  const repToolName = "infinity-dnd5e-reputation-tool";
+  const repCategory = "infinity-dnd5e-reputation";
+  const repBaseTool = {
+    name: repToolName,
+    title: "Reputation",
+    icon: "fa-solid fa-handshake",
+    button: true,
+    visible: true,
+    toggle: false,
+    order: 0,
+    onClick: () => ReputationViewApp.open(),
+    onChange: () => ReputationViewApp.open(),
+  };
+  const repCategoryEntry = (tools) => ({
+    name: repCategory,
+    title: "Reputation",
+    icon: "fa-solid fa-handshake",
+    visible: true,
+    activeTool: repToolName,
+    order: 98,
+    onChange: (_event, active) => {
+      if (active) ReputationViewApp.open();
+    },
+    tools,
+  });
+
   if (Array.isArray(controls)) {
     controls.push(categoryEntry([{ ...baseTool }]));
+    controls.push(repCategoryEntry([{ ...repBaseTool }]));
   } else if (controls && typeof controls === "object") {
     controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
+    controls[repCategory] = repCategoryEntry({
+      [repToolName]: { ...repBaseTool },
+    });
   } else {
     console.warn(
       `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
     );
     return;
   }
-  console.log(`${MODULE_ID} | registered player Shops scene control`);
+  console.log(
+    `${MODULE_ID} | registered player Shops + Reputation scene controls`,
+  );
 }
 
 function nextToolOrder(tools) {

@@ -8,6 +8,8 @@
  * they reference `foundry.applications.api` at module load.
  */
 
+import { standingTier } from "./reputation/standing.js";
+
 /** Capitalize the first character. "uncommon" -> "Uncommon". */
 export function titleCase(value) {
   const raw = String(value ?? "");
@@ -107,6 +109,19 @@ export function clampInt(raw, min, max, fallback) {
   const value = Number(raw);
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+/**
+ * Plain-language reputation standing label, e.g. +2 → "+2 — Friendly",
+ * 0 → "0 — Neutral", −3 → "−3 — Hostile". Uses a real minus sign so the
+ * negative tiers read cleanly. The numeric tier names live in
+ * reputation/standing.js (the scale's source of truth); this just joins
+ * the signed score to its tier for display.
+ */
+export function prettyStanding(score) {
+  const n = Math.max(-5, Math.min(5, Math.round(Number(score) || 0)));
+  const sign = n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "0";
+  return `${sign} — ${standingTier(n)}`;
 }
 
 /** Minimal HTML-escape for names spliced into chat HTML. */

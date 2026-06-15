@@ -1,0 +1,185 @@
+/**
+ * Infinity D&D5e — Reputation view (player, read-only).
+ * Shares the --lf-* design tokens with safe fallbacks. Standing color
+ * bands mirror the GM workspace: hostile→red … allied→green.
+ */
+
+.infinity-reputation-view {
+  --rv-hostile: var(--lf-danger, #ef6f74);
+  --rv-cold: #e0935a;
+  --rv-neutral: var(--lf-muted, #97a3c1);
+  --rv-warm: #8fd0a8;
+  --rv-allied: var(--lf-success, #6dd5a2);
+}
+
+.infinity-reputation-view .rv-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.infinity-reputation-view .rv-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-reputation-view .rv-head__title h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-reputation-view .rv-head__hint {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.infinity-reputation-view .rv-btn--icon {
+  flex: 0 0 auto;
+  border: 1px solid var(--lf-border, #475070);
+  background: var(--lf-surface-elev, #364159);
+  color: inherit;
+  border-radius: var(--lf-radius-sm, 6px);
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+.infinity-reputation-view .rv-btn--icon:hover {
+  border-color: var(--lf-border-strong, #6473a0);
+}
+
+.infinity-reputation-view .rv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.infinity-reputation-view .rv-row {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--lf-border, #475070);
+  border-left-width: 4px;
+  border-radius: var(--lf-radius-sm, 6px);
+  background: var(--lf-bg-alt, #242b3b);
+}
+.infinity-reputation-view .rv-row--hostile {
+  border-left-color: var(--rv-hostile);
+}
+.infinity-reputation-view .rv-row--cold {
+  border-left-color: var(--rv-cold);
+}
+.infinity-reputation-view .rv-row--neutral {
+  border-left-color: var(--rv-neutral);
+}
+.infinity-reputation-view .rv-row--warm {
+  border-left-color: var(--rv-warm);
+}
+.infinity-reputation-view .rv-row--allied {
+  border-left-color: var(--rv-allied);
+}
+
+.infinity-reputation-view .rv-row__art {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--lf-radius-sm, 6px);
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px var(--lf-border, #475070) inset;
+}
+
+.infinity-reputation-view .rv-row__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.infinity-reputation-view .rv-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-reputation-view .rv-row__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-reputation-view .rv-row__cat {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.infinity-reputation-view .rv-row__score {
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.infinity-reputation-view .rv-row__note {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.infinity-reputation-view .rv-pill {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: var(--lf-radius-pill, 999px);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.infinity-reputation-view .rv-pill--hostile {
+  color: var(--rv-hostile);
+}
+.infinity-reputation-view .rv-pill--cold {
+  color: var(--rv-cold);
+}
+.infinity-reputation-view .rv-pill--neutral {
+  color: var(--rv-neutral);
+}
+.infinity-reputation-view .rv-pill--warm {
+  color: var(--rv-warm);
+}
+.infinity-reputation-view .rv-pill--allied {
+  color: var(--rv-allied);
+}
+
+.infinity-reputation-view .rv-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  padding: 28px 12px;
+  opacity: 0.78;
+  font-size: 0.9rem;
+  text-align: center;
+  border: 1px dashed var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+}

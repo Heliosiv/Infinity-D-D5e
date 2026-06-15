@@ -42,6 +42,12 @@ assert.equal(
   "manifest should reference the current dnd5e V13-compatible system line",
 );
 
+assert.equal(
+  manifest.socket,
+  true,
+  "socket must be true or the server drops all cross-client frames (shops, sessions, reputation reveals)",
+);
+
 assert.deepEqual(manifest.esmodules, ["scripts/module.js"]);
 assert.ok(
   !("scripts" in manifest),

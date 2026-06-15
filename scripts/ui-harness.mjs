@@ -23,6 +23,8 @@ const CSS_FILES = [
   "styles/merchant-workspace.css",
   "styles/merchant-session.css",
   "styles/shop-picker.css",
+  "styles/reputation-workspace.css",
+  "styles/reputation-view.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -125,6 +127,30 @@ export function buildHarnessViews() {
       "templates/shop-picker.hbs",
       shopPickerEmptyContext(),
       { width: 440, height: 560 },
+    ),
+    view(
+      "reputation-workspace",
+      "Reputation Workspace",
+      "infinity-reputation-workspace",
+      "templates/reputation-workspace.hbs",
+      reputationWorkspaceContext(),
+      { width: 940, height: 720 },
+    ),
+    view(
+      "reputation-view",
+      "Reputation (player)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewContext(),
+      { width: 420, height: 560 },
+    ),
+    view(
+      "reputation-view-empty",
+      "Reputation (empty)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewEmptyContext(),
+      { width: 420, height: 560 },
     ),
   ];
 }
@@ -847,6 +873,138 @@ function shopPickerContext() {
 
 function shopPickerEmptyContext() {
   return { noGm: false, loading: false, hasShops: false, shops: [] };
+}
+
+function reputationWorkspaceContext() {
+  const selected = {
+    id: "f-veil",
+    name: "The Silver Veil",
+    category: "Thieves' Guild",
+    description:
+      "A discreet network of fences and informants working the harbor district.",
+    gmNotes: "Owes the party a favor after the warehouse job.",
+    playerNote: "They remember you fondly after the warehouse job.",
+    img: iconDataUri("#6b5a8a", "SV"),
+    revealed: true,
+    standing: 2,
+    tier: "Friendly",
+    band: "warm",
+    standingLabel: "+2 — Friendly",
+    canRaise: true,
+    canLower: true,
+    meterPercent: 70,
+    hasHistory: true,
+    history: [
+      {
+        id: "h1",
+        reason: "Returned the stolen ledger",
+        by: "GM",
+        when: "Today 7:14 PM",
+        deltaLabel: "+1",
+        deltaTone: "up",
+        swing: "Noticed → Friendly",
+        changed: true,
+      },
+      {
+        id: "h2",
+        reason: "First contact at the Drowned Rat",
+        by: "GM",
+        when: "Today 6:02 PM",
+        deltaLabel: "note",
+        deltaTone: "flat",
+        swing: "Neutral → Neutral",
+        changed: false,
+      },
+    ],
+    hasPerCharacter: true,
+    perCharacter: [
+      {
+        id: "pc1",
+        actorId: "a-thia",
+        delta: 1,
+        note: "Thia grew up in the guild",
+        unknownActor: false,
+        characterOptions: [
+          { id: "a-thia", name: "Thia", selected: true },
+          { id: "a-bram", name: "Bram", selected: false },
+        ],
+      },
+    ],
+  };
+  return {
+    moduleId: "infinity-dnd5e",
+    hasFactions: true,
+    total: 2,
+    revealedCount: 1,
+    hasCharacters: true,
+    factions: [
+      {
+        id: "f-veil",
+        name: "The Silver Veil",
+        img: iconDataUri("#6b5a8a", "SV"),
+        tier: "Friendly",
+        band: "warm",
+        standingLabel: "+2 — Friendly",
+        revealed: true,
+        selected: true,
+      },
+      {
+        id: "f-crown",
+        name: "The Iron Crown",
+        img: iconDataUri("#7a3b3b", "IC"),
+        tier: "Hostile",
+        band: "hostile",
+        standingLabel: "−3 — Hostile",
+        revealed: false,
+        selected: false,
+      },
+    ],
+    selected,
+  };
+}
+
+function reputationViewContext() {
+  return {
+    isGmPreview: false,
+    noGm: false,
+    loading: false,
+    requestFailed: false,
+    hasFactions: true,
+    factions: [
+      {
+        id: "f-veil",
+        name: "The Silver Veil",
+        category: "Thieves' Guild",
+        img: iconDataUri("#6b5a8a", "SV"),
+        tier: "Friendly",
+        band: "warm",
+        standingLabel: "+2 — Friendly",
+        playerNote: "They remember you fondly after the warehouse job.",
+      },
+      {
+        id: "f-crown",
+        name: "The Iron Crown",
+        category: "Ruling House",
+        img: iconDataUri("#7a3b3b", "IC"),
+        tier: "Hostile",
+        band: "hostile",
+        standingLabel: "−3 — Hostile",
+        playerNote:
+          "Word of your deeds has reached the throne — and they are not pleased.",
+      },
+    ],
+  };
+}
+
+function reputationViewEmptyContext() {
+  return {
+    isGmPreview: false,
+    noGm: false,
+    loading: false,
+    requestFailed: false,
+    hasFactions: false,
+    factions: [],
+  };
 }
 
 function tierOptions(selectedTier) {

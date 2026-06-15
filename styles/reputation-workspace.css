@@ -1,0 +1,539 @@
+/**
+ * Infinity D&D5e — Reputation Workspace (GM).
+ * Leans on the shared --lf-* design tokens, with fallbacks so the window
+ * reads correctly even if tokens.css loads late. Standing color bands map
+ * hostile→red … allied→green for at-a-glance reading.
+ */
+
+.infinity-reputation-workspace {
+  --rw-hostile: var(--lf-danger, #ef6f74);
+  --rw-cold: #e0935a;
+  --rw-neutral: var(--lf-muted, #97a3c1);
+  --rw-warm: #8fd0a8;
+  --rw-allied: var(--lf-success, #6dd5a2);
+}
+
+.infinity-reputation-workspace .rw-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.infinity-reputation-workspace .rw-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.infinity-reputation-workspace .rw-head__title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-reputation-workspace .rw-head__hint {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  max-width: 60ch;
+}
+
+.infinity-reputation-workspace .rw-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Left rail */
+.infinity-reputation-workspace .rw-list {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.infinity-reputation-workspace .rw-list__summary {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.infinity-reputation-workspace .rw-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.infinity-reputation-workspace .rw-list__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: var(--lf-bg-alt, #242b3b);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.infinity-reputation-workspace .rw-list__btn:hover {
+  border-color: var(--lf-border-strong, #6473a0);
+}
+.infinity-reputation-workspace .rw-list__row.is-selected .rw-list__btn {
+  border-color: var(--lf-accent, #ffb15d);
+  background: color-mix(
+    in srgb,
+    var(--lf-accent, #ffb15d) 12%,
+    var(--lf-bg-alt, #242b3b)
+  );
+}
+
+.infinity-reputation-workspace .rw-list__art {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--lf-radius-sm, 6px);
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px var(--lf-border, #475070) inset;
+}
+
+.infinity-reputation-workspace .rw-list__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.infinity-reputation-workspace .rw-list__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-reputation-workspace .rw-list__eye {
+  flex: 0 0 auto;
+  opacity: 0.7;
+  color: var(--lf-accent, #ffb15d);
+}
+
+/* Standing pill (shared color bands) */
+.infinity-reputation-workspace .rw-pill {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: var(--lf-radius-pill, 999px);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.infinity-reputation-workspace .rw-pill--hostile {
+  color: var(--rw-hostile);
+}
+.infinity-reputation-workspace .rw-pill--cold {
+  color: var(--rw-cold);
+}
+.infinity-reputation-workspace .rw-pill--neutral {
+  color: var(--rw-neutral);
+}
+.infinity-reputation-workspace .rw-pill--warm {
+  color: var(--rw-warm);
+}
+.infinity-reputation-workspace .rw-pill--allied {
+  color: var(--rw-allied);
+}
+
+/* Right pane */
+.infinity-reputation-workspace .rw-edit {
+  flex: 2 1 360px;
+  min-width: 0;
+  overflow: auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.infinity-reputation-workspace .rw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.infinity-reputation-workspace .rw-form__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.infinity-reputation-workspace .rw-form__art {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--lf-radius-sm, 6px);
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px var(--lf-border, #475070) inset;
+}
+
+.infinity-reputation-workspace .rw-form__head-fields {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.infinity-reputation-workspace .rw-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infinity-reputation-workspace .rw-field__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.infinity-reputation-workspace .rw-field__label small {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.infinity-reputation-workspace .rw-field__row {
+  display: flex;
+  gap: 6px;
+}
+.infinity-reputation-workspace .rw-field__row .rw-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.infinity-reputation-workspace .rw-field--toggle {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.infinity-reputation-workspace .rw-input,
+.infinity-reputation-workspace .rw-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--lf-surface, #2c3548);
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  color: inherit;
+  padding: 6px 8px;
+  font: inherit;
+}
+.infinity-reputation-workspace .rw-input--num {
+  width: 4.5rem;
+}
+.infinity-reputation-workspace .rw-textarea {
+  resize: vertical;
+}
+
+/* Standing meter */
+.infinity-reputation-workspace .rw-standing {
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius, 10px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--lf-bg-alt, #242b3b);
+}
+
+.infinity-reputation-workspace .rw-standing__readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.infinity-reputation-workspace .rw-standing__tier {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+.infinity-reputation-workspace .rw-standing--hostile .rw-standing__tier {
+  color: var(--rw-hostile);
+}
+.infinity-reputation-workspace .rw-standing--cold .rw-standing__tier {
+  color: var(--rw-cold);
+}
+.infinity-reputation-workspace .rw-standing--neutral .rw-standing__tier {
+  color: var(--rw-neutral);
+}
+.infinity-reputation-workspace .rw-standing--warm .rw-standing__tier {
+  color: var(--rw-warm);
+}
+.infinity-reputation-workspace .rw-standing--allied .rw-standing__tier {
+  color: var(--rw-allied);
+}
+
+.infinity-reputation-workspace .rw-standing__score {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  font-weight: 700;
+}
+
+.infinity-reputation-workspace .rw-meter {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rw-hostile) 55%, transparent),
+    color-mix(in srgb, var(--rw-neutral) 45%, transparent),
+    color-mix(in srgb, var(--rw-allied) 55%, transparent)
+  );
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.infinity-reputation-workspace .rw-meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-right: 2px solid var(--lf-text, #e7ecf6);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.infinity-reputation-workspace .rw-standing__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Fieldsets */
+.infinity-reputation-workspace .rw-fieldset {
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  padding: 8px 10px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.infinity-reputation-workspace .rw-fieldset > legend {
+  padding: 0 6px;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+.infinity-reputation-workspace .rw-fieldset > legend small {
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+/* Per-character rows */
+.infinity-reputation-workspace .rw-perchar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.infinity-reputation-workspace .rw-perchar__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.infinity-reputation-workspace .rw-perchar__row > select.rw-input {
+  flex: 1 1 120px;
+  min-width: 0;
+  width: auto;
+}
+.infinity-reputation-workspace .rw-perchar__row > input[type="text"].rw-input {
+  flex: 2 1 140px;
+  min-width: 0;
+  width: auto;
+}
+
+/* Change log */
+.infinity-reputation-workspace .rw-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.infinity-reputation-workspace .rw-log__row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: var(--lf-bg-alt, #242b3b);
+}
+.infinity-reputation-workspace .rw-log__delta {
+  flex: 0 0 auto;
+  min-width: 2.4rem;
+  text-align: center;
+  font-weight: 800;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: var(--lf-radius-sm, 6px);
+}
+.infinity-reputation-workspace .rw-log__delta--up {
+  color: var(--rw-allied);
+  background: color-mix(in srgb, var(--rw-allied) 16%, transparent);
+}
+.infinity-reputation-workspace .rw-log__delta--down {
+  color: var(--rw-hostile);
+  background: color-mix(in srgb, var(--rw-hostile) 16%, transparent);
+}
+.infinity-reputation-workspace .rw-log__delta--flat {
+  color: var(--rw-neutral);
+  background: color-mix(in srgb, var(--rw-neutral) 16%, transparent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.infinity-reputation-workspace .rw-log__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.infinity-reputation-workspace .rw-log__swing {
+  font-size: 0.74rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+.infinity-reputation-workspace .rw-log__reason {
+  font-size: 0.86rem;
+}
+.infinity-reputation-workspace .rw-log__meta {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+/* Buttons */
+.infinity-reputation-workspace .rw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  min-height: 30px;
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: var(--lf-surface-elev, #364159);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+.infinity-reputation-workspace .rw-btn:hover:not([disabled]) {
+  border-color: var(--lf-border-strong, #6473a0);
+}
+.infinity-reputation-workspace .rw-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.infinity-reputation-workspace .rw-btn--icon {
+  padding: 6px 8px;
+  min-width: 30px;
+}
+.infinity-reputation-workspace .rw-btn--ghost {
+  background: transparent;
+}
+.infinity-reputation-workspace .rw-btn--primary {
+  background: var(--lf-accent, #ffb15d);
+  color: var(--lf-accent-contrast, #1a1208);
+  border-color: var(--lf-accent, #ffb15d);
+  font-weight: 700;
+}
+.infinity-reputation-workspace .rw-btn--raise {
+  border-color: color-mix(
+    in srgb,
+    var(--rw-allied) 60%,
+    var(--lf-border, #475070)
+  );
+}
+.infinity-reputation-workspace .rw-btn--lower {
+  border-color: color-mix(
+    in srgb,
+    var(--rw-hostile) 60%,
+    var(--lf-border, #475070)
+  );
+}
+.infinity-reputation-workspace .rw-btn--danger {
+  border-color: color-mix(
+    in srgb,
+    var(--lf-danger, #ef6f74) 60%,
+    var(--lf-border, #475070)
+  );
+  color: var(--lf-danger, #ef6f74);
+}
+
+.infinity-reputation-workspace .rw-form__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.infinity-reputation-workspace .rw-perchar__foot {
+  display: flex;
+}
+
+/* Empty states */
+.infinity-reputation-workspace .rw-empty {
+  padding: 18px 12px;
+  text-align: center;
+  opacity: 0.78;
+  font-size: 0.9rem;
+  border: 1px dashed var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+}
+.infinity-reputation-workspace .rw-empty--sm {
+  padding: 10px;
+  font-size: 0.82rem;
+}
+
+.infinity-reputation-workspace .rw-edit__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  opacity: 0.7;
+  text-align: center;
+}
+.infinity-reputation-workspace .rw-edit__empty i {
+  font-size: 2rem;
+}
+
+/* Honor the animations client setting (parity with the other windows). */
+.infinity-reputation-workspace.rw-no-anim * {
+  transition: none !important;
+}

@@ -41,6 +41,9 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
   MERCHANT_CONFIRM_TRANSACTIONS: "merchantConfirmTransactions",
+  // Faction reputation records. Hidden store (no config UI) — managed by
+  // the Reputation Workspace via scripts/reputation/store.js.
+  FACTIONS: "factions",
   // Hidden stores (no config UI) — keyed-by-tool blobs of saved presets
   // and recent roll history. Managed by scripts/loot/loot-store.js.
   SAVED_PRESETS: "savedPresets",
@@ -329,6 +332,17 @@ export const SETTINGS = Object.freeze([
     config: true,
     type: Boolean,
     default: false,
+  },
+  {
+    key: SETTING_KEYS.FACTIONS,
+    name: "Faction Reputation Records",
+    hint:
+      "Persistent faction reputation data. Managed by the Reputation " +
+      "Workspace; edit through that window rather than this field.",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
   },
   {
     key: SETTING_KEYS.SAVED_PRESETS,
