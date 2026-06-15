@@ -312,6 +312,91 @@ try {
     globalThis.game = savedInner;
     clearAllSessions();
   }
+
+  /* OVERSELL: a finite item with 1 in stock hit by a 2-unit buy (a concurrent
+     buyer took the last unit) is REJECTED with ok:false reason:"out-of-stock"
+     and the merchant's gold is left untouched — not charged for a phantom unit. */
+  {
+    clearAllSessions();
+    const rec = openSession({ merchantId: "m-buy", viewerUserId: "player1" });
+    let savedList = [
+      {
+        id: "m-buy",
+        name: "Stall",
+        goldOnHand: 100,
+        allowedUserIds: ["player1"],
+        items: [{ uuid: "Compendium.x.Item.last", qty: 1, unlimited: false }],
+      },
+    ];
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      settings: {
+        get: () => savedList,
+        set: (_m, _k, v) => {
+          savedList = v;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "player1",
+      sessionId: rec.sessionId,
+      commitId: "co1",
+      itemUuid: "Compendium.x.Item.last",
+      qty: 2,
+      totalGp: 10,
+    });
+    off();
+    assert.ok(
+      acks.some(
+        (a) => a.commitId === "co1" && a.ok === false && a.reason === "out-of-stock",
+      ),
+      "an oversell is rejected with out-of-stock, not silently charged",
+    );
+    const merchant = savedList.find((m) => m.id === "m-buy");
+    assert.equal(
+      merchant.goldOnHand,
+      100,
+      "merchant gold is untouched on a rejected oversell",
+    );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
+
+  /* PAYLOAD VALIDATION: a COMMIT_PURCHASE missing its required sessionId is a
+     malformed/forged frame and is dropped before any handler runs — no ack. */
+  {
+    clearAllSessions();
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "player1",
+      commitId: "cbad",
+      itemUuid: "Compendium.x.Item.y",
+      qty: 1,
+      // sessionId omitted → invalid shape
+    });
+    off();
+    assert.equal(
+      acks.length,
+      0,
+      "a malformed commit (no sessionId) is dropped, not acked",
+    );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
 } finally {
   if (savedGame === undefined) delete globalThis.game;
   else globalThis.game = savedGame;

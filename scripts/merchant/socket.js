@@ -77,6 +77,40 @@ export const MERCHANT_EVENTS = Object.freeze({
 
 const MERCHANT_TYPES = new Set(Object.values(MERCHANT_EVENTS));
 
+/**
+ * Required-field rules per inbound type. `req` fields must be non-empty
+ * strings; `num` fields, when present, must be finite numbers. The socket
+ * can't authenticate the sender (originUserId is client-asserted — all
+ * real authority decisions stay GM-side), so this is shape-hardening
+ * against malformed/forged frames, not authentication. Unlisted types are
+ * not field-validated (broadcasts the receiver already scopes by target).
+ */
+const PAYLOAD_RULES = Object.freeze({
+  [MERCHANT_EVENTS.COMMIT_PURCHASE]: { req: ["sessionId", "itemUuid"], num: ["qty", "totalGp"] },
+  [MERCHANT_EVENTS.COMMIT_SALE]: { req: ["sessionId", "itemUuid"], num: ["qty", "totalGp"] },
+  [MERCHANT_EVENTS.BARGAIN_RESULT]: { req: ["sessionId", "itemUuid", "side"], num: ["rollTotal"] },
+  [MERCHANT_EVENTS.SESSION_CLOSE]: { req: ["sessionId"], num: [] },
+  [MERCHANT_EVENTS.SHOP_REQUEST]: { req: ["merchantId"], num: [] },
+});
+
+const MAX_FIELD_LEN = 200;
+
+/** Validate an inbound payload's shape against PAYLOAD_RULES. */
+function isValidPayload(payload) {
+  const rule = PAYLOAD_RULES[payload.type];
+  if (!rule) return true; // not a field-validated type
+  for (const key of rule.req) {
+    const value = payload[key];
+    if (typeof value !== "string" || value.length === 0 || value.length > MAX_FIELD_LEN) {
+      return false;
+    }
+  }
+  for (const key of rule.num) {
+    if (key in payload && !Number.isFinite(Number(payload[key]))) return false;
+  }
+  return true;
+}
+
 let registered = false;
 
 /**
@@ -135,8 +169,19 @@ function isAuthoritativeGM() {
   const game = globalThis.game;
   if (!game?.user?.isGM) return false;
   const active = game.users?.activeGM;
-  if (!active) return true;
-  return active.id === game.user.id;
+  if (active) return active.id === game.user.id;
+  // No designated active GM — e.g. the brief window during GM connect/
+  // disconnect churn. "Every GM acts" here double-writes stock/gold, so fall
+  // back to a deterministic tiebreaker: only the lowest-id currently-connected
+  // GM handles the frame. Solo GM (no other GMs online, or headless/tests)
+  // still acts.
+  const gms = [];
+  game.users?.forEach?.((u) => {
+    if (u?.isGM && u?.active) gms.push(u.id);
+  });
+  if (gms.length === 0) return true;
+  gms.sort();
+  return gms[0] === game.user.id;
 }
 
 /* ------------------------------------------------------------------ *
@@ -172,6 +217,10 @@ export function emitMerchantEvent(type, data = {}) {
 export async function receiveMerchantPayload(payload) {
   if (!payload || typeof payload !== "object") return;
   if (!MERCHANT_TYPES.has(payload.type)) return;
+  if (!isValidPayload(payload)) {
+    console.warn(`${MODULE_ID} | dropped malformed ${payload.type} frame`);
+    return;
+  }
 
   // Suppress echo to self — we already dispatched locally on emit.
   if (
@@ -321,6 +370,19 @@ async function handleCommitPurchase(payload) {
       emitCommitResult(payload, false, "item-unavailable");
       return;
     }
+    // Reject an oversell BEFORE burning the seal or charging. If finite stock
+    // can't cover the request — a concurrent buyer took the last unit while
+    // this commit waited on the mutex — the sale didn't happen on the
+    // merchant's side. Tell the buyer (their sheet already changed) instead of
+    // silently charging the merchant for stock it never had and double-selling
+    // one unit. The buyer's _onCommitResult then prompts them to reconcile.
+    if (!row.unlimited && row.qty < requested) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase: "${itemUuid}" stock ${row.qty} < ${requested} (out of stock) — rejecting`,
+      );
+      emitCommitResult(payload, false, "out-of-stock");
+      return;
+    }
     // Verify + burn the bargain seal here (inside the mutex) and keep its
     // delta for the GM-side reprice. A missing/expired seal simply prices at
     // base (resolveUnitBuyPrice ignores a null seal) — but say so.
@@ -365,19 +427,14 @@ async function handleCommitPurchase(payload) {
     }
 
     let updated = merchant;
-    // Decrement stock when the row is finite and the player's view was
-    // current; otherwise the buy already executed client-side against stale
-    // state, so leave stock alone but surface it rather than silently swallow.
-    if (!row.unlimited && row.qty >= requested) {
+    // Finite stock is guaranteed sufficient here (oversell rejected above),
+    // so the decrement always applies; unlimited rows never decrement.
+    if (!row.unlimited) {
       try {
         updated = decrementInventory(updated, itemUuid, requested);
       } catch (error) {
         console.warn(`${MODULE_ID} | decrement failed`, error);
       }
-    } else if (!row.unlimited) {
-      console.warn(
-        `${MODULE_ID} | commit-purchase: "${itemUuid}" stock ${row.qty} < ${requested} (concurrent/stale buy) — charged but not decremented`,
-      );
     }
     // The merchant gains the gold the player paid (no-op if unlimited purse).
     updated = adjustMerchantGold(updated, trueTotal);
@@ -484,6 +541,36 @@ async function broadcastState(merchant) {
   emitMerchantEvent(MERCHANT_EVENTS.STATE_UPDATE, {
     merchantId: merchant.id,
     merchant: normalizeMerchant(merchant),
+  });
+}
+
+/**
+ * Atomically read-modify-write an existing merchant under its per-merchant
+ * mutex, then optionally broadcast the new state to open player windows.
+ *
+ * GM-facing edits (the Merchant Workspace) must go through this so they
+ * serialize against the player commit handlers, which already hold the same
+ * lock. Mutating outside the lock is a lost-update race: a GM restock/edit and
+ * a concurrent player purchase both read the same snapshot and the last writer
+ * silently clobbers the other (e.g. a stock decrement reverted to full).
+ *
+ * The mutator receives the FRESH record loaded inside the lock — not a stale
+ * one captured earlier — and returns the next record (or a falsy value to
+ * abort with no write). Returns the saved record, or null if aborted/missing.
+ */
+export async function commitMerchantWrite(
+  merchantId,
+  mutator,
+  { broadcast = false } = {},
+) {
+  return runWithMerchantMutex(merchantId, async () => {
+    const current = findMerchant(merchantId);
+    if (!current) return null;
+    const next = await mutator(current);
+    if (!next) return null;
+    await upsertMerchant(next);
+    if (broadcast) await broadcastState(next);
+    return next;
   });
 }
 

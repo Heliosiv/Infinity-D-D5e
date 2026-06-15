@@ -47,6 +47,7 @@ import { LOOT_TYPES, RARITIES, getItemRarity } from "./loot/tag-vocabulary.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { formatMultiplier, prettyLootType, prettyRarity } from "./ui-util.js";
 import {
+  commitMerchantWrite,
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
   pushCloseSession,
@@ -575,11 +576,17 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Ammunition always stocks as a full stack of 20; everything else as 1.
     const item = await this._resolveItem(uuid);
     const qty = resolveStockQty(item, 1);
-    const next = upsertInventoryRow(
-      merchant,
-      createInventoryRow(uuid, { qty, startingQty: qty }),
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) =>
+        fresh.items.some((r) => r.uuid === uuid)
+          ? null
+          : upsertInventoryRow(
+              fresh,
+              createInventoryRow(uuid, { qty, startingQty: qty }),
+            ),
+      { broadcast: true },
     );
-    await upsertMerchant(next);
     playModuleSound(SOUND_EVENTS.ROSTER_ADD);
     this.render(false);
   }
@@ -606,55 +613,62 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     const data = readFormFields(form);
-    // First time a shop gains an allowed player, flip it from the default
-    // "off" to "open" so it actually appears in that player's Shops door —
-    // otherwise GMs tick a player, see nothing happen, and conclude "players
-    // can't open shops". Only auto-promote on the no-players → has-players
-    // step; a GM who wants a GM-pull-only shop can still set "off"/"knock".
-    const selfServiceMode = promoteSelfServiceMode(
-      data.selfServiceMode,
-      (merchant.allowedUserIds?.length ?? 0) > 0,
-      (data.allowedUserIds?.length ?? 0) > 0,
+    // Build the next record from the FRESH merchant inside the per-merchant
+    // mutex so a concurrent player purchase (which decrements stock under the
+    // same lock) isn't clobbered back by this config save's stale snapshot.
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) =>
+        normalizeMerchant({
+          ...fresh,
+          name: data.name ?? fresh.name,
+          art: data.art ?? fresh.art,
+          description: data.description ?? fresh.description,
+          defaultMarkup: Number(data.defaultMarkup ?? fresh.defaultMarkup),
+          sellRatio: Number(data.sellRatio ?? fresh.sellRatio),
+          bargainDC: Number(data.bargainDC ?? fresh.bargainDC),
+          bargainAdvantage: data.bargainAdvantage === "on",
+          bargainSuccessPct: Number(
+            data.bargainSuccessPct ?? fresh.bargainSuccessPct,
+          ),
+          bargainFailPct: Number(data.bargainFailPct ?? fresh.bargainFailPct),
+          passiveHaggle: data.passiveHaggle === "on",
+          passivePctPerPoint: Number(
+            data.passivePctPerPoint ?? fresh.passivePctPerPoint,
+          ),
+          passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
+          goldOnHand: data.goldOnHand,
+          allowedSkills: data.allowedSkills,
+          allowedUserIds: data.allowedUserIds,
+          // First time a shop gains an allowed player, flip it from the default
+          // "off" to "open" so it appears in that player's Shops door — else GMs
+          // tick a player, see nothing, and conclude "players can't open shops".
+          // Only auto-promote on the no-players → has-players step; a GM who
+          // wants a GM-pull-only shop can still set "off"/"knock".
+          selfServiceMode: promoteSelfServiceMode(
+            data.selfServiceMode,
+            (fresh.allowedUserIds?.length ?? 0) > 0,
+            (data.allowedUserIds?.length ?? 0) > 0,
+          ),
+          pool: {
+            lootTypes: data.poolLootTypes,
+            rarities: data.poolRarities,
+            // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
+            count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
+            budgetGp:
+              data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
+            rarityBalance: data.poolRarityBalance,
+            rarityWeights: data.poolRarityWeights,
+            minGp: Number(data.poolMinGp ?? fresh.pool?.minGp ?? 0),
+            maxGp: Number(data.poolMaxGp ?? fresh.pool?.maxGp ?? 0),
+          },
+          buyFilter: {
+            lootTypes: data.buyFilterLootTypes,
+            rarities: data.buyFilterRarities,
+          },
+        }),
+      { broadcast: true },
     );
-    const next = normalizeMerchant({
-      ...merchant,
-      name: data.name ?? merchant.name,
-      art: data.art ?? merchant.art,
-      description: data.description ?? merchant.description,
-      defaultMarkup: Number(data.defaultMarkup ?? merchant.defaultMarkup),
-      sellRatio: Number(data.sellRatio ?? merchant.sellRatio),
-      bargainDC: Number(data.bargainDC ?? merchant.bargainDC),
-      bargainAdvantage: data.bargainAdvantage === "on",
-      bargainSuccessPct: Number(
-        data.bargainSuccessPct ?? merchant.bargainSuccessPct,
-      ),
-      bargainFailPct: Number(data.bargainFailPct ?? merchant.bargainFailPct),
-      passiveHaggle: data.passiveHaggle === "on",
-      passivePctPerPoint: Number(
-        data.passivePctPerPoint ?? merchant.passivePctPerPoint,
-      ),
-      passiveCapPct: Number(data.passiveCapPct ?? merchant.passiveCapPct),
-      goldOnHand: data.goldOnHand,
-      allowedSkills: data.allowedSkills,
-      allowedUserIds: data.allowedUserIds,
-      selfServiceMode,
-      pool: {
-        lootTypes: data.poolLootTypes,
-        rarities: data.poolRarities,
-        // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
-        count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
-        budgetGp: data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
-        rarityBalance: data.poolRarityBalance,
-        rarityWeights: data.poolRarityWeights,
-        minGp: Number(data.poolMinGp ?? merchant.pool?.minGp ?? 0),
-        maxGp: Number(data.poolMaxGp ?? merchant.pool?.maxGp ?? 0),
-      },
-      buyFilter: {
-        lootTypes: data.buyFilterLootTypes,
-        rarities: data.buyFilterRarities,
-      },
-    });
-    await upsertMerchant(next);
   }
 
   /* -------------------- actions -------------------- */
@@ -870,12 +884,18 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       );
       return;
     }
-    let next = merchant;
-    for (const row of rows) next = upsertInventoryRow(next, row);
-    await upsertMerchant(next);
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) => {
+        let next = fresh;
+        for (const row of rows) next = upsertInventoryRow(next, row);
+        return next;
+      },
+      { broadcast: true },
+    );
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(
-      `${MODULE_ID}: ${replace ? "re-stocked" : "generated"} ${rows.length} item(s) for ${next.name}.`,
+      `${MODULE_ID}: ${replace ? "re-stocked" : "generated"} ${rows.length} item(s) for ${merchant.name}.`,
     );
     this.render(false);
   }
@@ -890,14 +910,18 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     } catch {}
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
-    const next = normalizeMerchant({
-      ...merchant,
-      buyFilter: {
-        lootTypes: [...merchant.pool.lootTypes],
-        rarities: [...merchant.pool.rarities],
-      },
-    });
-    await upsertMerchant(next);
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) =>
+        normalizeMerchant({
+          ...fresh,
+          buyFilter: {
+            lootTypes: [...fresh.pool.lootTypes],
+            rarities: [...fresh.pool.rarities],
+          },
+        }),
+      { broadcast: true },
+    );
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     ui.notifications?.info(
       `${MODULE_ID}: copied stock types & rarities into the buy filter.`,
@@ -918,7 +942,11 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         })
       : true;
     if (!confirmed) return;
-    await upsertMerchant(clearInventory(merchant));
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) => clearInventory(fresh),
+      { broadcast: true },
+    );
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     this.render(false);
   }
@@ -966,8 +994,9 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         : true;
       if (!confirmed) return;
     }
-    const next = restockAll(merchant);
-    await upsertMerchant(next);
+    await commitMerchantWrite(this._selectedId, (fresh) => restockAll(fresh), {
+      broadcast: true,
+    });
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(`${merchant.name} restocked.`);
     this.render(false);
@@ -1060,24 +1089,28 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const uuid = target?.dataset?.uuid;
     if (!uuid) return;
-    const merchant = findMerchant(this._selectedId);
-    if (!merchant) return;
-    const next = removeInventoryRow(merchant, uuid);
-    await upsertMerchant(next);
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) => removeInventoryRow(fresh, uuid),
+      { broadcast: true },
+    );
     playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
     this.render(false);
   }
 
   async _mutateInventoryRow(uuid, mutator) {
     if (!uuid || !this._selectedId) return;
-    const merchant = findMerchant(this._selectedId);
-    if (!merchant) return;
-    const idx = merchant.items.findIndex((r) => r.uuid === uuid);
-    if (idx < 0) return;
-    const updated = normalizeInventoryRow(mutator(merchant.items[idx]));
-    if (!updated) return;
-    const next = upsertInventoryRow(merchant, updated);
-    await upsertMerchant(next);
+    await commitMerchantWrite(
+      this._selectedId,
+      (fresh) => {
+        const idx = fresh.items.findIndex((r) => r.uuid === uuid);
+        if (idx < 0) return null;
+        const updated = normalizeInventoryRow(mutator(fresh.items[idx]));
+        if (!updated) return null;
+        return upsertInventoryRow(fresh, updated);
+      },
+      { broadcast: true },
+    );
   }
 }
 
