@@ -133,9 +133,17 @@ async function readManifest() {
  * Per-field overrides win over the `REPO` shortcut. Returns the list of
  * fields actually touched so we can log them.
  */
+// The canonical GitHub repo, used to populate url/manifest/download when
+// no INFINITY_RELEASE_* env vars are set. Without this the released
+// module.json shipped empty URLs and Foundry/Forge could never offer
+// auto-updates. Override via env for forks/relocations.
+const DEFAULT_RELEASE_REPO = "Heliosiv/Infinity-D-D5e";
+
 function injectReleaseUrls(manifest) {
   const version = String(manifest?.version ?? "0.0.0");
-  const repo = (process.env.INFINITY_RELEASE_REPO ?? "").trim();
+  const repo = (
+    process.env.INFINITY_RELEASE_REPO ?? DEFAULT_RELEASE_REPO
+  ).trim();
   const explicit = {
     url: (process.env.INFINITY_RELEASE_URL ?? "").trim(),
     manifest: (process.env.INFINITY_RELEASE_MANIFEST_URL ?? "").trim(),
@@ -246,6 +254,62 @@ async function verifyStage(manifest) {
       }
     }
   }
+}
+
+/** Recursively collect every `img` field value from a document. */
+function collectImageFields(value) {
+  if (!value || typeof value !== "object") return [];
+  const images = [];
+  if (Object.hasOwn(value, "img")) {
+    images.push(String(value.img ?? "").trim());
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) images.push(...collectImageFields(entry));
+    return images;
+  }
+  for (const entry of Object.values(value)) {
+    images.push(...collectImageFields(entry));
+  }
+  return images;
+}
+
+/**
+ * Every art file the pack references from this module's own assets must
+ * survive into the staged tree, or the release ships items with broken
+ * icons (the recurring v0.2.17-style regression). The compile step already
+ * guarantees LevelDB↔NeDB document parity; this guards the asset side, in
+ * particular against shouldStage() accidentally filtering a needed .webp.
+ */
+async function verifyStagedArt() {
+  const selfPrefix = "modules/infinity-dnd5e/";
+  const dbPath = path.join(repoRoot, "packs", "infinity-dnd5e-items.db");
+  if (!(await pathExists(dbPath))) return;
+  const text = await readFile(dbPath, "utf8");
+  const referenced = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let item;
+    try {
+      item = JSON.parse(trimmed);
+    } catch {
+      continue; // test-pack-shape catches bad JSON
+    }
+    for (const ref of collectImageFields(item)) {
+      if (ref.startsWith(selfPrefix)) referenced.add(ref.slice(selfPrefix.length));
+    }
+  }
+  const missing = [];
+  for (const rel of referenced) {
+    if (!(await pathExists(path.join(stagingDir, rel)))) missing.push(rel);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Pack references ${missing.length} art file(s) missing from the staged ` +
+        `release (would 404 in Foundry):\n  ${missing.join("\n  ")}`,
+    );
+  }
+  console.log(`Verified ${referenced.size} referenced art files are staged.`);
 }
 
 async function writeManifestCopy(manifest) {
@@ -372,6 +436,7 @@ async function main() {
   await clean();
   await stageFiles();
   await verifyStage(manifest);
+  await verifyStagedArt();
 
   const injected = injectReleaseUrls(manifest);
   if (injected.length > 0) {

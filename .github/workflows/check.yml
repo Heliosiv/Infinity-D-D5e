@@ -1,0 +1,55 @@
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # Core quality gate: the full bespoke test suite. Blocking.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so the manifest version>=tag gate in
+          # test-manifest-compat.mjs can compare against released tags.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  # Prettier formatting. Advisory for now: master carries pre-existing
+  # drift, so this reports without blocking until the drift is cleaned.
+  format:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+
+  # Headless-Chrome layout/overflow + action-wiring audit. Advisory:
+  # depends on a Chromium binary and is the flakiest gate, so it reports
+  # without blocking. Promote to required once it is proven stable in CI.
+  ui-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium for the UI harness
+        run: npx --yes playwright install --with-deps chromium
+      - run: npm run ui:audit
