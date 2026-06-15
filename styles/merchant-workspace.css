@@ -27,6 +27,15 @@
   padding: 0;
 }
 
+/* Promote the content to its own GPU compositing layer. Foundry's WebGL canvas
+   sits behind these windows; without an explicit layer, Chrome can fail to
+   repaint the lower region after this window rebuilds its DOM on a click,
+   leaving a black void (and the window looking like it "blacks out"). A stable
+   translateZ(0) forces an own-layer that composites cleanly over the canvas. */
+.infinity-dnd5e.infinity-merchant-workspace .window-content {
+  transform: translateZ(0);
+}
+
 .mw-shell {
   display: flex;
   flex-direction: column;
