@@ -421,7 +421,18 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const tag = event.target?.tagName?.toLowerCase();
     const isEditable =
       tag === "input" || tag === "select" || tag === "textarea";
-    if (event.key === "Enter" && (!isEditable || tag === "input")) {
+    // Enter triggers Generate from anywhere EXCEPT a text-entry field, where
+    // Enter means "confirm this value". A GM typing a budget/quantity/min-gp
+    // and pressing Enter should not silently re-roll the whole bundle and
+    // discard unlocked results. Checkbox/radio/range inputs still generate.
+    const type = (event.target?.type ?? "").toLowerCase();
+    const isTextEntry =
+      tag === "textarea" ||
+      (tag === "input" &&
+        ["text", "number", "search", "email", "tel", "url", "password"].includes(
+          type,
+        ));
+    if (event.key === "Enter" && !isTextEntry && tag !== "select") {
       event.preventDefault();
       this._primaryGenerate();
       return;

@@ -6,9 +6,10 @@
  * all import from here so renames or additions happen in one place.
  *
  * Items in packs/infinity-dnd5e-items.db carry these tags under
- * `flags["party-operations"].keywords` (legacy from the source
- * compendium). v0.1 reads that flag namespace verbatim; a future
- * milestone migrates the pack to `flags["infinity-dnd5e"]`.
+ * `flags["infinity-dnd5e"].keywords`. The accessors below still read the
+ * legacy `flags["party-operations"]` namespace as a fallback so items in
+ * existing player worlds that were imported before the migration keep their
+ * tags; the shipped pack itself is 100% on the native namespace.
  */
 
 /** Rarity bucket — matches dnd5e's `system.rarity` after normalization. */
