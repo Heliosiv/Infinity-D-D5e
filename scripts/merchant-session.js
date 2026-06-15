@@ -425,22 +425,47 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   }
 
   async _resolveMerchantItems() {
+    // Cache uuid→snapshot across renders. _prepareContext runs on every
+    // render(false) — every buy/sell/tab-switch/bargain and inbound
+    // STATE_UPDATE — and previously re-awaited fromUuid() for every shelf row
+    // each time (sequentially). The bundled pack is read-only at runtime, so a
+    // snapshot can't go stale within a session; stock/qty come from
+    // this._merchant.items, not the cached doc. Only newly-seen uuids are
+    // fetched, and cold fetches run concurrently.
+    if (!this._itemCache) this._itemCache = new Map();
+    const cache = this._itemCache;
+    const missing = [
+      ...new Set(
+        this._merchant.items
+          .map((row) => row.uuid)
+          .filter((uuid) => !cache.has(uuid)),
+      ),
+    ];
+    if (missing.length > 0) {
+      await Promise.all(
+        missing.map(async (uuid) => {
+          try {
+            const doc = await fromUuid(uuid);
+            if (!doc) {
+              cache.set(uuid, null);
+              return;
+            }
+            const snapshot =
+              typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+            if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? uuid;
+            cache.set(uuid, snapshot);
+          } catch (error) {
+            console.warn(`${MODULE_ID} | failed to resolve ${uuid}`, error);
+            cache.set(uuid, null);
+          }
+        }),
+      );
+    }
+    // Project the cache down to the current shelf (it may also hold snapshots
+    // for rows the GM has since removed).
     const map = new Map();
     for (const row of this._merchant.items) {
-      try {
-        const doc = await fromUuid(row.uuid);
-        if (!doc) {
-          map.set(row.uuid, null);
-          continue;
-        }
-        const snapshot =
-          typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
-        if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? row.uuid;
-        map.set(row.uuid, snapshot);
-      } catch (error) {
-        console.warn(`${MODULE_ID} | failed to resolve ${row.uuid}`, error);
-        map.set(row.uuid, null);
-      }
+      map.set(row.uuid, cache.get(row.uuid) ?? null);
     }
     return map;
   }

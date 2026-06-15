@@ -295,6 +295,13 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onClose(options) {
     super._onClose?.(options);
+    // Clear any pending debounced work so a timer can't fire into a torn-down app.
+    if (this._debounceTimers) {
+      for (const id of this._debounceTimers.values()) {
+        globalThis.clearTimeout?.(id);
+      }
+      this._debounceTimers.clear();
+    }
     const Cls = this.constructor;
     if (getSetting(SETTING_KEYS.PERSIST_STATE) !== false) {
       Cls._persistedState = this._snapshotState();
@@ -302,6 +309,24 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       Cls._persistedState = null;
     }
     Cls._instance = null;
+  }
+
+  /**
+   * Trailing-edge debounce keyed by name. Coalesces rapid input — a slider
+   * drag fires `input` dozens of times a second — so an expensive recompute
+   * (e.g. a full-pack candidate recount) runs once when the control settles
+   * instead of on every frame. Cheap readouts stay synchronous; only the
+   * costly scan is deferred.
+   */
+  _debounce(key, fn, delay = 120) {
+    if (!this._debounceTimers) this._debounceTimers = new Map();
+    const timers = this._debounceTimers;
+    if (timers.has(key)) globalThis.clearTimeout?.(timers.get(key));
+    const id = globalThis.setTimeout?.(() => {
+      timers.delete(key);
+      fn();
+    }, delay);
+    timers.set(key, id);
   }
 
   /** Default persisted snapshot; Per-Creature widens it for the roster. */

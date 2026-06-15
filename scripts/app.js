@@ -532,13 +532,20 @@ export class PerEncounterLootApp extends BaseLootApp {
       formatMagicBias(this._form.magicBias),
     );
 
-    const candidates = this._countCandidates();
-    setText(
-      root,
-      "[data-candidates]",
-      this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
-    );
-    setText(root, "[data-value-range]", this._valueRangeLabel());
+    // Full-pack candidate scan + value-range readout: debounce so a slider
+    // drag recomputes once when it settles instead of on every input frame.
+    // The cheap readouts above stay synchronous for instant feedback.
+    this._debounce("candidates", () => {
+      const el = this.element;
+      if (!el) return;
+      const candidates = this._countCandidates();
+      setText(
+        el,
+        "[data-candidates]",
+        this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
+      );
+      setText(el, "[data-value-range]", this._valueRangeLabel());
+    });
 
     setText(
       root,
