@@ -24,6 +24,20 @@ const DEFAULT_IMAGE_PATHS = new Set([
   "icons/svg/mystery-man.svg",
 ]);
 const GENERATED_LOCAL_IMAGE_PATTERN = /DALL|^ddb-images\//i;
+const LEAKED_SOURCE_ID = /^(Compendium\.party-operations|Compendium\.world|Actor\.|Item\.)/;
+
+/** Recursively collect every `sourceId` value in a document. */
+function collectSourceIds(value) {
+  if (!value || typeof value !== "object") return [];
+  const ids = [];
+  if (typeof value.sourceId === "string") ids.push(value.sourceId);
+  if (Array.isArray(value)) {
+    for (const entry of value) ids.push(...collectSourceIds(entry));
+    return ids;
+  }
+  for (const entry of Object.values(value)) ids.push(...collectSourceIds(entry));
+  return ids;
+}
 
 function collectImageFields(value, path = "$") {
   if (!value || typeof value !== "object") return [];
@@ -69,6 +83,7 @@ const defaultImageItems = [];
 const forgeImageItems = [];
 const generatedLocalImageItems = [];
 const invalidDnd5eFormulaItems = [];
+const leakedSourceIdItems = [];
 
 for (const [index, line] of lines.entries()) {
   let item;
@@ -100,6 +115,12 @@ for (const [index, line] of lines.entries()) {
       generatedLocalImageItems.push(
         `${index + 1}:${item.name}:${imageField.path}`,
       );
+    }
+  }
+
+  for (const sourceId of collectSourceIds(item)) {
+    if (LEAKED_SOURCE_ID.test(sourceId)) {
+      leakedSourceIdItems.push(`${index + 1}:${item.name}:${sourceId}`);
     }
   }
 
@@ -166,6 +187,11 @@ assert.equal(
   invalidDnd5eFormulaItems.length,
   0,
   `dnd5e-invalid formula fields remain: ${invalidDnd5eFormulaItems.join(", ")}`,
+);
+assert.equal(
+  leakedSourceIdItems.length,
+  0,
+  `leaked/private sourceId references remain (party-operations/world/Actor/Item): ${leakedSourceIdItems.join(", ")}`,
 );
 const coverage = (count) => (count / lines.length) * 100;
 
