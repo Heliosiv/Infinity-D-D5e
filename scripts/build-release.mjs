@@ -56,6 +56,16 @@ const TOP_LEVEL_FILES = ["module.json"];
 const TOP_LEVEL_DIRS = ["assets", "scripts", "styles", "templates", "packs"];
 
 /**
+ * Allow-list of repo-relative item-art paths the pack actually references
+ * (e.g. "assets/item-art/unique/foo.webp"). Set in main() before staging.
+ * The repo keeps a large pool of generated art the pack doesn't (yet)
+ * reference; shipping all of it bloats the release zip by ~17 MB for no
+ * runtime benefit (Foundry only loads img paths the pack declares). We keep
+ * those source files in the repo (author WIP) but ship only referenced art.
+ */
+let stagedArtAllowlist = null;
+
+/**
  * Predicate that returns false when a file should NOT be staged.
  * Receives the *absolute* path of the candidate. The `cp` recursive
  * filter calls this for BOTH files and directories — returning false
@@ -66,6 +76,14 @@ function shouldStage(sourcePath) {
   const ext = path.extname(sourcePath).toLowerCase();
   const normalized = sourcePath.split(path.sep).join("/");
   const base = path.basename(sourcePath).toLowerCase();
+
+  // Ship only item-art the pack references; skip the unreferenced generated
+  // pool (kept in-repo as source). Directories pass through so we recurse.
+  const artAt = normalized.indexOf("/assets/item-art/");
+  if (artAt !== -1 && ext === ".webp" && stagedArtAllowlist) {
+    const rel = normalized.slice(artAt + 1); // "assets/item-art/..."
+    if (!stagedArtAllowlist.has(rel)) return false;
+  }
 
   // Skip test-utils entirely (both the directory and anything inside).
   if (base === "test-utils") return false;
@@ -274,18 +292,17 @@ function collectImageFields(value) {
 }
 
 /**
- * Every art file the pack references from this module's own assets must
- * survive into the staged tree, or the release ships items with broken
- * icons (the recurring v0.2.17-style regression). The compile step already
- * guarantees LevelDB↔NeDB document parity; this guards the asset side, in
- * particular against shouldStage() accidentally filtering a needed .webp.
+ * Repo-relative set of item-art paths the pack references (e.g.
+ * "assets/item-art/unique/foo.webp"), derived from every `img` field in the
+ * NeDB source that points at this module's own assets. Drives both the
+ * stage allow-list (ship only referenced art) and the staged-art verifier.
  */
-async function verifyStagedArt() {
+async function computeReferencedArt() {
   const selfPrefix = "modules/infinity-dnd5e/";
   const dbPath = path.join(repoRoot, "packs", "infinity-dnd5e-items.db");
-  if (!(await pathExists(dbPath))) return;
-  const text = await readFile(dbPath, "utf8");
   const referenced = new Set();
+  if (!(await pathExists(dbPath))) return referenced;
+  const text = await readFile(dbPath, "utf8");
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -299,6 +316,17 @@ async function verifyStagedArt() {
       if (ref.startsWith(selfPrefix)) referenced.add(ref.slice(selfPrefix.length));
     }
   }
+  return referenced;
+}
+
+/**
+ * Every art file the pack references from this module's own assets must
+ * survive into the staged tree, or the release ships items with broken
+ * icons (the recurring v0.2.17-style regression). The compile step already
+ * guarantees LevelDB↔NeDB document parity; this guards the asset side, in
+ * particular against shouldStage() accidentally filtering a needed .webp.
+ */
+async function verifyStagedArt(referenced) {
   const missing = [];
   for (const rel of referenced) {
     if (!(await pathExists(path.join(stagingDir, rel)))) missing.push(rel);
@@ -433,10 +461,15 @@ async function main() {
   console.log("Compiling compendium packs (NeDB → LevelDB)…");
   compilePacks();
 
+  // Compute which item-art the pack references, then stage only that art
+  // (the repo keeps a larger generated pool that would bloat the zip).
+  const referencedArt = await computeReferencedArt();
+  stagedArtAllowlist = referencedArt;
+
   await clean();
   await stageFiles();
   await verifyStage(manifest);
-  await verifyStagedArt();
+  await verifyStagedArt(referencedArt);
 
   const injected = injectReleaseUrls(manifest);
   if (injected.length > 0) {
