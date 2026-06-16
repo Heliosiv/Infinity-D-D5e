@@ -65,6 +65,7 @@ import { loadCompendiumItems } from "./loot/pack.js";
 import {
   bindRowDoubleClickOpen,
   openItemByUuid,
+  resolveItemSnapshot,
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
@@ -368,20 +369,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
     for (const uuid of allUuids) {
       if (this._itemCache.has(uuid)) continue;
-      try {
-        const doc = await fromUuid(uuid);
-        if (!doc) {
-          this._itemCache.set(uuid, null);
-          continue;
-        }
-        const snapshot =
-          typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
-        if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? uuid;
-        this._itemCache.set(uuid, snapshot);
-      } catch (error) {
-        console.warn(`${MODULE_ID} | failed to resolve item ${uuid}`, error);
-        this._itemCache.set(uuid, null);
-      }
+      this._itemCache.set(uuid, await resolveItemSnapshot(uuid));
     }
   }
 
@@ -600,16 +588,9 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   /** Resolve an item snapshot by uuid, using the render cache when warm. */
   async _resolveItem(uuid) {
     if (this._itemCache.has(uuid)) return this._itemCache.get(uuid);
-    try {
-      const doc = await fromUuid(uuid);
-      const snapshot = doc?.toObject?.() ?? (doc ? { ...doc } : null);
-      if (snapshot && !snapshot.uuid) snapshot.uuid = doc?.uuid ?? uuid;
-      this._itemCache.set(uuid, snapshot);
-      return snapshot;
-    } catch {
-      this._itemCache.set(uuid, null);
-      return null;
-    }
+    const snapshot = await resolveItemSnapshot(uuid);
+    this._itemCache.set(uuid, snapshot);
+    return snapshot;
   }
 
   async _saveFromForm() {

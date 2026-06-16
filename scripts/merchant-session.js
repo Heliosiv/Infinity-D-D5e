@@ -45,6 +45,7 @@ import { getItemRarity } from "./loot/tag-vocabulary.js";
 import {
   bindRowDoubleClickOpen,
   openItemByUuid,
+  resolveItemSnapshot,
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
 import {
@@ -446,20 +447,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (missing.length > 0) {
       await Promise.all(
         missing.map(async (uuid) => {
-          try {
-            const doc = await fromUuid(uuid);
-            if (!doc) {
-              cache.set(uuid, null);
-              return;
-            }
-            const snapshot =
-              typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
-            if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? uuid;
-            cache.set(uuid, snapshot);
-          } catch (error) {
-            console.warn(`${MODULE_ID} | failed to resolve ${uuid}`, error);
-            cache.set(uuid, null);
-          }
+          cache.set(uuid, await resolveItemSnapshot(uuid));
         }),
       );
     }

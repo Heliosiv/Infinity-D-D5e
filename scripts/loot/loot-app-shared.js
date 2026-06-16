@@ -18,6 +18,26 @@ import { formatGp } from "../ui-util.js";
 export const MODULE_ID = "infinity-dnd5e";
 export const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 
+/**
+ * Resolve a uuid to a plain item snapshot suitable for caching/pricing:
+ * `{ ...doc.toObject(), uuid }`, or `null` if it can't be resolved. Centralizes
+ * the fromUuid → toObject → uuid-backfill dance that the merchant workspace and
+ * session each used to hand-roll (with slightly different null handling).
+ */
+export async function resolveItemSnapshot(uuid) {
+  try {
+    const doc = await fromUuid(uuid);
+    if (!doc) return null;
+    const snapshot =
+      typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+    if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? uuid;
+    return snapshot;
+  } catch (error) {
+    console.warn(`${MODULE_ID} | failed to resolve item ${uuid}`, error);
+    return null;
+  }
+}
+
 /** Mint a stable, unique id for a result entry (per roll, not per item). */
 export function mintEntryId() {
   return (
