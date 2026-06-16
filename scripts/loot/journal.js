@@ -7,6 +7,8 @@
  * Send-to-Chat, so there's one source of truth for roll presentation.
  */
 
+import { notify } from "../ui-util.js";
+
 const MODULE_ID = "infinity-dnd5e";
 
 /**
@@ -38,7 +40,7 @@ export async function buildJournalEntry({ title, html } = {}) {
       ],
     });
     entry?.sheet?.render(true);
-    ui.notifications?.info(`${MODULE_ID}: saved loot to journal "${name}".`);
+    notify("info", `saved loot to journal "${name}".`);
     return entry;
   } catch (error) {
     console.error(`${MODULE_ID} | failed to create journal entry`, error);

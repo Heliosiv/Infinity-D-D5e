@@ -13,7 +13,7 @@
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { getTool, getTools } from "./tool-registry.js";
-import { prettyCategory } from "./ui-util.js";
+import { prettyCategory, notify } from "./ui-util.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -160,7 +160,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     const tool = getTool(id);
     if (!tool) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.warn(`${MODULE_ID}: tool "${id}" is not registered.`);
+      notify("warn", `tool "${id}" is not registered.`);
       return;
     }
     if (tool.status !== "available") {

@@ -52,6 +52,7 @@ import {
   prettyRarity,
   prettyBargainTier,
   friendlyTransactionError,
+  notify,
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
@@ -1072,7 +1073,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     );
     const totalGp = roundGp(unitGp * count);
     if (totalGp <= 0) {
-      ui.notifications?.info(`${MODULE_ID}: this item has no resale value.`);
+      notify("info", `this item has no resale value.`);
       return;
     }
     if (!merchantCanAfford(this._merchant, totalGp)) {

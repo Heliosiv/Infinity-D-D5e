@@ -34,7 +34,7 @@ import {
   isAuthoritativeGM,
 } from "./resource/socket.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
-import { escapeHtml, prettyEnvironment } from "./ui-util.js";
+import { escapeHtml, prettyEnvironment, notify } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -77,7 +77,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   static open() {
     if (!globalThis.game?.user?.isGM) {
-      ui.notifications?.warn(`${MODULE_ID}: the Quartermaster is GM-only.`);
+      notify("warn", `the Quartermaster is GM-only.`);
       return null;
     }
     playModuleSound(SOUND_EVENTS.UI_OPEN);
@@ -381,7 +381,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     res.matching.itemUuids = [...uuids];
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.DEPOSIT);
-    ui.notifications?.info(`${MODULE_ID}: tagged an item as ${res.label}.`);
+    notify("info", `tagged an item as ${res.label}.`);
     this.render(false);
   }
 
@@ -474,7 +474,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     }
     if (!result) return;
     if (!Array.isArray(result.ids) || result.ids.length === 0) {
-      ui.notifications?.info(`${MODULE_ID}: select at least one forager.`);
+      notify("info", `select at least one forager.`);
       return;
     }
     playModuleSound(SOUND_EVENTS.ROLL_START);

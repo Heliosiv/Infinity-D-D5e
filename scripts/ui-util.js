@@ -8,6 +8,15 @@
  * they reference `foundry.applications.api` at module load.
  */
 
+/** Human-facing product name shown in user toasts (not the dev slug). */
+export const NOTIFY_PREFIX = "Infinity D&D5e";
+/** Foundry toast prefixed with the product name. level: "info"|"warn"|"error". */
+export function notify(level, message) {
+  const box = globalThis.ui?.notifications;
+  const fn = box?.[level] ?? box?.info;
+  return fn?.call(box, `${NOTIFY_PREFIX}: ${message}`);
+}
+
 /** Capitalize the first character. "uncommon" -> "Uncommon". */
 export function titleCase(value) {
   const raw = String(value ?? "");

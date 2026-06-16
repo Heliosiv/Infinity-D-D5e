@@ -29,7 +29,7 @@ import {
 } from "./hoard-budget.js";
 import { DEFAULT_ITEM_PACK_ID, loadCompendiumItems } from "./pack.js";
 import { isBareSpellLootItem } from "./tag-vocabulary.js";
-import { escapeHtml } from "../ui-util.js";
+import { escapeHtml, notify } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -117,13 +117,13 @@ export async function promptDistributeItems(items, opts = {}) {
     (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
   );
   if (cleaned.length === 0 && !hasCurrency) {
-    ui.notifications?.warn(`${MODULE_ID}: nothing to distribute.`);
+    notify("warn", `nothing to distribute.`);
     return null;
   }
 
   const candidates = listDistributableActors();
   if (candidates.length === 0) {
-    ui.notifications?.warn(`${MODULE_ID}: no character-type actors available.`);
+    notify("warn", `no character-type actors available.`);
     return null;
   }
 
@@ -294,7 +294,7 @@ export async function depositToActors(assignments, { notify = true } = {}) {
         `${MODULE_ID}: split ${created} item(s) across ${recipients.length} character(s) — ${recipients.join(", ")}.`,
       );
     } else {
-      ui.notifications?.warn(`${MODULE_ID}: nothing was distributed.`);
+      notify("warn", `nothing was distributed.`);
     }
   }
   return { created, recipients };
@@ -322,12 +322,12 @@ export async function promptDistributeSplit(items, opts = {}) {
     (currency.pp || currency.gp || currency.ep || currency.sp || currency.cp),
   );
   if (cleaned.length === 0 && !hasCurrency) {
-    ui.notifications?.warn(`${MODULE_ID}: nothing to distribute.`);
+    notify("warn", `nothing to distribute.`);
     return null;
   }
   const candidates = listDistributableActors();
   if (candidates.length === 0) {
-    ui.notifications?.warn(`${MODULE_ID}: no character-type actors available.`);
+    notify("warn", `no character-type actors available.`);
     return null;
   }
   const DialogV2 = foundry?.applications?.api?.DialogV2;
@@ -415,7 +415,7 @@ export async function distributeItemsToActor(actorId, items) {
   ensureFoundry();
   const actor = game.actors?.get?.(actorId);
   if (!actor) {
-    ui.notifications?.error(`${MODULE_ID}: actor ${actorId} not found.`);
+    notify("error", `actor ${actorId} not found.`);
     return 0;
   }
   const { created, failures } = await depositItemsCore(actor, items);
@@ -451,7 +451,7 @@ export async function depositToActor(
   ensureFoundry();
   const actor = game.actors?.get?.(actorId);
   if (!actor) {
-    ui.notifications?.error(`${MODULE_ID}: actor ${actorId} not found.`);
+    notify("error", `actor ${actorId} not found.`);
     return { created: 0, failures: [], currencyAdded: null };
   }
 

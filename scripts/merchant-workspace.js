@@ -50,6 +50,7 @@ import {
   formatMultiplier,
   prettyLootType,
   prettyRarity,
+  notify,
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
@@ -132,7 +133,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   static open() {
     if (!globalThis.game?.user?.isGM) {
-      ui.notifications?.warn(`${MODULE_ID}: Merchant Workspace is GM-only.`);
+      notify("warn", `Merchant Workspace is GM-only.`);
       return null;
     }
     playModuleSound(SOUND_EVENTS.UI_OPEN);
@@ -575,7 +576,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!merchant) return;
     const exists = merchant.items.some((r) => r.uuid === uuid);
     if (exists) {
-      ui.notifications?.info(`${MODULE_ID}: already in inventory.`);
+      notify("info", `already in inventory.`);
       return;
     }
     // Ammunition always stocks as a full stack of 20; everything else as 1.
@@ -712,10 +713,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     try {
       await this._saveFromForm();
       playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
-      ui.notifications?.info(`${MODULE_ID}: merchant saved.`);
+      notify("info", `merchant saved.`);
     } catch (error) {
       console.error(`${MODULE_ID} | save failed`, error);
-      ui.notifications?.error(`${MODULE_ID}: save failed. See console.`);
+      notify("error", `save failed. See console.`);
     }
   }
 
@@ -747,7 +748,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!merchant) return;
     const items = await loadCompendiumItems().catch(() => []);
     if (items.length === 0) {
-      ui.notifications?.warn(`${MODULE_ID}: no items in compendium.`);
+      notify("warn", `no items in compendium.`);
       return;
     }
     const DialogV2 = foundry?.applications?.api?.DialogV2;
@@ -760,7 +761,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
     if (candidates.length === 0) {
-      ui.notifications?.info(`${MODULE_ID}: every pack item already stocked.`);
+      notify("info", `every pack item already stocked.`);
       return;
     }
 
@@ -962,7 +963,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       foundry?.applications?.apps?.FilePicker?.implementation ??
       globalThis.FilePicker;
     if (!FP) {
-      ui.notifications?.warn(`${MODULE_ID}: file picker unavailable.`);
+      notify("warn", `file picker unavailable.`);
       return;
     }
     const picker = new FP({
