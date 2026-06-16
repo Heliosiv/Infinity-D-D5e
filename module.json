@@ -49,7 +49,7 @@
       {
         "id": "dnd5e",
         "type": "system",
-        "compatibility": { "minimum": "4.0.0", "verified": "5.3.3" }
+        "compatibility": { "minimum": "4.0.0", "verified": "4.0.4" }
       }
     ]
   },
