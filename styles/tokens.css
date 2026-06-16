@@ -49,7 +49,16 @@
 /* Keyboard focus visibility. Foundry's chrome doesn't reliably ring our
    custom-styled controls, so keyboard users couldn't see focus on any button,
    launcher tile, or Buy/Sell tab. One scoped rule covers them all. */
-.infinity-dnd5e :is(button, [role="tab"], a, summary):focus-visible {
+.infinity-dnd5e
+  :is(
+    button,
+    [role="tab"],
+    a,
+    summary,
+    input,
+    select,
+    textarea
+  ):focus-visible {
   outline: 2px solid var(--lf-accent);
   outline-offset: 2px;
   border-radius: var(--lf-radius-sm);

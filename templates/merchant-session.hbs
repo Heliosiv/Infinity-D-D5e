@@ -11,12 +11,12 @@
       {{#if merchant.description}}
       <p class="ms-head__desc">{{merchant.description}}</p>
       {{/if}}
-      {{#if merchantGoldLabel}}<span class="ms-head__coffer"><i class="fa-solid fa-vault" aria-hidden="true"></i> Shop Gold: {{merchantGoldLabel}}</span>{{/if}}
+      {{#if merchantGoldLabel}}<span class="ms-head__coffer" aria-live="polite"><i class="fa-solid fa-vault" aria-hidden="true"></i> Shop Gold: {{merchantGoldLabel}}</span>{{/if}}
       {{#if passiveHaggleLabel}}<span class="ms-head__haggle"><i class="fa-solid fa-comments-dollar" aria-hidden="true"></i> {{passiveHaggleLabel}}</span>{{/if}}
     </div>
     <div class="ms-head__purse">
       <span class="ms-head__purse-label">Your Gold</span>
-      <strong class="ms-head__purse-value">{{walletLabel}}</strong>
+      <strong class="ms-head__purse-value" aria-live="polite">{{walletLabel}}</strong>
     </div>
   </header>
 
@@ -135,7 +135,7 @@
   {{#if log.length}}
   <footer class="ms-log" aria-label="Transaction log">
     <h4>This session{{#if sessionSpentLabel}} · spent {{sessionSpentLabel}}{{/if}}{{#if sessionEarnedLabel}} · earned {{sessionEarnedLabel}}{{/if}}</h4>
-    <ul>
+    <ul aria-live="polite" role="status">
       {{#each log}}
       <li class="{{kind}}">{{text}}</li>
       {{/each}}
