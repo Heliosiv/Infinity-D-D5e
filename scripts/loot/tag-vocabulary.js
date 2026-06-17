@@ -191,6 +191,8 @@ export function normalizeRarity(value) {
  * already sitting on a character sheet) still resolve.
  */
 export function getItemKeywords(item) {
+  const pre = item?.__inf;
+  if (pre && Array.isArray(pre.keywords)) return pre.keywords;
   const native = item?.flags?.["infinity-dnd5e"]?.keywords;
   if (Array.isArray(native)) return native;
   const legacy = item?.flags?.["party-operations"]?.keywords;
@@ -224,6 +226,8 @@ const LOOT_TYPE_ALIASES = new Map([
 
 /** Get the canonical lootType bucket off an item, or "" if not tagged. */
 export function getItemLootType(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.lootType === "string") return pre.lootType;
   const raw =
     String(
       item?.flags?.["infinity-dnd5e"]?.lootType ??
@@ -244,6 +248,8 @@ export function isBareSpellLootItem(item) {
 
 /** Get the tier id (`t1`-`t5`) off an item, or "" if not tagged. */
 export function getItemTier(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.tier === "string") return pre.tier;
   const raw = String(
     item?.flags?.["infinity-dnd5e"]?.tier ??
       item?.flags?.["party-operations"]?.tier ??
@@ -256,6 +262,8 @@ export function getItemTier(item) {
 
 /** Get the value band (`v1`-`v5`) off an item, or "" if not tagged. */
 export function getItemValueBand(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.valueBand === "string") return pre.valueBand;
   const raw = String(
     item?.flags?.["infinity-dnd5e"]?.valueBand ??
       item?.flags?.["party-operations"]?.valueBand ??
@@ -267,6 +275,8 @@ export function getItemValueBand(item) {
 
 /** Get the normalized rarity off an item. */
 export function getItemRarity(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.rarity === "string") return pre.rarity;
   return normalizeRarity(
     item?.flags?.["infinity-dnd5e"]?.rarityNormalized ??
       item?.flags?.["party-operations"]?.rarityNormalized ??
@@ -277,6 +287,8 @@ export function getItemRarity(item) {
 
 /** Get the gp value off an item. Returns 0 when not tagged. */
 export function getItemGpValue(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.gpValue === "number") return pre.gpValue;
   const raw = Number(
     item?.flags?.["infinity-dnd5e"]?.gpValue ??
       item?.flags?.["party-operations"]?.gpValue ??
@@ -287,6 +299,8 @@ export function getItemGpValue(item) {
 
 /** Get the loot weight (probability multiplier) off an item. Defaults to 1.0. */
 export function getItemLootWeight(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.lootWeight === "number") return pre.lootWeight;
   const raw = Number(
     item?.flags?.["infinity-dnd5e"]?.lootWeight ??
       item?.flags?.["party-operations"]?.lootWeight ??
@@ -332,6 +346,8 @@ export function isAmmunitionItem(item) {
  * @returns {"magic"|"mundane"|"neutral"}
  */
 export function getItemMagicNature(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.magicNature === "string") return pre.magicNature;
   const lootType = getItemLootType(item);
   if (MAGIC_LOOT_TYPES.has(lootType)) return "magic";
   if (MUNDANE_LOOT_TYPES.has(lootType)) return "mundane";
@@ -358,6 +374,8 @@ export function isVariableTreasureBase(item) {
 
 /** Is the item eligible to appear in a loot roll at all? */
 export function isLootEligible(item) {
+  const pre = item?.__inf;
+  if (pre && typeof pre.eligible === "boolean") return pre.eligible;
   const eligible =
     item?.flags?.["infinity-dnd5e"]?.lootEligible ??
     item?.flags?.["party-operations"]?.lootEligible;
@@ -366,4 +384,39 @@ export function isLootEligible(item) {
   // are still rollable because the shipped compendium pre-dates the
   // flag's universal application.
   return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Hot-path precompute
+ * ------------------------------------------------------------------ */
+
+/**
+ * Build a normalized tag record for one item by parsing its flag
+ * namespace ONCE. Stash the result under `item.__inf` and every getter
+ * above will return the precomputed value instead of re-walking the
+ * `flags["infinity-dnd5e"]` / `flags["party-operations"]` namespaces on
+ * each call — the loot roller hits these getters thousands of times per
+ * draw.
+ *
+ * Must run before `__inf` is set on the item, so the getters fall
+ * through to their flag-parsing branches here and produce results
+ * byte-identical to the un-cached path. Fields the record omits (e.g.
+ * effectiveRarity, which lives in roller.js and would create a circular
+ * import) keep flowing through their own getters unchanged.
+ *
+ * @param {object} item - item-shaped POJO (must NOT yet carry `__inf`)
+ * @returns {object} the `__inf` record
+ */
+export function buildInfRecord(item) {
+  return {
+    tier: getItemTier(item),
+    rarity: getItemRarity(item),
+    lootType: getItemLootType(item),
+    valueBand: getItemValueBand(item),
+    gpValue: getItemGpValue(item),
+    keywords: getItemKeywords(item),
+    magicNature: getItemMagicNature(item),
+    lootWeight: getItemLootWeight(item),
+    eligible: isLootEligible(item),
+  };
 }

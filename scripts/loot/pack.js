@@ -11,6 +11,8 @@
  * on Forge) the next call after the TTL picks up the new state.
  */
 
+import { buildInfRecord } from "./tag-vocabulary.js";
+
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 export const DEFAULT_ITEM_PACK_ID = "infinity-dnd5e.infinity-dnd5e-items";
 
@@ -101,10 +103,21 @@ export async function loadCompendiumItems(opts = {}) {
     const uuid = isFullCompendiumDocumentUuid(doc.uuid)
       ? doc.uuid
       : buildCompendiumItemUuid(packId, itemId, documentName);
-    return {
+    const pojo = {
       ...data,
       uuid,
     };
+    // Precompute the normalized tag record ONCE so the roller/stats hot
+    // path reads `item.__inf.<field>` instead of re-parsing the flag
+    // namespace on every getter call. Non-enumerable so it never leaks
+    // into serialization, `{...item}` spreads, or drag-drop payloads.
+    Object.defineProperty(pojo, "__inf", {
+      value: buildInfRecord(pojo),
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    return pojo;
   });
   cache.set(packId, { items, fetchedAt: now });
   console.log(

@@ -225,13 +225,18 @@ export function rollLoot(candidates, opts = {}) {
   const drawPool = affordablePool.length > 0 ? affordablePool : pool;
 
   // Pass 1: weighted random draw without replacement at the item level.
+  // The per-item weights and their cumulative-sum (CDF) are constant for
+  // the whole draw — magicBias and rarityWeights don't change mid-roll —
+  // so build them ONCE here. Each draw is then an O(log n) binary search
+  // over the CDF instead of rebuilding + summing the pool every attempt.
+  const picker = buildWeightedPicker(drawPool, magicBias, rarityWeights);
   const picked = new Map(); // _id → { item, quantity }
   let runningTotal = 0;
   let attempts = 0;
   let skippedForBudget = 0;
   while (picked.size < hardCap && attempts < maxAttempts) {
     attempts += 1;
-    const item = weightedPick(drawPool, rng, magicBias, rarityWeights);
+    const item = weightedPick(picker, rng);
     if (!item) break;
     const id = String(item._id ?? item.id ?? `anon-${attempts}`);
     const gpValue = getItemGpValue(item);
@@ -500,21 +505,44 @@ function materializeLootEntry(item, quantity, { artVariants, rng }) {
 }
 
 /**
- * Pick one item from `pool` weighted by its lootWeight tag, optionally
- * skewed by the Magic Bias dial. Uses the standard inverse-CDF method.
+ * Precompute the constant weighted-draw state for a pool: each item's
+ * effective weight, the running cumulative-sum (CDF), and the total
+ * weight. `magicBias` / `rarityWeights` are fixed for a whole roll, so
+ * this runs once and every {@link weightedPick} draw binary-searches the
+ * CDF in O(log n) rather than rebuilding + summing the pool each attempt.
+ *
+ * The CDF is accumulated left-to-right in the same order the old linear
+ * scan summed `cursor`, so `cdf[i]` is bit-identical to that scan's
+ * running total at index `i` — the binary search returns the same index
+ * for any given target, keeping seeded-RNG draws byte-identical.
  *
  * @param {Array<object>} pool
- * @param {() => number} rng
  * @param {number} magicBias - clamped to [-1, 1]
  * @param {Record<string, number>} rarityWeights
+ * @returns {{ pool: Array<object>, cdf: number[], totalWeight: number }}
  */
-function weightedPick(pool, rng, magicBias = 0, rarityWeights = null) {
-  if (pool.length === 0) return null;
-  const weights = pool.map((item) =>
-    effectiveWeight(item, magicBias, rarityWeights),
-  );
+function buildWeightedPicker(pool, magicBias = 0, rarityWeights = null) {
+  const cdf = new Array(pool.length);
   let totalWeight = 0;
-  for (const weight of weights) totalWeight += weight;
+  for (let i = 0; i < pool.length; i += 1) {
+    totalWeight += effectiveWeight(pool[i], magicBias, rarityWeights);
+    cdf[i] = totalWeight;
+  }
+  return { pool, cdf, totalWeight };
+}
+
+/**
+ * Pick one item from a precomputed picker via the standard inverse-CDF
+ * method. Consumes exactly one `rng()` value per call — matching the
+ * original implementation in both the weighted and uniform-fallback
+ * branches so seeded sequences line up.
+ *
+ * @param {{ pool: Array<object>, cdf: number[], totalWeight: number }} picker
+ * @param {() => number} rng
+ */
+function weightedPick(picker, rng) {
+  const { pool, cdf, totalWeight } = picker;
+  if (pool.length === 0) return null;
   if (totalWeight <= 0) {
     // Bias zeroed out everything (e.g. bias=+1 against an all-mundane pool).
     // Fall back to uniform so the roller still produces something.
@@ -522,12 +550,17 @@ function weightedPick(pool, rng, magicBias = 0, rarityWeights = null) {
     return pool[Math.min(pool.length - 1, Math.max(0, index))];
   }
   const target = rng() * totalWeight;
-  let cursor = 0;
-  for (let i = 0; i < pool.length; i += 1) {
-    cursor += weights[i];
-    if (cursor >= target) return pool[i];
+  // First index whose cumulative weight reaches `target` — the same item
+  // the old linear scan returned (`cursor >= target`), found by binary
+  // search. Floating-point overshoot falls through to the last item.
+  let lo = 0;
+  let hi = pool.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cdf[mid] >= target) hi = mid;
+    else lo = mid + 1;
   }
-  return pool[pool.length - 1];
+  return pool[lo];
 }
 
 function rollInitialQuantity(item, { budgetCeil, gpValue, rng, runningTotal }) {
