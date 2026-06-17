@@ -9,7 +9,19 @@
       <h2>Infinity D&amp;D5e</h2>
       <p class="id-head__hint">Roll treasure, run shops, and track travel supplies — pick a tool below. Reopen this hub anytime with Shift+I.</p>
     </div>
-    <span class="id-head__version">v{{moduleVersion}}</span>
+    <div class="id-head__aside">
+      <button
+        type="button"
+        class="id-head__help"
+        data-action="help"
+        title="How to use Infinity D&amp;D5e"
+        aria-label="Help — how to use Infinity D&amp;D5e"
+      >
+        <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+        <span>Help</span>
+      </button>
+      <span class="id-head__version">v{{moduleVersion}}</span>
+    </div>
   </header>
 
   {{#if hasTools}}

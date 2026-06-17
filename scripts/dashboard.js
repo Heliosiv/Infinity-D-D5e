@@ -13,7 +13,7 @@
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { getTool, getTools } from "./tool-registry.js";
-import { prettyCategory, notify } from "./ui-util.js";
+import { prettyCategory, notify, escapeHtml } from "./ui-util.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -71,6 +71,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     actions: {
       launch: InfinityDashboardApp._onLaunch,
       openSettings: InfinityDashboardApp._onOpenSettings,
+      help: InfinityDashboardApp._onHelp,
     },
   };
 
@@ -154,6 +155,38 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {InfinityDashboardApp} */
+  static _onHelp(_event, _target) {
+    // Plain-language quick-start for non-technical GMs. Best-effort: if
+    // DialogV2 isn't reachable (older core), fall back to a notification.
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const content = buildHelpHtml();
+    if (typeof DialogV2?.prompt !== "function") {
+      ui.notifications?.info(
+        "Pick a tool tile to roll treasure, run a shop, or track travel supplies. Reopen this hub anytime with Shift+I.",
+      );
+      return;
+    }
+    playModuleSound(SOUND_EVENTS.UI_OPEN);
+    try {
+      void DialogV2.prompt({
+        window: {
+          title: "Infinity D&D5e — Help",
+          icon: "fa-solid fa-circle-question",
+        },
+        position: { width: 480 },
+        content,
+        ok: { label: "Close", icon: "fa-solid fa-check" },
+        rejectClose: false,
+      });
+    } catch (error) {
+      console.warn(`${MODULE_ID} | could not open help dialog`, error);
+      ui.notifications?.info(
+        "Pick a tool tile to roll treasure, run a shop, or track travel supplies. Reopen this hub anytime with Shift+I.",
+      );
+    }
+  }
+
+  /** @this {InfinityDashboardApp} */
   static _onLaunch(_event, target) {
     const id = target?.dataset?.toolId;
     if (!id) return;
@@ -201,6 +234,47 @@ function renderSettingsConfig(SettingsConfigClass) {
 }
 
 /**
+ * Build the plain-language help dialog body. Static copy, but routed through
+ * escapeHtml so the few interpolated labels can never break the markup.
+ */
+function buildHelpHtml() {
+  const tools = [
+    [
+      "Per-Encounter Loot",
+      "Roll a quick pile of treasure for a single fight — coins and a few items scaled to the party.",
+    ],
+    [
+      "Hoard Loot",
+      "Build a bigger stash for a dragon's lair, vault, or milestone — more coin plus rarer finds.",
+    ],
+    [
+      "Per-Creature Loot",
+      "Roll drops creature-by-creature, so each monster's body has its own pickings.",
+    ],
+  ];
+  const toolItems = tools
+    .map(
+      ([name, desc]) =>
+        `<li><strong>${escapeHtml(name)}</strong> — ${escapeHtml(desc)}</li>`,
+    )
+    .join("");
+  return `
+    <div class="id-help">
+      <p>Pick a tool tile to get started. Here's what each one does:</p>
+      <h4>Treasure &amp; Loot</h4>
+      <ul>${toolItems}</ul>
+      <h4>Shops &amp; Merchants</h4>
+      <p>The Merchant tools let you set up a shop and open a buy/sell window for a player, with optional haggling.</p>
+      <h4>Keyboard shortcuts</h4>
+      <ul>
+        <li><strong>Shift+I</strong> — open this dashboard anytime.</li>
+        <li><strong>Enter</strong> or <strong>R</strong> — roll inside a loot window.</li>
+      </ul>
+    </div>
+  `;
+}
+
+/**
  * Group tools by category preserving registration order within each
  * category. Lets the template render section headers if we ever
  * outgrow a single flat tile grid.
@@ -226,4 +300,3 @@ function groupByCategory(tools) {
     tools: buckets.get(category),
   }));
 }
-

@@ -60,6 +60,40 @@
   max-width: 56ch;
 }
 
+.id-head__aside {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.id-head__help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  min-height: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.id-head__help:hover {
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+  color: var(--lf-text-strong);
+}
+
 .id-head__version {
   flex: 0 0 auto;
   padding: 4px 10px;
