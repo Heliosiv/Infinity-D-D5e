@@ -171,26 +171,27 @@
           <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
           <span>Send to Chat</span>
         </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="copyToClipboard" title="Copy a plain-text summary to the clipboard">
-          <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-          <span>Copy</span>
-        </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="distributeBundle" title="Give every item to one character">
-          <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
-          <span>Give to Character</span>
-        </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="distributeSplit" title="Split the haul across multiple characters">
-          <i class="fa-solid fa-users" aria-hidden="true"></i>
-          <span>Split</span>
-        </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="distributeToSelected" title="Select party tokens on the canvas first, then this splits the haul to them with no dialog">
-          <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
-          <span>To Selected</span>
-        </button>
-        <button type="button" class="lf-btn lf-btn--small" data-action="exportJournal" title="Save this roll to a journal entry">
-          <i class="fa-solid fa-book" aria-hidden="true"></i>
-          <span>Journal</span>
-        </button>
+        {{!--
+          Distribute actions grouped under one labelled cluster so the
+          "give it out" choices read as one decision, not three peers.
+        --}}
+        <div class="lf-give" role="group" aria-label="Give to players">
+          <span class="lf-give__caption">Give to players</span>
+          <div class="lf-give__btns">
+            <button type="button" class="lf-btn lf-btn--small lf-btn--primary" data-action="distributeBundle" title="Give every item to one character">
+              <i class="fa-solid fa-share-from-square" aria-hidden="true"></i>
+              <span>Give to Character</span>
+            </button>
+            <button type="button" class="lf-btn lf-btn--small" data-action="distributeSplit" title="Split the haul across multiple characters">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+              <span>Split</span>
+            </button>
+            <button type="button" class="lf-btn lf-btn--small" data-action="distributeToSelected" title="Select party tokens on the canvas first, then this splits the haul to them with no dialog">
+              <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+              <span>To Selected</span>
+            </button>
+          </div>
+        </div>
       </div>
       {{#if result.droppedForBudget}}
       <p class="lf-result__warning">Dropped {{result.droppedForBudget}} item(s) to fit budget.</p>
@@ -328,6 +329,18 @@
     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
   </summary>
   <div class="lf-menu__panel">
+    {{#if hasResult}}
+    {{!-- Secondary result actions demoted here to declutter the result toolbar --}}
+    <div class="lf-menu__heading">This roll</div>
+    <div class="lf-menu__row">
+      <button type="button" class="lf-btn lf-btn--small" data-action="copyToClipboard" title="Copy a plain-text summary to the clipboard">
+        <i class="fa-solid fa-clipboard" aria-hidden="true"></i><span>Copy</span>
+      </button>
+      <button type="button" class="lf-btn lf-btn--small" data-action="exportJournal" title="Save this roll to a journal entry">
+        <i class="fa-solid fa-book" aria-hidden="true"></i><span>Journal</span>
+      </button>
+    </div>
+    {{/if}}
     <div class="lf-menu__row">
       <input type="text" class="lf-input lf-menu__name" data-preset-name placeholder="Preset name…" aria-label="New preset name" maxlength="40" />
       <button type="button" class="lf-btn lf-btn--small" data-action="savePreset" title="Save current settings as a preset">
