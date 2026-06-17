@@ -35,6 +35,11 @@ import { loadCompendiumItems } from "./pack.js";
 import { computePackStats } from "./pack-stats.js";
 import { filterCandidates, itemIdentity, rerollOne } from "./roller.js";
 import {
+  bindScrollTracking,
+  captureScroll,
+  restoreScroll,
+} from "../merchant/scroll.js";
+import {
   getItemMaxQty,
   getItemRarity,
   isAmmunitionItem,
@@ -341,41 +346,21 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _captureScrollState() {
-    const entries = this._scrollEntries(this.element).map(
-      ({ key, element }) => ({
-        key,
-        left: element.scrollLeft,
-        top: element.scrollTop,
-      }),
+    // Delegate the DOM read to the shared scroll engine, but keep the loot
+    // app's "remember the last known position when the pane is momentarily
+    // absent" fallback — captureScroll returns null in that case.
+    return (
+      captureScroll(this.element, this._scrollTargets()) ??
+      this._lastScrollState
     );
-    if (entries.length === 0) return this._lastScrollState;
-    return { entries };
   }
 
   _restoreScrollState() {
     const state = this._pendingScrollState ?? this._lastScrollState;
     this._pendingScrollState = null;
-    if (!state) return;
-    const restore = () => {
-      for (const entry of state.entries ?? []) {
-        const element = this._scrollElement(entry.key);
-        if (!element) continue;
-        const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
-        const maxLeft = Math.max(0, element.scrollWidth - element.clientWidth);
-        element.scrollTop = Math.min(entry.top, maxTop);
-        element.scrollLeft = Math.min(entry.left, maxLeft);
-      }
-    };
-    restore();
-    if (typeof globalThis.requestAnimationFrame === "function") {
-      globalThis.requestAnimationFrame(restore);
-      globalThis.requestAnimationFrame(() =>
-        globalThis.requestAnimationFrame(restore),
-      );
-    } else {
-      restore();
-    }
-    globalThis.setTimeout?.(restore, 50);
+    // settleMs adds the loot windows' extra delayed retry on top of the
+    // shared engine's immediate + triple-rAF passes.
+    restoreScroll(this.element, this._scrollTargets(), state, { settleMs: 50 });
   }
 
   async _renderPreservingScroll(options) {
@@ -384,33 +369,14 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _bindScrollTracking(root) {
-    for (const { element } of this._scrollEntries(root)) {
-      if (element.dataset.infinityDnd5eScrollTracked === "true") continue;
-      element.dataset.infinityDnd5eScrollTracked = "true";
-      element.addEventListener(
-        "scroll",
-        () => {
-          this._lastScrollState = this._captureScrollState();
-        },
-        { passive: true },
-      );
-    }
-  }
-
-  _scrollEntries(root) {
-    if (!root) return [];
-    return this._scrollTargets()
-      .map(({ key, selector }) => ({
-        key,
-        element: root.querySelector(selector),
-      }))
-      .filter(({ element }) => Boolean(element));
-  }
-
-  _scrollElement(key) {
-    const target = this._scrollTargets().find((entry) => entry.key === key);
-    if (!target) return null;
-    return this.element?.querySelector(target.selector) ?? null;
+    bindScrollTracking(
+      root,
+      this._scrollTargets(),
+      () => {
+        this._lastScrollState = this._captureScrollState();
+      },
+      { flag: "infinityDnd5eScrollTracked" },
+    );
   }
 
   /* ------------------- keyboard ------------------- */
@@ -429,9 +395,15 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const isTextEntry =
       tag === "textarea" ||
       (tag === "input" &&
-        ["text", "number", "search", "email", "tel", "url", "password"].includes(
-          type,
-        ));
+        [
+          "text",
+          "number",
+          "search",
+          "email",
+          "tel",
+          "url",
+          "password",
+        ].includes(type));
     if (event.key === "Enter" && !isTextEntry && tag !== "select") {
       event.preventDefault();
       this._primaryGenerate();

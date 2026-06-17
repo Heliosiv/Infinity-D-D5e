@@ -29,8 +29,11 @@ export function captureScroll(root, targets) {
  * Restore a previously captured scroll state onto the (freshly rendered)
  * DOM. Runs immediately plus a couple of rAF retries because the pane's
  * scrollHeight may not be final until layout settles.
+ *
+ * `options.settleMs` adds one more delayed retry (default off) for panes
+ * whose final height arrives after layout — the loot windows lean on it.
  */
-export function restoreScroll(root, targets, state) {
+export function restoreScroll(root, targets, state, options = {}) {
   if (!root || !state || !Array.isArray(targets)) return;
   const selectorByKey = new Map(targets.map((t) => [t.key, t.selector]));
   const apply = () => {
@@ -50,6 +53,11 @@ export function restoreScroll(root, targets, state) {
     globalThis.requestAnimationFrame(() =>
       globalThis.requestAnimationFrame(apply),
     );
+  } else {
+    apply();
+  }
+  if (Number.isFinite(options.settleMs) && options.settleMs > 0) {
+    globalThis.setTimeout?.(apply, options.settleMs);
   }
 }
 
@@ -58,15 +66,19 @@ export function restoreScroll(root, targets, state) {
  * callback can capture the live position. Guards against double-binding
  * within the same DOM via a data flag (cleared automatically when the
  * element is replaced on the next render).
+ *
+ * `options.flag` names the dataset guard key so multiple consumers can
+ * share this engine without colliding (defaults to the merchant flag).
  */
-export function bindScrollTracking(root, targets, onScroll) {
+export function bindScrollTracking(root, targets, onScroll, options = {}) {
   if (!root || !Array.isArray(targets) || typeof onScroll !== "function") {
     return;
   }
+  const flag = options.flag || "msScrollTracked";
   for (const { selector } of targets) {
     const el = root.querySelector?.(selector);
-    if (!el || el.dataset?.msScrollTracked === "true") continue;
-    if (el.dataset) el.dataset.msScrollTracked = "true";
+    if (!el || el.dataset?.[flag] === "true") continue;
+    if (el.dataset) el.dataset[flag] = "true";
     el.addEventListener("scroll", onScroll, { passive: true });
   }
 }
