@@ -541,13 +541,12 @@ export class PerCreatureLootApp extends BaseLootApp {
     }
     // Make a fresh roll undoable (protects a hand-edited roster haul from Enter/R).
     if (this._lastResult) this._pushUndo();
-    const needsLoad = !this._isItemCacheFresh();
-    if (needsLoad) {
-      this._loadingItems = true;
-      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
-      await this._renderPreservingScroll();
-    }
     try {
+      if (!this._isItemCacheFresh()) {
+        this._loadingItems = true;
+        playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
+        await this._renderPreservingScroll();
+      }
       const items = await this._loadItems();
       const creatures = this._form.roster.map((c) =>
         this._rollForCreature(c, items),

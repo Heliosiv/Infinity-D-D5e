@@ -341,7 +341,7 @@ function resultItems(result) {
   return [];
 }
 
-const RARITY_RANK = Object.freeze({
+export const RARITY_RANK = Object.freeze({
   common: 1,
   uncommon: 2,
   rare: 3,

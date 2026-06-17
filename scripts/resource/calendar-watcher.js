@@ -698,12 +698,12 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
         row.shortfalls[resource.id] = res.shortfall;
         // Normalize the canonical food/water keys the report/exhaustion expect.
         if (isFood) {
-          row.consumed.food = res.consumed;
-          row.shortfalls.food = res.shortfall;
+          row.consumed.food = (row.consumed.food ?? 0) + res.consumed;
+          row.shortfalls.food = (row.shortfalls.food ?? 0) + res.shortfall;
         }
         if (resource.forageYields === "water" || resource.id === "water") {
-          row.consumed.water = res.consumed;
-          row.shortfalls.water = res.shortfall;
+          row.consumed.water = (row.consumed.water ?? 0) + res.consumed;
+          row.shortfalls.water = (row.shortfalls.water ?? 0) + res.shortfall;
         }
       }
     }
@@ -1066,7 +1066,7 @@ function owningOnlineUserId(actor) {
   return owner?.id ?? null;
 }
 
-function actorItemSnapshots(actor) {
+export function actorItemSnapshots(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
   const list = Array.isArray(items) ? items : Array.from(items ?? []);
   return list.map((i) =>

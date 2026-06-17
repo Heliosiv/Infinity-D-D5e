@@ -363,10 +363,12 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     for (const merchant of merchants) {
       for (const row of merchant.items) allUuids.add(row.uuid);
     }
-    for (const uuid of allUuids) {
-      if (this._itemCache.has(uuid)) continue;
-      this._itemCache.set(uuid, await resolveItemSnapshot(uuid));
-    }
+    const missing = [...allUuids].filter((uuid) => !this._itemCache.has(uuid));
+    await Promise.all(
+      missing.map(async (uuid) => {
+        this._itemCache.set(uuid, await resolveItemSnapshot(uuid));
+      }),
+    );
   }
 
   _onRender(context, options) {
@@ -865,7 +867,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     await commitMerchantWrite(
       this._selectedId,
       (fresh) => {
-        let next = fresh;
+        let next = replace ? clearInventory(fresh) : fresh;
         for (const row of rows) next = upsertInventoryRow(next, row);
         return next;
       },

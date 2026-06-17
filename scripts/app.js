@@ -613,14 +613,13 @@ export class PerEncounterLootApp extends BaseLootApp {
         ? this._lastResult.items.filter((entry) => entry.locked)
         : [];
 
-    const needsLoad = !this._isItemCacheFresh();
-    if (needsLoad) {
-      this._loadingItems = true;
-      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
-      await this._renderPreservingScroll();
-    }
-
     try {
+      if (!this._isItemCacheFresh()) {
+        this._loadingItems = true;
+        playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
+        await this._renderPreservingScroll();
+      }
+
       const totalBudget = computeLootBudget(this._formForBudget());
       const lockedGp = lockedEntries.reduce(
         (sum, entry) => sum + (entry.gpTotal ?? 0),

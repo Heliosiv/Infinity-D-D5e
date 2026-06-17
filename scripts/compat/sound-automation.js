@@ -1,4 +1,9 @@
-import { SOUND_EVENTS, SOUND_REGISTRY, playSoundEvent } from "../audio.js";
+import {
+  SOUND_EVENTS,
+  SOUND_REGISTRY,
+  RARITY_RANK,
+  playSoundEvent,
+} from "../audio.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const HOOK_MARKER = "__infinityDnd5eSoundAutomationHooksV1";
@@ -46,16 +51,6 @@ const DEFAULT_EVENT_BY_PHASE = Object.freeze({
   animation: SOUND_EVENTS.LOADING_SHIMMER,
   midi: SOUND_EVENTS.ROLL_START,
   empty: SOUND_EVENTS.WARNING_MUTED,
-});
-
-const RARITY_RANK = Object.freeze({
-  common: 1,
-  uncommon: 2,
-  rare: 3,
-  "very-rare": 4,
-  veryRare: 4,
-  legendary: 5,
-  artifact: 6,
 });
 
 const recentAutomationSoundKeys = new Map();

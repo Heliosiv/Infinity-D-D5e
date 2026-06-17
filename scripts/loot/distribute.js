@@ -34,6 +34,12 @@ import { escapeHtml, notify } from "../ui-util.js";
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
 let spellScrollIndexPromise = null;
+// The item array `loadCompendiumItems` hands back is reused while the pack
+// cache is warm and replaced with a fresh array on every re-fetch (TTL expiry
+// or `invalidatePackCache`). Keeping the source array we indexed against lets
+// us notice that swap and rebuild, so a pack reloaded mid-session never leaves
+// the spell-scroll lookup pointing at a stale first-load index.
+let spellScrollIndexSource = null;
 
 /* ------------------------------------------------------------------ *
  * Drag-and-drop
@@ -272,7 +278,10 @@ export function planEvenSplit(items, currency, actorIds) {
  * @param {boolean} [opts.notify=true]
  * @returns {Promise<{created: number, recipients: string[]}>}
  */
-export async function depositToActors(assignments, { notify = true } = {}) {
+export async function depositToActors(
+  assignments,
+  { notify: shouldNotify = true } = {},
+) {
   ensureFoundry();
   let created = 0;
   const recipients = [];
@@ -288,7 +297,7 @@ export async function depositToActors(assignments, { notify = true } = {}) {
       recipients.push(game.actors?.get?.(assignment.actorId)?.name ?? "actor");
     }
   }
-  if (notify) {
+  if (shouldNotify) {
     if (recipients.length > 0) {
       ui.notifications?.info(
         `${MODULE_ID}: split ${created} item(s) across ${recipients.length} character(s) — ${recipients.join(", ")}.`,
@@ -446,7 +455,7 @@ export async function distributeItemsToActor(actorId, items) {
  */
 export async function depositToActor(
   actorId,
-  { items = [], currency = null, notify = true } = {},
+  { items = [], currency = null, notify: shouldNotify = true } = {},
 ) {
   ensureFoundry();
   const actor = game.actors?.get?.(actorId);
@@ -480,7 +489,7 @@ export async function depositToActor(
     }
   }
 
-  if (notify) notifyDeposit(actor, created, failures, currencyAdded);
+  if (shouldNotify) notifyDeposit(actor, created, failures, currencyAdded);
   return { created, failures, currencyAdded };
 }
 
@@ -580,10 +589,13 @@ async function findSpellScrollForSpell(spellData, sourceUuid = "") {
 }
 
 async function getSpellScrollIndex() {
-  if (!spellScrollIndexPromise) {
-    spellScrollIndexPromise = loadCompendiumItems({
-      packId: DEFAULT_ITEM_PACK_ID,
-    }).then(buildSpellScrollIndex);
+  const items = await loadCompendiumItems({ packId: DEFAULT_ITEM_PACK_ID });
+  // Rebuild only when the pack handed back a different array than the one we
+  // last indexed — a cache hit returns the same reference, so warm calls stay
+  // a single Map lookup.
+  if (!spellScrollIndexPromise || spellScrollIndexSource !== items) {
+    spellScrollIndexSource = items;
+    spellScrollIndexPromise = Promise.resolve(buildSpellScrollIndex(items));
   }
   return spellScrollIndexPromise;
 }

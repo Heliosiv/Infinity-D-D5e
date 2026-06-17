@@ -19,6 +19,7 @@ import {
   normalizeResource,
 } from "./resource/store.js";
 import {
+  actorItemSnapshots,
   advanceDayNow,
   describeForageDrive,
   discoverAllActors,
@@ -666,14 +667,6 @@ function sumMatches(matches) {
   return (Array.isArray(matches) ? matches : []).reduce(
     (sum, m) => sum + (Number(m.quantity) || 0),
     0,
-  );
-}
-
-function actorItemSnapshots(actor) {
-  const items = actor?.items?.contents ?? actor?.items ?? [];
-  const list = Array.isArray(items) ? items : Array.from(items ?? []);
-  return list.map((i) =>
-    typeof i?.toObject === "function" ? i.toObject() : i,
   );
 }
 

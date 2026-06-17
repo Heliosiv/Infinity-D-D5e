@@ -493,16 +493,22 @@ export class HoardLootApp extends BaseLootApp {
       formatMagicBias(this._form.magicBias),
     );
 
-    const candidates = this._countCandidates();
-    setText(
-      root,
-      "[data-candidates]",
-      this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
-    );
-    setText(root, "[data-value-range]", this._valueRangeLabel());
-
     this._syncSnapStates(root, "pileBias", this._form.pileBias);
     this._syncSnapStates(root, "magicBias", this._form.magicBias);
+
+    // Debounce the full-pack candidate scan so a slider drag recomputes once at
+    // rest, not on every input frame (the cheap readouts above stay synchronous).
+    this._debounce("candidates", () => {
+      const el = this.element;
+      if (!el) return;
+      const candidates = this._countCandidates();
+      setText(
+        el,
+        "[data-candidates]",
+        this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
+      );
+      setText(el, "[data-value-range]", this._valueRangeLabel());
+    });
   }
 
   /** Read a chip group's checked values off the live form. */
@@ -536,13 +542,12 @@ export class HoardLootApp extends BaseLootApp {
     // Make a fresh roll undoable (protects a hand-edited haul from a stray Enter/R).
     if (this._lastResult) this._pushUndo();
     let generatedResult = null;
-    const needsLoad = !this._isItemCacheFresh();
-    if (needsLoad) {
-      this._loadingItems = true;
-      playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
-      await this._renderPreservingScroll();
-    }
     try {
+      if (!this._isItemCacheFresh()) {
+        this._loadingItems = true;
+        playModuleSound(SOUND_EVENTS.LOADING_SHIMMER);
+        await this._renderPreservingScroll();
+      }
       const totalBudget = computeHoardBudget(this._formForBudget());
       const { coinPileGp, itemBudget } = splitCoinPile(
         totalBudget,

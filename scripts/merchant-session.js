@@ -527,7 +527,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   _buildSellRow(doc, passivePct = 0) {
     const data = doc.toObject?.() ?? doc;
     const ownedQty = Math.max(
-      1,
+      0,
       Math.floor(Number(data.system?.quantity ?? 1)),
     );
     const sealKey = `${doc.id}::sell`;
