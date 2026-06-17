@@ -102,7 +102,7 @@
         <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Add an item by UUID (keyboard)"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
         {{#each tags}}
         <span class="rm-tag {{#if missing}}rm-tag--missing{{/if}}" title="{{uuid}}">{{name}}{{#if missing}} (missing){{/if}}
-          <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove this item">×</button>
+          <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove {{name}}" aria-label="Remove {{name}} from resource items">×</button>
         </span>
         {{/each}}
       </div>
@@ -128,12 +128,12 @@
     <table class="rm-table rm-roster">
       <thead>
         <tr>
-          <th>Character</th>
-          {{#each resources}}<th>{{label}}</th>{{/each}}
-          <th>Exhaustion</th>
-          <th title="This character's pack is a shared source the party can draw from">Stash</th>
-          <th>Draws from</th>
-          <th><span class="rm-sr">Remove</span></th>
+          <th scope="col">Character</th>
+          {{#each resources}}<th scope="col">{{label}}</th>{{/each}}
+          <th scope="col">Exhaustion</th>
+          <th scope="col" title="This character's pack is a shared source the party can draw from">Stash</th>
+          <th scope="col">Draws from</th>
+          <th scope="col"><span class="rm-sr">Remove</span></th>
         </tr>
       </thead>
       <tbody>
@@ -159,7 +159,7 @@
             {{/if}}
           </td>
           <td>
-            <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeRosterMember" data-actor-id="{{actorId}}" title="Remove {{name}} from the roster" aria-label="Remove {{name}} from the roster">×</button>
+            <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeRosterMember" data-actor-id="{{actorId}}" title="Remove {{name}} from the roster" aria-label="Remove {{name}} from the roster"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
           </td>
         </tr>
         {{/each}}

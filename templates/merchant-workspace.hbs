@@ -281,7 +281,7 @@
           <div class="mw-inv__search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input type="search" class="mw-input" data-inv-search placeholder="Filter inventory…" aria-label="Filter inventory by item name" />
-            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite"></span>
+            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite" aria-label="Inventory search results count"></span>
           </div>
           {{/if}}
           <div class="mw-inv__head">
@@ -292,7 +292,7 @@
             <span class="mw-inv__head-flag" title="Never runs out — unlimited stock.">∞</span>
             <span></span>
           </div>
-          <div class="mw-inv__drop" data-drop-zone="inventory">
+          <div class="mw-inv__drop" data-drop-zone="inventory" role="region" aria-label="Inventory — drag items here or use Add From Library below">
             {{#if inventoryRows.length}}
               {{#each inventoryRows}}
               <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" data-search-text="{{name}}{{#if rarityLabel}} {{rarityLabel}}{{/if}}" title="Double-click to open sheet">
@@ -303,10 +303,10 @@
                     <span class="mw-inv__meta">{{#unless missing}}<i class="fa-solid fa-coins mw-coin" aria-hidden="true"></i> {{/unless}}{{basePriceLabel}}{{#if rarityLabel}} · <span class="mw-rarity mw-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}{{#if missing}} · <em>missing</em>{{/if}}</span>
                   </div>
                 </div>
-                <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} />
-                <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" />
-                <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" />
-                <label class="mw-toggle">
+                <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} aria-label="Quantity for {{name}}" />
+                <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" aria-label="Restock quantity for {{name}}" />
+                <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" aria-label="Custom price (gp) for {{name}}" />
+                <label class="mw-toggle" aria-label="Unlimited stock for {{name}}">
                   <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
                 </label>
                 <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="invRemove" data-uuid="{{uuid}}" title="Remove from inventory">

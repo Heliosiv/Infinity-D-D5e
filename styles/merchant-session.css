@@ -217,6 +217,9 @@
   background: var(--lf-accent);
   color: var(--lf-accent-contrast);
 }
+.ms-tab.is-active:focus-visible {
+  outline-color: var(--lf-accent-contrast);
+}
 
 /* Rows */
 .ms-rows {
@@ -554,5 +557,28 @@
   }
   .infinity-dnd5e.infinity-merchant-session .ms-row__actions {
     flex-wrap: wrap;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head {
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: auto auto;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head__art {
+    width: 56px;
+    height: 56px;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head__purse {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-tabs {
+    align-self: stretch;
+    justify-content: stretch;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-tab {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 }

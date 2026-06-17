@@ -182,7 +182,7 @@
 
   <section class="hl-result" aria-live="polite">
     {{#if loadingItems}}
-    <div class="lf-result__loading" role="status" aria-live="polite">
+    <div class="lf-result__loading" role="status">
       <span class="lf-skeleton lf-skeleton--lg"></span>
       <span class="lf-skeleton"></span>
       <span class="lf-skeleton lf-skeleton--sm"></span>
@@ -223,7 +223,7 @@
 
     {{#if hasCoinPile}}
     <article class="hl-coinpile" aria-label="Coin pile">
-      <div class="hl-coinpile__icon"><i class="fa-solid fa-coins"></i></div>
+      <div class="hl-coinpile__icon"><i class="fa-solid fa-coins" aria-hidden="true"></i></div>
       <div class="hl-coinpile__body">
         <strong class="hl-coinpile__total">{{result.coinPileLabel}}</strong>
         {{#if result.coinBreakdownLabel}}
