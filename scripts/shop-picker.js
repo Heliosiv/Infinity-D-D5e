@@ -20,6 +20,7 @@ import {
 } from "./merchant/socket.js";
 import { wireBackgroundImageFallback } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
+import { openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/shop-picker.hbs`;
@@ -59,14 +60,8 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       );
       return null;
     }
-    if (!ShopPickerApp._instance) {
-      ShopPickerApp._instance = new ShopPickerApp();
-    }
-    const app = ShopPickerApp._instance;
     playModuleSound(SOUND_EVENTS.UI_OPEN);
-    if (app.rendered) app.bringToFront();
-    else app.render(true);
-    return app;
+    return openSingleton(ShopPickerApp, () => new ShopPickerApp());
   }
 
   constructor(options = {}) {

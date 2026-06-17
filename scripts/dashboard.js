@@ -15,6 +15,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { getTool, getTools } from "./tool-registry.js";
 import { prettyCategory, notify, escapeHtml } from "./ui-util.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
+import { openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/dashboard.hbs`;
@@ -82,15 +83,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   /** Open (or focus) the singleton dashboard instance. */
   static open() {
     playModuleSound(SOUND_EVENTS.UI_OPEN);
-    if (!InfinityDashboardApp._instance) {
-      InfinityDashboardApp._instance = new InfinityDashboardApp();
-    }
-    if (InfinityDashboardApp._instance.rendered) {
-      InfinityDashboardApp._instance.bringToFront();
-    } else {
-      InfinityDashboardApp._instance.render(true);
-    }
-    return InfinityDashboardApp._instance;
+    return openSingleton(InfinityDashboardApp, () => new InfinityDashboardApp());
   }
 
   async _prepareContext() {

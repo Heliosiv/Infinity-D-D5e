@@ -57,6 +57,7 @@ import {
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { applyVisualPrefs } from "./infinity-app.js";
 import {
   captureScroll,
   restoreScroll,
@@ -596,16 +597,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     // Honor the shared visual prefs (animations + rarity glow), mirroring
     // the workspace and loot tools.
     const root = this.element;
-    if (root) {
-      root.classList.toggle(
-        "mw-no-anim",
-        getSetting(SETTING_KEYS.ANIMATIONS) === false,
-      );
-      root.classList.toggle(
-        "mw-no-glow",
-        getSetting(SETTING_KEYS.RARITY_GLOW) === false,
-      );
-    }
+    applyVisualPrefs(root, "mw-");
 
     // Play the one-shot bargain celebration if a result just landed.
     this._playBargainCelebration();

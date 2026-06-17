@@ -70,6 +70,7 @@ import {
 } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { applyVisualPrefs, openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
@@ -138,15 +139,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       return null;
     }
     playModuleSound(SOUND_EVENTS.UI_OPEN);
-    if (!MerchantWorkspaceApp._instance) {
-      MerchantWorkspaceApp._instance = new MerchantWorkspaceApp();
-    }
-    if (MerchantWorkspaceApp._instance.rendered) {
-      MerchantWorkspaceApp._instance.bringToFront();
-    } else {
-      MerchantWorkspaceApp._instance.render(true);
-    }
-    return MerchantWorkspaceApp._instance;
+    return openSingleton(
+      MerchantWorkspaceApp,
+      () => new MerchantWorkspaceApp(),
+    );
   }
 
   constructor(options = {}) {
@@ -377,12 +373,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     super._onRender?.(context, options);
 
     // Honor the existing animation + rarity-glow client settings.
-    const animations = getSetting(SETTING_KEYS.ANIMATIONS) !== false;
-    this.element?.classList?.toggle("mw-no-anim", !animations);
-    this.element?.classList?.toggle(
-      "mw-no-glow",
-      getSetting(SETTING_KEYS.RARITY_GLOW) === false,
-    );
+    applyVisualPrefs(this.element, "mw-");
 
     this._wireFormChange();
     this._wireInventoryInputs();
