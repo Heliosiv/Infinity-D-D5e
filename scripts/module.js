@@ -483,19 +483,27 @@ function registerGmSceneControls(controls) {
   try {
     if (Array.isArray(controls)) {
       /* ---------- V12 shape: controls is an Array ---------- */
-      controls.push({
-        name: "infinity-dnd5e",
-        title: "Infinity D&D5e",
-        icon: "fa-solid fa-dice-d20",
-        visible: true,
-        activeTool: launcherToolName,
-        order: 99,
-        onChange: onCategoryChange,
-        tools: [buildTool(launcherToolName, baseTool.title, 0)],
-      });
+      // Guard against a re-fired hook against the same array (key assignment in
+      // the V13 branch is naturally idempotent; an Array push is not).
+      if (!controls.some((c) => c?.name === "infinity-dnd5e")) {
+        controls.push({
+          name: "infinity-dnd5e",
+          title: "Infinity D&D5e",
+          icon: "fa-solid fa-dice-d20",
+          visible: true,
+          activeTool: launcherToolName,
+          order: 99,
+          onChange: onCategoryChange,
+          tools: [buildTool(launcherToolName, baseTool.title, 0)],
+        });
+      }
       const tokenControl =
         controls.find((c) => c?.name === "token") ?? controls[0];
-      if (tokenControl && Array.isArray(tokenControl.tools)) {
+      if (
+        tokenControl &&
+        Array.isArray(tokenControl.tools) &&
+        !tokenControl.tools.some((t) => t?.name === dashboardToolName)
+      ) {
         tokenControl.tools.push(
           buildTool(
             dashboardToolName,
@@ -604,8 +612,13 @@ function registerPlayerSceneControls(controls) {
   });
 
   if (Array.isArray(controls)) {
-    controls.push(categoryEntry([{ ...baseTool }]));
-    controls.push(repCategoryEntry([{ ...repBaseTool }]));
+    // Idempotent guard for a re-fired hook (Array push isn't self-deduping).
+    if (!controls.some((c) => c?.name === category)) {
+      controls.push(categoryEntry([{ ...baseTool }]));
+    }
+    if (!controls.some((c) => c?.name === repCategory)) {
+      controls.push(repCategoryEntry([{ ...repBaseTool }]));
+    }
   } else if (controls && typeof controls === "object") {
     controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
     controls[repCategory] = repCategoryEntry({

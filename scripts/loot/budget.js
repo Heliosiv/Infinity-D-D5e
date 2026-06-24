@@ -92,9 +92,14 @@ export function computeLootBudget(input = {}) {
     fallback: 1,
   });
 
+  // Guard non-numeric partySize the same way resolveMultiplier guards its
+  // inputs: a stray string/NaN (e.g. from the public rollLootBundle API) must
+  // fall back to the canonical 4, not coerce to NaN and silently disable budget
+  // enforcement downstream (rollLoot treats a NaN budget as unbounded).
+  const rawParty = Number(input.partySize ?? 4);
   const partySize = Math.max(
     1,
-    Math.min(10, Math.floor(Number(input.partySize ?? 4))),
+    Math.min(10, Math.floor(Number.isFinite(rawParty) ? rawParty : 4)),
   );
   const partyFactor = partySize / 4; // 4 PCs = canonical baseline
 

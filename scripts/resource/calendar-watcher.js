@@ -44,7 +44,7 @@ import {
   isAuthoritativeGM,
 } from "./socket.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
-import { escapeHtml, prettyEnvironment } from "../ui-util.js";
+import { escapeHtml, prettyEnvironment, prettyResource } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -842,16 +842,23 @@ async function postUpkeepReport({ env, result }) {
       return `<li><strong>${escapeHtml(r.name)}</strong> — ${shortLabel}${forageLabel}</li>`;
     })
     .join("");
-  const lightLine =
-    result.party?.light && result.party.light.shortfall > 0
-      ? `<div style="color:#ef6f74;">Light: ${result.party.light.shortfall} short of torches.</div>`
-      : "";
+  // Render every party-scope resource shortfall, not just the hard-coded
+  // "light" id — a GM-added party resource is keyed by its own id, so a literal
+  // `result.party.light` lookup silently dropped its warning.
+  const partyLines = Object.entries(result.party ?? {})
+    .filter(([, r]) => (r?.shortfall ?? 0) > 0)
+    .map(([id, r]) => {
+      const label = id === "light" ? "Light" : prettyResource(id) || id;
+      const suffix = id === "light" ? " of torches" : "";
+      return `<div style="color:#ef6f74;">${escapeHtml(label)}: ${r.shortfall} short${suffix}.</div>`;
+    })
+    .join("");
   const daysLabel = result.days > 1 ? ` (${result.days} days)` : "";
   const content = `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
       <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeHtml(envLabel)}${daysLabel}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      ${lightLine}
+      ${partyLines}
     </div>`;
 
   const speaker = globalThis.ChatMessage.getSpeaker?.({
@@ -882,7 +889,9 @@ function resolveWhisperForActors(actorIds) {
   );
   if (mode === "public") return null;
   const users = globalThis.game?.users;
-  if (!users) return [];
+  // null = public (no whisper); an empty array would whisper to NOBODY (Foundry
+  // does not treat whisper:[] as public), hiding the report from everyone.
+  if (!users) return null;
   const gmIds = users.filter((u) => u.isGM).map((u) => u.id);
   if (mode === "whisper-gm") return gmIds;
   // whisper-gm-owner: GMs + each affected character's owner.

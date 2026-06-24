@@ -33,13 +33,6 @@ import { escapeHtml, notify } from "../ui-util.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
-let spellScrollIndexPromise = null;
-// The item array `loadCompendiumItems` hands back is reused while the pack
-// cache is warm and replaced with a fresh array on every re-fetch (TTL expiry
-// or `invalidatePackCache`). Keeping the source array we indexed against lets
-// us notice that swap and rebuild, so a pack reloaded mid-session never leaves
-// the spell-scroll lookup pointing at a stale first-load index.
-let spellScrollIndexSource = null;
 
 /* ------------------------------------------------------------------ *
  * Drag-and-drop
@@ -580,24 +573,19 @@ async function prepareCreatableItemData(source, { sourceUuid = "" } = {}) {
 }
 
 async function findSpellScrollForSpell(spellData, sourceUuid = "") {
-  const index = await getSpellScrollIndex();
+  // Rebuild the index from the pack's own (TTL-bounded) cache rather than a
+  // permanent module-level memo, so a runtime pack edit (adding/editing a
+  // generated spell scroll) is picked up once the pack cache refreshes instead
+  // of being pinned to the first-ever snapshot for the life of the page. The
+  // pack array is already cached by loadCompendiumItems, so the only added cost
+  // is rebuilding the Map — cheap, and only on deposit of a bare-spell drop.
+  const items = await loadCompendiumItems({ packId: DEFAULT_ITEM_PACK_ID });
+  const index = buildSpellScrollIndex(items);
   for (const key of spellLookupKeys(spellData, sourceUuid)) {
     const scroll = index.get(key);
     if (scroll) return cloneItemData(scroll);
   }
   return null;
-}
-
-async function getSpellScrollIndex() {
-  const items = await loadCompendiumItems({ packId: DEFAULT_ITEM_PACK_ID });
-  // Rebuild only when the pack handed back a different array than the one we
-  // last indexed — a cache hit returns the same reference, so warm calls stay
-  // a single Map lookup.
-  if (!spellScrollIndexPromise || spellScrollIndexSource !== items) {
-    spellScrollIndexSource = items;
-    spellScrollIndexPromise = Promise.resolve(buildSpellScrollIndex(items));
-  }
-  return spellScrollIndexPromise;
 }
 
 function buildSpellScrollIndex(items) {

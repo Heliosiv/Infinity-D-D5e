@@ -560,6 +560,12 @@ function weightedPick(picker, rng) {
     if (cdf[mid] >= target) hi = mid;
     else lo = mid + 1;
   }
+  // When rng() returns exactly 0 (a legal Math.random() value) target is 0, so
+  // the search lands on index 0 even if it carries no mass (cdf[0] === 0 for a
+  // zero-weight leading item — rarity weight 0, or the losing side of a ±1 magic
+  // bias). Skip forward to the first item with positive cumulative weight so a
+  // suppressed item is never drawn. totalWeight > 0 here, so this terminates.
+  while (cdf[lo] <= 0 && lo < pool.length - 1) lo += 1;
   return pool[lo];
 }
 

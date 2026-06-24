@@ -316,10 +316,25 @@ async function handleBargainResult(payload) {
   if (session.viewerUserId !== payload.originUserId) return;
   const merchant = findMerchant(session.merchantId);
   if (!merchant) return;
+  // The roll runs on the player's own client, so rollTotal is client-asserted.
+  // Foundry's socket can't authenticate it, but we can bound it to a window a
+  // real d20 + skill modifier (advantage/expertise/guidance included) can reach
+  // so a forged client can't send rollTotal: 9999. Out-of-range values are
+  // logged + clamped, which surfaces tampering rather than silently honoring it.
+  const ROLL_MIN = -10;
+  const ROLL_MAX = 50;
+  const rawRoll = Number(rollTotal);
+  let safeRoll = Number.isFinite(rawRoll) ? rawRoll : 0;
+  if (safeRoll < ROLL_MIN || safeRoll > ROLL_MAX) {
+    console.warn(
+      `${MODULE_ID} | bargain-result: implausible rollTotal ${rollTotal} from ${payload.originUserId} — clamping to [${ROLL_MIN}, ${ROLL_MAX}]`,
+    );
+    safeRoll = Math.max(ROLL_MIN, Math.min(ROLL_MAX, safeRoll));
+  }
   // Per-merchant success/fail swing (no crit distinction).
   const tiers = buildMerchantBargainTiers(merchant);
   const outcome = computeBargainOutcome(
-    Number(rollTotal) || 0,
+    safeRoll,
     Number(merchant.bargainDC) || 0,
     tiers,
   );
@@ -399,7 +414,10 @@ async function handleCommitPurchase(payload) {
     // Recompute the price from the merchant's OWN data — never trust the
     // client's claimed total. The merchant's gold gain uses this server
     // figure, so a buggy/forged client can't shortchange (or overpay) it.
-    let trueTotal = clientTotalGp;
+    // Default to 0 (NOT the client total): a free/unpriced/deleted row credits
+    // nothing, and a reprice throw can't fall back to crediting an attacker's
+    // arbitrary figure into the GM-owned coffer.
+    let trueTotal = 0;
     try {
       const itemDoc = await fromUuid(itemUuid);
       const item = itemDoc?.toObject?.() ?? itemDoc ?? null;
@@ -417,7 +435,9 @@ async function handleCommitPurchase(payload) {
         seal,
         passivePct,
       });
-      if (unitGp > 0) trueTotal = roundGp(unitGp * requested);
+      if (Number.isFinite(unitGp) && unitGp > 0) {
+        trueTotal = roundGp(unitGp * requested);
+      }
     } catch (error) {
       console.warn(`${MODULE_ID} | commit-purchase reprice failed`, error);
     }
@@ -481,7 +501,8 @@ async function handleCommitSale(payload) {
     // honest client bugs, and adjustMerchantGold floors the purse at 0 so a
     // stale/forged total can't drive the coffer to a wrong value. Falls back to
     // the client total only when no usable snapshot was sent.
-    let trueTotal = clientTotalGp;
+    let trueTotal = 0;
+    let priced = false;
     const snap = payload.itemSnapshot;
     if (snap && typeof snap === "object") {
       try {
@@ -495,22 +516,37 @@ async function handleCommitSale(payload) {
           seal,
           passivePct,
         });
-        if (unitGp > 0) trueTotal = roundGp(unitGp * requested);
+        if (Number.isFinite(unitGp) && unitGp > 0) {
+          trueTotal = roundGp(unitGp * requested);
+          priced = true;
+        }
       } catch (error) {
         console.warn(`${MODULE_ID} | commit-sale reprice failed`, error);
       }
+    }
+    // Never debit the GM-owned coffer by a client-controlled figure: if the GM
+    // couldn't derive a payout (missing/zero-price snapshot, forged frame),
+    // reject rather than spending the client's claimed total.
+    if (!priced) {
+      emitCommitResult(payload, false, "no-price");
+      return;
     }
     if (Math.abs(trueTotal - clientTotalGp) > 0.01) {
       console.warn(
         `${MODULE_ID} | commit-sale price mismatch (client ${clientTotalGp}, server ${trueTotal}) — using server price`,
       );
     }
-    if (!merchantCanAfford(merchant, trueTotal)) {
+    // Clamp to what the merchant can actually pay (a concurrent/stale sell may
+    // exceed the current purse); adjustMerchantGold also floors at 0.
+    const payout = merchantCanAfford(merchant, trueTotal)
+      ? trueTotal
+      : Math.max(0, Number(merchant.goldOnHand) || 0);
+    if (payout !== trueTotal) {
       console.warn(
-        `${MODULE_ID} | commit-sale: payout ${trueTotal} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — floored at 0`,
+        `${MODULE_ID} | commit-sale: payout ${trueTotal} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — clamped to ${payout}`,
       );
     }
-    const updated = adjustMerchantGold(merchant, -trueTotal);
+    const updated = adjustMerchantGold(merchant, -payout);
     await upsertMerchant(updated);
     await broadcastState(updated);
     emitCommitResult(payload, true);

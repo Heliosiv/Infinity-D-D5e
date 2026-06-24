@@ -397,6 +397,120 @@ try {
     globalThis.game = savedInner;
     clearAllSessions();
   }
+
+  /* COMMIT_SALE with no usable snapshot: the GM can't derive a server price, so
+     it must REJECT (no-price) rather than debit the coffer by the client's
+     claimed total. Regression: it used to fall back to the client figure and a
+     forged 9999 would drain a finite-gold merchant to 0. */
+  {
+    clearAllSessions();
+    const rec = openSession({ merchantId: "m-sell2", viewerUserId: "player1" });
+    let savedList = [
+      {
+        id: "m-sell2",
+        name: "Pawn",
+        sellRatio: 0.5,
+        goldOnHand: 1000,
+        allowedUserIds: ["player1"],
+        items: [],
+      },
+    ];
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      settings: {
+        get: () => savedList,
+        set: (_m, _k, v) => {
+          savedList = v;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.COMMIT_SALE,
+      originUserId: "player1",
+      sessionId: rec.sessionId,
+      commitId: "cs2",
+      itemUuid: "owned-item-id",
+      qty: 1,
+      totalGp: 9999, // forged — no snapshot to recompute against
+      // itemSnapshot deliberately omitted
+    });
+    off();
+    const merchant = savedList.find((m) => m.id === "m-sell2");
+    assert.equal(
+      merchant.goldOnHand,
+      1000,
+      "coffer untouched when the server can't price the sale (no client fallback)",
+    );
+    assert.ok(
+      acks.some(
+        (a) =>
+          a.commitId === "cs2" && a.ok === false && a.reason === "no-price",
+      ),
+      "an unpriceable sale is rejected with reason no-price",
+    );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
+
+  /* COMMIT_PURCHASE never credits the coffer by the client's claimed total when
+     the server can't derive a price (here `fromUuid` is absent so the reprice
+     throws → server total 0). A forged 9999 must NOT inflate the merchant gold. */
+  {
+    clearAllSessions();
+    const rec = openSession({ merchantId: "m-buy", viewerUserId: "player1" });
+    let savedList = [
+      {
+        id: "m-buy",
+        name: "Shop",
+        goldOnHand: 100,
+        allowedUserIds: ["player1"],
+        items: [
+          {
+            uuid: "Compendium.x.Item.free",
+            unlimited: true,
+            priceOverrideGp: 0,
+          },
+        ],
+      },
+    ];
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      settings: {
+        get: () => savedList,
+        set: (_m, _k, v) => {
+          savedList = v;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
+    await receiveMerchantPayload({
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "player1",
+      sessionId: rec.sessionId,
+      commitId: "cb1",
+      itemUuid: "Compendium.x.Item.free",
+      qty: 1,
+      totalGp: 9999, // forged — must not be credited to the coffer
+    });
+    off();
+    const merchant = savedList.find((m) => m.id === "m-buy");
+    assert.equal(
+      merchant.goldOnHand,
+      100,
+      "coffer not inflated by the client's claimed total when server price is 0",
+    );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
 } finally {
   if (savedGame === undefined) delete globalThis.game;
   else globalThis.game = savedGame;
