@@ -120,6 +120,21 @@ import {
   assert.equal(garbage, 400, "garbage multipliers behave like 1.0");
 }
 
+/* non-numeric partySize falls back to the canonical 4 — never NaN, which would
+ * silently disable budget enforcement downstream (rollLoot reads it as
+ * unbounded). null/undefined keep defaulting to 4 via the nullish guard. */
+{
+  for (const bad of ["abc", NaN, {}]) {
+    assert.equal(
+      computeLootBudget({ tier: "t2", partySize: bad }),
+      400,
+      "non-numeric partySize → default 4 (400 gp), not NaN",
+    );
+  }
+  assert.equal(computeLootBudget({ tier: "t2", partySize: null }), 400);
+  assert.equal(computeLootBudget({ tier: "t2", partySize: undefined }), 400);
+}
+
 /* tier classification */
 {
   assert.equal(classifyBudgetTier(0), "");

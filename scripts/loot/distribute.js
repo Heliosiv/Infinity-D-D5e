@@ -32,7 +32,6 @@ import { isBareSpellLootItem } from "./tag-vocabulary.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
-let spellScrollIndexPromise = null;
 
 /* ------------------------------------------------------------------ *
  * Drag-and-drop
@@ -570,21 +569,19 @@ async function prepareCreatableItemData(source, { sourceUuid = "" } = {}) {
 }
 
 async function findSpellScrollForSpell(spellData, sourceUuid = "") {
-  const index = await getSpellScrollIndex();
+  // Rebuild the index from the pack's own (TTL-bounded) cache rather than a
+  // permanent module-level memo, so a runtime pack edit (adding/editing a
+  // generated spell scroll) is picked up once the pack cache refreshes instead
+  // of being pinned to the first-ever snapshot for the life of the page. The
+  // pack array is already cached by loadCompendiumItems, so the only added cost
+  // is rebuilding the Map — cheap, and only on deposit of a bare-spell drop.
+  const items = await loadCompendiumItems({ packId: DEFAULT_ITEM_PACK_ID });
+  const index = buildSpellScrollIndex(items);
   for (const key of spellLookupKeys(spellData, sourceUuid)) {
     const scroll = index.get(key);
     if (scroll) return cloneItemData(scroll);
   }
   return null;
-}
-
-async function getSpellScrollIndex() {
-  if (!spellScrollIndexPromise) {
-    spellScrollIndexPromise = loadCompendiumItems({
-      packId: DEFAULT_ITEM_PACK_ID,
-    }).then(buildSpellScrollIndex);
-  }
-  return spellScrollIndexPromise;
 }
 
 function buildSpellScrollIndex(items) {

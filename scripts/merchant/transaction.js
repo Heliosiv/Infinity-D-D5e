@@ -316,13 +316,16 @@ export async function executeSell({
     return { ok: false, reason: "remove-failed", error };
   }
 
-  // 2. Credit currency. Sales are flat-gp so we add it to the gp column.
-  const add = currencyAddFromBreakdown({ gp: Math.floor(totalGp) });
-  const fractional = totalGp - Math.floor(totalGp);
-  if (fractional > 0) {
-    add.sp = Math.floor(fractional * 10);
-    add.cp = Math.round(fractional * 100 - add.sp * 10);
-  }
+  // 2. Credit currency. Derive every denomination from integer copper so none
+  //    can overflow its valid range — the old `floor(fractional*10)` / rounded
+  //    remainder split leaked a malformed cp:10 (with a short sp) for ~40% of
+  //    fractional gp totals (e.g. 2.4 gp). Total value is preserved either way.
+  const cpTotal = Math.round(totalGp * 100);
+  const add = currencyAddFromBreakdown({
+    gp: Math.floor(cpTotal / 100),
+    sp: Math.floor((cpTotal % 100) / 10),
+    cp: cpTotal % 10,
+  });
   const cur = actor.system?.currency ?? {};
   try {
     await actor.update({
