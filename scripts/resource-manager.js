@@ -709,9 +709,11 @@ function forageNote(foraged) {
 function summarizeReport(result) {
   if (!result || typeof result !== "object") return null;
   const perActor = Array.isArray(result.perActor) ? result.perActor : [];
-  const lightShortfall = Math.max(
+  // Sum every party-scope resource shortfall (a GM-added party resource is
+  // keyed by its own id, not the literal "light"), so none is silently dropped.
+  const lightShortfall = Object.values(result.party ?? {}).reduce(
+    (sum, r) => sum + Math.max(0, Number(r?.shortfall) || 0),
     0,
-    Number(result.party?.light?.shortfall) || 0,
   );
   return {
     days: result.days ?? 1,

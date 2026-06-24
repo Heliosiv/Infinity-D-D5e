@@ -29,7 +29,12 @@ import {
   computePackStats,
   computeTierFilteredStats,
 } from "./loot/pack-stats.js";
-import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
+import {
+  MAGIC_BIAS_RANGE,
+  filterCandidates,
+  itemIdentity,
+  rollLoot,
+} from "./loot/roller.js";
 import {
   LOOT_TYPES,
   RARITIES,
@@ -619,17 +624,20 @@ export class PerEncounterLootApp extends BaseLootApp {
         (sum, entry) => sum + (entry.gpTotal ?? 0),
         0,
       );
+      // Use the uuid-first identity helper so a locked entry restored from
+      // history (slimResult keeps `uuid` but drops `_id`/`id`) still matches a
+      // pack candidate — keying on `_id` alone collapsed those to "" and let
+      // Re-roll Unlocked re-draw the very item the GM had locked. Empty ids are
+      // filtered out so an unidentifiable entry never matches an unrelated item.
       const lockedIds = new Set(
-        lockedEntries.map((entry) =>
-          String(entry.item._id ?? entry.item.id ?? ""),
-        ),
+        lockedEntries.map((entry) => itemIdentity(entry.item)).filter(Boolean),
       );
 
       const items = await this._loadItems();
       let candidates = filterCandidates(items, this._filterSpec());
       if (lockedIds.size > 0) {
         candidates = candidates.filter(
-          (item) => !lockedIds.has(String(item._id ?? item.id ?? "")),
+          (item) => !lockedIds.has(itemIdentity(item)),
         );
       }
 

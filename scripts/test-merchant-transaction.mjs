@@ -100,6 +100,33 @@ const merchant = normalizeMerchant({ id: "shop", sellRatio: 0.5 });
   assert.equal(actor._calls.created.length, 0, "no rollback on success");
 }
 
+/* T4 — a fractional gp payout never leaks an out-of-range coin (cp/sp must be
+ * 0-9) and conserves total value. 4.8 gp × 0.5 = 2.4 gp; the old floor+round
+ * split produced sp:3/cp:10. */
+{
+  const actor = makeActor();
+  const item = makeItem({ quantity: 1, priceGp: 4.8 });
+  const result = await executeSell({
+    actor,
+    merchant,
+    ownedItem: item,
+    qty: 1,
+    notify: false,
+  });
+  assert.equal(result.ok, true, "a fractional-gp sell succeeds");
+  assert.equal(result.totalGp, 2.4, "4.8 gp base × 0.5 sell ratio");
+  const b = result.coinBreakdown;
+  assert.ok(b.cp < 10, `cp must stay 0-9 (got ${b.cp})`);
+  assert.ok(b.sp < 10, `sp must stay 0-9 (got ${b.sp})`);
+  const valueCp =
+    (b.pp ?? 0) * 1000 +
+    (b.gp ?? 0) * 100 +
+    (b.ep ?? 0) * 50 +
+    (b.sp ?? 0) * 10 +
+    (b.cp ?? 0);
+  assert.equal(valueCp, 240, "coin value equals 2.4 gp (240 cp) exactly");
+}
+
 /* T2 — a payout failure rolls the removal back (no item loss) */
 {
   const actor = makeActor({ updateRejects: true });

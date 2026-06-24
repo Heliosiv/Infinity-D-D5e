@@ -525,7 +525,11 @@ function weightedPick(pool, rng, magicBias = 0, rarityWeights = null) {
   let cursor = 0;
   for (let i = 0; i < pool.length; i += 1) {
     cursor += weights[i];
-    if (cursor >= target) return pool[i];
+    // Require a positive weight: when rng() returns exactly 0 (a legal
+    // Math.random() value) target is 0, and a zero-weight item at index 0 would
+    // otherwise satisfy `cursor >= target` and be drawn despite being suppressed
+    // (rarity weight 0, or the losing side of a ±1 magic bias).
+    if (weights[i] > 0 && cursor >= target) return pool[i];
   }
   return pool[pool.length - 1];
 }

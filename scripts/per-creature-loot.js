@@ -297,6 +297,9 @@ export class PerCreatureLootApp extends BaseLootApp {
   static async _onRemoveCreature(_event, target) {
     const id = target?.dataset?.creatureId;
     if (!id) return;
+    // Snapshot first so dropping a creature (and its rolled drops) is undoable,
+    // matching every other destructive path (_onDeleteItem / _adjustQty / etc.).
+    if (this._lastResult?.creatures) this._pushUndo();
     this._form = {
       ...this._form,
       roster: this._form.roster.filter((c) => c.id !== id),
@@ -343,6 +346,9 @@ export class PerCreatureLootApp extends BaseLootApp {
     }
     if (this._loadingItems) return;
 
+    // Make the card reroll undoable — it overwrites a creature's bundle, which
+    // may have been hand-edited (delete / qty / single-slot reroll).
+    if (this._lastResult) this._pushUndo();
     playModuleSound(SOUND_EVENTS.ROLL_START);
     const items = await this._loadItems();
     const rolled = this._rollForCreature(creature, items);

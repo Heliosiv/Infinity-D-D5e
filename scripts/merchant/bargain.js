@@ -5,7 +5,8 @@
  * (`computeBargainOutcome`) takes a roll total + DC + tier list and
  * returns the matching tier with its price delta. The Foundry-touching
  * path (`runBargain`) wraps dnd5e's `actor.rollSkill()` and harmonizes
- * the v3 / v4 return-shape divergence.
+ * the v3 / v4+ divergence in both the argument shape (string skillId vs
+ * config object) and the return shape (single Roll vs Array<Roll>).
  */
 
 import {
@@ -185,12 +186,43 @@ export async function runBargain({
 }
 
 /**
- * Call `actor.rollSkill(skillId, options)` and normalize the return
- * shape across dnd5e v3 / v4. v3 returns a single Roll (or null); v4
- * may return an Array<Roll>. We return the first non-null Roll.
+ * Call dnd5e's `actor.rollSkill` and normalize across system majors. Two
+ * divergences are handled:
+ *  - Argument shape: dnd5e v3 took `(skillId, options)`; v4+ (and the module's
+ *    verified v5) take a config object `({ skill, ... }, dialog, message)` and
+ *    the legacy string-first form was removed — passing a bare skillId on v5
+ *    resolves to no skill, so the haggle/forage roll loses its skill modifier.
+ *    We branch on `game.system.version`.
+ *  - Return shape: v3 returns a single Roll (or null); v4+ may return an
+ *    Array<Roll>. We return the first non-null Roll either way.
  */
-export async function rollSkillCompat(actor, skillId, options) {
-  const result = await actor.rollSkill(skillId, options);
+export async function rollSkillCompat(actor, skillId, options = {}) {
+  const {
+    advantage = false,
+    disadvantage = false,
+    chatMessage = false,
+  } = options;
+  const major = Number.parseInt(
+    String(globalThis.game?.system?.version ?? ""),
+    10,
+  );
+  let result;
+  if (Number.isFinite(major) && major >= 4) {
+    // v4+/v5: rollSkill(config, dialog, message). The skill MUST ride in the
+    // config object; message.create controls whether a chat card is posted.
+    result = await actor.rollSkill(
+      { skill: skillId, advantage, disadvantage },
+      {},
+      { create: chatMessage === true },
+    );
+  } else {
+    // v3 and earlier: rollSkill(skillId, options).
+    result = await actor.rollSkill(skillId, {
+      advantage,
+      disadvantage,
+      chatMessage,
+    });
+  }
   if (!result) return null;
   if (Array.isArray(result)) return result.find(Boolean) ?? null;
   return result;
