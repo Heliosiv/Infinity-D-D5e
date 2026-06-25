@@ -52,6 +52,9 @@ export const SETTING_KEYS = Object.freeze({
   // Hidden resource stores (no config UI) — edited via the Resource Manager.
   RESOURCE_CONFIG: "resourceConfig",
   RESOURCE_RUNSTATE: "resourceRunState",
+  // Faction reputation records (no config UI) — managed by the Reputation
+  // Workspace via scripts/reputation/store.js.
+  FACTIONS: "factions",
   // Dashboard "Recently Used" — client-scoped list of recent tool ids so the
   // hub's quick-launch row survives reloads.
   RECENT_TOOLS: "recentTools",
@@ -454,6 +457,17 @@ export const SETTINGS = Object.freeze([
     name: "Recently Used Tools",
     hint: "Internal store for the dashboard's recent-tools row. Not shown in the UI.",
     scope: "client",
+    config: false,
+    type: Array,
+    default: [],
+  },
+  {
+    key: SETTING_KEYS.FACTIONS,
+    name: "Faction Reputation Records",
+    hint:
+      "Persistent faction reputation data. Managed by the Reputation " +
+      "Workspace; edit through that window rather than this field.",
+    scope: "world",
     config: false,
     type: Array,
     default: [],

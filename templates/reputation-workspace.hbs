@@ -1,0 +1,197 @@
+{{!--
+  Infinity D&D5e — Reputation Workspace (GM).
+  Left: every faction the party has encountered, with its standing.
+  Right: editor for the selected faction — raise/lower with a logged
+  reason, reveal to players, per-character notes, and the change log.
+--}}
+<div class="rw-shell">
+  <header class="rw-head">
+    <div class="rw-head__title">
+      <h2><i class="fa-solid fa-handshake" aria-hidden="true"></i> Reputation &amp; Factions</h2>
+      <p class="rw-head__hint">
+        Track how each faction leans toward the party. Raise or lower a standing as the party earns
+        (or loses) favor — every change is logged with your reason. Reveal a faction to show players
+        where they stand.
+      </p>
+    </div>
+    <div class="rw-head__actions">
+      <button type="button" class="rw-btn rw-btn--primary" data-action="newFaction" title="Add a faction the party has encountered">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> New Faction
+      </button>
+    </div>
+  </header>
+
+  <div class="rw-body">
+    {{!-- Left rail: faction list --}}
+    <aside class="rw-list" aria-label="Factions">
+      {{#if hasFactions}}
+        <p class="rw-list__summary">{{total}} tracked · {{revealedCount}} revealed</p>
+        <ul class="rw-list__items">
+          {{#each factions}}
+          <li class="rw-list__row {{#if selected}}is-selected{{/if}}">
+            <button type="button" class="rw-list__btn" data-action="selectFaction" data-faction-id="{{id}}">
+              <span class="rw-list__art" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+              <span class="rw-list__copy">
+                <strong class="rw-list__name">{{name}}</strong>
+                <span class="rw-pill rw-pill--{{band}}">{{standingLabel}}</span>
+              </span>
+              {{#if revealed}}
+              <span class="rw-list__eye" title="Revealed to players"><i class="fa-solid fa-eye" aria-hidden="true"></i></span>
+              {{/if}}
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p class="rw-empty">No factions yet. Click <strong>New Faction</strong> to add the first one the party has met.</p>
+      {{/if}}
+    </aside>
+
+    {{!-- Right pane: editor --}}
+    <section class="rw-edit" aria-label="Faction editor">
+      {{#if selected}}
+      <form class="rw-form" data-form="faction-edit" autocomplete="off">
+        <div class="rw-form__head">
+          <span class="rw-form__art" style="background-image:url('{{selected.img}}');" aria-hidden="true"></span>
+          <div class="rw-form__head-fields">
+            <label class="rw-field">
+              <span class="rw-field__label">Name</span>
+              <input class="rw-input" type="text" name="name" value="{{selected.name}}" />
+            </label>
+            <label class="rw-field">
+              <span class="rw-field__label">Type <small>(e.g. Guild, Noble House, Cult)</small></span>
+              <input class="rw-input" type="text" name="category" value="{{selected.category}}" placeholder="Optional" />
+            </label>
+            <label class="rw-field">
+              <span class="rw-field__label">Image</span>
+              <div class="rw-field__row">
+                <input class="rw-input" type="text" name="img" value="{{selected.img}}" placeholder="icons/svg/mystery-man.svg" />
+                <button type="button" class="rw-btn rw-btn--icon" data-action="pickImage" title="Browse or upload an image">
+                  <i class="fa-solid fa-image" aria-hidden="true"></i>
+                </button>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {{!-- Standing meter + controls --}}
+        <section class="rw-standing rw-standing--{{selected.band}}">
+          <div class="rw-standing__readout">
+            <span class="rw-standing__tier">{{selected.tier}}</span>
+            <span class="rw-standing__score">{{selected.standingLabel}}</span>
+          </div>
+          <div class="rw-meter" role="img" aria-label="Standing {{selected.standingLabel}}">
+            <div class="rw-meter__fill rw-meter__fill--{{selected.band}}" style="width:{{selected.meterPercent}}%;"></div>
+          </div>
+          <div class="rw-standing__controls">
+            <button type="button" class="rw-btn rw-btn--lower" data-action="lowerStanding" title="Lower the party's standing by one" {{#unless selected.canLower}}disabled{{/unless}}>
+              <i class="fa-solid fa-arrow-down" aria-hidden="true"></i> Lower
+            </button>
+            <button type="button" class="rw-btn rw-btn--raise" data-action="raiseStanding" title="Raise the party's standing by one" {{#unless selected.canRaise}}disabled{{/unless}}>
+              <i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Raise
+            </button>
+            <button type="button" class="rw-btn" data-action="setStanding" title="Set the standing to a specific tier">
+              <i class="fa-solid fa-sliders" aria-hidden="true"></i> Set…
+            </button>
+            <button type="button" class="rw-btn" data-action="logNote" title="Record a note without changing the standing">
+              <i class="fa-solid fa-feather" aria-hidden="true"></i> Log Note
+            </button>
+          </div>
+        </section>
+
+        {{!-- Reveal to players --}}
+        <fieldset class="rw-fieldset">
+          <legend>Players</legend>
+          <label class="rw-field rw-field--toggle">
+            <input type="checkbox" name="revealed" {{#if selected.revealed}}checked{{/if}} />
+            <span class="rw-field__label">Reveal this faction to players <small>(shows name, standing, and the note below)</small></span>
+          </label>
+          <label class="rw-field">
+            <span class="rw-field__label">Player-facing note</span>
+            <textarea class="rw-textarea" name="playerNote" rows="2" placeholder="What players know about where they stand with this faction.">{{selected.playerNote}}</textarea>
+          </label>
+        </fieldset>
+
+        {{!-- GM-only notes --}}
+        <fieldset class="rw-fieldset">
+          <legend>GM Notes <small>(never shown to players)</small></legend>
+          <label class="rw-field">
+            <span class="rw-field__label">Who they are / what they want</span>
+            <textarea class="rw-textarea" name="description" rows="2" placeholder="Background, goals, key NPCs…">{{selected.description}}</textarea>
+          </label>
+          <label class="rw-field">
+            <span class="rw-field__label">Current notes</span>
+            <textarea class="rw-textarea" name="gmNotes" rows="2" placeholder="Anything you want to remember.">{{selected.gmNotes}}</textarea>
+          </label>
+        </fieldset>
+
+        {{!-- Per-character notes --}}
+        <fieldset class="rw-fieldset">
+          <legend>Per-Character <small>(optional — one PC stands apart from the party)</small></legend>
+          <div class="rw-perchar" data-perchar-rows>
+            {{#if selected.hasPerCharacter}}
+              {{#each selected.perCharacter}}
+              <div class="rw-perchar__row" data-row-id="{{id}}">
+                <select class="rw-input" data-role="pcActor" data-row-id="{{id}}" aria-label="Character">
+                  {{#if unknownActor}}<option value="{{actorId}}" selected>(unknown)</option>{{/if}}
+                  {{#each characterOptions}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+                <input class="rw-input rw-input--num" type="number" data-role="pcDelta" data-row-id="{{id}}" value="{{delta}}" min="-5" max="5" step="1" title="Modifier vs. the party standing (display only)" />
+                <input class="rw-input" type="text" data-role="pcNote" data-row-id="{{id}}" value="{{note}}" placeholder="Why this PC stands apart" />
+                <button type="button" class="rw-btn rw-btn--ghost rw-btn--icon" data-action="removeCharacterNote" data-row-id="{{id}}" title="Remove this note">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+              {{/each}}
+            {{else}}
+              <p class="rw-empty rw-empty--sm">No per-character notes.{{#unless hasCharacters}} (Add player characters to the world first.){{/unless}}</p>
+            {{/if}}
+          </div>
+          <div class="rw-perchar__foot">
+            <button type="button" class="rw-btn" data-action="addCharacterNote" {{#unless hasCharacters}}disabled{{/unless}}>
+              <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Add Character Note
+            </button>
+          </div>
+        </fieldset>
+
+        {{!-- Change log --}}
+        <fieldset class="rw-fieldset rw-fieldset--log">
+          <legend>Change Log</legend>
+          {{#if selected.hasHistory}}
+          <ul class="rw-log">
+            {{#each selected.history}}
+            <li class="rw-log__row">
+              <span class="rw-log__delta rw-log__delta--{{deltaTone}}">{{deltaLabel}}</span>
+              <div class="rw-log__body">
+                {{#if changed}}<span class="rw-log__swing">{{swing}}</span>{{/if}}
+                {{#if reason}}<span class="rw-log__reason">{{reason}}</span>{{/if}}
+                <span class="rw-log__meta">{{#if by}}{{by}}{{/if}}{{#if when}} · {{when}}{{/if}}</span>
+              </div>
+            </li>
+            {{/each}}
+          </ul>
+          {{else}}
+          <p class="rw-empty rw-empty--sm">No changes logged yet. Use <strong>Raise</strong> / <strong>Lower</strong> to start the history.</p>
+          {{/if}}
+        </fieldset>
+
+        <div class="rw-form__foot">
+          <button type="button" class="rw-btn rw-btn--danger" data-action="deleteFaction">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Faction
+          </button>
+          <button type="button" class="rw-btn" data-action="save" title="Save the text fields now (they also auto-save)">
+            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save
+          </button>
+        </div>
+      </form>
+      {{else}}
+      <div class="rw-edit__empty">
+        <i class="fa-solid fa-handshake-slash" aria-hidden="true"></i>
+        <p>Select a faction from the list, or add one to get started.</p>
+      </div>
+      {{/if}}
+    </section>
+  </div>
+</div>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildUiHarnessDocument, renderHarnessViews } from "./ui-harness.mjs";
 
 const views = renderHarnessViews();
-assert.equal(views.length, 10, "harness covers all ten UI windows");
+assert.equal(views.length, 13, "harness covers all UI windows");
 
 for (const view of views) {
   assert.ok(view.html.includes("data-action="), `${view.id}: renders actions`);
@@ -76,6 +76,9 @@ for (const expectedId of [
   "shop-picker-empty",
   "resource-manager",
   "forage-prompt",
+  "reputation-workspace",
+  "reputation-view",
+  "reputation-view-empty",
 ]) {
   assert.ok(
     documentHtml.includes(`data-harness-window="${expectedId}"`),

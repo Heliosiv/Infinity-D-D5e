@@ -1,0 +1,45 @@
+{{!--
+  Infinity D&D5e — Reputation (player, read-only).
+  Shows the factions the GM has revealed, the party's standing, and a
+  short note. The GM previews this exact view when they open it.
+--}}
+<div class="rv-shell">
+  <header class="rv-head">
+    <div class="rv-head__title">
+      <h2><i class="fa-solid fa-handshake" aria-hidden="true"></i> Reputation</h2>
+      <p class="rv-head__hint">
+        Where the party stands with the factions you've met.{{#if isGmPreview}} <em>(GM preview — what players see.)</em>{{/if}}
+      </p>
+    </div>
+    <button type="button" class="rv-btn--icon" data-action="refresh" title="Refresh" aria-label="Refresh">
+      <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+    </button>
+  </header>
+
+  {{#if noGm}}
+    <p class="rv-empty"><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i> No GM is online right now — check back when your game is running.</p>
+  {{else if loading}}
+    <p class="rv-empty"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Loading reputations…</p>
+  {{else if requestFailed}}
+    <p class="rv-empty"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Couldn't reach the GM. Click refresh to try again.</p>
+  {{else if hasFactions}}
+    <ul class="rv-list">
+      {{#each factions}}
+      <li class="rv-row rv-row--{{band}}">
+        <span class="rv-row__art" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+        <div class="rv-row__copy">
+          <div class="rv-row__top">
+            <strong class="rv-row__name">{{name}}</strong>
+            <span class="rv-pill rv-pill--{{band}}">{{tier}}</span>
+          </div>
+          {{#if category}}<span class="rv-row__cat">{{category}}</span>{{/if}}
+          <span class="rv-row__score">Standing: {{standingLabel}}</span>
+          {{#if playerNote}}<p class="rv-row__note">{{playerNote}}</p>{{/if}}
+        </div>
+      </li>
+      {{/each}}
+    </ul>
+  {{else}}
+    <p class="rv-empty"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> No factions revealed yet. Your GM will share standings here as you meet them.</p>
+  {{/if}}
+</div>

@@ -26,6 +26,8 @@ const CSS_FILES = [
   "styles/shop-picker.css",
   "styles/resource-manager.css",
   "styles/forage-prompt.css",
+  "styles/reputation-workspace.css",
+  "styles/reputation-view.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -144,6 +146,30 @@ export function buildHarnessViews() {
       "templates/forage-prompt.hbs",
       foragePromptContext(),
       { width: 460, height: 400 },
+    ),
+    view(
+      "reputation-workspace",
+      "Reputation Workspace",
+      "infinity-reputation-workspace",
+      "templates/reputation-workspace.hbs",
+      reputationWorkspaceContext(),
+      { width: 940, height: 720 },
+    ),
+    view(
+      "reputation-view",
+      "Reputation (player)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewContext(),
+      { width: 420, height: 560 },
+    ),
+    view(
+      "reputation-view-empty",
+      "Reputation (empty)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewEmptyContext(),
+      { width: 420, height: 560 },
     ),
   ];
 }
@@ -920,9 +946,24 @@ function resourceManagerContext() {
     },
   ];
   const counts = (food, water, light) => [
-    { id: "food", label: "Food (Rations)", total: food, detail: "Rations ×" + food },
-    { id: "water", label: "Water", total: water, detail: "Waterskin ×" + water },
-    { id: "light", label: "Light (Torches)", total: light, detail: "Torch ×" + light },
+    {
+      id: "food",
+      label: "Food (Rations)",
+      total: food,
+      detail: "Rations ×" + food,
+    },
+    {
+      id: "water",
+      label: "Water",
+      total: water,
+      detail: "Waterskin ×" + water,
+    },
+    {
+      id: "light",
+      label: "Light (Torches)",
+      total: light,
+      detail: "Torch ×" + light,
+    },
   ];
   return {
     isAuthoritative: true,
@@ -950,7 +991,12 @@ function resourceManagerContext() {
         exhaustion: 0,
         counts: counts(6, 4, 3),
       },
-      { actorId: "a2", name: "Mira Quickstep", exhaustion: 1, counts: counts(0, 2, 0) },
+      {
+        actorId: "a2",
+        name: "Mira Quickstep",
+        exhaustion: 1,
+        counts: counts(0, 2, 0),
+      },
     ],
     report: {
       days: 1,
@@ -989,6 +1035,138 @@ function foragePromptContext() {
     passiveLabel: "Your passive Survival is 14",
     wisLabel: "Wisdom +2",
     result: { success: false, food: 0, water: 0 },
+  };
+}
+
+function reputationWorkspaceContext() {
+  const selected = {
+    id: "f-veil",
+    name: "The Silver Veil",
+    category: "Thieves' Guild",
+    description:
+      "A discreet network of fences and informants working the harbor district.",
+    gmNotes: "Owes the party a favor after the warehouse job.",
+    playerNote: "They remember you fondly after the warehouse job.",
+    img: iconDataUri("#6b5a8a", "SV"),
+    revealed: true,
+    standing: 2,
+    tier: "Friendly",
+    band: "warm",
+    standingLabel: "+2 — Friendly",
+    canRaise: true,
+    canLower: true,
+    meterPercent: 70,
+    hasHistory: true,
+    history: [
+      {
+        id: "h1",
+        reason: "Returned the stolen ledger",
+        by: "GM",
+        when: "Today 7:14 PM",
+        deltaLabel: "+1",
+        deltaTone: "up",
+        swing: "Noticed → Friendly",
+        changed: true,
+      },
+      {
+        id: "h2",
+        reason: "First contact at the Drowned Rat",
+        by: "GM",
+        when: "Today 6:02 PM",
+        deltaLabel: "note",
+        deltaTone: "flat",
+        swing: "Neutral → Neutral",
+        changed: false,
+      },
+    ],
+    hasPerCharacter: true,
+    perCharacter: [
+      {
+        id: "pc1",
+        actorId: "a-thia",
+        delta: 1,
+        note: "Thia grew up in the guild",
+        unknownActor: false,
+        characterOptions: [
+          { id: "a-thia", name: "Thia", selected: true },
+          { id: "a-bram", name: "Bram", selected: false },
+        ],
+      },
+    ],
+  };
+  return {
+    moduleId: "infinity-dnd5e",
+    hasFactions: true,
+    total: 2,
+    revealedCount: 1,
+    hasCharacters: true,
+    factions: [
+      {
+        id: "f-veil",
+        name: "The Silver Veil",
+        img: iconDataUri("#6b5a8a", "SV"),
+        tier: "Friendly",
+        band: "warm",
+        standingLabel: "+2 — Friendly",
+        revealed: true,
+        selected: true,
+      },
+      {
+        id: "f-crown",
+        name: "The Iron Crown",
+        img: iconDataUri("#7a3b3b", "IC"),
+        tier: "Hostile",
+        band: "hostile",
+        standingLabel: "−3 — Hostile",
+        revealed: false,
+        selected: false,
+      },
+    ],
+    selected,
+  };
+}
+
+function reputationViewContext() {
+  return {
+    isGmPreview: false,
+    noGm: false,
+    loading: false,
+    requestFailed: false,
+    hasFactions: true,
+    factions: [
+      {
+        id: "f-veil",
+        name: "The Silver Veil",
+        category: "Thieves' Guild",
+        img: iconDataUri("#6b5a8a", "SV"),
+        tier: "Friendly",
+        band: "warm",
+        standingLabel: "+2 — Friendly",
+        playerNote: "They remember you fondly after the warehouse job.",
+      },
+      {
+        id: "f-crown",
+        name: "The Iron Crown",
+        category: "Ruling House",
+        img: iconDataUri("#7a3b3b", "IC"),
+        tier: "Hostile",
+        band: "hostile",
+        standingLabel: "−3 — Hostile",
+        playerNote:
+          "Word of your deeds has reached the throne — and they are not pleased.",
+      },
+    ],
+  };
+}
+
+function reputationViewEmptyContext() {
+  return {
+    isGmPreview: false,
+    noGm: false,
+    loading: false,
+    requestFailed: false,
+    hasFactions: false,
+    factions: [],
   };
 }
 
@@ -1128,4 +1306,3 @@ function iconDataUri(color, label) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="10" fill="${color}"/><circle cx="48" cy="16" r="18" fill="rgba(255,255,255,.16)"/><text x="32" y="38" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700" fill="white">${safeLabel}</text></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
-
