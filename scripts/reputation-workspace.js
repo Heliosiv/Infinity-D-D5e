@@ -14,7 +14,6 @@ import {
   createBlankFaction,
   findFaction,
   loadFactions,
-  normalizeFaction,
   removeFaction,
   removePerCharacter,
   setStanding,
@@ -24,6 +23,7 @@ import {
 import {
   STANDING_MAX,
   STANDING_MIN,
+  normalizeFaction,
   standingBand,
   standingTier,
 } from "./reputation/standing.js";
