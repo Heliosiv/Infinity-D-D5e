@@ -23,6 +23,11 @@ import {
   standingBand,
   standingTier,
 } from "./standing.js";
+import {
+  getPrivateState,
+  isPrivateStateReady,
+  setPrivateState,
+} from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 /** Setting key — mirrors SETTING_KEYS.FACTIONS in settings.js. */
@@ -159,6 +164,8 @@ export function listRevealedForPlayers() {
 
 /** Load every faction record from the world setting. */
 export function loadFactions() {
+  const privateValue = getPrivateState("factions");
+  if (privateValue !== undefined) return privateValue.map(normalizeFaction);
   try {
     const raw = globalThis.game?.settings?.get?.(
       MODULE_ID,
@@ -178,34 +185,52 @@ export function findFaction(id) {
   return loadFactions().find((f) => f.id === want) ?? null;
 }
 
-/** Persist the full faction list. */
-export async function saveFactions(factions) {
-  if (!globalThis.game?.settings?.set) {
-    throw new Error("NotInFoundry: saveFactions requires game.settings");
-  }
+let factionWriteChain = Promise.resolve();
+
+function runFactionWrite(operation) {
+  const result = factionWriteChain.then(operation, operation);
+  factionWriteChain = result.catch(() => {});
+  return result;
+}
+
+async function writeFactions(factions) {
   const cleaned = (Array.isArray(factions) ? factions : []).map(
     normalizeFaction,
   );
-  await globalThis.game.settings.set(MODULE_ID, FACTION_SETTING_KEY, cleaned);
+  if (isPrivateStateReady()) await setPrivateState("factions", cleaned);
+  else {
+    if (!globalThis.game?.settings?.set) {
+      throw new Error("NotInFoundry: saveFactions requires game.settings");
+    }
+    await globalThis.game.settings.set(MODULE_ID, FACTION_SETTING_KEY, cleaned);
+  }
   return cleaned;
 }
 
+/** Persist the full faction list through a process-wide write queue. */
+export function saveFactions(factions) {
+  return runFactionWrite(() => writeFactions(factions));
+}
+
 /** Insert-or-replace a single faction; returns the saved list. */
-export async function upsertFaction(faction) {
+export function upsertFaction(faction) {
   const normalized = normalizeFaction(faction);
-  const list = loadFactions();
-  const idx = list.findIndex((f) => f.id === normalized.id);
-  if (idx < 0) list.push(normalized);
-  else list[idx] = normalized;
-  return saveFactions(list);
+  return runFactionWrite(() => {
+    const list = loadFactions();
+    const idx = list.findIndex((f) => f.id === normalized.id);
+    if (idx < 0) list.push(normalized);
+    else list[idx] = normalized;
+    return writeFactions(list);
+  });
 }
 
 /** Delete a faction by id; returns the saved list. */
-export async function removeFaction(id) {
+export function removeFaction(id) {
   const want = String(id ?? "").trim();
   if (!want) return loadFactions();
-  const list = loadFactions().filter((f) => f.id !== want);
-  return saveFactions(list);
+  return runFactionWrite(() =>
+    writeFactions(loadFactions().filter((f) => f.id !== want)),
+  );
 }
 
 /**

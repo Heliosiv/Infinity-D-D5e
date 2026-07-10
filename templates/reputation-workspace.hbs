@@ -29,7 +29,7 @@
         <ul class="rw-list__items">
           {{#each factions}}
           <li class="rw-list__row {{#if selected}}is-selected{{/if}}">
-            <button type="button" class="rw-list__btn" data-action="selectFaction" data-faction-id="{{id}}">
+            <button type="button" class="rw-list__btn" data-action="selectFaction" data-faction-id="{{id}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
               <span class="rw-list__art" style="background-image:url('{{img}}');" aria-hidden="true"></span>
               <span class="rw-list__copy">
                 <strong class="rw-list__name">{{name}}</strong>
@@ -178,6 +178,7 @@
         </fieldset>
 
         <div class="rw-form__foot">
+          <span class="rw-save-status" role="status" aria-live="polite" data-save-status>{{saveStatus}}</span>
           <button type="button" class="rw-btn rw-btn--danger" data-action="deleteFaction">
             <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Faction
           </button>

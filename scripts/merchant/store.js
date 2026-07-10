@@ -18,6 +18,11 @@ import {
   resolveRarityWeights,
 } from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
+import {
+  getPrivateState,
+  isPrivateStateReady,
+  setPrivateState,
+} from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_SETTING_KEY = "merchants";
@@ -705,6 +710,8 @@ export function applyPreviewSell(merchant, totalGp) {
 
 /** Load every merchant record from the world setting. */
 export function loadMerchants() {
+  const privateValue = getPrivateState("merchants");
+  if (privateValue !== undefined) return privateValue.map(normalizeMerchant);
   try {
     const raw = globalThis.game?.settings?.get?.(
       MODULE_ID,
@@ -724,32 +731,51 @@ export function findMerchant(id) {
   return loadMerchants().find((m) => m.id === want) ?? null;
 }
 
-/** Persist the full merchant list. */
-export async function saveMerchants(merchants) {
-  if (!globalThis.game?.settings?.set) {
-    throw new Error("NotInFoundry: saveMerchants requires game.settings");
-  }
+let storeWriteChain = Promise.resolve();
+
+function runStoreWrite(operation) {
+  const result = storeWriteChain.then(operation, operation);
+  storeWriteChain = result.catch(() => {});
+  return result;
+}
+
+async function writeMerchants(merchants) {
   const cleaned = (Array.isArray(merchants) ? merchants : []).map(
     normalizeMerchant,
   );
-  await globalThis.game.settings.set(MODULE_ID, MERCHANT_SETTING_KEY, cleaned);
+  if (isPrivateStateReady()) await setPrivateState("merchants", cleaned);
+  else {
+    if (!globalThis.game?.settings?.set) {
+      throw new Error("NotInFoundry: saveMerchants requires game.settings");
+    }
+    await globalThis.game.settings.set(MODULE_ID, MERCHANT_SETTING_KEY, cleaned);
+  }
   return cleaned;
 }
 
+/** Persist the full merchant list through the process-wide write queue. */
+export function saveMerchants(merchants) {
+  return runStoreWrite(() => writeMerchants(merchants));
+}
+
 /** Insert-or-replace a single merchant; returns the saved list. */
-export async function upsertMerchant(merchant) {
+export function upsertMerchant(merchant) {
   const normalized = normalizeMerchant(merchant);
-  const list = loadMerchants();
-  const idx = list.findIndex((m) => m.id === normalized.id);
-  if (idx < 0) list.push(normalized);
-  else list[idx] = normalized;
-  return saveMerchants(list);
+  return runStoreWrite(() => {
+    const list = loadMerchants();
+    const idx = list.findIndex((m) => m.id === normalized.id);
+    if (idx < 0) list.push(normalized);
+    else list[idx] = normalized;
+    return writeMerchants(list);
+  });
 }
 
 /** Delete a merchant by id; returns the saved list. */
-export async function deleteMerchant(id) {
+export function deleteMerchant(id) {
   const want = toStr(id);
   if (!want) return loadMerchants();
-  const list = loadMerchants().filter((m) => m.id !== want);
-  return saveMerchants(list);
+  return runStoreWrite(() => {
+    const list = loadMerchants().filter((m) => m.id !== want);
+    return writeMerchants(list);
+  });
 }

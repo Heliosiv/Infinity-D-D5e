@@ -19,6 +19,62 @@ import { openSession, clearAllSessions } from "./merchant/session-state.js";
 
 const savedGame = globalThis.game;
 
+function makeTransactionActor(itemData = null) {
+  const items = new Map();
+  const actor = {
+    id: "actor-player1",
+    name: "Player One",
+    type: "character",
+    system: { currency: { pp: 0, gp: 1000, ep: 0, sp: 0, cp: 0 } },
+    items: { get: (id) => items.get(id) ?? null },
+    testUserPermission: (user) => user?.id === "player1",
+    async update(changes) {
+      for (const [path, value] of Object.entries(changes ?? {})) {
+        const match = /^system\.currency\.(pp|gp|ep|sp|cp)$/.exec(path);
+        if (match) this.system.currency[match[1]] = Number(value) || 0;
+      }
+      return this;
+    },
+    async createEmbeddedDocuments() {
+      return [];
+    },
+    async deleteEmbeddedDocuments(_type, ids) {
+      for (const id of ids) items.delete(id);
+      return ids;
+    },
+  };
+  if (itemData) {
+    const item = {
+      ...structuredClone(itemData),
+      parent: actor,
+      toObject() {
+        return structuredClone(itemData);
+      },
+      async update(changes) {
+        if ("system.quantity" in changes) {
+          this.system.quantity = Number(changes["system.quantity"]);
+        }
+        return this;
+      },
+    };
+    items.set(item.id, item);
+  }
+  return actor;
+}
+
+function actorAccess(actor) {
+  return {
+    users: {
+      activeGM: { id: "gm" },
+      get: (id) => ({ id, name: id, active: true, character: actor }),
+    },
+    actors: {
+      get: (id) => (id === actor.id ? actor : null),
+      find: (predicate) => (predicate(actor) ? actor : null),
+    },
+  };
+}
+
 try {
   // Pretend to be the player "player1"; the socket emit is a no-op sink.
   const emitted = [];
@@ -225,7 +281,7 @@ try {
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(makeTransactionActor()),
       socket: { emit() {}, on() {} },
     };
     for (const type of [
@@ -270,9 +326,16 @@ try {
       },
     ];
     const savedInner = globalThis.game;
+    const actor = makeTransactionActor({
+      id: "owned-item-id",
+      name: "Longsword",
+      type: "weapon",
+      system: { quantity: 1, price: { value: 100, denomination: "gp" } },
+      flags: {},
+    });
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(actor),
       settings: {
         get: () => savedList,
         set: (_m, _k, v) => {
@@ -331,7 +394,7 @@ try {
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(makeTransactionActor()),
       settings: {
         get: () => savedList,
         set: (_m, _k, v) => {
@@ -375,7 +438,7 @@ try {
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(makeTransactionActor()),
       socket: { emit() {}, on() {} },
     };
     const acks = [];
@@ -418,7 +481,7 @@ try {
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(makeTransactionActor()),
       settings: {
         get: () => savedList,
         set: (_m, _k, v) => {
@@ -449,9 +512,9 @@ try {
     assert.ok(
       acks.some(
         (a) =>
-          a.commitId === "cs2" && a.ok === false && a.reason === "no-price",
+          a.commitId === "cs2" && a.ok === false && a.reason === "no-target",
       ),
-      "an unpriceable sale is rejected with reason no-price",
+      "a sale for a non-owned item is rejected with reason no-target",
     );
     globalThis.game = savedInner;
     clearAllSessions();
@@ -481,7 +544,7 @@ try {
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },
-      users: { activeGM: { id: "gm" }, get: (id) => ({ id, name: id }) },
+      ...actorAccess(makeTransactionActor()),
       settings: {
         get: () => savedList,
         set: (_m, _k, v) => {

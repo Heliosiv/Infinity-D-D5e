@@ -49,6 +49,7 @@
     "adm-zip": "^0.5.17",
     "classic-level": "^3.0.0",
     "handlebars": "^4.7.9",
+    "playwright": "^1.61.1",
     "prettier": "^3.3.3"
   }
 }

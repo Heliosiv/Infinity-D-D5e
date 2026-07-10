@@ -100,6 +100,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     super(options);
     this._selectedId = null;
     this._scroll = null;
+    this._saveStatus = "All changes saved";
   }
 
   _onClose(options) {
@@ -139,6 +140,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       factions: factionList,
       hasCharacters: characters.length > 0,
       selected: selected ? this._buildSelectedView(selected, characters) : null,
+      saveStatus: this._saveStatus,
     };
   }
 
@@ -223,6 +225,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
         if (name === "revealed") this.render(false);
       } catch (error) {
         console.warn(`${MODULE_ID} | faction auto-save failed`, error);
+        ui.notifications?.error(`${MODULE_ID}: faction changes could not be saved.`);
       }
     });
   }
@@ -250,6 +253,8 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
         await this._persist(updatePerCharacter(faction, rowId, patch));
       } catch (error) {
         console.warn(`${MODULE_ID} | per-character update failed`, error);
+        this._setSaveStatus("Save failed — retry");
+        ui.notifications?.error(`${MODULE_ID}: character reputation could not be saved.`);
       }
     });
   }
@@ -270,14 +275,34 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       playerNote: data.playerNote ?? faction.playerNote,
       revealed: data.revealed === "on",
     });
-    await upsertFaction(next);
+    this._setSaveStatus("Saving…");
+    try {
+      await upsertFaction(next);
+      this._setSaveStatus("Saved");
+    } catch (error) {
+      this._setSaveStatus("Save failed — retry");
+      throw error;
+    }
+  }
+
+  _setSaveStatus(message) {
+    this._saveStatus = String(message || "");
+    const status = this.element?.querySelector?.("[data-save-status]");
+    if (status) status.textContent = this._saveStatus;
   }
 
   /** Save a faction, push the player projection, and re-render. */
   async _persist(faction) {
-    await upsertFaction(faction);
-    broadcastReputationState();
-    this.render(false);
+    this._setSaveStatus("Saving…");
+    try {
+      await upsertFaction(faction);
+      this._setSaveStatus("Saved");
+      broadcastReputationState();
+      this.render(false);
+    } catch (error) {
+      this._setSaveStatus("Save failed — retry");
+      throw error;
+    }
   }
 
   /* -------------------- actions -------------------- */

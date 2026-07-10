@@ -20,6 +20,8 @@
   min-height: 0;
   height: 100%;
   box-sizing: border-box;
+  color: var(--lf-text, #e7ecf6);
+  background: var(--lf-bg, #1d2330);
 }
 
 .infinity-reputation-view .rv-head {

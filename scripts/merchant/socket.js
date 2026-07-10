@@ -31,19 +31,40 @@ import {
   sanitizeMerchantForList,
   upsertMerchant,
 } from "./store.js";
-import { resolveUnitBuyPrice, resolveUnitSellPrice } from "./transaction.js";
-import { computeBargainOutcome, computePassiveBargainPct } from "./bargain.js";
+import {
+  executeBuy,
+  executeSell,
+  resolveUnitBuyPrice,
+  resolveUnitSellPrice,
+  rollbackBuyTransaction,
+  rollbackSellTransaction,
+} from "./transaction.js";
+import {
+  computeBargainOutcome,
+  computePassiveBargainPct,
+  runBargain,
+} from "./bargain.js";
 import {
   closeSession,
   consumeSeal,
   findSessionFor,
+  getBargain,
+  getCommitResult,
   getSession,
   listSessions,
   openSession,
   recordBargain,
+  recordCommitResult,
   runWithMerchantMutex,
 } from "./session-state.js";
 import { escapeHtml } from "../ui-util.js";
+import {
+  authenticateSocketPayload,
+  isActiveSocketUser,
+  isAuthoritativeGM,
+  isAuthoritativeGMSender,
+  withAuthenticatedOrigin,
+} from "../socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
@@ -77,6 +98,23 @@ export const MERCHANT_EVENTS = Object.freeze({
 });
 
 const MERCHANT_TYPES = new Set(Object.values(MERCHANT_EVENTS));
+const PLAYER_TO_GM_TYPES = new Set([
+  MERCHANT_EVENTS.SESSION_CLOSE,
+  MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+  MERCHANT_EVENTS.BARGAIN_RESULT,
+  MERCHANT_EVENTS.COMMIT_PURCHASE,
+  MERCHANT_EVENTS.COMMIT_SALE,
+  MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+  MERCHANT_EVENTS.SHOP_REQUEST,
+]);
+const GM_TO_CLIENT_TYPES = new Set([
+  MERCHANT_EVENTS.SESSION_OPEN,
+  MERCHANT_EVENTS.BARGAIN_SEAL,
+  MERCHANT_EVENTS.COMMIT_RESULT,
+  MERCHANT_EVENTS.STATE_UPDATE,
+  MERCHANT_EVENTS.SHOP_LIST_REPLY,
+  MERCHANT_EVENTS.SHOP_RESULT,
+]);
 
 /**
  * Required-field rules per inbound type. `req` fields must be non-empty
@@ -87,8 +125,8 @@ const MERCHANT_TYPES = new Set(Object.values(MERCHANT_EVENTS));
  * not field-validated (broadcasts the receiver already scopes by target).
  */
 const PAYLOAD_RULES = Object.freeze({
-  [MERCHANT_EVENTS.COMMIT_PURCHASE]: { req: ["sessionId", "itemUuid"], num: ["qty", "totalGp"] },
-  [MERCHANT_EVENTS.COMMIT_SALE]: { req: ["sessionId", "itemUuid"], num: ["qty", "totalGp"] },
+  [MERCHANT_EVENTS.COMMIT_PURCHASE]: { req: ["sessionId", "itemUuid", "commitId"], num: ["qty", "totalGp"] },
+  [MERCHANT_EVENTS.COMMIT_SALE]: { req: ["sessionId", "itemUuid", "commitId"], num: ["qty", "totalGp"] },
   [MERCHANT_EVENTS.BARGAIN_RESULT]: { req: ["sessionId", "itemUuid", "side"], num: ["rollTotal"] },
   [MERCHANT_EVENTS.SESSION_CLOSE]: { req: ["sessionId"], num: [] },
   [MERCHANT_EVENTS.SHOP_REQUEST]: { req: ["merchantId"], num: [] },
@@ -156,7 +194,9 @@ export function registerMerchantSocket() {
   const socket = globalThis.game?.socket;
   if (!socket || registered) return registered;
   if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, receiveMerchantPayload);
+  socket.on(SOCKET_NAME, (payload, senderUserId) =>
+    receiveMerchantPayload(payload, senderUserId),
+  );
   registered = true;
   return true;
 }
@@ -166,7 +206,7 @@ export function registerMerchantSocket() {
  * authoritative writes. Only the active GM (the one Foundry deems
  * "primary") handles player→GM messages.
  */
-function isAuthoritativeGM() {
+function legacyIsAuthoritativeGM() {
   const game = globalThis.game;
   if (!game?.user?.isGM) return false;
   const active = game.users?.activeGM;
@@ -215,7 +255,7 @@ export function emitMerchantEvent(type, data = {}) {
  * Receive
  * ------------------------------------------------------------------ */
 
-export async function receiveMerchantPayload(payload) {
+export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   if (!payload || typeof payload !== "object") return;
   if (!MERCHANT_TYPES.has(payload.type)) return;
   if (!isValidPayload(payload)) {
@@ -224,12 +264,18 @@ export async function receiveMerchantPayload(payload) {
   }
 
   // Suppress echo to self — we already dispatched locally on emit.
-  if (
-    payload.originUserId &&
-    payload.originUserId === globalThis.game?.user?.id
-  ) {
+  const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
+  if (!senderId) {
+    console.warn(`${MODULE_ID} | dropped unauthenticated ${payload.type} frame`);
     return;
   }
+  if (senderId === globalThis.game?.user?.id) return;
+  if (PLAYER_TO_GM_TYPES.has(payload.type)) {
+    if (!isAuthoritativeGM() || !isActiveSocketUser(senderId)) return;
+  } else if (GM_TO_CLIENT_TYPES.has(payload.type)) {
+    if (!isAuthoritativeGMSender(senderId)) return;
+  }
+  payload = withAuthenticatedOrigin(payload, senderId);
 
   dispatchToListeners(payload.type, payload);
 
@@ -269,7 +315,8 @@ export async function receiveMerchantPayload(payload) {
       // are echo-suppressed here.)
       if (isAuthoritativeGM() && payload.sessionId) {
         try {
-          closeSession(payload.sessionId);
+          const session = getSession(payload.sessionId);
+          if (session?.viewerUserId === senderId) closeSession(payload.sessionId);
         } catch (error) {
           console.warn(`${MODULE_ID} | session-close cleanup`, error);
         }
@@ -310,31 +357,33 @@ export async function receiveMerchantPayload(payload) {
  * ------------------------------------------------------------------ */
 
 async function handleBargainResult(payload) {
-  const { sessionId, itemUuid, side, rollTotal, skillId } = payload;
+  const { sessionId, itemUuid, side, skillId } = payload;
   const session = getSession(sessionId);
   if (!session) return;
   if (session.viewerUserId !== payload.originUserId) return;
   const merchant = findMerchant(session.merchantId);
   if (!merchant) return;
-  // The roll runs on the player's own client, so rollTotal is client-asserted.
-  // Foundry's socket can't authenticate it, but we can bound it to a window a
-  // real d20 + skill modifier (advantage/expertise/guidance included) can reach
-  // so a forged client can't send rollTotal: 9999. Out-of-range values are
-  // logged + clamped, which surfaces tampering rather than silently honoring it.
-  const ROLL_MIN = -10;
-  const ROLL_MAX = 50;
-  const rawRoll = Number(rollTotal);
-  let safeRoll = Number.isFinite(rawRoll) ? rawRoll : 0;
-  if (safeRoll < ROLL_MIN || safeRoll > ROLL_MAX) {
-    console.warn(
-      `${MODULE_ID} | bargain-result: implausible rollTotal ${rollTotal} from ${payload.originUserId} — clamping to [${ROLL_MIN}, ${ROLL_MAX}]`,
-    );
-    safeRoll = Math.max(ROLL_MIN, Math.min(ROLL_MAX, safeRoll));
+  if (!merchant.allowedSkills?.includes?.(skillId)) return;
+  const actor = resolveSessionActor(session, payload.actorId);
+  if (!actor) {
+    emitBargainFailure(payload, session, "no-actor");
+    return;
   }
-  // Per-merchant success/fail swing (no crit distinction).
   const tiers = buildMerchantBargainTiers(merchant);
+  const rolled = await runBargain({
+    actor,
+    skillId,
+    dc: merchant.bargainDC,
+    tiers,
+    advantage: merchant.bargainAdvantage,
+    chatMessage: true,
+  });
+  if (!rolled.ok) {
+    emitBargainFailure(payload, session, rolled.reason ?? "skill-roll-failed");
+    return;
+  }
   const outcome = computeBargainOutcome(
-    safeRoll,
+    rolled.rollTotal,
     Number(merchant.bargainDC) || 0,
     tiers,
   );
@@ -346,6 +395,7 @@ async function handleBargainResult(payload) {
   });
   if (!seal) return;
   emitMerchantEvent(MERCHANT_EVENTS.BARGAIN_SEAL, {
+    ok: true,
     sessionId,
     itemUuid,
     side,
@@ -353,8 +403,19 @@ async function handleBargainResult(payload) {
     tier: seal.tier,
     deltaPct: seal.deltaPct,
     skillId,
-    rollTotal,
+    rollTotal: rolled.rollTotal,
     dc: merchant.bargainDC,
+    targetUserId: session.viewerUserId,
+  });
+}
+
+function emitBargainFailure(payload, session, reason) {
+  emitMerchantEvent(MERCHANT_EVENTS.BARGAIN_SEAL, {
+    ok: false,
+    reason,
+    sessionId: payload.sessionId,
+    itemUuid: payload.itemUuid,
+    side: payload.side,
     targetUserId: session.viewerUserId,
   });
 }
@@ -371,8 +432,18 @@ async function handleCommitPurchase(payload) {
   if (session.viewerUserId !== payload.originUserId) return;
   const requested = Math.max(1, Math.floor(Number(qty) || 1));
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
+  const actor = resolveSessionActor(session, payload.actorId);
+  if (!actor) {
+    emitCommitResult(payload, false, "no-actor");
+    return;
+  }
 
   await runWithMerchantMutex(session.merchantId, async () => {
+    const prior = getCommitResult(sessionId, payload.commitId);
+    if (prior) {
+      emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
+      return;
+    }
     const merchant = findMerchant(session.merchantId);
     if (!merchant) {
       console.warn(
@@ -402,9 +473,10 @@ async function handleCommitPurchase(payload) {
     // Verify + burn the bargain seal here (inside the mutex) and keep its
     // delta for the GM-side reprice. A missing/expired seal simply prices at
     // base (resolveUnitBuyPrice ignores a null seal) — but say so.
-    const seal = sealId
-      ? consumeSeal(sessionId, sealId, { itemUuid, side: "buy" })
+    const candidateSeal = sealId
+      ? getBargain(sessionId, itemUuid, "buy")
       : null;
+    const seal = candidateSeal?.sealId === sealId ? candidateSeal : null;
     if (sealId && !seal) {
       console.warn(
         `${MODULE_ID} | commit-purchase: seal "${sealId}" not found/expired — pricing at base`,
@@ -418,17 +490,17 @@ async function handleCommitPurchase(payload) {
     // nothing, and a reprice throw can't fall back to crediting an attacker's
     // arbitrary figure into the GM-owned coffer.
     let trueTotal = 0;
+    let unitGp = 0;
+    let item = null;
+    let passivePct = 0;
     try {
       const itemDoc = await fromUuid(itemUuid);
-      const item = itemDoc?.toObject?.() ?? itemDoc ?? null;
+      item = itemDoc?.toObject?.() ?? itemDoc ?? null;
       // Re-derive the passive haggle nudge from the buyer's own actor so the
       // GM price matches what the player paid (a seal supersedes it inside
       // resolveUnitBuyPrice, so this is a no-op when an active bargain sealed).
-      const passivePct = computePassiveBargainPct(
-        merchant,
-        resolveSessionActor(session),
-      );
-      const unitGp = resolveUnitBuyPrice({
+      passivePct = computePassiveBargainPct(merchant, actor);
+      unitGp = resolveUnitBuyPrice({
         merchant,
         row,
         item,
@@ -446,6 +518,25 @@ async function handleCommitPurchase(payload) {
         `${MODULE_ID} | commit-purchase price mismatch (client ${clientTotalGp}, server ${trueTotal}) — using server price`,
       );
     }
+    if (!(trueTotal > 0)) {
+      emitCommitResult(payload, false, "no-price");
+      return;
+    }
+
+    const actorResult = await executeBuy({
+      actor,
+      merchant,
+      row,
+      item,
+      qty: requested,
+      seal,
+      passivePct,
+      notify: false,
+    });
+    if (!actorResult.ok) {
+      emitCommitResult(payload, false, actorResult.reason ?? "actor-write-failed");
+      return;
+    }
 
     let updated = merchant;
     // Finite stock is guaranteed sufficient here (oversell rejected above),
@@ -459,9 +550,26 @@ async function handleCommitPurchase(payload) {
     }
     // The merchant gains the gold the player paid (no-op if unlimited purse).
     updated = adjustMerchantGold(updated, trueTotal);
-    await upsertMerchant(updated);
+    try {
+      await upsertMerchant(updated);
+    } catch (error) {
+      console.error(`${MODULE_ID} | purchase merchant persistence failed`, error);
+      const rolledBack = await rollbackBuyTransaction(actor, actorResult);
+      emitCommitResult(
+        payload,
+        false,
+        rolledBack ? "merchant-write-failed" : "compensation-failed",
+      );
+      return;
+    }
+    if (seal) consumeSeal(sessionId, sealId, { itemUuid, side: "buy" });
     await broadcastState(updated);
-    emitCommitResult(payload, true);
+    emitCommitResult(payload, true, "", {
+      totalGp: actorResult.totalGp,
+      unitGp: actorResult.unitGp,
+      qty: actorResult.qty,
+      itemName: actorResult.itemName,
+    });
   });
 }
 
@@ -475,10 +583,25 @@ async function handleCommitSale(payload) {
   if (session.viewerUserId !== payload.originUserId) return;
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
   const requested = Math.max(1, Math.floor(Number(payload.qty) || 1));
+  const actor = resolveSessionActor(session, payload.actorId);
+  if (!actor) {
+    emitCommitResult(payload, false, "no-actor");
+    return;
+  }
   // Sales don't change stock, but the merchant pays out — spend its gold
   // (clamped at 0; no-op if the purse is unlimited). Seal consumption runs
   // inside the mutex too, matching the buy path.
   await runWithMerchantMutex(session.merchantId, async () => {
+    const prior = getCommitResult(sessionId, payload.commitId);
+    if (prior) {
+      emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
+      return;
+    }
+    const ownedItem = actor.items?.get?.(itemUuid) ?? null;
+    if (!ownedItem) {
+      emitCommitResult(payload, false, "no-target");
+      return;
+    }
     const merchant = findMerchant(session.merchantId);
     if (!merchant) {
       console.warn(
@@ -487,9 +610,10 @@ async function handleCommitSale(payload) {
       emitCommitResult(payload, false, "merchant-gone");
       return;
     }
-    const seal = sealId
-      ? consumeSeal(sessionId, sealId, { itemUuid, side: "sell" })
+    const candidateSeal = sealId
+      ? getBargain(sessionId, itemUuid, "sell")
       : null;
+    const seal = candidateSeal?.sealId === sealId ? candidateSeal : null;
     if (sealId && !seal) {
       console.warn(
         `${MODULE_ID} | commit-sale: seal "${sealId}" not found/expired`,
@@ -503,13 +627,10 @@ async function handleCommitSale(payload) {
     // the client total only when no usable snapshot was sent.
     let trueTotal = 0;
     let priced = false;
-    const snap = payload.itemSnapshot;
+    const snap = ownedItem.toObject?.() ?? ownedItem;
     if (snap && typeof snap === "object") {
       try {
-        const passivePct = computePassiveBargainPct(
-          merchant,
-          resolveSessionActor(session),
-        );
+        const passivePct = computePassiveBargainPct(merchant, actor);
         const unitGp = resolveUnitSellPrice({
           merchant,
           item: snap,
@@ -538,18 +659,51 @@ async function handleCommitSale(payload) {
     }
     // Clamp to what the merchant can actually pay (a concurrent/stale sell may
     // exceed the current purse); adjustMerchantGold also floors at 0.
-    const payout = merchantCanAfford(merchant, trueTotal)
-      ? trueTotal
-      : Math.max(0, Number(merchant.goldOnHand) || 0);
+    if (!merchantCanAfford(merchant, trueTotal)) {
+      emitCommitResult(payload, false, "merchant-cannot-afford");
+      return;
+    }
+    const payout = trueTotal;
     if (payout !== trueTotal) {
       console.warn(
         `${MODULE_ID} | commit-sale: payout ${trueTotal} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — clamped to ${payout}`,
       );
     }
+    const passivePct = computePassiveBargainPct(merchant, actor);
+    const actorResult = await executeSell({
+      actor,
+      merchant,
+      ownedItem,
+      qty: requested,
+      seal,
+      passivePct,
+      notify: false,
+    });
+    if (!actorResult.ok) {
+      emitCommitResult(payload, false, actorResult.reason ?? "actor-write-failed");
+      return;
+    }
     const updated = adjustMerchantGold(merchant, -payout);
-    await upsertMerchant(updated);
+    try {
+      await upsertMerchant(updated);
+    } catch (error) {
+      console.error(`${MODULE_ID} | sale merchant persistence failed`, error);
+      const rolledBack = await rollbackSellTransaction(actor, actorResult);
+      emitCommitResult(
+        payload,
+        false,
+        rolledBack ? "merchant-write-failed" : "compensation-failed",
+      );
+      return;
+    }
+    if (seal) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
     await broadcastState(updated);
-    emitCommitResult(payload, true);
+    emitCommitResult(payload, true, "", {
+      totalGp: actorResult.totalGp,
+      unitGp: actorResult.unitGp,
+      qty: actorResult.qty,
+      itemName: actorResult.itemName,
+    });
   });
 }
 
@@ -558,12 +712,22 @@ async function handleCommitSale(payload) {
  * client's `resolvePlayerActor` (assigned character, else first owned
  * character) so the GM can re-derive the same passive haggle nudge.
  */
-function resolveSessionActor(session) {
+function resolveSessionActor(session, requestedActorId = null) {
   const userId = session?.viewerUserId;
   if (!userId) return null;
   const users = globalThis.game?.users;
   const user = users?.get?.(userId);
   if (!user) return null;
+  if (requestedActorId) {
+    const requested = globalThis.game?.actors?.get?.(requestedActorId);
+    if (
+      requested?.type === "character" &&
+      requested.testUserPermission?.(user, "OWNER")
+    ) {
+      return requested;
+    }
+    return null;
+  }
   if (user.character) return user.character;
   const actors = globalThis.game?.actors;
   return (
@@ -614,15 +778,23 @@ export async function commitMerchantWrite(
 /** Acknowledge a commit back to the buyer/seller so a trade can't silently
  *  half-complete (actor mutated, shop never updated) without the player knowing.
  *  Scoped to the originating user; correlated by the player's commitId. */
-function emitCommitResult(commitPayload, ok, reason = "") {
-  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, {
+function emitCommitResult(commitPayload, ok, reason = "", details = {}) {
+  const result = {
     targetUserId: commitPayload.originUserId,
     sessionId: commitPayload.sessionId,
     commitId: commitPayload.commitId ?? null,
     side: commitPayload.type === MERCHANT_EVENTS.COMMIT_SALE ? "sell" : "buy",
     ok: ok === true,
     reason,
-  });
+    ...details,
+  };
+  const recorded = recordCommitResult(
+    commitPayload.sessionId,
+    commitPayload.commitId,
+    result,
+  );
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, recorded ?? result);
+  return recorded ?? result;
 }
 
 /* ------------------------------------------------------------------ *

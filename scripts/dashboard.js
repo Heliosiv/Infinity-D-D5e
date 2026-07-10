@@ -12,6 +12,7 @@
  */
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
+import { runAsFullGM } from "./permissions.js";
 import { getTool, getTools } from "./tool-registry.js";
 import { prettyCategory, notify, escapeHtml } from "./ui-util.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
@@ -82,8 +83,10 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   /** Open (or focus) the singleton dashboard instance. */
   static open() {
-    playModuleSound(SOUND_EVENTS.UI_OPEN);
-    return openSingleton(InfinityDashboardApp, () => new InfinityDashboardApp());
+    return runAsFullGM(() => {
+      playModuleSound(SOUND_EVENTS.UI_OPEN);
+      return openSingleton(InfinityDashboardApp, () => new InfinityDashboardApp());
+    });
   }
 
   async _prepareContext() {

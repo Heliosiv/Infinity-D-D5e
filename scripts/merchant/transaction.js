@@ -38,6 +38,24 @@ const NON_SELLABLE_ITEM_TYPES = new Set([
   "spell",
 ]);
 
+function snapshotCurrency(currency = {}) {
+  return Object.fromEntries(
+    ["pp", "gp", "ep", "sp", "cp"].map((denom) => [
+      denom,
+      Number(currency?.[denom]) || 0,
+    ]),
+  );
+}
+
+function currencyUpdate(currency) {
+  return Object.fromEntries(
+    Object.entries(snapshotCurrency(currency)).map(([denom, value]) => [
+      `system.currency.${denom}`,
+      value,
+    ]),
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Sell-eligibility
  * ------------------------------------------------------------------ */
@@ -150,7 +168,7 @@ export async function executeBuy({
   }
 
   // 1. Funds check.
-  const before = actor.system?.currency ?? {};
+  const before = snapshotCurrency(actor.system?.currency);
   const planned = planCurrencyDeduction(before, totalGp);
   if (!planned) {
     if (notify) {
@@ -233,6 +251,7 @@ export async function executeBuy({
     createdItemIds: (Array.isArray(created) ? created : [])
       .map((doc) => doc?.id)
       .filter(Boolean),
+    currencyBefore: before,
   };
 }
 
@@ -326,7 +345,7 @@ export async function executeSell({
     sp: Math.floor((cpTotal % 100) / 10),
     cp: cpTotal % 10,
   });
-  const cur = actor.system?.currency ?? {};
+  const cur = snapshotCurrency(actor.system?.currency);
   try {
     await actor.update({
       "system.currency.pp": (cur.pp ?? 0) + add.pp,
@@ -386,7 +405,65 @@ export async function executeSell({
       system: { price: itemData.system?.price ?? {} },
       flags: itemData.flags ?? {},
     },
+    rollback: {
+      currencyBefore: cur,
+      itemSnapshot: preSaleSnapshot,
+      removedWholeStack,
+      previousQuantity: inStack,
+    },
   };
+}
+
+/** Compensate a completed buy when the merchant-side persistence fails. */
+export async function rollbackBuyTransaction(actor, result) {
+  if (!actor || !result?.ok) return false;
+  let ok = true;
+  try {
+    const ids = Array.isArray(result.createdItemIds)
+      ? result.createdItemIds.filter(Boolean)
+      : [];
+    if (ids.length > 0) await actor.deleteEmbeddedDocuments("Item", ids);
+  } catch (error) {
+    ok = false;
+    console.error(`${MODULE_ID} | buy compensation item rollback failed`, error);
+  }
+  try {
+    await actor.update(currencyUpdate(result.currencyBefore));
+  } catch (error) {
+    ok = false;
+    console.error(`${MODULE_ID} | buy compensation currency rollback failed`, error);
+  }
+  return ok;
+}
+
+/** Compensate a completed sale when the merchant-side persistence fails. */
+export async function rollbackSellTransaction(actor, result) {
+  if (!actor || !result?.ok || !result.rollback) return false;
+  let ok = true;
+  try {
+    await actor.update(currencyUpdate(result.rollback.currencyBefore));
+  } catch (error) {
+    ok = false;
+    console.error(`${MODULE_ID} | sell compensation currency rollback failed`, error);
+  }
+  try {
+    if (result.rollback.removedWholeStack) {
+      const snapshot = cloneItemSnapshot(result.rollback.itemSnapshot);
+      if (!snapshot) throw new Error("Missing sale rollback item snapshot");
+      delete snapshot._id;
+      await actor.createEmbeddedDocuments("Item", [snapshot]);
+    } else {
+      const item = actor.items?.get?.(result.itemId);
+      if (!item) throw new Error("Sale rollback item no longer exists");
+      await item.update({
+        "system.quantity": result.rollback.previousQuantity,
+      });
+    }
+  } catch (error) {
+    ok = false;
+    console.error(`${MODULE_ID} | sell compensation item rollback failed`, error);
+  }
+  return ok;
 }
 
 /* ------------------------------------------------------------------ *

@@ -323,12 +323,21 @@ async function runForageDriveInner({ dc, targetActorIds }) {
 
   // Apply the planned deposits against the real actors.
   const actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  let landedFood = 0;
+  let landedWater = 0;
+  const depositErrors = [];
   for (const dep of plan.deposits) {
     const sink = actorById.get(dep.actorId);
     if (!sink) continue;
-    if (foodRes && dep.food > 0) await depositResource(sink, foodRes, dep.food);
+    if (foodRes && dep.food > 0) {
+      const applied = await depositResource(sink, foodRes, dep.food);
+      landedFood += applied;
+      if (applied < dep.food) depositErrors.push(`${sink.name}: food deposit failed`);
+    }
     if (waterRes && dep.water > 0) {
-      await depositResource(sink, waterRes, dep.water);
+      const applied = await depositResource(sink, waterRes, dep.water);
+      landedWater += applied;
+      if (applied < dep.water) depositErrors.push(`${sink.name}: water deposit failed`);
     }
   }
 
@@ -340,14 +349,16 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     env: driveEnv,
     perForager: plan.perForager,
     stashActor,
-    totalFood: plan.totalFood,
-    totalWater: plan.totalWater,
+    totalFood: landedFood,
+    totalWater: landedWater,
+    depositErrors,
   });
   return {
     dc: driveEnv.dc,
     perForager: plan.perForager,
-    totalFood: plan.totalFood,
-    totalWater: plan.totalWater,
+    totalFood: landedFood,
+    totalWater: landedWater,
+    depositErrors,
     stashActor,
   };
 }
@@ -358,6 +369,7 @@ async function postForageDriveReport({
   stashActor,
   totalFood,
   totalWater,
+  depositErrors = [],
 }) {
   if (typeof globalThis.ChatMessage?.create !== "function") return null;
   const rows = perForager
@@ -378,11 +390,15 @@ async function postForageDriveReport({
   const dest = stashActor
     ? `Added to <strong>${escapeHtml(stashActor.name)}</strong>'s stash`
     : "Added to each forager's pack";
+  const errorLine = depositErrors.length
+    ? `<div style="color:#f2bd61;">Some deposits failed: ${escapeHtml(depositErrors.join("; "))}</div>`
+    : "";
   const content = `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
       <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeHtml(env.dc)}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
       <div>${dest}: <strong>+${totalFood} food / +${totalWater} water</strong> total.</div>
+      ${errorLine}
     </div>`;
   const speaker = globalThis.ChatMessage.getSpeaker?.({
     alias: "Quartermaster",
@@ -441,9 +457,16 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     const yld = foragedByActor.get(actor.id);
     if (!yld || !yld.success) continue;
     const sink = sourceForMember.get(actor.id) ?? actor;
-    if (foodRes && yld.food > 0) await depositResource(sink, foodRes, yld.food);
+    yld.landedFood = 0;
+    yld.landedWater = 0;
+    yld.depositErrors = [];
+    if (foodRes && yld.food > 0) {
+      yld.landedFood = await depositResource(sink, foodRes, yld.food);
+      if (yld.landedFood < yld.food) yld.depositErrors.push("food deposit failed");
+    }
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
-      await depositResource(sink, waterRes, yld.water);
+      yld.landedWater = await depositResource(sink, waterRes, yld.water);
+      if (yld.landedWater < yld.water) yld.depositErrors.push("water deposit failed");
     }
   }
 
@@ -457,12 +480,14 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     const yld = foragedByActor.get(row.actorId);
     row.foraged = yld
       ? {
-          food: yld.food ?? 0,
-          water: yld.water ?? 0,
+          food: yld.landedFood ?? 0,
+          water: yld.landedWater ?? 0,
           success: yld.success,
           attempted: true,
+          errors: yld.depositErrors ?? [],
         }
       : { food: 0, water: 0, success: false, attempted: false };
+    if (yld?.depositErrors?.length) row.errors.push(...yld.depositErrors);
   }
 
   // 4) Suggest exhaustion from shortfalls (GM applies).
@@ -478,6 +503,9 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
   });
 
   // 5) Persist + broadcast + report.
+  const hasErrors =
+    report.perActor.some((row) => row.errors?.length > 0) ||
+    Object.values(report.party ?? {}).some((entry) => Boolean(entry?.error));
   const result = {
     day: state.lastSeenDay,
     days,
@@ -485,6 +513,8 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     perActor: report.perActor,
     party: report.party,
     suggestions,
+    status: hasErrors ? "partial" : "complete",
+    hasErrors,
     ranAt: null,
   };
   await setLastUpkeepResult(result);
@@ -494,6 +524,11 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     environmentId: result.environmentId,
   });
   await postUpkeepReport({ env, result });
+  if (hasErrors) {
+    globalThis.ui?.notifications?.error(
+      `${MODULE_ID}: upkeep completed with inventory write failures. Review the Quartermaster report before continuing.`,
+    );
+  }
   if (suggestions.length > 0) await promptApplyExhaustion(suggestions);
   return result;
 }
@@ -662,6 +697,7 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
         name: actor.name,
         consumed: {},
         shortfalls: {},
+        errors: [],
       };
       perActorMap.set(actor.id, row);
     }
@@ -696,6 +732,7 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
         const row = ensureRow(member);
         row.consumed[resource.id] = res.consumed;
         row.shortfalls[resource.id] = res.shortfall;
+        if (res.error) row.errors.push(`${resource.label}: ${res.error}`);
         // Normalize the canonical food/water keys the report/exhaustion expect.
         if (isFood) {
           row.consumed.food = (row.consumed.food ?? 0) + res.consumed;
@@ -718,8 +755,12 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
 async function consumeFromActor(actor, resourceDef, amount) {
   const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
   const plan = planConsumption({ matches, amount });
-  await applyConsumptionOps(actor, plan.ops);
-  return { consumed: plan.consumed, shortfall: plan.shortfall };
+  const applied = await applyConsumptionOps(actor, plan.ops, matches);
+  return {
+    consumed: applied.consumed,
+    shortfall: Math.max(0, Math.floor(Number(amount) || 0) - applied.consumed),
+    error: applied.error,
+  };
 }
 
 /**
@@ -744,36 +785,63 @@ async function consumePartyResource(roster, resourceDef, amount) {
   }
   let remaining = amount;
   let consumed = 0;
+  const errors = [];
   for (const actor of order) {
     if (remaining <= 0) break;
     const res = await consumeFromActor(actor, resourceDef, remaining);
     consumed += res.consumed;
     remaining -= res.consumed;
+    if (res.error) errors.push(`${actor.name}: ${res.error}`);
   }
-  return { consumed, shortfall: Math.max(0, remaining) };
+  return {
+    consumed,
+    shortfall: Math.max(0, remaining),
+    error: errors.join("; "),
+  };
 }
 
-async function applyConsumptionOps(actor, ops) {
+export async function applyConsumptionOps(actor, ops, matches = []) {
+  const quantities = new Map(
+    matches.map((match) => [String(match.id), Math.max(0, Number(match.quantity) || 0)]),
+  );
   const deletes = ops.filter((o) => o.op === "delete").map((o) => o.id);
   const updates = ops
     .filter((o) => o.op === "decrement")
     .map((o) => ({ _id: o.id, "system.quantity": o.to }));
-  try {
-    if (updates.length > 0) {
+  let consumed = 0;
+  const failures = [];
+  if (updates.length > 0) {
+    try {
       await actor.updateEmbeddedDocuments("Item", updates);
+      consumed += updates.reduce(
+        (sum, update) =>
+          sum + Math.max(0, (quantities.get(String(update._id)) ?? 0) - update["system.quantity"]),
+        0,
+      );
+    } catch (error) {
+      failures.push(error);
+      console.error(`${MODULE_ID} | consumption update failed on ${actor?.name}`, error);
     }
-    if (deletes.length > 0) {
-      await actor.deleteEmbeddedDocuments("Item", deletes);
-    }
-  } catch (error) {
-    console.error(
-      `${MODULE_ID} | consumption write failed on ${actor?.name}`,
-      error,
-    );
   }
+  if (deletes.length > 0) {
+    try {
+      await actor.deleteEmbeddedDocuments("Item", deletes);
+      consumed += deletes.reduce(
+        (sum, id) => sum + (quantities.get(String(id)) ?? 0),
+        0,
+      );
+    } catch (error) {
+      failures.push(error);
+      console.error(`${MODULE_ID} | consumption delete failed on ${actor?.name}`, error);
+    }
+  }
+  return {
+    consumed,
+    error: failures.length > 0 ? `${failures.length} inventory write(s) failed` : "",
+  };
 }
 
-async function depositResource(actor, resourceDef, amount) {
+export async function depositResource(actor, resourceDef, amount) {
   if (!amount || amount <= 0) return 0;
   const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
   let template = null;
@@ -786,6 +854,7 @@ async function depositResource(actor, resourceDef, amount) {
       template = null;
     }
   }
+  if (!template) template = defaultResourceTemplate(resourceDef);
   const plan = planDeposit({ matches, amount, templateItem: template });
   try {
     if (plan.op === "bump") {
@@ -816,6 +885,21 @@ async function depositResource(actor, resourceDef, amount) {
   return 0; // op "none": no existing stack and no template to create from
 }
 
+function defaultResourceTemplate(resourceDef) {
+  const label = String(resourceDef?.label ?? resourceDef?.id ?? "Supply").trim();
+  return {
+    name: label,
+    type: "loot",
+    img: "icons/containers/bags/sack-simple-leather-brown.webp",
+    system: {
+      quantity: 1,
+      weight: { value: 0, units: "lb" },
+      price: { value: 0, denomination: "gp" },
+      description: { value: "Created by Infinity D&D5e Quartermaster." },
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Reporting + exhaustion
  * ------------------------------------------------------------------ */
@@ -839,17 +923,23 @@ async function postUpkeepReport({ env, result }) {
           ? `<span style="color:#ef6f74;">short ${short.join(", ")}</span>`
           : `<span style="color:#6dd5a2;">supplied</span>`;
       const forageLabel = parts.length > 0 ? ` · ${parts.join(", ")}` : "";
-      return `<li><strong>${escapeHtml(r.name)}</strong> — ${shortLabel}${forageLabel}</li>`;
+      const errorLabel = r.errors?.length
+        ? ` · <span style="color:#f2bd61;">write failed: ${escapeHtml(r.errors.join("; "))}</span>`
+        : "";
+      return `<li><strong>${escapeHtml(r.name)}</strong> — ${shortLabel}${forageLabel}${errorLabel}</li>`;
     })
     .join("");
   // Render every party-scope resource shortfall, not just the hard-coded
   // "light" id — a GM-added party resource is keyed by its own id, so a literal
   // `result.party.light` lookup silently dropped its warning.
   const partyLines = Object.entries(result.party ?? {})
-    .filter(([, r]) => (r?.shortfall ?? 0) > 0)
+    .filter(([, r]) => (r?.shortfall ?? 0) > 0 || r?.error)
     .map(([id, r]) => {
       const label = id === "light" ? "Light" : prettyResource(id) || id;
       const suffix = id === "light" ? " of torches" : "";
+      if (r?.error) {
+        return `<div style="color:#f2bd61;">${escapeHtml(label)}: ${escapeHtml(r.error)}.</div>`;
+      }
       return `<div style="color:#ef6f74;">${escapeHtml(label)}: ${r.shortfall} short${suffix}.</div>`;
     })
     .join("");

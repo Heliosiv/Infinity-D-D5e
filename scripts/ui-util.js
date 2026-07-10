@@ -156,6 +156,13 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "not-sellable": "That item can't be sold.",
   "not-bought-here": "This merchant won't buy that.",
   "not-enough": "You don't have that many to sell.",
+  "merchant-cannot-afford": "The merchant doesn't have enough gold for that purchase.",
+  "merchant-write-failed": "The shop couldn't save the transaction; your character was restored.",
+  "compensation-failed": "The transaction could not be restored automatically. Ask your GM to review it.",
+  "no-session": "That shop session expired. Reopen the shop and try again.",
+  "merchant-gone": "That merchant is no longer available.",
+  "item-unavailable": "That item is no longer available.",
+  "actor-write-failed": "Your character could not be updated.",
   "no-skill": "Pick a skill to haggle with.",
   "skill-roll-failed": "The haggle roll didn't go through — try again.",
   cancelled: "Cancelled.",
@@ -166,6 +173,42 @@ export function friendlyTransactionError(reason) {
   return (
     TRANSACTION_ERROR_MESSAGES[key] ?? "That didn't go through — try again."
   );
+}
+
+const INTERACTIVE_SELECTOR = [
+  "button",
+  "a[href]",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  "[contenteditable='true']",
+  "[role='button']",
+  "[role='link']",
+  "[role='menuitem']",
+  "[role='tab']",
+  "[role='checkbox']",
+  "[role='radio']",
+  "[role='switch']",
+].join(",");
+
+/** Whether a keyboard event originated in a native or ARIA interactive control. */
+export function isInteractiveKeyboardTarget(target) {
+  return Boolean(target?.closest?.(INTERACTIVE_SELECTOR));
+}
+
+export async function confirmDestructive({ title, content, icon = "fa-solid fa-triangle-exclamation" }) {
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.confirm !== "function") return false;
+  try {
+    return await DialogV2.confirm({
+      window: { title, icon },
+      content,
+      rejectClose: false,
+    });
+  } catch {
+    return false;
+  }
 }
 
 /** "very-rare" -> "Very Rare" for rarity badges. Empty in -> empty out. */

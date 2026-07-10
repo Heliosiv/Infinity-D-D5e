@@ -12,6 +12,14 @@
  * - Listeners receive every broadcast; non-target roles self-filter.
  */
 
+import {
+  authenticateSocketPayload,
+  isActiveSocketUser,
+  isAuthoritativeGM as sharedIsAuthoritativeGM,
+  isAuthoritativeGMSender,
+  withAuthenticatedOrigin,
+} from "../socket-authority.js";
+
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
 
@@ -64,7 +72,9 @@ export function registerResourceSocket() {
   const socket = globalThis.game?.socket;
   if (!socket || registered) return registered;
   if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, receiveResourcePayload);
+  socket.on(SOCKET_NAME, (payload, senderUserId) =>
+    receiveResourcePayload(payload, senderUserId),
+  );
   registered = true;
   return true;
 }
@@ -75,11 +85,7 @@ export function registerResourceSocket() {
  * multi-GM table doesn't double-process.
  */
 export function isAuthoritativeGM() {
-  const game = globalThis.game;
-  if (!game?.user?.isGM) return false;
-  const active = game.users?.activeGM;
-  if (!active) return true;
-  return active.id === game.user.id;
+  return sharedIsAuthoritativeGM();
 }
 
 /** Emit a resource event over the socket. Dispatches locally too so the
@@ -102,15 +108,17 @@ export function emitResourceEvent(type, data = {}) {
   return payload;
 }
 
-export function receiveResourcePayload(payload) {
+export function receiveResourcePayload(payload, authenticatedSenderId) {
   if (!payload || typeof payload !== "object") return;
   if (!RESOURCE_TYPES.has(payload.type)) return;
   // Suppress echo to self — we already dispatched locally on emit.
-  if (
-    payload.originUserId &&
-    payload.originUserId === globalThis.game?.user?.id
-  ) {
+  const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
+  if (!senderId || senderId === globalThis.game?.user?.id) return;
+  if (payload.type === RESOURCE_EVENTS.FORAGE_RESULT) {
+    if (!isAuthoritativeGM() || !isActiveSocketUser(senderId)) return;
+  } else if (!isAuthoritativeGMSender(senderId)) {
     return;
   }
+  payload = withAuthenticatedOrigin(payload, senderId);
   dispatchToListeners(payload.type, payload);
 }

@@ -26,7 +26,7 @@
         <ul class="mw-list__items">
           {{#each merchants}}
           <li class="mw-list__row {{#if selected}}is-selected{{/if}}">
-            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}">
+            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
               <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
               <span class="mw-list__copy">
                 <strong class="mw-list__name">{{name}}</strong>
@@ -207,7 +207,7 @@
             </div>
             <div class="mw-market__tiers">
               {{#each poolMarketTiers}}
-              <button type="button" class="mw-market__tier {{#if active}}is-active{{/if}}" data-action="marketTier" data-min="{{min}}" data-max="{{max}}" title="{{label}} — {{#if max}}items up to {{max}} gp{{else}}no value limit{{/if}}">
+              <button type="button" class="mw-market__tier {{#if active}}is-active{{/if}}" data-action="marketTier" data-min="{{min}}" data-max="{{max}}" aria-pressed="{{#if active}}true{{else}}false{{/if}}" title="{{label}} — {{#if max}}items up to {{max}} gp{{else}}no value limit{{/if}}">
                 <i class="{{icon}}" aria-hidden="true"></i> {{label}}
               </button>
               {{/each}}
@@ -291,6 +291,7 @@
             <span title="Custom price in gp for this item. Leave blank to use Buy price ×.">Custom gp</span>
             <span class="mw-inv__head-flag" title="Never runs out — unlimited stock.">∞</span>
             <span></span>
+            <span></span>
           </div>
           <div class="mw-inv__drop" data-drop-zone="inventory" role="region" aria-label="Inventory — drag items here or use Add From Library below">
             {{#if inventoryRows.length}}
@@ -309,6 +310,9 @@
                 <label class="mw-toggle" aria-label="Unlimited stock for {{name}}">
                   <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
                 </label>
+                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openInventoryItem" data-uuid="{{uuid}}" title="Open {{name}}" aria-label="Open {{name}} item sheet">
+                  <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>
+                </button>
                 <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="invRemove" data-uuid="{{uuid}}" title="Remove from inventory">
                   <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
@@ -338,6 +342,7 @@
             </button>
           </div>
           <div class="mw-form__foot-right">
+            <span class="mw-save-status" role="status" aria-live="polite" data-save-status>{{saveStatus}}</span>
             <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
             </button>

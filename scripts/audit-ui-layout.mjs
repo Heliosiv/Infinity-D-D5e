@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { chromium } from "playwright";
 
 import { buildUiHarnessDocument } from "./ui-harness.mjs";
 
@@ -126,6 +127,9 @@ function findChromeExecutable() {
     if (existsSync(explicit)) return explicit;
     throw new Error(`INFINITY_UI_AUDIT_CHROME does not exist: ${explicit}`);
   }
+
+  const playwrightChromium = chromium.executablePath();
+  if (playwrightChromium && existsSync(playwrightChromium)) return playwrightChromium;
 
   const localAppData = process.env.LOCALAPPDATA;
   if (localAppData) {
@@ -304,12 +308,23 @@ async function auditPage() {
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
-      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell",
+      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell",
     );
     for (const element of [content, shell].filter(Boolean)) {
       if (element.scrollWidth > element.clientWidth + 2) {
         issues.push(
           `${root.dataset.harnessWindow}: horizontal overflow in ${describe(element)} (${element.scrollWidth}px > ${element.clientWidth}px)`,
+        );
+      }
+    }
+    for (const element of shell?.querySelectorAll("*") ?? []) {
+      if (element.dataset.allowHorizontalScroll === "true") continue;
+      const style = getComputedStyle(element);
+      if (!["block", "flex", "grid", "table"].includes(style.display)) continue;
+      if (element.clientWidth <= 0) continue;
+      if (element.scrollWidth > element.clientWidth + 2) {
+        issues.push(
+          `${root.dataset.harnessWindow}: nested horizontal overflow in ${describe(element)} (${element.scrollWidth}px > ${element.clientWidth}px)`,
         );
       }
     }
@@ -329,17 +344,19 @@ async function auditPage() {
     const windowName =
       button.closest("[data-harness-window]")?.dataset.harnessWindow ??
       "unknown";
-    if (rect.width < 18 || rect.height < 18) {
+    if (rect.width < 24 || rect.height < 24) {
       issues.push(
         `${windowName}: "${label}" action target is too small (${rect.width}x${rect.height})`,
       );
       return;
     }
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
     if (
       rect.right < 0 ||
       rect.bottom < 0 ||
-      rect.left > innerWidth ||
-      rect.top > innerHeight
+      rect.left > viewportWidth ||
+      rect.top > viewportHeight
     ) {
       issues.push(
         `${windowName}: "${label}" action target is outside the viewport`,
@@ -349,11 +366,11 @@ async function auditPage() {
 
     const centerX = Math.max(
       0,
-      Math.min(innerWidth - 1, rect.left + rect.width / 2),
+      Math.min(viewportWidth - 1, rect.left + rect.width / 2),
     );
     const centerY = Math.max(
       0,
-      Math.min(innerHeight - 1, rect.top + rect.height / 2),
+      Math.min(viewportHeight - 1, rect.top + rect.height / 2),
     );
     // Popover-menu buttons float over content and can be clipped by the
     // harness window's overflow:hidden (a harness artifact, not a real

@@ -21,6 +21,8 @@
   min-height: 0;
   height: 100%;
   box-sizing: border-box;
+  color: var(--lf-text, #e7ecf6);
+  background: var(--lf-bg, #1d2330);
 }
 
 .infinity-reputation-workspace .rw-head {
@@ -498,6 +500,13 @@
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.infinity-reputation-workspace .rw-save-status {
+  align-self: center;
+  color: var(--lf-muted, #97a3c1);
+  font-size: 0.78rem;
+  margin-left: auto;
 }
 
 .infinity-reputation-workspace .rw-perchar__foot {

@@ -30,6 +30,7 @@
         <button
           type="button"
           class="lf-quick__btn {{#if active}}is-active{{/if}}"
+          aria-pressed="{{#if active}}true{{else}}false{{/if}}"
           data-action="quickPreset"
           data-preset="{{key}}"
         >
@@ -48,6 +49,7 @@
         <button
           type="button"
           class="lf-segment__btn {{#if selected}}is-active{{/if}}"
+          aria-pressed="{{#if selected}}true{{else}}false{{/if}}"
           data-action="tierSelect"
           data-value="{{value}}"
           title="{{label}}"
@@ -260,6 +262,7 @@
     <button
       type="button"
       class="lf-slider__snap {{#if active}}is-active{{/if}}"
+      aria-pressed="{{#if active}}true{{else}}false{{/if}}"
       data-action="snap"
       data-target="{{../name}}"
       data-value="{{value}}"
@@ -403,6 +406,7 @@
     <button
       type="button"
       class="lf-market__tier {{#if active}}is-active{{/if}}"
+      aria-pressed="{{#if active}}true{{else}}false{{/if}}"
       data-action="marketTier"
       data-min="{{min}}"
       data-max="{{max}}"

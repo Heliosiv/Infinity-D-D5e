@@ -45,6 +45,11 @@ import {
   isAmmunitionItem,
 } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
+import { runAsFullGM } from "../permissions.js";
+import {
+  confirmDestructive,
+  isInteractiveKeyboardTarget,
+} from "../ui-util.js";
 import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
 import {
@@ -185,11 +190,13 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Open (or focus) the per-subclass singleton instance. */
   static open() {
-    playModuleSound(SOUND_EVENTS.UI_OPEN);
-    if (!this._instance) this._instance = new this();
-    if (this._instance.rendered) this._instance.bringToFront();
-    else this._instance.render(true);
-    return this._instance;
+    return runAsFullGM(() => {
+      playModuleSound(SOUND_EVENTS.UI_OPEN);
+      if (!this._instance) this._instance = new this();
+      if (this._instance.rendered) this._instance.bringToFront();
+      else this._instance.render(true);
+      return this._instance;
+    });
   }
 
   constructor(options = {}) {
@@ -384,6 +391,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _onKeyDown(event) {
     if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) === false) return;
     if (event.defaultPrevented) return;
+    if (isInteractiveKeyboardTarget(event.target)) return;
     const tag = event.target?.tagName?.toLowerCase();
     const isEditable =
       tag === "input" || tag === "select" || tag === "textarea";
@@ -438,8 +446,11 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _loadItems() {
     if (this._isItemCacheFresh()) return this._cachedItems;
+    const minutes = Number(getSetting(SETTING_KEYS.PACK_TTL_MINUTES) ?? 5);
+    const ttlMs = Math.max(1, Number.isFinite(minutes) ? minutes : 5) * 60 * 1000;
     this._cachedItems = await loadCompendiumItems({
       packId: this.constructor.PACK_ID,
+      ttlMs,
     });
     this._cachedItemsAt = Date.now();
     this._packStats = computePackStats(this._cachedItems);
@@ -513,10 +524,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
     for (const snap of snaps) {
       const snapValue = Number(snap.dataset.value);
-      snap.classList.toggle(
-        "is-active",
-        Number.isFinite(snapValue) && Math.abs(snapValue - value) < 0.01,
-      );
+      const active = Number.isFinite(snapValue) && Math.abs(snapValue - value) < 0.01;
+      snap.classList.toggle("is-active", active);
+      snap.setAttribute("aria-pressed", String(active));
     }
   }
 
@@ -1049,6 +1059,12 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {BaseLootApp} */
   static async _onDeletePreset(_event, target) {
+    const confirmed = await confirmDestructive({
+      title: "Delete preset?",
+      content: "<p>Delete this saved preset? This cannot be undone.</p>",
+      icon: "fa-solid fa-trash",
+    });
+    if (!confirmed) return;
     await deletePreset(this.constructor.TOOL_ID, target?.dataset?.presetId);
     await this._renderPreservingScroll();
   }
@@ -1093,6 +1109,12 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {BaseLootApp} */
   static async _onClearHistory(_event, _target) {
+    const confirmed = await confirmDestructive({
+      title: "Clear roll history?",
+      content: "<p>Clear every saved roll in this tool's history? This cannot be undone.</p>",
+      icon: "fa-solid fa-trash-clock",
+    });
+    if (!confirmed) return;
     await clearHistory(this.constructor.TOOL_ID);
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     await this._renderPreservingScroll();

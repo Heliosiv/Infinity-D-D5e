@@ -10,6 +10,8 @@
   gap: 10px;
   padding: 10px;
   min-height: 0;
+  color: var(--lf-text, #e7ecf6);
+  background: var(--lf-bg, #1d2330);
 }
 
 .infinity-shop-picker .sp-head {

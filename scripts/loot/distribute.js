@@ -221,7 +221,37 @@ export function planRoundRobin(items, actorIds) {
   return assignments;
 }
 
-/** Split a coin breakdown as evenly as possible; remainder to the first. */
+const COIN_CP = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
+
+function totalCurrencyCp(currency) {
+  return Object.entries(COIN_CP).reduce(
+    (total, [denom, copper]) =>
+      total + Math.max(0, Math.floor(Number(currency?.[denom]) || 0)) * copper,
+    0,
+  );
+}
+
+function currencyFromCp(totalCp, sourceCurrency) {
+  let remaining = Math.max(0, Math.floor(Number(totalCp) || 0));
+  const out = { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 };
+  const sourceHasPp = Number(sourceCurrency?.pp) > 0;
+  const sourceHasEp = Number(sourceCurrency?.ep) > 0;
+  const order = [
+    ...(sourceHasPp ? ["pp"] : []),
+    "gp",
+    ...(sourceHasEp ? ["ep"] : []),
+    "sp",
+    "cp",
+  ];
+  for (const denom of order) {
+    const copper = COIN_CP[denom];
+    out[denom] = Math.floor(remaining / copper);
+    remaining %= copper;
+  }
+  return out;
+}
+
+/** Split total coin value as evenly as possible; copper remainder to the first. */
 function splitCurrencyEven(currency, count) {
   const out = Array.from({ length: count }, () => ({
     pp: 0,
@@ -231,14 +261,13 @@ function splitCurrencyEven(currency, count) {
     cp: 0,
   }));
   if (count <= 0 || !currency) return out;
-  for (const denom of ["pp", "gp", "ep", "sp", "cp"]) {
-    const total = Math.floor(Number(currency[denom]) || 0);
-    const base = Math.floor(total / count);
-    let remainder = total - base * count;
-    for (let i = 0; i < count; i += 1) {
-      out[i][denom] = base + (remainder > 0 ? 1 : 0);
-      if (remainder > 0) remainder -= 1;
-    }
+  const totalCp = totalCurrencyCp(currency);
+  const baseCp = Math.floor(totalCp / count);
+  let remainderCp = totalCp - baseCp * count;
+  for (let i = 0; i < count; i += 1) {
+    const shareCp = baseCp + (remainderCp > 0 ? 1 : 0);
+    if (remainderCp > 0) remainderCp -= 1;
+    out[i] = currencyFromCp(shareCp, currency);
   }
   return out;
 }

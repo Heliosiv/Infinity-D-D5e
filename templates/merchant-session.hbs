@@ -28,16 +28,16 @@
   {{/if}}
 
   <nav class="ms-tabs" role="tablist">
-    <button type="button" id="ms-tab-buy" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="selectTab" data-tab="buy" role="tab" aria-selected="{{#if buyActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-buy">
+    <button type="button" id="ms-tab-buy-{{domId}}" class="ms-tab {{#if buyActive}}is-active{{/if}}" data-action="selectTab" data-tab="buy" role="tab" tabindex="{{#if buyActive}}0{{else}}-1{{/if}}" aria-selected="{{#if buyActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-buy-{{domId}}">
       <i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Buy
     </button>
-    <button type="button" id="ms-tab-sell" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="selectTab" data-tab="sell" role="tab" aria-selected="{{#if sellActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-sell">
+    <button type="button" id="ms-tab-sell-{{domId}}" class="ms-tab {{#if sellActive}}is-active{{/if}}" data-action="selectTab" data-tab="sell" role="tab" tabindex="{{#if sellActive}}0{{else}}-1{{/if}}" aria-selected="{{#if sellActive}}true{{else}}false{{/if}}" aria-controls="ms-panel-sell-{{domId}}">
       <i class="fa-solid fa-coins" aria-hidden="true"></i> Sell
     </button>
   </nav>
 
   {{#if buyActive}}
-  <section class="ms-rows" id="ms-panel-buy" role="tabpanel" aria-labelledby="ms-tab-buy" aria-label="Goods for sale">
+  <section class="ms-rows" id="ms-panel-buy-{{domId}}" role="tabpanel" aria-labelledby="ms-tab-buy-{{domId}}" aria-label="Goods for sale">
     {{#unless previewMode}}{{#if noActor}}
     <p class="mw-empty">No character selected — ask your GM to assign you one before buying. (Prices shown below.)</p>
     {{/if}}{{/unless}}
@@ -85,7 +85,7 @@
   {{/if}}
 
   {{#if sellActive}}
-  <section class="ms-rows" id="ms-panel-sell" role="tabpanel" aria-labelledby="ms-tab-sell" aria-label="Your sellable items">
+  <section class="ms-rows" id="ms-panel-sell-{{domId}}" role="tabpanel" aria-labelledby="ms-tab-sell-{{domId}}" aria-label="Your sellable items">
     {{#if sellRows.length}}
       {{#each sellRows}}
       <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}" data-uuid="{{uuid}}" title="Double-click to open sheet">

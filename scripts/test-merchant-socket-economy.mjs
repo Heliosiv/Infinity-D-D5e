@@ -38,6 +38,7 @@ import {
   MERCHANT_SETTING_KEY,
   findMerchant,
   normalizeMerchant,
+  upsertMerchant,
 } from "./merchant/store.js";
 
 /* ------------------------------------------------------------------ *
@@ -80,22 +81,113 @@ function makeWire() {
   };
 }
 
+let embeddedSeed = 0;
+
+function makeOwnedItem(actor, data) {
+  const item = {
+    ...structuredClone(data),
+    id: data.id,
+    parent: actor,
+    toObject() {
+      return structuredClone({
+        ...data,
+        id: this.id,
+        system: this.system,
+      });
+    },
+    async update(changes) {
+      if ("system.quantity" in changes) {
+        this.system.quantity = Number(changes["system.quantity"]);
+      }
+      return this;
+    },
+  };
+  return item;
+}
+
+function makeActor(ownerId) {
+  const itemMap = new Map();
+  const actor = {
+    id: `actor-${ownerId}`,
+    name: `${ownerId} Hero`,
+    type: "character",
+    system: { currency: { pp: 0, gp: 10000, ep: 0, sp: 0, cp: 0 } },
+    items: {
+      get: (id) => itemMap.get(id) ?? null,
+      get contents() {
+        return [...itemMap.values()];
+      },
+    },
+    testUserPermission: (user) => user?.id === ownerId,
+    async rollSkill() {
+      return { total: 25 };
+    },
+    async update(changes) {
+      for (const [path, value] of Object.entries(changes ?? {})) {
+        const match = /^system\.currency\.(pp|gp|ep|sp|cp)$/.exec(path);
+        if (match) this.system.currency[match[1]] = Number(value) || 0;
+      }
+      return this;
+    },
+    async createEmbeddedDocuments(_type, snapshots) {
+      return snapshots.map((snapshot) => {
+        const id = snapshot._id ?? `created-${++embeddedSeed}`;
+        const item = makeOwnedItem(actor, {
+          ...structuredClone(snapshot),
+          id,
+          system: structuredClone(snapshot.system ?? {}),
+        });
+        itemMap.set(id, item);
+        return item;
+      });
+    },
+    async deleteEmbeddedDocuments(_type, ids) {
+      for (const id of ids) itemMap.delete(id);
+      return ids;
+    },
+  };
+  const sword = makeOwnedItem(actor, {
+    id: "owned-sword",
+    name: "Longsword",
+    type: "weapon",
+    system: {
+      quantity: 10,
+      price: { value: 100, denomination: "gp" },
+    },
+    flags: {},
+  });
+  itemMap.set(sword.id, sword);
+  return actor;
+}
+
 /**
  * Build a client context. `users`/`actors` default to a lone-GM world; callers
  * override for multi-GM or player contexts. The socket is the fake transport.
  */
 function makeClient({ id, isGM, world, wire, users, actors }) {
+  const actorList = [makeActor("p1"), makeActor("p2")];
+  const actorCollection = actors ?? {
+    get: (actorId) => actorList.find((actor) => actor.id === actorId) ?? null,
+    find: (predicate) => actorList.find(predicate) ?? null,
+  };
   const client = {
     id,
     inbox: [],
+    actors: actorCollection,
     game: {
       user: { id, isGM: Boolean(isGM) },
       users: users ?? {
         activeGM: { id },
-        get: (uid) => ({ id: uid, active: true, isGM: false, name: uid }),
+        get: (uid) => ({
+          id: uid,
+          active: true,
+          isGM: false,
+          name: uid,
+          character: actorList.find((actor) => actor.id === `actor-${uid}`) ?? null,
+        }),
         forEach() {},
       },
-      actors: actors ?? { find: () => null },
+      actors: actorCollection,
       settings: world,
       socket: {
         emit: (name, payload) => wire.deliver(id, name, payload),
@@ -193,6 +285,13 @@ try {
 
     const stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(stored.items[0].qty, 3, "stock 5 - 2 = 3 after buy");
+    const buyer = gm.actors.get("actor-p1");
+    assert.equal(buyer.system.currency.gp, 9800, "GM deducted the buyer's funds");
+    assert.equal(
+      buyer.items.contents.filter((owned) => owned.id !== "owned-sword").length,
+      1,
+      "GM added one purchased item stack to the buyer",
+    );
     assert.equal(stored.goldOnHand, 700, "merchant gained 200 gp (base 100×2)");
 
     const stateUpdate = lastOf(player.inbox, MERCHANT_EVENTS.STATE_UPDATE);
@@ -263,6 +362,10 @@ try {
       100,
       "merchant charged for ONE unit, not two",
     );
+    const chargedPlayers = ["actor-p1", "actor-p2"].filter(
+      (id) => gm.actors.get(id).system.currency.gp === 9900,
+    );
+    assert.equal(chargedPlayers.length, 1, "only the successful buyer was charged");
 
     const results = allOf(
       wire.log.map((e) => e.payload),
@@ -553,6 +656,9 @@ try {
     );
     await receiveMerchantPayload(sellFrame);
     const stored = asClient(gm, () => findMerchant("m-1"));
+    const seller = gm.actors.get("actor-p1");
+    assert.equal(seller.items.get("owned-sword").system.quantity, 9);
+    assert.equal(seller.system.currency.gp, 10055);
     assert.equal(
       stored.goldOnHand,
       945,
@@ -564,6 +670,140 @@ try {
       "seller acked ok:true",
     );
     ok("sell bargain seal raises the seller's payout (sign flips correctly)");
+  }
+
+  /* ============================================================== *
+   * 6. Authenticated sender defeats a forged originUserId
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.auth", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    makeClient({ id: "p1", isGM: false, world, wire });
+    makeClient({ id: "p2", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "forged-origin",
+      },
+      "p2",
+    );
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 2, "forged sender cannot decrement stock");
+    assert.equal(stored.goldOnHand, 500, "forged sender cannot change merchant gold");
+    ok("transport-authenticated sender defeats forged originUserId");
+  }
+
+  /* ============================================================== *
+   * 7. Commit IDs are replay-safe
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.replay", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+    const frame = {
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "p1",
+      sessionId: session.sessionId,
+      itemUuid: item._uuid,
+      qty: 1,
+      totalGp: 100,
+      commitId: "same-commit",
+    };
+
+    await receiveMerchantPayload(frame, "p1");
+    await receiveMerchantPayload(frame, "p1");
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 1, "replayed commit decrements once");
+    assert.equal(stored.goldOnHand, 600, "replayed commit credits once");
+    ok("duplicate commitId returns the cached result without a second mutation");
+  }
+
+  /* ============================================================== *
+   * 8. Different-shop writes share a store-wide queue
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const world = makeWorld([
+      makeMerchant({ id: "m-a", name: "A", goldOnHand: 10 }),
+      makeMerchant({ id: "m-b", name: "B", goldOnHand: 20 }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    globalThis.game = gm.game;
+    const a = findMerchant("m-a");
+    const b = findMerchant("m-b");
+    await Promise.all([
+      upsertMerchant({ ...a, goldOnHand: 11 }),
+      upsertMerchant({ ...b, goldOnHand: 21 }),
+    ]);
+    assert.equal(findMerchant("m-a").goldOnHand, 11);
+    assert.equal(findMerchant("m-b").goldOnHand, 21);
+    ok("store-wide queue preserves concurrent writes to different shops");
+  }
+
+  /* ============================================================== *
+   * 9. Missing authoritative price fails closed
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const itemUuid = "Compendium.x.Item.missing";
+    globalThis.fromUuid = async () => null;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: itemUuid, qty: 1, startingQty: 1, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "missing-price",
+      },
+      "p1",
+    );
+    assert.equal(findMerchant("m-1").items[0].qty, 1, "stock remains available");
+    assert.equal(
+      lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)?.reason,
+      "no-price",
+    );
+    ok("purchase repricing failure leaves stock untouched and reports no-price");
   }
 
   process.stdout.write(

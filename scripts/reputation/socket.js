@@ -15,6 +15,13 @@
  */
 
 import { listRevealedForPlayers } from "./store.js";
+import {
+  authenticateSocketPayload,
+  isActiveSocketUser,
+  isAuthoritativeGM,
+  isAuthoritativeGMSender,
+  withAuthenticatedOrigin,
+} from "../socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
@@ -69,14 +76,16 @@ export function registerReputationSocket() {
   const socket = globalThis.game?.socket;
   if (!socket || registered) return registered;
   if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, receiveReputationPayload);
+  socket.on(SOCKET_NAME, (payload, senderUserId) =>
+    receiveReputationPayload(payload, senderUserId),
+  );
   registered = true;
   return true;
 }
 
 /** Only the active (primary) GM answers player→GM messages, so a multi-GM
  *  table doesn't reply twice. */
-function isAuthoritativeGM() {
+function legacyIsAuthoritativeGM() {
   const game = globalThis.game;
   if (!game?.user?.isGM) return false;
   const active = game.users?.activeGM;
@@ -123,17 +132,19 @@ export function broadcastReputationState() {
  * Receive
  * ------------------------------------------------------------------ */
 
-export function receiveReputationPayload(payload) {
+export function receiveReputationPayload(payload, authenticatedSenderId) {
   if (!payload || typeof payload !== "object") return;
   if (!REPUTATION_TYPES.has(payload.type)) return;
 
   // Suppress echo to self — we already dispatched locally on emit.
-  if (
-    payload.originUserId &&
-    payload.originUserId === globalThis.game?.user?.id
-  ) {
+  const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
+  if (!senderId || senderId === globalThis.game?.user?.id) return;
+  if (payload.type === REPUTATION_EVENTS.LIST_REQUEST) {
+    if (!isAuthoritativeGM() || !isActiveSocketUser(senderId)) return;
+  } else if (!isAuthoritativeGMSender(senderId)) {
     return;
   }
+  payload = withAuthenticatedOrigin(payload, senderId);
 
   dispatchToListeners(payload.type, payload);
 

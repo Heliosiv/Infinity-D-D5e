@@ -31,6 +31,8 @@ const DENY = [
   [/â(?:€|ˆ|…)|Ã(?:—|¶)/, "mojibake / encoding artifact"],
 ];
 
+const VALUE_LABEL = /Value:\s*([\d,]+(?:\.\d+)?)\s*(cp|sp|ep|gp|pp)\b/i;
+
 const offenders = [];
 for (const item of items) {
   const texts = [
@@ -49,6 +51,18 @@ for (const item of items) {
     if (hit) {
       offenders.push(`${item.name} (${item._id}): ${hit}`);
       break;
+    }
+  }
+  const description = item.system?.description?.value ?? "";
+  const valueMatch = description.match(VALUE_LABEL);
+  if (valueMatch) {
+    const displayed = Number(valueMatch[1].replaceAll(",", ""));
+    const price = Number(item.system?.price?.value);
+    const denomination = String(item.system?.price?.denomination ?? "").toLowerCase();
+    if (valueMatch[2].toLowerCase() !== denomination || displayed !== price) {
+      offenders.push(
+        `${item.name} (${item._id}): description ${displayed} ${valueMatch[2]} != price ${price} ${denomination}`,
+      );
     }
   }
 }

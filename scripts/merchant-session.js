@@ -23,8 +23,6 @@ import {
   resolveUnitBuyPrice,
   resolveUnitSellPrice,
   isSellable,
-  executeBuy,
-  executeSell,
   postTransactionReceipt,
 } from "./merchant/transaction.js";
 import {
@@ -287,6 +285,17 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       return;
     }
     const key = `${payload.itemUuid}::${payload.side}`;
+    if (payload.ok === false) {
+      this._bargainPending.delete(key);
+      const watchdog = this._bargainTimers.get(key);
+      if (watchdog != null) globalThis.clearTimeout?.(watchdog);
+      this._bargainTimers.delete(key);
+      const message = friendlyTransactionError(payload.reason);
+      this._appendLog("fail", `Bargain failed: ${message}`);
+      ui.notifications?.warn(message);
+      if (this.rendered) this.render(false);
+      return;
+    }
     this._seals.set(key, {
       sealId: payload.sealId,
       tier: payload.tier,
@@ -326,7 +335,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
    * actor mutation: a merely-slow ack would otherwise double-revert. The GM and
    * player reconcile manually — rare (mostly a GM reload mid-trade).
    */
-  _onCommitResult(payload) {
+  async _onCommitResult(payload) {
     if (!payload || payload.sessionId !== this._sessionId) return;
     if (
       payload.targetUserId &&
@@ -338,15 +347,53 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (!ctx) return;
     globalThis.clearTimeout?.(ctx.timer);
     this._pendingCommits.delete(payload.commitId);
-    if (payload.ok) return; // recorded cleanly — nothing to surface
+    if (payload.ok) {
+      const totalGp = roundGp(Number(payload.totalGp) || 0);
+      const qty = Math.max(1, Math.floor(Number(payload.qty) || ctx.qty || 1));
+      const unitGp = roundGp(
+        Number(payload.unitGp) || totalGp / Math.max(1, qty),
+      );
+      const itemName = payload.itemName || ctx.itemName || "item";
+      if (ctx.side === "sell") {
+        this._earnedGp = roundGp(this._earnedGp + totalGp);
+        playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
+        this._appendLog(
+          "sell",
+          `Sold ${qty}x ${itemName} for ${totalGp.toFixed(2)} gp`,
+        );
+      } else {
+        this._spentGp = roundGp(this._spentGp + totalGp);
+        playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
+        this._appendLog(
+          "buy",
+          `Bought ${qty}x ${itemName} for ${totalGp.toFixed(2)} gp`,
+        );
+      }
+      if (ctx.sealKey) this._seals.delete(ctx.sealKey);
+      await postTransactionReceipt({
+        side: ctx.side,
+        actor: ctx.actor,
+        merchant: this._merchant,
+        itemName,
+        qty,
+        unitGp,
+        totalGp,
+        bargainTier: ctx.seal?.tier ?? null,
+        rollTotal: ctx.seal?.rollTotal ?? null,
+        dc: ctx.seal?.dc ?? null,
+      });
+      if (this.rendered) this.render(false);
+      return;
+    }
     playModuleSound(SOUND_EVENTS.WARNING_MUTED);
     const verb = ctx.side === "sell" ? "sale" : "purchase";
+    const reason = friendlyTransactionError(payload.reason);
     this._appendLog(
       "fail",
-      `The shop didn't record your ${verb} of ${ctx.itemName} — your sheet changed, so check with your GM.`,
+      `The shop declined your ${verb} of ${ctx.itemName}: ${reason}`,
     );
     ui.notifications?.warn(
-      `${MODULE_ID}: the shop couldn't record that ${verb}${payload.reason ? ` (${payload.reason})` : ""}. Your character sheet was already updated — ask your GM to reconcile.`,
+      `${MODULE_ID}: ${reason}`,
     );
     if (this.rendered) this.render(false);
   }
@@ -363,7 +410,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         `No response from the GM on your ${verb} of ${ctx.itemName} — it may not have reached the shop.`,
       );
       ui.notifications?.warn(
-        `${MODULE_ID}: no response from the GM on that ${verb}. Your sheet changed; confirm with your GM that the shop updated.`,
+        `${MODULE_ID}: no response from the GM on that ${verb}. No character changes were made; retry when a GM is connected.`,
       );
       if (this.rendered) this.render(false);
     }, COMMIT_ACK_TIMEOUT_MS);
@@ -416,6 +463,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       previewMode: this._previewMode,
       previewNoActor: this._previewMode && !actor,
       noActor: !actor,
+      domId: String(this._sessionId).replace(/[^a-zA-Z0-9_-]/g, "-"),
       buyActive: this._activeTab === "buy",
       sellActive: this._activeTab === "sell",
       buyRows,
@@ -629,6 +677,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
             onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
           }),
       });
+      this._wireTabKeyboard(root);
     }
 
     // Preserve scroll position across action re-renders (buy, bargain, tab…).
@@ -638,6 +687,25 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       });
       restoreScroll(root, SCROLL_TARGETS, this._scroll);
     }
+  }
+
+  _wireTabKeyboard(root) {
+    const tablist = root.querySelector?.('[role="tablist"]');
+    if (!tablist) return;
+    tablist.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const tabs = [...tablist.querySelectorAll('[role="tab"]')];
+      const current = tabs.indexOf(event.target);
+      if (current < 0 || tabs.length === 0) return;
+      event.preventDefault();
+      let next = current;
+      if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = tabs.length - 1;
+      else if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
+      else next = (current + 1) % tabs.length;
+      tabs[next].focus();
+      tabs[next].click();
+    });
   }
 
   _wireQtyInputs() {
@@ -757,16 +825,24 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       });
       if (!confirmed) return;
     }
-    const result = await executeBuy({
-      actor,
-      merchant: this._merchant,
-      row,
-      item: itemObj,
-      qty,
-      seal,
-      passivePct,
-      notify: false,
-    });
+    const unitGp = roundGp(
+      resolveUnitBuyPrice({
+        merchant: this._merchant,
+        row,
+        item: itemObj,
+        seal,
+        passivePct,
+      }),
+    );
+    const result = {
+      ok: unitGp > 0,
+      reason: unitGp > 0 ? "" : "no-price",
+      itemName: itemObj.name ?? "item",
+      qty: Math.max(1, qty),
+      unitGp,
+      totalGp: roundGp(unitGp * Math.max(1, qty)),
+      sealId: seal?.sealId ?? null,
+    };
     if (!result.ok) {
       const message = friendlyTransactionError(result.reason);
       ui.notifications?.warn(message);
@@ -785,27 +861,19 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       sealId: result.sealId,
       totalGp: result.totalGp,
       commitId,
+      actorId: actor.id,
     });
-    this._trackCommit(commitId, { side: "buy", itemName: result.itemName });
-    this._seals.delete(sealKey);
-    this._spentGp = roundGp(this._spentGp + result.totalGp);
-    playModuleSound(SOUND_EVENTS.MERCHANT_PURCHASE);
-    this._appendLog(
-      "buy",
-      `Bought ${result.qty}× ${result.itemName} for ${result.totalGp.toFixed(2)} gp`,
-    );
-    await postTransactionReceipt({
+    this._trackCommit(commitId, {
       side: "buy",
-      actor,
-      merchant: this._merchant,
       itemName: result.itemName,
       qty: result.qty,
       unitGp: result.unitGp,
       totalGp: result.totalGp,
-      bargainTier: seal?.tier ?? null,
-      rollTotal: seal?.rollTotal ?? null,
-      dc: seal?.dc ?? null,
+      actor,
+      seal,
+      sealKey,
     });
+    this._appendLog("pending", `Purchase requested: ${result.qty}x ${result.itemName}`);
     this.render(false);
   }
 
@@ -862,15 +930,15 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       });
       if (!confirmed) return;
     }
-    const result = await executeSell({
-      actor,
-      merchant: this._merchant,
-      ownedItem,
-      qty,
-      seal,
-      passivePct,
-      notify: false,
-    });
+    const result = {
+      ok: unitGp > 0,
+      reason: unitGp > 0 ? "" : "no-value",
+      itemName: ownedItem.name ?? "item",
+      qty: Math.max(1, qty),
+      unitGp,
+      totalGp: roundGp(unitGp * Math.max(1, qty)),
+      sealId: seal?.sealId ?? null,
+    };
     if (!result.ok) {
       const message = friendlyTransactionError(result.reason);
       ui.notifications?.warn(message);
@@ -887,29 +955,19 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       sealId: result.sealId,
       totalGp: result.totalGp,
       commitId,
-      // Lets the GM recompute the payout server-side (the item is gone now).
-      itemSnapshot: result.itemSnapshot,
+      actorId: actor.id,
     });
-    this._trackCommit(commitId, { side: "sell", itemName: result.itemName });
-    this._seals.delete(sealKey);
-    this._earnedGp = roundGp(this._earnedGp + result.totalGp);
-    playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
-    this._appendLog(
-      "sell",
-      `Sold ${result.qty}× ${result.itemName} for ${result.totalGp.toFixed(2)} gp`,
-    );
-    await postTransactionReceipt({
+    this._trackCommit(commitId, {
       side: "sell",
-      actor,
-      merchant: this._merchant,
       itemName: result.itemName,
       qty: result.qty,
       unitGp: result.unitGp,
       totalGp: result.totalGp,
-      bargainTier: seal?.tier ?? null,
-      rollTotal: seal?.rollTotal ?? null,
-      dc: seal?.dc ?? null,
+      actor,
+      seal,
+      sealKey,
     });
+    this._appendLog("pending", `Sale requested: ${result.qty}x ${result.itemName}`);
     this.render(false);
   }
 
@@ -941,27 +999,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (!skillId) return;
     this._bargainPending.add(sealKey);
     this.render(false);
-    const outcome = await runBargain({
-      actor,
-      skillId,
-      dc: this._merchant.bargainDC,
-      advantage: this._merchant.bargainAdvantage,
-      chatMessage: false,
-    });
-    if (!outcome.ok) {
-      this._bargainPending.delete(sealKey);
-      ui.notifications?.warn(
-        friendlyTransactionError(outcome.reason ?? "cancelled"),
-      );
-      this.render(false);
-      return;
-    }
     emitMerchantEvent(MERCHANT_EVENTS.BARGAIN_RESULT, {
       sessionId: this._sessionId,
       itemUuid: refId,
       side,
       skillId,
-      rollTotal: outcome.rollTotal,
+      actorId: actor.id,
     });
     // Seal normally arrives on the bargain-seal event handler. Guard against it
     // never coming back (GM reloaded the world, session expired, no active GM):
@@ -1295,7 +1338,6 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
     Array.isArray(allowedSkills) && allowedSkills.length > 0
       ? allowedSkills
       : ["per", "dec"];
-  if (allowed.length === 1) return allowed[0];
   if (!DialogV2) return allowed[0];
   const options = allowed
     .map((id) => `<option value="${id}">${labels[id] ?? id}</option>`)
@@ -1308,6 +1350,15 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
     Number.isFinite(dcNum) && Number.isFinite(failNum)
       ? `<p style="opacity:0.85;">Beat <strong>DC ${dcNum}</strong> to lower the price. Fail and it rises about <strong>${failNum}%</strong> — one attempt per item.</p>`
       : `<p style="opacity:0.85;">Haggling is a gamble: succeed to lower the price, fail and it rises — one attempt per item.</p>`;
+  if (allowed.length === 1 && typeof DialogV2.confirm === "function") {
+    const skillLabel = labels[allowed[0]] ?? allowed[0];
+    const confirmed = await DialogV2.confirm({
+      window: { title: `Bargain with ${skillLabel}?`, icon: "fa-solid fa-comments-dollar" },
+      content: `<p>Use <strong>${escapeHtml(skillLabel)}</strong> to haggle?</p>${riskLine}`,
+      rejectClose: false,
+    }).catch(() => false);
+    return confirmed ? allowed[0] : null;
+  }
   let picked = null;
   try {
     picked = await DialogV2.prompt({

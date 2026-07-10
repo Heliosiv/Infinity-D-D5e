@@ -1,4 +1,9 @@
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import {
+  authenticateSocketPayload,
+  isActiveSocketUser,
+  withAuthenticatedOrigin,
+} from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
@@ -79,7 +84,9 @@ export function registerSoundSocket() {
   if (!socket || soundSocketRegistered) return false;
   if (typeof socket.on !== "function") return false;
 
-  socket.on(SOCKET_NAME, receiveSoundEventPayload);
+  socket.on(SOCKET_NAME, (payload, senderUserId) =>
+    receiveSoundEventPayload(payload, senderUserId),
+  );
   soundSocketRegistered = true;
   return true;
 }
@@ -155,8 +162,11 @@ export function playSoundEvent(eventKey, options = {}) {
   return localResult;
 }
 
-export function receiveSoundEventPayload(payload) {
+export function receiveSoundEventPayload(payload, authenticatedSenderId) {
   if (!isValidSoundSocketPayload(payload)) return null;
+  const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
+  if (!senderId || !isActiveSocketUser(senderId)) return null;
+  payload = withAuthenticatedOrigin(payload, senderId);
   if (seenSocketSoundEvents.has(payload.id)) return null;
   if (
     payload.originUserId &&

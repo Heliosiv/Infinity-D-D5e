@@ -35,7 +35,13 @@ import {
   isAuthoritativeGM,
 } from "./resource/socket.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
-import { escapeHtml, prettyEnvironment, notify } from "./ui-util.js";
+import {
+  escapeHtml,
+  prettyEnvironment,
+  notify,
+  isInteractiveKeyboardTarget,
+  confirmDestructive,
+} from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -297,6 +303,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       root.addEventListener("keydown", (event) => {
         if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) === false) return;
         if (event.key !== "Enter" || event.defaultPrevented) return;
+        if (isInteractiveKeyboardTarget(event.target)) return;
         const tag = event.target?.tagName?.toLowerCase();
         if (tag === "input" || tag === "select" || tag === "textarea") return;
         event.preventDefault();
@@ -309,7 +316,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     if (envSelect) {
       envSelect.addEventListener("change", async (event) => {
         await setCurrentEnvironment(String(event.target.value ?? ""));
-        this.render(false);
+        await this._renderPreservingFocus(event.target);
       });
     }
 
@@ -342,7 +349,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     else if (path === "waterEnabled") config.waterEnabled = Boolean(value);
     else if (path === "autoTrigger") {
       await setSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER, Boolean(value));
-      this.render(false);
+      await this._renderPreservingFocus(input);
       return;
     } else if (path.startsWith("resource:")) {
       const [, id, field] = path.split(":");
@@ -367,7 +374,31 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
-    this.render(false);
+    await this._renderPreservingFocus(input);
+  }
+
+  async _renderPreservingFocus(activeElement) {
+    const configPath = activeElement?.dataset?.configPath;
+    const role = activeElement?.dataset?.role;
+    const selector = configPath
+      ? `[data-config-path="${cssEscape(configPath)}"]`
+      : role
+        ? `[data-role="${cssEscape(role)}"]`
+        : null;
+    const start = activeElement?.selectionStart;
+    const end = activeElement?.selectionEnd;
+    await this.render(false);
+    if (!selector) return;
+    const restored = this.element?.querySelector?.(selector);
+    restored?.focus?.();
+    if (
+      restored &&
+      typeof restored.setSelectionRange === "function" &&
+      Number.isInteger(start) &&
+      Number.isInteger(end)
+    ) {
+      restored.setSelectionRange(start, end);
+    }
   }
 
   async _onDropItem(event, resourceId) {
@@ -508,6 +539,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const id = target?.dataset?.resourceId;
     if (!id) return;
     const config = loadResourceConfig();
+    const resource = config.resources.find((entry) => entry.id === id);
+    const confirmed = await confirmDestructive({
+      title: "Remove tracked resource?",
+      content: `<p>Stop tracking <strong>${escapeHtml(resource?.label ?? id)}</strong>? Existing actor items will not be deleted.</p>`,
+      icon: "fa-solid fa-trash",
+    });
+    if (!confirmed) return;
     config.resources = config.resources.filter((r) => r.id !== id);
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
@@ -589,6 +627,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     if (!actorId) return;
     const config = loadResourceConfig();
     seedRosterIfEmpty(config);
+    const actorName = globalThis.game?.actors?.get?.(actorId)?.name ?? actorId;
+    const confirmed = await confirmDestructive({
+      title: "Remove party member?",
+      content: `<p>Remove <strong>${escapeHtml(actorName)}</strong> from Quartermaster tracking?</p>`,
+      icon: "fa-solid fa-user-minus",
+    });
+    if (!confirmed) return;
     config.roster = config.roster.filter((r) => r.actorId !== actorId);
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
@@ -714,6 +759,11 @@ function summarizeReport(result) {
 }
 
 /** Parse an Item UUID from a Foundry drag-drop event. */
+function cssEscape(value) {
+  const text = String(value ?? "");
+  return globalThis.CSS?.escape?.(text) ?? text.replace(/["\\]/g, "\\$&");
+}
+
 function extractDroppedItemUuid(event) {
   let raw = "";
   try {

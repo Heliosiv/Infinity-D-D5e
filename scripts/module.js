@@ -51,6 +51,8 @@ import {
 import { loadCompendiumItems } from "./loot/pack.js";
 import { filterCandidates, rollLoot } from "./loot/roller.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
+import { initializePrivateState } from "./private-state.js";
+import { isFullGM, runAsFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -75,23 +77,28 @@ console.log(`${MODULE_ID} | module.js evaluating…`);
 
 function buildApi() {
   return {
-    openDashboard: () => InfinityDashboardApp.open(),
-    openPerEncounterLoot: () => PerEncounterLootApp.open(),
-    openHoardLoot: () => HoardLootApp.open(),
-    openPerCreatureLoot: () => PerCreatureLootApp.open(),
-    openMerchantWorkspace: () => MerchantWorkspaceApp.open(),
+    openDashboard: () => runAsFullGM(() => InfinityDashboardApp.open()),
+    openPerEncounterLoot: () => runAsFullGM(() => PerEncounterLootApp.open()),
+    openHoardLoot: () => runAsFullGM(() => HoardLootApp.open()),
+    openPerCreatureLoot: () => runAsFullGM(() => PerCreatureLootApp.open()),
+    openMerchantWorkspace: () => runAsFullGM(() => MerchantWorkspaceApp.open()),
     openShops: () => ShopPickerApp.open(),
-    openResourceManager: () => ResourceManagerApp.open(),
-    openReputation: () => ReputationWorkspaceApp.open(),
+    openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
+    openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
-    advanceDay: () => advanceDayNow(),
+    advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
     ForagePromptApp,
     SOUND_EVENTS,
     SOUND_REGISTRY,
-    playSoundEvent,
+    playSoundEvent: (eventKey, options = {}) =>
+      playSoundEvent(eventKey, {
+        ...options,
+        audience: isFullGM() ? options.audience : "local",
+      }),
 
     rollLootBundle: async (opts = {}) => {
+      if (!isFullGM()) throw new Error("PermissionDenied: GM-only loot API");
       const budget = computeLootBudget({
         tier: opts.tier ?? "t2",
         scale: opts.scale ?? "standard",
@@ -123,9 +130,10 @@ function buildApi() {
     },
 
     distributeBundle: (actorId, uuids) =>
-      distributeItemsToActor(actorId, uuids),
+      runAsFullGM(() => distributeItemsToActor(actorId, uuids)),
 
-    promptDistribute: (uuids, options) => promptDistributeItems(uuids, options),
+    promptDistribute: (uuids, options) =>
+      runAsFullGM(() => promptDistributeItems(uuids, options)),
   };
 }
 
@@ -365,8 +373,9 @@ function registerKeybindings() {
  * Combined into a single handler so external code never has to guess
  * which ready pass owns which side effect.
  */
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
   try {
+    await initializePrivateState();
     const version = game.modules?.get?.(MODULE_ID)?.version ?? "?";
     const foundryGen = globalThis.foundry?.utils?.foundryVersion?.generation;
     const foundryVersion = globalThis.game?.release?.version ?? "?";

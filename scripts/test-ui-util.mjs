@@ -11,6 +11,7 @@ import {
   prettyLootType,
   prettyRarity,
   LOOT_TYPE_LABELS,
+  isInteractiveKeyboardTarget,
   titleCase,
 } from "./ui-util.js";
 import { LOOT_TYPES } from "./loot/tag-vocabulary.js";
@@ -19,6 +20,17 @@ import { LOOT_TYPES } from "./loot/tag-vocabulary.js";
 assert.equal(titleCase("uncommon"), "Uncommon");
 assert.equal(titleCase(""), "");
 assert.equal(titleCase(null), "");
+
+assert.equal(
+  isInteractiveKeyboardTarget({ closest: (selector) => (selector.includes("button") ? {} : null) }),
+  true,
+  "focused buttons are interactive keyboard targets",
+);
+assert.equal(
+  isInteractiveKeyboardTarget({ closest: () => null }),
+  false,
+  "plain application surfaces may use global shortcuts",
+);
 
 /* prettyLootType — friendly plain-noun labels */
 assert.equal(prettyLootType("loot.weapon.magic"), "Magic Weapons");

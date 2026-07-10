@@ -51,6 +51,7 @@ import {
   prettyLootType,
   prettyRarity,
   notify,
+  isInteractiveKeyboardTarget,
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
@@ -126,6 +127,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       openSession: MerchantWorkspaceApp._onOpenSession,
       closeSession: MerchantWorkspaceApp._onCloseSession,
       invRemove: MerchantWorkspaceApp._onInvRemove,
+      openInventoryItem: MerchantWorkspaceApp._onOpenInventoryItem,
     },
   };
 
@@ -148,6 +150,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   constructor(options = {}) {
     super(options);
     this._selectedId = null;
+    this._saveStatus = "All changes saved";
     this._itemCache = new Map(); // uuid → resolved item snapshot
     // Re-render on stock changes AND on session open/close so the "Active
     // Sessions" list stays accurate even when a player closes their own window.
@@ -333,6 +336,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
           : !globalThis.game?.users?.activeGM
             ? "An active GM must be online to host."
             : "",
+      saveStatus: this._saveStatus,
     };
   }
 
@@ -389,6 +393,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       this.element.addEventListener("keydown", (event) => {
         if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) === false) return;
         if (event.key !== "Enter" || event.defaultPrevented) return;
+        if (isInteractiveKeyboardTarget(event.target)) return;
         const tag = event.target?.tagName?.toLowerCase();
         if (tag === "input" || tag === "select" || tag === "textarea") return;
         event.preventDefault();
@@ -443,6 +448,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         await this._saveFromForm();
       } catch (error) {
         console.warn(`${MODULE_ID} | merchant auto-save failed`, error);
+        notify("error", "Merchant changes could not be saved. Retry with Save now.");
       }
     });
   }
@@ -496,6 +502,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         }
       } catch (error) {
         console.warn(`${MODULE_ID} | inventory row update failed`, error);
+        this._setSaveStatus("Save failed — retry");
+        notify("error", "Inventory changes could not be saved.");
       }
     });
   }
@@ -596,10 +604,12 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Build the next record from the FRESH merchant inside the per-merchant
     // mutex so a concurrent player purchase (which decrements stock under the
     // same lock) isn't clobbered back by this config save's stale snapshot.
-    await commitMerchantWrite(
-      this._selectedId,
-      (fresh) =>
-        normalizeMerchant({
+    this._setSaveStatus("Saving…");
+    try {
+      await commitMerchantWrite(
+        this._selectedId,
+        (fresh) =>
+          normalizeMerchant({
           ...fresh,
           name: data.name ?? fresh.name,
           art: data.art ?? fresh.art,
@@ -646,9 +656,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
             lootTypes: data.buyFilterLootTypes,
             rarities: data.buyFilterRarities,
           },
-        }),
-      { broadcast: true },
-    );
+          }),
+        { broadcast: true },
+      );
+      this._setSaveStatus("Saved");
+    } catch (error) {
+      this._setSaveStatus("Save failed — retry");
+      throw error;
+    }
+  }
+
+  _setSaveStatus(message) {
+    this._saveStatus = String(message || "");
+    const status = this.element?.querySelector?.("[data-save-status]");
+    if (status) status.textContent = this._saveStatus;
   }
 
   /* -------------------- actions -------------------- */
@@ -1080,17 +1101,32 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   async _mutateInventoryRow(uuid, mutator) {
     if (!uuid || !this._selectedId) return;
-    await commitMerchantWrite(
-      this._selectedId,
-      (fresh) => {
-        const idx = fresh.items.findIndex((r) => r.uuid === uuid);
-        if (idx < 0) return null;
-        const updated = normalizeInventoryRow(mutator(fresh.items[idx]));
-        if (!updated) return null;
-        return upsertInventoryRow(fresh, updated);
-      },
-      { broadcast: true },
-    );
+    this._setSaveStatus("Saving…");
+    try {
+      await commitMerchantWrite(
+        this._selectedId,
+        (fresh) => {
+          const idx = fresh.items.findIndex((r) => r.uuid === uuid);
+          if (idx < 0) return null;
+          const updated = normalizeInventoryRow(mutator(fresh.items[idx]));
+          if (!updated) return null;
+          return upsertInventoryRow(fresh, updated);
+        },
+        { broadcast: true },
+      );
+      this._setSaveStatus("Saved");
+    } catch (error) {
+      this._setSaveStatus("Save failed — retry");
+      throw error;
+    }
+  }
+
+  static async _onOpenInventoryItem(_event, target) {
+    const uuid = target?.dataset?.uuid;
+    if (!uuid) return;
+    await openItemByUuid(uuid, {
+      onOpened: () => playModuleSound(SOUND_EVENTS.ITEM_OPEN),
+    });
   }
 }
 

@@ -108,11 +108,19 @@ export function buildHarnessViews() {
       { width: 1000, height: 720 },
     ),
     view(
-      "merchant-session",
-      "Merchant Session",
+      "merchant-session-buy",
+      "Merchant Session — Buy",
       "infinity-merchant-session",
       "templates/merchant-session.hbs",
-      merchantSessionContext(),
+      merchantSessionContext("buy"),
+      { width: 720, height: 600 },
+    ),
+    view(
+      "merchant-session-sell",
+      "Merchant Session — Sell",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionContext("sell"),
       { width: 720, height: 600 },
     ),
     view(
@@ -357,6 +365,30 @@ function dashboardContext() {
       status: "available",
     },
     {
+      id: "merchant-workspace",
+      title: "Merchant Workspace",
+      description: "Build shops, inventory, pricing, and player sessions.",
+      icon: "fa-solid fa-store",
+      category: "merchants",
+      status: "available",
+    },
+    {
+      id: "resource-manager",
+      title: "Quartermaster",
+      description: "Track travel supplies, foraging, and daily upkeep.",
+      icon: "fa-solid fa-campground",
+      category: "party",
+      status: "available",
+    },
+    {
+      id: "reputation-workspace",
+      title: "Faction Reputation",
+      description: "Track party standing and player-facing faction notes.",
+      icon: "fa-solid fa-handshake",
+      category: "party",
+      status: "available",
+    },
+    {
       id: "hoard-loot",
       title: "Hoard Loot",
       description: "Build a treasure cache with coin and item budget controls.",
@@ -385,11 +417,9 @@ function dashboardContext() {
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
     categories: [
-      {
-        category: "loot",
-        label: "Loot",
-        tools: decorated,
-      },
+      { category: "loot", label: "Loot", tools: decorated.filter((tool) => tool.category === "loot") },
+      { category: "merchants", label: "Merchants", tools: decorated.filter((tool) => tool.category === "merchants") },
+      { category: "party", label: "Party", tools: decorated.filter((tool) => tool.category === "party") },
     ],
   };
 }
@@ -772,11 +802,13 @@ function merchantWorkspaceContext() {
     ],
     activeSessions: [{ sessionId: "s-1", userLabel: "Alice" }],
     canOpenSession: true,
+    saveStatus: "Saved",
   };
 }
 
-function merchantSessionContext() {
+function merchantSessionContext(activeTab = "buy") {
   return {
+    domId: `harness-${activeTab}`,
     merchant: {
       id: "m-curios",
       name: "Yannick's Curios",
@@ -789,8 +821,8 @@ function merchantSessionContext() {
     previewMode: true,
     previewNoActor: false,
     noActor: false,
-    buyActive: true,
-    sellActive: true,
+    buyActive: activeTab === "buy",
+    sellActive: activeTab === "sell",
     buyRows: [
       {
         uuid: "Compendium.infinity-dnd5e-items.Item.potion",
@@ -1096,6 +1128,7 @@ function reputationWorkspaceContext() {
   };
   return {
     moduleId: "infinity-dnd5e",
+    saveStatus: "Saved",
     hasFactions: true,
     total: 2,
     revealedCount: 1,

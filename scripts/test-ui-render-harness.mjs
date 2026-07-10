@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildUiHarnessDocument, renderHarnessViews } from "./ui-harness.mjs";
 
 const views = renderHarnessViews();
-assert.equal(views.length, 13, "harness covers all UI windows");
+assert.equal(views.length, 14, "harness covers all UI windows and both merchant tabs");
 
 for (const view of views) {
   assert.ok(view.html.includes("data-action="), `${view.id}: renders actions`);
@@ -71,7 +71,8 @@ for (const expectedId of [
   "hoard",
   "per-creature",
   "merchant-workspace",
-  "merchant-session",
+  "merchant-session-buy",
+  "merchant-session-sell",
   "shop-picker",
   "shop-picker-empty",
   "resource-manager",

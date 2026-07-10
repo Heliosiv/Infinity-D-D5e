@@ -54,6 +54,7 @@ export function openSession({ merchantId, viewerUserId }) {
     viewerUserId,
     bargains: new Map(), // bargainKey → { tier, deltaPct, sealId, side, itemUuid }
     openedAt: null,
+    commits: new Map(),
   };
   sessions.set(record.sessionId, record);
   return record;
@@ -154,6 +155,30 @@ export function consumeSeal(sessionId, sealId, { itemUuid, side } = {}) {
     return seal;
   }
   return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Commit idempotency
+ * ------------------------------------------------------------------ */
+
+const MAX_COMMIT_RESULTS_PER_SESSION = 250;
+
+export function getCommitResult(sessionId, commitId) {
+  if (!sessionId || !commitId) return null;
+  return sessions.get(sessionId)?.commits?.get(commitId) ?? null;
+}
+
+export function recordCommitResult(sessionId, commitId, result) {
+  const session = sessions.get(sessionId);
+  if (!session || !commitId || !result) return null;
+  const existing = session.commits.get(commitId);
+  if (existing) return existing;
+  const recorded = Object.freeze({ ...result });
+  session.commits.set(commitId, recorded);
+  while (session.commits.size > MAX_COMMIT_RESULTS_PER_SESSION) {
+    session.commits.delete(session.commits.keys().next().value);
+  }
+  return recorded;
 }
 
 /* ------------------------------------------------------------------ *
