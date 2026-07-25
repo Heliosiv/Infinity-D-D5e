@@ -47,6 +47,10 @@ import {
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { BaseLootApp } from "./loot/loot-app-base.js";
 import {
+  HOARD_SCALE_ORDER as SCALE_ORDER,
+  normalizeHoardLootForm,
+} from "./loot/form-state.js";
+import {
   humanizeKey,
   resultImageForEntry,
   sameSet,
@@ -74,8 +78,6 @@ const SLIDER_LABELS = Object.freeze({
   pileBias: "Coin vs. Items",
   magicBias: "Magic vs. Mundane",
 });
-
-const SCALE_ORDER = Object.freeze(["small", "standard", "large", "massive"]);
 
 export class HoardLootApp extends BaseLootApp {
   static _instance = null;
@@ -135,14 +137,16 @@ export class HoardLootApp extends BaseLootApp {
     };
   }
 
+  static normalizeForm(form, defaults = this.buildDefaultForm()) {
+    return normalizeHoardLootForm(form, defaults);
+  }
+
   constructor(options = {}) {
     super(options);
     const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
     const persisted = persistEnabled ? HoardLootApp._persistedState : null;
     const defaults = HoardLootApp.buildDefaultForm();
-    this._form = persisted?.form
-      ? normalizeHoardForm({ ...defaults, ...persisted.form })
-      : normalizeHoardForm(defaults);
+    this._form = HoardLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
   }
 
@@ -626,21 +630,6 @@ export class HoardLootApp extends BaseLootApp {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
-
-function normalizeHoardForm(form) {
-  const raw = form && typeof form === "object" ? form : {};
-  const rarityBalance = normalizeRarityBalanceKey(
-    raw.rarityBalance ??
-      (raw.rarityWeights
-        ? RARITY_BALANCE_CUSTOM_KEY
-        : RARITY_BALANCE_DEFAULT_KEY),
-  );
-  return {
-    ...raw,
-    rarityBalance,
-    rarityWeights: resolveRarityWeights(rarityBalance, raw.rarityWeights),
-  };
-}
 
 function resultContext(result) {
   if (!result) return null;

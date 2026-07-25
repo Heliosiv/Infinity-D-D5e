@@ -42,6 +42,11 @@ import {
 import { SETTING_KEYS, getSetting, parseRaritiesSetting } from "./settings.js";
 import { BaseLootApp } from "./loot/loot-app-base.js";
 import {
+  ENCOUNTER_COUNT_RANGE as COUNT_RANGE,
+  ENCOUNTER_PARTY_RANGE as PARTY_RANGE,
+  normalizeEncounterLootForm,
+} from "./loot/form-state.js";
+import {
   livePartySize,
   resultImageForEntry,
   setText,
@@ -62,9 +67,6 @@ import {
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-forge.hbs`;
-
-const COUNT_RANGE = Object.freeze({ min: 1, max: 20, step: 1 });
-const PARTY_RANGE = Object.freeze({ min: 1, max: 10, step: 1 });
 
 /** Display labels for each slider — central so the template stays mute. */
 const SLIDER_LABELS = Object.freeze({
@@ -176,6 +178,10 @@ export class PerEncounterLootApp extends BaseLootApp {
     };
   }
 
+  static normalizeForm(form, defaults = this.buildDefaultForm()) {
+    return normalizeEncounterLootForm(form, defaults);
+  }
+
   constructor(options = {}) {
     super(options);
     const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
@@ -183,16 +189,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       ? PerEncounterLootApp._persistedState
       : null;
     const defaults = PerEncounterLootApp.buildDefaultForm();
-    this._form = persisted?.form
-      ? { ...defaults, ...persisted.form }
-      : defaults;
-    this._form.itemLimitEnabled = this._form.itemLimitEnabled === true;
-    this._form.count = clampInt(
-      this._form.count,
-      COUNT_RANGE.min,
-      COUNT_RANGE.max,
-      6,
-    );
+    this._form = PerEncounterLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
   }
 

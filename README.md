@@ -20,6 +20,7 @@ Three ways to open the dashboard:
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, scale-shaped rarity defaults, and filter-aware chips while preserving valid coin-only rolls.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
+- Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions.
 - **Quartermaster**: party food, water, and light tracking with calendar-aware daily consumption and player forage prompts.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.

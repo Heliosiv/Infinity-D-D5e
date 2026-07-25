@@ -24,6 +24,11 @@ import {
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { BaseLootApp } from "./loot/loot-app-base.js";
 import {
+  PER_CREATURE_ITEM_RANGE as ITEMS_PER_CREATURE_RANGE,
+  PER_CREATURE_ROSTER_LIMIT as ROSTER_LIMIT,
+  normalizePerCreatureLootForm,
+} from "./loot/form-state.js";
+import {
   livePartySize,
   resultImageForEntry,
   setText,
@@ -42,9 +47,6 @@ import {
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/per-creature-loot.hbs`;
-
-const ITEMS_PER_CREATURE_RANGE = Object.freeze({ min: 1, max: 5, step: 1 });
-const ROSTER_LIMIT = 30; // soft cap to keep the window manageable
 
 const SLIDER_LABELS = Object.freeze({
   itemsPerCreature: "Items per Creature",
@@ -111,6 +113,10 @@ export class PerCreatureLootApp extends BaseLootApp {
     };
   }
 
+  static normalizeForm(form, defaults = this.buildDefaultForm()) {
+    return normalizePerCreatureLootForm(form, defaults);
+  }
+
   constructor(options = {}) {
     super(options);
     const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
@@ -118,13 +124,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       ? PerCreatureLootApp._persistedState
       : null;
     const defaults = PerCreatureLootApp.buildDefaultForm();
-    this._form = persisted?.form
-      ? {
-          ...defaults,
-          ...persisted.form,
-          roster: persisted.form.roster ?? defaults.roster,
-        }
-      : defaults;
+    this._form = PerCreatureLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
   }
 
@@ -245,13 +245,6 @@ export class PerCreatureLootApp extends BaseLootApp {
       creature.totalGpLabel = formatGp(total);
     }
     this._recomputeGrandTotal();
-  }
-
-  _snapshotState() {
-    return {
-      form: { ...this._form, roster: [...this._form.roster] },
-      lastResult: this._lastResult,
-    };
   }
 
   /* ------------------- context ------------------- */

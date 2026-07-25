@@ -341,9 +341,29 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     timers.set(key, id);
   }
 
-  /** Default persisted snapshot; Per-Creature widens it for the roster. */
+  /** Persist the current bounded form and result for this app session. */
   _snapshotState() {
-    return { form: { ...this._form }, lastResult: this._lastResult };
+    return {
+      form: this._normalizeStoredForm(this._form),
+      lastResult: this._lastResult,
+    };
+  }
+
+  /**
+   * Normalize every form that crosses a persistence boundary. Subclasses own
+   * their schemas so the shared preset/history actions cannot bypass bounds.
+   */
+  _normalizeStoredForm(form) {
+    const normalize = this.constructor.normalizeForm;
+    if (typeof normalize === "function") {
+      return normalize.call(this.constructor, cloneData(form));
+    }
+    const defaults = this.constructor.buildDefaultForm?.() ?? {};
+    const raw =
+      form && typeof form === "object" && !Array.isArray(form)
+        ? cloneData(form)
+        : {};
+    return { ...defaults, ...raw };
   }
 
   /* ------------------- scroll preservation ------------------- */
@@ -1241,7 +1261,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _recordRoll(result) {
     if (!result) return;
     void pushHistory(this.constructor.TOOL_ID, {
-      form: cloneData(this._form),
+      form: this._normalizeStoredForm(this._form),
       result: slimResult(result),
     });
   }
@@ -1251,7 +1271,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const input = this.element?.querySelector("[data-preset-name]");
     await savePreset(this.constructor.TOOL_ID, {
       name: input?.value ?? "",
-      form: this._form,
+      form: this._normalizeStoredForm(this._form),
     });
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
@@ -1264,10 +1284,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       target?.dataset?.presetId,
     );
     if (!preset) return;
-    this._form = {
-      ...this.constructor.buildDefaultForm(),
-      ...cloneData(preset.form),
-    };
+    this._form = this._normalizeStoredForm(preset.form);
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
   }
@@ -1344,12 +1361,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
     if (!entry) return;
     if (entry.form) {
-      this._form = {
-        ...this.constructor.buildDefaultForm(),
-        ...cloneData(entry.form),
-      };
+      this._form = this._normalizeStoredForm(entry.form);
     }
-    if (entry.result) this._lastResult = cloneData(entry.result);
+    this._lastResult = entry.result ? cloneData(entry.result) : null;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
   }

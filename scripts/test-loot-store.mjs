@@ -25,6 +25,7 @@ const {
   importPresets,
   parsePresetExport,
   PRESET_EXPORT_SCHEMA,
+  PRESET_LIMIT,
   listHistory,
   pushHistory,
   clearHistory,
@@ -105,6 +106,33 @@ assert.equal(
   1,
   "only well-formed presets survive",
 );
+assert.deepEqual(
+  parsePresetExport(
+    {
+      schema: PRESET_EXPORT_SCHEMA,
+      toolId: "toolA",
+      presets: [{ name: "Array Form", form: [] }],
+    },
+    "toolA",
+  ),
+  [],
+  "array-shaped forms are rejected",
+);
+assert.equal(
+  parsePresetExport(
+    {
+      schema: PRESET_EXPORT_SCHEMA,
+      toolId: "toolA",
+      presets: Array.from({ length: PRESET_LIMIT + 5 }, (_, index) => ({
+        name: `Preset ${index}`,
+        form: {},
+      })),
+    },
+    "toolA",
+  ).length,
+  PRESET_LIMIT,
+  "oversized imports are bounded",
+);
 
 // Import into a fresh tool, then re-import to confirm in-place update.
 const imported = await importPresets("toolC", {
@@ -141,6 +169,42 @@ assert.equal(
   "junk imports 0",
 );
 
+/* ---------------------- corrupt store recovery ---------------------- */
+
+backing.set("infinity-dnd5e.savedPresets", {
+  broken: [
+    null,
+    { id: "", name: "No id", form: {} },
+    { id: "good", name: " Good ", form: { tier: "t2" }, savedAt: "10" },
+    { id: "duplicate-name", name: "good", form: { tier: "t5" } },
+    { id: "repair-form", name: "Repair Form", form: [] },
+  ],
+});
+assert.deepEqual(
+  listPresets("broken"),
+  [
+    {
+      id: "good",
+      name: "Good",
+      form: { tier: "t2" },
+      savedAt: 10,
+    },
+    {
+      id: "repair-form",
+      name: "Repair Form",
+      form: {},
+      savedAt: 0,
+    },
+  ],
+  "bad preset rows are dropped while salvageable rows remain usable",
+);
+await savePreset("broken", { name: "After Recovery", form: { tier: "t3" } });
+assert.equal(
+  listPresets("broken").length,
+  3,
+  "saving after recovery does not throw",
+);
+
 /* ----------------------------- history ----------------------------- */
 
 for (let i = 0; i < HISTORY_LIMIT + 5; i += 1) {
@@ -156,6 +220,70 @@ assert.ok(
 
 await clearHistory("toolA");
 assert.deepEqual(listHistory("toolA"), []);
+
+backing.set("infinity-dnd5e.rollHistory", {
+  broken: [
+    null,
+    { id: "", form: {}, result: {} },
+    { id: "h1", at: "bad", form: [], result: [] },
+    { id: "h1", at: 5, form: { tier: "t5" }, result: {} },
+    { id: "h2", at: "12", form: { tier: "t3" }, result: { items: [] } },
+    { id: "h3", at: 13, form: {}, result: { items: "broken" } },
+    {
+      id: "h4",
+      at: 14,
+      form: {},
+      result: {
+        creatures: [
+          null,
+          { id: "creature", items: "broken" },
+          { id: "creature-2", items: [{ item: { name: "Coin" } }, null] },
+        ],
+      },
+    },
+  ],
+});
+assert.deepEqual(
+  listHistory("broken"),
+  [
+    { id: "h1", at: 0, form: {}, result: null },
+    {
+      id: "h2",
+      at: 12,
+      form: { tier: "t3" },
+      result: { items: [] },
+    },
+    { id: "h3", at: 13, form: {}, result: null },
+    {
+      id: "h4",
+      at: 14,
+      form: {},
+      result: {
+        creatures: [
+          { id: "creature", items: [] },
+          {
+            id: "creature-2",
+            items: [{ item: { name: "Coin" } }],
+          },
+        ],
+      },
+    },
+  ],
+  "malformed and duplicate history rows cannot break the menu",
+);
+
+const repairedPreset = await savePreset("direct-repair", {
+  name: "X".repeat(100),
+  form: [],
+});
+assert.equal(repairedPreset.name.length, 40);
+assert.deepEqual(repairedPreset.form, {});
+const repairedHistory = await pushHistory("direct-repair", {
+  form: [],
+  result: [],
+});
+assert.deepEqual(repairedHistory.form, {});
+assert.equal(repairedHistory.result, null);
 
 /* --------------------- node fallback (no game) --------------------- */
 

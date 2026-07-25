@@ -210,6 +210,7 @@ for (const [name, Cls] of [
     "_patchChipAvailability",
     "_canStartPrimaryGeneration",
     "_sliderContext",
+    "_normalizeStoredForm",
   ]) {
     assert.equal(
       typeof instance[method],
@@ -217,9 +218,27 @@ for (const [name, Cls] of [
       `${name} should inherit ${method} from BaseLootApp`,
     );
   }
+  assert.equal(
+    Object.hasOwn(
+      instance._normalizeStoredForm({ unexpected: true }),
+      "unexpected",
+    ),
+    false,
+    `${name} restores only fields in its current form schema`,
+  );
   // Every action referenced in DEFAULT_OPTIONS must resolve to a function,
   // including the spread-in shared handlers.
   const actions = Cls.DEFAULT_OPTIONS.actions ?? {};
+  assert.match(
+    String(actions.loadPreset),
+    /_normalizeStoredForm/,
+    `${name} must normalize preset forms before restoring them`,
+  );
+  assert.match(
+    String(actions.loadHistory),
+    /_normalizeStoredForm/,
+    `${name} must normalize history forms before restoring them`,
+  );
   for (const shared of ["reset", "clear", "rerollOne", "deleteItem"]) {
     assert.equal(
       typeof actions[shared],

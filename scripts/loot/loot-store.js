@@ -14,6 +14,10 @@
 import { SETTING_KEYS, getSetting, setSetting } from "../settings.js";
 
 const HISTORY_LIMIT = 20;
+export const PRESET_LIMIT = 200;
+const PRESET_NAME_LIMIT = 40;
+const RESULT_ITEM_LIMIT = 200;
+const RESULT_CREATURE_LIMIT = 30;
 
 function readStore(key) {
   const raw = getSetting(key);
@@ -33,13 +37,90 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function isRecord(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function cleanPresetName(value) {
+  return typeof value === "string"
+    ? value.trim().slice(0, PRESET_NAME_LIMIT)
+    : "";
+}
+
+function sanitizePresetList(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seenIds = new Set();
+  const seenNames = new Set();
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    const name = cleanPresetName(entry.name);
+    const nameKey = name.toLowerCase();
+    if (!id || !name || seenIds.has(id) || seenNames.has(nameKey)) continue;
+    seenIds.add(id);
+    seenNames.add(nameKey);
+    out.push({
+      id,
+      name,
+      form: isRecord(entry.form) ? clone(entry.form) : {},
+      savedAt: Number.isFinite(Number(entry.savedAt))
+        ? Number(entry.savedAt)
+        : 0,
+    });
+    if (out.length >= PRESET_LIMIT) break;
+  }
+  return out;
+}
+
+function sanitizeHistoryList(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seenIds = new Set();
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    out.push({
+      id,
+      at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0,
+      form: isRecord(entry.form) ? clone(entry.form) : {},
+      result: sanitizeStoredResult(entry.result),
+    });
+    if (out.length >= HISTORY_LIMIT) break;
+  }
+  return out;
+}
+
+function sanitizeStoredResult(value) {
+  if (!isRecord(value)) return null;
+  const result = clone(value);
+  if (Object.hasOwn(result, "creatures")) {
+    if (!Array.isArray(result.creatures)) return null;
+    result.creatures = result.creatures
+      .filter(isRecord)
+      .slice(0, RESULT_CREATURE_LIMIT)
+      .map((creature) => ({
+        ...creature,
+        items: Array.isArray(creature.items)
+          ? creature.items.filter(isRecord).slice(0, RESULT_ITEM_LIMIT)
+          : [],
+      }));
+    return result;
+  }
+  if (!Array.isArray(result.items)) return null;
+  result.items = result.items.filter(isRecord).slice(0, RESULT_ITEM_LIMIT);
+  return result;
+}
+
 /* ------------------------------------------------------------------ *
  * Presets
  * ------------------------------------------------------------------ */
 
 export function listPresets(toolId) {
   const list = readStore(SETTING_KEYS.SAVED_PRESETS)[toolId];
-  return Array.isArray(list) ? list : [];
+  return sanitizePresetList(list);
 }
 
 export function getPreset(toolId, presetId) {
@@ -49,19 +130,22 @@ export function getPreset(toolId, presetId) {
 /** Save (or replace same-name) a preset. Returns the stored preset. */
 export async function savePreset(toolId, { name, form } = {}) {
   const store = { ...readStore(SETTING_KEYS.SAVED_PRESETS) };
-  const list = Array.isArray(store[toolId]) ? [...store[toolId]] : [];
-  const cleanName = String(name ?? "").trim() || "Preset";
+  const list = sanitizePresetList(store[toolId]);
+  const cleanName = cleanPresetName(String(name ?? "")) || "Preset";
   const existingIndex = list.findIndex(
     (preset) => preset.name.toLowerCase() === cleanName.toLowerCase(),
   );
   const preset = {
     id: existingIndex >= 0 ? list[existingIndex].id : mintId("p"),
     name: cleanName,
-    form: clone(form) ?? {},
+    form: isRecord(form) ? clone(form) : {},
     savedAt: Date.now(),
   };
   if (existingIndex >= 0) list[existingIndex] = preset;
-  else list.push(preset);
+  else {
+    if (list.length >= PRESET_LIMIT) list.shift();
+    list.push(preset);
+  }
   store[toolId] = list;
   await setSetting(SETTING_KEYS.SAVED_PRESETS, store);
   return preset;
@@ -69,7 +153,7 @@ export async function savePreset(toolId, { name, form } = {}) {
 
 export async function deletePreset(toolId, presetId) {
   const store = { ...readStore(SETTING_KEYS.SAVED_PRESETS) };
-  store[toolId] = (store[toolId] ?? []).filter(
+  store[toolId] = sanitizePresetList(store[toolId]).filter(
     (preset) => preset.id !== presetId,
   );
   await setSetting(SETTING_KEYS.SAVED_PRESETS, store);
@@ -107,11 +191,12 @@ export function parsePresetExport(data, toolId) {
   const list = Array.isArray(data.presets) ? data.presets : [];
   const out = [];
   for (const entry of list) {
-    if (!entry || typeof entry !== "object") continue;
-    const name = String(entry.name ?? "").trim();
+    if (!isRecord(entry)) continue;
+    const name = cleanPresetName(entry.name);
     if (!name) continue;
-    if (!entry.form || typeof entry.form !== "object") continue;
+    if (!isRecord(entry.form)) continue;
     out.push({ name, form: clone(entry.form) });
+    if (out.length >= PRESET_LIMIT) break;
   }
   return out;
 }
@@ -125,7 +210,8 @@ export async function importPresets(toolId, data) {
   const incoming = parsePresetExport(data, toolId);
   if (incoming.length === 0) return 0;
   const store = { ...readStore(SETTING_KEYS.SAVED_PRESETS) };
-  const list = Array.isArray(store[toolId]) ? [...store[toolId]] : [];
+  const list = sanitizePresetList(store[toolId]);
+  let imported = 0;
   for (const { name, form } of incoming) {
     const idx = list.findIndex(
       (preset) => preset.name.toLowerCase() === name.toLowerCase(),
@@ -137,11 +223,13 @@ export async function importPresets(toolId, data) {
       savedAt: Date.now(),
     };
     if (idx >= 0) list[idx] = preset;
-    else list.push(preset);
+    else if (list.length < PRESET_LIMIT) list.push(preset);
+    else continue;
+    imported += 1;
   }
   store[toolId] = list;
   await setSetting(SETTING_KEYS.SAVED_PRESETS, store);
-  return incoming.length;
+  return imported;
 }
 
 /* ------------------------------------------------------------------ *
@@ -150,7 +238,7 @@ export async function importPresets(toolId, data) {
 
 export function listHistory(toolId) {
   const list = readStore(SETTING_KEYS.ROLL_HISTORY)[toolId];
-  return Array.isArray(list) ? list : [];
+  return sanitizeHistoryList(list);
 }
 
 export function getHistoryEntry(toolId, historyId) {
@@ -160,12 +248,12 @@ export function getHistoryEntry(toolId, historyId) {
 /** Prepend a roll to history, trimming to HISTORY_LIMIT. */
 export async function pushHistory(toolId, { form, result } = {}) {
   const store = { ...readStore(SETTING_KEYS.ROLL_HISTORY) };
-  const list = Array.isArray(store[toolId]) ? [...store[toolId]] : [];
+  const list = sanitizeHistoryList(store[toolId]);
   const record = {
     id: mintId("h"),
     at: Date.now(),
-    form: clone(form) ?? {},
-    result: clone(result) ?? null,
+    form: isRecord(form) ? clone(form) : {},
+    result: sanitizeStoredResult(result),
   };
   list.unshift(record);
   store[toolId] = list.slice(0, HISTORY_LIMIT);
