@@ -670,7 +670,13 @@ import {
       merchants: [],
       factions: [],
       resourceConfig: { version: 1 },
-      resourceRunState: {},
+      // Foundry deep-merges flag objects and can retain this legacy key order.
+      // Migration verification must compare values, not JSON insertion order.
+      resourceRunState: {
+        lastSeenDay: null,
+        currentEnvironmentId: null,
+        lastUpkeepResult: null,
+      },
     };
     let blockedRunStateUpdate = null;
     const store = {
@@ -691,7 +697,17 @@ import {
         }
         for (const [path, value] of Object.entries(changes)) {
           const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
-          if (match) flags[match[1]] = structuredClone(value);
+          if (match) {
+            const key = match[1];
+            const snapshot = structuredClone(value);
+            flags[key] =
+              key === "resourceRunState" &&
+              flags[key] &&
+              typeof flags[key] === "object" &&
+              !Array.isArray(flags[key])
+                ? { ...flags[key], ...snapshot }
+                : snapshot;
+          }
         }
         globalThis.Hooks.call("updateJournalEntry", this, changes);
         return this;

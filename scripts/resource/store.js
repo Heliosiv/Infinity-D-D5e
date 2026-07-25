@@ -27,6 +27,7 @@ import {
   getSettingDefault,
   setSetting,
 } from "../settings.js";
+import { persistedValuesEqual } from "../utils/persisted-data.js";
 import {
   getDefaultEnvironments,
   normalizeEnvironmentCatalog,
@@ -365,14 +366,10 @@ function serializeRunState(state, { revision, authorityId, authorityEpoch }) {
 }
 
 function runStateValuesEqual(left, right) {
-  try {
-    return (
-      JSON.stringify(normalizeRunState(left)) ===
-      JSON.stringify(normalizeRunState(right))
-    );
-  } catch {
-    return false;
-  }
+  return persistedValuesEqual(
+    normalizeRunState(left),
+    normalizeRunState(right),
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -741,11 +738,7 @@ function readRawRunState() {
 }
 
 function rawRunStatesEqual(left, right) {
-  try {
-    return JSON.stringify(left) === JSON.stringify(right);
-  } catch {
-    return false;
-  }
+  return persistedValuesEqual(left, right);
 }
 
 function cloneRunState(state) {

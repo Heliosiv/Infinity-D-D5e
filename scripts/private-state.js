@@ -11,6 +11,7 @@
 import { isFullGM } from "./permissions.js";
 import { SETTING_KEYS } from "./settings.js";
 import { authoritativeGMId, isAuthoritativeGM } from "./socket-authority.js";
+import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
@@ -86,11 +87,7 @@ function cleanValue(key, value) {
 }
 
 function valuesEqual(left, right) {
-  try {
-    return JSON.stringify(left) === JSON.stringify(right);
-  } catch {
-    return false;
-  }
+  return persistedValuesEqual(left, right);
 }
 
 function readLegacyValue(key) {
