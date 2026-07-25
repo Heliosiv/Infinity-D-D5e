@@ -13,7 +13,16 @@
 import { computeLootBudget } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
-import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
+import {
+  MAGIC_BIAS_RANGE,
+  estimateLootChances,
+  filterCandidates,
+  rollLoot,
+} from "./loot/roller.js";
+import {
+  LOOT_BALANCE_PROFILE_IDS,
+  getLootBundleBalanceOptions,
+} from "./loot/category-balance.js";
 import {
   LOOT_TYPES,
   RARITIES,
@@ -102,7 +111,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       defaultTier,
       itemsPerCreature: 2,
       magicBias: getSetting(SETTING_KEYS.DEFAULT_MAGIC_BIAS) ?? 0,
-      rarities: ["common", "uncommon"],
+      rarities: [],
       lootTypes: [],
       minItemGp: 0,
       maxItemGp: 0,
@@ -177,17 +186,24 @@ export class PerCreatureLootApp extends BaseLootApp {
     const filter = this._filterSpec();
     const relevantTiers = new Set();
     const emptyTiers = [];
+    const zeroChanceTiers = [];
 
     for (const tier of rosterTiers) {
       const window = tierWindow(tier);
       for (const candidateTier of window) relevantTiers.add(candidateTier);
-      if (
-        filterCandidates(this._cachedItems, {
-          ...filter,
-          tiers: window,
-        }).length === 0
-      ) {
+      const tierCandidates = filterCandidates(this._cachedItems, {
+        ...filter,
+        tiers: window,
+      });
+      if (tierCandidates.length === 0) {
         emptyTiers.push(tier);
+      } else {
+        const chance = estimateLootChances(tierCandidates, {
+          budgetGp: this._creatureBudget(tier),
+          magicBias: this._form.magicBias,
+          ...this._balanceOptionsForCreature({ tier }),
+        });
+        if (!chance.available) zeroChanceTiers.push(tier);
       }
     }
 
@@ -195,21 +211,34 @@ export class PerCreatureLootApp extends BaseLootApp {
       ...filter,
       tiers: [...relevantTiers],
     }).length;
-    const candidateEmpty = emptyTiers.length > 0;
-    const tierSummary = emptyTiers.map((tier) => tier.toUpperCase()).join(", ");
+    const blockedTiers = [...new Set([...emptyTiers, ...zeroChanceTiers])];
+    const candidateEmpty = blockedTiers.length > 0;
+    const emptySummary = emptyTiers
+      .map((tier) => tier.toUpperCase())
+      .join(", ");
+    const zeroChanceSummary = zeroChanceTiers
+      .map((tier) => tier.toUpperCase())
+      .join(", ");
     const matchLabel = `${count.toLocaleString()} item${count === 1 ? "" : "s"} match roster tiers`;
+    const problemLabels = [];
+    if (emptySummary) problemLabels.push(`no matches for ${emptySummary}`);
+    if (zeroChanceSummary) {
+      problemLabels.push(`zero roll chance for ${zeroChanceSummary}`);
+    }
 
     return {
       ...base,
       count,
       label: candidateEmpty
-        ? `${matchLabel}; no matches for ${tierSummary}`
+        ? `${matchLabel}; ${problemLabels.join("; ")}`
         : matchLabel,
       candidateEmpty,
       blocksGeneration: candidateEmpty,
-      reason: candidateEmpty
-        ? `No items match the current rarity, item type, and value filters for ${tierSummary}. Adjust a filter or creature tier and try again.`
-        : "",
+      reason: emptySummary
+        ? `No items match the current rarity, item type, and value filters for ${emptySummary}. Adjust a filter or creature tier and try again.`
+        : zeroChanceSummary
+          ? `The current Magic Bias excludes every matching item for ${zeroChanceSummary}. Move the dial away from its endpoint or widen the item-type filters.`
+          : "",
       notificationLevel: "warn",
     };
   }
@@ -433,10 +462,20 @@ export class PerCreatureLootApp extends BaseLootApp {
 
     // Make the card reroll undoable — it overwrites a creature's bundle, which
     // may have been hand-edited (delete / qty / single-slot reroll).
-    if (this._lastResult) this._pushUndo();
     playModuleSound(SOUND_EVENTS.ROLL_START);
     const items = await this._loadItems();
-    const rolled = this._rollForCreature(creature, items);
+    const plan = this._creatureRollPlan(creature, items);
+    if (!plan.chance.available) {
+      this._notifyGenerationBlocked({
+        reason:
+          "No items can be rolled for this creature at the current filters and Magic Bias.",
+        notificationLevel: "warn",
+      });
+      return;
+    }
+    // A blocked card reroll must preserve both the existing drops and Undo.
+    if (this._lastResult) this._pushUndo();
+    const rolled = this._rollForCreature(creature, items, plan);
     this._lastResult = {
       ...(this._lastResult ?? {
         creatures: [],
@@ -596,6 +635,23 @@ export class PerCreatureLootApp extends BaseLootApp {
     return creature ? { ...spec, tiers: tierWindow(creature.tier) } : spec;
   }
 
+  _balanceOptionsForCreature(creature, existingItems = []) {
+    return getLootBundleBalanceOptions({
+      profileId: LOOT_BALANCE_PROFILE_IDS.CREATURE,
+      tier: creature?.tier ?? this._form.defaultTier,
+      lootTypes: this._form.lootTypes,
+      existingItems,
+    });
+  }
+
+  _rerollRollOptions(oldEntry, list) {
+    const creature = this._creatureForEntry(oldEntry);
+    return this._balanceOptionsForCreature(
+      creature,
+      list.filter((entry) => entry !== oldEntry),
+    );
+  }
+
   /** Reroll budget = the owning creature's budget (not a global one). */
   _rerollBudgetForList(list) {
     const creature = (this._lastResult?.creatures ?? []).find(
@@ -604,11 +660,33 @@ export class PerCreatureLootApp extends BaseLootApp {
     return creature?.budgetGp ?? 0;
   }
 
+  _creatureBudget(tier) {
+    return computeLootBudget({
+      tier,
+      scale: "trivial",
+      partySize: livePartySize() || 4,
+    });
+  }
+
+  _creatureRollPlan(creature, items) {
+    const filter = {
+      ...this._filterSpec(),
+      tiers: tierWindow(creature.tier),
+    };
+    const candidates = filterCandidates(items, filter);
+    const budget = this._creatureBudget(creature.tier);
+    const balanceOptions = this._balanceOptionsForCreature(creature);
+    const chance = estimateLootChances(candidates, {
+      budgetGp: budget,
+      magicBias: this._form.magicBias,
+      ...balanceOptions,
+    });
+    return { candidates, budget, balanceOptions, chance };
+  }
+
   _rosterTotalBudget() {
-    const partySize = livePartySize() || 4;
     return this._form.roster.reduce(
-      (sum, c) =>
-        sum + computeLootBudget({ tier: c.tier, scale: "trivial", partySize }),
+      (sum, creature) => sum + this._creatureBudget(creature.tier),
       0,
     );
   }
@@ -653,22 +731,14 @@ export class PerCreatureLootApp extends BaseLootApp {
   }
 
   /** Roll a single creature's bundle and return a decorated entry. */
-  _rollForCreature(creature, items) {
-    const filter = {
-      ...this._filterSpec(),
-      tiers: tierWindow(creature.tier),
-    };
-    const candidates = filterCandidates(items, filter);
-    const partySize = livePartySize() || 4;
-    const budget = computeLootBudget({
-      tier: creature.tier,
-      scale: "trivial",
-      partySize,
-    });
+  _rollForCreature(creature, items, plan = null) {
+    const { candidates, budget, balanceOptions } =
+      plan ?? this._creatureRollPlan(creature, items);
     const raw = rollLoot(candidates, {
       count: this._form.itemsPerCreature,
       budgetGp: budget,
       magicBias: this._form.magicBias,
+      ...balanceOptions,
     });
     const decoratedItems = raw.items.map((entry) => this._decorateEntry(entry));
     return {

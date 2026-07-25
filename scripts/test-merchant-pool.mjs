@@ -99,6 +99,70 @@ const ITEMS = [
 }
 
 /* ------------------------------------------------------------------ *
+ * Category-first Merchant balance is independent of source-folder size.
+ * One potion document competes with one hundred weapon documents by the
+ * configured category weights, not by a 100:1 document-count advantage.
+ * ------------------------------------------------------------------ */
+{
+  const oversizedWeaponFolder = Array.from({ length: 100 }, (_, index) =>
+    mkItem(`magic-weapon-${index}`, "loot.weapon.magic", "common"),
+  );
+  const mixedPool = [
+    ...oversizedWeaponFolder,
+    mkItem("only-potion", "loot.potion", "common"),
+  ];
+  let weaponRolls = 0;
+  const trials = 400;
+  for (let seed = 1; seed <= trials; seed += 1) {
+    const { rows } = rollMerchantStock(
+      {
+        lootTypes: ["loot.weapon.magic", "loot.potion"],
+        rarities: ["common"],
+        count: 1,
+      },
+      mixedPool,
+      { rng: mulberry32(seed) },
+    );
+    assert.equal(rows.length, 1);
+    if (rows[0].uuid.includes("magic-weapon-")) weaponRolls += 1;
+  }
+  const weaponRate = weaponRolls / trials;
+  assert.ok(
+    weaponRate >= 0.3 && weaponRate <= 0.55,
+    `merchant category rate ${weaponRate.toFixed(3)} follows category weights, not document cardinality`,
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Merchants are shelf generators, not loot bundles: a mixed stock pool has
+ * no one-scroll cap. With a deterministic low draw, scrolls remain eligible
+ * after the first named scroll is stocked.
+ * ------------------------------------------------------------------ */
+{
+  const scrollStock = [
+    mkItem("named-scroll-1", "loot.scroll", "common"),
+    mkItem("named-scroll-2", "loot.scroll", "common"),
+    mkItem("named-scroll-3", "loot.scroll", "common"),
+    mkItem("named-scroll-4", "loot.scroll", "common"),
+    mkItem("healing-potion", "loot.potion", "common"),
+  ];
+  const { rows } = rollMerchantStock(
+    {
+      lootTypes: ["loot.scroll", "loot.potion"],
+      rarities: ["common"],
+      count: 3,
+    },
+    scrollStock,
+    { rng: () => 0 },
+  );
+  assert.equal(rows.length, 3);
+  assert.ok(
+    rows.every((row) => row.uuid.includes("named-scroll-")),
+    "mixed merchant stock can contain multiple distinct named scrolls",
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Ammunition always stocks in full stacks of 20
  * ------------------------------------------------------------------ */
 {

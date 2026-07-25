@@ -1179,7 +1179,18 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       .filter((e) => e !== old)
       .reduce((sum, e) => sum + (e.gpTotal ?? 0), 0);
     // Budget freed by this slot = the list's budget minus everything else in it.
-    const budgetGp = Math.max(0, this._rerollBudgetForList(list) - otherGp);
+    const listBudget = Number(this._rerollBudgetForList(list) ?? 0);
+    const budgetGp = Math.max(0, listBudget - otherGp);
+    // `rerollOne` treats a zero budget as intentionally unbounded. Keep those
+    // semantics for genuinely unbudgeted lists, but never let a fully consumed
+    // positive bundle budget turn into an unlimited replacement roll.
+    if (Number.isFinite(listBudget) && listBudget > 0 && budgetGp <= 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.info(
+        "No budget remains for a replacement — keeping the current item.",
+      );
+      return;
+    }
     // Exclude the other items in this list so the swap doesn't duplicate them.
     // Use the shared uuid-first identity so dedup still works after a history
     // entry is restored (slimResult keeps uuid but drops _id/id).

@@ -106,8 +106,8 @@ const RARITY_DEFAULTS = Object.freeze({
   t5: Object.freeze({
     small: Object.freeze(["very-rare", "legendary"]),
     standard: Object.freeze(["very-rare", "legendary"]),
-    large: Object.freeze(["legendary", "artifact"]),
-    massive: Object.freeze(["legendary", "artifact"]),
+    large: Object.freeze(["very-rare", "legendary", "artifact"]),
+    massive: Object.freeze(["very-rare", "legendary", "artifact"]),
   }),
 });
 

@@ -28,6 +28,10 @@ import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
+  LOOT_BALANCE_PROFILE_IDS,
+  getLootBundleBalanceOptions,
+} from "./loot/category-balance.js";
+import {
   LOOT_TYPES,
   RARITIES,
   TIERS,
@@ -552,6 +556,27 @@ export class HoardLootApp extends BaseLootApp {
     };
   }
 
+  _balanceOptions(existingItems = []) {
+    return getLootBundleBalanceOptions({
+      profileId: LOOT_BALANCE_PROFILE_IDS.HOARD,
+      tier: this._form.tier,
+      scale: this._form.scale,
+      lootTypes: this._form.lootTypes,
+      existingItems,
+      // Hoard exposes an explicit rarity-balance control. It remains
+      // authoritative while category odds, diversity, and caps are shared
+      // with the other loot generators.
+      rarityWeights: resolveRarityWeights(
+        this._form.rarityBalance,
+        this._form.rarityWeights,
+      ),
+    });
+  }
+
+  _rerollRollOptions(oldEntry, list) {
+    return this._balanceOptions(list.filter((entry) => entry !== oldEntry));
+  }
+
   /* ------------------- generation pipeline ------------------- */
 
   async _generate() {
@@ -584,10 +609,7 @@ export class HoardLootApp extends BaseLootApp {
               ),
               budgetGp: itemBudget,
               magicBias: this._form.magicBias,
-              rarityWeights: resolveRarityWeights(
-                this._form.rarityBalance,
-                this._form.rarityWeights,
-              ),
+              ...this._balanceOptions(),
               artVariants: this._form.artVariants,
             })
           : { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };

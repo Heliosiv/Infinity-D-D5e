@@ -33,7 +33,7 @@ import {
   itemIdentity,
   rollLoot,
 } from "./loot/roller.js";
-import { getEncounterBalanceOptions } from "./loot/category-balance.js";
+import { getLootBundleBalanceOptions } from "./loot/category-balance.js";
 import { restoreStoredRollCategories } from "./loot/item-categories.js";
 import {
   LOOT_TYPES,
@@ -625,7 +625,7 @@ export class PerEncounterLootApp extends BaseLootApp {
   }
 
   _balanceOptions(existingItems = []) {
-    return getEncounterBalanceOptions({
+    return getLootBundleBalanceOptions({
       tier: this._form.tier,
       lootTypes: this._form.lootTypes,
       existingItems,

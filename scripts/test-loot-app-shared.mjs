@@ -713,6 +713,194 @@ for (const [name, Cls] of [
 }
 
 /* ------------------------------------------------------------------ *
+ * Per-Creature balance is local to each creature. A sibling scroll uses
+ * that creature's one-scroll allowance; scrolls carried by another creature
+ * must not consume it or make the result depend on roster order.
+ * ------------------------------------------------------------------ */
+{
+  const app = new PerCreatureLootApp();
+  const oldEntry = {
+    entryId: "old",
+    item: fakeItem({
+      _id: "old-mundane",
+      tier: "t2",
+      lootType: "loot.weapon.mundane",
+    }),
+  };
+  const siblingScroll = {
+    entryId: "own-scroll",
+    item: fakeItem({
+      _id: "own-scroll-item",
+      tier: "t2",
+      lootType: "loot.scroll",
+    }),
+  };
+  const foreignScrollA = {
+    entryId: "foreign-scroll-a",
+    item: fakeItem({
+      _id: "foreign-scroll-item-a",
+      tier: "t2",
+      lootType: "loot.scroll",
+    }),
+  };
+  const foreignScrollB = {
+    entryId: "foreign-scroll-b",
+    item: fakeItem({
+      _id: "foreign-scroll-item-b",
+      tier: "t2",
+      lootType: "loot.scroll",
+    }),
+  };
+  const ownList = [oldEntry, siblingScroll];
+  app._lastResult = {
+    creatures: [
+      { id: "c1", tier: "t2", items: ownList, budgetGp: 500 },
+      {
+        id: "c2",
+        tier: "t2",
+        items: [foreignScrollA, foreignScrollB],
+        budgetGp: 500,
+      },
+    ],
+  };
+
+  const freshOptions = app._balanceOptionsForCreature({ tier: "t2" });
+  assert.deepEqual(
+    freshOptions.categoryCaps,
+    { "loot.scroll": 1 },
+    "a mixed creature bundle allows at most one scroll",
+  );
+  assert.deepEqual(
+    freshOptions.initialCategoryCounts,
+    {},
+    "a fresh creature starts with no category usage",
+  );
+
+  const rerollOptions = app._rerollRollOptions(oldEntry, ownList);
+  assert.deepEqual(
+    rerollOptions.initialCategoryCounts,
+    { "loot.scroll": 1 },
+    "single-slot reroll counts only siblings on the owning creature",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Default Per-Creature rarity selection stays tier-driven. In particular,
+ * a fresh T4/T5 roster remains rollable instead of inheriting a Common /
+ * Uncommon-only default that makes its tier windows empty.
+ * ------------------------------------------------------------------ */
+{
+  assert.deepEqual(
+    PerCreatureLootApp.buildDefaultForm().rarities,
+    [],
+    "no checked rarity means use the creature profile's full tier curve",
+  );
+
+  const app = new PerCreatureLootApp();
+  app._cachedItems = [
+    fakeItem({
+      _id: "t4-default-drop",
+      rarity: "legendary",
+      tier: "t4",
+      lootType: "loot.equipment.magic",
+      gpValue: 10,
+    }),
+    fakeItem({
+      _id: "t5-default-drop",
+      rarity: "legendary",
+      tier: "t5",
+      lootType: "loot.equipment.magic",
+      gpValue: 10,
+    }),
+  ];
+  app._packStats = { totalItems: 2 };
+  app._form = {
+    ...app._form,
+    rarities: [],
+    lootTypes: [],
+    magicBias: 0,
+    roster: [
+      { id: "c4", name: "T4 Creature", tier: "t4" },
+      { id: "c5", name: "T5 Creature", tier: "t5" },
+    ],
+  };
+
+  const state = app._primaryGenerationState();
+  assert.equal(state.candidateEmpty, false);
+  assert.equal(
+    state.disabled,
+    false,
+    "default T4/T5 creature profiles retain selectable high-tier drops",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * A card reroll preflights the exact creature profile before touching Undo.
+ * At +100% Magic Bias, a mundane-only pool is impossible, so the prior card
+ * must be preserved byte-for-byte.
+ * ------------------------------------------------------------------ */
+{
+  const app = new PerCreatureLootApp();
+  const creature = { id: "c1", name: "Guard", tier: "t1" };
+  const previousResult = {
+    creatures: [
+      {
+        ...creature,
+        items: [{ entryId: "keep", item: { _id: "kept-item" }, gpTotal: 10 }],
+        totalGp: 10,
+        budgetGp: 100,
+      },
+    ],
+    grandTotal: 10,
+    grandTotalLabel: "10 gp",
+  };
+  const mundaneOnly = fakeItem({
+    _id: "mundane-only",
+    tier: "t1",
+    rarity: "common",
+    lootType: "loot.weapon.mundane",
+    gpValue: 5,
+  });
+  app._form = {
+    ...app._form,
+    roster: [creature],
+    rarities: [],
+    lootTypes: ["loot.weapon.mundane"],
+    magicBias: 1,
+  };
+  app._lastResult = previousResult;
+  app._loadingItems = false;
+  app._loadItems = async () => [mundaneOnly];
+  let undoPushes = 0;
+  let blockedReason = "";
+  let renderCalls = 0;
+  app._pushUndo = () => {
+    undoPushes += 1;
+  };
+  app._notifyGenerationBlocked = ({ reason }) => {
+    blockedReason = reason;
+  };
+  app._renderPreservingScroll = async () => {
+    renderCalls += 1;
+  };
+
+  await PerCreatureLootApp.DEFAULT_OPTIONS.actions.rerollCreature.call(
+    app,
+    null,
+    { dataset: { creatureId: creature.id } },
+  );
+
+  assert.equal(app._lastResult, previousResult);
+  assert.equal(
+    undoPushes,
+    0,
+    "an impossible card reroll does not consume Undo",
+  );
+  assert.equal(renderCalls, 0, "an impossible card reroll does not replace UI");
+  assert.match(blockedReason, /No items can be rolled/);
+}
+
+/* ------------------------------------------------------------------ *
  * Flat tools (Hoard / Per-Encounter) keep the original base behavior:
  * the single global `_lastResult.budgetGp` bounds the reroll.
  * ------------------------------------------------------------------ */
@@ -724,6 +912,134 @@ for (const [name, Cls] of [
     777,
     "flat tool reroll budget reads _lastResult.budgetGp",
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * A fully consumed positive bundle budget must not become an unbounded
+ * single-slot reroll merely because its remaining numeric budget is zero.
+ * ------------------------------------------------------------------ */
+{
+  const app = new HoardLootApp();
+  const oldEntry = {
+    entryId: "budget-old",
+    item: fakeItem({ _id: "budget-old-item", lootType: "loot.art" }),
+    gpTotal: 25,
+  };
+  const sibling = {
+    entryId: "budget-sibling",
+    item: fakeItem({
+      _id: "budget-sibling-item",
+      lootType: "loot.gem",
+    }),
+    gpTotal: 100,
+  };
+  const originalItems = [oldEntry, sibling];
+  app._lastResult = {
+    items: originalItems,
+    budgetGp: 100,
+    totalGp: 125,
+  };
+  app._loadingItems = false;
+  app._loadItems = async () => [];
+  let undoPushes = 0;
+  let renderCalls = 0;
+  app._pushUndo = () => {
+    undoPushes += 1;
+  };
+  app._renderPreservingScroll = async () => {
+    renderCalls += 1;
+  };
+
+  const savedUi = globalThis.ui;
+  const notices = [];
+  globalThis.ui = {
+    notifications: {
+      info: (message) => notices.push(message),
+    },
+  };
+  try {
+    await HoardLootApp.DEFAULT_OPTIONS.actions.rerollOne.call(app, null, {
+      dataset: { entryId: oldEntry.entryId },
+    });
+  } finally {
+    if (savedUi !== undefined) globalThis.ui = savedUi;
+    else delete globalThis.ui;
+  }
+
+  assert.equal(app._lastResult.items, originalItems);
+  assert.equal(app._lastResult.items[0], oldEntry);
+  assert.equal(undoPushes, 0);
+  assert.equal(renderCalls, 0);
+  assert.match(notices[0] ?? "", /No budget remains/);
+}
+
+/* ------------------------------------------------------------------ *
+ * Hoard generation and single-slot rerolls share the same treasure profile.
+ * Scale controls the scroll cap, custom rarity weights remain authoritative,
+ * and rerolls seed their counts from the surviving siblings.
+ * ------------------------------------------------------------------ */
+{
+  const hoard = new HoardLootApp();
+  const customRarityWeights = {
+    common: 0.2,
+    uncommon: 0.4,
+    rare: 1.5,
+    "very-rare": 2,
+    legendary: 0.6,
+    artifact: 0.1,
+  };
+  hoard._form = {
+    ...hoard._form,
+    tier: "t4",
+    scale: "large",
+    lootTypes: [],
+    rarityBalance: "custom",
+    rarityWeights: customRarityWeights,
+  };
+
+  const freshOptions = hoard._balanceOptions();
+  assert.deepEqual(
+    freshOptions.categoryCaps,
+    { "loot.scroll": 2 },
+    "a large hoard allows at most two scrolls",
+  );
+  assert.deepEqual(freshOptions.initialCategoryCounts, {});
+  assert.deepEqual(
+    freshOptions.rarityWeights,
+    customRarityWeights,
+    "the Hoard rarity-balance control overrides the shared tier curve",
+  );
+  assert.equal(
+    freshOptions.categoryWeights["loot.gem"],
+    9,
+    "fresh Hoard rolls use the T4 treasure-cache category profile",
+  );
+
+  const oldEntry = {
+    entryId: "replace",
+    item: fakeItem({
+      _id: "replace-item",
+      tier: "t4",
+      lootType: "loot.art",
+    }),
+  };
+  const survivingScroll = {
+    entryId: "surviving-scroll",
+    item: fakeItem({
+      _id: "surviving-scroll-item",
+      tier: "t4",
+      lootType: "loot.scroll",
+    }),
+  };
+  const list = [oldEntry, survivingScroll];
+  const rerollOptions = hoard._rerollRollOptions(oldEntry, list);
+  assert.deepEqual(
+    rerollOptions.initialCategoryCounts,
+    { "loot.scroll": 1 },
+    "Hoard rerolls preserve sibling category usage",
+  );
+  assert.deepEqual(rerollOptions.categoryCaps, { "loot.scroll": 2 });
+  assert.deepEqual(rerollOptions.rarityWeights, customRarityWeights);
 }
 
 delete globalThis.foundry;

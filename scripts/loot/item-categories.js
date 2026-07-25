@@ -44,6 +44,12 @@ export const VIRTUAL_LOOT_TYPES = Object.freeze(
 );
 
 const LOOT_TYPE_SET = new Set(LOOT_TYPES);
+const LEGACY_ROLL_CATEGORY_ALIASES = new Map(
+  LOOT_TYPES.map((category) => [
+    category.replace(/^loot\./, "").replaceAll(".", "-"),
+    category,
+  ]),
+);
 const VIRTUAL_LOOT_TYPE_SET = new Set(VIRTUAL_LOOT_TYPES);
 const REAGENT_KEYWORDS = new Set([
   "loot.reagent",
@@ -101,6 +107,8 @@ export function getItemRollCategory(item) {
   }
   const canonical = getItemLootType(item);
   if (LOOT_TYPE_SET.has(canonical)) return canonical;
+  const legacyCategory = LEGACY_ROLL_CATEGORY_ALIASES.get(canonical);
+  if (legacyCategory) return legacyCategory;
   for (const category of categories) {
     if (LOOT_TYPE_SET.has(category)) return category;
   }

@@ -10,6 +10,10 @@
  */
 
 import { filterCandidates, rollLoot } from "../loot/roller.js";
+import {
+  LOOT_BALANCE_PROFILE_IDS,
+  getLootBundleBalanceOptions,
+} from "../loot/category-balance.js";
 import { valueFilterSpec } from "../loot/value-filter.js";
 import { createInventoryRow, resolveStockQty } from "./store.js";
 
@@ -102,7 +106,11 @@ export function rollMerchantStock(pool, items, opts = {}) {
   const rolled = rollLoot(candidates, {
     count, // 0 = fill toward budgetGp; > 0 = unique-line cap
     budgetGp, // 0 = no budget
-    rarityWeights: pool?.rarityWeights,
+    ...getLootBundleBalanceOptions({
+      profileId: LOOT_BALANCE_PROFILE_IDS.MERCHANT,
+      lootTypes,
+      rarityWeights: pool?.rarityWeights,
+    }),
     rng: opts.rng,
   });
   const seen = new Set();

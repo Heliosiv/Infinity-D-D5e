@@ -42,6 +42,15 @@ assert.deepEqual(VIRTUAL_LOOT_TYPES, [
   );
 }
 
+/* pre-v3 roll-category slugs still map onto category-first balance profiles */
+{
+  assert.equal(
+    getItemRollCategory(fakeItem({ lootType: "weapon-magic" })),
+    "loot.weapon.magic",
+  );
+  assert.equal(getItemRollCategory(fakeItem({ lootType: "gem" })), "loot.gem");
+}
+
 /* canonical + virtual categories work through the legacy flag namespace */
 {
   const gem = legacyNamespaceItem({

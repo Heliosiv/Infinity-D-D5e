@@ -220,6 +220,16 @@ const rarityRank = (r) => RARITY_ORDER.indexOf(r);
 
   // Sanity: t1/small is just common; t5/massive includes artifact.
   assert.deepEqual(getDefaultRarities("t1", "small"), ["common"]);
+  assert.deepEqual(getDefaultRarities("t5", "large"), [
+    "very-rare",
+    "legendary",
+    "artifact",
+  ]);
+  assert.deepEqual(getDefaultRarities("t5", "massive"), [
+    "very-rare",
+    "legendary",
+    "artifact",
+  ]);
   assert.ok(getDefaultRarities("t5", "massive").includes("artifact"));
   assert.ok(getDefaultRarities("t4", "massive").includes("artifact"));
 
