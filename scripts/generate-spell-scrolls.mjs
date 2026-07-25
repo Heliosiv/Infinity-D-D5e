@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { isGenericSpellScrollItem } from "./loot/tag-vocabulary.js";
 import { escapeHtml } from "./ui-util.js";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
@@ -124,7 +125,7 @@ const itemsWithoutGenerated = rawItems.filter(
   (item) => !isGeneratedSpellScroll(item),
 );
 const retaggedItems = itemsWithoutGenerated.map((item) =>
-  isGenericSpellScroll(item) ? retagGenericSpellScroll(item) : item,
+  isGenericSpellScrollItem(item) ? retagGenericSpellScroll(item) : item,
 );
 const spells = retaggedItems.filter(isSourceSpell).sort((a, b) => {
   const byLevel = Number(a.system?.level ?? 0) - Number(b.system?.level ?? 0);
@@ -133,8 +134,16 @@ const spells = retaggedItems.filter(isSourceSpell).sort((a, b) => {
 });
 
 const templates = collectScrollTemplates(retaggedItems);
+const distributedLootWeights = distributeSpellScrollLootWeights(
+  spells,
+  templates,
+);
 const generated = spells.map((spell) =>
-  createSpellScroll(spell, templates.get(normalizeLevel(spell.system?.level))),
+  createSpellScroll(
+    spell,
+    templates.get(normalizeLevel(spell.system?.level)),
+    distributedLootWeights.get(spell._id),
+  ),
 );
 
 const usedIds = new Set(retaggedItems.map((item) => item._id));
@@ -171,16 +180,6 @@ function isGeneratedSpellScroll(item) {
   return Array.isArray(keywords) && keywords.includes(GENERATED_KEYWORD);
 }
 
-function isGenericSpellScroll(item) {
-  return (
-    item?.type === "consumable" &&
-    item?.system?.type?.value === "scroll" &&
-    /^Spell Scroll (?:Cantrip|\d+(?:st|nd|rd|th) Level)$/i.test(
-      String(item?.name ?? ""),
-    )
-  );
-}
-
 function isSourceSpell(item) {
   return (
     item?.type === "spell" &&
@@ -201,6 +200,9 @@ function retagGenericSpellScroll(item) {
     sourceClass: "generated",
     extraKeywords: ["source.dnd5e.items"],
   });
+  // Keep the level-based scroll as a document template, never as a result.
+  // A usable loot scroll must identify the exact spell it contains.
+  out.flags[MODULE_ID].lootEligible = false;
   delete out.flags[MODULE_ID].variableTreasureKind;
   delete out.flags["party-operations"];
   delete out.variableTreasureKind;
@@ -268,7 +270,7 @@ function cleanScrollKeywords(keywords) {
 function collectScrollTemplates(items) {
   const templates = new Map();
   for (const item of items) {
-    if (!isGenericSpellScroll(item)) continue;
+    if (!isGenericSpellScrollItem(item)) continue;
     const level = levelFromGenericScrollName(item.name);
     if (level === null) continue;
     templates.set(level, item);
@@ -282,7 +284,63 @@ function collectScrollTemplates(items) {
   return templates;
 }
 
-function createSpellScroll(spell, template) {
+/**
+ * Divide each generic level template's original loot weight among the named
+ * spells at that level. Expanding one "1st Level" result into dozens of
+ * concrete spell documents must not multiply the overall chance of a scroll.
+ *
+ * Source-spell weights are retained as relative weights within the level, and
+ * the final entry absorbs rounding residue so every level sums back to the
+ * template's exact target weight.
+ */
+function distributeSpellScrollLootWeights(spells, templates) {
+  const spellsByLevel = new Map();
+  for (const spell of spells) {
+    const level = normalizeLevel(spell.system?.level);
+    const group = spellsByLevel.get(level) ?? [];
+    group.push(spell);
+    spellsByLevel.set(level, group);
+  }
+
+  const distributed = new Map();
+  for (const [level, levelSpells] of spellsByLevel) {
+    const template = templates.get(level);
+    const templatePo =
+      template?.flags?.[MODULE_ID] ??
+      template?.flags?.["party-operations"] ??
+      {};
+    const targetWeight = positiveLootWeight(templatePo.lootWeight);
+    const sourceWeights = levelSpells.map((spell) => {
+      const sourcePo =
+        spell?.flags?.[MODULE_ID] ?? spell?.flags?.["party-operations"] ?? {};
+      return positiveLootWeight(sourcePo.lootWeight);
+    });
+    const sourceTotal = sourceWeights.reduce((sum, weight) => sum + weight, 0);
+    let assigned = 0;
+
+    levelSpells.forEach((spell, index) => {
+      const isLast = index === levelSpells.length - 1;
+      const rawWeight = isLast
+        ? targetWeight - assigned
+        : (targetWeight * sourceWeights[index]) / sourceTotal;
+      const lootWeight = roundLootWeight(rawWeight);
+      distributed.set(spell._id, lootWeight);
+      assigned += lootWeight;
+    });
+  }
+  return distributed;
+}
+
+function positiveLootWeight(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+}
+
+function roundLootWeight(value) {
+  return Math.max(Number.EPSILON, Number(Number(value).toFixed(12)));
+}
+
+function createSpellScroll(spell, template, distributedLootWeight) {
   const level = normalizeLevel(spell.system?.level);
   const fallback = LEVEL_FALLBACKS[level] ?? LEVEL_FALLBACKS[9];
   const templatePo =
@@ -362,7 +420,7 @@ function createSpellScroll(spell, template) {
       "spell",
     ],
     saleLiquidity: "sale.standard",
-    lootWeight: Number(sourcePo.lootWeight ?? templatePo.lootWeight ?? 1),
+    lootWeight: positiveLootWeight(distributedLootWeight),
     maxRecommendedQty: 1,
     lootEligible: true,
     sellValueGp: Math.floor(gpValue / 2),

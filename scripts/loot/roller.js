@@ -31,6 +31,7 @@ import {
   getItemValueBand,
   isAmmunitionItem,
   isBareSpellLootItem,
+  isGenericSpellScrollItem,
   isLootEligible,
   normalizeRarity,
 } from "./tag-vocabulary.js";
@@ -100,7 +101,7 @@ export function filterCandidates(items, filter = {}) {
   const out = [];
   for (const item of items) {
     if (!item) continue;
-    if (isBareSpellLootItem(item)) continue;
+    if (isBareSpellLootItem(item) || isGenericSpellScrollItem(item)) continue;
     if (requireEligible && !isLootEligible(item)) continue;
 
     if (lootTypes.size > 0 && !matchesLootTypes(item, lootTypes)) continue;

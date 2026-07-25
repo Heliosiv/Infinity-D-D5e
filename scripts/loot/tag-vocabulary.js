@@ -250,6 +250,23 @@ export function isBareSpellLootItem(item) {
   return item?.type === "spell" || getItemLootType(item) === "loot.spell";
 }
 
+/**
+ * True for the generic level-based spell-scroll documents bundled with dnd5e.
+ *
+ * Infinity D&D5e keeps these documents only as pricing, rarity, and item-shape
+ * templates for the generated spell-specific scrolls. They are not complete
+ * loot results because they do not identify which spell the scroll contains.
+ */
+export function isGenericSpellScrollItem(item) {
+  return (
+    item?.type === "consumable" &&
+    String(item?.system?.type?.value ?? "").toLowerCase() === "scroll" &&
+    /^Spell Scroll (?:Cantrip|\d+(?:st|nd|rd|th) Level)$/i.test(
+      String(item?.name ?? ""),
+    )
+  );
+}
+
 /** Get the tier id (`t1`-`t5`) off an item, or "" if not tagged. */
 export function getItemTier(item) {
   const pre = item?.__inf;

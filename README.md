@@ -31,6 +31,10 @@ Three ways to open the dashboard:
 
 The Per-Encounter window includes a single -100% mundane to +100% magic slider. Each item is classified as `magic`, `mundane`, or `neutral`; the slider applies a per-item weight multiplier and can fully exclude the opposite side at either extreme. Most categories resolve directly from `lootType`. The mixed `loot.consumable` bucket also considers rarity and explicit dnd5e magic signals, so ordinary ammunition, food, rope, lanterns, and similar gear are weighted as mundane while magic consumables remain magic. The classifier lives in [scripts/loot/tag-vocabulary.js](scripts/loot/tag-vocabulary.js).
 
+### Spell Scrolls
+
+Loot rolls use only spell-specific scrolls such as **Spell Scroll: Fireball**. The generic level documents supplied by dnd5e remain in the compendium solely as pricing, rarity, and item-shape templates and are never roll candidates. Each level template's original loot weight is divided among the named spells at that level, so providing hundreds of predetermined spell choices does not make scrolls dominate mixed loot.
+
 ### Keyboard
 
 Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Toggleable in settings.

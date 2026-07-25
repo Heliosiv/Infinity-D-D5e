@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { filterCandidates } from "./loot/roller.js";
+import { filterCandidates, rollLoot } from "./loot/roller.js";
+import {
+  getItemLootType,
+  getItemLootWeight,
+  isGenericSpellScrollItem,
+  tierWindow,
+} from "./loot/tag-vocabulary.js";
+import { mulberry32 } from "./test-utils/rng.mjs";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const GENERATED_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -21,14 +28,7 @@ const generatedScrolls = items.filter(
   (item) =>
     item.flags?.["infinity-dnd5e"]?.spellScroll?.schema === GENERATED_SCHEMA,
 );
-const genericScrolls = items.filter(
-  (item) =>
-    item.type === "consumable" &&
-    item.system?.type?.value === "scroll" &&
-    /^Spell Scroll (?:Cantrip|\d+(?:st|nd|rd|th) Level)$/i.test(
-      String(item.name ?? ""),
-    ),
-);
+const genericScrolls = items.filter(isGenericSpellScrollItem);
 
 assert.equal(
   generatedScrolls.length,
@@ -105,6 +105,31 @@ for (const item of genericScrolls) {
   );
   assert.ok(!po.keywords.includes("loot.variable.art"));
   assert.equal(po.variableTreasureKind, undefined);
+  assert.equal(
+    po.lootEligible,
+    false,
+    `${item.name} must remain a non-rollable generation template`,
+  );
+}
+
+const generatedByLevel = Map.groupBy(
+  generatedScrolls,
+  (item) => item.flags["infinity-dnd5e"].spellScroll.spellLevel,
+);
+for (const template of genericScrolls) {
+  const level = /Cantrip/i.test(template.name)
+    ? 0
+    : Number(template.name.match(/Spell Scroll (\d+)/i)?.[1]);
+  const specificScrolls = generatedByLevel.get(level) ?? [];
+  const distributedWeight = specificScrolls.reduce(
+    (sum, item) => sum + getItemLootWeight(item),
+    0,
+  );
+  const templateWeight = getItemLootWeight(template);
+  assert.ok(
+    Math.abs(distributedWeight - templateWeight) < 1e-9,
+    `${template.name} weight must be distributed across its named spells`,
+  );
 }
 
 const scrollCandidates = filterCandidates(items, {
@@ -112,14 +137,73 @@ const scrollCandidates = filterCandidates(items, {
 });
 assert.equal(
   scrollCandidates.length,
-  generatedScrolls.length + genericScrolls.length,
-  "Scroll filter should return generated and generic scrolls",
+  generatedScrolls.length,
+  "Scroll filter should return only spell-specific scrolls",
 );
 assert.ok(
   scrollCandidates.some((item) => item.name === "Spell Scroll: Fireball"),
   "Scroll filter should include spell-specific scroll names",
 );
+assert.equal(
+  scrollCandidates.some(isGenericSpellScrollItem),
+  false,
+  "generic level scroll templates must never enter the loot pool",
+);
+assert.equal(
+  filterCandidates(genericScrolls, {
+    lootTypes: ["loot.scroll"],
+    requireEligible: false,
+  }).length,
+  0,
+  "generic templates must stay excluded even when eligibility flags are ignored",
+);
+for (const item of scrollCandidates) {
+  const spellScroll = item.flags?.["infinity-dnd5e"]?.spellScroll;
+  assert.equal(
+    spellScroll?.schema,
+    GENERATED_SCHEMA,
+    `${item.name} must identify a predetermined spell`,
+  );
+  assert.ok(spellScroll.sourceSpellId, `${item.name} missing source spell id`);
+  assert.ok(
+    spellScroll.sourceSpellName,
+    `${item.name} missing source spell name`,
+  );
+}
+
+const defaultEncounterCandidates = filterCandidates(items, {
+  tiers: tierWindow("t2"),
+  rarities: ["uncommon", "rare"],
+  requireEligible: true,
+});
+let scrollBearingEncounters = 0;
+let rolledScrolls = 0;
+for (let seed = 1; seed <= 1000; seed += 1) {
+  const result = rollLoot(defaultEncounterCandidates, {
+    count: 0,
+    budgetGp: 400,
+    magicBias: 0,
+    rng: mulberry32(seed),
+  });
+  const scrollCount = result.items.filter(
+    (entry) => getItemLootType(entry.item) === "loot.scroll",
+  ).length;
+  if (scrollCount > 0) scrollBearingEncounters += 1;
+  rolledScrolls += scrollCount;
+}
+assert.ok(
+  scrollBearingEncounters > 0,
+  "standard encounters should still occasionally produce a spell scroll",
+);
+assert.ok(
+  scrollBearingEncounters <= 150,
+  `spell scrolls appeared in ${scrollBearingEncounters}/1000 standard encounters`,
+);
+assert.ok(
+  rolledScrolls <= 160,
+  `standard encounters produced ${rolledScrolls} scrolls across 1000 rolls`,
+);
 
 process.stdout.write(
-  `spell-scroll validation passed (${generatedScrolls.length} generated, ${scrollCandidates.length} scroll candidates)\n`,
+  `spell-scroll validation passed (${generatedScrolls.length} generated, ${scrollCandidates.length} candidates, ${scrollBearingEncounters}/1000 standard encounters)\n`,
 );
