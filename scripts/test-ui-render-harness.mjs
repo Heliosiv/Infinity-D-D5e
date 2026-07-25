@@ -109,12 +109,27 @@ const lootFixtures = new Map(
 );
 for (const id of ["per-encounter", "per-creature"]) {
   const reason = `No items match the current filters for ${id}.`;
+  const fixture = lootFixtures.get(id);
+  const rarityOptions = fixture.context.rarityOptions.map((option, index) =>
+    index === 0
+      ? {
+          ...option,
+          count: 0,
+          selected: false,
+          unavailable: true,
+          selectedUnavailable: false,
+          disabled: true,
+          availabilityTitle: reason,
+        }
+      : option,
+  );
   const html = renderFixture(lootFixtures.get(id), {
     candidateLabel: `0 items match; ${id} unavailable`,
     noCandidates: true,
     candidateUnavailableReason: reason,
     generateDisabled: true,
     generateDisabledReason: reason,
+    rarityOptions,
   });
   const generateButton = html.match(
     /<button\b[^>]*data-action="generate"[^>]*>/,
@@ -131,6 +146,14 @@ for (const id of ["per-encounter", "per-creature"]) {
     /class="[^"]*budget-sub[^"]*is-empty[^"]*"[^>]*data-candidates/,
     `${id}: zero-match readout receives warning styling`,
   );
+  const unavailableChip = html.match(
+    /<label\b[^>]*data-chip-value="common"[^>]*>[\s\S]*?<\/label>/,
+  )?.[0];
+  assert.ok(unavailableChip, `${id}: renders the unavailable rarity chip`);
+  assert.match(unavailableChip, /\bis-unavailable\b/);
+  assert.match(unavailableChip, /aria-disabled="true"/);
+  assert.match(unavailableChip, /<input\b[^>]*\bdisabled\b/);
+  assert.match(unavailableChip, /data-chip-count>0<\/em>/);
 }
 
 {

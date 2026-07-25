@@ -32,7 +32,7 @@ import {
 } from "./distribute.js";
 import { buildJournalEntry } from "./journal.js";
 import { loadCompendiumItems } from "./pack.js";
-import { computePackStats } from "./pack-stats.js";
+import { computeFilterFacetStats, computePackStats } from "./pack-stats.js";
 import { filterCandidates, itemIdentity, rerollOne } from "./roller.js";
 import {
   bindScrollTracking,
@@ -545,6 +545,101 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  /** Required filter scopes for chip availability. Per-Creature widens this. */
+  _chipFacetScopes() {
+    const tier = String(this._form?.tier ?? "")
+      .trim()
+      .toUpperCase();
+    return [{ filter: this._filterSpec(), label: tier }];
+  }
+
+  _chipFacetStats() {
+    if (!Array.isArray(this._cachedItems)) return null;
+    return computeFilterFacetStats(this._cachedItems, this._chipFacetScopes(), {
+      rarities: this._chipUniverse("rarity") ?? [],
+      lootTypes: this._chipUniverse("lootType") ?? [],
+    });
+  }
+
+  _chipOptionAvailability(group, value, selected, facetStats) {
+    const countKnown = Boolean(facetStats);
+    const entries =
+      group === "rarity" ? facetStats?.byRarity : facetStats?.byLootType;
+    const entry = entries?.[value] ?? {
+      count: 0,
+      available: false,
+      complete: false,
+      unavailableScopes: [],
+      unavailableScopeCount: 0,
+    };
+    const unavailable = countKnown && !entry.available;
+    const partial = countKnown && entry.available && !entry.complete;
+    const disabled = unavailable && !selected;
+    const optionLabel = group === "rarity" ? "rarity" : "item type";
+    const scopes = entry.unavailableScopes ?? [];
+    const scopeLabel =
+      scopes.length > 0
+        ? ` for ${scopes.join(", ")}`
+        : entry.unavailableScopeCount > 0 && facetStats?.scopeCount > 1
+          ? " for at least one roster tier"
+          : "";
+
+    let availabilityTitle = "Availability loads with the compendium.";
+    if (unavailable && selected) {
+      availabilityTitle = `This selected ${optionLabel} has no matches${scopeLabel} with the other current filters. Deselect it or adjust another filter.`;
+    } else if (unavailable) {
+      availabilityTitle = `No matches${scopeLabel} with the other current filters. Adjust another filter to make this ${optionLabel} available.`;
+    } else if (partial) {
+      availabilityTitle = `${entry.count.toLocaleString()} matching item opportunities across the roster, but none${scopeLabel}. Combine it with another ${optionLabel} or adjust the filters.`;
+    } else if (countKnown && facetStats.scopeCount > 1) {
+      availabilityTitle = `${entry.count.toLocaleString()} matching item opportunities across the roster tiers.`;
+    } else if (countKnown) {
+      availabilityTitle = `${entry.count.toLocaleString()} matching item${entry.count === 1 ? "" : "s"} with the other current filters.`;
+    }
+
+    return {
+      count: entry.count,
+      countKnown,
+      unavailable,
+      partial,
+      selectedUnavailable: unavailable && selected,
+      disabled,
+      availabilityTitle,
+    };
+  }
+
+  _patchChipAvailability(root = this.element) {
+    if (!root) return;
+    const facetStats = this._chipFacetStats();
+    if (!facetStats) return;
+
+    for (const chip of root.querySelectorAll?.(
+      "[data-chip-group][data-chip-value]",
+    ) ?? []) {
+      const group = chip.dataset?.chipGroup;
+      const value = chip.dataset?.chipValue;
+      const input = chip.querySelector?.("input[type='checkbox']");
+      if (!group || !value || !input) continue;
+      const option = this._chipOptionAvailability(
+        group,
+        value,
+        input.checked === true,
+        facetStats,
+      );
+      chip.classList?.toggle("is-unavailable", option.unavailable);
+      chip.classList?.toggle("is-partial", option.partial);
+      chip.classList?.toggle(
+        "is-selected-unavailable",
+        option.selectedUnavailable,
+      );
+      chip.setAttribute?.("aria-disabled", String(option.disabled));
+      chip.setAttribute?.("title", option.availabilityTitle);
+      input.disabled = option.disabled;
+      const count = chip.querySelector?.("[data-chip-count]");
+      if (count) count.textContent = String(option.count);
+    }
+  }
+
   /**
    * Keep the live candidate readout and primary button synchronized without a
    * full ApplicationV2 render. Action and keyboard handlers still re-check the
@@ -586,6 +681,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       else button.removeAttribute?.("aria-busy");
     }
 
+    this._patchChipAvailability(root);
     return state;
   }
 

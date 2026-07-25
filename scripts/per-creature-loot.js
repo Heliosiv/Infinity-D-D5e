@@ -13,7 +13,6 @@
 import { computeLootBudget } from "./loot/budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
-import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
@@ -135,6 +134,32 @@ export class PerCreatureLootApp extends BaseLootApp {
     return this._generateAll();
   }
 
+  _rosterTierKeys() {
+    const roster = Array.isArray(this._form?.roster) ? this._form.roster : [];
+    return [
+      ...new Set(
+        roster.map(
+          (creature) =>
+            String(creature?.tier ?? this._form.defaultTier ?? "t1")
+              .trim()
+              .toLowerCase() || "t1",
+        ),
+      ),
+    ];
+  }
+
+  _chipFacetScopes() {
+    const rosterTiers = this._rosterTierKeys();
+    if (rosterTiers.length === 0) return super._chipFacetScopes();
+    return rosterTiers.map((tier) => ({
+      label: tier.toUpperCase(),
+      filter: {
+        ...this._filterSpec(),
+        tiers: tierWindow(tier),
+      },
+    }));
+  }
+
   _candidateAvailability() {
     const base = super._candidateAvailability();
     const roster = Array.isArray(this._form?.roster) ? this._form.roster : [];
@@ -148,16 +173,7 @@ export class PerCreatureLootApp extends BaseLootApp {
     }
     if (!Array.isArray(this._cachedItems)) return base;
 
-    const rosterTiers = [
-      ...new Set(
-        roster.map(
-          (creature) =>
-            String(creature?.tier ?? this._form.defaultTier ?? "t1")
-              .trim()
-              .toLowerCase() || "t1",
-        ),
-      ),
-    ];
+    const rosterTiers = this._rosterTierKeys();
     const filter = this._filterSpec();
     const relevantTiers = new Set();
     const emptyTiers = [];
@@ -241,8 +257,8 @@ export class PerCreatureLootApp extends BaseLootApp {
   /* ------------------- context ------------------- */
 
   async _prepareContext() {
-    const stats = this._packStats ?? computePackStats([]);
     const candidateContext = this._candidateContext();
+    const chipFacetStats = this._chipFacetStats();
     // Same live party size the roll (_rollForCreature) and the roster total
     // (_rosterTotalBudget) use, so the per-row budget preview can't disagree
     // with them for a party that isn't exactly 4 PCs.
@@ -290,18 +306,34 @@ export class PerCreatureLootApp extends BaseLootApp {
         valueLabel: formatMagicBias(this._form.magicBias),
       }),
 
-      rarityOptions: RARITIES.map((rarity) => ({
-        value: rarity,
-        label: prettyRarity(rarity),
-        count: stats.byRarity?.[rarity] ?? 0,
-        selected: this._form.rarities.includes(rarity),
-      })),
-      lootTypeOptions: LOOT_TYPES.map((lootType) => ({
-        value: lootType,
-        label: prettyLootType(lootType),
-        count: stats.byLootType?.[lootType] ?? 0,
-        selected: this._form.lootTypes.includes(lootType),
-      })),
+      rarityOptions: RARITIES.map((rarity) => {
+        const selected = this._form.rarities.includes(rarity);
+        return {
+          value: rarity,
+          label: prettyRarity(rarity),
+          selected,
+          ...this._chipOptionAvailability(
+            "rarity",
+            rarity,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
+      lootTypeOptions: LOOT_TYPES.map((lootType) => {
+        const selected = this._form.lootTypes.includes(lootType);
+        return {
+          value: lootType,
+          label: prettyLootType(lootType),
+          selected,
+          ...this._chipOptionAvailability(
+            "lootType",
+            lootType,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
 
       hasResult: Boolean(this._lastResult?.creatures?.length),
       result: resultContext(this._lastResult),

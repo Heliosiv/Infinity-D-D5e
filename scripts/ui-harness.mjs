@@ -1246,7 +1246,13 @@ function rarityOptions(selected) {
     value,
     label,
     count,
+    countKnown: true,
     selected: selectedSet.has(value),
+    unavailable: false,
+    partial: false,
+    selectedUnavailable: false,
+    disabled: false,
+    availabilityTitle: `${count} matching items with the other current filters.`,
   }));
 }
 
@@ -1277,7 +1283,13 @@ function lootTypeOptions(selected) {
     value,
     label,
     count,
+    countKnown: true,
     selected: selectedSet.has(value),
+    unavailable: false,
+    partial: false,
+    selectedUnavailable: false,
+    disabled: false,
+    availabilityTitle: `${count} matching items with the other current filters.`,
   }));
 }
 

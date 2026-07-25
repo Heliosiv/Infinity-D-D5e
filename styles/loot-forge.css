@@ -319,6 +319,33 @@ select.lf-input {
   border-color: var(--lf-rarity-artifact);
 }
 
+.lf-chip.is-partial {
+  border-style: dotted;
+}
+
+.lf-chip.is-unavailable:not(.is-selected-unavailable) {
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.lf-chip.is-unavailable:not(.is-selected-unavailable):hover {
+  border-color: var(--lf-border);
+  color: var(--lf-muted);
+}
+
+.lf-chip.is-unavailable input:disabled {
+  cursor: not-allowed;
+}
+
+.lf-chip.is-selected-unavailable,
+.lf-chip.is-selected-unavailable:has(input:checked) {
+  border-color: var(--lf-warn);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--lf-warn) 10%, var(--lf-bg));
+  color: var(--lf-text);
+}
+
 /* Rarity balance weights */
 .lf-balance {
   display: grid;

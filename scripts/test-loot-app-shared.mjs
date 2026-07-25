@@ -206,6 +206,8 @@ for (const [name, Cls] of [
     "_countCandidates",
     "_candidateAvailability",
     "_patchCandidateAvailability",
+    "_chipFacetStats",
+    "_patchChipAvailability",
     "_canStartPrimaryGeneration",
     "_sliderContext",
   ]) {
@@ -285,8 +287,8 @@ for (const [name, Cls] of [
   );
 
   const encounter = new PerEncounterLootApp();
-  encounter._cachedItems = [t1Common];
-  encounter._packStats = { totalItems: 1 };
+  encounter._cachedItems = [t1Common, t4Legendary];
+  encounter._packStats = { totalItems: 2 };
   encounter._form = {
     ...encounter._form,
     tier: "t5",
@@ -346,6 +348,43 @@ for (const [name, Cls] of [
   assert.match(state.label, /no matches for T5/);
   assert.match(state.reason, /for T5/);
 
+  const rosterFacets = perCreature._chipFacetStats();
+  assert.equal(rosterFacets.scopeCount, 2);
+  assert.deepEqual(
+    rosterFacets.byRarity.common.unavailableScopes,
+    ["T5"],
+    "common records its missing T5 roster scope",
+  );
+  assert.deepEqual(
+    rosterFacets.byRarity.legendary.unavailableScopes,
+    ["T1"],
+    "legendary records its missing T1 roster scope",
+  );
+  const selectedPartialRarity = perCreature._chipOptionAvailability(
+    "rarity",
+    "common",
+    true,
+    rosterFacets,
+  );
+  assert.equal(selectedPartialRarity.partial, true);
+  assert.equal(
+    selectedPartialRarity.disabled,
+    false,
+    "a partial roster-tier chip stays selectable for complementary filters",
+  );
+  const selectedDeadRarity = perCreature._chipOptionAvailability(
+    "rarity",
+    "artifact",
+    true,
+    rosterFacets,
+  );
+  assert.equal(selectedDeadRarity.selectedUnavailable, true);
+  assert.equal(
+    selectedDeadRarity.disabled,
+    false,
+    "a selected fully unavailable chip stays enabled so it can be removed",
+  );
+
   perCreature._form = {
     ...perCreature._form,
     roster: [{ id: "c1", name: "Scout", tier: "t1" }],
@@ -397,12 +436,55 @@ for (const [name, Cls] of [
       buttonAttributes.delete(name);
     },
   };
+  const makeChip = ({ group, value, checked }) => {
+    const classes = new Set();
+    const attributes = new Map();
+    const input = { checked, disabled: false };
+    const count = { textContent: "" };
+    return {
+      classes,
+      attributes,
+      input,
+      count,
+      element: {
+        dataset: { chipGroup: group, chipValue: value },
+        classList: {
+          toggle(name, enabled) {
+            if (enabled) classes.add(name);
+            else classes.delete(name);
+          },
+        },
+        querySelector(selector) {
+          if (selector === "input[type='checkbox']") return input;
+          if (selector === "[data-chip-count]") return count;
+          return null;
+        },
+        setAttribute(name, valueToSet) {
+          attributes.set(name, String(valueToSet));
+        },
+      },
+    };
+  };
+  const selectedCommonChip = makeChip({
+    group: "rarity",
+    value: "common",
+    checked: true,
+  });
+  const mundaneWeaponChip = makeChip({
+    group: "lootType",
+    value: "loot.weapon.mundane",
+    checked: false,
+  });
   encounter.element = {
     querySelector(selector) {
       return selector === "[data-candidates]" ? readout : null;
     },
     querySelectorAll(selector) {
-      return selector === "[data-action='generate']" ? [generateButton] : [];
+      if (selector === "[data-action='generate']") return [generateButton];
+      if (selector === "[data-chip-group][data-chip-value]") {
+        return [selectedCommonChip.element, mundaneWeaponChip.element];
+      }
+      return [];
     },
   };
 
@@ -411,6 +493,21 @@ for (const [name, Cls] of [
   assert.equal(buttonAttributes.get("aria-disabled"), "true");
   assert.match(buttonAttributes.get("title"), /No items match/);
   assert.ok(readoutClasses.has("is-empty"));
+  assert.equal(
+    selectedCommonChip.input.disabled,
+    false,
+    "selected zero-count rarity remains removable",
+  );
+  assert.ok(
+    selectedCommonChip.classes.has("is-selected-unavailable"),
+    "selected zero-count rarity is visibly flagged",
+  );
+  assert.equal(
+    mundaneWeaponChip.input.disabled,
+    true,
+    "unselected zero-count item type is disabled",
+  );
+  assert.equal(mundaneWeaponChip.count.textContent, "0");
 
   encounter._form = { ...encounter._form, tier: "t1" };
   encounter._patchCandidateAvailability();
@@ -418,6 +515,17 @@ for (const [name, Cls] of [
   assert.equal(buttonAttributes.get("aria-disabled"), "false");
   assert.equal(buttonAttributes.get("title"), "Generate (Enter or R)");
   assert.ok(!readoutClasses.has("is-empty"));
+  assert.equal(selectedCommonChip.input.disabled, false);
+  assert.ok(
+    !selectedCommonChip.classes.has("is-selected-unavailable"),
+    "selected rarity warning clears when the tier recovers",
+  );
+  assert.equal(
+    mundaneWeaponChip.input.disabled,
+    false,
+    "item type re-enables when matching candidates return",
+  );
+  assert.equal(mundaneWeaponChip.count.textContent, "1");
 
   // Keyboard shortcuts perform the same synchronous guard as the button, so
   // they cannot exploit the 120 ms live-readout debounce window.

@@ -25,10 +25,7 @@ import {
   promptDistributeItems,
 } from "./loot/distribute.js";
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
-import {
-  computePackStats,
-  computeTierFilteredStats,
-} from "./loot/pack-stats.js";
+import { computePackStats } from "./loot/pack-stats.js";
 import {
   MAGIC_BIAS_RANGE,
   filterCandidates,
@@ -229,10 +226,8 @@ export class PerEncounterLootApp extends BaseLootApp {
     const projectedBudget = computeLootBudget(this._formForBudget());
     const stats = this._packStats ?? computePackStats([]);
     const candidateContext = this._candidateContext();
+    const chipFacetStats = this._chipFacetStats();
     const result = prepareResultForDisplay(this._lastResult);
-    const tierStats = this._cachedItems
-      ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
-      : null;
     return {
       ...this._basePresetContext(),
       ...this._marketContext(),
@@ -313,21 +308,34 @@ export class PerEncounterLootApp extends BaseLootApp {
         valueLabel: formatMagicBias(this._form.magicBias),
       }),
 
-      rarityOptions: RARITIES.map((rarity) => ({
-        value: rarity,
-        label: prettyRarity(rarity),
-        count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
-        selected: this._form.rarities.includes(rarity),
-      })),
-      lootTypeOptions: LOOT_TYPES.map((lootType) => ({
-        value: lootType,
-        label: prettyLootType(lootType),
-        count:
-          tierStats?.byLootType?.[lootType] ??
-          stats.byLootType?.[lootType] ??
-          0,
-        selected: this._form.lootTypes.includes(lootType),
-      })),
+      rarityOptions: RARITIES.map((rarity) => {
+        const selected = this._form.rarities.includes(rarity);
+        return {
+          value: rarity,
+          label: prettyRarity(rarity),
+          selected,
+          ...this._chipOptionAvailability(
+            "rarity",
+            rarity,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
+      lootTypeOptions: LOOT_TYPES.map((lootType) => {
+        const selected = this._form.lootTypes.includes(lootType);
+        return {
+          value: lootType,
+          label: prettyLootType(lootType),
+          selected,
+          ...this._chipOptionAvailability(
+            "lootType",
+            lootType,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
 
       packStatsLoaded: Boolean(this._packStats),
       hasResult: Boolean(result && result.items.length > 0),

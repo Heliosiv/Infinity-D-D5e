@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  computeFilterFacetStats,
   computePackStats,
   computeTierFilteredStats,
   countBy,
@@ -201,6 +202,126 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
   assert.equal(tierStats.byLootType["loot.gem"], 1);
   assert.equal(tierStats.byLootType["loot.art"], 1);
   assert.equal(tierStats.byLootType["loot.trade-good"], 2);
+}
+
+/* filter-aware facets ignore only their own axis */
+{
+  const pool = [
+    fakeItem({
+      _id: "common-weapon",
+      tier: "t1",
+      rarity: "common",
+      lootType: "loot.weapon.mundane",
+      gpValue: 10,
+    }),
+    fakeItem({
+      _id: "rare-potion",
+      tier: "t1",
+      rarity: "rare",
+      lootType: "loot.potion",
+      gpValue: 500,
+    }),
+  ];
+  const facets = computeFilterFacetStats(
+    pool,
+    [
+      {
+        label: "T1",
+        filter: {
+          tiers: ["t1"],
+          rarities: ["rare"],
+          lootTypes: ["loot.weapon.mundane"],
+          requireEligible: true,
+        },
+      },
+    ],
+    {
+      rarities: ["common", "rare"],
+      lootTypes: ["loot.weapon.mundane", "loot.potion"],
+    },
+  );
+
+  assert.equal(
+    facets.byRarity.common.count,
+    1,
+    "rarity facet ignores the current rarity selection",
+  );
+  assert.equal(
+    facets.byRarity.rare.count,
+    0,
+    "rarity facet still respects the selected item type",
+  );
+  assert.equal(
+    facets.byLootType["loot.potion"].count,
+    1,
+    "item-type facet ignores the current item-type selection",
+  );
+  assert.equal(
+    facets.byLootType["loot.weapon.mundane"].count,
+    0,
+    "item-type facet still respects the selected rarity",
+  );
+}
+
+/* multi-scope facets distinguish partial coverage and name missing tiers */
+{
+  const pool = [
+    fakeItem({
+      _id: "t1-common",
+      tier: "t1",
+      rarity: "common",
+      lootType: "loot.weapon.mundane",
+    }),
+    fakeItem({
+      _id: "t1-rare",
+      tier: "t1",
+      rarity: "rare",
+      lootType: "loot.potion",
+    }),
+    fakeItem({
+      _id: "t4-rare",
+      tier: "t4",
+      rarity: "rare",
+      lootType: "loot.potion",
+    }),
+  ];
+  const facets = computeFilterFacetStats(
+    pool,
+    [
+      { label: "T1", filter: { tiers: ["t1"], rarities: ["rare"] } },
+      { label: "T5", filter: { tiers: ["t4", "t5"], rarities: ["rare"] } },
+    ],
+    {
+      rarities: ["common", "rare"],
+      lootTypes: ["loot.weapon.mundane", "loot.potion"],
+    },
+  );
+
+  assert.equal(facets.scopeCount, 2);
+  assert.deepEqual(facets.byRarity.common, {
+    count: 1,
+    available: true,
+    complete: false,
+    unavailableScopes: ["T5"],
+    unavailableScopeCount: 1,
+  });
+  assert.deepEqual(facets.byRarity.rare, {
+    count: 2,
+    available: true,
+    complete: true,
+    unavailableScopes: [],
+    unavailableScopeCount: 0,
+  });
+  assert.equal(
+    facets.byLootType["loot.potion"].count,
+    2,
+    "count includes matching opportunities across roster tiers",
+  );
+  assert.equal(facets.byLootType["loot.potion"].available, true);
+  assert.deepEqual(facets.byLootType["loot.weapon.mundane"].unavailableScopes, [
+    "T1",
+    "T5",
+  ]);
 }
 
 process.stdout.write("pack-stats validation passed\n");

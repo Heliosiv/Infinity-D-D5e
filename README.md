@@ -17,9 +17,9 @@ Three ways to open the dashboard:
 **v0.2.60 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, and hardened multi-client sockets.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
-- **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
-- **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, and scale-shaped rarity defaults.
-- **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action.
+- **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
+- **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, scale-shaped rarity defaults, and filter-aware chips while preserving valid coin-only rolls.
+- **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions.
 - **Quartermaster**: party food, water, and light tracking with calendar-aware daily consumption and player forage prompts.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.

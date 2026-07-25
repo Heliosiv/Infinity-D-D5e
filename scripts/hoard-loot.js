@@ -25,10 +25,7 @@ import {
 } from "./loot/hoard-budget.js";
 import { promptDistributeItems } from "./loot/distribute.js";
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
-import {
-  computePackStats,
-  computeTierFilteredStats,
-} from "./loot/pack-stats.js";
+import { computePackStats } from "./loot/pack-stats.js";
 import { MAGIC_BIAS_RANGE, filterCandidates, rollLoot } from "./loot/roller.js";
 import {
   LOOT_TYPES,
@@ -215,9 +212,7 @@ export class HoardLootApp extends BaseLootApp {
     );
     const stats = this._packStats ?? computePackStats([]);
     const candidateContext = this._candidateContext();
-    const tierStats = this._cachedItems
-      ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
-      : null;
+    const chipFacetStats = this._chipFacetStats();
     return {
       ...this._basePresetContext(),
       ...this._marketContext(),
@@ -264,23 +259,36 @@ export class HoardLootApp extends BaseLootApp {
         valueLabel: formatMagicBias(this._form.magicBias),
       }),
 
-      rarityOptions: RARITIES.map((rarity) => ({
-        value: rarity,
-        label: prettyRarity(rarity),
-        count: tierStats?.byRarity?.[rarity] ?? stats.byRarity?.[rarity] ?? 0,
-        selected: this._form.rarities.includes(rarity),
-      })),
+      rarityOptions: RARITIES.map((rarity) => {
+        const selected = this._form.rarities.includes(rarity);
+        return {
+          value: rarity,
+          label: prettyRarity(rarity),
+          selected,
+          ...this._chipOptionAvailability(
+            "rarity",
+            rarity,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
       rarityBalanceOptions: rarityBalanceOptions(this._form.rarityBalance),
       rarityWeightRows: rarityWeightRows(this._form.rarityWeights),
-      lootTypeOptions: LOOT_TYPES.map((lootType) => ({
-        value: lootType,
-        label: prettyLootType(lootType),
-        count:
-          tierStats?.byLootType?.[lootType] ??
-          stats.byLootType?.[lootType] ??
-          0,
-        selected: this._form.lootTypes.includes(lootType),
-      })),
+      lootTypeOptions: LOOT_TYPES.map((lootType) => {
+        const selected = this._form.lootTypes.includes(lootType);
+        return {
+          value: lootType,
+          label: prettyLootType(lootType),
+          selected,
+          ...this._chipOptionAvailability(
+            "lootType",
+            lootType,
+            selected,
+            chipFacetStats,
+          ),
+        };
+      }),
 
       // A hoard can roll a coins-only result (e.g. a Min-gp filter that empties
       // the item pool) — the coin pile is still real, depositable value, so the

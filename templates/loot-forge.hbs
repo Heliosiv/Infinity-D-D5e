@@ -104,9 +104,9 @@
       </legend>
       <div class="lf-chiprow">
         {{#each rarityOptions}}
-        <label class="lf-chip lf-chip--rarity-{{value}}">
-          <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} />
-          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        <label class="lf-chip lf-chip--rarity-{{value}} {{#if unavailable}}is-unavailable{{/if}} {{#if partial}}is-partial{{/if}} {{#if selectedUnavailable}}is-selected-unavailable{{/if}}" data-chip-group="rarity" data-chip-value="{{value}}" title="{{availabilityTitle}}" aria-disabled="{{#if disabled}}true{{else}}false{{/if}}">
+          <input type="checkbox" name="rarity" value="{{value}}" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
+          <span>{{label}}{{#if countKnown}} <em class="lf-chip__count" data-chip-count>{{count}}</em>{{/if}}</span>
         </label>
         {{/each}}
       </div>
@@ -123,9 +123,9 @@
       </legend>
       <div class="lf-chiprow">
         {{#each lootTypeOptions}}
-        <label class="lf-chip">
-          <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} />
-          <span>{{label}}{{#if count}} <em class="lf-chip__count">{{count}}</em>{{/if}}</span>
+        <label class="lf-chip {{#if unavailable}}is-unavailable{{/if}} {{#if partial}}is-partial{{/if}} {{#if selectedUnavailable}}is-selected-unavailable{{/if}}" data-chip-group="lootType" data-chip-value="{{value}}" title="{{availabilityTitle}}" aria-disabled="{{#if disabled}}true{{else}}false{{/if}}">
+          <input type="checkbox" name="lootType" value="{{value}}" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
+          <span>{{label}}{{#if countKnown}} <em class="lf-chip__count" data-chip-count>{{count}}</em>{{/if}}</span>
         </label>
         {{/each}}
       </div>
