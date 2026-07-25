@@ -107,7 +107,6 @@ export const MAGIC_LOOT_TYPES = Object.freeze(
     "loot.armor.magic",
     "loot.equipment.magic", // wondrous magic gear: rings, ioun stones, robes
     "loot.scroll",
-    "loot.consumable", // potions / elixirs / consumed magic items
     "loot.potion",
     // Retained for classification though no longer surfaced as chips: the
     // shipped pack folds these into consumable / equipment.magic, so they
@@ -143,6 +142,11 @@ const AMMUNITION_KEYWORDS = Object.freeze(
     "folder.section.ammunition",
     "folder.path.weapons.ammunition",
   ]),
+);
+
+/** Explicit signals that a mixed-bucket consumable is magical. */
+const MAGIC_NATURE_KEYWORDS = Object.freeze(
+  new Set(["magic.bonus", "merchant.magic"]),
 );
 
 /* ------------------------------------------------------------------ *
@@ -339,9 +343,16 @@ export function isAmmunitionItem(item) {
 }
 
 /**
- * Classify an item as inherently magic / mundane / neutral based on
- * its loot type. Equipment with no clear bucket falls through to
- * "neutral" so the Magic Bias dial leaves it alone.
+ * Classify an item as magic / mundane / neutral for the Magic Bias dial.
+ *
+ * Most loot types are inherently one side or the other. `loot.consumable` is
+ * deliberately mixed: it contains magic dusts, wands, and special ammunition,
+ * but also ordinary food, rope, lanterns, and base ammunition. For that bucket,
+ * uncommon-or-higher rarity and explicit dnd5e/tag signals mean magic;
+ * common/unrarified items without those signals are mundane.
+ *
+ * Equipment with no clear bucket falls through to "neutral" so the slider
+ * leaves it alone.
  *
  * @returns {"magic"|"mundane"|"neutral"}
  */
@@ -349,9 +360,55 @@ export function getItemMagicNature(item) {
   const pre = item?.__inf;
   if (pre && typeof pre.magicNature === "string") return pre.magicNature;
   const lootType = getItemLootType(item);
+  if (lootType === "loot.consumable") {
+    const rarity = getItemRarity(item);
+    if (rarity && rarity !== "common") return "magic";
+    return hasExplicitMagicSignal(item) ? "magic" : "mundane";
+  }
   if (MAGIC_LOOT_TYPES.has(lootType)) return "magic";
   if (MUNDANE_LOOT_TYPES.has(lootType)) return "mundane";
   return "neutral";
+}
+
+function hasExplicitMagicSignal(item) {
+  const properties = item?.system?.properties;
+  if (Array.isArray(properties) && properties.includes("mgc")) return true;
+  if (
+    properties &&
+    typeof properties.has === "function" &&
+    properties.has("mgc")
+  ) {
+    return true;
+  }
+  if (
+    properties &&
+    typeof properties === "object" &&
+    typeof properties.has !== "function" &&
+    Boolean(properties.mgc)
+  ) {
+    return true;
+  }
+
+  if (hasMeaningfulMagicSignal(item?.system?.magicalBonus)) return true;
+  if (hasMeaningfulMagicSignal(item?.system?.attunement)) return true;
+
+  return getItemKeywords(item).some((keyword) =>
+    MAGIC_NATURE_KEYWORDS.has(
+      String(keyword ?? "")
+        .trim()
+        .toLowerCase(),
+    ),
+  );
+}
+
+function hasMeaningfulMagicSignal(value) {
+  if (value === null || value === undefined || value === false) return false;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized || normalized === "none" || normalized === "false") {
+    return false;
+  }
+  const numeric = Number(normalized);
+  return !Number.isFinite(numeric) || numeric !== 0;
 }
 
 /**

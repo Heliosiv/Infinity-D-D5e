@@ -46,15 +46,26 @@ export function fakeItem(overrides = {}) {
     flags.variableTreasureKind = overrides.variableTreasureKind;
   }
 
+  const system = {
+    rarity,
+    price: { value: gpValue, denomination: "gp" },
+  };
+  if (overrides.properties !== undefined) {
+    system.properties = overrides.properties;
+  }
+  if (overrides.attunement !== undefined) {
+    system.attunement = overrides.attunement;
+  }
+  if (overrides.magicalBonus !== undefined) {
+    system.magicalBonus = overrides.magicalBonus;
+  }
+
   return {
     _id: id,
     name: overrides.name ?? `Item ${id}`,
     img: overrides.img ?? "icons/svg/item-bag.svg",
     type: overrides.type ?? "weapon",
-    system: {
-      rarity,
-      price: { value: gpValue, denomination: "gp" },
-    },
+    system,
     flags: {
       // Use the PRIMARY namespace that 100% of shipped items carry, so tests
       // exercise the real read path rather than the legacy party-operations
@@ -100,6 +111,7 @@ export function smallPool() {
       gpValue: 50,
       lootType: "loot.consumable",
       maxRecommendedQty: 4,
+      properties: ["mgc"],
     }),
     fakeItem({
       _id: "c",

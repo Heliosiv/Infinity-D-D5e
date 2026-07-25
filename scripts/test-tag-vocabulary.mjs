@@ -184,6 +184,97 @@ assert.equal(normalizeRarity("nonexistent"), "");
     "neutral",
     "missing lootType → neutral",
   );
+
+  const baseArrow = fakeItem({
+    type: "consumable",
+    lootType: "loot.consumable",
+    rarity: "common",
+    properties: [],
+  });
+  assert.equal(
+    getItemMagicNature(baseArrow),
+    "mundane",
+    "common base ammunition/gear in the mixed consumable bucket is mundane",
+  );
+
+  const magicArrow = fakeItem({
+    type: "consumable",
+    lootType: "loot.consumable",
+    rarity: "uncommon",
+    properties: [],
+  });
+  assert.equal(
+    getItemMagicNature(magicArrow),
+    "magic",
+    "uncommon-or-higher consumables remain magic",
+  );
+
+  const commonMagicConsumable = fakeItem({
+    type: "consumable",
+    lootType: "loot.consumable",
+    rarity: "common",
+    properties: ["mgc"],
+  });
+  assert.equal(
+    getItemMagicNature(commonMagicConsumable),
+    "magic",
+    "an explicit dnd5e magic property overrides common rarity",
+  );
+
+  const liveDocumentShape = {
+    type: "consumable",
+    system: { rarity: "common", properties: new Set(["mgc"]) },
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "loot.consumable",
+        keywords: [],
+      },
+    },
+  };
+  assert.equal(
+    getItemMagicNature(liveDocumentShape),
+    "magic",
+    "Foundry SetField properties are recognized on live documents",
+  );
+
+  const taggedCommonMagic = fakeItem({
+    type: "consumable",
+    lootType: "loot.consumable",
+    rarity: "common",
+    properties: [],
+    keywords: ["loot.consumable", "magic.bonus"],
+  });
+  assert.equal(
+    getItemMagicNature(taggedCommonMagic),
+    "magic",
+    "an explicit curated magic tag overrides common rarity",
+  );
+
+  const legacyZeroSignals = fakeItem({
+    type: "consumable",
+    lootType: "loot.consumable",
+    rarity: "common",
+    properties: [],
+    attunement: 0,
+    magicalBonus: 0,
+  });
+  assert.equal(
+    getItemMagicNature(legacyZeroSignals),
+    "mundane",
+    "legacy zero-valued fields do not create a false magic signal",
+  );
+
+  const mundanePoison = fakeItem({
+    type: "consumable",
+    lootType: "loot.poison",
+    rarity: "",
+    properties: [],
+  });
+  assert.equal(
+    getItemMagicNature(mundanePoison),
+    "mundane",
+    "unrarified mundane poisons are not weighted as magic",
+  );
 }
 
 /* loot-type aliases — coarse source buckets fold onto curated chips */
