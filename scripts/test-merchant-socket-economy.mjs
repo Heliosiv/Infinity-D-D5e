@@ -183,7 +183,8 @@ function makeClient({ id, isGM, world, wire, users, actors }) {
           active: true,
           isGM: false,
           name: uid,
-          character: actorList.find((actor) => actor.id === `actor-${uid}`) ?? null,
+          character:
+            actorList.find((actor) => actor.id === `actor-${uid}`) ?? null,
         }),
         forEach() {},
       },
@@ -286,7 +287,11 @@ try {
     const stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(stored.items[0].qty, 3, "stock 5 - 2 = 3 after buy");
     const buyer = gm.actors.get("actor-p1");
-    assert.equal(buyer.system.currency.gp, 9800, "GM deducted the buyer's funds");
+    assert.equal(
+      buyer.system.currency.gp,
+      9800,
+      "GM deducted the buyer's funds",
+    );
     assert.equal(
       buyer.items.contents.filter((owned) => owned.id !== "owned-sword").length,
       1,
@@ -365,7 +370,11 @@ try {
     const chargedPlayers = ["actor-p1", "actor-p2"].filter(
       (id) => gm.actors.get(id).system.currency.gp === 9900,
     );
-    assert.equal(chargedPlayers.length, 1, "only the successful buyer was charged");
+    assert.equal(
+      chargedPlayers.length,
+      1,
+      "only the successful buyer was charged",
+    );
 
     const results = allOf(
       wire.log.map((e) => e.payload),
@@ -705,8 +714,16 @@ try {
     );
 
     const stored = findMerchant("m-1");
-    assert.equal(stored.items[0].qty, 2, "forged sender cannot decrement stock");
-    assert.equal(stored.goldOnHand, 500, "forged sender cannot change merchant gold");
+    assert.equal(
+      stored.items[0].qty,
+      2,
+      "forged sender cannot decrement stock",
+    );
+    assert.equal(
+      stored.goldOnHand,
+      500,
+      "forged sender cannot change merchant gold",
+    );
     ok("transport-authenticated sender defeats forged originUserId");
   }
 
@@ -743,7 +760,9 @@ try {
     const stored = findMerchant("m-1");
     assert.equal(stored.items[0].qty, 1, "replayed commit decrements once");
     assert.equal(stored.goldOnHand, 600, "replayed commit credits once");
-    ok("duplicate commitId returns the cached result without a second mutation");
+    ok(
+      "duplicate commitId returns the cached result without a second mutation",
+    );
   }
 
   /* ============================================================== *
@@ -798,12 +817,18 @@ try {
       },
       "p1",
     );
-    assert.equal(findMerchant("m-1").items[0].qty, 1, "stock remains available");
+    assert.equal(
+      findMerchant("m-1").items[0].qty,
+      1,
+      "stock remains available",
+    );
     assert.equal(
       lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)?.reason,
       "no-price",
     );
-    ok("purchase repricing failure leaves stock untouched and reports no-price");
+    ok(
+      "purchase repricing failure leaves stock untouched and reports no-price",
+    );
   }
 
   process.stdout.write(

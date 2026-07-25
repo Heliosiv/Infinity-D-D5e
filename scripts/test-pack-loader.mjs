@@ -87,7 +87,9 @@ import {
       metadata: { type: "Item" },
       async getDocuments() {
         loads += 1;
-        return [{ id: `item-${loads}`, toObject: () => ({ _id: `item-${loads}` }) }];
+        return [
+          { id: `item-${loads}`, toObject: () => ({ _id: `item-${loads}` }) },
+        ];
       },
     });
     const realNow = Date.now;

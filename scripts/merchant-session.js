@@ -392,9 +392,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       "fail",
       `The shop declined your ${verb} of ${ctx.itemName}: ${reason}`,
     );
-    ui.notifications?.warn(
-      `${MODULE_ID}: ${reason}`,
-    );
+    ui.notifications?.warn(`${MODULE_ID}: ${reason}`);
     if (this.rendered) this.render(false);
   }
 
@@ -693,7 +691,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const tablist = root.querySelector?.('[role="tablist"]');
     if (!tablist) return;
     tablist.addEventListener("keydown", (event) => {
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+        return;
       const tabs = [...tablist.querySelectorAll('[role="tab"]')];
       const current = tabs.indexOf(event.target);
       if (current < 0 || tabs.length === 0) return;
@@ -701,7 +700,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       let next = current;
       if (event.key === "Home") next = 0;
       else if (event.key === "End") next = tabs.length - 1;
-      else if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
+      else if (event.key === "ArrowLeft")
+        next = (current - 1 + tabs.length) % tabs.length;
       else next = (current + 1) % tabs.length;
       tabs[next].focus();
       tabs[next].click();
@@ -873,7 +873,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       seal,
       sealKey,
     });
-    this._appendLog("pending", `Purchase requested: ${result.qty}x ${result.itemName}`);
+    this._appendLog(
+      "pending",
+      `Purchase requested: ${result.qty}x ${result.itemName}`,
+    );
     this.render(false);
   }
 
@@ -967,7 +970,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       seal,
       sealKey,
     });
-    this._appendLog("pending", `Sale requested: ${result.qty}x ${result.itemName}`);
+    this._appendLog(
+      "pending",
+      `Sale requested: ${result.qty}x ${result.itemName}`,
+    );
     this.render(false);
   }
 
@@ -1299,7 +1305,6 @@ function cssEscape(value) {
   return String(value ?? "").replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
 
-
 /**
  * Ask the player to confirm a buy/sell before it commits. Gated by the
  * MERCHANT_CONFIRM_TRANSACTIONS setting at the call site. Resolves true when
@@ -1353,7 +1358,10 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
   if (allowed.length === 1 && typeof DialogV2.confirm === "function") {
     const skillLabel = labels[allowed[0]] ?? allowed[0];
     const confirmed = await DialogV2.confirm({
-      window: { title: `Bargain with ${skillLabel}?`, icon: "fa-solid fa-comments-dollar" },
+      window: {
+        title: `Bargain with ${skillLabel}?`,
+        icon: "fa-solid fa-comments-dollar",
+      },
       content: `<p>Use <strong>${escapeHtml(skillLabel)}</strong> to haggle?</p>${riskLine}`,
       rejectClose: false,
     }).catch(() => false);

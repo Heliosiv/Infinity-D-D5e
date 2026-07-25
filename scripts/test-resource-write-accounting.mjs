@@ -28,7 +28,11 @@ try {
       { id: "stack-b", quantity: 4 },
     ],
   );
-  assert.equal(result.consumed, 4, "reports only the delete that actually landed");
+  assert.equal(
+    result.consumed,
+    4,
+    "reports only the delete that actually landed",
+  );
   assert.match(result.error, /1 inventory write/);
 
   let created = null;

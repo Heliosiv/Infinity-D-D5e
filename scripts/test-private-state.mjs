@@ -43,7 +43,8 @@ try {
         async update(changes) {
           for (const [path, value] of Object.entries(changes)) {
             const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
-            if (match) flags["infinity-dnd5e"][match[1]] = structuredClone(value);
+            if (match)
+              flags["infinity-dnd5e"][match[1]] = structuredClone(value);
           }
           return this;
         },
@@ -55,8 +56,16 @@ try {
 
   resetPrivateStateForTests();
   await initializePrivateState();
-  assert.equal(journal.length, 1, "creates one restricted private-state journal");
-  assert.equal(journal[0].ownership.default, 0, "private store defaults to NONE");
+  assert.equal(
+    journal.length,
+    1,
+    "creates one restricted private-state journal",
+  );
+  assert.equal(
+    journal[0].ownership.default,
+    0,
+    "private store defaults to NONE",
+  );
   assert.equal(getPrivateState("merchants")[0].goldOnHand, 500);
   assert.equal(getPrivateState("factions")[0].gmNotes, "secret");
   assert.deepEqual(cleared.sort(), ["factions", "merchants"]);

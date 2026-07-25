@@ -332,12 +332,14 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     if (foodRes && dep.food > 0) {
       const applied = await depositResource(sink, foodRes, dep.food);
       landedFood += applied;
-      if (applied < dep.food) depositErrors.push(`${sink.name}: food deposit failed`);
+      if (applied < dep.food)
+        depositErrors.push(`${sink.name}: food deposit failed`);
     }
     if (waterRes && dep.water > 0) {
       const applied = await depositResource(sink, waterRes, dep.water);
       landedWater += applied;
-      if (applied < dep.water) depositErrors.push(`${sink.name}: water deposit failed`);
+      if (applied < dep.water)
+        depositErrors.push(`${sink.name}: water deposit failed`);
     }
   }
 
@@ -462,11 +464,13 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     yld.depositErrors = [];
     if (foodRes && yld.food > 0) {
       yld.landedFood = await depositResource(sink, foodRes, yld.food);
-      if (yld.landedFood < yld.food) yld.depositErrors.push("food deposit failed");
+      if (yld.landedFood < yld.food)
+        yld.depositErrors.push("food deposit failed");
     }
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
       yld.landedWater = await depositResource(sink, waterRes, yld.water);
-      if (yld.landedWater < yld.water) yld.depositErrors.push("water deposit failed");
+      if (yld.landedWater < yld.water)
+        yld.depositErrors.push("water deposit failed");
     }
   }
 
@@ -802,7 +806,10 @@ async function consumePartyResource(roster, resourceDef, amount) {
 
 export async function applyConsumptionOps(actor, ops, matches = []) {
   const quantities = new Map(
-    matches.map((match) => [String(match.id), Math.max(0, Number(match.quantity) || 0)]),
+    matches.map((match) => [
+      String(match.id),
+      Math.max(0, Number(match.quantity) || 0),
+    ]),
   );
   const deletes = ops.filter((o) => o.op === "delete").map((o) => o.id);
   const updates = ops
@@ -815,12 +822,20 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
       await actor.updateEmbeddedDocuments("Item", updates);
       consumed += updates.reduce(
         (sum, update) =>
-          sum + Math.max(0, (quantities.get(String(update._id)) ?? 0) - update["system.quantity"]),
+          sum +
+          Math.max(
+            0,
+            (quantities.get(String(update._id)) ?? 0) -
+              update["system.quantity"],
+          ),
         0,
       );
     } catch (error) {
       failures.push(error);
-      console.error(`${MODULE_ID} | consumption update failed on ${actor?.name}`, error);
+      console.error(
+        `${MODULE_ID} | consumption update failed on ${actor?.name}`,
+        error,
+      );
     }
   }
   if (deletes.length > 0) {
@@ -832,12 +847,16 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
       );
     } catch (error) {
       failures.push(error);
-      console.error(`${MODULE_ID} | consumption delete failed on ${actor?.name}`, error);
+      console.error(
+        `${MODULE_ID} | consumption delete failed on ${actor?.name}`,
+        error,
+      );
     }
   }
   return {
     consumed,
-    error: failures.length > 0 ? `${failures.length} inventory write(s) failed` : "",
+    error:
+      failures.length > 0 ? `${failures.length} inventory write(s) failed` : "",
   };
 }
 
@@ -886,7 +905,9 @@ export async function depositResource(actor, resourceDef, amount) {
 }
 
 function defaultResourceTemplate(resourceDef) {
-  const label = String(resourceDef?.label ?? resourceDef?.id ?? "Supply").trim();
+  const label = String(
+    resourceDef?.label ?? resourceDef?.id ?? "Supply",
+  ).trim();
   return {
     name: label,
     type: "loot",
@@ -1217,4 +1238,3 @@ function generateRunId() {
       .padStart(5, "0");
   return `qm-${part()}${part()}`;
 }
-

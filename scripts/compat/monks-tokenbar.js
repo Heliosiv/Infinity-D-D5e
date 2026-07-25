@@ -345,9 +345,7 @@ function isPlayerOwnedCharacter(actor, gameRef, ownerLevel) {
 
   const users = getUserCollection(gameRef);
   if (
-    users.some(
-      (user) => !user?.isGM && getUserCharacterId(user) === actor.id,
-    )
+    users.some((user) => !user?.isGM && getUserCharacterId(user) === actor.id)
   ) {
     return true;
   }

@@ -22,7 +22,9 @@ assert.equal(titleCase(""), "");
 assert.equal(titleCase(null), "");
 
 assert.equal(
-  isInteractiveKeyboardTarget({ closest: (selector) => (selector.includes("button") ? {} : null) }),
+  isInteractiveKeyboardTarget({
+    closest: (selector) => (selector.includes("button") ? {} : null),
+  }),
   true,
   "focused buttons are interactive keyboard targets",
 );

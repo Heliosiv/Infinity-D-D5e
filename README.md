@@ -1,10 +1,10 @@
 # Infinity D&D5e
 
-Tag-driven GM tools for D&D 5e on Foundry VTT, surfaced through a single dashboard.
+Loot, commerce, party-resource, and reputation tools for D&D 5e on Foundry VTT.
 
 ## What This Module Is
 
-A focused, ground-up rewrite of the GM tooling formerly bundled inside `party-operations`. It ships a curated 1,422-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches each tool in its own window and new tools can be registered with `registerTool(...)`.
+A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches six dedicated tools, while players receive permission-scoped shops, reputation, and forage workflows.
 
 Three ways to open the dashboard:
 
@@ -14,15 +14,18 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.6** - Dashboard, Per-Encounter Loot, Hoard Loot, Per-Creature Loot, settings, obvious launchers, and art-object variant rolls.
+**v0.2.60 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, and hardened multi-client sockets.
 
-- GM-only dashboard with a tile grid of tools.
+- GM dashboard with six dedicated tools and scene-control launchers.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; rarity and loot-type chips; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, and scale-shaped rarity defaults.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action.
+- **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions.
+- **Quartermaster**: party food, water, and light tracking with calendar-aware daily consumption and player forage prompts.
+- **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
+- **Player launchers**: `Shift + O` opens available shops and `Shift + R` opens revealed faction reputation.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
-- No claim board, player UI, or merchant flow yet.
 
 ### Magic Bias
 
@@ -61,7 +64,7 @@ npm run ui:audit
 
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
-`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` renders the dashboard, Per-Encounter, Hoard, and Per-Creature windows at desktop, tablet, and narrow widths, then clicks every rendered `data-action` button and checks for horizontal overflow.
+`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` renders every GM and player window at desktop, tablet, narrow, and phone widths, checks action wiring and row opening, and reports horizontal overflow or unreachable controls.
 
 ### Compendium pack
 
@@ -77,7 +80,11 @@ npm run compile:packs
 
 ## Install
 
-This module is in active development. There is no public release manifest yet.
+This module is in active development. The latest published build can be installed with:
+
+```text
+https://github.com/Heliosiv/Infinity-D-D5e/releases/latest/download/module.json
+```
 
 - **Local zip**: `npm run release` builds `release/module.zip` with `module.json` at the zip root, ready for Foundry's Install Module file picker or Forge Bazaar upload. The script also writes `release/module.json`, `release/module.zip.sha256.txt`, and short release notes.
 - **Dev symlink**: link or copy this folder into your Foundry user data as `Data/modules/infinity-dnd5e/`. Run `npm run compile:packs` first so the LevelDB pack exists. Foundry will pick up file changes on reload.
@@ -89,7 +96,7 @@ This module is in active development. There is no public release manifest yet.
 ```powershell
 # Shortcut: GitHub Releases convention.
 # Derives `manifest` (stable) + `download` (versioned) + `url` (homepage).
-$env:INFINITY_RELEASE_REPO = "OWNER/infinity-dnd5e"
+$env:INFINITY_RELEASE_REPO = "Heliosiv/Infinity-D-D5e"
 npm run release
 
 # Fine-grained overrides (any combination):
@@ -103,9 +110,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.4 && git push --tags`).
+1. Tag the commit (`git tag v0.2.60 && git push --tags`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.4` and upload both `release/module.zip` and `release/module.json` as assets.
+3. Create a GitHub Release named `v0.2.60` and upload both `release/module.zip` and `release/module.json` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema
@@ -134,30 +141,26 @@ infinity-dnd5e/
     module.js
     dashboard.js
     tool-registry.js
-    app.js
-    hoard-loot.js
-    per-creature-loot.js
+    merchant-workspace.js
+    merchant-session.js
+    resource-manager.js
+    reputation-workspace.js
+    reputation-view.js
     settings.js
+    compat/
     loot/
       tag-vocabulary.js
-      budget.js
-      roller.js
-      art-variants.js
-      pack-stats.js
-      hoard-budget.js
+    merchant/
+    reputation/
+    resource/
+    test-utils/
     test-*.mjs
     run-checks.mjs
     build-release.mjs
   templates/
-    dashboard.hbs
-    loot-forge.hbs
-    hoard-loot.hbs
-    per-creature-loot.hbs
+    *.hbs
   styles/
-    dashboard.css
-    loot-forge.css
-    hoard-loot.css
-    per-creature-loot.css
+    *.css
   packs/
     infinity-dnd5e-items.db
 ```
@@ -177,6 +180,17 @@ npm run format
 npm run format:check
 npm run release
 npm run release:nocheck
+```
+
+On Windows, npm lifecycle commands can misparse a checkout path containing `&`.
+If a clean install fails from this folder, use an unused temporary drive letter:
+
+```powershell
+subst R: "$PWD"
+Push-Location R:\
+npm ci
+Pop-Location
+subst R: /d
 ```
 
 ## Provenance

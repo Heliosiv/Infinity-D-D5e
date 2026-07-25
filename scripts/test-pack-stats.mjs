@@ -72,10 +72,7 @@ import { fakeItem, smallPool } from "./test-utils/fixtures.mjs";
 /* countBy — small utility for ad-hoc grouping */
 {
   const pool = smallPool();
-  const byType = countBy(
-    pool,
-    (item) => item.flags["infinity-dnd5e"].lootType,
-  );
+  const byType = countBy(pool, (item) => item.flags["infinity-dnd5e"].lootType);
   assert.equal(byType["loot.weapon.mundane"], 1);
   assert.equal(byType["loot.wondrous"], 1);
   assert.throws(

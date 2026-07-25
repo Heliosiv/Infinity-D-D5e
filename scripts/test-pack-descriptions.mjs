@@ -58,7 +58,9 @@ for (const item of items) {
   if (valueMatch) {
     const displayed = Number(valueMatch[1].replaceAll(",", ""));
     const price = Number(item.system?.price?.value);
-    const denomination = String(item.system?.price?.denomination ?? "").toLowerCase();
+    const denomination = String(
+      item.system?.price?.denomination ?? "",
+    ).toLowerCase();
     if (valueMatch[2].toLowerCase() !== denomination || displayed !== price) {
       offenders.push(
         `${item.name} (${item._id}): description ${displayed} ${valueMatch[2]} != price ${price} ${denomination}`,

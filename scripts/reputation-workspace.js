@@ -225,7 +225,9 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
         if (name === "revealed") this.render(false);
       } catch (error) {
         console.warn(`${MODULE_ID} | faction auto-save failed`, error);
-        ui.notifications?.error(`${MODULE_ID}: faction changes could not be saved.`);
+        ui.notifications?.error(
+          `${MODULE_ID}: faction changes could not be saved.`,
+        );
       }
     });
   }
@@ -254,7 +256,9 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       } catch (error) {
         console.warn(`${MODULE_ID} | per-character update failed`, error);
         this._setSaveStatus("Save failed — retry");
-        ui.notifications?.error(`${MODULE_ID}: character reputation could not be saved.`);
+        ui.notifications?.error(
+          `${MODULE_ID}: character reputation could not be saved.`,
+        );
       }
     });
   }

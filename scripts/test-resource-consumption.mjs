@@ -52,7 +52,9 @@ function item(id, name, qty, extra = {}) {
  * Keyword matching can be disabled per resource (empty nameKeywords)
  * ------------------------------------------------------------------ */
 {
-  const tagOnly = { matching: { nameKeywords: [], flagTag: "food", itemUuids: [] } };
+  const tagOnly = {
+    matching: { nameKeywords: [], flagTag: "food", itemUuids: [] },
+  };
   const items = [
     item("k", "Trail Rations"),
     item("f", "Mystery Pack", 1, {
@@ -60,7 +62,11 @@ function item(id, name, qty, extra = {}) {
     }),
   ];
   const matches = matchResourceItems(items, tagOnly);
-  assert.deepEqual(matches.map((m) => m.id), ["f"], "only the tagged item matches");
+  assert.deepEqual(
+    matches.map((m) => m.id),
+    ["f"],
+    "only the tagged item matches",
+  );
 }
 
 /* ------------------------------------------------------------------ *

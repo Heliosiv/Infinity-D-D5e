@@ -748,7 +748,11 @@ async function writeMerchants(merchants) {
     if (!globalThis.game?.settings?.set) {
       throw new Error("NotInFoundry: saveMerchants requires game.settings");
     }
-    await globalThis.game.settings.set(MODULE_ID, MERCHANT_SETTING_KEY, cleaned);
+    await globalThis.game.settings.set(
+      MODULE_ID,
+      MERCHANT_SETTING_KEY,
+      cleaned,
+    );
   }
   return cleaned;
 }

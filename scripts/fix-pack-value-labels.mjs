@@ -13,7 +13,9 @@ const output = source
     if (!line.trim()) return line;
     const item = JSON.parse(line);
     const value = Number(item.system?.price?.value);
-    const denomination = String(item.system?.price?.denomination ?? "").toLowerCase();
+    const denomination = String(
+      item.system?.price?.denomination ?? "",
+    ).toLowerCase();
     const description = item.system?.description?.value;
     VALUE_LABEL.lastIndex = 0;
     if (

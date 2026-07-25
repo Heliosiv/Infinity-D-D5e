@@ -11,39 +11,36 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          # Full history + tags so the manifest version>=tag gate in
+          # Full history + tags so the manifest release-state gate in
           # test-manifest-compat.mjs can compare against released tags.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run check
 
-  # Prettier formatting. Advisory for now: master carries pre-existing
-  # drift, so this reports without blocking until the drift is cleaned.
+  # Prettier formatting. Blocking.
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run format:check
 
-  # Headless-Chrome layout/overflow + action-wiring audit. Advisory:
-  # depends on a Chromium binary and is the flakiest gate, so it reports
-  # without blocking. Promote to required once it is proven stable in CI.
+  # Headless-Chromium layout, reachability, and action-wiring audit. Blocking.
   ui-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm

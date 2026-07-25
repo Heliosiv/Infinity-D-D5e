@@ -846,4 +846,3 @@ function cloneItemData(itemData) {
   if (typeof structuredClone === "function") return structuredClone(itemData);
   return JSON.parse(JSON.stringify(itemData));
 }
-

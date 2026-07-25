@@ -417,9 +417,21 @@ function dashboardContext() {
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
     categories: [
-      { category: "loot", label: "Loot", tools: decorated.filter((tool) => tool.category === "loot") },
-      { category: "merchants", label: "Merchants", tools: decorated.filter((tool) => tool.category === "merchants") },
-      { category: "party", label: "Party", tools: decorated.filter((tool) => tool.category === "party") },
+      {
+        category: "loot",
+        label: "Loot",
+        tools: decorated.filter((tool) => tool.category === "loot"),
+      },
+      {
+        category: "merchants",
+        label: "Merchants",
+        tools: decorated.filter((tool) => tool.category === "merchants"),
+      },
+      {
+        category: "party",
+        label: "Party",
+        tools: decorated.filter((tool) => tool.category === "party"),
+      },
     ],
   };
 }

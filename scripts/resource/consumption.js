@@ -62,7 +62,9 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
       .filter(Boolean),
   );
   const flagTag = String(matching.flagTag ?? "").trim();
-  const keywords = (Array.isArray(matching.nameKeywords) ? matching.nameKeywords : [])
+  const keywords = (
+    Array.isArray(matching.nameKeywords) ? matching.nameKeywords : []
+  )
     .map((k) => lower(k).trim())
     .filter(Boolean);
 
@@ -83,7 +85,12 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
       if (keywords.some((kw) => name.includes(kw))) priority = 1;
     }
     if (priority > 0) {
-      out.push({ id: String(id), name: item.name ?? "item", quantity, priority });
+      out.push({
+        id: String(id),
+        name: item.name ?? "item",
+        quantity,
+        priority,
+      });
     }
   }
   // Highest priority first; within a tier, larger stacks first (drain big piles).
@@ -139,7 +146,11 @@ export function planDeposit({ matches, amount, templateItem = null } = {}) {
   const list = Array.isArray(matches) ? matches : [];
   const target = list.find((m) => toQty(m.quantity) >= 0 && m.id);
   if (target) {
-    return { op: "bump", id: String(target.id), to: toQty(target.quantity) + qty };
+    return {
+      op: "bump",
+      id: String(target.id),
+      to: toQty(target.quantity) + qty,
+    };
   }
   if (templateItem && typeof templateItem === "object") {
     return { op: "create", from: templateItem, quantity: qty };

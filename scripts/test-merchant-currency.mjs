@@ -33,8 +33,10 @@ import {
  * Totals
  * ------------------------------------------------------------------ */
 {
-  assert.equal(totalWalletCp({ pp: 1, gp: 2, ep: 1, sp: 3, cp: 4 }),
-    1000 + 200 + 50 + 30 + 4);
+  assert.equal(
+    totalWalletCp({ pp: 1, gp: 2, ep: 1, sp: 3, cp: 4 }),
+    1000 + 200 + 50 + 30 + 4,
+  );
   assert.equal(totalWalletGp({ gp: 5, sp: 5 }), 5.5);
 }
 

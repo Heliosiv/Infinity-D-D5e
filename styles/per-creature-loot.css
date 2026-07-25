@@ -324,6 +324,11 @@
 }
 
 @media (max-width: 620px) {
+  .infinity-dnd5e.per-creature-loot .lf-menu__panel {
+    right: auto;
+    left: 0;
+  }
+
   .pc-shell {
     padding: 12px;
   }

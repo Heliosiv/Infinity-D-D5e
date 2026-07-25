@@ -59,7 +59,10 @@ import { normalizeDistributableItems } from "./loot/distribute.js";
   );
 
   // Inline itemData carries through with its quantity, cloned (not shared).
-  const source = { itemData: { name: "Gem", system: { quantity: 1 } }, quantity: 2 };
+  const source = {
+    itemData: { name: "Gem", system: { quantity: 1 } },
+    quantity: 2,
+  };
   const withData = normalizeDistributableItems([source]);
   assert.equal(withData.length, 1);
   assert.equal(withData[0].quantity, 2);

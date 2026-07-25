@@ -156,9 +156,12 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "not-sellable": "That item can't be sold.",
   "not-bought-here": "This merchant won't buy that.",
   "not-enough": "You don't have that many to sell.",
-  "merchant-cannot-afford": "The merchant doesn't have enough gold for that purchase.",
-  "merchant-write-failed": "The shop couldn't save the transaction; your character was restored.",
-  "compensation-failed": "The transaction could not be restored automatically. Ask your GM to review it.",
+  "merchant-cannot-afford":
+    "The merchant doesn't have enough gold for that purchase.",
+  "merchant-write-failed":
+    "The shop couldn't save the transaction; your character was restored.",
+  "compensation-failed":
+    "The transaction could not be restored automatically. Ask your GM to review it.",
   "no-session": "That shop session expired. Reopen the shop and try again.",
   "merchant-gone": "That merchant is no longer available.",
   "item-unavailable": "That item is no longer available.",
@@ -197,7 +200,11 @@ export function isInteractiveKeyboardTarget(target) {
   return Boolean(target?.closest?.(INTERACTIVE_SELECTOR));
 }
 
-export async function confirmDestructive({ title, content, icon = "fa-solid fa-triangle-exclamation" }) {
+export async function confirmDestructive({
+  title,
+  content,
+  icon = "fa-solid fa-triangle-exclamation",
+}) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   if (typeof DialogV2?.confirm !== "function") return false;
   try {

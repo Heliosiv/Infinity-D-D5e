@@ -448,7 +448,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         await this._saveFromForm();
       } catch (error) {
         console.warn(`${MODULE_ID} | merchant auto-save failed`, error);
-        notify("error", "Merchant changes could not be saved. Retry with Save now.");
+        notify(
+          "error",
+          "Merchant changes could not be saved. Retry with Save now.",
+        );
       }
     });
   }
@@ -610,52 +613,52 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         this._selectedId,
         (fresh) =>
           normalizeMerchant({
-          ...fresh,
-          name: data.name ?? fresh.name,
-          art: data.art ?? fresh.art,
-          description: data.description ?? fresh.description,
-          defaultMarkup: Number(data.defaultMarkup ?? fresh.defaultMarkup),
-          sellRatio: Number(data.sellRatio ?? fresh.sellRatio),
-          bargainDC: Number(data.bargainDC ?? fresh.bargainDC),
-          bargainAdvantage: data.bargainAdvantage === "on",
-          bargainSuccessPct: Number(
-            data.bargainSuccessPct ?? fresh.bargainSuccessPct,
-          ),
-          bargainFailPct: Number(data.bargainFailPct ?? fresh.bargainFailPct),
-          passiveHaggle: data.passiveHaggle === "on",
-          passivePctPerPoint: Number(
-            data.passivePctPerPoint ?? fresh.passivePctPerPoint,
-          ),
-          passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
-          goldOnHand: data.goldOnHand,
-          allowedSkills: data.allowedSkills,
-          allowedUserIds: data.allowedUserIds,
-          // First time a shop gains an allowed player, flip it from the default
-          // "off" to "open" so it appears in that player's Shops door — else GMs
-          // tick a player, see nothing, and conclude "players can't open shops".
-          // Only auto-promote on the no-players → has-players step; a GM who
-          // wants a GM-pull-only shop can still set "off"/"knock".
-          selfServiceMode: promoteSelfServiceMode(
-            data.selfServiceMode,
-            (fresh.allowedUserIds?.length ?? 0) > 0,
-            (data.allowedUserIds?.length ?? 0) > 0,
-          ),
-          pool: {
-            lootTypes: data.poolLootTypes,
-            rarities: data.poolRarities,
-            // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
-            count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
-            budgetGp:
-              data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
-            rarityBalance: data.poolRarityBalance,
-            rarityWeights: data.poolRarityWeights,
-            minGp: Number(data.poolMinGp ?? fresh.pool?.minGp ?? 0),
-            maxGp: Number(data.poolMaxGp ?? fresh.pool?.maxGp ?? 0),
-          },
-          buyFilter: {
-            lootTypes: data.buyFilterLootTypes,
-            rarities: data.buyFilterRarities,
-          },
+            ...fresh,
+            name: data.name ?? fresh.name,
+            art: data.art ?? fresh.art,
+            description: data.description ?? fresh.description,
+            defaultMarkup: Number(data.defaultMarkup ?? fresh.defaultMarkup),
+            sellRatio: Number(data.sellRatio ?? fresh.sellRatio),
+            bargainDC: Number(data.bargainDC ?? fresh.bargainDC),
+            bargainAdvantage: data.bargainAdvantage === "on",
+            bargainSuccessPct: Number(
+              data.bargainSuccessPct ?? fresh.bargainSuccessPct,
+            ),
+            bargainFailPct: Number(data.bargainFailPct ?? fresh.bargainFailPct),
+            passiveHaggle: data.passiveHaggle === "on",
+            passivePctPerPoint: Number(
+              data.passivePctPerPoint ?? fresh.passivePctPerPoint,
+            ),
+            passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
+            goldOnHand: data.goldOnHand,
+            allowedSkills: data.allowedSkills,
+            allowedUserIds: data.allowedUserIds,
+            // First time a shop gains an allowed player, flip it from the default
+            // "off" to "open" so it appears in that player's Shops door — else GMs
+            // tick a player, see nothing, and conclude "players can't open shops".
+            // Only auto-promote on the no-players → has-players step; a GM who
+            // wants a GM-pull-only shop can still set "off"/"knock".
+            selfServiceMode: promoteSelfServiceMode(
+              data.selfServiceMode,
+              (fresh.allowedUserIds?.length ?? 0) > 0,
+              (data.allowedUserIds?.length ?? 0) > 0,
+            ),
+            pool: {
+              lootTypes: data.poolLootTypes,
+              rarities: data.poolRarities,
+              // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
+              count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
+              budgetGp:
+                data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
+              rarityBalance: data.poolRarityBalance,
+              rarityWeights: data.poolRarityWeights,
+              minGp: Number(data.poolMinGp ?? fresh.pool?.minGp ?? 0),
+              maxGp: Number(data.poolMaxGp ?? fresh.pool?.maxGp ?? 0),
+            },
+            buyFilter: {
+              lootTypes: data.buyFilterLootTypes,
+              rarities: data.buyFilterRarities,
+            },
           }),
         { broadcast: true },
       );
@@ -1313,4 +1316,3 @@ async function promptPlayerPicker(merchant) {
   }
   return picked;
 }
-

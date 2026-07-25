@@ -22,7 +22,7 @@ for (const [name, file, template] of CHECKS) {
 
   const templateSource = readFileSync(template, "utf8");
   assert.ok(
-    !templateSource.includes('{{#if selected}}is-checked{{/if}}'),
+    !templateSource.includes("{{#if selected}}is-checked{{/if}}"),
     `${name}: chip templates should not render stale is-checked classes`,
   );
 }

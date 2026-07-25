@@ -24,10 +24,11 @@ assert.equal(
   'module.json must declare "socket": true or all cross-client features break',
 );
 
-// Stale-tree guard: the manifest version must never be BEHIND the latest
-// released git tag. Catches the failure mode where a diverged local
-// checkout (or forgotten version bump) would ship an older version than
-// what is already published — breaking Forge manifest-URL installs/updates.
+// Release-state guard: development builds must be newer than the latest
+// released tag. Equality is only valid when HEAD is that exact tagged commit.
+// This catches a diverged checkout or forgotten version bump that would ship
+// the same or an older version than what is already published, breaking Forge
+// manifest-URL installs and updates.
 // Graceful when git/tags are unavailable (e.g. a tarball checkout).
 function parseSemver(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(value).trim());
@@ -48,22 +49,48 @@ const tagResult = spawnSync("git", ["tag", "--list", "v*"], {
 if (tagResult.status === 0 && tagResult.stdout.trim()) {
   const tags = tagResult.stdout
     .split(/\r?\n/)
-    .map((line) => parseSemver(line))
-    .filter(Boolean);
+    .map((name) => ({ name, version: parseSemver(name) }))
+    .filter((tag) => tag.version);
   if (tags.length > 0) {
-    const latest = tags.reduce((max, t) => (compareSemver(t, max) > 0 ? t : max));
+    const latest = tags.reduce((max, tag) =>
+      compareSemver(tag.version, max.version) > 0 ? tag : max,
+    );
     const current = parseSemver(manifest.version);
     assert.ok(current, `manifest version is not semver: ${manifest.version}`);
+    const comparison = compareSemver(current, latest.version);
     assert.ok(
-      compareSemver(current, latest) >= 0,
+      comparison >= 0,
       `manifest version ${manifest.version} is behind the latest released ` +
-        `tag v${latest.join(".")} — the working tree looks stale/diverged. ` +
+        `tag ${latest.name} — the working tree looks stale/diverged. ` +
         `Sync to origin or bump the version before releasing.`,
     );
+    if (comparison === 0) {
+      const headResult = spawnSync("git", ["rev-parse", "HEAD"], {
+        encoding: "utf8",
+      });
+      const tagCommitResult = spawnSync(
+        "git",
+        ["rev-list", "-n", "1", latest.name],
+        { encoding: "utf8" },
+      );
+      if (headResult.status === 0 && tagCommitResult.status === 0) {
+        assert.equal(
+          headResult.stdout.trim(),
+          tagCommitResult.stdout.trim(),
+          `manifest version ${manifest.version} is already released as ` +
+            `${latest.name}, but HEAD contains unreleased work. Bump the ` +
+            `package and manifest versions before building a release.`,
+        );
+      } else {
+        process.stdout.write(
+          "  (exact HEAD-to-tag check skipped: git history unavailable)\n",
+        );
+      }
+    }
   }
 } else {
   process.stdout.write(
-    "  (manifest version>=tag check skipped: git tags unavailable)\n",
+    "  (manifest release-state check skipped: git tags unavailable)\n",
   );
 }
 

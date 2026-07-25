@@ -72,7 +72,8 @@ function parseExports(absFile, src) {
 
   // export { a, b as c }            -> exports a, c   (no `from`)
   // export { a, b as c } from "./x" -> re-exports from x as a, c
-  const exportBraceRe = /export\s*\{([\s\S]*?)\}\s*(?:from\s*["']([^"']+)["'])?/g;
+  const exportBraceRe =
+    /export\s*\{([\s\S]*?)\}\s*(?:from\s*["']([^"']+)["'])?/g;
   let m;
   while ((m = exportBraceRe.exec(src))) {
     const specs = parseSpecifierList(m[1]);
@@ -155,7 +156,8 @@ function hasDefault(file, seen = new Set()) {
   const info = exportsByFile.get(file);
   if (!info) return null;
   if (info.hasDefault) return true;
-  for (const star of info.star) if (hasDefault(star, seen) === true) return true;
+  for (const star of info.star)
+    if (hasDefault(star, seen) === true) return true;
   return false;
 }
 
@@ -163,8 +165,7 @@ function hasDefault(file, seen = new Set()) {
 const problems = [];
 let importCount = 0;
 
-const importRe =
-  /import\s+(?:([\s\S]*?)\s+from\s+)?["']([^"']+)["']/g;
+const importRe = /import\s+(?:([\s\S]*?)\s+from\s+)?["']([^"']+)["']/g;
 
 for (const f of files) {
   const src = srcByFile.get(f);

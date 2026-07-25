@@ -417,7 +417,8 @@ try {
     off();
     assert.ok(
       acks.some(
-        (a) => a.commitId === "co1" && a.ok === false && a.reason === "out-of-stock",
+        (a) =>
+          a.commitId === "co1" && a.ok === false && a.reason === "out-of-stock",
       ),
       "an oversell is rejected with out-of-stock, not silently charged",
     );

@@ -415,7 +415,7 @@
 }
 .mw-rarity-balance__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px;
 }
 .mw-rarity-balance__row {
@@ -654,6 +654,9 @@
 }
 .mw-inv__copy {
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   display: grid;
   gap: 0;
 }
@@ -740,6 +743,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 6px;
   padding-top: 10px;
@@ -747,6 +751,8 @@
 }
 .mw-form__foot-right {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -815,7 +821,7 @@
   text-align: right;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 560px) {
   .mw-edit {
     padding: 10px;
   }

@@ -71,7 +71,9 @@ function fromRepoRelative(relativePath) {
 }
 
 function normalizeArtPath(value) {
-  return String(value ?? "").trim().replaceAll("\\", "/");
+  return String(value ?? "")
+    .trim()
+    .replaceAll("\\", "/");
 }
 
 export function isGeneratedItemArtPath(value) {
@@ -284,7 +286,10 @@ function assertJobCount(kind, actual, expected) {
   }
 }
 
-export async function validateGeneratedAssets(plan, { presentOnly = false } = {}) {
+export async function validateGeneratedAssets(
+  plan,
+  { presentOnly = false } = {},
+) {
   validatePlanShape(plan);
   const errors = [];
   const records = new Map();
@@ -577,9 +582,7 @@ async function commandAbsent() {
   }
 
   for (const item of absent) {
-    console.log(
-      `${item.id}\t${item.name}\t${item.type ?? ""}\t${item.reason}`,
-    );
+    console.log(`${item.id}\t${item.name}\t${item.type ?? ""}\t${item.reason}`);
   }
 }
 

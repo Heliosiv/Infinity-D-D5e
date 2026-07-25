@@ -64,12 +64,21 @@ const valueCp = (currency) =>
   (currency.ep ?? 0) * 50 +
   (currency.sp ?? 0) * 10 +
   (currency.cp ?? 0);
-assert.equal(split.reduce((sum, entry) => sum + valueCp(entry.currency), 0), 10103);
-assert.deepEqual(split.map((entry) => valueCp(entry.currency)), [3368, 3368, 3367]);
+assert.equal(
+  split.reduce((sum, entry) => sum + valueCp(entry.currency), 0),
+  10103,
+);
+assert.deepEqual(
+  split.map((entry) => valueCp(entry.currency)),
+  [3368, 3368, 3367],
+);
 
 // Mixed high denominations must split by value, not by each denomination.
 const mixed = planEvenSplit([], { pp: 1, gp: 10 }, ["a", "b"]);
-assert.deepEqual(mixed.map((entry) => valueCp(entry.currency)), [1000, 1000]);
+assert.deepEqual(
+  mixed.map((entry) => valueCp(entry.currency)),
+  [1000, 1000],
+);
 
 // Items are still round-robin dealt alongside the coin split.
 assert.deepEqual(

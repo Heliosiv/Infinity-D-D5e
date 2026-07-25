@@ -23,7 +23,9 @@ let initialization = null;
 
 function clone(value) {
   if (value == null) return value;
-  return globalThis.foundry?.utils?.deepClone?.(value) ?? structuredClone(value);
+  return (
+    globalThis.foundry?.utils?.deepClone?.(value) ?? structuredClone(value)
+  );
 }
 
 function isLiveFoundry() {

@@ -1,6 +1,6 @@
 {
   "name": "infinity-dnd5e",
-  "version": "0.2.59",
+  "version": "0.2.60",
   "private": true,
   "description": "Dev tooling for the Infinity D&D5e Foundry module.",
   "type": "module",
@@ -46,7 +46,7 @@
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\""
   },
   "devDependencies": {
-    "adm-zip": "^0.5.17",
+    "adm-zip": "^0.6.0",
     "classic-level": "^3.0.0",
     "handlebars": "^4.7.9",
     "playwright": "^1.61.1",

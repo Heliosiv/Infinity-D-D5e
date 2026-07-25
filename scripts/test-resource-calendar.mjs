@@ -15,9 +15,15 @@ import {
   assert.equal(resolveSecondsPerDay(), SECONDS_PER_DAY_FALLBACK);
   assert.equal(resolveSecondsPerDay({}), SECONDS_PER_DAY_FALLBACK);
   assert.equal(resolveSecondsPerDay({ secondsPerDay: 7200 }), 7200);
-  assert.equal(resolveSecondsPerDay({ earth: { secondsPerDay: 90000 } }), 90000);
+  assert.equal(
+    resolveSecondsPerDay({ earth: { secondsPerDay: 90000 } }),
+    90000,
+  );
   // Non-positive / NaN ignored → fallback.
-  assert.equal(resolveSecondsPerDay({ secondsPerDay: 0 }), SECONDS_PER_DAY_FALLBACK);
+  assert.equal(
+    resolveSecondsPerDay({ secondsPerDay: 0 }),
+    SECONDS_PER_DAY_FALLBACK,
+  );
   assert.equal(
     resolveSecondsPerDay({ secondsPerDay: "nope" }),
     SECONDS_PER_DAY_FALLBACK,

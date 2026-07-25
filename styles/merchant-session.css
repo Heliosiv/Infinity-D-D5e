@@ -544,7 +544,7 @@
 
 /* Narrow / phone reflow: drop price + the 4-control action cluster to a full
    width row beneath the item so nothing overflows or clips. */
-@media (max-width: 480px) {
+@media (max-width: 560px) {
   .infinity-dnd5e.infinity-merchant-session .ms-row {
     grid-template-columns: 44px 1fr;
   }

@@ -425,13 +425,19 @@ export async function rollbackBuyTransaction(actor, result) {
     if (ids.length > 0) await actor.deleteEmbeddedDocuments("Item", ids);
   } catch (error) {
     ok = false;
-    console.error(`${MODULE_ID} | buy compensation item rollback failed`, error);
+    console.error(
+      `${MODULE_ID} | buy compensation item rollback failed`,
+      error,
+    );
   }
   try {
     await actor.update(currencyUpdate(result.currencyBefore));
   } catch (error) {
     ok = false;
-    console.error(`${MODULE_ID} | buy compensation currency rollback failed`, error);
+    console.error(
+      `${MODULE_ID} | buy compensation currency rollback failed`,
+      error,
+    );
   }
   return ok;
 }
@@ -444,7 +450,10 @@ export async function rollbackSellTransaction(actor, result) {
     await actor.update(currencyUpdate(result.rollback.currencyBefore));
   } catch (error) {
     ok = false;
-    console.error(`${MODULE_ID} | sell compensation currency rollback failed`, error);
+    console.error(
+      `${MODULE_ID} | sell compensation currency rollback failed`,
+      error,
+    );
   }
   try {
     if (result.rollback.removedWholeStack) {
@@ -461,7 +470,10 @@ export async function rollbackSellTransaction(actor, result) {
     }
   } catch (error) {
     ok = false;
-    console.error(`${MODULE_ID} | sell compensation item rollback failed`, error);
+    console.error(
+      `${MODULE_ID} | sell compensation item rollback failed`,
+      error,
+    );
   }
   return ok;
 }
@@ -578,4 +590,3 @@ function setItemQuantity(snapshot, qty) {
     snapshot.system.quantity = n;
   }
 }
-

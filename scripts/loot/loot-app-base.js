@@ -46,10 +46,7 @@ import {
 } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { runAsFullGM } from "../permissions.js";
-import {
-  confirmDestructive,
-  isInteractiveKeyboardTarget,
-} from "../ui-util.js";
+import { confirmDestructive, isInteractiveKeyboardTarget } from "../ui-util.js";
 import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
 import {
@@ -447,7 +444,8 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _loadItems() {
     if (this._isItemCacheFresh()) return this._cachedItems;
     const minutes = Number(getSetting(SETTING_KEYS.PACK_TTL_MINUTES) ?? 5);
-    const ttlMs = Math.max(1, Number.isFinite(minutes) ? minutes : 5) * 60 * 1000;
+    const ttlMs =
+      Math.max(1, Number.isFinite(minutes) ? minutes : 5) * 60 * 1000;
     this._cachedItems = await loadCompendiumItems({
       packId: this.constructor.PACK_ID,
       ttlMs,
@@ -524,7 +522,8 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
     for (const snap of snaps) {
       const snapValue = Number(snap.dataset.value);
-      const active = Number.isFinite(snapValue) && Math.abs(snapValue - value) < 0.01;
+      const active =
+        Number.isFinite(snapValue) && Math.abs(snapValue - value) < 0.01;
       snap.classList.toggle("is-active", active);
       snap.setAttribute("aria-pressed", String(active));
     }
@@ -1111,7 +1110,8 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static async _onClearHistory(_event, _target) {
     const confirmed = await confirmDestructive({
       title: "Clear roll history?",
-      content: "<p>Clear every saved roll in this tool's history? This cannot be undone.</p>",
+      content:
+        "<p>Clear every saved roll in this tool's history? This cannot be undone.</p>",
       icon: "fa-solid fa-trash-clock",
     });
     if (!confirmed) return;

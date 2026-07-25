@@ -125,9 +125,18 @@ const GM_TO_CLIENT_TYPES = new Set([
  * not field-validated (broadcasts the receiver already scopes by target).
  */
 const PAYLOAD_RULES = Object.freeze({
-  [MERCHANT_EVENTS.COMMIT_PURCHASE]: { req: ["sessionId", "itemUuid", "commitId"], num: ["qty", "totalGp"] },
-  [MERCHANT_EVENTS.COMMIT_SALE]: { req: ["sessionId", "itemUuid", "commitId"], num: ["qty", "totalGp"] },
-  [MERCHANT_EVENTS.BARGAIN_RESULT]: { req: ["sessionId", "itemUuid", "side"], num: ["rollTotal"] },
+  [MERCHANT_EVENTS.COMMIT_PURCHASE]: {
+    req: ["sessionId", "itemUuid", "commitId"],
+    num: ["qty", "totalGp"],
+  },
+  [MERCHANT_EVENTS.COMMIT_SALE]: {
+    req: ["sessionId", "itemUuid", "commitId"],
+    num: ["qty", "totalGp"],
+  },
+  [MERCHANT_EVENTS.BARGAIN_RESULT]: {
+    req: ["sessionId", "itemUuid", "side"],
+    num: ["rollTotal"],
+  },
   [MERCHANT_EVENTS.SESSION_CLOSE]: { req: ["sessionId"], num: [] },
   [MERCHANT_EVENTS.SHOP_REQUEST]: { req: ["merchantId"], num: [] },
 });
@@ -140,7 +149,11 @@ function isValidPayload(payload) {
   if (!rule) return true; // not a field-validated type
   for (const key of rule.req) {
     const value = payload[key];
-    if (typeof value !== "string" || value.length === 0 || value.length > MAX_FIELD_LEN) {
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_FIELD_LEN
+    ) {
       return false;
     }
   }
@@ -266,7 +279,9 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   // Suppress echo to self — we already dispatched locally on emit.
   const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
   if (!senderId) {
-    console.warn(`${MODULE_ID} | dropped unauthenticated ${payload.type} frame`);
+    console.warn(
+      `${MODULE_ID} | dropped unauthenticated ${payload.type} frame`,
+    );
     return;
   }
   if (senderId === globalThis.game?.user?.id) return;
@@ -316,7 +331,8 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       if (isAuthoritativeGM() && payload.sessionId) {
         try {
           const session = getSession(payload.sessionId);
-          if (session?.viewerUserId === senderId) closeSession(payload.sessionId);
+          if (session?.viewerUserId === senderId)
+            closeSession(payload.sessionId);
         } catch (error) {
           console.warn(`${MODULE_ID} | session-close cleanup`, error);
         }
@@ -534,7 +550,11 @@ async function handleCommitPurchase(payload) {
       notify: false,
     });
     if (!actorResult.ok) {
-      emitCommitResult(payload, false, actorResult.reason ?? "actor-write-failed");
+      emitCommitResult(
+        payload,
+        false,
+        actorResult.reason ?? "actor-write-failed",
+      );
       return;
     }
 
@@ -553,7 +573,10 @@ async function handleCommitPurchase(payload) {
     try {
       await upsertMerchant(updated);
     } catch (error) {
-      console.error(`${MODULE_ID} | purchase merchant persistence failed`, error);
+      console.error(
+        `${MODULE_ID} | purchase merchant persistence failed`,
+        error,
+      );
       const rolledBack = await rollbackBuyTransaction(actor, actorResult);
       emitCommitResult(
         payload,
@@ -680,7 +703,11 @@ async function handleCommitSale(payload) {
       notify: false,
     });
     if (!actorResult.ok) {
-      emitCommitResult(payload, false, actorResult.reason ?? "actor-write-failed");
+      emitCommitResult(
+        payload,
+        false,
+        actorResult.reason ?? "actor-write-failed",
+      );
       return;
     }
     const updated = adjustMerchantGold(merchant, -payout);

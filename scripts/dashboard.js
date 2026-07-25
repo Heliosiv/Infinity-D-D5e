@@ -85,7 +85,10 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   static open() {
     return runAsFullGM(() => {
       playModuleSound(SOUND_EVENTS.UI_OPEN);
-      return openSingleton(InfinityDashboardApp, () => new InfinityDashboardApp());
+      return openSingleton(
+        InfinityDashboardApp,
+        () => new InfinityDashboardApp(),
+      );
     });
   }
 

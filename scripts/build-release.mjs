@@ -313,7 +313,8 @@ async function computeReferencedArt() {
       continue; // test-pack-shape catches bad JSON
     }
     for (const ref of collectImageFields(item)) {
-      if (ref.startsWith(selfPrefix)) referenced.add(ref.slice(selfPrefix.length));
+      if (ref.startsWith(selfPrefix))
+        referenced.add(ref.slice(selfPrefix.length));
     }
   }
   return referenced;

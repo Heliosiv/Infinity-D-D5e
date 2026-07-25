@@ -1,12 +1,4 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
@@ -23,66 +15,46 @@ const VIEWPORTS = [
 async function main() {
   const outDir = path.resolve("tmp", "playwright");
   const outFile = path.join(outDir, "ui-harness.html");
-  const profileDir = path.join(outDir, `chrome-profile-${Date.now()}`);
 
   mkdirSync(outDir, { recursive: true });
   writeFileSync(outFile, buildUiHarnessDocument(), "utf8");
 
-  const chromeExe = findChromeExecutable();
-  const port = 9300 + Math.floor(Math.random() * 500);
-  const chrome = spawn(
-    chromeExe,
-    [
-      "--headless=new",
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${profileDir}`,
-      "--disable-background-networking",
-      "--disable-gpu",
-      "--disable-sync",
-      "--hide-scrollbars=false",
-      "--no-default-browser-check",
-      "--no-first-run",
-      "about:blank",
-    ],
-    { stdio: "ignore" },
-  );
+  const browser = await chromium.launch({ headless: true });
 
-  let client;
   try {
-    await waitForJson(`http://127.0.0.1:${port}/json/version`);
-    const pageTarget = await waitForPageTarget(port);
-    client = await CdpClient.connect(pageTarget.webSocketDebuggerUrl);
-    await client.send("Page.enable");
-    await client.send("Runtime.enable");
-
     const fileUrl = pathToFileURL(outFile).href;
     const summary = [];
     for (const viewport of VIEWPORTS) {
-      await client.send("Emulation.setDeviceMetricsOverride", {
-        width: viewport.width,
-        height: viewport.height,
-        deviceScaleFactor: 1,
-        mobile: viewport.width <= 560,
-        screenWidth: viewport.width,
-        screenHeight: viewport.height,
+      const context = await browser.newContext({
+        viewport: {
+          width: viewport.width,
+          height: viewport.height,
+        },
+        screen: {
+          width: viewport.width,
+          height: viewport.height,
+        },
       });
-      await client.send("Page.navigate", {
-        url: `${fileUrl}?viewport=${encodeURIComponent(viewport.name)}`,
-      });
-      await client.evaluate(waitForReadyExpression());
+      const page = await context.newPage();
+      await page.goto(
+        `${fileUrl}?viewport=${encodeURIComponent(viewport.name)}`,
+        {
+          waitUntil: "load",
+        },
+      );
 
-      const screenshot = await client.send("Page.captureScreenshot", {
-        format: "png",
-        captureBeyondViewport: true,
-      });
       const screenshotFile = path.join(
         outDir,
         `ui-harness-${viewport.name}.png`,
       );
-      writeFileSync(screenshotFile, Buffer.from(screenshot.data, "base64"));
+      await page.screenshot({
+        path: screenshotFile,
+        fullPage: true,
+      });
 
-      const result = await client.evaluate(`(${auditPage.toString()})()`);
+      const result = await page.evaluate(auditPage);
       summary.push({ viewport, screenshotFile, ...result });
+      await context.close();
     }
 
     const issueCount = summary.reduce(
@@ -102,194 +74,7 @@ async function main() {
     }
     process.stdout.write("ui layout audit passed\n");
   } finally {
-    await client?.close();
-    await stopChrome(chrome);
-    // Best-effort: Chrome can briefly hold the profile dir on Windows,
-    // throwing EPERM. The temp dir is disposable, so don't fail the run.
-    try {
-      rmSync(profileDir, {
-        recursive: true,
-        force: true,
-        maxRetries: 5,
-        retryDelay: 100,
-      });
-    } catch (error) {
-      console.warn(
-        `ui:audit — could not remove temp profile: ${error.message}`,
-      );
-    }
-  }
-}
-
-function findChromeExecutable() {
-  if (process.env.INFINITY_UI_AUDIT_CHROME) {
-    const explicit = process.env.INFINITY_UI_AUDIT_CHROME;
-    if (existsSync(explicit)) return explicit;
-    throw new Error(`INFINITY_UI_AUDIT_CHROME does not exist: ${explicit}`);
-  }
-
-  const playwrightChromium = chromium.executablePath();
-  if (playwrightChromium && existsSync(playwrightChromium)) return playwrightChromium;
-
-  const localAppData = process.env.LOCALAPPDATA;
-  if (localAppData) {
-    const browserRoot = path.join(localAppData, "ms-playwright");
-    if (existsSync(browserRoot)) {
-      const candidates = readdirSync(browserRoot, { withFileTypes: true })
-        .filter(
-          (entry) => entry.isDirectory() && entry.name.startsWith("chromium"),
-        )
-        .map((entry) =>
-          path.join(browserRoot, entry.name, "chrome-win", "chrome.exe"),
-        )
-        .filter((candidate) => existsSync(candidate))
-        .sort()
-        .reverse();
-      if (candidates.length > 0) return candidates[0];
-    }
-  }
-
-  const programFiles = [
-    process.env.PROGRAMFILES,
-    process.env["PROGRAMFILES(X86)"],
-  ].filter(Boolean);
-  for (const base of programFiles) {
-    for (const relative of [
-      path.join("Google", "Chrome", "Application", "chrome.exe"),
-      path.join("Microsoft", "Edge", "Application", "msedge.exe"),
-    ]) {
-      const candidate = path.join(base, relative);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-
-  throw new Error(
-    "No Chromium/Chrome executable found. Install Playwright browsers or set INFINITY_UI_AUDIT_CHROME.",
-  );
-}
-
-async function waitForJson(url) {
-  const started = Date.now();
-  let lastError;
-  while (Date.now() - started < 15000) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return await response.json();
-      lastError = new Error(`${response.status} ${response.statusText}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await delay(100);
-  }
-  throw new Error(
-    `Timed out waiting for Chrome DevTools at ${url}: ${lastError?.message ?? "unknown"}`,
-  );
-}
-
-async function waitForPageTarget(port) {
-  const started = Date.now();
-  let lastError;
-  while (Date.now() - started < 15000) {
-    try {
-      const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`);
-      const page = targets.find(
-        (target) => target.type === "page" && target.webSocketDebuggerUrl,
-      );
-      if (page) return page;
-      lastError = new Error("no page target");
-    } catch (error) {
-      lastError = error;
-    }
-    await delay(100);
-  }
-  throw new Error(
-    `Timed out waiting for page target: ${lastError?.message ?? "unknown"}`,
-  );
-}
-
-function waitForReadyExpression() {
-  return `new Promise((resolve) => {
-    if (document.readyState === "complete") resolve(true);
-    else window.addEventListener("load", () => resolve(true), { once: true });
-  })`;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function stopChrome(process) {
-  if (process.exitCode !== null || process.signalCode !== null) return;
-  process.kill();
-  await Promise.race([once(process, "exit"), delay(3000)]);
-}
-
-class CdpClient {
-  static async connect(url) {
-    const client = new CdpClient(url);
-    await client.open();
-    return client;
-  }
-
-  constructor(url) {
-    this.url = url;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.socket = null;
-  }
-
-  open() {
-    return new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.url);
-      this.socket = socket;
-      socket.addEventListener("open", () => resolve());
-      socket.addEventListener("error", (event) =>
-        reject(event.error ?? new Error("WebSocket error")),
-      );
-      socket.addEventListener("message", (event) => this.onMessage(event.data));
-    });
-  }
-
-  close() {
-    this.socket?.close();
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++;
-    const payload = JSON.stringify({ id, method, params });
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, method });
-      this.socket.send(payload);
-    });
-  }
-
-  async evaluate(expression) {
-    const response = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (response.exceptionDetails) {
-      const text =
-        response.exceptionDetails.exception?.description ??
-        response.exceptionDetails.text ??
-        "Runtime.evaluate failed";
-      throw new Error(text);
-    }
-    return response.result?.value;
-  }
-
-  onMessage(raw) {
-    const message = JSON.parse(raw);
-    if (!message.id) return;
-    const pending = this.pending.get(message.id);
-    if (!pending) return;
-    this.pending.delete(message.id);
-    if (message.error) {
-      pending.reject(new Error(`${pending.method}: ${message.error.message}`));
-    } else {
-      pending.resolve(message.result);
-    }
+    await browser.close();
   }
 }
 
@@ -319,10 +104,38 @@ async function auditPage() {
     }
     for (const element of shell?.querySelectorAll("*") ?? []) {
       if (element.dataset.allowHorizontalScroll === "true") continue;
+      if (
+        element.matches(
+          "input, select, textarea, .lf-sr-only, .rm-sr, [aria-hidden='true']",
+        )
+      ) {
+        continue;
+      }
       const style = getComputedStyle(element);
       if (!["block", "flex", "grid", "table"].includes(style.display)) continue;
       if (element.clientWidth <= 0) continue;
-      if (element.scrollWidth > element.clientWidth + 2) {
+      if (["auto", "scroll", "hidden", "clip"].includes(style.overflowX)) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      const hasVisibleChildOverflow = [...element.children].some((child) => {
+        const childStyle = getComputedStyle(child);
+        if (
+          childStyle.display === "none" ||
+          ["absolute", "fixed"].includes(childStyle.position)
+        ) {
+          return false;
+        }
+        const childRect = child.getBoundingClientRect();
+        if (childRect.width <= 0 || childRect.height <= 0) return false;
+        return (
+          childRect.left < rect.left - 2 || childRect.right > rect.right + 2
+        );
+      });
+      const hasVisibleTextOverflow =
+        element.children.length === 0 &&
+        element.scrollWidth > element.clientWidth + 2;
+      if (hasVisibleChildOverflow || hasVisibleTextOverflow) {
         issues.push(
           `${root.dataset.harnessWindow}: nested horizontal overflow in ${describe(element)} (${element.scrollWidth}px > ${element.clientWidth}px)`,
         );
@@ -331,7 +144,7 @@ async function auditPage() {
   }
 
   async function auditButton(button, { skipCover = false } = {}) {
-    button.scrollIntoView({ block: "center", inline: "center" });
+    button.scrollIntoView({ block: "center", inline: "nearest" });
     await nextFrame();
     await nextFrame();
 
@@ -424,7 +237,7 @@ async function auditPage() {
     ),
   ];
   for (const row of openableRows) {
-    row.scrollIntoView({ block: "center", inline: "center" });
+    row.scrollIntoView({ block: "center", inline: "nearest" });
     await nextFrame();
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   }

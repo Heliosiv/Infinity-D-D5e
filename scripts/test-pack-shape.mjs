@@ -24,7 +24,8 @@ const DEFAULT_IMAGE_PATHS = new Set([
   "icons/svg/mystery-man.svg",
 ]);
 const GENERATED_LOCAL_IMAGE_PATTERN = /DALL|^ddb-images\//i;
-const LEAKED_SOURCE_ID = /^(Compendium\.party-operations|Compendium\.world|Actor\.|Item\.)/;
+const LEAKED_SOURCE_ID =
+  /^(Compendium\.party-operations|Compendium\.world|Actor\.|Item\.)/;
 
 /** Recursively collect every `sourceId` value in a document. */
 function collectSourceIds(value) {
@@ -35,7 +36,8 @@ function collectSourceIds(value) {
     for (const entry of value) ids.push(...collectSourceIds(entry));
     return ids;
   }
-  for (const entry of Object.values(value)) ids.push(...collectSourceIds(entry));
+  for (const entry of Object.values(value))
+    ids.push(...collectSourceIds(entry));
   return ids;
 }
 

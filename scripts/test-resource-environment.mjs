@@ -62,7 +62,10 @@ import {
  * normalizeEnvironmentCatalog — dedupe, fallback to defaults
  * ------------------------------------------------------------------ */
 {
-  assert.equal(normalizeEnvironmentCatalog([]).length, DEFAULT_ENVIRONMENTS.length);
+  assert.equal(
+    normalizeEnvironmentCatalog([]).length,
+    DEFAULT_ENVIRONMENTS.length,
+  );
   assert.equal(
     normalizeEnvironmentCatalog("not array").length,
     DEFAULT_ENVIRONMENTS.length,
