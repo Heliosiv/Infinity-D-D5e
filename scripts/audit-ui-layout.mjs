@@ -172,7 +172,10 @@ async function auditPage() {
       rect.top > viewportHeight
     ) {
       issues.push(
-        `${windowName}: "${label}" action target is outside the viewport`,
+        `${windowName}: "${label}" action target is outside the viewport ` +
+          `(${Math.round(rect.left)},${Math.round(rect.top)} to ` +
+          `${Math.round(rect.right)},${Math.round(rect.bottom)} within ` +
+          `${viewportWidth}x${viewportHeight})`,
       );
       return;
     }
