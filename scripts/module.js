@@ -66,7 +66,7 @@ import {
   getEffectiveRarity,
   rollLoot,
 } from "./loot/roller.js";
-import { getEncounterBalanceOptions } from "./loot/category-balance.js";
+import { getLootBundleBalanceOptions } from "./loot/category-balance.js";
 import { tierWindow } from "./loot/tag-vocabulary.js";
 import {
   initializePrivateState,
@@ -268,7 +268,7 @@ function buildApi() {
         lootTypes,
         requireEligible: true,
       });
-      const balanceOptions = getEncounterBalanceOptions({ tier, lootTypes });
+      const balanceOptions = getLootBundleBalanceOptions({ tier, lootTypes });
       const raw = rollLoot(candidates, {
         count: opts.count ?? 0,
         budgetGp: budget,
