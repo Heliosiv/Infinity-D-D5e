@@ -17,6 +17,7 @@ import {
   listSessions,
   openSession,
   recordBargain,
+  runWithActorMutex,
   runWithMerchantMutex,
 } from "./merchant/session-state.js";
 
@@ -161,6 +162,34 @@ clearAllSessions();
   await assert.rejects(fail, /boom/);
   const after = await runWithMerchantMutex("m", async () => "ok");
   assert.equal(after, "ok", "the chain survives a failed fn");
+}
+
+/* ------------------------------------------------------------------ *
+ * Actor mutex — serializes one wallet across otherwise independent shops
+ * ------------------------------------------------------------------ */
+{
+  clearAllSessions();
+  const order = [];
+  const first = runWithActorMutex("actor-1", async () => {
+    order.push("first-start");
+    await Promise.resolve();
+    order.push("first-end");
+  });
+  const second = runWithActorMutex("actor-1", async () => {
+    order.push("second");
+  });
+  const independent = runWithActorMutex("actor-2", async () => {
+    order.push("independent");
+  });
+  await Promise.all([first, second, independent]);
+  assert.ok(
+    order.indexOf("second") > order.indexOf("first-end"),
+    "same-actor work waits for the prior transaction",
+  );
+  assert.ok(
+    order.indexOf("independent") < order.indexOf("second"),
+    "a different actor is not blocked by the first actor's queue",
+  );
 }
 
 process.stdout.write("merchant-session-state validation passed\n");

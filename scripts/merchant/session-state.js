@@ -3,7 +3,7 @@
  *
  * Holds the transient state of every open merchant session — who is
  * shopping with whom, which bargains have been struck, and per-merchant
- * mutex chains that serialize stock writes.
+ * mutex chains that serialize stock and actor-wallet writes.
  *
  * State is in-memory only. The GM client is authoritative; sessions
  * end when the GM closes them or the world reloads.
@@ -182,13 +182,28 @@ export function recordCommitResult(sessionId, commitId, result) {
 }
 
 /* ------------------------------------------------------------------ *
- * Per-merchant mutex
+ * Transaction mutexes
  *
- * Serializes stock decrements across concurrent purchases so two
- * players can't both buy the last potion.
+ * Merchant locks protect shop stock and gold. Actor locks protect one wallet
+ * and inventory across simultaneous transactions at different shops.
  * ------------------------------------------------------------------ */
 
-const mutexChains = new Map(); // merchantId → trailing Promise
+const merchantMutexChains = new Map(); // merchantId → trailing Promise
+const actorMutexChains = new Map(); // actorId → trailing Promise
+
+function runWithMutex(chains, key, fn) {
+  const prev = chains.get(key) ?? Promise.resolve();
+  const result = prev.then(
+    () => fn(),
+    () => fn(),
+  );
+  const sink = result.catch(() => {});
+  chains.set(key, sink);
+  sink.then(() => {
+    if (chains.get(key) === sink) chains.delete(key);
+  });
+  return result;
+}
 
 /**
  * Run `fn` while holding the mutex for `merchantId`. Returns whatever
@@ -196,23 +211,27 @@ const mutexChains = new Map(); // merchantId → trailing Promise
  * poison the chain — subsequent callers still acquire the lock.
  */
 export function runWithMerchantMutex(merchantId, fn) {
-  const prev = mutexChains.get(merchantId) ?? Promise.resolve();
-  const result = prev.then(
-    () => fn(),
-    () => fn(),
-  );
-  const sink = result.catch(() => {});
-  mutexChains.set(merchantId, sink);
-  sink.then(() => {
-    if (mutexChains.get(merchantId) === sink) mutexChains.delete(merchantId);
-  });
-  return result;
+  return runWithMutex(merchantMutexChains, merchantId, fn);
+}
+
+/**
+ * Serialize money and inventory mutations for one actor across every merchant.
+ * Per-merchant locking alone cannot protect a wallet shared by two shops.
+ */
+export function runWithActorMutex(actorId, fn) {
+  return runWithMutex(actorMutexChains, actorId, fn);
+}
+
+/** Hold the shop lock, then the actor lock, for one complete transaction. */
+export function runWithMerchantActorMutex(merchantId, actorId, fn) {
+  return runWithMerchantMutex(merchantId, () => runWithActorMutex(actorId, fn));
 }
 
 /** Reset every session — test/dev convenience. */
 export function clearAllSessions() {
   sessions.clear();
-  mutexChains.clear();
+  merchantMutexChains.clear();
+  actorMutexChains.clear();
 }
 
 /** Print a summary of active sessions to the console. Debug-only. */

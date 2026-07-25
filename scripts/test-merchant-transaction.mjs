@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 
-import { executeSell } from "./merchant/transaction.js";
+import { executeBuy, executeSell } from "./merchant/transaction.js";
 import { normalizeMerchant } from "./merchant/store.js";
 
 function makeItem({
@@ -41,7 +41,11 @@ function makeItem({
   };
 }
 
-function makeActor({ updateRejects = false } = {}) {
+function makeActor({
+  updateRejects = false,
+  createRejects = false,
+  deleteRejects = false,
+} = {}) {
   const calls = { created: [], deleted: [], updates: 0 };
   return {
     name: "Tester",
@@ -52,10 +56,12 @@ function makeActor({ updateRejects = false } = {}) {
       return true;
     },
     async createEmbeddedDocuments(_type, arr) {
+      if (createRejects) throw new Error("item create boom");
       calls.created.push(...arr);
       return arr.map((_d, i) => ({ id: `restored-${i}` }));
     },
     async deleteEmbeddedDocuments(_type, ids) {
+      if (deleteRejects) throw new Error("item delete boom");
       calls.deleted.push(...ids);
       return ids;
     },
@@ -145,6 +151,60 @@ const merchant = normalizeMerchant({ id: "shop", sellRatio: 0.5 });
     actor._calls.created.length,
     1,
     "…then restored when the payout failed",
+  );
+}
+
+/* A failed buy payment plus a failed item rollback must be reported as a
+ * compensation failure, since the actor may still hold the created item. */
+{
+  const actor = makeActor({ updateRejects: true, deleteRejects: true });
+  const item = makeItem({ id: "catalog-item", quantity: 1, priceGp: 10 });
+  const result = await executeBuy({
+    actor,
+    merchant,
+    row: {
+      uuid: "Compendium.test.Item.catalog",
+      qty: 1,
+      unlimited: false,
+      priceOverrideGp: 10,
+    },
+    item,
+    qty: 1,
+    notify: false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "compensation-failed");
+  assert.equal(
+    actor._calls.created.length,
+    1,
+    "the purchased item was created",
+  );
+  assert.equal(
+    actor._calls.deleted.length,
+    0,
+    "the failed rollback could not remove it",
+  );
+}
+
+/* A failed sell payout plus a failed item restore is likewise a compensation
+ * failure rather than a misleading claim that the item was restored. */
+{
+  const actor = makeActor({ updateRejects: true, createRejects: true });
+  const item = makeItem({ quantity: 1, priceGp: 10 });
+  const result = await executeSell({
+    actor,
+    merchant,
+    ownedItem: item,
+    qty: 1,
+    notify: false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "compensation-failed");
+  assert.equal(actor._calls.deleted.length, 1, "the sold item was removed");
+  assert.equal(
+    actor._calls.created.length,
+    0,
+    "the failed rollback could not restore it",
   );
 }
 

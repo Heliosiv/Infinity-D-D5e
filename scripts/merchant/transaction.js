@@ -132,14 +132,13 @@ export function resolveUnitSellPrice({
  * ------------------------------------------------------------------ */
 
 /**
- * Execute a purchase. The player client:
+ * Execute a purchase on the authoritative GM:
  *   1. validates funds against the resolved unit price × qty,
  *   2. creates the item on the actor with the rolled quantity,
  *   3. deducts the currency.
  *
- * The merchant stock decrement + seal burn are the GM's job — see
- * `socket.js`. This function returns enough information to surface a
- * receipt and to emit the commit-purchase event.
+ * The caller owns the merchant stock decrement and seal burn. This function
+ * returns enough information to persist the shop and surface a receipt.
  */
 export async function executeBuy({
   actor,
@@ -212,6 +211,7 @@ export async function executeBuy({
   const deduct = await deductCurrency(actor, totalGp);
   if (!deduct.ok) {
     // Roll back the created item so the player doesn't get a freebie.
+    let rolledBack = true;
     try {
       const ids = (Array.isArray(created) ? created : [])
         .map((doc) => doc?.id)
@@ -220,14 +220,21 @@ export async function executeBuy({
         await actor.deleteEmbeddedDocuments("Item", ids);
       }
     } catch (rollbackError) {
+      rolledBack = false;
       console.warn(`${MODULE_ID} | buy rollback failed`, rollbackError);
     }
     if (notify) {
       ui.notifications?.error(
-        `${MODULE_ID}: payment failed — purchase rolled back.`,
+        rolledBack
+          ? `${MODULE_ID}: payment failed — purchase rolled back.`
+          : `${MODULE_ID}: payment and item rollback failed — ask the GM to reconcile the transaction.`,
       );
     }
-    return { ok: false, reason: "payment-failed" };
+    return {
+      ok: false,
+      reason: rolledBack ? "payment-failed" : "compensation-failed",
+      error: deduct.error,
+    };
   }
 
   const itemName = snapshot.name ?? "item";
@@ -260,13 +267,12 @@ export async function executeBuy({
  * ------------------------------------------------------------------ */
 
 /**
- * Execute a sale. The player client:
+ * Execute a sale on the authoritative GM:
  *   1. validates the owned item is sellable + has enough quantity,
  *   2. removes the requested quantity (deletes or decrements the stack),
  *   3. credits the currency.
  *
- * The GM doesn't track sold goods as merchant stock — sales just emit
- * a `commit-sale` so the GM can log the receipt.
+ * Sold goods are not added to merchant stock; the caller persists the payout.
  */
 export async function executeSell({
   actor,
@@ -356,6 +362,7 @@ export async function executeSell({
     });
   } catch (error) {
     // Roll the removal back so the player doesn't lose the item for nothing.
+    let rolledBack = true;
     try {
       if (removedWholeStack) {
         const restore = cloneItemSnapshot(preSaleSnapshot);
@@ -367,15 +374,22 @@ export async function executeSell({
         await ownedItem.update({ "system.quantity": inStack });
       }
     } catch (rollbackError) {
+      rolledBack = false;
       console.warn(`${MODULE_ID} | sell rollback failed`, rollbackError);
     }
     console.error(`${MODULE_ID} | sell payout failed`, error);
     if (notify) {
       ui.notifications?.error(
-        `${MODULE_ID}: payout failed — item restored, sale cancelled.`,
+        rolledBack
+          ? `${MODULE_ID}: payout failed — item restored, sale cancelled.`
+          : `${MODULE_ID}: payout and item rollback failed — ask the GM to reconcile the transaction.`,
       );
     }
-    return { ok: false, reason: "payout-failed", error };
+    return {
+      ok: false,
+      reason: rolledBack ? "payout-failed" : "compensation-failed",
+      error,
+    };
   }
 
   const itemName = itemData.name ?? "item";

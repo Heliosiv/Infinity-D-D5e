@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
  *  - buy commit converges: GM stored merchant === the merchant the player's
  *    session view receives via STATE_UPDATE, and the buyer is acked ok:true;
  *  - no double-charge / no oversell when two buys race the last unit (mutex);
+ *  - one actor cannot spend the same wallet balance concurrently at two shops;
  *  - a GM edit racing a player purchase loses neither write (mutex, no
  *    lost-update);
  *  - the authoritative-GM lowest-id tiebreaker means a two-GM table decrements
@@ -393,6 +394,133 @@ try {
     ok(
       "racing buys serialize: one sells, one out-of-stock, merchant charged once",
     );
+  }
+
+  /* ============================================================== *
+   * 2b. One actor cannot double-spend across different shops
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const itemA = makeItem("Compendium.x.Item.shop-a", 100, { name: "A" });
+    const itemB = makeItem("Compendium.x.Item.shop-b", 100, { name: "B" });
+    globalThis.fromUuid = async (uuid) =>
+      [itemA, itemB].find((item) => item._uuid === uuid) ?? null;
+    const world = makeWorld([
+      makeMerchant({
+        id: "m-a",
+        name: "Shop A",
+        items: [
+          { uuid: itemA._uuid, qty: 1, startingQty: 1, unlimited: false },
+        ],
+      }),
+      makeMerchant({
+        id: "m-b",
+        name: "Shop B",
+        items: [
+          { uuid: itemB._uuid, qty: 1, startingQty: 1, unlimited: false },
+        ],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+
+    const actor = gm.actors.get("actor-p1");
+    actor.system.currency.gp = 150;
+    const originalUpdate = actor.update.bind(actor);
+    let updateCalls = 0;
+    let releaseFirstUpdate;
+    let signalFirstUpdate;
+    const firstUpdateStarted = new Promise((resolve) => {
+      signalFirstUpdate = resolve;
+    });
+    const firstUpdateGate = new Promise((resolve) => {
+      releaseFirstUpdate = resolve;
+    });
+    actor.update = async (changes) => {
+      updateCalls += 1;
+      if (updateCalls === 1) {
+        signalFirstUpdate();
+        await firstUpdateGate;
+      }
+      return originalUpdate(changes);
+    };
+
+    const sessionA = openSession({
+      merchantId: "m-a",
+      viewerUserId: "p1",
+    });
+    const sessionB = openSession({
+      merchantId: "m-b",
+      viewerUserId: "p1",
+    });
+    const commits = Promise.all([
+      receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+          originUserId: "p1",
+          sessionId: sessionA.sessionId,
+          itemUuid: itemA._uuid,
+          qty: 1,
+          totalGp: 100,
+          commitId: "cross-shop-a",
+        },
+        "p1",
+      ),
+      receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+          originUserId: "p1",
+          sessionId: sessionB.sessionId,
+          itemUuid: itemB._uuid,
+          qty: 1,
+          totalGp: 100,
+          commitId: "cross-shop-b",
+        },
+        "p1",
+      ),
+    ]);
+    await firstUpdateStarted;
+    releaseFirstUpdate();
+    await commits;
+
+    assert.equal(actor.system.currency.gp, 50, "the wallet is charged once");
+    assert.equal(
+      updateCalls,
+      1,
+      "only the affordable purchase updates currency",
+    );
+    assert.equal(
+      actor.items.contents.filter((item) => item.id !== "owned-sword").length,
+      1,
+      "only one purchased item is created",
+    );
+    const merchants = [findMerchant("m-a"), findMerchant("m-b")];
+    assert.equal(
+      merchants.filter((merchant) => merchant.items[0].qty === 0).length,
+      1,
+      "only one shop loses stock",
+    );
+    const results = allOf(
+      wire.log.map((entry) => entry.payload),
+      MERCHANT_EVENTS.COMMIT_RESULT,
+    ).filter((result) =>
+      ["cross-shop-a", "cross-shop-b"].includes(result.commitId),
+    );
+    assert.equal(results.filter((result) => result.ok).length, 1);
+    assert.equal(
+      results.filter(
+        (result) => !result.ok && result.reason === "insufficient-funds",
+      ).length,
+      1,
+      "the second shop receives an explicit insufficient-funds result",
+    );
+    assert.ok(
+      lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT),
+      "the player receives transaction results",
+    );
+    ok("cross-shop purchases serialize one actor wallet");
   }
 
   /* ============================================================== *

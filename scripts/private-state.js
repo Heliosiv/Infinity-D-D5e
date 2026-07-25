@@ -7,19 +7,26 @@
  * clients. Legacy settings are migrated once and then cleared.
  */
 
+import { isAuthoritativeGM } from "./socket-authority.js";
+
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
 const STORE_SCHEMA = 1;
 const STORE_NAME = "[Infinity D&D5e] Private State";
+const STORE_WAIT_MS = 5000;
 const LEGACY_KEYS = Object.freeze({
   merchants: "merchants",
   factions: "factions",
 });
 
 const cache = new Map();
+const storeWaiters = new Set();
+const syncHookIds = [];
 let storeDocument = null;
 let initialized = false;
 let initialization = null;
+let initializing = false;
+let syncHooksRegistered = false;
 
 function clone(value) {
   if (value == null) return value;
@@ -46,12 +53,99 @@ function documentValue(document, key) {
   return Array.isArray(value) ? clone(value) : [];
 }
 
+function isStoreDocument(document) {
+  return document?.getFlag?.(MODULE_ID, STORE_MARKER) === true;
+}
+
 function findStoreDocument() {
   return (
-    globalThis.game?.journal?.find?.(
-      (entry) => entry?.getFlag?.(MODULE_ID, STORE_MARKER) === true,
-    ) ?? null
+    globalThis.game?.journal?.find?.((entry) => isStoreDocument(entry)) ?? null
   );
+}
+
+function hydrateCache(document) {
+  if (!document) return;
+  storeDocument = document;
+  for (const key of Object.keys(LEGACY_KEYS)) {
+    cache.set(key, documentValue(document, key));
+  }
+}
+
+function resolveStoreWaiters(document) {
+  for (const resolve of storeWaiters) resolve(document);
+  storeWaiters.clear();
+}
+
+function registerSyncHooks() {
+  if (
+    syncHooksRegistered ||
+    !globalThis.game?.user?.isGM ||
+    typeof globalThis.Hooks?.on !== "function"
+  ) {
+    return;
+  }
+  syncHooksRegistered = true;
+
+  syncHookIds.push([
+    "createJournalEntry",
+    globalThis.Hooks.on("createJournalEntry", (document) => {
+      if (!isStoreDocument(document)) return;
+      if (storeDocument?.id && document?.id !== storeDocument.id) {
+        console.warn(
+          `${MODULE_ID} | ignored a duplicate private state journal (${document.id})`,
+        );
+        return;
+      }
+      hydrateCache(document);
+      if (!initializing) initialized = true;
+      resolveStoreWaiters(document);
+    }),
+  ]);
+  syncHookIds.push([
+    "updateJournalEntry",
+    globalThis.Hooks.on("updateJournalEntry", (document) => {
+      if (!isStoreDocument(document)) return;
+      if (storeDocument?.id && document?.id !== storeDocument.id) return;
+      hydrateCache(document);
+    }),
+  ]);
+  syncHookIds.push([
+    "deleteJournalEntry",
+    globalThis.Hooks.on("deleteJournalEntry", (document) => {
+      if (!isStoreDocument(document)) return;
+      if (storeDocument?.id && document?.id !== storeDocument.id) return;
+      cache.clear();
+      storeDocument = null;
+      initialized = false;
+      initialization = null;
+    }),
+  ]);
+}
+
+function waitForStoreDocument() {
+  const existing = findStoreDocument();
+  if (existing) return Promise.resolve(existing);
+  if (!syncHooksRegistered) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let timer = null;
+    const finish = (document) => {
+      if (!storeWaiters.delete(finish)) return;
+      if (timer !== null) globalThis.clearTimeout(timer);
+      resolve(document);
+    };
+    storeWaiters.add(finish);
+
+    const afterSubscribe = findStoreDocument();
+    if (afterSubscribe) {
+      finish(afterSubscribe);
+      return;
+    }
+    timer = globalThis.setTimeout(
+      () => finish(findStoreDocument()),
+      STORE_WAIT_MS,
+    );
+  });
 }
 
 async function createStoreDocument(initial) {
@@ -76,6 +170,7 @@ async function createStoreDocument(initial) {
 /** Initialize and migrate the private store before any subsystem reads it. */
 export function initializePrivateState() {
   if (initialization) return initialization;
+  initializing = true;
   initialization = (async () => {
     if (!isLiveFoundry()) {
       initialized = true;
@@ -88,12 +183,23 @@ export function initializePrivateState() {
       return true;
     }
 
+    registerSyncHooks();
     const legacy = {
       merchants: legacyValue("merchants"),
       factions: legacyValue("factions"),
     };
     storeDocument = findStoreDocument();
-    if (!storeDocument) storeDocument = await createStoreDocument(legacy);
+    if (!storeDocument && isAuthoritativeGM()) {
+      storeDocument = await createStoreDocument(legacy);
+    } else if (!storeDocument) {
+      storeDocument = await waitForStoreDocument();
+    }
+    if (!storeDocument) {
+      console.warn(
+        `${MODULE_ID} | private state store is not available yet; initialization will retry`,
+      );
+      return false;
+    }
 
     for (const key of Object.keys(LEGACY_KEYS)) {
       const stored = documentValue(storeDocument, key);
@@ -108,11 +214,21 @@ export function initializePrivateState() {
     }
     initialized = true;
     return true;
-  })().catch((error) => {
-    initialization = null;
-    console.error(`${MODULE_ID} | private state initialization failed`, error);
-    throw error;
-  });
+  })()
+    .then((result) => {
+      initializing = false;
+      if (!result && !initialized) initialization = null;
+      return result;
+    })
+    .catch((error) => {
+      initializing = false;
+      initialization = null;
+      console.error(
+        `${MODULE_ID} | private state initialization failed`,
+        error,
+      );
+      throw error;
+    });
   return initialization;
 }
 
@@ -148,8 +264,14 @@ export function isPrivateStateReady() {
 
 /** Test-only reset; harmless when imported by the Foundry runtime. */
 export function resetPrivateStateForTests() {
+  for (const [event, id] of syncHookIds.splice(0)) {
+    globalThis.Hooks?.off?.(event, id);
+  }
+  resolveStoreWaiters(null);
   cache.clear();
   storeDocument = null;
   initialized = false;
   initialization = null;
+  initializing = false;
+  syncHooksRegistered = false;
 }

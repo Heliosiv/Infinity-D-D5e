@@ -7,10 +7,11 @@
  *
  * Authority model:
  * - GM client owns the merchant store and the in-memory session map.
- * - Player client owns its actor mutations (item create/delete, coin).
+ * - The authoritative GM validates and applies actor mutations.
  * - Bargain *tier resolution* is GM-side so the merchant's DC + tier
  *   schedule are the source of truth (player can't fake a discount).
- * - Stock decrements run inside a per-merchant async mutex on the GM.
+ * - Shop writes use a per-merchant mutex; wallet/inventory writes also use a
+ *   per-actor mutex so transactions across different shops cannot race.
  *
  * Listeners receive every broadcast; non-target roles ignore them.
  * Only the active GM (when one exists) handles player→GM messages, so
@@ -55,6 +56,7 @@ import {
   openSession,
   recordBargain,
   recordCommitResult,
+  runWithMerchantActorMutex,
   runWithMerchantMutex,
 } from "./session-state.js";
 import { escapeHtml } from "../ui-util.js";
@@ -212,30 +214,6 @@ export function registerMerchantSocket() {
   );
   registered = true;
   return true;
-}
-
-/**
- * Whether the current client should act as the GM handler for
- * authoritative writes. Only the active GM (the one Foundry deems
- * "primary") handles player→GM messages.
- */
-function legacyIsAuthoritativeGM() {
-  const game = globalThis.game;
-  if (!game?.user?.isGM) return false;
-  const active = game.users?.activeGM;
-  if (active) return active.id === game.user.id;
-  // No designated active GM — e.g. the brief window during GM connect/
-  // disconnect churn. "Every GM acts" here double-writes stock/gold, so fall
-  // back to a deterministic tiebreaker: only the lowest-id currently-connected
-  // GM handles the frame. Solo GM (no other GMs online, or headless/tests)
-  // still acts.
-  const gms = [];
-  game.users?.forEach?.((u) => {
-    if (u?.isGM && u?.active) gms.push(u.id);
-  });
-  if (gms.length === 0) return true;
-  gms.sort();
-  return gms[0] === game.user.id;
 }
 
 /* ------------------------------------------------------------------ *
@@ -454,7 +432,7 @@ async function handleCommitPurchase(payload) {
     return;
   }
 
-  await runWithMerchantMutex(session.merchantId, async () => {
+  await runWithMerchantActorMutex(session.merchantId, actor.id, async () => {
     const prior = getCommitResult(sessionId, payload.commitId);
     if (prior) {
       emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
@@ -476,9 +454,8 @@ async function handleCommitPurchase(payload) {
     // Reject an oversell BEFORE burning the seal or charging. If finite stock
     // can't cover the request — a concurrent buyer took the last unit while
     // this commit waited on the mutex — the sale didn't happen on the
-    // merchant's side. Tell the buyer (their sheet already changed) instead of
-    // silently charging the merchant for stock it never had and double-selling
-    // one unit. The buyer's _onCommitResult then prompts them to reconcile.
+    // merchant's side. Tell the buyer instead of mutating their actor or
+    // double-selling one unit.
     if (!row.unlimited && row.qty < requested) {
       console.warn(
         `${MODULE_ID} | commit-purchase: "${itemUuid}" stock ${row.qty} < ${requested} (out of stock) — rejecting`,
@@ -611,10 +588,10 @@ async function handleCommitSale(payload) {
     emitCommitResult(payload, false, "no-actor");
     return;
   }
-  // Sales don't change stock, but the merchant pays out — spend its gold
-  // (clamped at 0; no-op if the purse is unlimited). Seal consumption runs
-  // inside the mutex too, matching the buy path.
-  await runWithMerchantMutex(session.merchantId, async () => {
+  // Sales don't change stock, but the merchant pays out. Finite purses are
+  // checked before mutation; unlimited purses are a no-op. Seal consumption
+  // runs inside the mutex too, matching the buy path.
+  await runWithMerchantActorMutex(session.merchantId, actor.id, async () => {
     const prior = getCommitResult(sessionId, payload.commitId);
     if (prior) {
       emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
@@ -642,12 +619,8 @@ async function handleCommitSale(payload) {
         `${MODULE_ID} | commit-sale: seal "${sealId}" not found/expired`,
       );
     }
-    // Recompute the payout from the item snapshot the player sent (the item is
-    // already removed from their sheet, so we can't fromUuid it). The sold item
-    // is inherently player-side data, but recomputing catches display drift /
-    // honest client bugs, and adjustMerchantGold floors the purse at 0 so a
-    // stale/forged total can't drive the coffer to a wrong value. Falls back to
-    // the client total only when no usable snapshot was sent.
+    // Recompute the payout from the actor's current embedded item. The client
+    // total is advisory only; the authoritative GM owns pricing and mutation.
     let trueTotal = 0;
     let priced = false;
     const snap = ownedItem.toObject?.() ?? ownedItem;
@@ -687,11 +660,6 @@ async function handleCommitSale(payload) {
       return;
     }
     const payout = trueTotal;
-    if (payout !== trueTotal) {
-      console.warn(
-        `${MODULE_ID} | commit-sale: payout ${trueTotal} exceeds merchant gold ${merchant.goldOnHand} (concurrent/stale sell) — clamped to ${payout}`,
-      );
-    }
     const passivePct = computePassiveBargainPct(merchant, actor);
     const actorResult = await executeSell({
       actor,

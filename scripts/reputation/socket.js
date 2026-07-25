@@ -83,16 +83,6 @@ export function registerReputationSocket() {
   return true;
 }
 
-/** Only the active (primary) GM answers player→GM messages, so a multi-GM
- *  table doesn't reply twice. */
-function legacyIsAuthoritativeGM() {
-  const game = globalThis.game;
-  if (!game?.user?.isGM) return false;
-  const active = game.users?.activeGM;
-  if (!active) return true;
-  return active.id === game.user.id;
-}
-
 /* ------------------------------------------------------------------ *
  * Send
  * ------------------------------------------------------------------ */

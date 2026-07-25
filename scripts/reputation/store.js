@@ -1,10 +1,9 @@
 /**
  * Infinity D&D5e — Reputation Store
  *
- * Persistence layer for faction reputation. Factions live as plain
- * objects in a single world-scoped Foundry setting (FACTIONS), so the GM
- * curates them in the Reputation Workspace and they survive world reloads
- * without any actor/journal baggage — mirroring the merchant store.
+ * Persistence layer for faction reputation. Live Foundry worlds keep faction
+ * data in the module's restricted private-state journal; node tests and legacy
+ * migrations use the original world setting fallback.
  *
  * Pure record shaping (in standing.js) plus the pure mutation helpers here
  * (`applyStandingChange`, per-character add/update/remove,
@@ -23,11 +22,7 @@ import {
   standingBand,
   standingTier,
 } from "./standing.js";
-import {
-  getPrivateState,
-  isPrivateStateReady,
-  setPrivateState,
-} from "../private-state.js";
+import { getPrivateState, setPrivateState } from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 /** Setting key — mirrors SETTING_KEYS.FACTIONS in settings.js. */
@@ -197,13 +192,7 @@ async function writeFactions(factions) {
   const cleaned = (Array.isArray(factions) ? factions : []).map(
     normalizeFaction,
   );
-  if (isPrivateStateReady()) await setPrivateState("factions", cleaned);
-  else {
-    if (!globalThis.game?.settings?.set) {
-      throw new Error("NotInFoundry: saveFactions requires game.settings");
-    }
-    await globalThis.game.settings.set(MODULE_ID, FACTION_SETTING_KEY, cleaned);
-  }
+  await setPrivateState("factions", cleaned);
   return cleaned;
 }
 

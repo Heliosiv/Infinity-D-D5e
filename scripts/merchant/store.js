@@ -1,10 +1,9 @@
 /**
  * Infinity D&D5e — Merchant Store
  *
- * Persistence layer for merchant records. Merchants live as plain
- * objects in a single world-scoped Foundry setting (MERCHANTS), so the
- * GM curates them in the Merchant Workspace UI and they survive world
- * reloads without any actor or journal baggage.
+ * Persistence layer for merchant records. Live Foundry worlds keep merchant
+ * data in the module's restricted private-state journal; node tests and legacy
+ * migrations use the original world setting fallback.
  *
  * Pure data shaping (normalization, defaults, validation) is exported
  * for unit testing. Foundry-touching helpers (`load`, `save`) degrade
@@ -18,11 +17,7 @@ import {
   resolveRarityWeights,
 } from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
-import {
-  getPrivateState,
-  isPrivateStateReady,
-  setPrivateState,
-} from "../private-state.js";
+import { getPrivateState, setPrivateState } from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_SETTING_KEY = "merchants";
@@ -743,17 +738,7 @@ async function writeMerchants(merchants) {
   const cleaned = (Array.isArray(merchants) ? merchants : []).map(
     normalizeMerchant,
   );
-  if (isPrivateStateReady()) await setPrivateState("merchants", cleaned);
-  else {
-    if (!globalThis.game?.settings?.set) {
-      throw new Error("NotInFoundry: saveMerchants requires game.settings");
-    }
-    await globalThis.game.settings.set(
-      MODULE_ID,
-      MERCHANT_SETTING_KEY,
-      cleaned,
-    );
-  }
+  await setPrivateState("merchants", cleaned);
   return cleaned;
 }
 
