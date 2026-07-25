@@ -23,7 +23,6 @@ import {
   RARITIES,
   getItemGpValue,
   getItemKeywords,
-  getItemLootType,
   getItemLootWeight,
   getItemMagicNature,
   getItemMaxQty,
@@ -33,15 +32,14 @@ import {
   isAmmunitionItem,
   isBareSpellLootItem,
   isLootEligible,
-  isVariableTreasureBase,
   normalizeRarity,
 } from "./tag-vocabulary.js";
 import {
   createArtVariant,
   createArtVariantItemData,
-  getVariableTreasureKind,
   isVariableArtItem,
 } from "./art-variants.js";
+import { getItemLootCategories, isVariableGemItem } from "./item-categories.js";
 import {
   normalizeRarityWeights,
   rarityWeightForRarity,
@@ -406,19 +404,10 @@ function toSet(values) {
 }
 
 function matchesLootTypes(item, lootTypes) {
-  const directType = getItemLootType(item);
-  if (directType && lootTypes.has(directType)) return true;
-
-  const keywords = new Set(getItemKeywords(item));
+  const categories = getItemLootCategories(item);
   for (const lootType of lootTypes) {
-    if (keywords.has(lootType)) return true;
+    if (categories.has(lootType)) return true;
   }
-
-  if (lootTypes.has("loot.art") && isVariableArtItem(item)) return true;
-  if (lootTypes.has("loot.gem") && isVariableGemItem(item)) return true;
-  // Synthetic "Ammunition" chip: arrows/bolts/bullets ship as loot.consumable,
-  // so match them through the dedicated ammo predicate instead of a lootType.
-  if (lootTypes.has("loot.ammunition") && isAmmunitionItem(item)) return true;
   return false;
 }
 
@@ -447,26 +436,6 @@ export function getEffectiveRarity(item) {
 
 function matchesRarities(item, rarities) {
   return rarities.has(getEffectiveRarity(item));
-}
-
-export function isVariableGemItem(item) {
-  // Gate on a real mundane-treasure base first: magic items such as "Pearl of
-  // Power" and "Gem of Seeing" carry `treasure.gem` / `variableTreasureKind:
-  // gem` tags copied from their flavor, but they are consumables — not gems —
-  // and must not surface on the Gem chip. (isVariableArtItem applies the same
-  // gate; see tag-vocabulary.isVariableTreasureBase.)
-  if (!isVariableTreasureBase(item)) return false;
-
-  const kind = getVariableTreasureKind(item);
-  if (kind === "gem") return true;
-  if (kind && kind !== "gem") return false;
-
-  const keywords = new Set(getItemKeywords(item));
-  return (
-    keywords.has("treasure.gem") ||
-    keywords.has("loot.variable.gem") ||
-    keywords.has("merchant.gem")
-  );
 }
 
 function materializeLootEntry(item, quantity, { artVariants, rng }) {
@@ -612,4 +581,4 @@ function clampBias(raw) {
 }
 
 /** Re-export for convenience so the UI layer doesn't have to import two files. */
-export { ELEVATED_RARITIES, RARITIES };
+export { ELEVATED_RARITIES, RARITIES, isVariableGemItem };

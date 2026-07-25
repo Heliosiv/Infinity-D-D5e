@@ -69,7 +69,7 @@ export function fakeItem(overrides = {}) {
  * namespace, so the fallback read path in tag-vocabulary keeps a test.
  */
 export function legacyNamespaceItem(overrides = {}) {
-  const item = makeItem(overrides);
+  const item = fakeItem(overrides);
   const flags = item.flags["infinity-dnd5e"];
   delete item.flags["infinity-dnd5e"];
   item.flags["party-operations"] = flags;

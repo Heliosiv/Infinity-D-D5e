@@ -212,6 +212,7 @@ export function isVariableArtItem(item) {
 
   const keywords = new Set(getItemKeywords(item));
   const hasArtTag =
+    keywords.has("loot.art") ||
     keywords.has("treasure.art") ||
     keywords.has("loot.variable.art") ||
     keywords.has("merchant.art");

@@ -2,7 +2,7 @@
  * Merchant buy-filter classification + matching.
  *
  * Guards the two-path design of itemBuyCategories:
- *   - TAGGED compendium items are classified by their curated lootType alone.
+ *   - TAGGED compendium items use their curated canonical + virtual categories.
  *   - UNtagged character-sheet items fall back to a dnd5e item-type classifier.
  *
  * The regression this locks down: the curated pack stamps mundane base gear
@@ -71,6 +71,56 @@ const tagged = (lootType, extra = {}) => ({
   assert.ok(
     itemBuyCategories(reagent).has("loot.reagent"),
     "tagged reagent -> reagent",
+  );
+
+  // Variable treasure retains the coarse loot.loot source tag. Its virtual
+  // Gem/Art membership must survive when a purchased item is sold again.
+  const gem = tagged("loot.loot", {
+    type: "loot",
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "loot.loot",
+        variableTreasureKind: "gem",
+        keywords: ["loot.loot", "treasure.gem"],
+      },
+    },
+  });
+  assert.ok(itemBuyCategories(gem).has("loot.gem"), "tagged gem -> Gems");
+  assert.equal(
+    itemMatchesBuyFilter({ lootTypes: ["loot.gem"] }, gem),
+    true,
+    "a Gems merchant buys a variable gem",
+  );
+
+  const art = tagged("loot.loot", {
+    type: "loot",
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "loot.loot",
+        variableTreasureKind: "art",
+        keywords: ["loot.loot", "treasure.art"],
+      },
+    },
+  });
+  assert.ok(itemBuyCategories(art).has("loot.art"), "tagged art -> Art");
+  assert.equal(
+    itemMatchesBuyFilter({ lootTypes: ["loot.art"] }, art),
+    true,
+    "an Art merchant buys a variable art object",
+  );
+
+  const incense = tagged("loot.loot", {
+    type: "loot",
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "loot.loot",
+        keywords: ["loot.loot", "folder.path.sundries.herbs-reagents.reagents"],
+      },
+    },
+  });
+  assert.ok(
+    itemBuyCategories(incense).has("loot.reagent"),
+    "a legacy reagent-folder trade good -> Reagents",
   );
 }
 

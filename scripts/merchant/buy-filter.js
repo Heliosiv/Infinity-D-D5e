@@ -16,7 +16,8 @@
  */
 
 import { getEffectiveRarity } from "../loot/roller.js";
-import { getItemLootType, isAmmunitionItem } from "../loot/tag-vocabulary.js";
+import { getItemLootCategories } from "../loot/item-categories.js";
+import { getItemLootType } from "../loot/tag-vocabulary.js";
 
 /** dnd5e `equipment` subtypes that are armor (vs. clothing / trinkets / gear). */
 const ARMOR_SUBTYPES = new Set([
@@ -33,27 +34,19 @@ const ARMOR_SUBTYPES = new Set([
  * fallback so untagged player gear still classifies.
  *
  * @param {object} item - a dnd5e item Document or snapshot
- * @returns {Set<string>} loot.* category keys (subset of LOOT_TYPES)
+ * @returns {Set<string>} canonical and virtual loot.* category keys
  */
 export function itemBuyCategories(item) {
-  const out = new Set();
-
-  // Synthetic ammunition chip — arrows/bolts ship as loot.consumable, so this
-  // virtual-chip predicate applies whether or not the item is tagged.
-  if (isAmmunitionItem(item)) out.add("loot.ammunition");
+  const out = getItemLootCategories(item);
 
   // 1. Tagged compendium items (incl. ones the player bought from a merchant,
-  //    which keep their source flags) carry a canonical lootType. Trust it and
+  //    which keep their source flags) carry a canonical lootType plus any
+  //    virtual categories resolved by getItemLootCategories. Trust those and
   //    STOP — the dnd5e-type fallback below exists only to classify untagged
-  //    character-sheet gear. Running it on tagged items both double-classifies
-  //    (every consumable also picked up loot.consumable) and, worse, mis-flags
-  //    mundane base gear as magic, because this pack tags base weapons/armor as
-  //    rarity "common" (see the heuristic note in the fallback).
+  //    character-sheet gear. Running it on tagged items can misclassify mundane
+  //    base gear because this pack stamps it with rarity "common".
   const tagged = getItemLootType(item);
-  if (tagged) {
-    out.add(tagged);
-    return out;
-  }
+  if (tagged) return out;
 
   // 2. dnd5e-type fallback for untagged sheet items.
   const type = String(item?.type ?? "").toLowerCase();
