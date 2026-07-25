@@ -615,6 +615,18 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
     "stacked art bases are split into one unique result per item",
   );
   assert.notEqual(result.items[0].variant.id, result.items[1].variant.id);
+
+  const capped = rollLoot([art], {
+    count: 1,
+    maxAttempts: 10,
+    rng: seqRng([0.5, 0.5, 0.5, 0, 0, 0]),
+    artVariants: true,
+  });
+  assert.equal(
+    capped.items.length,
+    1,
+    "the item limit counts each materialized art variant as one result",
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -723,23 +735,23 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   assert.equal(
     result.items[0].quantity,
     1,
-    "non-ammo maxRecommendedQty still requires duplicate picks to stack",
+    "non-ammo maxRecommendedQty does not create duplicate loot stacks",
   );
 }
 
 /* ------------------------------------------------------------------ *
- * rollLoot — stacking up to maxRecommendedQty
+ * rollLoot — ammunition stacks up to maxRecommendedQty
  * ------------------------------------------------------------------ */
 {
-  // Healing Potion has maxRecommendedQty: 4. Force the RNG to keep
-  // picking that item; we should see the stack grow rather than
-  // counting as new items.
+  // Ammunition remains the deliberate stackable result type.
   const pool = [
     fakeItem({
-      _id: "potion",
-      name: "Potion",
+      _id: "arrows",
+      name: "Arrows",
+      type: "consumable",
       lootType: "loot.consumable",
       maxRecommendedQty: 4,
+      keywords: ["loot.consumable", "subtype.ammo"],
     }),
   ];
   // count=1 with a single-item pool: roller stops after one pick.
@@ -804,6 +816,26 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
   assert.ok(
     result.warnings.length >= 1,
     "warns that the budget could not be met",
+  );
+}
+
+/* Dynamic budget pruning reports a budget-limited result accurately. */
+{
+  const pool = [
+    fakeItem({ _id: "sixty-a", gpValue: 60 }),
+    fakeItem({ _id: "sixty-b", gpValue: 60 }),
+  ];
+  const result = rollLoot(pool, {
+    count: 2,
+    budgetGp: 100,
+    rng: mulberry32(4),
+  });
+  assert.equal(result.items.length, 1);
+  assert.ok(
+    result.warnings.some((warning) =>
+      warning.includes("100 gp budget had room for only 1"),
+    ),
+    "dynamic pruning explains that the remaining item was budget-blocked",
   );
 }
 
@@ -1097,12 +1129,11 @@ import { mulberry32, seqRng } from "./test-utils/rng.mjs";
 }
 
 /* ------------------------------------------------------------------ *
- * rollLoot — all-mundane pool + bias=+1 falls back to uniform
+ * rollLoot — legacy all-mundane pool + bias=+1 falls back to uniform
  * ------------------------------------------------------------------ */
 {
-  // Every item is mundane; bias=+1 would zero them all out. The
-  // roller falls back to uniform so the bundle is still produced
-  // rather than silently returning empty.
+  // Non-category-first callers retain their historical uniform fallback.
+  // Per-Encounter's category-first endpoint behavior has its own regression.
   const pool = [
     fakeItem({ _id: "m1", lootType: "loot.weapon.mundane" }),
     fakeItem({ _id: "m2", lootType: "loot.armor.mundane" }),

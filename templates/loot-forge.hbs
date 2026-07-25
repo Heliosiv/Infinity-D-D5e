@@ -131,6 +131,52 @@
       </div>
     </fieldset>
 
+    {{#if rollChances}}
+    <details class="lf-odds {{#unless rollChances.available}}is-empty{{/unless}}" data-roll-chances {{#if rollChances.expanded}}open{{/if}}>
+      <summary>
+        <span><i class="fa-solid fa-percent" aria-hidden="true"></i> Roll Chances</span>
+        <small>First item of a fresh Generate</small>
+      </summary>
+      <p class="lf-odds__status" data-chance-status>{{rollChances.status}}</p>
+      <div class="lf-odds__grid">
+        <section class="lf-odds__group" aria-label="Item type chances">
+          <h4>Item Type</h4>
+          <dl>
+            {{#each rollChances.categoryRows}}
+            <div class="lf-odds__row" data-chance-group="{{group}}" data-chance-key="{{key}}" {{#unless available}}hidden{{/unless}}>
+              <dt>{{label}}</dt>
+              <dd data-chance-value>{{percentLabel}}</dd>
+            </div>
+            {{/each}}
+          </dl>
+        </section>
+        <section class="lf-odds__group" aria-label="Rarity chances">
+          <h4>Rarity</h4>
+          <dl>
+            {{#each rollChances.rarityRows}}
+            <div class="lf-odds__row" data-chance-group="{{group}}" data-chance-key="{{key}}" {{#unless available}}hidden{{/unless}}>
+              <dt>{{label}}</dt>
+              <dd data-chance-value>{{percentLabel}}</dd>
+            </div>
+            {{/each}}
+          </dl>
+        </section>
+        <section class="lf-odds__group" aria-label="Magic nature chances">
+          <h4>Magic Mix</h4>
+          <dl>
+            {{#each rollChances.magicRows}}
+            <div class="lf-odds__row" data-chance-group="{{group}}" data-chance-key="{{key}}" {{#unless available}}hidden{{/unless}}>
+              <dt>{{label}}</dt>
+              <dd data-chance-value>{{percentLabel}}</dd>
+            </div>
+            {{/each}}
+          </dl>
+        </section>
+      </div>
+      <p class="lf-odds__note">These are fresh-roll odds. Bundle totals change as the budget fills, repeated categories are reduced after each pick, and mixed bundles stop at one spell scroll.</p>
+    </details>
+    {{/if}}
+
     {{> marketFilter}}
 
     <div class="lf-form__actions">

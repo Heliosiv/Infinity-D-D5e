@@ -25,6 +25,20 @@ const VIRTUAL_LOOT_TYPE_TESTS = Object.freeze([
   Object.freeze({ key: "loot.reagent", test: isReagentItem }),
 ]);
 
+/**
+ * Overlapping virtual categories that should own an item's probability slot.
+ *
+ * Ammunition otherwise lands in Consumables, while gems, art, and legacy
+ * reagents otherwise land in Trade Goods. Giving each one a single primary
+ * roll category prevents it from receiving probability mass twice.
+ */
+const ROLL_CATEGORY_PRIORITY = Object.freeze([
+  "loot.ammunition",
+  "loot.reagent",
+  "loot.gem",
+  "loot.art",
+]);
+
 export const VIRTUAL_LOOT_TYPES = Object.freeze(
   VIRTUAL_LOOT_TYPE_TESTS.map(({ key }) => key),
 );
@@ -68,6 +82,62 @@ export function getItemLootCategories(item) {
   }
 
   return categories;
+}
+
+/**
+ * Return the item's one primary category for category-first probability rolls.
+ *
+ * Filtering continues to use every overlapping membership from
+ * {@link getItemLootCategories}; only probability accounting needs one owner.
+ *
+ * @param {object} item
+ * @returns {string}
+ */
+export function getItemRollCategory(item) {
+  if (!item || typeof item !== "object") return "";
+  const categories = getItemLootCategories(item);
+  for (const category of ROLL_CATEGORY_PRIORITY) {
+    if (categories.has(category)) return category;
+  }
+  const canonical = getItemLootType(item);
+  if (LOOT_TYPE_SET.has(canonical)) return canonical;
+  for (const category of categories) {
+    if (LOOT_TYPE_SET.has(category)) return category;
+  }
+  return canonical || categories.values().next().value || "";
+}
+
+/**
+ * Restore missing primary categories on entries loaded from older roll
+ * histories. Those histories retain the compendium uuid but pre-date the
+ * `rollCategory` field, so resolve the category from the current pack item.
+ *
+ * @param {Array<object>} entries
+ * @param {Array<object>} candidates
+ * @returns {Array<object>} the same entry array, updated in place
+ */
+export function restoreStoredRollCategories(entries, candidates = []) {
+  if (!Array.isArray(entries)) return [];
+
+  const sourceByIdentity = new Map();
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const identity = itemCategoryIdentity(candidate);
+    if (identity) sourceByIdentity.set(identity, candidate);
+  }
+
+  for (const entry of entries) {
+    if (!entry || String(entry.rollCategory ?? "").trim()) continue;
+    const storedItem = entry.item ?? entry;
+    const source =
+      sourceByIdentity.get(itemCategoryIdentity(storedItem)) ?? storedItem;
+    const category = getItemRollCategory(source);
+    if (category) entry.rollCategory = category;
+  }
+  return entries;
+}
+
+function itemCategoryIdentity(item) {
+  return String(item?.uuid ?? item?._id ?? item?.id ?? "").trim();
 }
 
 /**

@@ -41,7 +41,10 @@ import {
 } from "./audio.js";
 import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
 import { registerSoundAutomation } from "./compat/sound-automation.js";
-import { SETTINGS } from "./settings.js";
+import {
+  SETTINGS,
+  migrateEncounterBalanceDefaults,
+} from "./settings.js";
 import { registerTool } from "./tool-registry.js";
 import { computeLootBudget } from "./loot/budget.js";
 import {
@@ -49,8 +52,13 @@ import {
   promptDistributeItems,
 } from "./loot/distribute.js";
 import { loadCompendiumItems } from "./loot/pack.js";
-import { filterCandidates, rollLoot } from "./loot/roller.js";
-import { getItemRarity } from "./loot/tag-vocabulary.js";
+import {
+  filterCandidates,
+  getEffectiveRarity,
+  rollLoot,
+} from "./loot/roller.js";
+import { getEncounterBalanceOptions } from "./loot/category-balance.js";
+import { tierWindow } from "./loot/tag-vocabulary.js";
 import { initializePrivateState } from "./private-state.js";
 import { isFullGM, runAsFullGM } from "./permissions.js";
 
@@ -99,8 +107,10 @@ function buildApi() {
 
     rollLootBundle: async (opts = {}) => {
       if (!isFullGM()) throw new Error("PermissionDenied: GM-only loot API");
+      const tier = opts.tier ?? "t2";
+      const lootTypes = opts.lootTypes ?? [];
       const budget = computeLootBudget({
-        tier: opts.tier ?? "t2",
+        tier,
         scale: opts.scale ?? "standard",
         generosity: opts.generosity ?? "balanced",
         partySize: opts.partySize ?? 4,
@@ -110,21 +120,26 @@ function buildApi() {
         packId: opts.packId ?? PACK_ID,
       });
       const candidates = filterCandidates(items, {
-        tiers: [opts.tier ?? "t2"],
-        rarities: opts.rarities ?? ["uncommon", "rare"],
-        lootTypes: opts.lootTypes ?? [],
+        tiers: tierWindow(tier),
+        rarities: opts.rarities ?? [],
+        lootTypes,
         requireEligible: true,
       });
+      const balanceOptions = getEncounterBalanceOptions({ tier, lootTypes });
       const raw = rollLoot(candidates, {
         count: opts.count ?? 0,
         budgetGp: budget,
+        magicBias: opts.magicBias ?? 0,
+        artVariants: opts.artVariants === true,
+        ...balanceOptions,
+        rarityWeights: opts.rarityWeights ?? balanceOptions.rarityWeights,
       });
       return {
         ...raw,
         items: raw.items.map((entry) => ({
           ...entry,
           uuid: entry.item?.uuid ?? null,
-          rarity: getItemRarity(entry.item) || "common",
+          rarity: getEffectiveRarity(entry.item),
         })),
       };
     },
@@ -390,6 +405,14 @@ Hooks.once("ready", async () => {
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
     if (mod && !mod.api) mod.api = buildApi();
+    if (isFullGM()) {
+      try {
+        await migrateEncounterBalanceDefaults();
+      } catch (error) {
+        console.error(`${MODULE_ID} | encounter balance migration failed`, error);
+      }
+    }
+
     // Register each subsystem in isolation: a throw in one (e.g. a sound hook)
     // must NOT skip the rest. Previously these ran bare in one try/catch, so a
     // single failing init silently disabled every registration after it —

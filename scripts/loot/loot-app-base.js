@@ -31,19 +31,24 @@ import {
   promptDistributeSplit,
 } from "./distribute.js";
 import { buildJournalEntry } from "./journal.js";
+import {
+  getItemRollCategory,
+  restoreStoredRollCategories,
+} from "./item-categories.js";
 import { loadCompendiumItems } from "./pack.js";
 import { computeFilterFacetStats, computePackStats } from "./pack-stats.js";
-import { filterCandidates, itemIdentity, rerollOne } from "./roller.js";
+import {
+  filterCandidates,
+  getEffectiveRarity,
+  itemIdentity,
+  rerollOne,
+} from "./roller.js";
 import {
   bindScrollTracking,
   captureScroll,
   restoreScroll,
 } from "../merchant/scroll.js";
-import {
-  getItemMaxQty,
-  getItemRarity,
-  isAmmunitionItem,
-} from "./tag-vocabulary.js";
+import { getItemMaxQty, isAmmunitionItem } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { runAsFullGM } from "../permissions.js";
 import { confirmDestructive, isInteractiveKeyboardTarget } from "../ui-util.js";
@@ -104,6 +109,9 @@ function slimResult(result) {
     if (!Array.isArray(items)) return;
     for (const entry of items) {
       if (entry?.item) {
+        entry.rollCategory =
+          String(entry.rollCategory ?? "").trim() ||
+          getItemRollCategory(entry.item);
         entry.item = {
           uuid: entry.item.uuid,
           name: entry.item.name,
@@ -117,6 +125,19 @@ function slimResult(result) {
     for (const creature of copy.creatures) slim(creature.items);
   }
   return copy;
+}
+
+/** Restore category metadata that histories saved before v0.2.60 lack. */
+function restoreResultRollCategories(result, candidates) {
+  if (Array.isArray(result?.items)) {
+    restoreStoredRollCategories(result.items, candidates);
+  }
+  if (Array.isArray(result?.creatures)) {
+    for (const creature of result.creatures) {
+      restoreStoredRollCategories(creature?.items, candidates);
+    }
+  }
+  return result;
 }
 
 /** One-line summary of a stored roll for the history list. */
@@ -1146,6 +1167,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     playModuleSound(SOUND_EVENTS.ROLL_START);
     const items = await this._loadItems();
+    restoreStoredRollCategories(list, items);
     const candidates = filterCandidates(items, this._rerollFilterSpec(old));
 
     // Scope the freed budget and the dedup set to the SAME entry-list the slot
@@ -1171,6 +1193,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       magicBias: this._form.magicBias ?? 0,
       rarityWeights: this._form.rarityWeights,
       artVariants: Boolean(old.variant) || Boolean(this._form.artVariants),
+      ...this._rerollRollOptions(old, list),
     });
 
     if (!replacement) {
@@ -1192,6 +1215,11 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return this._filterSpec();
   }
 
+  /** Additional probability controls for a single-slot reroll. */
+  _rerollRollOptions(_oldEntry, _list) {
+    return {};
+  }
+
   /**
    * The gp budget a single-slot reroll should fit within for the given
    * entry-list. Flat tools store one budget on `_lastResult`; Per-Creature
@@ -1205,11 +1233,19 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Decorate a raw rolled entry for display + item controls. */
   _decorateEntry(entry) {
-    return decorateEntry(entry, {
-      imageSrc: resultImageForEntry(entry),
-      rarity: getItemRarity(entry.item) || "common",
-      isAmmo: isAmmunitionItem(entry.item),
-    });
+    return decorateEntry(
+      {
+        ...entry,
+        rollCategory:
+          String(entry?.rollCategory ?? "").trim() ||
+          getItemRollCategory(entry?.item),
+      },
+      {
+        imageSrc: resultImageForEntry(entry),
+        rarity: getEffectiveRarity(entry.item),
+        isAmmo: isAmmunitionItem(entry.item),
+      },
+    );
   }
 
   /* ------------------- result search ------------------- */
@@ -1364,6 +1400,17 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._form = this._normalizeStoredForm(entry.form);
     }
     this._lastResult = entry.result ? cloneData(entry.result) : null;
+    if (this._lastResult) {
+      try {
+        const items = await this._loadItems();
+        restoreResultRollCategories(this._lastResult, items);
+      } catch (error) {
+        console.warn(
+          `${MODULE_ID} | could not restore legacy roll categories`,
+          error,
+        );
+      }
+    }
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     await this._renderPreservingScroll();
   }

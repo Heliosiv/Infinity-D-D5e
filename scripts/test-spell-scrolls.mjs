@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { filterCandidates, rollLoot } from "./loot/roller.js";
+import { getEncounterBalanceOptions } from "./loot/category-balance.js";
 import {
   getItemLootType,
   getItemLootWeight,
@@ -173,7 +174,7 @@ for (const item of scrollCandidates) {
 
 const defaultEncounterCandidates = filterCandidates(items, {
   tiers: tierWindow("t2"),
-  rarities: ["uncommon", "rare"],
+  rarities: [],
   requireEligible: true,
 });
 let scrollBearingEncounters = 0;
@@ -183,12 +184,17 @@ for (let seed = 1; seed <= 1000; seed += 1) {
     count: 0,
     budgetGp: 400,
     magicBias: 0,
+    ...getEncounterBalanceOptions({ tier: "t2" }),
     rng: mulberry32(seed),
   });
   const scrollCount = result.items.filter(
     (entry) => getItemLootType(entry.item) === "loot.scroll",
   ).length;
   if (scrollCount > 0) scrollBearingEncounters += 1;
+  assert.ok(
+    scrollCount <= 1,
+    `seed ${seed}: mixed encounter caps scrolls at one`,
+  );
   rolledScrolls += scrollCount;
 }
 assert.ok(
@@ -200,7 +206,7 @@ assert.ok(
   `spell scrolls appeared in ${scrollBearingEncounters}/1000 standard encounters`,
 );
 assert.ok(
-  rolledScrolls <= 160,
+  rolledScrolls <= 150,
   `standard encounters produced ${rolledScrolls} scrolls across 1000 rolls`,
 );
 

@@ -32,6 +32,12 @@ Three ways to open the dashboard:
 
 The Per-Encounter window includes a single -100% mundane to +100% magic slider. Each item is classified as `magic`, `mundane`, or `neutral`; the slider applies a per-item weight multiplier and can fully exclude the opposite side at either extreme. Most categories resolve directly from `lootType`. The mixed `loot.consumable` bucket also considers rarity and explicit dnd5e magic signals, so ordinary ammunition, food, rope, lanterns, and similar gear are weighted as mundane while magic consumables remain magic. The classifier lives in [scripts/loot/tag-vocabulary.js](scripts/loot/tag-vocabulary.js).
 
+### Encounter Roll Chances
+
+Per-Encounter Loot chooses an item category first, then an item inside that category. Each encounter tier has an explicit category profile and rarity progression, so a large compendium folder cannot dominate merely because it contains more documents. Repeated categories are reduced within a bundle for variety, and a mixed bundle can contain at most one spell scroll. Selecting only the Scroll chip intentionally removes that cap.
+
+Open **Roll Chances** in the Per-Encounter window to see the calculated item-type, rarity, and magic/mundane percentages for the first item of a fresh **Generate** under the current tier, budget, filters, and Magic Bias. Later bundle picks change as the budget fills and the diversity adjustment takes effect.
+
 ### Spell Scrolls
 
 Loot rolls use only spell-specific scrolls such as **Spell Scroll: Fireball**. The generic level documents supplied by dnd5e remain in the compendium solely as pricing, rarity, and item-shape templates and are never roll candidates. Each level template's original loot weight is divided among the named spells at that level, so providing hundreds of predetermined spell choices does not make scrolls dominate mixed loot.

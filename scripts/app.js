@@ -28,10 +28,13 @@ import { SOUND_EVENTS, playModuleSound, playResultSound } from "./audio.js";
 import { computePackStats } from "./loot/pack-stats.js";
 import {
   MAGIC_BIAS_RANGE,
+  estimateLootChances,
   filterCandidates,
   itemIdentity,
   rollLoot,
 } from "./loot/roller.js";
+import { getEncounterBalanceOptions } from "./loot/category-balance.js";
+import { restoreStoredRollCategories } from "./loot/item-categories.js";
 import {
   LOOT_TYPES,
   RARITIES,
@@ -224,6 +227,7 @@ export class PerEncounterLootApp extends BaseLootApp {
     const stats = this._packStats ?? computePackStats([]);
     const candidateContext = this._candidateContext();
     const chipFacetStats = this._chipFacetStats();
+    const rollChances = this._rollChanceContext();
     const result = prepareResultForDisplay(this._lastResult);
     return {
       ...this._basePresetContext(),
@@ -231,6 +235,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       form: this._form,
       moduleId: MODULE_ID,
       projectedBudgetLabel: formatGp(projectedBudget),
+      rollChances,
       ...candidateContext,
       loadingItems: this._loadingItems,
       partyAutofillSize: livePartySize(),
@@ -548,6 +553,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       if (!el) return;
       this._patchCandidateAvailability();
       setText(el, "[data-value-range]", this._valueRangeLabel());
+      this._patchRollChances();
     });
 
     setText(
@@ -602,6 +608,72 @@ export class PerEncounterLootApp extends BaseLootApp {
     };
   }
 
+  _candidateAvailability() {
+    const state = super._candidateAvailability();
+    if (!Array.isArray(this._cachedItems) || state.candidateEmpty) return state;
+    const breakdown = this._freshRollChanceBreakdown();
+    if (breakdown?.available) return state;
+    return {
+      ...state,
+      label: `${state.count.toLocaleString()} items match · 0 have roll chance`,
+      candidateEmpty: true,
+      blocksGeneration: true,
+      reason:
+        "The current Magic Bias excludes every matching item. Move the dial away from its endpoint or widen the item-type filters.",
+      notificationLevel: "warn",
+    };
+  }
+
+  _balanceOptions(existingItems = []) {
+    return getEncounterBalanceOptions({
+      tier: this._form.tier,
+      lootTypes: this._form.lootTypes,
+      existingItems,
+    });
+  }
+
+  _freshRollChanceBreakdown() {
+    if (!Array.isArray(this._cachedItems)) return null;
+    const candidates = filterCandidates(this._cachedItems, this._filterSpec());
+    return estimateLootChances(candidates, {
+      budgetGp: computeLootBudget(this._formForBudget()),
+      magicBias: this._form.magicBias,
+      ...this._balanceOptions(),
+    });
+  }
+
+  _rollChanceContext() {
+    return buildRollChanceContext(this._freshRollChanceBreakdown());
+  }
+
+  _patchRollChances() {
+    const root = this.element;
+    if (!root) return;
+    const context = this._rollChanceContext();
+    setText(root, "[data-chance-status]", context.status);
+    root
+      .querySelector?.("[data-roll-chances]")
+      ?.classList?.toggle("is-empty", !context.available);
+
+    for (const row of [
+      ...context.categoryRows,
+      ...context.rarityRows,
+      ...context.magicRows,
+    ]) {
+      const element = root.querySelector?.(
+        `[data-chance-group="${row.group}"][data-chance-key="${row.key}"]`,
+      );
+      if (!element) continue;
+      element.toggleAttribute?.("hidden", !row.available);
+      const value = element.querySelector?.("[data-chance-value]");
+      if (value) value.textContent = row.percentLabel;
+    }
+  }
+
+  _rerollRollOptions(oldEntry, list) {
+    return this._balanceOptions(list.filter((entry) => entry !== oldEntry));
+  }
+
   /* ------------------- generation pipeline ------------------- */
 
   async _generate({ preserveLocked = false } = {}) {
@@ -639,6 +711,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       );
 
       const items = await this._loadItems();
+      restoreStoredRollCategories(lockedEntries, items);
       let candidates = filterCandidates(items, this._filterSpec());
       if (lockedIds.size > 0) {
         candidates = candidates.filter(
@@ -659,6 +732,7 @@ export class PerEncounterLootApp extends BaseLootApp {
         totalBudget > 0 &&
         remainingBudget <= 0 &&
         shouldRollMore;
+      const rollOptions = this._balanceOptions(lockedEntries);
 
       if (shouldRollMore && !locksFilledBudget && candidates.length === 0) {
         const availability = this._candidateAvailability();
@@ -671,6 +745,24 @@ export class PerEncounterLootApp extends BaseLootApp {
           notificationLevel: "warn",
         });
         return;
+      }
+
+      if (shouldRollMore && !locksFilledBudget) {
+        const chance = estimateLootChances(candidates, {
+          budgetGp: remainingBudget > 0 ? remainingBudget : 0,
+          magicBias: this._form.magicBias,
+          ...rollOptions,
+        });
+        if (!chance.available) {
+          this._notifyGenerationBlocked({
+            available: false,
+            count: 0,
+            reason:
+              "No unlocked items can be selected at the current Magic Bias. Unlock an item, move the dial away from its endpoint, or widen the filters.",
+            notificationLevel: "warn",
+          });
+          return;
+        }
       }
 
       // Snapshot only after the roll has passed its candidate preflight. An
@@ -693,6 +785,7 @@ export class PerEncounterLootApp extends BaseLootApp {
           budgetGp: remainingBudget > 0 ? remainingBudget : 0,
           magicBias: this._form.magicBias,
           artVariants: this._form.artVariants,
+          ...rollOptions,
         });
       } else {
         raw = { items: [], totalGp: 0, droppedForBudget: 0, warnings: [] };
@@ -732,6 +825,68 @@ export class PerEncounterLootApp extends BaseLootApp {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+function buildRollChanceContext(breakdown) {
+  const categoryRows = chanceRows(
+    LOOT_TYPES,
+    breakdown?.categories,
+    "category",
+    prettyLootType,
+  );
+  const rarityRows = chanceRows(
+    RARITIES,
+    breakdown?.rarities,
+    "rarity",
+    prettyRarity,
+  );
+  const magicRows = chanceRows(
+    ["mundane", "neutral", "magic"],
+    breakdown?.magicNatures,
+    "magic",
+    (key) => titleCase(key),
+  );
+  const available = breakdown?.available === true;
+  let status = "Odds load with the item compendium.";
+  if (breakdown && !available) {
+    status = "No eligible next item at the current filters and Magic Bias.";
+  } else if (breakdown?.usedOverBudgetFallback) {
+    status = `${breakdown.selectableCandidateCount.toLocaleString()} selectable candidates · none fit the budget, so Generate will keep one over-budget item.`;
+  } else if (available) {
+    status = `${breakdown.selectableCandidateCount.toLocaleString()} selectable candidates · recalculated from the current tier, filters, and Magic Bias.`;
+  }
+  return {
+    available,
+    expanded: false,
+    status,
+    categoryRows,
+    rarityRows,
+    magicRows,
+  };
+}
+
+function chanceRows(universe, rawRows, group, labelForKey) {
+  const probabilities = new Map(
+    (rawRows ?? []).map(({ key, probability }) => [key, probability]),
+  );
+  return universe.map((key) => {
+    const probability = Math.max(0, Number(probabilities.get(key) ?? 0));
+    return {
+      key,
+      group,
+      label: labelForKey(key),
+      probability,
+      percentLabel: formatChancePercent(probability),
+      available: probability > 0,
+    };
+  });
+}
+
+function formatChancePercent(probability) {
+  const percent = Math.max(0, Number(probability) || 0) * 100;
+  if (percent > 0 && percent < 0.05) return "<0.1%";
+  if (percent >= 10) return `${percent.toFixed(1)}%`;
+  return `${percent.toFixed(2)}%`;
+}
 
 function itemLimitValueLabel(count) {
   const value = clampInt(count, COUNT_RANGE.min, COUNT_RANGE.max, 6);

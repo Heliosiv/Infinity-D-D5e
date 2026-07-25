@@ -50,6 +50,7 @@ const COMMON_LOOT_TYPES = [
   ["loot.equipment", "Adventuring Gear", 17],
   ["loot.consumable", "Potions & Consumables", 64],
   ["loot.potion", "Potions", 22],
+  ["loot.reagent", "Alchemical Supplies", 28],
   ["loot.scroll", "Scrolls", 44],
   ["loot.ammunition", "Ammunition", 18],
   ["loot.tool", "Tools", 39],
@@ -463,6 +464,7 @@ function perEncounterContext() {
       budgetOverride: 0,
     },
     projectedBudgetLabel: "450 gp",
+    rollChances: encounterChanceContext(),
     candidateLabel: "644 items match current filters",
     noCandidates: false,
     candidateUnavailableReason: "",
@@ -1291,6 +1293,56 @@ function lootTypeOptions(selected) {
     disabled: false,
     availabilityTitle: `${count} matching items with the other current filters.`,
   }));
+}
+
+function encounterChanceContext() {
+  const categoryPercents = new Map([
+    ["loot.weapon.magic", 4.9],
+    ["loot.weapon.mundane", 8.2],
+    ["loot.armor.magic", 2.3],
+    ["loot.armor.mundane", 4.0],
+    ["loot.equipment.magic", 6.4],
+    ["loot.equipment", 7.5],
+    ["loot.consumable", 12.4],
+    ["loot.potion", 8.4],
+    ["loot.reagent", 7.3],
+    ["loot.scroll", 1.3],
+    ["loot.ammunition", 6.1],
+    ["loot.tool", 7.3],
+    ["loot.gem", 10.8],
+    ["loot.art", 7.9],
+    ["loot.trade-good", 9.9],
+    ["loot.container", 3.3],
+  ]);
+  const chanceRow = (group, key, label, percent) => ({
+    group,
+    key,
+    label,
+    percentLabel: `${Number(percent).toFixed(percent >= 10 ? 1 : 2)}%`,
+    available: percent > 0,
+  });
+  return {
+    available: true,
+    expanded: true,
+    status:
+      "644 selectable candidates · recalculated from the current tier, filters, and Magic Bias.",
+    categoryRows: COMMON_LOOT_TYPES.map(([key, label]) =>
+      chanceRow("category", key, label, categoryPercents.get(key) ?? 0),
+    ),
+    rarityRows: [
+      chanceRow("rarity", "common", "Common", 77.5),
+      chanceRow("rarity", "uncommon", "Uncommon", 22.5),
+      chanceRow("rarity", "rare", "Rare", 0),
+      chanceRow("rarity", "very-rare", "Very Rare", 0),
+      chanceRow("rarity", "legendary", "Legendary", 0),
+      chanceRow("rarity", "artifact", "Artifact", 0),
+    ],
+    magicRows: [
+      chanceRow("magic", "mundane", "Mundane", 69.6),
+      chanceRow("magic", "neutral", "Neutral", 11.4),
+      chanceRow("magic", "magic", "Magic", 19),
+    ],
+  };
 }
 
 function slider(name, label, value, valueLabel, snaps, range = {}) {

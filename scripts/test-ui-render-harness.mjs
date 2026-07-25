@@ -98,6 +98,13 @@ for (const expectedId of [
   );
 }
 
+const encounterView = views.find((view) => view.id === "per-encounter");
+assert.ok(encounterView, "harness includes Per-Encounter Loot");
+assert.match(encounterView.html, /Roll Chances/);
+assert.match(encounterView.html, /First item of a fresh Generate/);
+assert.match(encounterView.html, /data-chance-group="category"/);
+assert.match(encounterView.html, /mixed bundles stop at one spell scroll/i);
+
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.
 const lootFixtures = new Map(

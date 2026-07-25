@@ -40,7 +40,11 @@ import {
   createArtVariantItemData,
   isVariableArtItem,
 } from "./art-variants.js";
-import { getItemLootCategories, isVariableGemItem } from "./item-categories.js";
+import {
+  getItemLootCategories,
+  getItemRollCategory,
+  isVariableGemItem,
+} from "./item-categories.js";
 import {
   normalizeRarityWeights,
   rarityWeightForRarity,
@@ -160,6 +164,10 @@ export function filterCandidates(items, filter = {}) {
  *                                    Applied as a per-item weight multiplier; ±1 zeroes
  *                                    out the opposite side entirely.
  * @param {Record<string, number>} [opts.rarityWeights] - per-rarity probability multipliers.
+ * @param {Record<string, number>} [opts.categoryWeights] - enables category-first selection.
+ * @param {Record<string, number>} [opts.categoryCaps] - maximum distinct results by category.
+ * @param {number} [opts.categoryRepeatPenalty=1] - multiplier for each prior category hit.
+ * @param {Record<string, number>} [opts.initialCategoryCounts] - categories already in the bundle.
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 600
  * @param {boolean} [opts.artVariants] - generate specific art-object names and appraisal notes
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
@@ -176,6 +184,13 @@ export function rollLoot(candidates, opts = {}) {
   const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
   const magicBias = clampBias(opts.magicBias);
   const rarityWeights = normalizeRarityWeights(opts.rarityWeights);
+  const categoryWeights = normalizeWeightRecord(opts.categoryWeights);
+  const categoryCaps = normalizeCountRecord(opts.categoryCaps);
+  const categoryRepeatPenalty = clampRepeatPenalty(opts.categoryRepeatPenalty);
+  const categoryCounts = new Map(
+    Object.entries(normalizeCountRecord(opts.initialCategoryCounts)),
+  );
+  const categoryFirst = Object.keys(categoryWeights).length > 0;
   const maxCap = Math.max(1, Math.floor(Number(opts.maxCap ?? 40)));
   const budgetLowFrac = clampFraction(opts.budgetLowFrac, 0.85);
   const budgetHighFrac = Math.max(
@@ -222,22 +237,64 @@ export function rollLoot(candidates, opts = {}) {
     ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
     : pool;
   const drawPool = affordablePool.length > 0 ? affordablePool : pool;
+  const identityByItem = new Map(
+    drawPool.map((item, index) => [
+      item,
+      itemIdentity(item) || `anonymous-candidate-${index}`,
+    ]),
+  );
 
   // Pass 1: weighted random draw without replacement at the item level.
-  // The per-item weights and their cumulative-sum (CDF) are constant for
-  // the whole draw — magicBias and rarityWeights don't change mid-roll —
-  // so build them ONCE here. Each draw is then an O(log n) binary search
-  // over the CDF instead of rebuilding + summing the pool every attempt.
-  const picker = buildWeightedPicker(drawPool, magicBias, rarityWeights);
+  // Rebuild the active picker after each accepted item so maxed-out source
+  // documents and items that no longer fit the remaining budget cannot keep
+  // consuming attempts or distort the next accepted-item odds.
   const picked = new Map(); // _id → { item, quantity }
+  let resultLineCount = 0;
   let runningTotal = 0;
   let attempts = 0;
   let skippedForBudget = 0;
-  while (picked.size < hardCap && attempts < maxAttempts) {
+  let stoppedForBudget = false;
+  while (resultLineCount < hardCap && attempts < maxAttempts) {
     attempts += 1;
-    const item = weightedPick(picker, rng);
+    const activePool = drawPool.filter((item) =>
+      canDrawItem(item, {
+        budgetCeil,
+        identityByItem,
+        picked,
+        runningTotal,
+      }),
+    );
+    if (activePool.length === 0) {
+      stoppedForBudget =
+        budgetEnforced &&
+        drawPool.some((item) =>
+          canDrawItem(item, {
+            budgetCeil: Infinity,
+            identityByItem,
+            picked,
+            runningTotal,
+          }),
+        );
+      break;
+    }
+    const picker = categoryFirst
+      ? buildCategoryWeightedPicker(
+          activePool,
+          categoryWeights,
+          magicBias,
+          rarityWeights,
+        )
+      : buildWeightedPicker(activePool, magicBias, rarityWeights);
+    const item = categoryFirst
+      ? categoryWeightedPick(picker, {
+          categoryCaps,
+          categoryCounts,
+          repeatPenalty: categoryRepeatPenalty,
+          rng,
+        })
+      : weightedPick(picker, rng);
     if (!item) break;
-    const id = String(item._id ?? item.id ?? `anon-${attempts}`);
+    const id = identityByItem.get(item);
     const gpValue = getItemGpValue(item);
 
     if (!picked.has(id)) {
@@ -253,15 +310,27 @@ export function rollLoot(candidates, opts = {}) {
         continue;
       }
       picked.set(id, { item, quantity: initialQuantity });
+      resultLineCount += isVariableArtItem(item) ? initialQuantity : 1;
+      const category = getItemRollCategory(item);
+      if (category) {
+        categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+      }
       runningTotal += initialGpTotal;
       if (fillBudget && runningTotal >= budgetTargetLow) break;
       continue;
     }
     const existing = picked.get(id);
-    const maxQty = getItemMaxQty(item);
+    const maxQty = isRepeatableRollItem(item) ? getItemMaxQty(item) : 1;
     if (existing.quantity < maxQty && runningTotal + gpValue <= budgetCeil) {
       existing.quantity += 1;
       runningTotal += gpValue;
+      if (isVariableArtItem(item)) {
+        resultLineCount += 1;
+        const category = getItemRollCategory(item);
+        if (category) {
+          categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+        }
+      }
     }
 
     if (fillBudget && runningTotal >= budgetTargetLow) break;
@@ -271,11 +340,11 @@ export function rollLoot(candidates, opts = {}) {
     warnings.push(
       `No items picked after ${attempts} attempts - pool size ${pool.length}, budget ${budgetEnforced ? budgetGp : "unbounded"}.`,
     );
-  } else if (requestedCount > 0 && picked.size < requestedCount) {
+  } else if (requestedCount > 0 && resultLineCount < requestedCount) {
     const reason =
-      skippedForBudget > 0
-        ? `the ${budgetGp} gp budget had room for only ${picked.size}`
-        : `the pool only produced ${picked.size} after ${attempts} attempts`;
+      skippedForBudget > 0 || stoppedForBudget
+        ? `the ${budgetGp} gp budget had room for only ${resultLineCount}`
+        : `the pool only produced ${resultLineCount} after ${attempts} attempts`;
     warnings.push(
       `Requested ${requestedCount} item(s) but ${reason}. Widen the rarity filter, raise the budget, or lower the item count.`,
     );
@@ -344,6 +413,10 @@ export function rollLoot(candidates, opts = {}) {
  * @param {number} [opts.budgetGp] - gp freed by the replaced slot
  * @param {number} [opts.magicBias]
  * @param {Record<string, number>} [opts.rarityWeights]
+ * @param {Record<string, number>} [opts.categoryWeights]
+ * @param {Record<string, number>} [opts.categoryCaps]
+ * @param {number} [opts.categoryRepeatPenalty]
+ * @param {Record<string, number>} [opts.initialCategoryCounts]
  * @param {boolean} [opts.artVariants]
  * @param {() => number} [opts.rng]
  * @returns {object|null}
@@ -363,10 +436,111 @@ export function rerollOne(candidates, opts = {}) {
     budgetGp: budgetGp > 0 ? budgetGp : 0,
     magicBias: opts.magicBias,
     rarityWeights: opts.rarityWeights,
+    categoryWeights: opts.categoryWeights,
+    categoryCaps: opts.categoryCaps,
+    categoryRepeatPenalty: opts.categoryRepeatPenalty,
+    initialCategoryCounts: opts.initialCategoryCounts,
     artVariants: opts.artVariants === true,
     rng: opts.rng,
   });
   return raw.items[0] ?? null;
+}
+
+/**
+ * Exact probability breakdown for the next accepted item at the start of a
+ * roll. Bundle-level odds vary as the budget fills and diversity penalties
+ * change, so callers should label this as a next-item chance.
+ *
+ * @param {Array<object>} candidates
+ * @param {object} [opts] - the same probability and budget options as rollLoot
+ * @returns {{ candidateCount: number, affordableCandidateCount: number,
+ *             selectableCandidateCount: number, usedOverBudgetFallback: boolean,
+ *             available: boolean,
+ *             categories: Array<{key: string, probability: number}>,
+ *             rarities: Array<{key: string, probability: number}>,
+ *             magicNatures: Array<{key: string, probability: number}> }}
+ */
+export function estimateLootChances(candidates, opts = {}) {
+  const pool = Array.isArray(candidates) ? candidates.slice() : [];
+  const budgetGp = Number(opts.budgetGp ?? 0);
+  const budgetEnforced = Number.isFinite(budgetGp) && budgetGp > 0;
+  const budgetLowFrac = clampFraction(opts.budgetLowFrac, 0.85);
+  const budgetHighFrac = Math.max(
+    budgetLowFrac,
+    clampFraction(opts.budgetHighFrac, 1.1),
+  );
+  const budgetCeil = budgetEnforced ? budgetGp * budgetHighFrac : Infinity;
+  const affordablePool = budgetEnforced
+    ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
+    : pool;
+  const drawPool = affordablePool.length > 0 ? affordablePool : pool;
+  const usedOverBudgetFallback =
+    budgetEnforced && pool.length > 0 && affordablePool.length === 0;
+  const magicBias = clampBias(opts.magicBias);
+  const rarityWeights = normalizeRarityWeights(opts.rarityWeights);
+  const categoryWeights = normalizeWeightRecord(opts.categoryWeights);
+  const categoryCaps = normalizeCountRecord(opts.categoryCaps);
+  const categoryCounts = new Map(
+    Object.entries(normalizeCountRecord(opts.initialCategoryCounts)),
+  );
+  const repeatPenalty = clampRepeatPenalty(opts.categoryRepeatPenalty);
+  const itemProbabilities = [];
+
+  if (Object.keys(categoryWeights).length > 0) {
+    const picker = buildCategoryWeightedPicker(
+      drawPool,
+      categoryWeights,
+      magicBias,
+      rarityWeights,
+    );
+    const categoryEntries = selectableCategoryEntries(picker, {
+      categoryCaps,
+      categoryCounts,
+      repeatPenalty,
+    });
+    const totalCategoryWeight = categoryEntries.reduce(
+      (sum, entry) => sum + entry.weight,
+      0,
+    );
+    if (totalCategoryWeight > 0) {
+      for (const { group, weight } of categoryEntries) {
+        const categoryProbability = weight / totalCategoryWeight;
+        for (let index = 0; index < group.itemPicker.pool.length; index += 1) {
+          const itemWeight = group.itemPicker.weights[index];
+          if (itemWeight <= 0 || group.itemPicker.totalWeight <= 0) continue;
+          itemProbabilities.push({
+            item: group.itemPicker.pool[index],
+            probability:
+              categoryProbability * (itemWeight / group.itemPicker.totalWeight),
+          });
+        }
+      }
+    }
+  } else {
+    const picker = buildWeightedPicker(drawPool, magicBias, rarityWeights);
+    if (picker.totalWeight > 0) {
+      for (let index = 0; index < picker.pool.length; index += 1) {
+        const weight = picker.weights[index];
+        if (weight <= 0) continue;
+        itemProbabilities.push({
+          item: picker.pool[index],
+          probability: weight / picker.totalWeight,
+        });
+      }
+    }
+  }
+
+  const selectableCandidateCount = itemProbabilities.length;
+  return {
+    candidateCount: selectableCandidateCount,
+    affordableCandidateCount: affordablePool.length,
+    selectableCandidateCount,
+    usedOverBudgetFallback,
+    available: itemProbabilities.length > 0,
+    categories: aggregateChances(itemProbabilities, getItemRollCategory),
+    rarities: aggregateChances(itemProbabilities, getEffectiveRarity),
+    magicNatures: aggregateChances(itemProbabilities, getItemMagicNature),
+  };
 }
 
 function clampFraction(raw, fallback) {
@@ -402,6 +576,51 @@ function toSet(values) {
     if (trimmed) out.add(trimmed);
   }
   return out;
+}
+
+function normalizeWeightRecord(raw) {
+  const out = Object.create(null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [rawKey, rawValue] of Object.entries(raw)) {
+    const key = String(rawKey ?? "").trim();
+    const value = Number(rawValue);
+    if (!key || !Number.isFinite(value) || value < 0) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function normalizeCountRecord(raw) {
+  const out = Object.create(null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [rawKey, rawValue] of Object.entries(raw)) {
+    const key = String(rawKey ?? "").trim();
+    const value = Number(rawValue);
+    if (!key || !Number.isFinite(value) || value < 0) continue;
+    out[key] = Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value));
+  }
+  return out;
+}
+
+function clampRepeatPenalty(raw) {
+  if (raw === undefined || raw === null || raw === "") return 1;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(1, value));
+}
+
+function aggregateChances(itemProbabilities, keyForItem) {
+  const totals = new Map();
+  for (const { item, probability } of itemProbabilities) {
+    const key = String(keyForItem(item) ?? "").trim();
+    if (!key || !Number.isFinite(probability) || probability <= 0) continue;
+    totals.set(key, (totals.get(key) ?? 0) + probability);
+  }
+  return [...totals.entries()]
+    .map(([key, probability]) => ({ key, probability }))
+    .sort(
+      (a, b) => b.probability - a.probability || a.key.localeCompare(b.key),
+    );
 }
 
 function matchesLootTypes(item, lootTypes) {
@@ -489,23 +708,102 @@ function materializeLootEntry(item, quantity, { artVariants, rng }) {
  * @param {Array<object>} pool
  * @param {number} magicBias - clamped to [-1, 1]
  * @param {Record<string, number>} rarityWeights
- * @returns {{ pool: Array<object>, cdf: number[], totalWeight: number }}
+ * @returns {{ pool: Array<object>, weights: number[], cdf: number[], totalWeight: number }}
  */
 function buildWeightedPicker(pool, magicBias = 0, rarityWeights = null) {
+  const weights = new Array(pool.length);
   const cdf = new Array(pool.length);
   let totalWeight = 0;
   for (let i = 0; i < pool.length; i += 1) {
-    totalWeight += effectiveWeight(pool[i], magicBias, rarityWeights);
+    const weight = effectiveWeight(pool[i], magicBias, rarityWeights);
+    weights[i] = weight;
+    totalWeight += weight;
     cdf[i] = totalWeight;
   }
-  return { pool, cdf, totalWeight };
+  return { pool, weights, cdf, totalWeight };
+}
+
+/**
+ * Build one item picker per primary category. The configured category weight
+ * remains independent of pool cardinality; the category's average magic
+ * multiplier lets Magic Bias shift the top-level category draw exactly once.
+ */
+function buildCategoryWeightedPicker(
+  pool,
+  categoryWeights,
+  magicBias,
+  rarityWeights,
+) {
+  const itemsByCategory = new Map();
+  for (const item of pool) {
+    const category = getItemRollCategory(item);
+    if (!category) continue;
+    if (!itemsByCategory.has(category)) itemsByCategory.set(category, []);
+    itemsByCategory.get(category).push(item);
+  }
+
+  const groups = [];
+  for (const [category, items] of itemsByCategory) {
+    const configuredWeight = Number(categoryWeights[category] ?? 0);
+    if (!Number.isFinite(configuredWeight) || configuredWeight <= 0) continue;
+    const itemPicker = buildWeightedPicker(items, magicBias, rarityWeights);
+    const neutralPicker = buildWeightedPicker(items, 0, rarityWeights);
+    if (itemPicker.totalWeight <= 0 || neutralPicker.totalWeight <= 0) continue;
+    groups.push({
+      category,
+      configuredWeight,
+      magicFactor: itemPicker.totalWeight / neutralPicker.totalWeight,
+      itemPicker,
+    });
+  }
+  return { groups };
+}
+
+function selectableCategoryEntries(
+  picker,
+  { categoryCaps, categoryCounts, repeatPenalty },
+) {
+  const entries = [];
+  for (const group of picker.groups) {
+    const count = Number(categoryCounts.get(group.category) ?? 0);
+    const cap = categoryCaps[group.category];
+    if (Number.isFinite(cap) && count >= cap) continue;
+    const diversityMultiplier = count > 0 ? Math.pow(repeatPenalty, count) : 1;
+    const weight =
+      group.configuredWeight * group.magicFactor * diversityMultiplier;
+    if (Number.isFinite(weight) && weight > 0) entries.push({ group, weight });
+  }
+  return entries;
+}
+
+function categoryWeightedPick(
+  picker,
+  { categoryCaps, categoryCounts, repeatPenalty, rng },
+) {
+  const entries = selectableCategoryEntries(picker, {
+    categoryCaps,
+    categoryCounts,
+    repeatPenalty,
+  });
+  const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) return null;
+
+  const target = rng() * totalWeight;
+  let cursor = 0;
+  let selected = entries.at(-1);
+  for (const entry of entries) {
+    cursor += entry.weight;
+    if (cursor >= target) {
+      selected = entry;
+      break;
+    }
+  }
+  return selected ? weightedPick(selected.group.itemPicker, rng) : null;
 }
 
 /**
  * Pick one item from a precomputed picker via the standard inverse-CDF
- * method. Consumes exactly one `rng()` value per call — matching the
- * original implementation in both the weighted and uniform-fallback
- * branches so seeded sequences line up.
+ * method. Consumes exactly one `rng()` value per successful call.
  *
  * @param {{ pool: Array<object>, cdf: number[], totalWeight: number }} picker
  * @param {() => number} rng
@@ -514,8 +812,9 @@ function weightedPick(picker, rng) {
   const { pool, cdf, totalWeight } = picker;
   if (pool.length === 0) return null;
   if (totalWeight <= 0) {
-    // Bias zeroed out everything (e.g. bias=+1 against an all-mundane pool).
-    // Fall back to uniform so the roller still produces something.
+    // Legacy (non-category-first) callers retain their historical fallback.
+    // Category-first groups with no positive mass are removed before this
+    // point, so hard Magic Bias endpoints remain strict for encounter rolls.
     const index = Math.floor(rng() * pool.length);
     return pool[Math.min(pool.length - 1, Math.max(0, index))];
   }
@@ -537,6 +836,29 @@ function weightedPick(picker, rng) {
   // suppressed item is never drawn. totalWeight > 0 here, so this terminates.
   while (cdf[lo] <= 0 && lo < pool.length - 1) lo += 1;
   return pool[lo];
+}
+
+function canDrawItem(
+  item,
+  { budgetCeil, identityByItem, picked, runningTotal },
+) {
+  const id = identityByItem.get(item);
+  const existing = picked.get(id);
+  const gpValue = getItemGpValue(item);
+  const remainingBudget = budgetCeil - runningTotal;
+
+  if (!existing) {
+    // The first result retains the documented one-item-over-budget fallback
+    // when the complete pool contains nothing affordable.
+    return picked.size === 0 || gpValue <= remainingBudget;
+  }
+  if (!isRepeatableRollItem(item)) return false;
+  if (existing.quantity >= getItemMaxQty(item)) return false;
+  return gpValue <= remainingBudget;
+}
+
+function isRepeatableRollItem(item) {
+  return isAmmunitionItem(item) || isVariableArtItem(item);
 }
 
 function rollInitialQuantity(item, { budgetCeil, gpValue, rng, runningTotal }) {

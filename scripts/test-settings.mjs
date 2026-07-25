@@ -5,6 +5,7 @@ import {
   SETTING_KEYS,
   SETTINGS_MODULE_ID,
   getSetting,
+  migrateEncounterBalanceDefaults,
   parseRaritiesSetting,
 } from "./settings.js";
 import { RARITIES } from "./loot/tag-vocabulary.js";
@@ -117,6 +118,50 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
     assert.equal(getSetting(SETTING_KEYS.SOUND_VOLUME), 0.65);
     // Keys the mock returns `undefined` for still fall back.
     assert.equal(getSetting(SETTING_KEYS.DEFAULT_COUNT), 0);
+  } finally {
+    if (original === undefined) delete globalThis.game;
+    else globalThis.game = original;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * encounter balance migration — only the exact legacy default changes
+ * ------------------------------------------------------------------ */
+{
+  const original = globalThis.game;
+  const values = new Map([
+    [SETTING_KEYS.DEFAULT_RARITIES, "uncommon,rare"],
+    [SETTING_KEYS.ENCOUNTER_BALANCE_VERSION, 0],
+  ]);
+  globalThis.game = {
+    settings: {
+      get(_moduleId, key) {
+        return values.get(key);
+      },
+      async set(_moduleId, key, value) {
+        values.set(key, value);
+      },
+    },
+  };
+  try {
+    assert.equal(await migrateEncounterBalanceDefaults(), true);
+    assert.equal(values.get(SETTING_KEYS.DEFAULT_RARITIES), "");
+    assert.equal(values.get(SETTING_KEYS.ENCOUNTER_BALANCE_VERSION), 1);
+    assert.equal(
+      await migrateEncounterBalanceDefaults(),
+      false,
+      "migration runs only once",
+    );
+
+    values.set(SETTING_KEYS.DEFAULT_RARITIES, "rare,very-rare");
+    values.set(SETTING_KEYS.ENCOUNTER_BALANCE_VERSION, 0);
+    assert.equal(await migrateEncounterBalanceDefaults(), false);
+    assert.equal(
+      values.get(SETTING_KEYS.DEFAULT_RARITIES),
+      "rare,very-rare",
+      "custom rarity defaults are preserved",
+    );
+    assert.equal(values.get(SETTING_KEYS.ENCOUNTER_BALANCE_VERSION), 1);
   } finally {
     if (original === undefined) delete globalThis.game;
     else globalThis.game = original;

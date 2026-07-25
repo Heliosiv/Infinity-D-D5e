@@ -326,6 +326,27 @@ for (const [name, Cls] of [
   );
   assert.match(state.reason, /No items match/);
 
+  encounter._form = {
+    ...encounter._form,
+    tier: "t1",
+    rarities: ["common"],
+    lootTypes: ["loot.weapon.mundane"],
+    magicBias: 1,
+  };
+  state = encounter._primaryGenerationState();
+  assert.equal(
+    state.disabled,
+    true,
+    "category-first preflight blocks a hard-bias roll with zero probability",
+  );
+  assert.match(state.reason, /Magic Bias/);
+  encounter._form = {
+    ...encounter._form,
+    tier: "t5",
+    lootTypes: [],
+    magicBias: 0,
+  };
+
   // A Hoard preserves its documented coin-only fallback when filters match no
   // items. The zero-match readout remains visible, but generation is allowed.
   const hoard = new HoardLootApp();
@@ -592,6 +613,67 @@ for (const [name, Cls] of [
   await encounter._generate();
   assert.equal(encounter._lastResult, previousResult);
   assert.equal(undoPushes, 0);
+
+  // Re-roll Unlocked performs a second preflight after locked items are
+  // excluded. A +100% magic bias cannot erase the prior unlocked result when
+  // the only magic candidate is the one that remains locked.
+  const lockedMagic = fakeItem({
+    _id: "locked-magic",
+    rarity: "common",
+    tier: "t1",
+    lootType: "loot.weapon.magic",
+  });
+  const unlockedMundane = fakeItem({
+    _id: "unlocked-mundane",
+    rarity: "common",
+    tier: "t1",
+    lootType: "loot.weapon.mundane",
+  });
+  const protectedResult = {
+    items: [
+      {
+        entryId: "locked",
+        item: lockedMagic,
+        gpTotal: 10,
+        locked: true,
+      },
+      {
+        entryId: "unlocked",
+        item: unlockedMundane,
+        gpTotal: 10,
+        locked: false,
+      },
+    ],
+    totalGp: 20,
+    budgetGp: 100,
+  };
+  encounter._cachedItems = [lockedMagic, unlockedMundane];
+  encounter._cachedItemsAt = Date.now();
+  encounter._packStats = { totalItems: 2 };
+  encounter._form = {
+    ...encounter._form,
+    tier: "t1",
+    rarities: ["common"],
+    lootTypes: [],
+    magicBias: 1,
+    budgetOverride: 100,
+    itemLimitEnabled: true,
+    count: 2,
+  };
+  encounter._lastResult = protectedResult;
+  encounter._renderPreservingScroll = async () => {};
+  undoPushes = 0;
+  await encounter._generate({ preserveLocked: true });
+  assert.equal(
+    encounter._lastResult,
+    protectedResult,
+    "a zero-chance unlocked pool preserves the existing haul",
+  );
+  assert.equal(
+    undoPushes,
+    0,
+    "a zero-chance unlocked pool does not consume Undo",
+  );
 }
 
 /* ------------------------------------------------------------------ *

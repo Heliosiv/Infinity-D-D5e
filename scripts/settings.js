@@ -21,6 +21,7 @@ export const SETTING_KEYS = Object.freeze({
   DEFAULT_PARTY_SIZE: "defaultPartySize",
   DEFAULT_COUNT: "defaultCount",
   DEFAULT_RARITIES: "defaultRarities",
+  ENCOUNTER_BALANCE_VERSION: "encounterBalanceVersion",
   DEFAULT_MAGIC_BIAS: "defaultMagicBias",
   DEFAULT_SCALE: "defaultScaleMultiplier",
   DEFAULT_GENEROSITY: "defaultGenerosityMultiplier",
@@ -114,12 +115,13 @@ export const SETTINGS = Object.freeze([
     key: SETTING_KEYS.DEFAULT_RARITIES,
     name: "Default Rarities",
     hint:
-      "Comma-separated list of rarities checked on open. " +
+      "Comma-separated rarities checked on open. Leave blank to let the " +
+      "encounter tier control the full common-to-legendary progression. " +
       "Options: common, uncommon, rare, very-rare, legendary, artifact.",
     scope: "world",
     config: true,
     type: String,
-    default: "uncommon,rare",
+    default: "",
   },
   {
     key: SETTING_KEYS.DEFAULT_MAGIC_BIAS,
@@ -132,6 +134,15 @@ export const SETTINGS = Object.freeze([
     type: Number,
     default: 0,
     range: { min: -1, max: 1, step: 0.05 },
+  },
+  {
+    key: SETTING_KEYS.ENCOUNTER_BALANCE_VERSION,
+    name: "Encounter Balance Version",
+    hint: "Internal migration marker for Per-Encounter loot defaults.",
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 0,
   },
   {
     key: SETTING_KEYS.DEFAULT_SCALE,
@@ -530,6 +541,37 @@ export async function setSetting(key, value) {
     console.warn(`${MODULE_ID} | failed to write setting "${key}"`, error);
     return false;
   }
+}
+
+/**
+ * Move worlds that still carry the former exact "uncommon,rare" default onto
+ * the tier-balanced all-rarity profile. Any genuinely customized rarity list
+ * is preserved. The hidden version marker makes this a one-time migration.
+ */
+export async function migrateEncounterBalanceDefaults() {
+  const targetVersion = 1;
+  const currentVersion = Number(
+    getSetting(SETTING_KEYS.ENCOUNTER_BALANCE_VERSION),
+  );
+  if (Number.isFinite(currentVersion) && currentVersion >= targetVersion) {
+    return false;
+  }
+
+  const currentRarities = String(
+    getSetting(SETTING_KEYS.DEFAULT_RARITIES) ?? "",
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  const usesLegacyDefault = currentRarities === "uncommon,rare";
+  if (
+    usesLegacyDefault &&
+    !(await setSetting(SETTING_KEYS.DEFAULT_RARITIES, ""))
+  ) {
+    return false;
+  }
+  await setSetting(SETTING_KEYS.ENCOUNTER_BALANCE_VERSION, targetVersion);
+  return usesLegacyDefault;
 }
 
 /**
