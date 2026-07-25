@@ -228,7 +228,7 @@ export class PerEncounterLootApp extends BaseLootApp {
   async _prepareContext() {
     const projectedBudget = computeLootBudget(this._formForBudget());
     const stats = this._packStats ?? computePackStats([]);
-    const candidates = this._countCandidates();
+    const candidateContext = this._candidateContext();
     const result = prepareResultForDisplay(this._lastResult);
     const tierStats = this._cachedItems
       ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
@@ -239,9 +239,7 @@ export class PerEncounterLootApp extends BaseLootApp {
       form: this._form,
       moduleId: MODULE_ID,
       projectedBudgetLabel: formatGp(projectedBudget),
-      candidateCount: candidates,
-      candidateLabel: this._candidateLabel(candidates, stats.totalItems),
-      noCandidates: candidates === 0 && !this._loadingItems,
+      ...candidateContext,
       loadingItems: this._loadingItems,
       partyAutofillSize: livePartySize(),
 
@@ -341,7 +339,7 @@ export class PerEncounterLootApp extends BaseLootApp {
 
   /** @this {PerEncounterLootApp} */
   static async _onGenerate(_event, _target) {
-    if (this._loadingItems) return;
+    if (!this._canStartPrimaryGeneration({ notify: true })) return;
     playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate({ preserveLocked: false });
   }
@@ -543,12 +541,7 @@ export class PerEncounterLootApp extends BaseLootApp {
     this._debounce("candidates", () => {
       const el = this.element;
       if (!el) return;
-      const candidates = this._countCandidates();
-      setText(
-        el,
-        "[data-candidates]",
-        this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
-      );
+      this._patchCandidateAvailability();
       setText(el, "[data-value-range]", this._valueRangeLabel());
     });
 
@@ -607,10 +600,11 @@ export class PerEncounterLootApp extends BaseLootApp {
   /* ------------------- generation pipeline ------------------- */
 
   async _generate({ preserveLocked = false } = {}) {
-    if (this._loadingItems) return; // re-entrant click guard
-    // Snapshot the current haul so a fresh roll (incl. a stray Enter/R) is
-    // undoable — Undo already appears in the menu when canUndo.
-    if (this._lastResult) this._pushUndo();
+    if (preserveLocked) {
+      if (this._loadingItems) return;
+    } else if (!this._canStartPrimaryGeneration({ notify: true })) {
+      return;
+    }
     let generatedResult = null;
 
     const lockedEntries =
@@ -660,6 +654,23 @@ export class PerEncounterLootApp extends BaseLootApp {
         totalBudget > 0 &&
         remainingBudget <= 0 &&
         shouldRollMore;
+
+      if (shouldRollMore && !locksFilledBudget && candidates.length === 0) {
+        const availability = this._candidateAvailability();
+        this._notifyGenerationBlocked({
+          ...availability,
+          reason:
+            lockedIds.size > 0
+              ? "No unlocked items remain in the current candidate pool. Unlock an item or widen the filters."
+              : availability.reason,
+          notificationLevel: "warn",
+        });
+        return;
+      }
+
+      // Snapshot only after the roll has passed its candidate preflight. An
+      // impossible filter must not consume Undo or replace a valid haul.
+      if (this._lastResult) this._pushUndo();
 
       let raw;
       if (locksFilledBudget) {

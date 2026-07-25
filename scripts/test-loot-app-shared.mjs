@@ -23,6 +23,7 @@ import {
   toDistributableEntry,
 } from "./loot/loot-app-shared.js";
 import { tierWindow } from "./loot/tag-vocabulary.js";
+import { fakeItem } from "./test-utils/fixtures.mjs";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers
@@ -203,6 +204,9 @@ for (const [name, Cls] of [
     "_onKeyDown",
     "_decorateEntry",
     "_countCandidates",
+    "_candidateAvailability",
+    "_patchCandidateAvailability",
+    "_canStartPrimaryGeneration",
     "_sliderContext",
   ]) {
     assert.equal(
@@ -249,6 +253,218 @@ for (const [name, Cls] of [
     context && context.form,
     `${name}._prepareContext() returns context`,
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Primary generation availability stays live and tool-aware.
+ * ------------------------------------------------------------------ */
+{
+  const t1Common = fakeItem({
+    _id: "t1-common",
+    rarity: "common",
+    tier: "t1",
+    lootType: "loot.weapon.mundane",
+  });
+  const t4Legendary = fakeItem({
+    _id: "t4-legendary",
+    rarity: "legendary",
+    tier: "t4",
+    lootType: "loot.equipment.magic",
+  });
+
+  const pendingEncounter = new PerEncounterLootApp();
+  let state = pendingEncounter._primaryGenerationState();
+  assert.equal(state.loading, true, "first render waits for the pack preload");
+  assert.equal(state.disabled, true);
+  pendingEncounter._packStats = { totalItems: 0 };
+  state = pendingEncounter._primaryGenerationState();
+  assert.equal(
+    state.disabled,
+    false,
+    "a failed preload leaves Generate available for a retry",
+  );
+
+  const encounter = new PerEncounterLootApp();
+  encounter._cachedItems = [t1Common];
+  encounter._packStats = { totalItems: 1 };
+  encounter._form = {
+    ...encounter._form,
+    tier: "t5",
+    rarities: ["common"],
+    lootTypes: [],
+    minItemGp: 0,
+    maxItemGp: 0,
+  };
+
+  state = encounter._primaryGenerationState();
+  assert.equal(state.candidateEmpty, true);
+  assert.equal(
+    state.disabled,
+    true,
+    "encounter blocks an empty candidate pool",
+  );
+  assert.match(state.reason, /No items match/);
+
+  // A Hoard preserves its documented coin-only fallback when filters match no
+  // items. The zero-match readout remains visible, but generation is allowed.
+  const hoard = new HoardLootApp();
+  hoard._cachedItems = [t1Common];
+  hoard._packStats = { totalItems: 1 };
+  hoard._form = {
+    ...hoard._form,
+    tier: "t5",
+    rarities: ["common"],
+    lootTypes: [],
+    minItemGp: 0,
+    maxItemGp: 0,
+  };
+  state = hoard._primaryGenerationState();
+  assert.equal(state.candidateEmpty, true);
+  assert.equal(state.disabled, false, "empty hoard pool still rolls coins");
+  assert.match(state.label, /coin-only hoard/);
+
+  // Per-Creature evaluates every distinct roster tier, not a tier-less global
+  // count. T1 has a valid common, while T5's T4/T5 window does not.
+  const perCreature = new PerCreatureLootApp();
+  perCreature._cachedItems = [t1Common, t4Legendary];
+  perCreature._packStats = { totalItems: 2 };
+  perCreature._form = {
+    ...perCreature._form,
+    rarities: ["common"],
+    lootTypes: [],
+    minItemGp: 0,
+    maxItemGp: 0,
+    roster: [
+      { id: "c1", name: "Scout", tier: "t1" },
+      { id: "c2", name: "Champion", tier: "t5" },
+    ],
+  };
+  state = perCreature._primaryGenerationState();
+  assert.equal(state.count, 1, "candidate count is scoped to roster tiers");
+  assert.equal(state.candidateEmpty, true);
+  assert.equal(state.disabled, true, "one empty roster tier blocks Roll All");
+  assert.match(state.label, /no matches for T5/);
+  assert.match(state.reason, /for T5/);
+
+  perCreature._form = {
+    ...perCreature._form,
+    roster: [{ id: "c1", name: "Scout", tier: "t1" }],
+  };
+  state = perCreature._primaryGenerationState();
+  assert.equal(state.candidateEmpty, false);
+  assert.equal(state.disabled, false);
+
+  perCreature._form = { ...perCreature._form, roster: [] };
+  state = perCreature._primaryGenerationState();
+  assert.equal(state.disabled, true, "empty roster blocks Roll All");
+  assert.equal(state.notificationLevel, "info");
+  assert.match(state.reason, /Add at least one creature/);
+
+  // Live patching disables immediately after the debounced candidate scan and
+  // restores both the enabled state and the original tooltip when filters
+  // recover.
+  const readoutClasses = new Set();
+  const readoutAttributes = new Map();
+  const readout = {
+    textContent: "",
+    classList: {
+      toggle(name, enabled) {
+        if (enabled) readoutClasses.add(name);
+        else readoutClasses.delete(name);
+      },
+    },
+    setAttribute(name, value) {
+      readoutAttributes.set(name, String(value));
+    },
+    removeAttribute(name) {
+      readoutAttributes.delete(name);
+    },
+  };
+  const buttonAttributes = new Map([
+    ["title", "Generate (Enter or R)"],
+    ["data-ready-title", "Generate (Enter or R)"],
+  ]);
+  const generateButton = {
+    dataset: { readyTitle: "Generate (Enter or R)" },
+    disabled: false,
+    getAttribute(name) {
+      return buttonAttributes.get(name) ?? null;
+    },
+    setAttribute(name, value) {
+      buttonAttributes.set(name, String(value));
+    },
+    removeAttribute(name) {
+      buttonAttributes.delete(name);
+    },
+  };
+  encounter.element = {
+    querySelector(selector) {
+      return selector === "[data-candidates]" ? readout : null;
+    },
+    querySelectorAll(selector) {
+      return selector === "[data-action='generate']" ? [generateButton] : [];
+    },
+  };
+
+  encounter._patchCandidateAvailability();
+  assert.equal(generateButton.disabled, true);
+  assert.equal(buttonAttributes.get("aria-disabled"), "true");
+  assert.match(buttonAttributes.get("title"), /No items match/);
+  assert.ok(readoutClasses.has("is-empty"));
+
+  encounter._form = { ...encounter._form, tier: "t1" };
+  encounter._patchCandidateAvailability();
+  assert.equal(generateButton.disabled, false);
+  assert.equal(buttonAttributes.get("aria-disabled"), "false");
+  assert.equal(buttonAttributes.get("title"), "Generate (Enter or R)");
+  assert.ok(!readoutClasses.has("is-empty"));
+
+  // Keyboard shortcuts perform the same synchronous guard as the button, so
+  // they cannot exploit the 120 ms live-readout debounce window.
+  const savedUi = globalThis.ui;
+  const warnings = [];
+  globalThis.ui = {
+    notifications: {
+      warn: (message) => warnings.push(message),
+      info: (message) => warnings.push(message),
+    },
+  };
+  let primaryCalls = 0;
+  encounter._primaryGenerate = () => {
+    primaryCalls += 1;
+  };
+  encounter._form = { ...encounter._form, tier: "t5" };
+  const keyEvent = {
+    key: "R",
+    target: { tagName: "DIV" },
+    defaultPrevented: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {},
+  };
+  encounter._onKeyDown(keyEvent);
+  assert.equal(primaryCalls, 0, "R cannot bypass an empty candidate guard");
+  assert.equal(warnings.length, 1);
+
+  encounter._form = { ...encounter._form, tier: "t1" };
+  encounter._onKeyDown(keyEvent);
+  assert.equal(primaryCalls, 1, "R rolls once candidates recover");
+
+  if (savedUi !== undefined) globalThis.ui = savedUi;
+  else delete globalThis.ui;
+
+  // A direct generation call is guarded too: invalid filters preserve both
+  // the current result and the Undo stack.
+  const previousResult = { items: [{ entryId: "keep-me" }], totalGp: 10 };
+  let undoPushes = 0;
+  encounter._lastResult = previousResult;
+  encounter._pushUndo = () => {
+    undoPushes += 1;
+  };
+  encounter._form = { ...encounter._form, tier: "t5" };
+  await encounter._generate();
+  assert.equal(encounter._lastResult, previousResult);
+  assert.equal(undoPushes, 0);
 }
 
 /* ------------------------------------------------------------------ *

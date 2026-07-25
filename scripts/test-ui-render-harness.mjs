@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { buildUiHarnessDocument, renderHarnessViews } from "./ui-harness.mjs";
+import Handlebars from "handlebars";
+
+import {
+  buildHarnessViews,
+  buildUiHarnessDocument,
+  renderHarnessViews,
+} from "./ui-harness.mjs";
 
 const views = renderHarnessViews();
 assert.equal(
@@ -91,8 +98,72 @@ for (const expectedId of [
   );
 }
 
+// Availability edge states are not part of the visual gallery's normal-result
+// fixtures, so render them directly and assert the primary-button contract.
+const lootFixtures = new Map(
+  buildHarnessViews()
+    .filter((view) =>
+      ["per-encounter", "hoard", "per-creature"].includes(view.id),
+    )
+    .map((view) => [view.id, view]),
+);
+for (const id of ["per-encounter", "per-creature"]) {
+  const reason = `No items match the current filters for ${id}.`;
+  const html = renderFixture(lootFixtures.get(id), {
+    candidateLabel: `0 items match; ${id} unavailable`,
+    noCandidates: true,
+    candidateUnavailableReason: reason,
+    generateDisabled: true,
+    generateDisabledReason: reason,
+  });
+  const generateButton = html.match(
+    /<button\b[^>]*data-action="generate"[^>]*>/,
+  )?.[0];
+  assert.ok(generateButton, `${id}: renders a primary generate button`);
+  assert.match(generateButton, /\bdisabled\b/);
+  assert.match(generateButton, /aria-disabled="true"/);
+  assert.ok(
+    generateButton.includes(`title="${reason}"`),
+    `${id}: blocked reason is exposed as the button tooltip`,
+  );
+  assert.match(
+    html,
+    /class="[^"]*budget-sub[^"]*is-empty[^"]*"[^>]*data-candidates/,
+    `${id}: zero-match readout receives warning styling`,
+  );
+}
+
+{
+  const html = renderFixture(lootFixtures.get("hoard"), {
+    candidateLabel: "0 items match; this roll will create a coin-only hoard",
+    noCandidates: true,
+    candidateUnavailableReason: "",
+    generateDisabled: false,
+    generateDisabledReason: "",
+  });
+  const generateButton = html.match(
+    /<button\b[^>]*data-action="generate"[^>]*>/,
+  )?.[0];
+  assert.ok(generateButton, "hoard: renders a primary generate button");
+  assert.doesNotMatch(
+    generateButton,
+    /\sdisabled(?:\s|>)/,
+    "hoard: an empty item pool must not block its coin-only roll",
+  );
+  assert.match(html, /coin-only hoard/);
+}
+
 process.stdout.write("ui render harness validation passed\n");
 
 function countMatches(value, pattern) {
   return [...value.matchAll(pattern)].length;
+}
+
+function renderFixture(fixture, overrides) {
+  assert.ok(fixture, "requested UI harness fixture exists");
+  const source = readFileSync(fixture.template, "utf8");
+  return Handlebars.compile(source, {
+    strict: true,
+    preventIndent: true,
+  })({ ...fixture.context, ...overrides });
 }

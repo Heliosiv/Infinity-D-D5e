@@ -465,6 +465,9 @@ function perEncounterContext() {
     projectedBudgetLabel: "450 gp",
     candidateLabel: "644 items match current filters",
     noCandidates: false,
+    candidateUnavailableReason: "",
+    generateDisabled: false,
+    generateDisabledReason: "",
     quickPresets: [
       ["easy", "Easy", "fa-solid fa-feather"],
       ["standard", "Standard", "fa-solid fa-shield"],
@@ -544,6 +547,9 @@ function hoardContext() {
     itemBudgetLabel: "1,500 gp",
     candidateLabel: "711 items match current filters",
     noCandidates: false,
+    candidateUnavailableReason: "",
+    generateDisabled: false,
+    generateDisabledReason: "",
     tierOptions: tierOptions("t3"),
     scaleOptions: [
       ["cache", "Cache", "0.5", false],
@@ -622,6 +628,9 @@ function perCreatureContext() {
     rosterTotalBudgetLabel: "303 gp",
     candidateLabel: "644 items match current filters",
     noCandidates: false,
+    candidateUnavailableReason: "",
+    generateDisabled: false,
+    generateDisabledReason: "",
     itemsPerCreature: slider(
       "itemsPerCreature",
       "Items Per Creature",

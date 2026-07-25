@@ -135,6 +135,69 @@ export class PerCreatureLootApp extends BaseLootApp {
     return this._generateAll();
   }
 
+  _candidateAvailability() {
+    const base = super._candidateAvailability();
+    const roster = Array.isArray(this._form?.roster) ? this._form.roster : [];
+    if (roster.length === 0) {
+      return {
+        ...base,
+        blocksGeneration: true,
+        reason: "Add at least one creature to the roster before rolling.",
+        notificationLevel: "info",
+      };
+    }
+    if (!Array.isArray(this._cachedItems)) return base;
+
+    const rosterTiers = [
+      ...new Set(
+        roster.map(
+          (creature) =>
+            String(creature?.tier ?? this._form.defaultTier ?? "t1")
+              .trim()
+              .toLowerCase() || "t1",
+        ),
+      ),
+    ];
+    const filter = this._filterSpec();
+    const relevantTiers = new Set();
+    const emptyTiers = [];
+
+    for (const tier of rosterTiers) {
+      const window = tierWindow(tier);
+      for (const candidateTier of window) relevantTiers.add(candidateTier);
+      if (
+        filterCandidates(this._cachedItems, {
+          ...filter,
+          tiers: window,
+        }).length === 0
+      ) {
+        emptyTiers.push(tier);
+      }
+    }
+
+    const count = filterCandidates(this._cachedItems, {
+      ...filter,
+      tiers: [...relevantTiers],
+    }).length;
+    const candidateEmpty = emptyTiers.length > 0;
+    const tierSummary = emptyTiers.map((tier) => tier.toUpperCase()).join(", ");
+    const matchLabel = `${count.toLocaleString()} item${count === 1 ? "" : "s"} match roster tiers`;
+
+    return {
+      ...base,
+      count,
+      label: candidateEmpty
+        ? `${matchLabel}; no matches for ${tierSummary}`
+        : matchLabel,
+      candidateEmpty,
+      blocksGeneration: candidateEmpty,
+      reason: candidateEmpty
+        ? `No items match the current rarity, item type, and value filters for ${tierSummary}. Adjust a filter or creature tier and try again.`
+        : "",
+      notificationLevel: "warn",
+    };
+  }
+
   _chipUniverse(group) {
     if (group === "rarity") return RARITIES;
     if (group === "lootType") return LOOT_TYPES;
@@ -179,7 +242,7 @@ export class PerCreatureLootApp extends BaseLootApp {
 
   async _prepareContext() {
     const stats = this._packStats ?? computePackStats([]);
-    const candidates = this._countCandidates();
+    const candidateContext = this._candidateContext();
     // Same live party size the roll (_rollForCreature) and the roster total
     // (_rosterTotalBudget) use, so the per-row budget preview can't disagree
     // with them for a party that isn't exactly 4 PCs.
@@ -190,8 +253,7 @@ export class PerCreatureLootApp extends BaseLootApp {
       form: this._form,
       moduleId: MODULE_ID,
       loadingItems: this._loadingItems,
-      candidateLabel: this._candidateLabel(candidates, stats.totalItems),
-      noCandidates: candidates === 0 && !this._loadingItems,
+      ...candidateContext,
       rosterTotalBudgetLabel: formatGp(this._rosterTotalBudget()),
       rosterFull: this._form.roster.length >= ROSTER_LIMIT,
 
@@ -250,10 +312,8 @@ export class PerCreatureLootApp extends BaseLootApp {
 
   /** @this {PerCreatureLootApp} */
   static async _onGenerate(_event, _target) {
-    if (this._loadingItems) return;
-    if (this._form.roster.length > 0) {
-      playModuleSound(SOUND_EVENTS.ROLL_START);
-    }
+    if (!this._canStartPrimaryGeneration({ notify: true })) return;
+    playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generateAll();
   }
 
@@ -466,12 +526,7 @@ export class PerCreatureLootApp extends BaseLootApp {
     this._debounce("candidates", () => {
       const el = this.element;
       if (!el) return;
-      const candidates = this._countCandidates();
-      setText(
-        el,
-        "[data-candidates]",
-        this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
-      );
+      this._patchCandidateAvailability();
       setText(el, "[data-value-range]", this._valueRangeLabel());
     });
   }
@@ -536,17 +591,8 @@ export class PerCreatureLootApp extends BaseLootApp {
   /* ------------------- generation pipeline ------------------- */
 
   async _generateAll() {
-    if (this._loadingItems) return;
+    if (!this._canStartPrimaryGeneration({ notify: true })) return;
     let generatedResult = null;
-    if (!this._form.roster.length) {
-      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.info(
-        "Add at least one creature to the roster before rolling.",
-      );
-      return;
-    }
-    // Make a fresh roll undoable (protects a hand-edited roster haul from Enter/R).
-    if (this._lastResult) this._pushUndo();
     try {
       if (!this._isItemCacheFresh()) {
         this._loadingItems = true;
@@ -554,6 +600,13 @@ export class PerCreatureLootApp extends BaseLootApp {
         await this._renderPreservingScroll();
       }
       const items = await this._loadItems();
+      const availability = this._candidateAvailability();
+      if (availability.blocksGeneration) {
+        this._notifyGenerationBlocked(availability);
+        return;
+      }
+      // Candidate preflight must pass before a valid haul is added to Undo.
+      if (this._lastResult) this._pushUndo();
       const creatures = this._form.roster.map((c) =>
         this._rollForCreature(c, items),
       );

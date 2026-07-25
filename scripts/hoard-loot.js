@@ -155,6 +155,17 @@ export class HoardLootApp extends BaseLootApp {
     return this._generate();
   }
 
+  _candidateAvailability() {
+    const state = super._candidateAvailability();
+    if (!state.candidateEmpty) return state;
+    return {
+      ...state,
+      label: "0 items match; this roll will create a coin-only hoard",
+      blocksGeneration: false,
+      reason: "",
+    };
+  }
+
   _snapLabel(key) {
     return humanizeKey(key);
   }
@@ -203,7 +214,7 @@ export class HoardLootApp extends BaseLootApp {
       this._form.pileBias,
     );
     const stats = this._packStats ?? computePackStats([]);
-    const candidates = this._countCandidates();
+    const candidateContext = this._candidateContext();
     const tierStats = this._cachedItems
       ? computeTierFilteredStats(this._cachedItems, tierWindow(this._form.tier))
       : null;
@@ -215,8 +226,7 @@ export class HoardLootApp extends BaseLootApp {
       totalBudgetLabel: formatGp(totalBudget),
       coinPileLabel: formatGp(coinPileGp),
       itemBudgetLabel: formatGp(itemBudget),
-      candidateLabel: this._candidateLabel(candidates, stats.totalItems),
-      noCandidates: candidates === 0 && !this._loadingItems,
+      ...candidateContext,
       loadingItems: this._loadingItems,
 
       tierOptions: TIERS.map((tier) => ({
@@ -290,7 +300,7 @@ export class HoardLootApp extends BaseLootApp {
 
   /** @this {HoardLootApp} */
   static async _onGenerate(_event, _target) {
-    if (this._loadingItems) return;
+    if (!this._canStartPrimaryGeneration({ notify: true })) return;
     playModuleSound(SOUND_EVENTS.ROLL_START);
     await this._generate();
   }
@@ -501,12 +511,7 @@ export class HoardLootApp extends BaseLootApp {
     this._debounce("candidates", () => {
       const el = this.element;
       if (!el) return;
-      const candidates = this._countCandidates();
-      setText(
-        el,
-        "[data-candidates]",
-        this._candidateLabel(candidates, this._packStats?.totalItems ?? 0),
-      );
+      this._patchCandidateAvailability();
       setText(el, "[data-value-range]", this._valueRangeLabel());
     });
   }
@@ -538,9 +543,7 @@ export class HoardLootApp extends BaseLootApp {
   /* ------------------- generation pipeline ------------------- */
 
   async _generate() {
-    if (this._loadingItems) return;
-    // Make a fresh roll undoable (protects a hand-edited haul from a stray Enter/R).
-    if (this._lastResult) this._pushUndo();
+    if (!this._canStartPrimaryGeneration({ notify: true })) return;
     let generatedResult = null;
     try {
       if (!this._isItemCacheFresh()) {
@@ -555,6 +558,9 @@ export class HoardLootApp extends BaseLootApp {
       );
       const items = await this._loadItems();
       const candidates = filterCandidates(items, this._filterSpec());
+      // A zero-item pool is a valid coin-only hoard, but a successful load
+      // must still happen before the previous haul is added to Undo.
+      if (this._lastResult) this._pushUndo();
       const raw =
         itemBudget > 0
           ? rollLoot(candidates, {

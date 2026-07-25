@@ -85,6 +85,9 @@ import {
 } from "./loot-app-shared.js";
 
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
+const NO_MATCHING_ITEMS_REASON =
+  "No items match the current tier, rarity, item type, and value filters. Adjust a filter and try again.";
+const ITEMS_LOADING_REASON = "Loot items are still loading.";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -411,7 +414,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ].includes(type));
     if (event.key === "Enter" && !isTextEntry && tag !== "select") {
       event.preventDefault();
-      this._primaryGenerate();
+      this._startPrimaryGeneration();
       return;
     }
     if (
@@ -421,8 +424,13 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       !event.metaKey
     ) {
       event.preventDefault();
-      this._primaryGenerate();
+      this._startPrimaryGeneration();
     }
+  }
+
+  _startPrimaryGeneration() {
+    if (!this._canStartPrimaryGeneration({ notify: true })) return undefined;
+    return this._primaryGenerate();
   }
 
   /** Subclass hook: what Enter/R triggers. Defaults to `_generate`. */
@@ -485,6 +493,118 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return `0 items match · pack has ${totalItems.toLocaleString()}`;
     }
     return `${count.toLocaleString()} item${count === 1 ? "" : "s"} match current filters`;
+  }
+
+  /**
+   * Candidate availability for the primary roll. Subclasses may preserve an
+   * empty pool as a valid outcome (Hoard) or evaluate several tier windows
+   * (Per-Creature), but all tools expose the same state to their templates.
+   */
+  _candidateAvailability() {
+    const known = Array.isArray(this._cachedItems);
+    const count = known ? this._countCandidates() : 0;
+    const candidateEmpty = known && count === 0;
+    return {
+      count,
+      label: this._candidateLabel(
+        count,
+        this._packStats?.totalItems ?? this._cachedItems?.length ?? 0,
+      ),
+      candidateEmpty,
+      blocksGeneration: candidateEmpty,
+      reason: candidateEmpty ? NO_MATCHING_ITEMS_REASON : "",
+      notificationLevel: "warn",
+    };
+  }
+
+  _primaryGenerationState() {
+    const candidate = this._candidateAvailability();
+    // Keep the first render inert until the automatic preload begins. If that
+    // preload fails, `_primePackStats` installs empty stats, which deliberately
+    // clears this pending state so Generate can be used to retry the pack load.
+    const awaitingInitialLoad =
+      !Array.isArray(this._cachedItems) && !this._packStats;
+    const loading = this._loadingItems === true || awaitingInitialLoad;
+    return {
+      ...candidate,
+      loading,
+      disabled: loading || candidate.blocksGeneration,
+      reason: loading ? ITEMS_LOADING_REASON : candidate.reason,
+    };
+  }
+
+  _candidateContext() {
+    const state = this._primaryGenerationState();
+    return {
+      candidateCount: state.count,
+      candidateLabel: state.label,
+      noCandidates: state.candidateEmpty,
+      candidateUnavailableReason: state.candidateEmpty ? state.reason : "",
+      generateDisabled: state.disabled,
+      generateDisabledReason: state.disabled ? state.reason : "",
+    };
+  }
+
+  /**
+   * Keep the live candidate readout and primary button synchronized without a
+   * full ApplicationV2 render. Action and keyboard handlers still re-check the
+   * state synchronously, closing the debounce window after rapid form edits.
+   */
+  _patchCandidateAvailability() {
+    const root = this.element;
+    const state = this._primaryGenerationState();
+    if (!root) return state;
+
+    const readout = root.querySelector?.("[data-candidates]");
+    if (readout) {
+      readout.textContent = state.label;
+      readout.classList?.toggle("is-empty", state.candidateEmpty);
+      if (state.candidateEmpty && state.reason) {
+        readout.setAttribute?.("title", state.reason);
+      } else {
+        readout.removeAttribute?.("title");
+      }
+    }
+
+    for (const button of root.querySelectorAll?.("[data-action='generate']") ??
+      []) {
+      const readyTitle =
+        button.dataset?.readyTitle ??
+        button.getAttribute?.("data-ready-title") ??
+        button.getAttribute?.("title") ??
+        "";
+      if (button.dataset && !button.dataset.readyTitle) {
+        button.dataset.readyTitle = readyTitle;
+      }
+      button.disabled = state.disabled;
+      button.setAttribute?.("aria-disabled", String(state.disabled));
+      button.setAttribute?.(
+        "title",
+        state.disabled && state.reason ? state.reason : readyTitle,
+      );
+      if (state.loading) button.setAttribute?.("aria-busy", "true");
+      else button.removeAttribute?.("aria-busy");
+    }
+
+    return state;
+  }
+
+  _notifyGenerationBlocked(state) {
+    if (!state?.reason) return;
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+    const notifications = globalThis.ui?.notifications;
+    if (state.notificationLevel === "info") {
+      notifications?.info?.(state.reason);
+    } else {
+      notifications?.warn?.(state.reason);
+    }
+  }
+
+  _canStartPrimaryGeneration({ notify = false } = {}) {
+    const state = this._primaryGenerationState();
+    if (!state.disabled) return true;
+    if (notify && !state.loading) this._notifyGenerationBlocked(state);
+    return false;
   }
 
   /** Label for a snap preset key. Hoard overrides to humanizeKey. */
