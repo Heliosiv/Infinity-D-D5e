@@ -3,8 +3,8 @@
  *
  * GM-only singleton for configuring party resources (what counts as food /
  * water / light, daily rates, matching), setting the party's environment, and
- * running the daily upkeep on demand. Resource data lives in the world settings
- * via resource/store.js; this window is the editor + control panel on top.
+ * running the daily upkeep on demand. Visible rules live in Foundry settings;
+ * GM-only structure and run state live in the restricted private store.
  *
  * Mirrors MerchantWorkspaceApp's scaffolding (singleton, GM guard, socket-driven
  * re-render, drop-to-tag).
@@ -16,7 +16,10 @@ import {
   loadRunState,
   setCurrentEnvironment,
   createDefaultResourceConfig,
+  isCanonicalPerCharacterResource,
   normalizeResource,
+  resetResourceRules,
+  setResourceRule,
 } from "./resource/store.js";
 import {
   actorItemSnapshots,
@@ -28,7 +31,12 @@ import {
   getPartyRoster,
   runForageDrive,
 } from "./resource/calendar-watcher.js";
-import { matchResourceItems } from "./resource/consumption.js";
+import { buildResourceOverview } from "./resource/overview.js";
+import { findEnvironment } from "./resource/environment.js";
+import {
+  diagnoseResourceConfiguration,
+  diagnoseResourceItemOverlaps,
+} from "./resource/consumption.js";
 import {
   RESOURCE_EVENTS,
   subscribe,
@@ -43,6 +51,7 @@ import {
   confirmDestructive,
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
+import { isFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
@@ -83,8 +92,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   };
 
   static open() {
-    if (!globalThis.game?.user?.isGM) {
-      notify("warn", `the Quartermaster is GM-only.`);
+    if (!isFullGM()) {
+      notify("warn", `the Quartermaster is available to full GMs only.`);
       return null;
     }
     playModuleSound(SOUND_EVENTS.UI_OPEN);
@@ -105,6 +114,19 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       subscribe(RESOURCE_EVENTS.STATE_UPDATE, () => this.render(false)),
       subscribe(RESOURCE_EVENTS.UPKEEP_REPORT, () => this.render(false)),
     ];
+    this._userConnectionHook =
+      globalThis.Hooks?.on?.("userConnected", () => {
+        if (this.rendered) this.render(false);
+      }) ?? null;
+    this._userRoleHook =
+      globalThis.Hooks?.on?.("updateUser", (user) => {
+        if (user?.id !== globalThis.game?.user?.id) return;
+        if (!isFullGM()) {
+          if (this.rendered) void this.close();
+          return;
+        }
+        if (this.rendered) this.render(false);
+      }) ?? null;
   }
 
   _onClose(options) {
@@ -117,6 +139,22 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       }
     }
     this._unsubs = [];
+    if (this._userConnectionHook != null) {
+      try {
+        globalThis.Hooks?.off?.("userConnected", this._userConnectionHook);
+      } catch {
+        // Best effort during Foundry shutdown.
+      }
+      this._userConnectionHook = null;
+    }
+    if (this._userRoleHook != null) {
+      try {
+        globalThis.Hooks?.off?.("updateUser", this._userRoleHook);
+      } catch {
+        // Best effort during Foundry shutdown.
+      }
+      this._userRoleHook = null;
+    }
     ResourceManagerApp._instance = null;
   }
 
@@ -128,35 +166,84 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       getSetting(SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT) ||
       "limited";
 
+    const currentEnv =
+      findEnvironment(config.environments, currentEnvId) ??
+      config.environments[0] ??
+      null;
     const environments = config.environments.map((env) => ({
       ...env,
       // Plain short name for the dropdown; the status pill carries forageability.
       optionLabel: prettyEnvironment(env.id) || env.label,
-      selected: env.id === currentEnvId,
+      selected: env.id === currentEnv?.id,
     }));
-    const currentEnv =
-      config.environments.find((e) => e.id === currentEnvId) ?? null;
 
     const roster = getPartyRoster(config);
     const rosterIsImplicit = (config.roster ?? []).length === 0;
     const nameById = new Map(roster.map((r) => [r.actor.id, r.actor.name]));
     const stashRows = roster.filter((r) => r.isStash);
-    const partyRows = roster.map(({ actor, isStash, drawFromId }) => {
-      const snaps = actorItemSnapshots(actor);
-      const counts = config.resources.map((res) => {
-        const matches = matchResourceItems(snaps, res);
-        // Tooltip: which items were counted (helps debug a 0 or an over-match).
-        const detail =
-          matches.length > 0
-            ? matches.map((m) => `${m.name} ×${m.quantity}`).join(", ")
-            : "No items match this resource";
-        return {
-          id: res.id,
-          label: res.label,
-          total: sumMatches(matches),
-          detail,
-        };
-      });
+    const autoTrigger =
+      getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) !== false;
+    const rosterSnapshots = roster.map(
+      ({ actor, isStash, consumes, drawFromId }) => ({
+        actorId: actor.id,
+        name: actor.name,
+        isStash,
+        consumes,
+        drawFromId,
+        exhaustion: Number(actor.system?.attributes?.exhaustion) || 0,
+        items: actorItemSnapshots(actor),
+      }),
+    );
+    const configurationDiagnostics = diagnoseResourceConfiguration(
+      config.resources,
+    );
+    const inventoryDiagnostics = diagnoseResourceItemOverlaps({
+      inventories: rosterSnapshots,
+      resources: config.resources,
+    });
+    const resourceConflictWarnings = [
+      ...configurationDiagnostics.conflicts,
+      ...inventoryDiagnostics.conflicts,
+    ]
+      .map((conflict) => ({
+        ...conflict,
+        isBlocking: conflict.blocking === true,
+      }))
+      .sort(
+        (left, right) => Number(right.isBlocking) - Number(left.isBlocking),
+      );
+    const hasBlockingResourceConflicts = resourceConflictWarnings.some(
+      (conflict) => conflict.isBlocking,
+    );
+    const isAuthoritative = isAuthoritativeGM();
+    const overview = buildResourceOverview({
+      config,
+      state,
+      environment: currentEnv,
+      autoTrigger,
+      generatedAt: Date.now(),
+      roster: rosterSnapshots,
+    });
+    // The inventory table always mirrors every configured resource, including
+    // water while water consumption is disabled. Its columns therefore stay
+    // aligned with the resource editor while the operational outlook omits
+    // disabled resources.
+    const inventoryOverview =
+      config.waterEnabled === false
+        ? buildResourceOverview({
+            config: { ...config, waterEnabled: true },
+            state,
+            environment: currentEnv,
+            autoTrigger,
+            generatedAt: overview.generatedAt,
+            roster: rosterSnapshots,
+          })
+        : overview;
+    const overviewMemberById = new Map(
+      inventoryOverview.members.map((member) => [member.actorId, member]),
+    );
+    const partyRows = roster.map(({ actor, isStash, consumes, drawFromId }) => {
+      const counts = overviewMemberById.get(actor.id)?.resources ?? [];
       const drawsFromSelf = drawFromId === actor.id;
       // A member can draw from itself or any OTHER nominated stash.
       const drawFromOptions = [
@@ -173,6 +260,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         actorId: actor.id,
         name: actor.name,
         isStash,
+        consumes,
         drawsFromSelf,
         drawFromLabel: drawsFromSelf
           ? "Self"
@@ -202,9 +290,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       })
       .sort((a, b) => a.rank - b.rank || String(a.name).localeCompare(b.name));
 
-    // Single party-wide food & water stash. When set, every member draws those
-    // supplies from one pile (see getPartyRoster), so the per-row "Draws from"
-    // is overridden — the dropdown below is the one control.
+    // Single party-wide per-character supply stash. When set, every consuming
+    // member draws those resources from one pile (see getPartyRoster), so the
+    // per-row "Draws from" is overridden — the dropdown below is the one control.
     const partyStashId = String(config.partyStashId ?? "").trim();
     const partyStashActive =
       partyStashId !== "" && roster.some((r) => r.actor.id === partyStashId);
@@ -249,6 +337,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           label: res.label,
           perDay: res.perDay,
           scopeIsParty: res.scope === "party",
+          scopeLocked: isCanonicalPerCharacterResource(res),
           keywords: (res.matching.nameKeywords ?? []).join(", "),
           flagTag: res.matching.flagTag ?? "",
           tags,
@@ -270,8 +359,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       forageModeEach: config.forageMode === "each",
       halfRations: config.halfRations,
       waterEnabled: config.waterEnabled,
-      autoTrigger: getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) !== false,
-      isAuthoritative: isAuthoritativeGM(),
+      maxCatchUpDays: config.maxCatchUpDays,
+      autoTrigger,
+      isAuthoritative,
+      canRunResourceWrites: isAuthoritative && !hasBlockingResourceConflicts,
+      resourceConflictWarnings,
+      hasResourceConflictWarnings: resourceConflictWarnings.length > 0,
+      hasBlockingResourceConflicts,
       partyRows,
       hasParty: partyRows.length > 0,
       rosterIsImplicit,
@@ -281,7 +375,12 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       partyStashActive,
       partyStashName,
       hasRosterMembers: roster.length > 0,
-      report: summarizeReport(state.lastUpkeepResult),
+      overviewResources: overview.resources.map((resource) => ({
+        ...resource,
+        icon: resourceIcon(resource.id),
+      })),
+      hasOverviewResources: overview.resources.length > 0,
+      report: presentOverviewReport(overview.lastUpkeep),
     };
   }
 
@@ -315,6 +414,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const envSelect = root.querySelector("[data-role='environment']");
     if (envSelect) {
       envSelect.addEventListener("change", async (event) => {
+        if (!isAuthoritativeGM()) {
+          notify(
+            "warn",
+            "only the active GM can change the current environment.",
+          );
+          await this._renderPreservingFocus(event.target);
+          return;
+        }
         await setCurrentEnvironment(String(event.target.value ?? ""));
         await this._renderPreservingFocus(event.target);
       });
@@ -343,11 +450,16 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const value =
       input.type === "checkbox" ? input.checked : String(input.value ?? "");
 
-    if (path === "forageMode")
-      config.forageMode = value === "best" ? "best" : "each";
-    else if (path === "halfRations") config.halfRations = Boolean(value);
-    else if (path === "waterEnabled") config.waterEnabled = Boolean(value);
-    else if (path === "autoTrigger") {
+    if (
+      path === "forageMode" ||
+      path === "halfRations" ||
+      path === "waterEnabled" ||
+      path === "maxCatchUpDays"
+    ) {
+      await setResourceRule(path, value);
+      await this._renderPreservingFocus(input);
+      return;
+    } else if (path === "autoTrigger") {
       await setSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER, Boolean(value));
       await this._renderPreservingFocus(input);
       return;
@@ -356,9 +468,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       const res = config.resources.find((r) => r.id === id);
       if (res) applyResourceField(res, field, value);
     } else if (path === "partyStashId") {
-      // The single party food/water stash. References a tracked actor (or "" to
-      // turn it off) — no roster seeding needed; getPartyRoster resolves it
-      // against the live/auto-discovered party.
+      // The single party stash for every per-character resource. References a
+      // tracked actor (or "" to turn it off) — no roster seeding needed;
+      // getPartyRoster resolves it against the live/auto-discovered party.
       config.partyStashId = String(value || "");
     } else if (path.startsWith("roster:")) {
       // Editing any roster row materializes the implicit "all PCs" roster first,
@@ -367,7 +479,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       seedRosterIfEmpty(config);
       const entry = config.roster.find((r) => r.actorId === actorId);
       if (entry) {
-        if (field === "isStash") entry.isStash = Boolean(value);
+        if (field === "isStash") {
+          entry.isStash = Boolean(value);
+          // The selected party stash is forced on at runtime. Treat unchecking
+          // its row as an explicit request to stop using the party-wide stash.
+          if (!entry.isStash && config.partyStashId === actorId) {
+            config.partyStashId = "";
+          }
+        } else if (field === "consumes") entry.consumes = Boolean(value);
         else if (field === "drawFrom") entry.drawFrom = String(value || "self");
       }
     }
@@ -421,6 +540,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAdvanceDay(_event, _target) {
+    if (!isAuthoritativeGM()) {
+      notify("warn", `only the active GM can run daily upkeep.`);
+      return;
+    }
     // Advancing a day consumes real supplies off character sheets and prompts
     // players to forage — confirm first (it's separate from the world clock).
     const party = discoverPartyActors();
@@ -440,6 +563,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onForageDrive(_event, _target) {
+    if (!isAuthoritativeGM()) {
+      notify("warn", `only the active GM can run a forage drive.`);
+      return;
+    }
     // Push a one-off Survival check (GM-set DC) to chosen party members and
     // deposit what they gather — no consumption, no day tick.
     const { defaultDc, stashName, candidates } = describeForageDrive();
@@ -610,11 +737,19 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     if (!actorId) return;
     // Any real actor is eligible — the GM may add NPCs / unowned actors as
     // supply sources, not just player characters.
-    if (!discoverAllActors().some((a) => a.id === actorId)) return;
+    const actor = discoverAllActors().find((entry) => entry.id === actorId);
+    if (!actor) return;
     const config = loadResourceConfig();
     seedRosterIfEmpty(config);
     if (!config.roster.some((r) => r.actorId === actorId)) {
-      config.roster.push({ actorId, isStash: false, drawFrom: "self" });
+      config.roster.push({
+        actorId,
+        isStash: false,
+        consumes: discoverPlayerCharacters().some(
+          (character) => character.id === actorId,
+        ),
+        drawFrom: "self",
+      });
     }
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.ROSTER_ADD);
@@ -635,6 +770,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     });
     if (!confirmed) return;
     config.roster = config.roster.filter((r) => r.actorId !== actorId);
+    if (config.partyStashId === actorId) config.partyStashId = "";
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
     this.render(false);
@@ -656,7 +792,22 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       }).catch(() => false);
     }
     if (!ok) return;
-    await saveResourceConfig(createDefaultResourceConfig());
+    const defaults = createDefaultResourceConfig();
+    await Promise.all([saveResourceConfig(defaults), resetResourceRules()]);
+    const currentEnvironmentId = loadRunState().currentEnvironmentId;
+    if (
+      isAuthoritativeGM() &&
+      !findEnvironment(defaults.environments, currentEnvironmentId)
+    ) {
+      const configuredDefault = getSetting(
+        SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT,
+      );
+      const fallback =
+        findEnvironment(defaults.environments, configuredDefault) ??
+        defaults.environments[0] ??
+        null;
+      await setCurrentEnvironment(fallback?.id ?? "limited");
+    }
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     this.render(false);
   }
@@ -683,6 +834,7 @@ function seedRosterIfEmpty(config) {
   config.roster = discoverPlayerCharacters().map((actor) => ({
     actorId: actor.id,
     isStash: false,
+    consumes: true,
     drawFrom: "self",
   }));
 }
@@ -708,18 +860,12 @@ function applyResourceField(res, field, value) {
   }
 }
 
-function sumMatches(matches) {
-  return (Array.isArray(matches) ? matches : []).reduce(
-    (sum, m) => sum + (Number(m.quantity) || 0),
-    0,
-  );
-}
-
 /** Plain-language foraging note for a per-actor report row. Distinguishes
  *  "foraged nothing" (was prompted, no haul) from "" (never foraged). */
 function forageNote(foraged) {
   const f = foraged ?? {};
   if (!f.attempted) return "";
+  if (f.suppressed) return "gathered; best party haul kept";
   const food = Number(f.food) || 0;
   const water = Number(f.water) || 0;
   if (f.success && (food > 0 || water > 0)) {
@@ -731,31 +877,26 @@ function forageNote(foraged) {
   return "foraged nothing";
 }
 
-function summarizeReport(result) {
-  if (!result || typeof result !== "object") return null;
-  const perActor = Array.isArray(result.perActor) ? result.perActor : [];
-  // Sum every party-scope resource shortfall (a GM-added party resource is
-  // keyed by its own id, not the literal "light"), so none is silently dropped.
-  const lightShortfall = Object.values(result.party ?? {}).reduce(
-    (sum, r) => sum + Math.max(0, Number(r?.shortfall) || 0),
-    0,
-  );
+function presentOverviewReport(report) {
+  if (!report || typeof report !== "object") return null;
   return {
-    days: result.days ?? 1,
-    environmentLabel: result.environmentId
-      ? prettyEnvironment(result.environmentId) || result.environmentId
+    ...report,
+    environmentLabel: report.environmentId
+      ? prettyEnvironment(report.environmentId) || report.environmentId
       : "—",
-    rows: perActor.map((r) => ({
-      name: r.name,
-      shortFood: r.shortfalls?.food ?? 0,
-      shortWater: r.shortfalls?.water ?? 0,
-      forageNote: forageNote(r.foraged),
-      ok: !(r.shortfalls?.food > 0 || r.shortfalls?.water > 0),
+    rows: report.rows.map((row) => ({
+      ...row,
+      forageNote: forageNote(row.forage),
+      ok: row.supplied && !row.hasErrors,
     })),
-    lightShortfall,
-    hasSuggestions:
-      Array.isArray(result.suggestions) && result.suggestions.length > 0,
   };
+}
+
+function resourceIcon(id) {
+  if (id === "food") return "fa-solid fa-bread-slice";
+  if (id === "water") return "fa-solid fa-droplet";
+  if (id === "light") return "fa-solid fa-fire-flame-simple";
+  return "fa-solid fa-box";
 }
 
 /** Parse an Item UUID from a Foundry drag-drop event. */

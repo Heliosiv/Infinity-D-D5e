@@ -42,8 +42,11 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
   MERCHANT_CONFIRM_TRANSACTIONS: "merchantConfirmTransactions",
+  // Opaque identity of the one canonical restricted private-state Journal.
+  PRIVATE_STATE_STORE_ID: "privateStateStoreId",
   // Quartermaster / party-resource feature.
   RESOURCE_AUTO_TRIGGER: "resourceAutoTrigger",
+  RESOURCE_PLAYER_VIEW: "resourcePlayerView",
   RESOURCE_DEFAULT_ENVIRONMENT: "resourceDefaultEnvironment",
   RESOURCE_FORAGE_MODE: "resourceForageMode",
   RESOURCE_WATER_ENABLED: "resourceWaterEnabled",
@@ -371,6 +374,18 @@ export const SETTINGS = Object.freeze([
     default: true,
   },
   {
+    key: SETTING_KEYS.RESOURCE_PLAYER_VIEW,
+    name: "Player Supplies View",
+    hint:
+      "Let players open a read-only Supplies window from the Infinity D&D5e " +
+      "scene controls. The active GM sends a sanitized party summary; item " +
+      "matching rules and actor inventory details stay GM-only.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  },
+  {
     key: SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT,
     name: "Default Party Environment",
     hint: "Where the party starts out. Sets the foraging difficulty until you change it.",
@@ -411,7 +426,9 @@ export const SETTINGS = Object.freeze([
   {
     key: SETTING_KEYS.RESOURCE_HALF_RATIONS,
     name: "Half Rations",
-    hint: "Halve daily food use to stretch supplies (the 5e rationing option). Prolonged half rations still risks exhaustion.",
+    hint:
+      "Halve daily food use to stretch supplies. This changes consumption only; " +
+      "the GM still decides whether prolonged rationing has other consequences.",
     scope: "world",
     config: true,
     type: Boolean,
@@ -444,11 +461,20 @@ export const SETTINGS = Object.freeze([
     },
   },
   {
+    key: SETTING_KEYS.PRIVATE_STATE_STORE_ID,
+    name: "Private State Store Identity",
+    hint: "Internal opaque Journal id used to keep every GM client on the same restricted private-state document.",
+    scope: "world",
+    config: false,
+    type: String,
+    default: "",
+  },
+  {
     key: SETTING_KEYS.RESOURCE_CONFIG,
-    name: "Quartermaster Config",
+    name: "Legacy Quartermaster Config",
     hint:
-      "Persistent resource setup (tracked resources, environments, matching). " +
-      "Managed by the Resource Manager window; edit through that, not here.",
+      "Migration bridge for worlds created before private resource storage. " +
+      "The active GM copies it into the restricted private-state journal and clears it.",
     scope: "world",
     config: false,
     type: Object,
@@ -456,8 +482,10 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.RESOURCE_RUNSTATE,
-    name: "Quartermaster Run-State",
-    hint: "Internal day-tracking + last upkeep report. Not shown in the UI.",
+    name: "Legacy Quartermaster Run-State",
+    hint:
+      "Migration bridge for old day-tracking data. The active GM copies it " +
+      "into the restricted private-state journal and clears it.",
     scope: "world",
     config: false,
     type: Object,
@@ -525,6 +553,11 @@ export function getSetting(key) {
   } catch {
     return fallback;
   }
+}
+
+/** Return a setting's registered default without reading live world state. */
+export function getSettingDefault(key) {
+  return SETTINGS_BY_KEY[key]?.default;
 }
 
 /**

@@ -19,15 +19,22 @@ import {
 } from "./merchant-session.js";
 import { ShopPickerApp } from "./shop-picker.js";
 import { ResourceManagerApp } from "./resource-manager.js";
+import { ResourceOverviewApp } from "./resource-overview.js";
 import {
   ForagePromptApp,
   registerForagePromptAutoOpen,
 } from "./forage-prompt.js";
 import { registerResourceSocket } from "./resource/socket.js";
+import { registerResourceOverviewService } from "./resource/overview-service.js";
 import {
   registerResourceCalendarWatcher,
   advanceDayNow,
 } from "./resource/calendar-watcher.js";
+import {
+  isResourceAutomationReady,
+  migrateResourceConfig,
+  observeResourceAuthorityTransition,
+} from "./resource/store.js";
 import { registerMerchantSocket } from "./merchant/socket.js";
 import { ReputationWorkspaceApp } from "./reputation-workspace.js";
 import { ReputationViewApp } from "./reputation-view.js";
@@ -43,6 +50,8 @@ import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
 import { registerSoundAutomation } from "./compat/sound-automation.js";
 import {
   SETTINGS,
+  SETTING_KEYS,
+  getSetting,
   migrateEncounterBalanceDefaults,
 } from "./settings.js";
 import { registerTool } from "./tool-registry.js";
@@ -59,11 +68,144 @@ import {
 } from "./loot/roller.js";
 import { getEncounterBalanceOptions } from "./loot/category-balance.js";
 import { tierWindow } from "./loot/tag-vocabulary.js";
-import { initializePrivateState } from "./private-state.js";
+import {
+  initializePrivateState,
+  onPrivateStateChanged,
+} from "./private-state.js";
 import { isFullGM, runAsFullGM } from "./permissions.js";
+import { isAuthoritativeGM as isSharedAuthoritativeGM } from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
+const PRIVATE_STATE_RETRY_MS = 5000;
+
+let readyBootComplete = false;
+let privateRecoveryInFlight = null;
+let privateRecoveryTimer = null;
+let privateRecoveryHooksRegistered = false;
+
+function safeInitializeSubsystem(label, fn) {
+  try {
+    fn();
+    return true;
+  } catch (error) {
+    console.error(`${MODULE_ID} | ${label} init failed`, error);
+    return false;
+  }
+}
+
+/**
+ * Register every service that reads the restricted Journal cache. Each
+ * registration is idempotent, so this is safe both during normal boot and
+ * after a late store arrival or a current-user role change.
+ */
+function registerPrivateDependentServices() {
+  safeInitializeSubsystem("merchant socket", registerMerchantSocket);
+  safeInitializeSubsystem(
+    "resource overview service",
+    registerResourceOverviewService,
+  );
+  safeInitializeSubsystem(
+    "resource calendar watcher",
+    registerResourceCalendarWatcher,
+  );
+  safeInitializeSubsystem("reputation socket", registerReputationSocket);
+}
+
+function clearPrivateRecoveryTimer() {
+  if (privateRecoveryTimer == null) return;
+  globalThis.clearTimeout?.(privateRecoveryTimer);
+  privateRecoveryTimer = null;
+}
+
+function schedulePrivateStateRecovery() {
+  if (!isFullGM() || privateRecoveryTimer != null) return;
+  privateRecoveryTimer = globalThis.setTimeout?.(() => {
+    privateRecoveryTimer = null;
+    void recoverPrivateStateAndServices();
+  }, PRIVATE_STATE_RETRY_MS);
+}
+
+/**
+ * Retry private-state hydration without requiring a Foundry reload. A promoted
+ * or newly authoritative full GM also completes the resource v1 -> v2
+ * migration before resource authority becomes writable.
+ */
+function recoverPrivateStateAndServices() {
+  if (privateRecoveryInFlight) return privateRecoveryInFlight;
+  let trackedRecovery;
+  trackedRecovery = (async () => {
+    let available = false;
+    try {
+      available = (await initializePrivateState()) === true;
+    } catch (error) {
+      console.error(`${MODULE_ID} | private state recovery failed`, error);
+    }
+    if (!available) {
+      schedulePrivateStateRecovery();
+      return false;
+    }
+
+    if (isSharedAuthoritativeGM()) {
+      try {
+        await migrateResourceConfig();
+      } catch (error) {
+        console.error(`${MODULE_ID} | resource config migration failed`, error);
+      }
+      if (!isResourceAutomationReady()) {
+        schedulePrivateStateRecovery();
+        return false;
+      }
+    }
+
+    clearPrivateRecoveryTimer();
+    registerPrivateDependentServices();
+    return true;
+  })().finally(() => {
+    if (privateRecoveryInFlight === trackedRecovery) {
+      privateRecoveryInFlight = null;
+    }
+  });
+  privateRecoveryInFlight = trackedRecovery;
+  return trackedRecovery;
+}
+
+function registerPrivateStateRecoveryHooks() {
+  if (privateRecoveryHooksRegistered) return;
+  privateRecoveryHooksRegistered = true;
+  observeResourceAuthorityTransition();
+  const requestRecoveryAfterHooks = () => {
+    void Promise.resolve().then(() => recoverPrivateStateAndServices());
+  };
+  onPrivateStateChanged((payload) => {
+    if (!readyBootComplete) return;
+    const reason = String(payload?.reason ?? "");
+    if (reason === "role-demotion") {
+      clearPrivateRecoveryTimer();
+      return;
+    }
+    if (
+      reason === "role-promotion" ||
+      reason === "store-ready" ||
+      reason === "journal-create" ||
+      reason === "journal-replacement" ||
+      reason === "authority-change"
+    ) {
+      requestRecoveryAfterHooks();
+      return;
+    }
+    if (isSharedAuthoritativeGM() && !isResourceAutomationReady()) {
+      requestRecoveryAfterHooks();
+    }
+  });
+  const onAuthorityCandidateChanged = () => {
+    const transition = observeResourceAuthorityTransition();
+    if (!readyBootComplete || !transition.newlyAuthoritative) return;
+    requestRecoveryAfterHooks();
+  };
+  globalThis.Hooks?.on?.("updateUser", onAuthorityCandidateChanged);
+  globalThis.Hooks?.on?.("userConnected", onAuthorityCandidateChanged);
+}
 
 // Very first thing we do — log that the ESM was evaluated at all. If
 // this line never appears in the console, the import chain failed
@@ -92,6 +234,7 @@ function buildApi() {
     openMerchantWorkspace: () => runAsFullGM(() => MerchantWorkspaceApp.open()),
     openShops: () => ShopPickerApp.open(),
     openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
+    openPartySupplies: () => ResourceOverviewApp.open(),
     openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
@@ -360,7 +503,7 @@ function registerKeybindings() {
       hint: "Open the merchant shops you have access to (players).",
       editable: [{ key: "KeyO", modifiers: ["Shift"] }],
       onDown: () => {
-        if (game.user?.isGM) return false;
+        if (isFullGM()) return false;
         ShopPickerApp.open();
         return true;
       },
@@ -378,6 +521,18 @@ function registerKeybindings() {
       },
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
+    // Party Supplies is the persistent read-only resource view. Players receive
+    // only the authoritative GM's sanitized snapshot; GMs see the same preview.
+    game.keybindings.register(MODULE_ID, "openPartySupplies", {
+      name: "Open Infinity D&D5e Party Supplies",
+      hint: "See the party's food, water, light, and supply outlook.",
+      editable: [{ key: "KeyQ", modifiers: ["Shift"] }],
+      onDown: () => {
+        ResourceOverviewApp.open();
+        return true;
+      },
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to register keybindings`, error);
   }
@@ -390,7 +545,13 @@ function registerKeybindings() {
  */
 Hooks.once("ready", async () => {
   try {
-    await initializePrivateState();
+    registerPrivateStateRecoveryHooks();
+    let privateStateAvailable = false;
+    try {
+      privateStateAvailable = (await initializePrivateState()) === true;
+    } catch (error) {
+      console.error(`${MODULE_ID} | private state init failed`, error);
+    }
     const version = game.modules?.get?.(MODULE_ID)?.version ?? "?";
     const foundryGen = globalThis.foundry?.utils?.foundryVersion?.generation;
     const foundryVersion = globalThis.game?.release?.version ?? "?";
@@ -405,36 +566,67 @@ Hooks.once("ready", async () => {
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
     if (mod && !mod.api) mod.api = buildApi();
+    // Move v1's duplicated resource rules into their canonical Foundry settings
+    // before any resource service reads the configuration.
     if (isFullGM()) {
       try {
         await migrateEncounterBalanceDefaults();
       } catch (error) {
-        console.error(`${MODULE_ID} | encounter balance migration failed`, error);
+        console.error(
+          `${MODULE_ID} | encounter balance migration failed`,
+          error,
+        );
+      }
+      if (privateStateAvailable) {
+        try {
+          await migrateResourceConfig();
+        } catch (error) {
+          console.error(
+            `${MODULE_ID} | resource config migration failed`,
+            error,
+          );
+        }
       }
     }
-
     // Register each subsystem in isolation: a throw in one (e.g. a sound hook)
     // must NOT skip the rest. Previously these ran bare in one try/catch, so a
     // single failing init silently disabled every registration after it —
     // including the merchant socket + session auto-open, which left players
     // unable to receive a pushed shop session.
-    const safeInit = (label, fn) => {
-      try {
-        fn();
-      } catch (error) {
-        console.error(`${MODULE_ID} | ${label} init failed`, error);
-      }
-    };
-    safeInit("sound socket", registerSoundSocket);
-    safeInit("sound automation", registerSoundAutomation);
-    safeInit("merchant socket", registerMerchantSocket);
-    safeInit("merchant session auto-open", registerMerchantSessionAutoOpen);
+    safeInitializeSubsystem("sound socket", registerSoundSocket);
+    safeInitializeSubsystem("sound automation", registerSoundAutomation);
+    if (privateStateAvailable) {
+      registerPrivateDependentServices();
+    }
+    safeInitializeSubsystem(
+      "merchant session auto-open",
+      registerMerchantSessionAutoOpen,
+    );
     // Quartermaster / party-resource feature.
-    safeInit("resource socket", registerResourceSocket);
-    safeInit("forage prompt auto-open", registerForagePromptAutoOpen);
-    safeInit("resource calendar watcher", registerResourceCalendarWatcher);
-    // Faction reputation reveals (player view refresh over the socket).
-    safeInit("reputation socket", registerReputationSocket);
+    safeInitializeSubsystem("resource socket", registerResourceSocket);
+    safeInitializeSubsystem(
+      "player supplies control refresh",
+      registerPlayerSuppliesControlRefresh,
+    );
+    safeInitializeSubsystem(
+      "forage prompt auto-open",
+      registerForagePromptAutoOpen,
+    );
+    if (!privateStateAvailable && isFullGM()) {
+      globalThis.ui?.notifications?.error?.(
+        `${MODULE_ID}: private data could not be loaded yet. Merchant, resource automation, and reputation services will retry automatically.`,
+      );
+      schedulePrivateStateRecovery();
+    } else if (
+      privateStateAvailable &&
+      isSharedAuthoritativeGM() &&
+      !isResourceAutomationReady()
+    ) {
+      globalThis.ui?.notifications?.error?.(
+        `${MODULE_ID}: resource migration is not ready yet. Automatic upkeep will stay locked while this client retries safely.`,
+      );
+      schedulePrivateStateRecovery();
+    }
     // NOTE: merchant sessions deliberately SURVIVE a player disconnect now, so a
     // reload/relog can resume the pushed buy/sell window (the player re-requests
     // it on ready — see registerMerchantSessionAutoOpen). Previously we GC'd a
@@ -445,7 +637,9 @@ Hooks.once("ready", async () => {
       console.warn(`${MODULE_ID} | Monk's TokenBar compat failed`, error);
     });
     void preloadModuleSounds();
+    readyBootComplete = true;
   } catch (error) {
+    readyBootComplete = true;
     console.error(`${MODULE_ID} | ready hook failed`, error);
   }
 });
@@ -466,7 +660,7 @@ Hooks.once("ready", async () => {
  */
 Hooks.on("getSceneControlButtons", (controls) => {
   try {
-    if (game.user?.isGM) registerGmSceneControls(controls);
+    if (isFullGM()) registerGmSceneControls(controls);
     else registerPlayerSceneControls(controls);
   } catch (error) {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
@@ -584,9 +778,9 @@ function registerGmSceneControls(controls) {
 }
 
 /**
- * Player launcher: a dedicated "Shops" category that opens the ShopPickerApp.
- * This is a SEPARATE registration from the GM block above — it never reuses the
- * GM dashboard. Handles both the V12 Array and V13+ Record control shapes.
+ * Player launchers: Shops, Reputation, and (when the GM shares it) Party
+ * Supplies. These are separate from the GM dashboard and handle both the V12
+ * Array and V13+ Record control shapes.
  */
 function registerPlayerSceneControls(controls) {
   const shopsToolName = "infinity-dnd5e-shops-tool";
@@ -643,6 +837,35 @@ function registerPlayerSceneControls(controls) {
     tools,
   });
 
+  // Party Supplies is omitted entirely when the GM disables player sharing.
+  const suppliesEnabled =
+    getSetting(SETTING_KEYS.RESOURCE_PLAYER_VIEW) !== false;
+  const suppliesToolName = "infinity-dnd5e-supplies-tool";
+  const suppliesCategory = "infinity-dnd5e-supplies";
+  const suppliesBaseTool = {
+    name: suppliesToolName,
+    title: "Party Supplies",
+    icon: "fa-solid fa-boxes-stacked",
+    button: true,
+    visible: true,
+    toggle: false,
+    order: 0,
+    onClick: () => ResourceOverviewApp.open(),
+    onChange: () => ResourceOverviewApp.open(),
+  };
+  const suppliesCategoryEntry = (tools) => ({
+    name: suppliesCategory,
+    title: "Party Supplies",
+    icon: "fa-solid fa-boxes-stacked",
+    visible: true,
+    activeTool: suppliesToolName,
+    order: 97,
+    onChange: (_event, active) => {
+      if (active) ResourceOverviewApp.open();
+    },
+    tools,
+  });
+
   if (Array.isArray(controls)) {
     // Idempotent guard for a re-fired hook (Array push isn't self-deduping).
     if (!controls.some((c) => c?.name === category)) {
@@ -651,11 +874,29 @@ function registerPlayerSceneControls(controls) {
     if (!controls.some((c) => c?.name === repCategory)) {
       controls.push(repCategoryEntry([{ ...repBaseTool }]));
     }
+    if (
+      suppliesEnabled &&
+      !controls.some((c) => c?.name === suppliesCategory)
+    ) {
+      controls.push(suppliesCategoryEntry([{ ...suppliesBaseTool }]));
+    } else if (!suppliesEnabled) {
+      const existingIndex = controls.findIndex(
+        (control) => control?.name === suppliesCategory,
+      );
+      if (existingIndex >= 0) controls.splice(existingIndex, 1);
+    }
   } else if (controls && typeof controls === "object") {
     controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
     controls[repCategory] = repCategoryEntry({
       [repToolName]: { ...repBaseTool },
     });
+    if (suppliesEnabled) {
+      controls[suppliesCategory] = suppliesCategoryEntry({
+        [suppliesToolName]: { ...suppliesBaseTool },
+      });
+    } else {
+      delete controls[suppliesCategory];
+    }
   } else {
     console.warn(
       `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
@@ -663,8 +904,28 @@ function registerPlayerSceneControls(controls) {
     return;
   }
   console.log(
-    `${MODULE_ID} | registered player Shops + Reputation scene controls`,
+    `${MODULE_ID} | registered player Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""} scene controls`,
   );
+}
+
+function registerPlayerSuppliesControlRefresh() {
+  if (typeof globalThis.Hooks?.on !== "function") return;
+  Hooks.on("updateSetting", (setting) => {
+    const rawKey = String(setting?.key ?? "");
+    const isPlayerViewSetting =
+      rawKey === `${MODULE_ID}.${SETTING_KEYS.RESOURCE_PLAYER_VIEW}` ||
+      (String(setting?.namespace ?? "") === MODULE_ID &&
+        rawKey === SETTING_KEYS.RESOURCE_PLAYER_VIEW);
+    if (!isPlayerViewSetting) return;
+    try {
+      globalThis.ui?.controls?.render?.({ force: true });
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | could not refresh Party Supplies scene control`,
+        error,
+      );
+    }
+  });
 }
 
 function nextToolOrder(tools) {

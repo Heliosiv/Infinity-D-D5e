@@ -89,11 +89,46 @@ export function combineYields(perForager, mode = "each") {
 }
 
 /**
+ * Build the GM-to-player acknowledgement for one resolved forage attempt.
+ *
+ * Keeping this projection pure makes the player-visible result explicit and
+ * prevents "best haul" losers from being flattened into an ordinary +0 result.
+ *
+ * @param {object} args
+ * @param {string} args.runId
+ * @param {string} args.actorId
+ * @param {object} args.entry
+ * @param {string} args.targetUserId
+ * @param {boolean} [args.noResponse=false]
+ * @returns {{runId:string,actorId:string,food:number,water:number,success:boolean,
+ *            suppressed:boolean,noResponse:boolean,targetUserId:string}}
+ */
+export function buildForageAcknowledgement({
+  runId,
+  actorId,
+  entry = {},
+  targetUserId,
+  noResponse = false,
+} = {}) {
+  return {
+    runId: String(runId ?? ""),
+    actorId: String(actorId ?? ""),
+    food: Math.max(0, Math.floor(Number(entry?.food) || 0)),
+    water: Math.max(0, Math.floor(Number(entry?.water) || 0)),
+    success: entry?.success === true,
+    suppressed: entry?.suppressed === true,
+    noResponse: noResponse === true,
+    targetUserId: String(targetUserId ?? ""),
+  };
+}
+
+/**
  * Plan a forage drive's deposits (pure). Given the curated roster, the GM's
  * selection, and the foragers' resolved yields, decide where each haul lands:
- *   - a single shared stash (the configured party stash, else the first roster
- *     entry flagged `isStash`) receives the whole party's food & water, OR
- *   - with no stash, each successful forager's haul goes to their own draw source.
+ *   - the explicitly configured party stash receives the whole party's food
+ *     and water, OR
+ *   - with no party stash, each successful forager's haul goes to that
+ *     member's own resolved draw source.
  * Failed/offline foragers contribute nothing; water is zeroed when the global
  * water toggle is off. Returns the report rows plus the merged deposit list.
  *
@@ -123,17 +158,11 @@ export function planForageDriveDeposits({
   );
   const wantWater = waterEnabled !== false;
 
-  // Resolve the single shared stash: configured party stash → first flagged
-  // stash → none (each forager keeps their own haul).
+  // A flagged stash is only an available per-member source. It becomes the one
+  // communal forage destination only when selected as partyStashId.
   const configured = String(partyStashId ?? "").trim();
-  let stashActorId =
+  const stashActorId =
     configured && rosterById.has(configured) ? configured : null;
-  if (!stashActorId) {
-    const flagged = (Array.isArray(roster) ? roster : []).find(
-      (r) => r.isStash,
-    );
-    stashActorId = flagged ? String(flagged.actorId) : null;
-  }
 
   const perForager = [];
   let totalFood = 0;

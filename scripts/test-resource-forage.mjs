@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 
 import {
+  buildForageAcknowledgement,
   computeForageYield,
   combineYields,
   planForageDriveDeposits,
 } from "./resource/forage.js";
+import {
+  owningOnlineUserId,
+  resolveExpectedForageActorId,
+  validateForageResultPayload,
+} from "./resource/calendar-watcher.js";
+import { RESOURCE_EVENTS } from "./resource/socket.js";
 
 const ABUNDANT = {
   id: "abundant",
@@ -151,6 +158,34 @@ const TOWN = {
 }
 
 /* ------------------------------------------------------------------ *
+ * buildForageAcknowledgement — player result preserves "best" suppression
+ * ------------------------------------------------------------------ */
+{
+  const acknowledgement = buildForageAcknowledgement({
+    runId: "qm-test",
+    actorId: "A",
+    targetUserId: "player-1",
+    noResponse: true,
+    entry: {
+      food: 0,
+      water: 0,
+      success: true,
+      suppressed: true,
+    },
+  });
+  assert.deepEqual(acknowledgement, {
+    runId: "qm-test",
+    actorId: "A",
+    food: 0,
+    water: 0,
+    success: true,
+    suppressed: true,
+    noResponse: true,
+    targetUserId: "player-1",
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * planForageDriveDeposits — GM forage drive deposit targeting
  * ------------------------------------------------------------------ */
 {
@@ -180,7 +215,9 @@ const TOWN = {
     assert.ok(plan.perForager.every((f) => f.attempted && f.success));
   }
 
-  /* No configured stash → falls back to the first roster entry flagged isStash. */
+  /* No configured party stash → keep each forager's resolved draw source.
+     Merely flagging an inventory actor as a per-member stash must not turn it
+     into the forage drive's global destination. */
   {
     const plan = planForageDriveDeposits({
       roster,
@@ -188,8 +225,61 @@ const TOWN = {
       foraged,
       partyStashId: "",
     });
-    assert.equal(plan.stashActorId, "S", "first isStash member is the sink");
-    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 4 }]);
+    assert.equal(plan.stashActorId, null);
+    assert.deepEqual(
+      plan.deposits,
+      [{ actorId: "A", food: 6, water: 4 }],
+      "A keeps its haul and B deposits into its nominated source A",
+    );
+  }
+
+  /* Distinct per-member stashes remain distinct during a forage-only drive. */
+  {
+    const perMemberStashes = [
+      {
+        actorId: "A",
+        name: "Aria",
+        consumes: true,
+        isStash: false,
+        drawFromId: "S1",
+      },
+      {
+        actorId: "B",
+        name: "Brom",
+        consumes: true,
+        isStash: false,
+        drawFromId: "S2",
+      },
+      {
+        actorId: "S1",
+        name: "Cart",
+        consumes: false,
+        isStash: true,
+        drawFromId: "S1",
+      },
+      {
+        actorId: "S2",
+        name: "Mule",
+        consumes: false,
+        isStash: true,
+        drawFromId: "S2",
+      },
+    ];
+    const plan = planForageDriveDeposits({
+      roster: perMemberStashes,
+      selectedIds: ["A", "B"],
+      foraged,
+      partyStashId: "",
+    });
+    assert.equal(
+      plan.stashActorId,
+      null,
+      "only an explicit party stash creates one global sink",
+    );
+    assert.deepEqual(plan.deposits, [
+      { actorId: "S1", food: 4, water: 3 },
+      { actorId: "S2", food: 2, water: 1 },
+    ]);
   }
 
   /* No stash anywhere → each forager's haul goes to their own draw source. */
@@ -272,6 +362,236 @@ const TOWN = {
     assert.equal(plan.totalFood, 0, "untracked selection contributes nothing");
     assert.equal(plan.perForager.length, 1, "only the tracked selection rows");
     assert.equal(plan.perForager[0].actorId, "A");
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Socket responses stay bound to the user/actor pair originally prompted.
+ * ------------------------------------------------------------------ */
+{
+  const run = {
+    expected: new Set(["actor-a", "actor-b", "actor-c"]),
+    expectedByUser: new Map([
+      ["player-a", ["actor-a"]],
+      ["player-b", ["actor-b", "actor-c"]],
+    ]),
+    results: new Map([["actor-c", { rollTotal: 12 }]]),
+  };
+  assert.equal(
+    resolveExpectedForageActorId(run, {
+      originUserId: "player-a",
+      actorId: "actor-b",
+    }),
+    null,
+    "a mismatched actor claim is rejected even with one pending prompt",
+  );
+  assert.equal(
+    resolveExpectedForageActorId(run, {
+      originUserId: "player-b",
+      actorId: "actor-b",
+    }),
+    "actor-b",
+  );
+  assert.equal(
+    resolveExpectedForageActorId(run, {
+      originUserId: "player-b",
+      actorId: "actor-c",
+    }),
+    null,
+    "a duplicate result cannot overwrite an already accepted actor",
+  );
+  assert.equal(
+    resolveExpectedForageActorId(run, {
+      originUserId: "unprompted-owner",
+      actorId: "actor-a",
+    }),
+    null,
+    "shared ownership is insufficient without an issued prompt",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Forage prompts use assigned characters or direct player ownership only.
+ * ------------------------------------------------------------------ */
+{
+  const savedGame = globalThis.game;
+  const savedConst = globalThis.CONST;
+  try {
+    globalThis.CONST = {
+      ...(savedConst ?? {}),
+      DOCUMENT_OWNERSHIP_LEVELS: {
+        ...(savedConst?.DOCUMENT_OWNERSHIP_LEVELS ?? {}),
+        OWNER: 3,
+      },
+    };
+    const drivingGm = {
+      id: "gm-driving",
+      isGM: true,
+      active: true,
+      character: { id: "actor-driving" },
+    };
+    const assistant = {
+      id: "assistant-a",
+      isGM: true,
+      active: true,
+      character: { id: "actor-assigned" },
+    };
+    const player = {
+      id: "player-a",
+      isGM: false,
+      active: true,
+      character: null,
+    };
+    globalThis.game = {
+      user: drivingGm,
+      users: [drivingGm, assistant, player],
+    };
+
+    assert.equal(
+      owningOnlineUserId({
+        id: "actor-assigned",
+        ownership: {},
+        testUserPermission: () => true,
+      }),
+      "assistant-a",
+      "an Assistant GM may forage as their explicitly assigned character",
+    );
+    assert.equal(
+      owningOnlineUserId({
+        id: "actor-player-owned",
+        ownership: { "player-a": 3 },
+        testUserPermission: () => true,
+      }),
+      "player-a",
+      "a regular user's direct OWNER grant is eligible",
+    );
+    assert.equal(
+      owningOnlineUserId({
+        id: "actor-default-owned",
+        ownership: { default: 3 },
+      }),
+      "player-a",
+      "a regular user may inherit a direct default OWNER grant",
+    );
+    assert.equal(
+      owningOnlineUserId({
+        id: "actor-unassigned",
+        ownership: {},
+        testUserPermission: () => true,
+      }),
+      null,
+      "an unassigned Assistant GM is not selected through role bypass",
+    );
+    assert.equal(
+      owningOnlineUserId({
+        id: "actor-driving",
+        ownership: { "gm-driving": 3 },
+      }),
+      null,
+      "the local GM driving the upkeep never receives a forage prompt",
+    );
+  } finally {
+    if (savedGame === undefined) delete globalThis.game;
+    else globalThis.game = savedGame;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
+  }
+}
+
+/* A direct handler invocation still receives strict socket-shape validation. */
+{
+  const valid = {
+    type: RESOURCE_EVENTS.FORAGE_RESULT,
+    originUserId: "player-a",
+    runId: "run-a",
+    actorId: "actor-a",
+    skipped: false,
+    rollTotal: 18,
+  };
+  assert.equal(validateForageResultPayload(valid).ok, true);
+  assert.equal(
+    validateForageResultPayload({ ...valid, rollTotal: Number.NaN }).ok,
+    false,
+  );
+  assert.equal(
+    validateForageResultPayload({ ...valid, rollTotal: 1000 }).ok,
+    false,
+  );
+}
+
+/* The player prompt mirrors the same direct-ownership rule for legacy prompts. */
+{
+  const savedFoundry = globalThis.foundry;
+  const savedGame = globalThis.game;
+  const savedConst = globalThis.CONST;
+  try {
+    globalThis.foundry = {
+      applications: {
+        api: {
+          ApplicationV2: class {},
+          HandlebarsApplicationMixin: (Base) => class extends Base {},
+        },
+      },
+    };
+    globalThis.CONST = {
+      ...(savedConst ?? {}),
+      DOCUMENT_OWNERSHIP_LEVELS: {
+        ...(savedConst?.DOCUMENT_OWNERSHIP_LEVELS ?? {}),
+        OWNER: 3,
+      },
+    };
+    const owned = {
+      id: "actor-owned",
+      type: "character",
+      ownership: { "player-a": 3 },
+      testUserPermission: () => true,
+    };
+    const actors = [owned];
+    actors.get = (id) => actors.find((actor) => actor.id === id) ?? null;
+    const { resolvePlayerActor } = await import("./forage-prompt.js");
+
+    globalThis.game = {
+      user: {
+        id: "assistant-a",
+        isGM: true,
+        character: null,
+      },
+      actors,
+    };
+    assert.equal(
+      resolvePlayerActor(),
+      null,
+      "an unassigned Assistant cannot inherit a character through GM access",
+    );
+
+    globalThis.game.user = {
+      id: "assistant-a",
+      isGM: true,
+      character: owned,
+    };
+    assert.equal(
+      resolvePlayerActor(),
+      owned,
+      "an Assistant's explicitly assigned character remains valid",
+    );
+
+    globalThis.game.user = {
+      id: "player-a",
+      isGM: false,
+      character: null,
+    };
+    assert.equal(
+      resolvePlayerActor(),
+      owned,
+      "a regular player resolves an actor through direct OWNER state",
+    );
+  } finally {
+    if (savedFoundry === undefined) delete globalThis.foundry;
+    else globalThis.foundry = savedFoundry;
+    if (savedGame === undefined) delete globalThis.game;
+    else globalThis.game = savedGame;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
   }
 }
 

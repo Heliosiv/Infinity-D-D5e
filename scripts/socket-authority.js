@@ -6,6 +6,8 @@
  * be used as the authority boundary when that authenticated id is available.
  */
 
+import { isFullGM } from "./permissions.js";
+
 function toId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -21,23 +23,23 @@ function activeUsers(game = globalThis.game) {
 /** Return the deterministic authoritative GM id for the current world. */
 export function authoritativeGMId(game = globalThis.game) {
   const active = game?.users?.activeGM;
-  if (active?.id) return active.id;
+  if (active?.id && isFullGM(active)) return active.id;
 
   const ids = activeUsers(game)
-    .filter((user) => user?.isGM)
+    .filter((user) => isFullGM(user))
     .map((user) => toId(user.id))
     .filter(Boolean)
     .sort();
   if (ids.length > 0) return ids[0];
 
-  return game?.user?.isGM ? toId(game.user.id) : null;
+  return isFullGM(game?.user) ? toId(game.user.id) : null;
 }
 
 /** Whether the current client is the one authoritative GM. */
 export function isAuthoritativeGM(game = globalThis.game) {
   const currentId = toId(game?.user?.id);
   return Boolean(
-    game?.user?.isGM && currentId && authoritativeGMId(game) === currentId,
+    isFullGM(game?.user) && currentId && authoritativeGMId(game) === currentId,
   );
 }
 

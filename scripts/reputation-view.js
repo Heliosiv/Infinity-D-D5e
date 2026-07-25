@@ -23,6 +23,8 @@ import { wireBackgroundImageFallback } from "./loot/loot-app-shared.js";
 import { prettyStanding } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { openSingleton } from "./infinity-app.js";
+import { isFullGM } from "./permissions.js";
+import { authoritativeGMId } from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/reputation-view.hbs`;
@@ -105,18 +107,18 @@ export class ReputationViewApp extends HandlebarsApplicationMixin(
     ReputationViewApp._instance = null;
   }
 
-  get _isGM() {
-    return Boolean(globalThis.game?.user?.isGM);
+  get _isFullGM() {
+    return isFullGM();
   }
 
   /** Whether a GM is connected to answer a player's request. */
   get _hasActiveGM() {
-    return Boolean(globalThis.game?.users?.activeGM);
+    return Boolean(authoritativeGMId());
   }
 
   /** Load the revealed list — locally for a GM preview, else ask the GM. */
   _loadList() {
-    if (this._isGM) {
+    if (this._isFullGM) {
       this._clearRequestTimer();
       this._factions = listRevealedForPlayers();
       this._loading = false;
@@ -184,7 +186,7 @@ export class ReputationViewApp extends HandlebarsApplicationMixin(
   }
 
   async _prepareContext() {
-    const noGm = !this._isGM && !this._hasActiveGM;
+    const noGm = !this._isFullGM && !this._hasActiveGM;
     const factions = this._factions.map((f) => ({
       id: f.id,
       name: f.name,
@@ -196,7 +198,7 @@ export class ReputationViewApp extends HandlebarsApplicationMixin(
       playerNote: f.playerNote || "",
     }));
     return {
-      isGmPreview: this._isGM,
+      isGmPreview: this._isFullGM,
       noGm,
       loading: this._loading && !noGm,
       requestFailed: this._requestFailed && !noGm,

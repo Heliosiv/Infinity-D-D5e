@@ -66,7 +66,12 @@ try {
       ["A", "B", "C"],
     );
     assert.ok(
-      roster.every((r) => r.drawFromId === r.actor.id && r.isStash === false),
+      roster.every(
+        (r) =>
+          r.drawFromId === r.actor.id &&
+          r.isStash === false &&
+          r.consumes === true,
+      ),
       "auto roster draws from self, no stashes",
     );
     // discoverPartyActors (no arg) goes through loadResourceConfig → same set.
@@ -271,9 +276,14 @@ try {
       "a curated NPC entry resolves (any actor can be tracked)",
     );
     assert.equal(roster.find((r) => r.actor.id === "N").drawFromId, "N");
+    assert.equal(
+      roster.find((r) => r.actor.id === "N").consumes,
+      false,
+      "a legacy NPC row defaults to an inventory-only source",
+    );
   }
 
-  /* A non-PC actor can be the single party food/water stash */
+  /* A non-PC actor can be a dedicated party stash without consuming. */
   {
     globalThis.game = mockGame([A, NPC]);
     const roster = getPartyRoster(
@@ -287,6 +297,27 @@ try {
       "an NPC can serve as the party stash everyone draws from",
     );
     assert.equal(roster.find((r) => r.actor.id === "N").isStash, true);
+    assert.equal(
+      roster.find((r) => r.actor.id === "N").consumes,
+      false,
+      "the dedicated stash does not add another daily ration",
+    );
+    assert.equal(roster.find((r) => r.actor.id === "A").consumes, true);
+  }
+
+  /* The GM may explicitly make an NPC a consuming party member. */
+  {
+    globalThis.game = mockGame([A, NPC]);
+    const roster = getPartyRoster(
+      normalizeResourceConfig({
+        roster: [{ actorId: "A" }, { actorId: "N", consumes: true }],
+      }),
+    );
+    assert.equal(
+      roster.find((r) => r.actor.id === "N").consumes,
+      true,
+      "an explicit consumer override wins over actor-type inference",
+    );
   }
 
   /* No game world → empty, no throw */

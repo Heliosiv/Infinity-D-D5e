@@ -4,7 +4,7 @@ Loot, commerce, party-resource, and reputation tools for D&D 5e on Foundry VTT.
 
 ## What This Module Is
 
-A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches six dedicated tools, while players receive permission-scoped shops, reputation, and forage workflows.
+A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches six dedicated tools, while players receive permission-scoped shops, reputation, party-supplies, and forage workflows.
 
 Three ways to open the dashboard:
 
@@ -14,7 +14,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.60 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, and hardened multi-client sockets.
+**v0.2.60 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, and transport-authenticated socket authorization. Installed-world multi-client acceptance is still pending.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
@@ -22,9 +22,9 @@ Three ways to open the dashboard:
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
 - Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions.
-- **Quartermaster**: party food, water, and light tracking with calendar-aware daily consumption and player forage prompts.
+- **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
-- **Player launchers**: `Shift + O` opens available shops and `Shift + R` opens revealed faction reputation.
+- **Player launchers**: `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, and `Shift + R` opens revealed faction reputation.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
 
@@ -53,6 +53,22 @@ Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts
 Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
+
+### Party resources
+
+GMs configure resources, the tracked roster, draw sources, a shared stash,
+environment, and automation in **Quartermaster**. Players can open **Party
+Supplies** from scene controls or `Shift + Q`; the active GM sends a sanitized
+snapshot without item-matching rules or raw actor inventory details.
+
+Roster actors can be marked as daily consumers or inventory-only sources, so a
+mule or NPC stash does not consume an extra ration. Quartermaster also warns
+about overlapping resource matchers and blocks unsafe inventory writes when a
+live item is claimed by more than one resource.
+
+The complete current-state map, data ownership rules, automation contract,
+test matrix, and phased hardening plan live in
+[docs/RESOURCE_SYSTEM.md](docs/RESOURCE_SYSTEM.md).
 
 ### Custom Item Art
 

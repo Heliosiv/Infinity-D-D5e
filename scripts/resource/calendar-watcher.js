@@ -26,12 +26,15 @@ import {
 } from "./store.js";
 import { findEnvironment, isForageable } from "./environment.js";
 import {
+  buildForageAcknowledgement,
   computeForageYield,
   combineYields,
   planForageDriveDeposits,
 } from "./forage.js";
 import { getWisMod } from "./roll.js";
 import {
+  diagnoseResourceConfiguration,
+  diagnoseResourceItemOverlaps,
   matchResourceItems,
   planConsumption,
   planDeposit,
@@ -42,9 +45,11 @@ import {
   emitResourceEvent,
   subscribe,
   isAuthoritativeGM,
+  validateResourcePayloadShape,
 } from "./socket.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { escapeHtml, prettyEnvironment, prettyResource } from "../ui-util.js";
+import { isFullGM } from "../permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -157,8 +162,15 @@ async function onTimeMaybeChanged(reason) {
     const days = clampElapsedForUpkeep(elapsed, config.maxCatchUpDays);
     upkeepInFlight = true;
     try {
-      await runDailyUpkeep({ elapsedDays: days, config });
-      await setLastSeenDay(current);
+      const result = await runDailyUpkeep({
+        elapsedDays: days,
+        config,
+        day: current,
+      });
+      // A conflict is recoverable configuration work, not a completed upkeep
+      // day. Keep the previous baseline so fixing the conflict can safely retry
+      // the missed day instead of silently skipping it.
+      if (!result?.blocked) await setLastSeenDay(current);
     } finally {
       upkeepInFlight = false;
     }
@@ -182,7 +194,11 @@ export async function advanceDayNow() {
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
-    return await runDailyUpkeep({ elapsedDays: 1, manual: true });
+    return await runDailyUpkeep({
+      elapsedDays: 1,
+      manual: true,
+      day: currentAbsoluteDay(),
+    });
   } finally {
     upkeepInFlight = false;
   }
@@ -206,25 +222,26 @@ export function describeForageDrive(config = null) {
   return {
     defaultDc: Number.isFinite(dc) && dc > 0 ? dc : 15,
     stashName: resolveDriveStashActor(cfg, roster)?.name ?? null,
-    candidates: roster.map(({ actor }) => ({
-      actorId: actor.id,
-      name: actor.name,
-      online: Boolean(owningOnlineUserId(actor)),
-    })),
+    candidates: roster
+      .filter((member) => member.consumes)
+      .map(({ actor }) => ({
+        actorId: actor.id,
+        name: actor.name,
+        online: Boolean(owningOnlineUserId(actor)),
+      })),
   };
 }
 
 /**
- * The single actor a forage drive deposits the whole haul onto: the configured
- * party food/water stash, else the first roster member flagged as a stash, else
- * null (meaning "no shared pile — give each forager their own haul"). Mirrors the
- * draw-source model the daily upkeep already uses.
+ * The single actor a forage drive deposits the whole haul onto: the explicitly
+ * configured party stash. Merely flagging an actor as an available per-member
+ * stash must not collapse several independent draw sources into one pile.
  */
 function resolveDriveStashActor(cfg, roster) {
   const byId = new Map(roster.map((r) => [r.actor.id, r.actor]));
   const partyStashId = String(cfg.partyStashId ?? "").trim();
   if (partyStashId && byId.has(partyStashId)) return byId.get(partyStashId);
-  return roster.find((r) => r.isStash)?.actor ?? null;
+  return null;
 }
 
 /**
@@ -254,9 +271,15 @@ export async function runForageDrive({ dc, targetActorIds } = {}) {
 }
 
 async function runForageDriveInner({ dc, targetActorIds }) {
-  const cfg = loadResourceConfig();
+  let cfg = loadResourceConfig();
   const state = loadRunState();
-  const roster = getPartyRoster(cfg);
+  let roster = getPartyRoster(cfg);
+  const operationFingerprint = resourceOperationFingerprint({
+    config: cfg,
+    state,
+    roster,
+    environmentId: resolveCurrentEnvironment(cfg, state)?.id ?? null,
+  });
 
   // The drive only forages tracked members; resolve the GM's selection to them.
   const wanted = new Set(
@@ -264,7 +287,9 @@ async function runForageDriveInner({ dc, targetActorIds }) {
       String(id),
     ),
   );
-  const selected = roster.filter((r) => wanted.has(r.actor.id));
+  let selected = roster.filter(
+    (member) => member.consumes && wanted.has(member.actor.id),
+  );
   if (selected.length === 0) {
     globalThis.ui?.notifications?.info(
       `${MODULE_ID}: no foragers selected for the drive.`,
@@ -288,11 +313,63 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     yieldWater: baseForageable ? baseEnv.yieldWater : "1d6",
   };
 
+  let actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  let driveStash = resolveDriveStashActor(cfg, roster);
+  let depositTargets = driveStash
+    ? [driveStash]
+    : selected.map(
+        (member) => actorById.get(member.drawFromId) ?? member.actor,
+      );
+  const conflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: depositTargets,
+    operation: "forage drive",
+  });
+  if (conflict) return conflict;
+
   const foragedByActor = await runForagingWindow({
     env: driveEnv,
     party,
     cfg,
   });
+
+  // Player rolls can leave this client waiting long enough for inventory,
+  // rules, the environment, or roster routing to change. Reload the canonical
+  // inputs and fail closed when the original roll no longer matches them.
+  const currentCfg = loadResourceConfig();
+  const currentState = loadRunState();
+  const currentRoster = getPartyRoster(currentCfg);
+  if (
+    resourceOperationFingerprint({
+      config: currentCfg,
+      state: currentState,
+      roster: currentRoster,
+      environmentId:
+        resolveCurrentEnvironment(currentCfg, currentState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("forage drive");
+  }
+  cfg = currentCfg;
+  roster = currentRoster;
+  selected = roster.filter(
+    (member) => member.consumes && wanted.has(member.actor.id),
+  );
+  actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  driveStash = resolveDriveStashActor(cfg, roster);
+  depositTargets = driveStash
+    ? [driveStash]
+    : selected.map(
+        (member) => actorById.get(member.drawFromId) ?? member.actor,
+      );
+
+  // Re-snapshot live inventory immediately before planning the first write.
+  const lateConflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: depositTargets,
+    operation: "forage drive",
+  });
+  if (lateConflict) return lateConflict;
 
   const foodRes = cfg.resources.find((r) => r.forageYields === "food");
   const waterRes = cfg.resources.find((r) => r.forageYields === "water");
@@ -307,6 +384,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
       actorId: r.actor.id,
       name: r.actor.name,
       isStash: r.isStash,
+      consumes: r.consumes,
       drawFromId: r.drawFromId,
     })),
     selectedIds: selected.map((r) => r.actor.id),
@@ -321,8 +399,111 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     waterEnabled: cfg.waterEnabled && Boolean(waterRes),
   });
 
+  const proposedDeposits = [];
+  for (const dep of plan.deposits) {
+    const sink = actorById.get(dep.actorId);
+    if (!sink) continue;
+    if (foodRes && dep.food > 0) {
+      proposedDeposits.push({
+        actor: sink,
+        resource: foodRes,
+        amount: dep.food,
+      });
+    }
+    if (waterRes && dep.water > 0) {
+      proposedDeposits.push({
+        actor: sink,
+        resource: waterRes,
+        amount: dep.water,
+      });
+    }
+  }
+  let proposedPreflight = await blockConflictedProposedResourceWrite({
+    resources: runtimeResourceDefinitions(cfg),
+    deposits: proposedDeposits,
+    operation: "forage drive",
+  });
+  if (proposedPreflight.blockedResult) {
+    return proposedPreflight.blockedResult;
+  }
+
+  // Template resolution is asynchronous. Revalidate the complete context after
+  // it settles, then rerun the proposal simulation against the latest inventory
+  // using only the already-approved templates.
+  const writeCfg = loadResourceConfig();
+  const writeState = loadRunState();
+  const writeRoster = getPartyRoster(writeCfg);
+  if (
+    resourceOperationFingerprint({
+      config: writeCfg,
+      state: writeState,
+      roster: writeRoster,
+      environmentId:
+        resolveCurrentEnvironment(writeCfg, writeState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("forage drive");
+  }
+  cfg = writeCfg;
+  roster = writeRoster;
+  selected = roster.filter(
+    (member) => member.consumes && wanted.has(member.actor.id),
+  );
+  actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  driveStash = resolveDriveStashActor(cfg, roster);
+  depositTargets = driveStash
+    ? [driveStash]
+    : selected.map(
+        (member) => actorById.get(member.drawFromId) ?? member.actor,
+      );
+  const reboundDeposits = rebindProposedResourceDeposits(
+    proposedDeposits,
+    actorById,
+    cfg.resources,
+  );
+  proposedPreflight = await blockConflictedProposedResourceWrite({
+    resources: runtimeResourceDefinitions(cfg),
+    deposits: reboundDeposits,
+    operation: "forage drive",
+    templatesByResourceId: proposedPreflight.templatesByResourceId,
+  });
+  if (proposedPreflight.blockedResult) {
+    return proposedPreflight.blockedResult;
+  }
+  const finalCfg = loadResourceConfig();
+  const finalState = loadRunState();
+  const finalRoster = getPartyRoster(finalCfg);
+  if (
+    resourceOperationFingerprint({
+      config: finalCfg,
+      state: finalState,
+      roster: finalRoster,
+      environmentId:
+        resolveCurrentEnvironment(finalCfg, finalState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("forage drive");
+  }
+  cfg = finalCfg;
+  roster = finalRoster;
+  selected = roster.filter(
+    (member) => member.consumes && wanted.has(member.actor.id),
+  );
+  actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
+  driveStash = resolveDriveStashActor(cfg, roster);
+  depositTargets = driveStash
+    ? [driveStash]
+    : selected.map(
+        (member) => actorById.get(member.drawFromId) ?? member.actor,
+      );
+  const finalConflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: depositTargets,
+    operation: "forage drive",
+  });
+  if (finalConflict) return finalConflict;
+
   // Apply the planned deposits against the real actors.
-  const actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
   let landedFood = 0;
   let landedWater = 0;
   const depositErrors = [];
@@ -330,13 +511,17 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     const sink = actorById.get(dep.actorId);
     if (!sink) continue;
     if (foodRes && dep.food > 0) {
-      const applied = await depositResource(sink, foodRes, dep.food);
+      const applied = await depositResource(sink, foodRes, dep.food, {
+        templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
+      });
       landedFood += applied;
       if (applied < dep.food)
         depositErrors.push(`${sink.name}: food deposit failed`);
     }
     if (waterRes && dep.water > 0) {
-      const applied = await depositResource(sink, waterRes, dep.water);
+      const applied = await depositResource(sink, waterRes, dep.water, {
+        templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
+      });
       landedWater += applied;
       if (applied < dep.water)
         depositErrors.push(`${sink.name}: water deposit failed`);
@@ -421,16 +606,375 @@ async function postForageDriveReport({
 }
 
 /* ------------------------------------------------------------------ *
+ * Resource write preflight
+ * ------------------------------------------------------------------ */
+
+/**
+ * Diagnose the resource definitions and concrete inventories that a pending
+ * operation may write. This stays callable in node-only tests and by the
+ * Quartermaster without mutating Foundry state.
+ *
+ * Water definitions are inactive when water tracking is disabled unless an
+ * explicit resource list is supplied. The explicit form lets callers preview
+ * the complete saved configuration, including rules that are currently off.
+ */
+export function diagnoseResourceWritePreflight({
+  config = {},
+  actors = [],
+  resources = null,
+} = {}) {
+  const configuredResources = Array.isArray(resources)
+    ? resources
+    : runtimeResourceDefinitions(config);
+  const actorList = Array.isArray(actors) ? actors : Array.from(actors ?? []);
+  const seenActorIds = new Set();
+  const inventories = [];
+
+  for (const [index, actor] of actorList.entries()) {
+    if (!actor || typeof actor !== "object") continue;
+    const actorId = String(actor.actorId ?? actor.id ?? "").trim();
+    if (actorId && seenActorIds.has(actorId)) continue;
+    if (actorId) seenActorIds.add(actorId);
+    inventories.push({
+      actorId: actorId || `actor-${index + 1}`,
+      actorName: String(actor.actorName ?? actor.name ?? actorId ?? "").trim(),
+      items: actorItemSnapshots(actor),
+    });
+  }
+
+  const configuration = diagnoseResourceConfiguration(configuredResources);
+  const inventory = diagnoseResourceItemOverlaps({
+    inventories,
+    resources: configuredResources,
+  });
+  const conflicts = [...configuration.conflicts, ...inventory.conflicts];
+  const blockingConflicts = conflicts.filter(
+    (entry) => entry.blocking === true,
+  );
+
+  return {
+    ok: conflicts.length === 0,
+    blocked: blockingConflicts.length > 0,
+    conflicts,
+    blockingConflicts,
+    warningConflicts: conflicts.filter((entry) => entry.blocking !== true),
+    configuration,
+    inventory,
+  };
+}
+
+function runtimeResourceDefinitions(config = {}) {
+  return (Array.isArray(config?.resources) ? config.resources : []).filter(
+    (resource) =>
+      config?.waterEnabled !== false ||
+      (resource?.id !== "water" && resource?.forageYields !== "water"),
+  );
+}
+
+/**
+ * Stable snapshot of the rules and resolved roster that determine one upkeep
+ * operation. Inventory is deliberately excluded because the late conflict
+ * preflight re-reads live Actor Items separately.
+ */
+export function resourceOperationFingerprint({
+  config = {},
+  state = {},
+  roster = [],
+  environmentId = null,
+} = {}) {
+  return JSON.stringify({
+    config: {
+      forageMode: config.forageMode,
+      halfRations: config.halfRations,
+      waterEnabled: config.waterEnabled,
+      maxCatchUpDays: config.maxCatchUpDays,
+      forageTimeoutSeconds: config.forageTimeoutSeconds,
+      resources: config.resources,
+      roster: config.roster,
+      partyStashId: config.partyStashId,
+      environments: config.environments,
+    },
+    currentEnvironmentId: environmentId ?? state.currentEnvironmentId ?? null,
+    roster: (Array.isArray(roster) ? roster : []).map((member) => ({
+      actorId: String(member?.actor?.id ?? member?.actorId ?? ""),
+      isStash: member?.isStash === true,
+      consumes: member?.consumes === true,
+      drawFromId: String(member?.drawFromId ?? ""),
+    })),
+  });
+}
+
+function blockChangedResourceContext(operation) {
+  const label = String(operation ?? "resource automation").trim();
+  globalThis.ui?.notifications?.warn?.(
+    `${MODULE_ID}: ${label} paused because the resource rules or roster changed while players were responding. Review Quartermaster and retry.`,
+  );
+  return {
+    blocked: true,
+    status: "blocked",
+    reason: "resource-context-changed",
+    operation: label,
+  };
+}
+
+/**
+ * Return a typed blocked result when the preflight is unsafe, else null.
+ * Callers return this result before any prompts, inventory writes, or run-state
+ * writes so the GM can repair the configuration and retry deterministically.
+ */
+function blockConflictedResourceWrite({ config, actors, operation }) {
+  const diagnostics = diagnoseResourceWritePreflight({ config, actors });
+  if (!diagnostics.blocked) return null;
+
+  const first = diagnostics.blockingConflicts[0];
+  const remaining = diagnostics.blockingConflicts.length - 1;
+  const more =
+    remaining > 0 ? ` ${remaining} more conflict(s) need review.` : "";
+  const label = String(operation ?? "resource automation").trim();
+  globalThis.ui?.notifications?.error?.(
+    `${MODULE_ID}: ${label} paused. ${first.message}${more} Open Quartermaster to fix the resource rules.`,
+  );
+  console.warn(
+    `${MODULE_ID} | ${label} blocked by resource conflicts`,
+    diagnostics,
+  );
+  return {
+    blocked: true,
+    status: "blocked",
+    reason: "resource-conflicts",
+    operation: label,
+    diagnostics,
+  };
+}
+
+/**
+ * Simulate the exact sequence of pending deposits against cloned inventory.
+ * Newly created stacks are stamped exactly as the live write path stamps them,
+ * so a template that would be claimed by another resource is caught before the
+ * first Actor Item is changed.
+ */
+export async function diagnoseProposedResourceDeposits({
+  resources = [],
+  deposits = [],
+  templatesByResourceId: approvedTemplates = null,
+} = {}) {
+  const resourceDefs = Array.isArray(resources) ? resources : [];
+  const resourceById = new Map(
+    resourceDefs.map((resource) => [String(resource?.id ?? ""), resource]),
+  );
+  const inventoriesById = new Map();
+  const templatesByResourceId =
+    approvedTemplates instanceof Map
+      ? new Map(approvedTemplates)
+      : new Map(
+          Object.entries(
+            approvedTemplates && typeof approvedTemplates === "object"
+              ? approvedTemplates
+              : {},
+          ),
+        );
+  const proposals = Array.isArray(deposits) ? deposits : [];
+  let syntheticId = 0;
+
+  // Approve one exact create template for every proposed resource up front,
+  // even when the current inventory suggests a bump. If that stack disappears
+  // before the write, depositResource must use this already-reviewed fallback.
+  for (const proposal of proposals) {
+    const resourceId = String(
+      proposal?.resource?.id ?? proposal?.resourceId ?? "",
+    ).trim();
+    const resource = proposal?.resource ?? resourceById.get(resourceId);
+    if (!resource || !resourceId || templatesByResourceId.has(resourceId)) {
+      continue;
+    }
+    templatesByResourceId.set(
+      resourceId,
+      await resolveResourceDepositTemplate(resource),
+    );
+  }
+
+  for (const proposal of proposals) {
+    const actor = proposal?.actor;
+    const actorId = String(actor?.id ?? proposal?.actorId ?? "").trim();
+    const resourceId = String(
+      proposal?.resource?.id ?? proposal?.resourceId ?? "",
+    ).trim();
+    const resource = proposal?.resource ?? resourceById.get(resourceId);
+    const amount = wholeAmount(proposal?.amount);
+    if (!actor || !actorId || !resource || amount <= 0) continue;
+
+    let inventory = inventoriesById.get(actorId);
+    if (!inventory) {
+      inventory = {
+        actorId,
+        actorName: String(actor.name ?? actorId),
+        items: actorItemSnapshots(actor)
+          .map((item) => cloneSnapshot(item))
+          .filter(Boolean),
+      };
+      inventoriesById.set(actorId, inventory);
+    }
+
+    const matches = matchResourceItems(inventory.items, resource);
+    const plan = planDeposit({
+      matches,
+      amount,
+      templateItem: templatesByResourceId.get(resourceId),
+    });
+
+    if (plan.op === "bump") {
+      const index = inventory.items.findIndex(
+        (item) => String(item?.id ?? item?._id ?? "") === String(plan.id),
+      );
+      if (index >= 0) {
+        const updated = cloneSnapshot(inventory.items[index]);
+        updated.system = updated.system ?? {};
+        updated.system.quantity = plan.to;
+        inventory.items[index] = updated;
+      }
+    } else if (plan.op === "create") {
+      const created = buildCreatedResourceSnapshot({
+        template: plan.from,
+        resourceDef: resource,
+        quantity: plan.quantity,
+      });
+      if (created) {
+        created._id = `proposed-resource-${++syntheticId}`;
+        inventory.items.push(created);
+      }
+    }
+  }
+
+  // Also validate the approved create fallback for every actor/resource pair.
+  // Candidate snapshots do not participate in the simulated bump sequence; they
+  // exist only to prove that a late bump-to-create switch remains unambiguous.
+  const candidateKeys = new Set();
+  for (const proposal of proposals) {
+    const actor = proposal?.actor;
+    const actorId = String(actor?.id ?? proposal?.actorId ?? "").trim();
+    const resourceId = String(
+      proposal?.resource?.id ?? proposal?.resourceId ?? "",
+    ).trim();
+    const resource = proposal?.resource ?? resourceById.get(resourceId);
+    const template = templatesByResourceId.get(resourceId);
+    const candidateKey = `${actorId}\u0000${resourceId}`;
+    if (
+      !actor ||
+      !actorId ||
+      !resource ||
+      !template ||
+      candidateKeys.has(candidateKey)
+    ) {
+      continue;
+    }
+    candidateKeys.add(candidateKey);
+    const inventory = inventoriesById.get(actorId);
+    if (!inventory) continue;
+    const candidate = buildCreatedResourceSnapshot({
+      template,
+      resourceDef: resource,
+      quantity: Math.max(1, wholeAmount(proposal?.amount)),
+    });
+    if (!candidate) continue;
+    candidate._id = `proposed-resource-fallback-${++syntheticId}`;
+    inventory.items.push(candidate);
+  }
+
+  const diagnostics = diagnoseResourceItemOverlaps({
+    inventories: [...inventoriesById.values()],
+    resources: resourceDefs,
+  });
+  return {
+    ...diagnostics,
+    blocked: diagnostics.blockingConflicts.length > 0,
+    templatesByResourceId,
+  };
+}
+
+async function blockConflictedProposedResourceWrite({
+  resources,
+  deposits,
+  operation,
+  templatesByResourceId = null,
+}) {
+  const diagnostics = await diagnoseProposedResourceDeposits({
+    resources,
+    deposits,
+    templatesByResourceId,
+  });
+  if (!diagnostics.blocked) {
+    return {
+      blockedResult: null,
+      templatesByResourceId: diagnostics.templatesByResourceId,
+    };
+  }
+
+  const first = diagnostics.blockingConflicts[0];
+  const remaining = diagnostics.blockingConflicts.length - 1;
+  const more =
+    remaining > 0 ? ` ${remaining} more conflict(s) need review.` : "";
+  const label = String(operation ?? "resource automation").trim();
+  globalThis.ui?.notifications?.error?.(
+    `${MODULE_ID}: ${label} paused before depositing supplies. ${first.message}${more} Open Quartermaster to fix the resource rules.`,
+  );
+  console.warn(
+    `${MODULE_ID} | ${label} blocked by proposed resource conflicts`,
+    diagnostics,
+  );
+  return {
+    blockedResult: {
+      blocked: true,
+      status: "blocked",
+      reason: "proposed-resource-conflicts",
+      operation: label,
+      diagnostics,
+    },
+    templatesByResourceId: diagnostics.templatesByResourceId,
+  };
+}
+
+function rebindProposedResourceDeposits(deposits, actorById, resources = []) {
+  const resourceById = new Map(
+    (Array.isArray(resources) ? resources : []).map((resource) => [
+      String(resource?.id ?? ""),
+      resource,
+    ]),
+  );
+  return (Array.isArray(deposits) ? deposits : [])
+    .map((proposal) => ({
+      actor: actorById.get(String(proposal?.actor?.id ?? "")),
+      resource: resourceById.get(String(proposal?.resource?.id ?? "")),
+      amount: wholeAmount(proposal?.amount),
+    }))
+    .filter(
+      (proposal) => proposal.actor && proposal.resource && proposal.amount > 0,
+    );
+}
+
+/* ------------------------------------------------------------------ *
  * The upkeep pipeline
  * ------------------------------------------------------------------ */
 
-async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
-  const cfg = config ?? loadResourceConfig();
+async function runDailyUpkeep({
+  elapsedDays = 1,
+  config = null,
+  day = null,
+  manual = false,
+} = {}) {
+  let cfg = config ?? loadResourceConfig();
   const days = Math.max(1, Math.floor(Number(elapsedDays) || 1));
   const state = loadRunState();
   const env = resolveCurrentEnvironment(cfg, state);
-  const roster = getPartyRoster(cfg);
-  const party = roster.map((r) => r.actor);
+  let roster = getPartyRoster(cfg);
+  const operationFingerprint = resourceOperationFingerprint({
+    config: cfg,
+    state,
+    roster,
+    environmentId: env?.id ?? null,
+  });
+  let consumers = roster.filter((member) => member.consumes);
+  let party = consumers.map((member) => member.actor);
+  let inventoryActors = roster.map((member) => member.actor);
 
   if (party.length === 0) {
     globalThis.ui?.notifications?.info(
@@ -440,10 +984,20 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
   }
 
   // Resolve each member's draw source actor once (own sheet, or a nominated stash).
-  const actorById = new Map(party.map((a) => [a.id, a]));
-  const sourceForMember = new Map(
-    roster.map((r) => [r.actor.id, actorById.get(r.drawFromId) ?? r.actor]),
+  let actorById = new Map(inventoryActors.map((actor) => [actor.id, actor]));
+  let sourceForMember = new Map(
+    consumers.map((member) => [
+      member.actor.id,
+      actorById.get(member.drawFromId) ?? member.actor,
+    ]),
   );
+
+  const conflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: inventoryActors,
+    operation: "daily upkeep",
+  });
+  if (conflict) return conflict;
 
   // 1) Foraging window (only when the environment allows it).
   let foragedByActor = new Map();
@@ -451,10 +1005,151 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     foragedByActor = await runForagingWindow({ env, party, cfg });
   }
 
+  // The foraging window may wait on remote players. Reload the canonical rules
+  // and resolved routing, then fail closed if the roll belongs to an outdated
+  // resource context.
+  const currentCfg = loadResourceConfig();
+  const currentState = loadRunState();
+  const currentRoster = getPartyRoster(currentCfg);
+  if (
+    resourceOperationFingerprint({
+      config: currentCfg,
+      state: currentState,
+      roster: currentRoster,
+      environmentId:
+        resolveCurrentEnvironment(currentCfg, currentState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("daily upkeep");
+  }
+  cfg = currentCfg;
+  roster = currentRoster;
+  consumers = roster.filter((member) => member.consumes);
+  party = consumers.map((member) => member.actor);
+  inventoryActors = roster.map((member) => member.actor);
+  actorById = new Map(inventoryActors.map((actor) => [actor.id, actor]));
+  sourceForMember = new Map(
+    consumers.map((member) => [
+      member.actor.id,
+      actorById.get(member.drawFromId) ?? member.actor,
+    ]),
+  );
+
+  // Re-snapshot inventory immediately before planning the first write.
+  const lateConflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: inventoryActors,
+    operation: "daily upkeep",
+  });
+  if (lateConflict) return lateConflict;
+
   // 2) Deposit foraged yield onto each forager's DRAW SOURCE — the same sheet
   //    they consume from — so foraging actually tops up the stash they rely on.
   const foodRes = cfg.resources.find((r) => r.forageYields === "food");
   const waterRes = cfg.resources.find((r) => r.forageYields === "water");
+  const proposedDeposits = [];
+  for (const actor of party) {
+    const yld = foragedByActor.get(actor.id);
+    if (!yld || !yld.success) continue;
+    const sink = sourceForMember.get(actor.id) ?? actor;
+    if (foodRes && yld.food > 0) {
+      proposedDeposits.push({
+        actor: sink,
+        resource: foodRes,
+        amount: yld.food,
+      });
+    }
+    if (waterRes && yld.water > 0 && cfg.waterEnabled) {
+      proposedDeposits.push({
+        actor: sink,
+        resource: waterRes,
+        amount: yld.water,
+      });
+    }
+  }
+  let proposedPreflight = await blockConflictedProposedResourceWrite({
+    resources: runtimeResourceDefinitions(cfg),
+    deposits: proposedDeposits,
+    operation: "daily upkeep",
+  });
+  if (proposedPreflight.blockedResult) {
+    return proposedPreflight.blockedResult;
+  }
+
+  const writeCfg = loadResourceConfig();
+  const writeState = loadRunState();
+  const writeRoster = getPartyRoster(writeCfg);
+  if (
+    resourceOperationFingerprint({
+      config: writeCfg,
+      state: writeState,
+      roster: writeRoster,
+      environmentId:
+        resolveCurrentEnvironment(writeCfg, writeState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("daily upkeep");
+  }
+  cfg = writeCfg;
+  roster = writeRoster;
+  consumers = roster.filter((member) => member.consumes);
+  party = consumers.map((member) => member.actor);
+  inventoryActors = roster.map((member) => member.actor);
+  actorById = new Map(inventoryActors.map((actor) => [actor.id, actor]));
+  sourceForMember = new Map(
+    consumers.map((member) => [
+      member.actor.id,
+      actorById.get(member.drawFromId) ?? member.actor,
+    ]),
+  );
+  const reboundDeposits = rebindProposedResourceDeposits(
+    proposedDeposits,
+    actorById,
+    cfg.resources,
+  );
+  proposedPreflight = await blockConflictedProposedResourceWrite({
+    resources: runtimeResourceDefinitions(cfg),
+    deposits: reboundDeposits,
+    operation: "daily upkeep",
+    templatesByResourceId: proposedPreflight.templatesByResourceId,
+  });
+  if (proposedPreflight.blockedResult) {
+    return proposedPreflight.blockedResult;
+  }
+
+  const finalCfg = loadResourceConfig();
+  const finalState = loadRunState();
+  const finalRoster = getPartyRoster(finalCfg);
+  if (
+    resourceOperationFingerprint({
+      config: finalCfg,
+      state: finalState,
+      roster: finalRoster,
+      environmentId:
+        resolveCurrentEnvironment(finalCfg, finalState)?.id ?? null,
+    }) !== operationFingerprint
+  ) {
+    return blockChangedResourceContext("daily upkeep");
+  }
+  cfg = finalCfg;
+  roster = finalRoster;
+  consumers = roster.filter((member) => member.consumes);
+  party = consumers.map((member) => member.actor);
+  inventoryActors = roster.map((member) => member.actor);
+  actorById = new Map(inventoryActors.map((actor) => [actor.id, actor]));
+  sourceForMember = new Map(
+    consumers.map((member) => [
+      member.actor.id,
+      actorById.get(member.drawFromId) ?? member.actor,
+    ]),
+  );
+  const finalConflict = blockConflictedResourceWrite({
+    config: cfg,
+    actors: inventoryActors,
+    operation: "daily upkeep",
+  });
+  if (finalConflict) return finalConflict;
+
   for (const actor of party) {
     const yld = foragedByActor.get(actor.id);
     if (!yld || !yld.success) continue;
@@ -463,19 +1158,29 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     yld.landedWater = 0;
     yld.depositErrors = [];
     if (foodRes && yld.food > 0) {
-      yld.landedFood = await depositResource(sink, foodRes, yld.food);
+      yld.landedFood = await depositResource(sink, foodRes, yld.food, {
+        templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
+      });
       if (yld.landedFood < yld.food)
         yld.depositErrors.push("food deposit failed");
     }
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
-      yld.landedWater = await depositResource(sink, waterRes, yld.water);
+      yld.landedWater = await depositResource(sink, waterRes, yld.water, {
+        templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
+      });
       if (yld.landedWater < yld.water)
         yld.depositErrors.push("water deposit failed");
     }
   }
 
   // 3) Consume the day's supplies across the roster.
-  const report = await applyConsumption({ roster, sourceForMember, cfg, days });
+  const report = await applyConsumption({
+    roster,
+    consumers,
+    sourceForMember,
+    cfg,
+    days,
+  });
 
   // Fold foraging into the per-actor report. `attempted` is true for actors who
   // were actually prompted (online owners), so the report can tell "foraged
@@ -488,6 +1193,7 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
           water: yld.landedWater ?? 0,
           success: yld.success,
           attempted: true,
+          suppressed: yld.suppressed === true,
           errors: yld.depositErrors ?? [],
         }
       : { food: 0, water: 0, success: false, attempted: false };
@@ -499,8 +1205,8 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     shortfalls: report.perActor.map((r) => ({
       actorId: r.actorId,
       name: r.name,
-      food: r.shortfalls.food ?? 0,
-      water: r.shortfalls.water ?? 0,
+      food: r.canonicalShortfalls?.food ?? r.shortfalls.food ?? 0,
+      water: r.canonicalShortfalls?.water ?? r.shortfalls.water ?? 0,
       light: report.party.light?.shortfall ?? 0,
     })),
     days,
@@ -511,15 +1217,23 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     report.perActor.some((row) => row.errors?.length > 0) ||
     Object.values(report.party ?? {}).some((entry) => Boolean(entry?.error));
   const result = {
-    day: state.lastSeenDay,
-    days,
+    ...buildUpkeepAuditMetadata({
+      day,
+      fallbackDay: state.lastSeenDay,
+      days,
+      manual,
+    }),
     environmentId: env?.id ?? null,
+    resourceSnapshot: cfg.resources.map((resource) => ({
+      id: String(resource.id ?? ""),
+      label: String(resource.label ?? resource.id ?? ""),
+      scope: resource.scope === "party" ? "party" : "per-character",
+    })),
     perActor: report.perActor,
     party: report.party,
     suggestions,
     status: hasErrors ? "partial" : "complete",
     hasErrors,
-    ranAt: null,
   };
   await setLastUpkeepResult(result);
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
@@ -527,7 +1241,7 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
     day: result.day,
     environmentId: result.environmentId,
   });
-  await postUpkeepReport({ env, result });
+  await postUpkeepReport({ env, result, resources: cfg.resources });
   if (hasErrors) {
     globalThis.ui?.notifications?.error(
       `${MODULE_ID}: upkeep completed with inventory write failures. Review the Quartermaster report before continuing.`,
@@ -535,6 +1249,33 @@ async function runDailyUpkeep({ elapsedDays = 1, config = null } = {}) {
   }
   if (suggestions.length > 0) await promptApplyExhaustion(suggestions);
   return result;
+}
+
+/**
+ * Build the stable audit envelope stored with every upkeep result.
+ *
+ * `null` is deliberately not coerced to day zero: a manual run without a
+ * readable clock falls back to the last observed day instead.
+ */
+export function buildUpkeepAuditMetadata({
+  day = null,
+  fallbackDay = null,
+  days = 1,
+  manual = false,
+  runId = null,
+  ranAt = null,
+} = {}) {
+  const explicitDay = integerOrNull(day);
+  const previousDay = integerOrNull(fallbackDay);
+  const timestamp = integerOrNull(ranAt);
+  const resolvedRunId = String(runId ?? "").trim() || generateRunId();
+  return {
+    runId: resolvedRunId,
+    day: explicitDay ?? previousDay,
+    days: Math.max(1, wholeAmount(days)),
+    trigger: manual ? "manual" : "calendar",
+    ranAt: timestamp ?? Date.now(),
+  };
 }
 
 function resolveCurrentEnvironment(cfg, state) {
@@ -558,9 +1299,9 @@ async function runForagingWindow({ env, party, cfg }) {
 
   const runId = generateRunId();
   const expected = new Set(targets.map((t) => t.actor.id));
-  // userId -> [expected actorIds], so a result with a missing/mismatched actor
-  // id (e.g. a skip after the forager lost their assigned char) can still be
-  // attributed when the user has exactly one outstanding actor.
+  // userId -> [expected actorIds]. Results must echo the exact user/actor pair
+  // that received the prompt; ownership or a single pending entry never acts
+  // as a fallback identity.
   const expectedByUser = new Map();
   for (const t of targets) {
     const list = expectedByUser.get(t.userId) ?? [];
@@ -629,28 +1370,26 @@ async function runForagingWindow({ env, party, cfg }) {
   }
 
   for (const entry of combineYields(perForager, cfg.forageMode)) {
+    const userId = targets.find((t) => t.actor.id === entry.actorId)?.userId;
+    const acknowledgement = buildForageAcknowledgement({
+      runId,
+      actorId: entry.actorId,
+      entry,
+      targetUserId: userId,
+      noResponse: !results.has(entry.actorId),
+    });
     out.set(entry.actorId, {
-      food: entry.food ?? 0,
-      water: entry.water ?? 0,
-      success: Boolean(entry.success),
+      food: acknowledgement.food,
+      water: acknowledgement.water,
+      success: acknowledgement.success,
       // "best" mode zeroes the losing foragers but keeps success=true; carry the
       // suppressed marker so the report can say "gathered, best haul kept" rather
       // than greet a loser with a green "+0 food / +0 water".
-      suppressed: Boolean(entry.suppressed),
+      suppressed: acknowledgement.suppressed,
     });
-    const userId = targets.find((t) => t.actor.id === entry.actorId)?.userId;
     if (userId) {
-      emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, {
-        runId,
-        actorId: entry.actorId,
-        food: entry.food ?? 0,
-        water: entry.water ?? 0,
-        success: Boolean(entry.success),
-        // The forager never answered (GM timed the run out) vs actively skipped —
-        // lets their prompt say "wrapped up before you decided", not "empty-handed".
-        noResponse: !results.has(entry.actorId),
-        targetUserId: userId,
-      });
+      // `noResponse` distinguishes a GM timeout from an active skip.
+      emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, acknowledgement);
     }
   }
   return out;
@@ -658,26 +1397,31 @@ async function runForagingWindow({ env, party, cfg }) {
 
 /** GM-side: record a player's Survival total; resolve the window when complete. */
 async function handleForageResult(payload) {
+  const validation = validateForageResultPayload(payload);
+  if (!validation.ok) {
+    console.warn(`${MODULE_ID} | rejected forage result`, {
+      type: payload?.type ?? null,
+      reason: validation.reason,
+      originUserId:
+        typeof payload?.originUserId === "string"
+          ? payload.originUserId.slice(0, 160)
+          : null,
+    });
+    return;
+  }
   const { runId } = payload ?? {};
   const run = pendingRuns.get(runId);
   if (!run) return;
-  let actorId = payload?.actorId;
-  // Tolerate a missing/mismatched actor id (a skip after the forager lost their
-  // assigned character, or an older client): if this user has exactly one actor
-  // still outstanding, attribute the result to it rather than dropping it (which
-  // would stall the whole run on the timeout).
-  if (!actorId || !run.expected.has(actorId)) {
-    const mine = run.expectedByUser?.get(payload?.originUserId) ?? [];
-    const pending = mine.filter((id) => !run.results.has(id));
-    if (pending.length === 1) actorId = pending[0];
-    else return;
-  }
+  const actorId = resolveExpectedForageActorId(run, payload);
+  if (!actorId) return;
   const actor = globalThis.game?.actors?.get?.(actorId);
   const user = globalThis.game?.users?.get?.(payload.originUserId);
-  // Trust the report only when the claiming user actually owns that character.
-  if (!actor || !user || !actor.testUserPermission?.(user, "OWNER")) return;
+  // `resolveExpectedForageActorId` proves this active user was sent this exact
+  // actor prompt. A generic OWNER check here would let Assistant GMs through
+  // Foundry's role-level permission bypass.
+  if (!actor || !user || user.active === false) return;
   run.results.set(actorId, {
-    rollTotal: Number(payload.rollTotal) || 0,
+    rollTotal: payload.rollTotal,
     // Recompute the Wisdom modifier from the GM-owned actor — never trust the
     // client's self-reported wisMod (it feeds the yield + success margin).
     wisMod: getWisMod(actor),
@@ -686,11 +1430,40 @@ async function handleForageResult(payload) {
   if (run.results.size >= run.expected.size) run.resolve();
 }
 
+/**
+ * Bind a response to the actor(s) that were actually targeted to its
+ * transport-authenticated user. Shared ownership alone never lets one player
+ * answer for another player's prompt, and the first accepted answer wins.
+ */
+export function resolveExpectedForageActorId(run, payload) {
+  const userId = String(payload?.originUserId ?? "").trim();
+  const mine = run?.expectedByUser?.get?.(userId) ?? [];
+  const pending = mine.filter(
+    (id) => run?.expected?.has?.(id) && !run?.results?.has?.(id),
+  );
+  const claimed = String(payload?.actorId ?? "").trim();
+  return claimed && pending.includes(claimed) ? claimed : null;
+}
+
+/** Defense-in-depth for direct calls that bypass the resource socket router. */
+export function validateForageResultPayload(payload) {
+  if (payload?.type !== RESOURCE_EVENTS.FORAGE_RESULT) {
+    return { ok: false, reason: "invalid-forage-result-type" };
+  }
+  return validateResourcePayloadShape(payload);
+}
+
 /* ------------------------------------------------------------------ *
  * Consumption + deposit
  * ------------------------------------------------------------------ */
 
-async function applyConsumption({ roster, sourceForMember, cfg, days }) {
+export async function applyConsumption({
+  roster,
+  consumers = roster.filter((member) => member.consumes !== false),
+  sourceForMember,
+  cfg,
+  days,
+}) {
   const perActorMap = new Map();
   const ensureRow = (member) => {
     const actor = member.actor;
@@ -701,6 +1474,8 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
         name: actor.name,
         consumed: {},
         shortfalls: {},
+        canonicalConsumed: { food: 0, water: 0 },
+        canonicalShortfalls: { food: 0, water: 0 },
         errors: [],
       };
       perActorMap.set(actor.id, row);
@@ -731,29 +1506,72 @@ async function applyConsumption({ roster, sourceForMember, cfg, days }) {
       // Each member draws from its nominated source (own sheet or a shared
       // stash). Sequential awaits mean members sharing a stash deplete it in
       // roster order — whoever's last comes up short if the stash runs dry.
-      for (const member of roster) {
+      for (const member of consumers) {
         const res = await consumeFromActor(sourceFor(member), resource, amount);
         const row = ensureRow(member);
-        row.consumed[resource.id] = res.consumed;
-        row.shortfalls[resource.id] = res.shortfall;
-        if (res.error) row.errors.push(`${resource.label}: ${res.error}`);
-        // Normalize the canonical food/water keys the report/exhaustion expect.
-        if (isFood) {
-          row.consumed.food = (row.consumed.food ?? 0) + res.consumed;
-          row.shortfalls.food = (row.shortfalls.food ?? 0) + res.shortfall;
-        }
-        if (resource.forageYields === "water" || resource.id === "water") {
-          row.consumed.water = (row.consumed.water ?? 0) + res.consumed;
-          row.shortfalls.water = (row.shortfalls.water ?? 0) + res.shortfall;
-        }
+        recordConsumptionAccounting(row, resource, res);
       }
     }
   }
 
   // Make sure every roster member has a row even if they matched no resources.
-  for (const member of roster) ensureRow(member);
+  for (const member of consumers) ensureRow(member);
+
+  // Legacy aliases remain available when a custom forage channel has no
+  // literal food/water resource id. Default resources already own these keys.
+  const resourceIds = new Set(cfg.resources.map((resource) => resource.id));
+  for (const row of perActorMap.values()) {
+    if (!resourceIds.has("food")) {
+      row.consumed.food = row.canonicalConsumed.food;
+      row.shortfalls.food = row.canonicalShortfalls.food;
+    }
+    if (!resourceIds.has("water")) {
+      row.consumed.water = row.canonicalConsumed.water;
+      row.shortfalls.water = row.canonicalShortfalls.water;
+    }
+  }
 
   return { perActor: [...perActorMap.values()], party: partyReport };
+}
+
+/**
+ * Record one committed consumption result without mixing the configured
+ * resource id with the canonical food/water rule channels.
+ *
+ * The configured values power generic reports while the canonical totals feed
+ * exhaustion. Keeping them separate prevents the default `food` and `water`
+ * resources from being counted twice.
+ */
+export function recordConsumptionAccounting(row, resource, result) {
+  if (!row || !resource) return row;
+  const resourceId = String(resource.id ?? "").trim();
+  if (!resourceId) return row;
+
+  const consumed = wholeAmount(result?.consumed);
+  const shortfall = wholeAmount(result?.shortfall);
+  row.consumed ??= {};
+  row.shortfalls ??= {};
+  row.canonicalConsumed ??= { food: 0, water: 0 };
+  row.canonicalShortfalls ??= { food: 0, water: 0 };
+  row.errors ??= [];
+
+  row.consumed[resourceId] = consumed;
+  row.shortfalls[resourceId] = shortfall;
+  if (result?.error) {
+    row.errors.push(
+      `${resource.label ?? prettyResource(resourceId) ?? resourceId}: ${result.error}`,
+    );
+  }
+
+  if (resource.forageYields === "food" || resourceId === "food") {
+    row.canonicalConsumed.food += consumed;
+    row.canonicalShortfalls.food += shortfall;
+  }
+  if (resource.forageYields === "water" || resourceId === "water") {
+    row.canonicalConsumed.water += consumed;
+    row.canonicalShortfalls.water += shortfall;
+  }
+  return row;
 }
 
 async function consumeFromActor(actor, resourceDef, amount) {
@@ -819,17 +1637,36 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
   const failures = [];
   if (updates.length > 0) {
     try {
-      await actor.updateEmbeddedDocuments("Item", updates);
-      consumed += updates.reduce(
-        (sum, update) =>
-          sum +
-          Math.max(
-            0,
-            (quantities.get(String(update._id)) ?? 0) -
-              update["system.quantity"],
-          ),
-        0,
+      const updatedDocuments = await actor.updateEmbeddedDocuments(
+        "Item",
+        updates,
       );
+      const updatedById = new Map(
+        (Array.isArray(updatedDocuments) ? updatedDocuments : [])
+          .map((document) => [documentId(document), document])
+          .filter(([id]) => id),
+      );
+      for (const update of updates) {
+        const id = String(update._id);
+        const document = updatedById.get(id);
+        const after = documentQuantity(document);
+        if (!document || after == null) {
+          failures.push(new Error(`update for Item ${id} was not confirmed`));
+          continue;
+        }
+        const before = quantities.get(id) ?? 0;
+        const expected = Math.max(0, Number(update["system.quantity"]) || 0);
+        const planned = Math.max(0, before - expected);
+        const observed = Math.max(0, before - after);
+        consumed += Math.min(planned, observed);
+        if (after !== expected) {
+          failures.push(
+            new Error(
+              `update for Item ${id} ended at ${after}, expected ${expected}`,
+            ),
+          );
+        }
+      }
     } catch (error) {
       failures.push(error);
       console.error(
@@ -840,11 +1677,23 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
   }
   if (deletes.length > 0) {
     try {
-      await actor.deleteEmbeddedDocuments("Item", deletes);
-      consumed += deletes.reduce(
-        (sum, id) => sum + (quantities.get(String(id)) ?? 0),
-        0,
+      const deletedDocuments = await actor.deleteEmbeddedDocuments(
+        "Item",
+        deletes,
       );
+      const deletedIds = new Set(
+        (Array.isArray(deletedDocuments) ? deletedDocuments : [])
+          .map(documentId)
+          .filter(Boolean),
+      );
+      for (const idValue of deletes) {
+        const id = String(idValue);
+        if (!deletedIds.has(id)) {
+          failures.push(new Error(`delete for Item ${id} was not confirmed`));
+          continue;
+        }
+        consumed += quantities.get(id) ?? 0;
+      }
     } catch (error) {
       failures.push(error);
       console.error(
@@ -860,48 +1709,98 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
   };
 }
 
-export async function depositResource(actor, resourceDef, amount) {
+export async function depositResource(
+  actor,
+  resourceDef,
+  amount,
+  { templateItem = null } = {},
+) {
   if (!amount || amount <= 0) return 0;
   const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
-  let template = null;
-  const firstUuid = resourceDef.matching?.itemUuids?.[0];
-  if (firstUuid) {
-    try {
-      const doc = await fromUuid(firstUuid);
-      template = doc?.toObject?.() ?? null;
-    } catch {
-      template = null;
-    }
+  let plan = planDeposit({ matches, amount });
+  if (plan.op === "none") {
+    const template =
+      cloneSnapshot(templateItem) ??
+      (await resolveResourceDepositTemplate(resourceDef));
+    plan = planDeposit({ matches, amount, templateItem: template });
   }
-  if (!template) template = defaultResourceTemplate(resourceDef);
-  const plan = planDeposit({ matches, amount, templateItem: template });
   try {
     if (plan.op === "bump") {
-      await actor.items
-        ?.get?.(plan.id)
-        ?.update?.({ "system.quantity": plan.to });
-      return amount;
+      const target = actor.items?.get?.(plan.id);
+      if (!target || typeof target.update !== "function") return 0;
+      const before =
+        matches.find((match) => String(match.id) === String(plan.id))
+          ?.quantity ?? 0;
+      const updated = await target.update({ "system.quantity": plan.to });
+      if (!updated) return 0;
+      const after = documentQuantity(updated) ?? documentQuantity(target);
+      return after == null
+        ? wholeAmount(amount)
+        : Math.min(
+            wholeAmount(amount),
+            Math.max(0, after - wholeAmount(before)),
+          );
     }
     if (plan.op === "create") {
-      const snap = cloneSnapshot(plan.from);
+      const snap = buildCreatedResourceSnapshot({
+        template: plan.from,
+        resourceDef,
+        quantity: plan.quantity,
+      });
       if (!snap) return 0;
-      delete snap._id;
-      delete snap.id;
-      delete snap.uuid;
-      snap.system = snap.system ?? {};
-      snap.system.quantity = plan.quantity;
-      snap.flags = snap.flags ?? {};
-      snap.flags[MODULE_ID] = {
-        ...(snap.flags[MODULE_ID] ?? {}),
-        resourceTag: resourceDef.matching?.flagTag || resourceDef.id,
-      };
-      await actor.createEmbeddedDocuments("Item", [snap]);
-      return amount;
+      const created = await actor.createEmbeddedDocuments("Item", [snap]);
+      if (!Array.isArray(created) || created.length === 0) return 0;
+      const quantity = documentQuantity(created[0]);
+      return quantity == null
+        ? wholeAmount(amount)
+        : Math.min(wholeAmount(amount), quantity);
     }
   } catch (error) {
     console.error(`${MODULE_ID} | deposit failed on ${actor?.name}`, error);
   }
   return 0; // op "none": no existing stack and no template to create from
+}
+
+async function resolveResourceDepositTemplate(resourceDef) {
+  const firstUuid = resourceDef?.matching?.itemUuids?.[0];
+  if (firstUuid) {
+    try {
+      const doc = await globalThis.fromUuid?.(firstUuid);
+      const template = doc?.toObject?.() ?? null;
+      if (template) return template;
+    } catch {
+      // Fall through to the stable module-owned default.
+    }
+  }
+  return defaultResourceTemplate(resourceDef);
+}
+
+function buildCreatedResourceSnapshot({ template, resourceDef, quantity }) {
+  const snap = cloneSnapshot(template);
+  if (!snap) return null;
+  delete snap._id;
+  delete snap.id;
+  delete snap.uuid;
+  snap.system = snap.system ?? {};
+  snap.system.quantity = wholeAmount(quantity);
+  snap.flags = snap.flags ?? {};
+  snap.flags[MODULE_ID] = {
+    ...(snap.flags[MODULE_ID] ?? {}),
+    resourceTag: resourceDef?.matching?.flagTag || resourceDef?.id,
+  };
+  return snap;
+}
+
+function documentQuantity(document) {
+  const raw =
+    document?.system?.quantity ?? document?._source?.system?.quantity ?? null;
+  if (raw === null || raw === undefined || raw === "") return null;
+  const quantity = Number(raw);
+  return Number.isFinite(quantity) ? wholeAmount(quantity) : null;
+}
+
+function documentId(document) {
+  return String(document?.id ?? document?._id ?? "").trim();
 }
 
 function defaultResourceTemplate(resourceDef) {
@@ -925,53 +1824,9 @@ function defaultResourceTemplate(resourceDef) {
  * Reporting + exhaustion
  * ------------------------------------------------------------------ */
 
-async function postUpkeepReport({ env, result }) {
+async function postUpkeepReport({ env, result, resources = [] }) {
   if (typeof globalThis.ChatMessage?.create !== "function") return null;
-  const envLabel = env ? prettyEnvironment(env.id) || env.label : "—";
-  const rows = result.perActor
-    .map((r) => {
-      const parts = [];
-      if (r.foraged?.success && (r.foraged.food || r.foraged.water)) {
-        parts.push(
-          `foraged +${r.foraged.food} food / +${r.foraged.water} water`,
-        );
-      }
-      const short = [];
-      if (r.shortfalls.food > 0) short.push(`${r.shortfalls.food} food`);
-      if (r.shortfalls.water > 0) short.push(`${r.shortfalls.water} water`);
-      const shortLabel =
-        short.length > 0
-          ? `<span style="color:#ef6f74;">short ${short.join(", ")}</span>`
-          : `<span style="color:#6dd5a2;">supplied</span>`;
-      const forageLabel = parts.length > 0 ? ` · ${parts.join(", ")}` : "";
-      const errorLabel = r.errors?.length
-        ? ` · <span style="color:#f2bd61;">write failed: ${escapeHtml(r.errors.join("; "))}</span>`
-        : "";
-      return `<li><strong>${escapeHtml(r.name)}</strong> — ${shortLabel}${forageLabel}${errorLabel}</li>`;
-    })
-    .join("");
-  // Render every party-scope resource shortfall, not just the hard-coded
-  // "light" id — a GM-added party resource is keyed by its own id, so a literal
-  // `result.party.light` lookup silently dropped its warning.
-  const partyLines = Object.entries(result.party ?? {})
-    .filter(([, r]) => (r?.shortfall ?? 0) > 0 || r?.error)
-    .map(([id, r]) => {
-      const label = id === "light" ? "Light" : prettyResource(id) || id;
-      const suffix = id === "light" ? " of torches" : "";
-      if (r?.error) {
-        return `<div style="color:#f2bd61;">${escapeHtml(label)}: ${escapeHtml(r.error)}.</div>`;
-      }
-      return `<div style="color:#ef6f74;">${escapeHtml(label)}: ${r.shortfall} short${suffix}.</div>`;
-    })
-    .join("");
-  const daysLabel = result.days > 1 ? ` (${result.days} days)` : "";
-  const content = `
-    <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeHtml(envLabel)}${daysLabel}</h3>
-      <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      ${partyLines}
-    </div>`;
-
+  const content = buildUpkeepReportContent({ env, result, resources });
   const speaker = globalThis.ChatMessage.getSpeaker?.({
     alias: "Quartermaster",
   });
@@ -984,6 +1839,104 @@ async function postUpkeepReport({ env, result }) {
     console.warn(`${MODULE_ID} | upkeep report failed`, error);
     return null;
   }
+}
+
+/**
+ * Render an upkeep receipt from configured resources instead of assuming the
+ * only individual supplies are food and water.
+ */
+export function buildUpkeepReportContent({
+  env = null,
+  result = {},
+  resources = [],
+} = {}) {
+  const envLabel = env ? prettyEnvironment(env.id) || env.label : "—";
+  const definitions = Array.isArray(resources) ? resources : [];
+  const byId = new Map(
+    definitions.map((resource) => [String(resource.id), resource]),
+  );
+  let individualResources = definitions.filter(
+    (resource) => resource?.scope !== "party",
+  );
+  if (individualResources.length === 0) {
+    const ids = new Set();
+    for (const row of result.perActor ?? []) {
+      for (const id of Object.keys(row?.shortfalls ?? {})) ids.add(id);
+    }
+    individualResources = [...ids].map((id) => ({ id, label: null }));
+  }
+
+  const rows = (result.perActor ?? [])
+    .map((row) => {
+      const shortages = individualResources
+        .map((resource) => {
+          const amount = wholeAmount(row?.shortfalls?.[resource.id]);
+          if (amount <= 0) return null;
+          return `${amount} ${escapeHtml(resourceDisplayLabel(resource))}`;
+        })
+        .filter(Boolean);
+      const shortLabel =
+        shortages.length > 0
+          ? `<span style="color:#ef6f74;">short ${shortages.join(", ")}</span>`
+          : `<span style="color:#6dd5a2;">supplied</span>`;
+      const forageLabel = buildForageReportLabel(row?.foraged);
+      const errorLabel = row?.errors?.length
+        ? ` · <span style="color:#f2bd61;">write failed: ${escapeHtml(row.errors.join("; "))}</span>`
+        : "";
+      return `<li><strong>${escapeHtml(row?.name ?? "Unknown")}</strong> — ${shortLabel}${forageLabel}${errorLabel}</li>`;
+    })
+    .join("");
+
+  const partyLines = Object.entries(result.party ?? {})
+    .filter(([, entry]) => wholeAmount(entry?.shortfall) > 0 || entry?.error)
+    .map(([id, entry]) => {
+      const definition = byId.get(String(id)) ?? { id, label: null };
+      const label = escapeHtml(resourceDisplayLabel(definition));
+      const shortfall = wholeAmount(entry?.shortfall);
+      const shortage =
+        shortfall > 0
+          ? `<span style="color:#ef6f74;">${label}: ${shortfall} short.</span>`
+          : "";
+      const separator = shortage && entry?.error ? " · " : "";
+      const error = entry?.error
+        ? `<span style="color:#f2bd61;">${label}: ${escapeHtml(entry.error)}.</span>`
+        : "";
+      return `<div>${shortage}${separator}${error}</div>`;
+    })
+    .join("");
+  const days = Math.max(1, wholeAmount(result.days));
+  const daysLabel = days > 1 ? ` (${days} days)` : "";
+  return `
+    <div class="infinity-dnd5e infinity-quartermaster-receipt">
+      <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeHtml(envLabel)}${daysLabel}</h3>
+      <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
+      ${partyLines}
+    </div>`;
+}
+
+function resourceDisplayLabel(resource) {
+  const id = String(resource?.id ?? "").trim();
+  return (
+    String(resource?.label ?? "").trim() || prettyResource(id) || id || "Supply"
+  );
+}
+
+function buildForageReportLabel(forage) {
+  if (!forage?.attempted) return "";
+  if (forage.suppressed) {
+    return ` · <span style="opacity:0.7;">gathered; best haul kept</span>`;
+  }
+  if (!forage.success) {
+    return ` · <span style="opacity:0.7;">foraged; found nothing</span>`;
+  }
+  const gathered = [];
+  const food = wholeAmount(forage.food);
+  const water = wholeAmount(forage.water);
+  if (food > 0) gathered.push(`+${food} food`);
+  if (water > 0) gathered.push(`+${water} water`);
+  const summary =
+    gathered.length > 0 ? `foraged ${gathered.join(" / ")}` : "foraged";
+  return ` · <span style="color:#6dd5a2;">${summary}</span>`;
 }
 
 function resolveReportWhisper(result) {
@@ -1003,7 +1956,7 @@ function resolveWhisperForActors(actorIds) {
   // null = public (no whisper); an empty array would whisper to NOBODY (Foundry
   // does not treat whisper:[] as public), hiding the report from everyone.
   if (!users) return null;
-  const gmIds = users.filter((u) => u.isGM).map((u) => u.id);
+  const gmIds = users.filter((user) => isFullGM(user)).map((user) => user.id);
   if (mode === "whisper-gm") return gmIds;
   // whisper-gm-owner: GMs + each affected character's owner.
   const out = new Set(gmIds);
@@ -1011,7 +1964,7 @@ function resolveWhisperForActors(actorIds) {
     const actor = globalThis.game?.actors?.get?.(actorId);
     if (!actor) continue;
     for (const u of users) {
-      if (!u.isGM && actor.testUserPermission?.(u, "OWNER")) out.add(u.id);
+      if (!isFullGM(u) && actor.testUserPermission?.(u, "OWNER")) out.add(u.id);
     }
   }
   return [...out];
@@ -1064,7 +2017,7 @@ async function applyExhaustion(actor, delta) {
  * Party discovery + small helpers
  * ------------------------------------------------------------------ */
 
-/** The non-GM user whose assigned character is this actor, or any non-GM user
+/** The non-full-GM user whose assigned character is this actor, or any such user
  *  holding an explicit OWNER permission on it — the real "a player owns this"
  *  test. Bare `hasPlayerOwner` misses characters owned only by an Assistant-GM
  *  (user.isGM is true for role 3) and is the kept-as-fallback last resort. */
@@ -1078,7 +2031,8 @@ export function isPlayerOwnedCharacter(actor) {
   const charId = (u) =>
     typeof u?.character === "string" ? u.character : (u?.character?.id ?? null);
   // (a) a non-GM user has this as their assigned character.
-  if (list.some((u) => u && !u.isGM && charId(u) === actor.id)) return true;
+  if (list.some((u) => u && !isFullGM(u) && charId(u) === actor.id))
+    return true;
   // (b) a non-GM user holds an explicit per-user OWNER permission.
   const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
   const ownerById = (id) =>
@@ -1086,8 +2040,7 @@ export function isPlayerOwnedCharacter(actor) {
   const ownership = actor?.ownership ?? {};
   for (const [userId, level] of Object.entries(ownership)) {
     if (userId === "default") continue;
-    if (Number(level) >= OWNER && ownerById(userId)?.isGM === false)
-      return true;
+    if (Number(level) >= OWNER && !isFullGM(ownerById(userId))) return true;
   }
   // (c) fallback — UNCONDITIONAL, so default-owned PCs still count (do NOT gate
   //     this on users.length === 0 the way the TokenBar compat does).
@@ -1111,12 +2064,13 @@ export function discoverAllActors() {
 
 /**
  * The tracked party as roster entries with their resolved draw source:
- * `[{ actor, isStash, drawFromId }]`, where `drawFromId` is the actor id each
- * member's per-character supplies are drawn from (its own id for "self"). When
- * the GM hasn't curated a roster, auto-tracks every player-owned character (each
- * drawing from self), so the feature degrades to the original behavior. Curated
- * entries that no longer resolve to a player character are dropped, and a draw
- * source that's gone (or no longer a stash) falls back to self.
+ * `[{ actor, isStash, consumes, drawFromId }]`, where `drawFromId` is the actor
+ * id each consuming member's per-character supplies are drawn from. A tracked
+ * actor may be inventory-only (`consumes:false`), which lets a mule, vehicle,
+ * or NPC stash hold supplies without becoming another mouth to feed. Legacy
+ * rows infer consumption from player-character ownership until the GM makes an
+ * explicit choice. Missing actors are dropped, and a stale draw source falls
+ * back to self.
  */
 export function getPartyRoster(config = null) {
   const cfg = config ?? loadResourceConfig();
@@ -1131,6 +2085,7 @@ export function getPartyRoster(config = null) {
     entries = discoverPlayerCharacters().map((actor) => ({
       actor,
       isStash: false,
+      consumes: true,
       drawFromId: actor.id,
     }));
   } else {
@@ -1144,14 +2099,25 @@ export function getPartyRoster(config = null) {
       const wanted = resolveDrawSourceId(entry);
       const drawFromId =
         wanted !== actor.id && presentStash.has(wanted) ? wanted : actor.id;
-      return { actor, isStash: entry.isStash === true, drawFromId };
+      const consumes =
+        entry.consumes === true
+          ? true
+          : entry.consumes === false
+            ? false
+            : isPlayerOwnedCharacter(actor);
+      return {
+        actor,
+        isStash: entry.isStash === true,
+        consumes,
+        drawFromId,
+      };
     });
   }
 
   // Single shared party stash: when it's set to a tracked actor, the WHOLE
-  // party draws its per-character supplies (food & water) from that one pile —
-  // overriding every per-member nomination — and it counts as a stash for
-  // party-scope pooling (light) too. An unset/stale id leaves per-member draws.
+  // party draws every per-character supply from that one pile — overriding
+  // every per-member nomination — and it counts as a stash for party-scope
+  // pooling too. An unset/stale id leaves per-member draws.
   const partyStashId = String(cfg.partyStashId ?? "").trim();
   if (partyStashId && entries.some((e) => e.actor.id === partyStashId)) {
     for (const e of entries) {
@@ -1165,13 +2131,15 @@ export function getPartyRoster(config = null) {
 
 /** Tracked party actors (honors the curated roster). */
 export function discoverPartyActors() {
-  return getPartyRoster().map((r) => r.actor);
+  return getPartyRoster()
+    .filter((member) => member.consumes)
+    .map((member) => member.actor);
 }
 
-/** The online user who owns this actor (assigned char first), or null. Includes
- *  Assistant-GMs (role 3) who play a PC — only the local driving GM is excluded,
- *  so we never pop a forage prompt on the GM running the upkeep. */
-function owningOnlineUserId(actor) {
+/** The online user who owns this actor (assigned char first), or null. An
+ *  Assistant GM may forage only as their explicitly assigned character; GM-role
+ *  permission bypass never makes an unassigned character theirs. */
+export function owningOnlineUserId(actor) {
   const users = globalThis.game?.users;
   if (!users?.filter) return null;
   const localId = globalThis.game?.user?.id ?? null;
@@ -1182,16 +2150,41 @@ function owningOnlineUserId(actor) {
     return charId === actor.id;
   });
   if (assigned) return assigned.id;
-  const owner = online.find((u) => actor.testUserPermission?.(u, "OWNER"));
+  const owner = online.find(
+    (u) => u.isGM !== true && hasDirectActorOwnerPermission(actor, u.id),
+  );
   return owner?.id ?? null;
+}
+
+function hasDirectActorOwnerPermission(actor, userId) {
+  const id = String(userId ?? "").trim();
+  if (!id) return false;
+  const ownership = actor?.ownership ?? {};
+  const level = Object.hasOwn(ownership, id)
+    ? ownership[id]
+    : ownership.default;
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  return Number(level) >= Number(OWNER);
 }
 
 export function actorItemSnapshots(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
   const list = Array.isArray(items) ? items : Array.from(items ?? []);
-  return list.map((i) =>
-    typeof i?.toObject === "function" ? i.toObject() : i,
-  );
+  return list.map((item) => {
+    const snapshot =
+      typeof item?.toObject === "function" ? item.toObject() : item;
+    // Foundry's synthetic Document UUID is not guaranteed to survive
+    // `toObject()`, but exact matcher rules intentionally accept embedded UUIDs.
+    if (
+      item?.uuid &&
+      snapshot &&
+      typeof snapshot === "object" &&
+      !snapshot.uuid
+    ) {
+      return { ...snapshot, uuid: item.uuid };
+    }
+    return snapshot;
+  });
 }
 
 /** Evaluate a yield die formula ("1d6", "0", "2") to a number; 0 on failure. */
@@ -1213,6 +2206,16 @@ async function rollDie(formula) {
   } catch {
     return 0;
   }
+}
+
+function wholeAmount(value) {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function integerOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.floor(number) : null;
 }
 
 function cloneSnapshot(value) {

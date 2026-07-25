@@ -3,7 +3,7 @@
   Pushed to a player when a new day begins somewhere they can forage. They roll
   Wisdom (Survival) to gather, or skip; the GM resolves and deposits the yield.
 --}}
-<div class="fp-shell">
+<div class="fp-shell" aria-busy="{{isWaiting}}">
   <header class="fp-head">
     <i class="fa-solid fa-wheat-awn fp-head__icon" aria-hidden="true"></i>
     <div class="fp-head__copy">
@@ -13,7 +13,7 @@
   </header>
 
   {{#if noActor}}
-  <p class="fp-empty">No character is assigned to you — ask your GM to assign one so you can forage.</p>
+  <p class="fp-empty" role="alert">No character is assigned to you — ask your GM to assign one so you can forage.</p>
   {{else if isPrompt}}
   <section class="fp-body">
     <p class="fp-prompt">Will <strong>{{actorName}}</strong> spend time foraging for food and water today?</p>
@@ -28,12 +28,12 @@
     </div>
   </section>
   {{else if isWaiting}}
-  <section class="fp-body fp-body--waiting">
+  <section class="fp-body fp-body--waiting" role="status" aria-live="polite" aria-atomic="true">
     <i class="fa-solid fa-hourglass-half fp-spin" aria-hidden="true"></i>
     <p>Your roll is in — waiting for the quartermaster to tally the haul…</p>
   </section>
   {{else if isDone}}
-  <section class="fp-body fp-body--done">
+  <section class="fp-body fp-body--done" role="status" aria-live="polite" aria-atomic="true">
     {{#if result.timedOut}}
     <p class="fp-result fp-result--fail">
       <i class="fa-solid fa-clock" aria-hidden="true"></i>

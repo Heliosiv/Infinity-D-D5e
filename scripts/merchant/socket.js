@@ -67,9 +67,20 @@ import {
   isAuthoritativeGMSender,
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
+import { isFullGM } from "../permissions.js";
+import { isPrivilegedPrivateStateReady } from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
+
+function isPrivateStateAuthorityReady() {
+  const liveFoundry = Boolean(
+    globalThis.game?.ready && globalThis.JournalEntry?.create,
+  );
+  return Boolean(
+    isAuthoritativeGM() && (!liveFoundry || isPrivilegedPrivateStateReady()),
+  );
+}
 
 export const MERCHANT_EVENTS = Object.freeze({
   SESSION_OPEN: "merchant:session-open",
@@ -264,7 +275,8 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   }
   if (senderId === globalThis.game?.user?.id) return;
   if (PLAYER_TO_GM_TYPES.has(payload.type)) {
-    if (!isAuthoritativeGM() || !isActiveSocketUser(senderId)) return;
+    if (!isPrivateStateAuthorityReady() || !isActiveSocketUser(senderId))
+      return;
   } else if (GM_TO_CLIENT_TYPES.has(payload.type)) {
     if (!isAuthoritativeGMSender(senderId)) return;
   }
@@ -275,7 +287,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   // GM-authority routes:
   switch (payload.type) {
     case MERCHANT_EVENTS.BARGAIN_RESULT:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           await handleBargainResult(payload);
         } catch (error) {
@@ -284,7 +296,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       }
       break;
     case MERCHANT_EVENTS.COMMIT_PURCHASE:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           await handleCommitPurchase(payload);
         } catch (error) {
@@ -293,7 +305,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       }
       break;
     case MERCHANT_EVENTS.COMMIT_SALE:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           await handleCommitSale(payload);
         } catch (error) {
@@ -306,7 +318,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       // drop the session record so the workspace's Active Sessions list stays
       // accurate. (GM-originated closes already call closeSession directly and
       // are echo-suppressed here.)
-      if (isAuthoritativeGM() && payload.sessionId) {
+      if (isPrivateStateAuthorityReady() && payload.sessionId) {
         try {
           const session = getSession(payload.sessionId);
           if (session?.viewerUserId === senderId)
@@ -317,7 +329,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       }
       break;
     case MERCHANT_EVENTS.SESSION_RESUME_REQUEST:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           handleSessionResumeRequest(payload);
         } catch (error) {
@@ -326,7 +338,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       }
       break;
     case MERCHANT_EVENTS.SHOP_LIST_REQUEST:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           handleShopListRequest(payload);
         } catch (error) {
@@ -335,7 +347,7 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
       }
       break;
     case MERCHANT_EVENTS.SHOP_REQUEST:
-      if (isAuthoritativeGM()) {
+      if (isPrivateStateAuthorityReady()) {
         try {
           await handleShopRequest(payload);
         } catch (error) {
@@ -874,7 +886,7 @@ function notifyGmShopOpened(merchant, userId) {
  *  shops that player is already allowed at). */
 function isActiveNonGm(userId) {
   const user = userId ? globalThis.game?.users?.get?.(userId) : null;
-  return Boolean(user && user.active && !user.isGM);
+  return Boolean(user && user.active && !isFullGM(user));
 }
 
 /** Player-targeted negative outcome so a rejected/declined click resolves

@@ -12,8 +12,8 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  14,
-  "harness covers all UI windows and both merchant tabs",
+  16,
+  "harness covers all UI windows, both merchant tabs, and resource states",
 );
 
 for (const view of views) {
@@ -87,6 +87,8 @@ for (const expectedId of [
   "shop-picker",
   "shop-picker-empty",
   "resource-manager",
+  "resource-overview",
+  "resource-overview-offline",
   "forage-prompt",
   "reputation-workspace",
   "reputation-view",
@@ -104,6 +106,19 @@ assert.match(encounterView.html, /Roll Chances/);
 assert.match(encounterView.html, /First item of a fresh Generate/);
 assert.match(encounterView.html, /data-chance-group="category"/);
 assert.match(encounterView.html, /mixed bundles stop at one spell scroll/i);
+
+const suppliesView = views.find((view) => view.id === "resource-overview");
+assert.ok(suppliesView, "harness includes the player Party Supplies view");
+assert.match(suppliesView.html, /Updated Jul 25, 2026, 2:14 PM/);
+assert.match(suppliesView.html, /aria-live="polite"/);
+assert.match(suppliesView.html, /Supply outlook/);
+assert.match(suppliesView.html, /Last upkeep/);
+
+const suppliesOfflineView = views.find(
+  (view) => view.id === "resource-overview-offline",
+);
+assert.ok(suppliesOfflineView, "harness includes Party Supplies offline state");
+assert.match(suppliesOfflineView.html, /No GM is online right now/);
 
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.
@@ -181,6 +196,42 @@ for (const id of ["per-encounter", "per-creature"]) {
     "hoard: an empty item pool must not block its coin-only roll",
   );
   assert.match(html, /coin-only hoard/);
+}
+
+{
+  const resourceFixture = buildHarnessViews().find(
+    (view) => view.id === "resource-manager",
+  );
+  const defaultHtml = renderFixture(resourceFixture, {});
+  assert.equal(
+    countMatches(defaultHtml, /data-config-path="roster:[^"]+:consumes"/g),
+    2,
+    "resource manager exposes a daily-consumer toggle for every tracked actor",
+  );
+  const html = renderFixture(resourceFixture, {
+    canRunResourceWrites: false,
+    hasResourceConflictWarnings: true,
+    hasBlockingResourceConflicts: true,
+    resourceConflictWarnings: [
+      {
+        message:
+          "Aric's Trail Rations matches multiple resources: Food, Meals.",
+        isBlocking: true,
+      },
+    ],
+  });
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Resource rules need attention/);
+  assert.match(html, /matches multiple resources: Food, Meals/);
+  for (const action of ["advanceDay", "forageDrive"]) {
+    const button = html.match(
+      new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*>`),
+    )?.[0];
+    assert.ok(button, `resource manager: renders ${action}`);
+    assert.match(button, /\bdisabled\b/);
+    assert.match(button, /aria-disabled="true"/);
+    assert.match(button, /blocking resource conflicts are fixed/);
+  }
 }
 
 process.stdout.write("ui render harness validation passed\n");

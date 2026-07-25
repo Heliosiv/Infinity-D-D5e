@@ -21,6 +21,7 @@ import {
 import { wireBackgroundImageFallback } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { openSingleton } from "./infinity-app.js";
+import { isFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/shop-picker.hbs`;
@@ -51,10 +52,10 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     body: { template: TEMPLATE_PATH },
   };
 
-  /** Open (or focus) the player's Shops picker. GM-guarded: GMs use the
-   *  Merchant Workspace, not this door. */
+  /** Open (or focus) the player's Shops picker. Full GMs use the Merchant
+   *  Workspace; Assistant GMs who play a character use this player door. */
   static open() {
-    if (globalThis.game?.user?.isGM) {
+    if (isFullGM()) {
       ui.notifications?.info(
         "The Shops picker is for players — GMs use the Merchant Workspace.",
       );

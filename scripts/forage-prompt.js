@@ -106,15 +106,11 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._result = null;
   }
 
-  /** The actor this prompt forages as: the GM-targeted one if this user owns
-   *  it, else the user's assigned/owned character (legacy single-actor path). */
+  /** The actor this prompt forages as. A targeted prompt is bound to exactly
+   *  that actor; it never falls through to another actor owned by the user. */
   _resolveActor() {
-    const byId = this._actorId
-      ? globalThis.game?.actors?.get?.(this._actorId)
-      : null;
-    const user = globalThis.game?.user;
-    if (byId && (!user || byId.testUserPermission?.(user, "OWNER") !== false)) {
-      return byId;
+    if (this._actorId) {
+      return globalThis.game?.actors?.get?.(this._actorId) ?? null;
     }
     return resolvePlayerActor();
   }
@@ -216,7 +212,6 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       // when this user's assigned character differs from the tracked actor.
       actorId: this._actorId ?? actor.id,
       rollTotal: rolled.total,
-      wisMod: getWisMod(actor),
       skipped: false,
     });
     this._state = "waiting";
@@ -241,7 +236,6 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       // (a null id would be dropped and stall the GM's window on the timeout).
       actorId: this._actorId ?? actor?.id ?? null,
       rollTotal: 0,
-      wisMod: 0,
       skipped: true,
     });
     this.close();
@@ -285,12 +279,7 @@ export function registerForagePromptAutoOpen() {
 
   subscribe(RESOURCE_EVENTS.FORAGE_ACK, (payload) => {
     if (!payload) return;
-    if (
-      payload.targetUserId &&
-      payload.targetUserId !== globalThis.game?.user?.id
-    ) {
-      return;
-    }
+    if (payload.targetUserId !== globalThis.game?.user?.id) return;
     ForagePromptApp.handleAck(payload);
   });
 }
@@ -299,16 +288,30 @@ export function registerForagePromptAutoOpen() {
  * Helpers
  * ------------------------------------------------------------------ */
 
-function resolvePlayerActor() {
+export function resolvePlayerActor() {
   const assigned = globalThis.game?.user?.character;
   if (assigned) return assigned;
+  const user = globalThis.game?.user;
+  // Assistant/full GM roles receive broad document access from Foundry. That
+  // role-level bypass must not silently select an unassigned player character.
+  if (!user || user.isGM === true) return null;
   const actors = globalThis.game?.actors;
   if (!actors) return null;
   return (
     actors.find?.(
       (a) =>
-        a?.type === "character" &&
-        a?.testUserPermission?.(globalThis.game?.user, "OWNER"),
+        a?.type === "character" && hasDirectActorOwnerPermission(a, user.id),
     ) ?? null
   );
+}
+
+function hasDirectActorOwnerPermission(actor, userId) {
+  const id = String(userId ?? "").trim();
+  if (!id) return false;
+  const ownership = actor?.ownership ?? {};
+  const level = Object.hasOwn(ownership, id)
+    ? ownership[id]
+    : ownership.default;
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  return Number(level) >= Number(OWNER);
 }

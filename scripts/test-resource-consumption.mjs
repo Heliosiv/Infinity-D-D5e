@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
 import {
+  diagnoseResourceConfiguration,
+  diagnoseResourceItemOverlaps,
   matchResourceItems,
   planConsumption,
   planDeposit,
@@ -75,6 +77,205 @@ function item(id, name, qty, extra = {}) {
 {
   const items = [item("hw", "Holy Water", 1)];
   assert.equal(matchResourceItems(items, FOOD_DEF).length, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * Configuration diagnostics — forage and matcher ambiguity
+ * ------------------------------------------------------------------ */
+{
+  const diagnostics = diagnoseResourceConfiguration([
+    {
+      id: "food",
+      label: "Food",
+      forageYields: "food",
+      matching: {
+        itemUuids: ["Compendium.test.Item.shared"],
+        flagTag: "provisions",
+        nameKeywords: ["ration", "trail ration"],
+      },
+    },
+    {
+      id: "meals",
+      label: "Meals",
+      forageYields: "food",
+      matching: {
+        itemUuids: ["Compendium.test.Item.shared"],
+        flagTag: "provisions",
+        nameKeywords: ["RATIONS"],
+      },
+    },
+    {
+      id: "light",
+      label: "Light",
+      matching: {
+        itemUuids: ["Compendium.test.Item.torch"],
+        flagTag: "light",
+        nameKeywords: ["torch"],
+      },
+    },
+  ]);
+
+  assert.equal(diagnostics.ok, false);
+  assert.deepEqual(
+    diagnostics.conflicts.map((entry) => entry.code),
+    [
+      "duplicate-forage-channel",
+      "overlapping-item-uuid",
+      "overlapping-flag-tag",
+      "overlapping-name-keyword",
+    ],
+  );
+  assert.equal(diagnostics.blockingConflicts.length, 1);
+  assert.equal(
+    diagnostics.blockingConflicts[0].code,
+    "duplicate-forage-channel",
+  );
+  assert.equal(diagnostics.warningConflicts.length, 3);
+  assert.deepEqual(
+    diagnostics.conflicts[3].resourceIds,
+    ["food", "meals"],
+    "keyword comparison is case-insensitive and catches substring overlap",
+  );
+}
+
+{
+  const diagnostics = diagnoseResourceConfiguration([
+    {
+      id: "food",
+      matching: {
+        itemUuids: ["same", "same"],
+        flagTag: "food",
+        nameKeywords: ["ration", "rations", "ration"],
+      },
+    },
+    {
+      id: "light",
+      matching: {
+        itemUuids: ["torch"],
+        flagTag: "light",
+        nameKeywords: ["torch"],
+      },
+    },
+  ]);
+  assert.equal(
+    diagnostics.ok,
+    true,
+    "duplicates inside one resource and unrelated matchers are not conflicts",
+  );
+}
+
+{
+  const diagnostics = diagnoseResourceConfiguration([
+    {
+      id: "upper",
+      matching: {
+        itemUuids: ["Compendium.test.Item.Shared"],
+        flagTag: "Provisions",
+      },
+    },
+    {
+      id: "lower",
+      matching: {
+        itemUuids: ["Compendium.test.Item.shared"],
+        flagTag: "provisions",
+      },
+    },
+  ]);
+  assert.equal(
+    diagnostics.ok,
+    true,
+    "UUID and flag matchers preserve runtime case sensitivity",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Live-item diagnostics — one concrete stack cannot back two resources
+ * ------------------------------------------------------------------ */
+{
+  const inventories = [
+    {
+      actorId: "actor-a",
+      actorName: "Aria",
+      items: [
+        item("shared", "Trail Rations", 0, {
+          _stats: { compendiumSource: "Compendium.test.Item.rations" },
+        }),
+        item("safe", "Torch", 2),
+      ],
+    },
+  ];
+  const diagnostics = diagnoseResourceItemOverlaps({
+    inventories,
+    resources: [
+      {
+        id: "food",
+        label: "Food",
+        matching: {
+          itemUuids: ["Compendium.test.Item.rations"],
+          flagTag: "food",
+          nameKeywords: [],
+        },
+      },
+      {
+        id: "meals",
+        label: "Meals",
+        matching: {
+          itemUuids: [],
+          flagTag: "meals",
+          nameKeywords: ["ration"],
+        },
+      },
+      {
+        id: "light",
+        label: "Light",
+        matching: {
+          itemUuids: [],
+          flagTag: "light",
+          nameKeywords: ["torch"],
+        },
+      },
+    ],
+  });
+
+  assert.equal(diagnostics.ok, false);
+  assert.equal(diagnostics.blockingConflicts.length, 1);
+  assert.deepEqual(diagnostics.conflicts[0].resourceIds, ["food", "meals"]);
+  assert.equal(diagnostics.conflicts[0].actorId, "actor-a");
+  assert.equal(diagnostics.conflicts[0].itemId, "shared");
+  assert.match(diagnostics.conflicts[0].message, /Aria's Trail Rations/);
+  assert.equal(
+    diagnostics.conflicts[0].resources.length,
+    2,
+    "a zero-quantity stack remains ambiguous because deposits can refill it",
+  );
+}
+
+{
+  const diagnostics = diagnoseResourceItemOverlaps({
+    inventories: [
+      {
+        actorId: "actor-a",
+        actorName: "Aria",
+        items: [item("same-id", "Rations", 1)],
+      },
+      {
+        actorId: "actor-b",
+        actorName: "Borin",
+        items: [item("same-id", "Rations", 1)],
+      },
+    ],
+    resources: [
+      {
+        id: "food",
+        matching: { nameKeywords: ["ration"] },
+      },
+    ],
+  });
+  assert.equal(
+    diagnostics.ok,
+    true,
+    "the same embedded id on different actors is not an overlap",
+  );
 }
 
 /* ------------------------------------------------------------------ *

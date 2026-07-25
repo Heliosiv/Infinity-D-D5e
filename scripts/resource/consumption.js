@@ -43,6 +43,194 @@ function itemSourceUuids(item) {
   return out;
 }
 
+function text(value) {
+  return String(value ?? "").trim();
+}
+
+function uniqueValues(values, { lowerCase = false } = {}) {
+  const seen = new Set();
+  const out = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = lowerCase ? lower(value).trim() : text(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function describeResources(resourceDefs) {
+  return (Array.isArray(resourceDefs) ? resourceDefs : [])
+    .filter((resource) => resource && typeof resource === "object")
+    .map((resource, index) => {
+      const id = text(resource.id) || `resource-${index + 1}`;
+      const matching =
+        resource.matching && typeof resource.matching === "object"
+          ? resource.matching
+          : {};
+      return {
+        source: resource,
+        id,
+        label: text(resource.label) || id,
+        forageYields:
+          resource.forageYields === "food" || resource.forageYields === "water"
+            ? resource.forageYields
+            : null,
+        itemUuids: uniqueValues(matching.itemUuids),
+        flagTag: text(matching.flagTag),
+        keywords: uniqueValues(matching.nameKeywords, { lowerCase: true }),
+      };
+    });
+}
+
+function diagnosticResult(conflicts) {
+  const list = Array.isArray(conflicts) ? conflicts : [];
+  return {
+    ok: list.length === 0,
+    conflicts: list,
+    blockingConflicts: list.filter((entry) => entry.blocking === true),
+    warningConflicts: list.filter((entry) => entry.blocking !== true),
+  };
+}
+
+function groupedValues(resources, valuesForResource) {
+  const groups = new Map();
+  for (const resource of resources) {
+    const values = valuesForResource(resource);
+    for (const value of Array.isArray(values) ? values : []) {
+      const group = groups.get(value) ?? [];
+      group.push(resource);
+      groups.set(value, group);
+    }
+  }
+  return groups;
+}
+
+function sharedMatcherConflict({ code, matcherType, value, resources, noun }) {
+  const labels = resources.map((resource) => resource.label);
+  return {
+    code,
+    severity: "warning",
+    blocking: false,
+    matcherType,
+    value,
+    resourceIds: resources.map((resource) => resource.id),
+    resourceLabels: labels,
+    message: `${labels.join(", ")} share the ${noun} "${value}".`,
+  };
+}
+
+/**
+ * Diagnose structural resource ambiguity without reading Foundry documents.
+ *
+ * Duplicate food/water forage channels are blocking because runtime deposits
+ * otherwise select only the first definition. Shared matcher declarations are
+ * warnings: they become blocking only when a live Item actually matches more
+ * than one resource (see diagnoseResourceItemOverlaps).
+ */
+export function diagnoseResourceConfiguration(resourceDefs = []) {
+  const resources = describeResources(resourceDefs);
+  const conflicts = [];
+
+  const forageGroups = groupedValues(resources, (resource) =>
+    resource.forageYields ? [resource.forageYields] : [],
+  );
+  for (const [channel, group] of forageGroups) {
+    if (group.length < 2) continue;
+    const labels = group.map((resource) => resource.label);
+    conflicts.push({
+      code: "duplicate-forage-channel",
+      severity: "error",
+      blocking: true,
+      channel,
+      resourceIds: group.map((resource) => resource.id),
+      resourceLabels: labels,
+      message: `${labels.join(", ")} all receive foraged ${channel}; choose one ${channel} resource.`,
+    });
+  }
+
+  const uuidGroups = groupedValues(resources, (resource) => resource.itemUuids);
+  for (const [uuid, group] of uuidGroups) {
+    if (group.length < 2) continue;
+    conflicts.push(
+      sharedMatcherConflict({
+        code: "overlapping-item-uuid",
+        matcherType: "itemUuid",
+        value: uuid,
+        resources: group,
+        noun: "exact item UUID",
+      }),
+    );
+  }
+
+  const flagGroups = groupedValues(resources, (resource) =>
+    resource.flagTag ? [resource.flagTag] : [],
+  );
+  for (const [flagTag, group] of flagGroups) {
+    if (group.length < 2) continue;
+    conflicts.push(
+      sharedMatcherConflict({
+        code: "overlapping-flag-tag",
+        matcherType: "flagTag",
+        value: flagTag,
+        resources: group,
+        noun: "item flag tag",
+      }),
+    );
+  }
+
+  for (let leftIndex = 0; leftIndex < resources.length; leftIndex += 1) {
+    const left = resources[leftIndex];
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < resources.length;
+      rightIndex += 1
+    ) {
+      const right = resources[rightIndex];
+      const overlaps = new Map();
+      for (const leftKeyword of left.keywords) {
+        for (const rightKeyword of right.keywords) {
+          if (
+            !leftKeyword.includes(rightKeyword) &&
+            !rightKeyword.includes(leftKeyword)
+          ) {
+            continue;
+          }
+          const pair = [leftKeyword, rightKeyword].sort();
+          overlaps.set(`${pair[0]}\u0000${pair[1]}`, {
+            left: leftKeyword,
+            right: rightKeyword,
+          });
+        }
+      }
+      if (overlaps.size === 0) continue;
+      const keywordPairs = [...overlaps.values()];
+      const preview = keywordPairs
+        .slice(0, 3)
+        .map(({ left: leftKeyword, right: rightKeyword }) =>
+          leftKeyword === rightKeyword
+            ? `"${leftKeyword}"`
+            : `"${leftKeyword}" / "${rightKeyword}"`,
+        )
+        .join(", ");
+      const more =
+        keywordPairs.length > 3 ? ` (+${keywordPairs.length - 3} more)` : "";
+      conflicts.push({
+        code: "overlapping-name-keyword",
+        severity: "warning",
+        blocking: false,
+        matcherType: "nameKeyword",
+        keywordPairs,
+        resourceIds: [left.id, right.id],
+        resourceLabels: [left.label, right.label],
+        message: `${left.label} and ${right.label} have overlapping name keywords: ${preview}${more}.`,
+      });
+    }
+  }
+
+  return diagnosticResult(conflicts);
+}
+
 /**
  * Match a character's items against a resource definition. Priority, highest
  * first: explicit source UUID > module flag tag > name keyword. Name matching
@@ -96,6 +284,72 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
   // Highest priority first; within a tier, larger stacks first (drain big piles).
   out.sort((a, b) => b.priority - a.priority || b.quantity - a.quantity);
   return out;
+}
+
+/**
+ * Find concrete Actor Items claimed by multiple resource definitions.
+ *
+ * @param {object} args
+ * @param {Array<{actorId?:string,actorName?:string,items?:Array<object>}>} args.inventories
+ * @param {Array<object>} args.resources
+ */
+export function diagnoseResourceItemOverlaps({
+  inventories = [],
+  resources: resourceDefs = [],
+} = {}) {
+  const resources = describeResources(resourceDefs);
+  const conflicts = [];
+
+  for (const [inventoryIndex, inventory] of (Array.isArray(inventories)
+    ? inventories
+    : []
+  ).entries()) {
+    if (!inventory || typeof inventory !== "object") continue;
+    const actorId =
+      text(inventory.actorId ?? inventory.id) || `actor-${inventoryIndex + 1}`;
+    const actorName = text(inventory.actorName ?? inventory.name) || actorId;
+    const claimsByItem = new Map();
+
+    for (const resource of resources) {
+      const matches = matchResourceItems(inventory.items, resource.source);
+      for (const match of matches) {
+        const itemId = text(match.id);
+        if (!itemId) continue;
+        const claim = claimsByItem.get(itemId) ?? {
+          itemId,
+          itemName: text(match.name) || itemId,
+          resources: new Map(),
+        };
+        claim.resources.set(resource.id, {
+          id: resource.id,
+          label: resource.label,
+          priority: match.priority,
+        });
+        claimsByItem.set(itemId, claim);
+      }
+    }
+
+    for (const claim of claimsByItem.values()) {
+      const claimedResources = [...claim.resources.values()];
+      if (claimedResources.length < 2) continue;
+      const labels = claimedResources.map((resource) => resource.label);
+      conflicts.push({
+        code: "overlapping-live-item",
+        severity: "error",
+        blocking: true,
+        actorId,
+        actorName,
+        itemId: claim.itemId,
+        itemName: claim.itemName,
+        resources: claimedResources,
+        resourceIds: claimedResources.map((resource) => resource.id),
+        resourceLabels: labels,
+        message: `${actorName}'s ${claim.itemName} matches multiple resources: ${labels.join(", ")}.`,
+      });
+    }
+  }
+
+  return diagnosticResult(conflicts);
 }
 
 /**

@@ -65,7 +65,7 @@ function makeTransactionActor(itemData = null) {
 function actorAccess(actor) {
   return {
     users: {
-      activeGM: { id: "gm" },
+      activeGM: { id: "gm", isGM: true },
       get: (id) => ({ id, name: id, active: true, character: actor }),
     },
     actors: {
@@ -80,7 +80,7 @@ try {
   const emitted = [];
   globalThis.game = {
     user: { id: "player1", isGM: false },
-    users: { activeGM: { id: "gm" } },
+    users: { activeGM: { id: "gm", isGM: true } },
     socket: {
       emit: (name, payload) => emitted.push({ name, payload }),
       on() {},
@@ -246,7 +246,7 @@ try {
     globalThis.game = {
       user: { id: "gm", isGM: true },
       users: {
-        activeGM: { id: "gm" },
+        activeGM: { id: "gm", isGM: true },
         get: (id) => ({ id, active: true, isGM: false, name: id }),
       },
       settings: { get: () => merchants },

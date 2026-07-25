@@ -2,32 +2,74 @@
  * Infinity D&D5e — Resource store
  *
  * Persistence + normalization for the Quartermaster's configuration and its
- * moving run-state. Two world settings back this:
+ * moving run-state. Both live in the restricted private-state Journal:
  *   - `resourceConfig`   — the GM-tunable structure (resources, environments,
  *                          modes). Rewritten only when the GM edits it.
  *   - `resourceRunState` — the small moving parts (lastSeenDay, current
  *                          environment, last upkeep report). Written each day.
  *
  * Pure shaping (normalize/create) is exported for node tests; the Foundry-
- * touching load/save go through settings.js getSetting/setSetting, which
- * already degrade gracefully when `game.settings` is absent.
+ * touching load/save use private-state.js. Legacy world-setting fallback is
+ * retained only outside a live Foundry session so the pure Node harness and
+ * old migration fixtures can run without constructing a Journal document.
  */
 
-import { SETTING_KEYS, getSetting, setSetting } from "../settings.js";
+import {
+  getPrivateState,
+  isPrivilegedPrivateStateReady,
+  setPrivateState,
+} from "../private-state.js";
+import { isFullGM } from "../permissions.js";
+import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
+import {
+  SETTING_KEYS,
+  getSetting,
+  getSettingDefault,
+  setSetting,
+} from "../settings.js";
 import {
   getDefaultEnvironments,
   normalizeEnvironmentCatalog,
 } from "./environment.js";
 
-export const RESOURCE_CONFIG_VERSION = 1;
+export const RESOURCE_CONFIG_VERSION = 2;
+export const RESOURCE_RUN_STATE_VERSION = 1;
 
 /** Resource consumption scope. Food/water are per-character; light is party-wide. */
 export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
 
 const FORAGE_MODES = Object.freeze(["each", "best"]);
 
+/**
+ * Runtime rules live in normal Foundry settings so the standard Module
+ * Settings screen and the Quartermaster editor always change the same values.
+ * v1 duplicated these fields inside resourceConfig, leaving the visible
+ * settings inert. The v2 migration copies the legacy values once, then stores
+ * only structural data (resources, roster, stash, and environments).
+ */
+export const RESOURCE_RULE_SETTINGS = Object.freeze({
+  forageMode: SETTING_KEYS.RESOURCE_FORAGE_MODE,
+  waterEnabled: SETTING_KEYS.RESOURCE_WATER_ENABLED,
+  halfRations: SETTING_KEYS.RESOURCE_HALF_RATIONS,
+  maxCatchUpDays: SETTING_KEYS.RESOURCE_MAX_CATCHUP_DAYS,
+});
+
+const RESOURCE_RULE_FIELDS = Object.freeze(Object.keys(RESOURCE_RULE_SETTINGS));
+
 /** `drawFrom` sentinel: a member draws from their own sheet. */
 export const DRAW_FROM_SELF = "self";
+
+/** Food/water channels must stay per-character so shortage and exhaustion
+ * accounting can identify which character went without a survival resource. */
+export function isCanonicalPerCharacterResource(resource) {
+  const id = toStr(resource?.id).toLowerCase();
+  return (
+    id === "food" ||
+    id === "water" ||
+    resource?.forageYields === "food" ||
+    resource?.forageYields === "water"
+  );
+}
 
 function toStr(value, fallback = "") {
   const s = String(value ?? "").trim();
@@ -107,15 +149,18 @@ export function normalizeResource(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = toStr(raw.id);
   if (!id) return null;
-  const scope = RESOURCE_SCOPES.includes(raw.scope)
-    ? raw.scope
-    : "per-character";
   const matching =
     raw.matching && typeof raw.matching === "object" ? raw.matching : {};
   const forageYields =
     raw.forageYields === "food" || raw.forageYields === "water"
       ? raw.forageYields
       : null;
+  const requestedScope = RESOURCE_SCOPES.includes(raw.scope)
+    ? raw.scope
+    : "per-character";
+  const scope = isCanonicalPerCharacterResource({ id, forageYields })
+    ? "per-character"
+    : requestedScope;
   return {
     id,
     label: toStr(raw.label, id),
@@ -135,6 +180,7 @@ export function normalizeResource(raw) {
  * per-character supplies from. Drops entries with no actorId (returns null).
  *   - actorId : the tracked character's id.
  *   - isStash : the character's pack is a shared source other members can draw from.
+ *   - consumes: explicit consumer override; null preserves legacy/unspecified intent.
  *   - drawFrom: "self" (own sheet) or another roster member's actorId. Cross-entry
  *               validity (must point at a real stash) is enforced in normalizeRoster.
  */
@@ -145,6 +191,8 @@ export function normalizeRosterEntry(raw) {
   return {
     actorId,
     isStash: raw.isStash === true,
+    consumes:
+      raw.consumes === true ? true : raw.consumes === false ? false : null,
     drawFrom: toStr(raw.drawFrom) || DRAW_FROM_SELF,
   };
 }
@@ -198,7 +246,12 @@ export function resolveDrawSourceId(entry) {
 export function normalizeResourceConfig(input) {
   const raw = input && typeof input === "object" ? input : {};
   const resourcesRaw = Array.isArray(raw.resources) ? raw.resources : [];
-  const resources = resourcesRaw.map(normalizeResource).filter(Boolean);
+  const seenResourceIds = new Set();
+  const resources = resourcesRaw.map(normalizeResource).filter((resource) => {
+    if (!resource || seenResourceIds.has(resource.id)) return false;
+    seenResourceIds.add(resource.id);
+    return true;
+  });
   return {
     version: RESOURCE_CONFIG_VERSION,
     forageMode: FORAGE_MODES.includes(raw.forageMode) ? raw.forageMode : "each",
@@ -208,10 +261,10 @@ export function normalizeResourceConfig(input) {
     forageTimeoutSeconds: Math.max(0, toInt(raw.forageTimeoutSeconds, 120)),
     resources: resources.length > 0 ? resources : defaultResources(),
     roster: normalizeRoster(raw.roster),
-    // A single shared stash the WHOLE party draws per-character supplies (food
-    // & water) from — the quartermaster's pack. "" = each member draws from
-    // their own sheet (or their per-row nomination). When set, it overrides the
-    // per-member `drawFrom` so the GM can run one communal pile with one pick.
+    // A single shared stash the WHOLE party draws every per-character supply
+    // from — the quartermaster's pack. "" = each member draws from their own
+    // sheet (or their per-row nomination). When set, it overrides per-member
+    // `drawFrom` so the GM can run one communal pile with one pick.
     partyStashId: toStr(raw.partyStashId),
     environments: normalizeEnvironmentCatalog(raw.environments),
   };
@@ -223,6 +276,23 @@ export function createDefaultResourceConfig() {
     resources: defaultResources(),
     environments: getDefaultEnvironments(),
   });
+}
+
+/**
+ * Project a normalized runtime config down to the structural v2 setting shape.
+ * Rule fields deliberately do not persist here; their canonical values live in
+ * the four visible settings listed in RESOURCE_RULE_SETTINGS.
+ */
+export function serializeResourceConfig(input) {
+  const config = normalizeResourceConfig(input);
+  return {
+    version: RESOURCE_CONFIG_VERSION,
+    forageTimeoutSeconds: config.forageTimeoutSeconds,
+    resources: config.resources,
+    roster: config.roster,
+    partyStashId: config.partyStashId,
+    environments: config.environments,
+  };
 }
 
 /** Normalize the run-state. lastSeenDay null means "never processed". */
@@ -244,47 +314,643 @@ export function normalizeRunState(input) {
   };
 }
 
+function isPersistedRunState(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  if (Number(raw.version) !== RESOURCE_RUN_STATE_VERSION) return false;
+  const revision = Number(raw.revision);
+  if (!Number.isSafeInteger(revision) || revision < 0) return false;
+  if (!toStr(raw.authorityId)) return false;
+  if (!toStr(raw.authorityEpoch)) return false;
+  if (
+    raw.lastSeenDay !== null &&
+    (!Number.isInteger(Number(raw.lastSeenDay)) ||
+      !Number.isFinite(Number(raw.lastSeenDay)))
+  ) {
+    return false;
+  }
+  if (
+    raw.currentEnvironmentId !== null &&
+    typeof raw.currentEnvironmentId !== "string"
+  ) {
+    return false;
+  }
+  if (
+    raw.lastUpkeepResult !== null &&
+    (!raw.lastUpkeepResult ||
+      typeof raw.lastUpkeepResult !== "object" ||
+      Array.isArray(raw.lastUpkeepResult))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function persistedRunStateRevision(raw) {
+  const revision = Number(raw?.revision);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+function serializeRunState(state, { revision, authorityId, authorityEpoch }) {
+  const safeRevision = Number(revision);
+  if (!Number.isSafeInteger(safeRevision) || safeRevision < 0) {
+    throw new Error("ResourceRunStateRevisionInvalid");
+  }
+  return {
+    version: RESOURCE_RUN_STATE_VERSION,
+    revision: safeRevision,
+    authorityId: toStr(authorityId) || null,
+    authorityEpoch: toStr(authorityEpoch) || null,
+    ...normalizeRunState(state),
+  };
+}
+
+function runStateValuesEqual(left, right) {
+  try {
+    return (
+      JSON.stringify(normalizeRunState(left)) ===
+      JSON.stringify(normalizeRunState(right))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Foundry-touching CRUD (graceful via settings.js)
  * ------------------------------------------------------------------ */
 
 export function loadResourceConfig() {
-  return normalizeResourceConfig(getSetting(SETTING_KEYS.RESOURCE_CONFIG));
+  const raw = readPrivateResourceValue(
+    SETTING_KEYS.RESOURCE_CONFIG,
+    SETTING_KEYS.RESOURCE_CONFIG,
+  );
+  const config = normalizeResourceConfig(raw);
+  const rawVersion = Math.floor(Number(raw?.version) || 0);
+  const hasLegacyRuleValues =
+    rawVersion < RESOURCE_CONFIG_VERSION &&
+    RESOURCE_RULE_FIELDS.some((field) =>
+      Object.prototype.hasOwnProperty.call(raw ?? {}, field),
+    );
+
+  // Preserve the behavior of an unmigrated v1 world until the active GM runs
+  // the ready migration. New/v2 worlds resolve every rule from Module Settings.
+  if (hasLegacyRuleValues) return config;
+  return {
+    ...config,
+    forageMode: normalizeRuleValue(
+      "forageMode",
+      getSetting(RESOURCE_RULE_SETTINGS.forageMode),
+    ),
+    waterEnabled: normalizeRuleValue(
+      "waterEnabled",
+      getSetting(RESOURCE_RULE_SETTINGS.waterEnabled),
+    ),
+    halfRations: normalizeRuleValue(
+      "halfRations",
+      getSetting(RESOURCE_RULE_SETTINGS.halfRations),
+    ),
+    maxCatchUpDays: normalizeRuleValue(
+      "maxCatchUpDays",
+      getSetting(RESOURCE_RULE_SETTINGS.maxCatchUpDays),
+    ),
+  };
 }
 
-export async function saveResourceConfig(config) {
-  return setSetting(
-    SETTING_KEYS.RESOURCE_CONFIG,
-    normalizeResourceConfig(config),
+/**
+ * Automation must not run against safe defaults or an unmigrated private
+ * payload. Node harnesses remain ready because they intentionally use the
+ * legacy settings fallback instead of a live restricted Journal.
+ */
+export function isResourceAutomationReady() {
+  if (!isLiveFoundrySession()) return true;
+  if (!isPrivilegedPrivateStateReady()) return false;
+  const rawConfig = getPrivateState(SETTING_KEYS.RESOURCE_CONFIG);
+  if (Math.floor(Number(rawConfig?.version) || 0) < RESOURCE_CONFIG_VERSION) {
+    return false;
+  }
+  const rawRunState = getPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE);
+  const currentUserId = toStr(globalThis.game?.user?.id);
+  const authority = observeResourceAuthorityTransition();
+  const revisionIsCurrent = isAcceptedRunStateRevision(rawRunState);
+  return Boolean(
+    isPersistedRunState(rawRunState) &&
+    currentUserId &&
+    rawRunState.authorityId === currentUserId &&
+    rawRunState.authorityEpoch === authority.authorityEpoch &&
+    authority.authorityId === currentUserId &&
+    revisionIsCurrent,
   );
 }
 
+export async function saveResourceConfig(config) {
+  await setPrivateState(
+    SETTING_KEYS.RESOURCE_CONFIG,
+    serializeResourceConfig(config),
+  );
+  return true;
+}
+
+/** Save one canonical runtime rule from the Quartermaster UI. */
+export async function setResourceRule(field, value) {
+  const settingKey = RESOURCE_RULE_SETTINGS[field];
+  if (!settingKey) return false;
+  return setSetting(settingKey, normalizeRuleValue(field, value));
+}
+
+/** Restore the four canonical runtime rules to their registered defaults. */
+export async function resetResourceRules() {
+  const writes = RESOURCE_RULE_FIELDS.map((field) => {
+    const settingKey = RESOURCE_RULE_SETTINGS[field];
+    return setSetting(settingKey, getSettingDefault(settingKey));
+  });
+  const results = await Promise.all(writes);
+  return results.every(Boolean);
+}
+
+/**
+ * One-time v1 -> v2 migration. Private-state initialization first copies the
+ * legacy world-setting object into the restricted Journal. This step moves its
+ * runtime rules into visible settings, then replaces the private payload with
+ * the structural v2 shape.
+ */
+export async function migrateResourceConfig() {
+  const game = globalThis.game;
+  if (!isFullGM(game?.user)) return false;
+  const activeGM = game.users?.activeGM;
+  if (activeGM?.id && activeGM.id !== game.user.id) return false;
+
+  let raw;
+  try {
+    raw = readPrivateResourceValue(
+      SETTING_KEYS.RESOURCE_CONFIG,
+      SETTING_KEYS.RESOURCE_CONFIG,
+    );
+  } catch {
+    return false;
+  }
+  const rawVersion = Math.floor(Number(raw?.version) || 0);
+  let changed = false;
+  if (rawVersion < RESOURCE_CONFIG_VERSION) {
+    const legacy = normalizeResourceConfig(raw);
+    for (const field of RESOURCE_RULE_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(raw ?? {}, field)) continue;
+      const wroteRule = await setResourceRule(field, legacy[field]);
+      if (!wroteRule) return false;
+    }
+    await saveResourceConfig(legacy);
+    changed = true;
+  }
+  const runStateChanged = await ensurePersistedRunStateForAuthority();
+  return changed || runStateChanged;
+}
+
 export function loadRunState() {
-  return normalizeRunState(getSetting(SETTING_KEYS.RESOURCE_RUNSTATE));
+  return normalizeRunState(readRawRunState());
 }
 
-export async function saveRunState(state) {
-  return setSetting(SETTING_KEYS.RESOURCE_RUNSTATE, normalizeRunState(state));
+let runStatePatchQueue = Promise.resolve();
+let authorityObservationStarted = false;
+let observedAuthorityId = null;
+let runStateAuthorityEpoch = 0;
+let observedAuthorityEpoch = null;
+let highestObservedRunStateRevision = -1;
+let lastAcceptedRunStateSnapshot = null;
+const retiredAuthorityEpochs = new Set();
+
+function createAuthorityEpoch(authorityId) {
+  const id = toStr(authorityId);
+  if (!id) return null;
+  return `${id}:${runStateAuthorityEpoch}:${Date.now()}:${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }
 
-/** Patch-style helpers so a frequent write doesn't rewrite the whole config. */
+function currentUserOwnsAuthority(authorityId) {
+  const currentUserId = toStr(globalThis.game?.user?.id);
+  return Boolean(
+    currentUserId &&
+    authorityId === currentUserId &&
+    isFullGM(globalThis.game?.user),
+  );
+}
+
+function clonePersistedRunState(raw) {
+  return globalThis.foundry?.utils?.deepClone?.(raw) ?? structuredClone(raw);
+}
+
+function isAcceptedRunStateRevision(raw) {
+  if (!isPersistedRunState(raw)) return false;
+  const revision = persistedRunStateRevision(raw);
+  const currentUserId = toStr(globalThis.game?.user?.id);
+  if (
+    isLiveFoundrySession() &&
+    (raw.authorityId !== currentUserId ||
+      raw.authorityEpoch !== observedAuthorityEpoch)
+  ) {
+    return false;
+  }
+  if (revision < highestObservedRunStateRevision) return false;
+  if (revision === highestObservedRunStateRevision) {
+    return Boolean(
+      isPersistedRunState(lastAcceptedRunStateSnapshot) &&
+      rawRunStatesEqual(raw, lastAcceptedRunStateSnapshot),
+    );
+  }
+  highestObservedRunStateRevision = revision;
+  lastAcceptedRunStateSnapshot = clonePersistedRunState(raw);
+  return true;
+}
+
+function recoveryRunStateBase(raw, fence) {
+  const accepted = lastAcceptedRunStateSnapshot;
+  if (!isPersistedRunState(accepted)) return raw;
+  const acceptedRevision = persistedRunStateRevision(accepted);
+  const rawRevision = persistedRunStateRevision(raw);
+  if (!fence.live) {
+    return acceptedRevision >= rawRevision ? accepted : raw;
+  }
+  const acceptedIsCurrent =
+    accepted.authorityId === fence.userId &&
+    accepted.authorityEpoch === fence.authorityEpoch;
+  const rawIsCurrent =
+    raw?.authorityId === fence.userId &&
+    raw?.authorityEpoch === fence.authorityEpoch;
+  if (
+    toStr(raw?.authorityEpoch) &&
+    retiredAuthorityEpochs.has(raw.authorityEpoch)
+  ) {
+    return accepted;
+  }
+  if (acceptedIsCurrent && !rawIsCurrent) return accepted;
+  if (acceptedIsCurrent && acceptedRevision >= rawRevision) return accepted;
+  if (acceptedRevision > rawRevision) return accepted;
+  return raw;
+}
+
+/**
+ * Observe the designated-GM identity. Module lifecycle hooks call this for
+ * every user role/connection change so an away-and-back handoff still
+ * invalidates work that was queued under the earlier authority generation.
+ */
+export function observeResourceAuthorityTransition() {
+  const authorityId = authoritativeGMId();
+  if (!authorityObservationStarted) {
+    authorityObservationStarted = true;
+    observedAuthorityId = authorityId;
+    observedAuthorityEpoch = currentUserOwnsAuthority(authorityId)
+      ? createAuthorityEpoch(authorityId)
+      : null;
+    return {
+      changed: false,
+      authorityId,
+      epoch: runStateAuthorityEpoch,
+      authorityEpoch: observedAuthorityEpoch,
+      newlyAuthoritative: false,
+    };
+  }
+  const changed = authorityId !== observedAuthorityId;
+  if (changed) {
+    if (observedAuthorityEpoch) {
+      retiredAuthorityEpochs.add(observedAuthorityEpoch);
+    }
+    observedAuthorityId = authorityId;
+    runStateAuthorityEpoch += 1;
+    observedAuthorityEpoch = currentUserOwnsAuthority(authorityId)
+      ? createAuthorityEpoch(authorityId)
+      : null;
+  }
+  const currentUserId = toStr(globalThis.game?.user?.id) || null;
+  return {
+    changed,
+    authorityId,
+    epoch: runStateAuthorityEpoch,
+    authorityEpoch: observedAuthorityEpoch,
+    newlyAuthoritative:
+      changed &&
+      currentUserId !== null &&
+      authorityId === currentUserId &&
+      isFullGM(),
+  };
+}
+
+function captureRunStateAuthorityFence() {
+  if (!isLiveFoundrySession()) return { live: false };
+  const observation = observeResourceAuthorityTransition();
+  return {
+    live: true,
+    authorityId: observation.authorityId,
+    authorityEpoch: observation.authorityEpoch,
+    epoch: observation.epoch,
+    userId: toStr(globalThis.game?.user?.id) || null,
+  };
+}
+
+function isRunStateAuthorityFenceCurrent(fence) {
+  if (!fence?.live) return true;
+  const observation = observeResourceAuthorityTransition();
+  return Boolean(
+    fence.userId &&
+    fence.authorityId === fence.userId &&
+    observation.authorityId === fence.authorityId &&
+    observation.authorityEpoch === fence.authorityEpoch &&
+    observation.epoch === fence.epoch &&
+    isAuthoritativeGM(),
+  );
+}
+
+function assertRunStateAuthorityFence(fence) {
+  if (isRunStateAuthorityFenceCurrent(fence)) return;
+  if (
+    fence?.live &&
+    (!fence.userId ||
+      fence.authorityId !== fence.userId ||
+      !isFullGM(globalThis.game?.user))
+  ) {
+    throw new Error(
+      "PermissionDenied: only the authoritative GM may write resource run state",
+    );
+  }
+  throw new Error("ResourceRunStateAuthorityChanged");
+}
+
+function rotateRunStateAuthorityForRevisionOverflow(fence, raw) {
+  if (fence.live) assertRunStateAuthorityFence(fence);
+  const previousEpoch = toStr(raw?.authorityEpoch);
+  if (previousEpoch) retiredAuthorityEpochs.add(previousEpoch);
+  runStateAuthorityEpoch += 1;
+  highestObservedRunStateRevision = -1;
+
+  if (!fence.live) {
+    const authorityId =
+      toStr(raw?.authorityId) ||
+      toStr(globalThis.game?.user?.id) ||
+      "node-test";
+    return {
+      fence,
+      revision: 0,
+      authorityId,
+      authorityEpoch: `${authorityId}:overflow:${runStateAuthorityEpoch}`,
+    };
+  }
+
+  observedAuthorityEpoch = createAuthorityEpoch(fence.userId);
+  const rotatedFence = {
+    ...fence,
+    epoch: runStateAuthorityEpoch,
+    authorityEpoch: observedAuthorityEpoch,
+  };
+  assertRunStateAuthorityFence(rotatedFence);
+  return {
+    fence: rotatedFence,
+    revision: 0,
+    authorityId: rotatedFence.userId,
+    authorityEpoch: rotatedFence.authorityEpoch,
+  };
+}
+
+function nextRunStateWriteIdentity(fence, raw, ...additionalSnapshots) {
+  const maximumRevision = Math.max(
+    persistedRunStateRevision(raw),
+    ...additionalSnapshots.map((snapshot) =>
+      persistedRunStateRevision(snapshot),
+    ),
+    highestObservedRunStateRevision,
+  );
+  if (maximumRevision < Number.MAX_SAFE_INTEGER) {
+    return {
+      fence,
+      revision: maximumRevision + 1,
+      authorityId: fence.live
+        ? fence.userId
+        : toStr(raw?.authorityId) ||
+          toStr(globalThis.game?.user?.id) ||
+          "node-test",
+      authorityEpoch: fence.live
+        ? fence.authorityEpoch
+        : toStr(raw?.authorityEpoch) || "node-test:0",
+    };
+  }
+  return rotateRunStateAuthorityForRevisionOverflow(fence, raw);
+}
+
+function readRawRunState() {
+  return readPrivateResourceValue(
+    SETTING_KEYS.RESOURCE_RUNSTATE,
+    SETTING_KEYS.RESOURCE_RUNSTATE,
+  );
+}
+
+function rawRunStatesEqual(left, right) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function cloneRunState(state) {
+  const normalized = normalizeRunState(state);
+  return (
+    globalThis.foundry?.utils?.deepClone?.(normalized) ??
+    structuredClone(normalized)
+  );
+}
+
+function enqueueRunStateOperation(operation) {
+  const fence = captureRunStateAuthorityFence();
+  const pending = runStatePatchQueue.then(() => operation(fence));
+  runStatePatchQueue = pending.catch(() => {});
+  return pending;
+}
+
+async function commitRunState(state, { fence, expectedRaw }) {
+  assertRunStateAuthorityFence(fence);
+  const before = readRawRunState();
+  if (!rawRunStatesEqual(before, expectedRaw)) {
+    throw new Error("ResourceRunStateStaleWrite");
+  }
+  if (fence.live) {
+    if (!isPersistedRunState(before) || !isAcceptedRunStateRevision(before)) {
+      throw new Error("ResourceRunStateUnavailable");
+    }
+    if (
+      before.authorityId !== fence.userId ||
+      before.authorityEpoch !== fence.authorityEpoch
+    ) {
+      throw new Error("ResourceRunStateAuthorityMismatch");
+    }
+  }
+
+  const writeIdentity = nextRunStateWriteIdentity(fence, before);
+  fence = writeIdentity.fence;
+  const next = serializeRunState(state, {
+    revision: writeIdentity.revision,
+    authorityId: writeIdentity.authorityId,
+    authorityEpoch: writeIdentity.authorityEpoch,
+  });
+  const beforeWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunState(), expectedRaw);
+  const afterWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunState(), next);
+  await setPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE, next, {
+    beforeWrite,
+    afterWrite,
+  });
+  assertRunStateAuthorityFence(fence);
+  const stored = readRawRunState();
+  if (
+    !rawRunStatesEqual(stored, next) ||
+    (fence.live && !isPersistedRunState(stored)) ||
+    !runStateValuesEqual(stored, state)
+  ) {
+    throw new Error("ResourceRunStateWriteVerificationFailed");
+  }
+  if (!isAcceptedRunStateRevision(stored)) {
+    throw new Error("ResourceRunStateRevisionRegression");
+  }
+  return true;
+}
+
+async function ensurePersistedRunStateForAuthority() {
+  if (isLiveFoundrySession() && !isAuthoritativeGM()) return false;
+  let fence = captureRunStateAuthorityFence();
+  assertRunStateAuthorityFence(fence);
+  const raw = readRawRunState();
+  const currentUserId = toStr(globalThis.game?.user?.id) || null;
+  if (
+    isPersistedRunState(raw) &&
+    (!fence.live ||
+      (raw.authorityId === currentUserId &&
+        raw.authorityEpoch === fence.authorityEpoch &&
+        isAcceptedRunStateRevision(raw)))
+  ) {
+    return false;
+  }
+
+  const recoveryBase = recoveryRunStateBase(raw, fence);
+  const writeIdentity = nextRunStateWriteIdentity(fence, raw, recoveryBase);
+  fence = writeIdentity.fence;
+  const next = serializeRunState(recoveryBase, {
+    revision: writeIdentity.revision,
+    authorityId: writeIdentity.authorityId,
+    authorityEpoch: writeIdentity.authorityEpoch,
+  });
+  const beforeWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunState(), raw);
+  const afterWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunState(), next);
+  await setPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE, next, {
+    beforeWrite,
+    afterWrite,
+  });
+  assertRunStateAuthorityFence(fence);
+  const stored = readRawRunState();
+  if (
+    !isPersistedRunState(stored) ||
+    !rawRunStatesEqual(stored, next) ||
+    (fence.live &&
+      (stored.authorityId !== currentUserId ||
+        stored.authorityEpoch !== fence.authorityEpoch))
+  ) {
+    throw new Error("ResourceRunStateMigrationVerificationFailed");
+  }
+  if (!isAcceptedRunStateRevision(stored)) {
+    throw new Error("ResourceRunStateRevisionRegression");
+  }
+  return true;
+}
+
+export function saveRunState(state) {
+  const requested = cloneRunState(state);
+  return enqueueRunStateOperation(async (fence) => {
+    const expectedRaw = readRawRunState();
+    return commitRunState(requested, { fence, expectedRaw });
+  });
+}
+
+/**
+ * Serialize same-client read-modify-write patches. Each updater reads only after
+ * the preceding write has settled, while the detached queue tail absorbs a
+ * rejection so one failed write cannot poison later updates.
+ */
+function updateRunState(updater) {
+  return enqueueRunStateOperation(async (fence) => {
+    const expectedRaw = readRawRunState();
+    const state = normalizeRunState(expectedRaw);
+    updater(state);
+    return commitRunState(state, { fence, expectedRaw });
+  });
+}
+
+/** Patch-style helpers so frequent writes preserve adjacent run-state fields. */
 export async function setLastSeenDay(day) {
-  const state = loadRunState();
-  state.lastSeenDay =
+  const value =
     day == null || !Number.isFinite(Number(day))
       ? null
       : Math.floor(Number(day));
-  return saveRunState(state);
+  return updateRunState((state) => {
+    state.lastSeenDay = value;
+  });
 }
 
 export async function setCurrentEnvironment(environmentId) {
-  const state = loadRunState();
-  state.currentEnvironmentId = toStr(environmentId) || null;
-  return saveRunState(state);
+  const value = toStr(environmentId) || null;
+  return updateRunState((state) => {
+    state.currentEnvironmentId = value;
+  });
 }
 
 export async function setLastUpkeepResult(result) {
-  const state = loadRunState();
-  state.lastUpkeepResult = result && typeof result === "object" ? result : null;
-  return saveRunState(state);
+  const value =
+    result && typeof result === "object"
+      ? (globalThis.foundry?.utils?.deepClone?.(result) ??
+        structuredClone(result))
+      : null;
+  return updateRunState((state) => {
+    state.lastUpkeepResult = value;
+  });
+}
+
+function normalizeRuleValue(field, value) {
+  if (field === "forageMode")
+    return FORAGE_MODES.includes(value) ? value : "each";
+  if (field === "waterEnabled") return value !== false;
+  if (field === "halfRations") return value === true;
+  if (field === "maxCatchUpDays") return Math.max(1, toInt(value, 7));
+  return value;
+}
+
+/**
+ * Private-state reads stay synchronous for the existing calculation pipeline.
+ * Ready initialization hydrates the cache before resource services register.
+ * If that invariant breaks in a live Foundry session, throw instead of silently
+ * replacing a world's private configuration with defaults.
+ */
+function readPrivateResourceValue(privateKey, legacySettingKey) {
+  const privateValue = getPrivateState(privateKey);
+  if (privateValue !== undefined) return privateValue;
+  if (isLiveFoundrySession()) {
+    throw new Error(`PrivateStateUnavailable: ${privateKey}`);
+  }
+  return getSetting(legacySettingKey);
+}
+
+function isLiveFoundrySession() {
+  return Boolean(globalThis.game?.ready && globalThis.JournalEntry?.create);
+}
+
+/** Test-only reset for authority generations and the detached patch queue. */
+export function resetResourceStoreForTests() {
+  runStatePatchQueue = Promise.resolve();
+  authorityObservationStarted = false;
+  observedAuthorityId = null;
+  observedAuthorityEpoch = null;
+  runStateAuthorityEpoch = 0;
+  highestObservedRunStateRevision = -1;
+  lastAcceptedRunStateSnapshot = null;
+  retiredAuthorityEpochs.clear();
 }

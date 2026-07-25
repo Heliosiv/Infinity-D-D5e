@@ -88,6 +88,116 @@
   font-size: 0.85rem;
 }
 
+.infinity-dnd5e .rm-outlook__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+}
+
+.infinity-dnd5e .rm-outlook-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--lf-border);
+  border-left-width: 4px;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.infinity-dnd5e .rm-outlook-card--ready {
+  border-left-color: var(--lf-success);
+}
+
+.infinity-dnd5e .rm-outlook-card--low {
+  border-left-color: var(--lf-warn);
+}
+
+.infinity-dnd5e .rm-outlook-card--critical {
+  border-left-color: var(--lf-danger);
+}
+
+.infinity-dnd5e .rm-outlook-card--stable,
+.infinity-dnd5e .rm-outlook-card--unconfigured {
+  border-left-color: var(--lf-muted);
+}
+
+.infinity-dnd5e .rm-outlook-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.infinity-dnd5e .rm-outlook-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  color: var(--lf-accent);
+  background: var(--lf-bg);
+}
+
+.infinity-dnd5e .rm-outlook-card__head > div {
+  min-width: 0;
+}
+
+.infinity-dnd5e .rm-outlook-card__head strong,
+.infinity-dnd5e .rm-outlook-card__head > div > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .rm-outlook-card__head > div > span {
+  color: var(--lf-muted);
+  font-size: 0.7rem;
+}
+
+.infinity-dnd5e .rm-outlook-card__status {
+  color: var(--lf-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.infinity-dnd5e .rm-outlook-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+}
+
+.infinity-dnd5e .rm-outlook-card dl > div {
+  min-width: 0;
+  padding: 4px 5px;
+  border-radius: 4px;
+  background: var(--lf-bg-alt);
+}
+
+.infinity-dnd5e .rm-outlook-card dt {
+  overflow: hidden;
+  color: var(--lf-muted);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .rm-outlook-card dd {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--lf-text-strong);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .infinity-dnd5e .rm-options__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -222,6 +332,12 @@
 .infinity-dnd5e .rm-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.infinity-dnd5e .rm-num small {
+  color: var(--lf-muted);
+  font-size: 0.65rem;
+  font-weight: 400;
 }
 
 /* Roster controls — stash checkbox column centers; draw-from select stays

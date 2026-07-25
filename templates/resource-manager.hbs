@@ -10,16 +10,16 @@
       <p class="rm-head__sub">Party supplies — food, water &amp; light.</p>
     </div>
     <div class="rm-head__actions">
-      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="Run one day of foraging + consumption now">
+      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Run one day of foraging + consumption now{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
         <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
       </button>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="Push a Survival check to chosen players to gather food &amp; water (no day passes)">
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Push a Survival check to chosen players to gather food &amp; water (no day passes){{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
         <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
       </button>
-      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="refresh" title="Refresh">
+      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="refresh" title="Refresh" aria-label="Refresh Quartermaster">
         <i class="fa-solid fa-rotate" aria-hidden="true"></i>
       </button>
-      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="resetConfig" title="Reset to defaults">
+      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="resetConfig" title="Reset to defaults" aria-label="Reset Quartermaster to defaults">
         <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
       </button>
     </div>
@@ -29,12 +29,25 @@
   <p class="rm-note rm-note--warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Another GM is the active one — daily upkeep runs on their client.</p>
   {{/unless}}
 
+  {{#if hasResourceConflictWarnings}}
+  <div class="rm-note rm-note--warn" {{#if hasBlockingResourceConflicts}}role="alert"{{else}}role="status"{{/if}}>
+    <p><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <strong>Resource rules need attention.</strong>
+      {{#if hasBlockingResourceConflicts}}Advance Day and Forage Drive are paused until the blocking conflicts are fixed.{{else}}These shared match rules are warnings; check them before they claim the same inventory item.{{/if}}
+    </p>
+    <ul>
+      {{#each resourceConflictWarnings}}
+      <li>{{message}}{{#if isBlocking}} <strong>(blocks resource writes)</strong>{{/if}}</li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
+
   <p class="rm-note">Set where the party is, check supplies below, then <strong>Advance Day</strong> — or turn on Auto-run to do it automatically as in-game days pass.</p>
 
   <section class="rm-section rm-environment">
     <h3>Where is the party?</h3>
     <div class="rm-environment__row">
-      <select class="mw-input" data-role="environment" aria-label="Current environment">
+      <select class="mw-input" data-role="environment" aria-label="Current environment" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
         {{#each environments}}
         <option value="{{id}}" {{#if selected}}selected{{/if}}>{{optionLabel}}</option>
         {{/each}}
@@ -49,6 +62,31 @@
     </div>
   </section>
 
+  {{#if hasOverviewResources}}
+  <section class="rm-section rm-outlook" aria-labelledby="rm-outlook-heading">
+    <h3 id="rm-outlook-heading">Supply outlook</h3>
+    <div class="rm-outlook__grid">
+      {{#each overviewResources}}
+      <article class="rm-outlook-card rm-outlook-card--{{status}}">
+        <div class="rm-outlook-card__head">
+          <span class="rm-outlook-card__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+          <div>
+            <strong>{{label}}</strong>
+            <span title="{{scopeLabel}} - {{sourceSummary}}">{{scopeLabel}} - {{sourceSummary}}</span>
+          </div>
+          <span class="rm-outlook-card__status">{{statusLabel}}</span>
+        </div>
+        <dl>
+          <div><dt>Available</dt><dd>{{available}}</dd></div>
+          <div><dt>Daily use</dt><dd>{{dailyUse}}</dd></div>
+          <div><dt>Coverage</dt><dd>{{coverageLabel}}</dd></div>
+        </dl>
+      </article>
+      {{/each}}
+    </div>
+  </section>
+  {{/if}}
+
   <section class="rm-section rm-options">
     <h3>Rules</h3>
     <div class="rm-options__grid">
@@ -61,6 +99,10 @@
           <option value="each" {{#if forageModeEach}}selected{{/if}}>Each forager keeps their own</option>
           <option value="best" {{#unless forageModeEach}}selected{{/unless}}>Best result feeds the party</option>
         </select>
+      </label>
+      <label class="rm-field">
+        <span>Maximum catch-up days</span>
+        <input class="mw-input mw-input--num" type="number" min="1" max="30" step="1" value="{{maxCatchUpDays}}" data-config-path="maxCatchUpDays" />
       </label>
     </div>
   </section>
@@ -78,12 +120,12 @@
           <input class="mw-input mw-input--num" type="number" min="0" step="1" value="{{perDay}}" data-config-path="resource:{{id}}:perDay" />
         </label>
         <label class="rm-resource__scope">Scope
-          <select class="mw-input" data-config-path="resource:{{id}}:scope">
+          <select class="mw-input" data-config-path="resource:{{id}}:scope" {{#if scopeLocked}}disabled aria-disabled="true" title="Food and water stay per character so shortages and exhaustion are assigned correctly."{{/if}}>
             <option value="per-character" {{#unless scopeIsParty}}selected{{/unless}}>Each character</option>
             <option value="party" {{#if scopeIsParty}}selected{{/if}}>Whole party</option>
           </select>
         </label>
-        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeResource" data-resource-id="{{id}}" title="Remove resource">
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="removeResource" data-resource-id="{{id}}" title="Remove resource" aria-label="Remove {{label}}">
           <i class="fa-solid fa-trash" aria-hidden="true"></i>
         </button>
       </div>
@@ -99,7 +141,7 @@
       </div>
       <div class="rm-resource__tags" data-drop-resource="{{id}}">
         <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here (from a sheet or compendium) to match it exactly — more reliable than keywords.</span>
-        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Add an item by UUID (keyboard)"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Add an item by UUID (keyboard)" aria-label="Add an exact item match to {{label}}"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
         {{#each tags}}
         <span class="rm-tag {{#if missing}}rm-tag--missing{{/if}}" title="{{uuid}}">{{name}}{{#if missing}} (missing){{/if}}
           <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove {{name}}" aria-label="Remove {{name}} from resource items">×</button>
@@ -113,24 +155,25 @@
   <section class="rm-section rm-party">
     <h3>Party supplies</h3>
     {{#if rosterIsImplicit}}
-    <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong> or change <strong>Draws from</strong> to start curating the roster — or remove anyone who shouldn't be tracked.</p>
+    <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong>, change <strong>Draws from</strong>, or add an inventory-only actor to start curating the roster.</p>
     {{/if}}
     {{#if hasRosterMembers}}
     <div class="rm-stash-pick">
-      <label for="rm-party-stash">Food &amp; water stash</label>
-      <select id="rm-party-stash" data-config-path="partyStashId" aria-label="Single stash the whole party draws food and water from">
+      <label for="rm-party-stash">Per-character supply stash</label>
+      <select id="rm-party-stash" data-config-path="partyStashId" aria-label="Single stash the whole party draws per-character supplies from">
         {{#each partyStashOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
       </select>
-      {{#if partyStashActive}}<span class="rm-muted">Everyone draws food &amp; water from {{partyStashName}}'s pack.</span>{{else}}<span class="rm-muted">Or set each character's source per-row below.</span>{{/if}}
+      {{#if partyStashActive}}<span class="rm-muted">Every consuming party member draws per-character supplies from {{partyStashName}}'s pack.</span>{{else}}<span class="rm-muted">Or set each character's source per-row below.</span>{{/if}}
     </div>
     {{/if}}
     {{#if hasParty}}
     <table class="rm-table rm-roster">
       <thead>
         <tr>
-          <th scope="col">Character</th>
+          <th scope="col">Actor</th>
           {{#each resources}}<th scope="col">{{label}}</th>{{/each}}
           <th scope="col">Exhaustion</th>
+          <th scope="col" title="Charge this actor one per-character share of daily supplies">Consumes</th>
           <th scope="col" title="This character's pack is a shared source the party can draw from">Stash</th>
           <th scope="col">Draws from</th>
           <th scope="col"><span class="rm-sr">Remove</span></th>
@@ -140,14 +183,19 @@
         {{#each partyRows}}
         <tr>
           <td>{{name}}</td>
-          {{#each counts}}<td class="rm-num" title="{{detail}}">{{total}}</td>{{/each}}
+          {{#each counts}}<td class="rm-num" title="{{detail}}">{{total}}{{#if shared}}<small> shared</small>{{/if}}</td>{{/each}}
           <td class="rm-num">{{exhaustion}}</td>
+          <td class="rm-num">
+            <input type="checkbox" data-config-path="roster:{{actorId}}:consumes" {{#if consumes}}checked{{/if}} aria-label="Charge {{name}} daily per-character supplies" />
+          </td>
           <td class="rm-num">
             <input type="checkbox" data-config-path="roster:{{actorId}}:isStash" {{#if isStash}}checked{{/if}} aria-label="Mark {{name}} as a shared stash" />
           </td>
           <td class="rm-drawfrom">
             {{#if @root.partyStashActive}}
-            <span class="rm-muted" title="The whole party draws food &amp; water from the party stash">→ {{@root.partyStashName}}</span>
+            <span class="rm-muted" title="The whole party draws per-character supplies from the party stash">→ {{@root.partyStashName}}</span>
+            {{else unless consumes}}
+            <span class="rm-muted" title="This actor stores inventory but does not consume a daily share">Inventory only</span>
             {{else if isStash}}
             <span class="rm-muted" title="A stash holds its own supplies">Self (stash)</span>
             {{else if canDrawFromStash}}
@@ -166,7 +214,7 @@
       </tbody>
     </table>
     {{else}}
-    <p class="rm-note">No player-owned characters auto-detected. Add any actor — character or NPC — from the picker below to start tracking its food &amp; water. (Player characters auto-appear when a non-GM user owns them or has them assigned.)</p>
+    <p class="rm-note">No player-owned characters auto-detected. Add any actor as an inventory source, then enable <strong>Consumes</strong> for each actual party member.</p>
     {{/if}}
     {{#if hasAvailableToAdd}}
     <div class="rm-roster-add">
@@ -180,16 +228,19 @@
 
   {{#if report}}
   <section class="rm-section rm-report">
-    <h3>Last upkeep — {{report.environmentLabel}}{{#if report.hasSuggestions}} · exhaustion suggested{{/if}}</h3>
+    <h3>Last upkeep - {{report.environmentLabel}}{{#if report.hasErrors}} - partial write{{/if}}</h3>
     <ul class="rm-report__list">
       {{#each report.rows}}
       <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
         <strong>{{name}}</strong>
-        {{#if ok}}supplied{{else}}short {{shortFood}} food / {{shortWater}} water{{/if}}
-        {{#if forageNote}} · {{forageNote}}{{/if}}
+        {{#if supplied}}supplied{{else}}short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}
+        {{#if forageNote}} - {{forageNote}}{{/if}}
+        {{#if hasErrors}} - inventory write needs review{{/if}}
       </li>
       {{/each}}
-      {{#if report.lightShortfall}}<li class="is-short">Light: {{report.lightShortfall}} short of torches</li>{{/if}}
+      {{#each report.partyShortages}}
+      <li class="is-short"><strong>{{label}}</strong>{{#if amount}} - party pool short by {{amount}}{{/if}}{{#if hasError}} - inventory write needs review{{/if}}</li>
+      {{/each}}
     </ul>
   </section>
   {{/if}}

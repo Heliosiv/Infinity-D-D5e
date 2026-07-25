@@ -22,9 +22,19 @@ import {
   isAuthoritativeGMSender,
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
+import { isPrivilegedPrivateStateReady } from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
+
+function isPrivateStateAuthorityReady() {
+  const liveFoundry = Boolean(
+    globalThis.game?.ready && globalThis.JournalEntry?.create,
+  );
+  return Boolean(
+    isAuthoritativeGM() && (!liveFoundry || isPrivilegedPrivateStateReady()),
+  );
+}
 
 export const REPUTATION_EVENTS = Object.freeze({
   // player → GM: "send me the factions I'm allowed to see"
@@ -130,7 +140,8 @@ export function receiveReputationPayload(payload, authenticatedSenderId) {
   const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
   if (!senderId || senderId === globalThis.game?.user?.id) return;
   if (payload.type === REPUTATION_EVENTS.LIST_REQUEST) {
-    if (!isAuthoritativeGM() || !isActiveSocketUser(senderId)) return;
+    if (!isPrivateStateAuthorityReady() || !isActiveSocketUser(senderId))
+      return;
   } else if (!isAuthoritativeGMSender(senderId)) {
     return;
   }
@@ -139,7 +150,10 @@ export function receiveReputationPayload(payload, authenticatedSenderId) {
   dispatchToListeners(payload.type, payload);
 
   // GM-authority route: answer a player's list request.
-  if (payload.type === REPUTATION_EVENTS.LIST_REQUEST && isAuthoritativeGM()) {
+  if (
+    payload.type === REPUTATION_EVENTS.LIST_REQUEST &&
+    isPrivateStateAuthorityReady()
+  ) {
     try {
       handleListRequest(payload);
     } catch (error) {

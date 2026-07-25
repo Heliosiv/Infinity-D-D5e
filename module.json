@@ -19,6 +19,7 @@
     "styles/merchant-session.css",
     "styles/shop-picker.css",
     "styles/resource-manager.css",
+    "styles/resource-overview.css",
     "styles/forage-prompt.css",
     "styles/reputation-workspace.css",
     "styles/reputation-view.css"
@@ -32,6 +33,7 @@
     "templates/merchant-session.hbs",
     "templates/shop-picker.hbs",
     "templates/resource-manager.hbs",
+    "templates/resource-overview.hbs",
     "templates/forage-prompt.hbs",
     "templates/reputation-workspace.hbs",
     "templates/reputation-view.hbs"

@@ -1,0 +1,163 @@
+{{!-- Infinity D&D5e - player-facing, read-only Party Supplies view. --}}
+<div class="ro-shell" aria-busy="{{#if loading}}true{{else}}false{{/if}}">
+  <header class="ro-head">
+    <div class="ro-head__copy">
+      <h2><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i> Party Supplies</h2>
+      <p>
+        Food, water, light, and other travel resources tracked by the Quartermaster.
+        {{#if isGmPreview}}<em>GM preview - player snapshots also hide actors that viewer cannot observe.</em>{{/if}}
+      </p>
+      {{#if updatedLabel}}<small class="ro-updated">Updated {{updatedLabel}}</small>{{/if}}
+    </div>
+    <button
+      type="button"
+      class="ro-icon-btn"
+      data-action="refresh"
+      title="Refresh party supplies"
+      aria-label="Refresh party supplies"
+    >
+      <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+    </button>
+  </header>
+
+  {{#if sharingDisabled}}
+  <p class="ro-notice ro-notice--warn">
+    <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
+    Player access is off in Module Settings. This preview still uses the player-safe data projection.
+  </p>
+  {{/if}}
+
+  <p class="ro-sr-status" role="status" aria-live="polite" aria-atomic="true">
+    {{#if disabled}}Party Supplies sharing is disabled.
+    {{else if noGm}}No full GM is online to provide Party Supplies.
+    {{else if loading}}Loading Party Supplies.
+    {{else if requestFailed}}Party Supplies could not be refreshed.
+    {{else if hasOverview}}Party Supplies updated{{#if updatedLabel}} {{updatedLabel}}{{/if}}.
+    {{else}}No Party Supplies snapshot is available.{{/if}}
+  </p>
+
+  <div class="ro-live">
+    {{#if disabled}}
+    <p class="ro-empty">
+      <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
+      Your GM has not shared the Party Supplies view.
+    </p>
+    {{else if noGm}}
+    <p class="ro-empty">
+      <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+      No GM is online right now. Supplies will refresh when the game reconnects.
+    </p>
+    {{else if loading}}
+    <p class="ro-empty">
+      <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+      Loading the party's supplies...
+    </p>
+    {{else if requestFailed}}
+    <p class="ro-empty ro-empty--warn">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+      The Quartermaster did not answer. Use Refresh to try again.
+    </p>
+    {{else if hasOverview}}
+      {{#if hasParty}}
+      <section class="ro-context" aria-label="Current supply context">
+        <div>
+          <span class="ro-context__label">Environment</span>
+          {{#if environment}}
+          <strong>{{environment.label}}</strong>
+          {{#if environment.forageable}}
+          <span class="ro-context__meta"><i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open{{#if environment.dc}} - DC {{environment.dc}}{{/if}}</span>
+          {{else}}
+          <span class="ro-context__meta"><i class="fa-solid fa-ban" aria-hidden="true"></i> No foraging</span>
+          {{/if}}
+          {{else}}
+          <strong>Not set</strong>
+          <span class="ro-context__meta">The GM has not selected an environment.</span>
+          {{/if}}
+        </div>
+        <div>
+          <span class="ro-context__label">Party</span>
+          <strong>{{partySize}} tracked</strong>
+          <span class="ro-context__meta">
+            {{#if autoTrigger}}Automatic daily upkeep{{else}}Manual daily upkeep{{/if}}
+            {{#if halfRations}} - half rations{{/if}}
+          </span>
+        </div>
+      </section>
+
+      {{#if hasResources}}
+      <section class="ro-resource-section" aria-labelledby="ro-resource-heading">
+        <h3 id="ro-resource-heading">Supply outlook</h3>
+        <div class="ro-grid">
+          {{#each resources}}
+          <article class="ro-card ro-card--{{status}}">
+            <div class="ro-card__head">
+              <span class="ro-card__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+              <div>
+                <h4>{{label}}</h4>
+                <span title="{{scopeLabel}} - {{sourceSummary}}">{{scopeLabel}} - {{sourceSummary}}</span>
+              </div>
+              <span class="ro-status ro-status--{{status}}">{{statusLabel}}</span>
+            </div>
+            <dl class="ro-metrics">
+              <div>
+                <dt>Available</dt>
+                <dd>{{available}}</dd>
+              </div>
+              <div>
+                <dt>Daily use</dt>
+                <dd>{{dailyUse}}</dd>
+              </div>
+              <div>
+                <dt>Coverage</dt>
+                <dd>{{coverageLabel}}</dd>
+              </div>
+            </dl>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{else}}
+      <p class="ro-empty">No resources are configured yet.</p>
+      {{/if}}
+
+      {{#if lastUpkeep}}
+      <section class="ro-last" aria-labelledby="ro-last-heading">
+        <div class="ro-section-head">
+          <h3 id="ro-last-heading">Last upkeep</h3>
+          <span class="ro-run-status ro-run-status--{{lastUpkeep.status}}">{{lastUpkeep.status}}</span>
+        </div>
+        <ul class="ro-last__list">
+          {{#each lastUpkeep.rows}}
+          <li class="{{#if ok}}is-supplied{{else}}is-short{{/if}}">
+            <strong>{{name}}</strong>
+            {{#if supplied}}
+            <span>Supplied</span>
+            {{else}}
+            <span>Short:</span>
+            {{#each shortages}}<span class="ro-shortage">{{label}} {{amount}}</span>{{/each}}
+            {{/if}}
+            {{#if forageNote}}<small>{{forageNote}}</small>{{/if}}
+            {{#if hasErrors}}<small class="ro-warning">The GM is reviewing an inventory write problem.</small>{{/if}}
+          </li>
+          {{/each}}
+          {{#each lastUpkeep.partyShortages}}
+          <li class="is-short">
+            <strong>{{label}}</strong>
+            {{#if amount}}<span>Party pool short by {{amount}}</span>{{/if}}
+            {{#if hasError}}<small class="ro-warning">The GM is reviewing an inventory write problem.</small>{{/if}}
+          </li>
+          {{/each}}
+        </ul>
+      </section>
+      {{/if}}
+      {{else}}
+      <p class="ro-empty">
+        <i class="fa-solid fa-users-slash" aria-hidden="true"></i>
+        No characters are tracked yet. The GM can add the party in Quartermaster.
+      </p>
+      {{/if}}
+    {{else}}
+    <p class="ro-empty">No supply snapshot is available yet.</p>
+    {{/if}}
+  </div>
+</div>

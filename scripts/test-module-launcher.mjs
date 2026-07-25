@@ -31,8 +31,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /if \(game\.user\?\.isGM\) registerGmSceneControls\(controls\);\s*else registerPlayerSceneControls\(controls\);/s,
-  "scene-controls hook should branch GM vs player",
+  /if \(isFullGM\(\)\) registerGmSceneControls\(controls\);\s*else registerPlayerSceneControls\(controls\);/s,
+  "scene-controls hook should reserve the GM dashboard for full GMs",
 );
 
 assert.match(
@@ -69,6 +69,50 @@ assert.match(
   source,
   /game\.keybindings\.register\(MODULE_ID, "openShops"/,
   "a player Shops keybinding should be registered",
+);
+
+assert.match(
+  source,
+  /game\.keybindings\.register\(MODULE_ID, "openPartySupplies"/,
+  "a player and Assistant-GM Party Supplies keybinding should be registered",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?ResourceOverviewApp\.open\(\)/,
+  "the non-full-GM scene controls should expose Party Supplies",
+);
+
+/* ---- Private-state recovery and promoted-GM resource authority ---- */
+
+assert.match(
+  source,
+  /function recoverPrivateStateAndServices\(\)[\s\S]*?await initializePrivateState\(\)[\s\S]*?await migrateResourceConfig\(\)[\s\S]*?registerPrivateDependentServices\(\)/,
+  "late private-state recovery should migrate resources before enabling dependent services",
+);
+
+assert.match(
+  source,
+  /reason === "role-promotion"[\s\S]*?reason === "store-ready"[\s\S]*?reason === "journal-create"[\s\S]*?reason === "authority-change"[\s\S]*?requestRecoveryAfterHooks\(\)/,
+  "role promotion and late Journal arrival should recover without a client reload",
+);
+
+assert.match(
+  source,
+  /observeResourceAuthorityTransition\(\)[\s\S]*?Hooks\?\.on\?\.\("updateUser", onAuthorityCandidateChanged\)[\s\S]*?Hooks\?\.on\?\.\("userConnected", onAuthorityCandidateChanged\)/,
+  "role and connection changes should observe deterministic GM handoffs",
+);
+
+assert.match(
+  source,
+  /onPrivateStateChanged\([\s\S]*?isSharedAuthoritativeGM\(\) && !isResourceAutomationReady\(\)[\s\S]*?requestRecoveryAfterHooks\(\)/,
+  "a stale run-state Journal update should lock readiness and trigger automatic reassertion",
+);
+
+assert.match(
+  source,
+  /private data could not be loaded yet[\s\S]*?schedulePrivateStateRecovery\(\)/,
+  "a failed ready-time private load should schedule an automatic retry",
 );
 
 process.stdout.write("module launcher validation passed\n");
