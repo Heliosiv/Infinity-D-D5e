@@ -1647,12 +1647,15 @@ select.lf-input {
 
 .infinity-dnd5e .lf-menu__panel {
   position: absolute;
+  top: 100%;
   right: 0;
   z-index: 20;
   display: grid;
   gap: 8px;
   width: min(280px, 80vw);
+  max-width: calc(100vw - 24px);
   max-height: min(420px, 70vh);
+  box-sizing: border-box;
   overflow-y: auto;
   margin-top: 6px;
   padding: 10px;
@@ -1665,6 +1668,7 @@ select.lf-input {
 .infinity-dnd5e .lf-menu__row {
   display: flex;
   gap: 6px;
+  min-width: 0;
 }
 
 .infinity-dnd5e .lf-menu__row > .lf-btn {
@@ -1680,6 +1684,7 @@ select.lf-input {
 
 .infinity-dnd5e .lf-menu__name {
   flex: 1 1 auto;
+  width: 0;
   min-width: 0;
 }
 
@@ -1710,6 +1715,7 @@ select.lf-input {
 .infinity-dnd5e .lf-menu__load {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 26px;
   padding: 4px 8px;
   border: 0;
   border-radius: 6px;
