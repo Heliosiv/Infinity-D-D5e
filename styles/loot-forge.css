@@ -1621,6 +1621,7 @@ select.lf-input {
 .infinity-dnd5e .lf-menu {
   position: relative;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .infinity-dnd5e .lf-menu__trigger {
