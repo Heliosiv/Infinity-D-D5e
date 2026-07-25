@@ -40,6 +40,59 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
 
 {
   const originalGame = globalThis.game;
+  const originalFoundry = globalThis.foundry;
+  const originalAudioHelper = globalThis.AudioHelper;
+  const namespacedCalls = [];
+  let globalCalled = false;
+  globalThis.game = {
+    settings: {
+      get(moduleId, key) {
+        if (moduleId !== "infinity-dnd5e") return undefined;
+        if (key === "soundsEnabled") return true;
+        if (key === "soundVolume") return 0.5;
+        return undefined;
+      },
+    },
+  };
+  globalThis.foundry = {
+    audio: {
+      AudioHelper: {
+        play(data, socketOptions) {
+          namespacedCalls.push({ data, socketOptions });
+          return { id: data.src };
+        },
+      },
+    },
+  };
+  globalThis.AudioHelper = {
+    play() {
+      globalCalled = true;
+    },
+  };
+  try {
+    playModuleSound(SOUND_EVENTS.UI_OPEN, { cooldownMs: 0 });
+    assert.equal(
+      namespacedCalls.length,
+      1,
+      "playModuleSound prefers foundry.audio.AudioHelper",
+    );
+    assert.equal(
+      globalCalled,
+      false,
+      "deprecated global AudioHelper is unused",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalFoundry === undefined) delete globalThis.foundry;
+    else globalThis.foundry = originalFoundry;
+    if (originalAudioHelper === undefined) delete globalThis.AudioHelper;
+    else globalThis.AudioHelper = originalAudioHelper;
+  }
+}
+
+{
+  const originalGame = globalThis.game;
   const originalAudioHelper = globalThis.AudioHelper;
   const calls = [];
   const socketPayloads = [];

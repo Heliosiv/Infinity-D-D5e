@@ -23,6 +23,9 @@ const DEFAULT_IMAGE_PATHS = new Set([
   "icons/svg/item-bag.svg",
   "icons/svg/mystery-man.svg",
 ]);
+const BROKEN_CORE_IMAGE_PATHS = new Set([
+  "icons/commodities/treasure/incense-burner-silver.webp",
+]);
 const GENERATED_LOCAL_IMAGE_PATTERN = /DALL|^ddb-images\//i;
 const LEAKED_SOURCE_ID =
   /^(Compendium\.party-operations|Compendium\.world|Actor\.|Item\.)/;
@@ -84,6 +87,7 @@ let badJson = 0;
 const defaultImageItems = [];
 const forgeImageItems = [];
 const generatedLocalImageItems = [];
+const brokenCoreImageItems = [];
 const invalidDnd5eFormulaItems = [];
 const leakedSourceIdItems = [];
 
@@ -112,6 +116,9 @@ for (const [index, line] of lines.entries()) {
     }
     if (/^https:\/\/assets\.forge-vtt\.com\//i.test(imageField.imagePath)) {
       forgeImageItems.push(`${index + 1}:${item.name}:${imageField.path}`);
+    }
+    if (BROKEN_CORE_IMAGE_PATHS.has(imageField.imagePath)) {
+      brokenCoreImageItems.push(`${index + 1}:${item.name}:${imageField.path}`);
     }
     if (GENERATED_LOCAL_IMAGE_PATTERN.test(imageField.imagePath)) {
       generatedLocalImageItems.push(
@@ -184,6 +191,11 @@ assert.equal(
   generatedLocalImageItems.length,
   0,
   `unshipped generated local image paths remain: ${generatedLocalImageItems.join(", ")}`,
+);
+assert.equal(
+  brokenCoreImageItems.length,
+  0,
+  `broken core image paths remain: ${brokenCoreImageItems.join(", ")}`,
 );
 assert.equal(
   invalidDnd5eFormulaItems.length,
