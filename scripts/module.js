@@ -655,8 +655,8 @@ Hooks.once("ready", async () => {
  *     spot for module utilities and a familiar pattern for GMs who've
  *     used party-operations.
  *
- * Foundry V12 hands us an Array<{ name, tools: Array }>; V13+ hands us
- * a Record<name, { tools: Record }>. We handle both shapes.
+ * Foundry V13 hands us a Record<name, { tools: Record }>. The legacy Array
+ * branch remains defensive, but tool activation uses V13's onChange API.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
   try {
@@ -669,8 +669,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
 
 /**
  * GM launcher: the Dashboard category (primary) + a Token-Controls fallback
- * button. Registered twice for discoverability. Handles both the V12 Array and
- * V13+ Record control shapes.
+ * button. Registered twice for discoverability.
  */
 function registerGmSceneControls(controls) {
   const launcherToolName = "infinity-dnd5e-launcher";
@@ -682,7 +681,6 @@ function registerGmSceneControls(controls) {
     button: true,
     visible: true,
     toggle: false,
-    onClick: () => InfinityDashboardApp.open(),
     onChange: () => InfinityDashboardApp.open(),
   };
 
@@ -779,8 +777,7 @@ function registerGmSceneControls(controls) {
 
 /**
  * Player launchers: Shops, Reputation, and (when the GM shares it) Party
- * Supplies. These are separate from the GM dashboard and handle both the V12
- * Array and V13+ Record control shapes.
+ * Supplies. These are separate from the GM dashboard.
  */
 function registerPlayerSceneControls(controls) {
   const shopsToolName = "infinity-dnd5e-shops-tool";
@@ -793,7 +790,6 @@ function registerPlayerSceneControls(controls) {
     visible: true,
     toggle: false,
     order: 0,
-    onClick: () => ShopPickerApp.open(),
     onChange: () => ShopPickerApp.open(),
   };
   const onCategoryChange = (_event, active) => {
@@ -821,7 +817,6 @@ function registerPlayerSceneControls(controls) {
     visible: true,
     toggle: false,
     order: 0,
-    onClick: () => ReputationViewApp.open(),
     onChange: () => ReputationViewApp.open(),
   };
   const repCategoryEntry = (tools) => ({
@@ -850,7 +845,6 @@ function registerPlayerSceneControls(controls) {
     visible: true,
     toggle: false,
     order: 0,
-    onClick: () => ResourceOverviewApp.open(),
     onChange: () => ResourceOverviewApp.open(),
   };
   const suppliesCategoryEntry = (tools) => ({

@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync("scripts/module.js", "utf8");
 
+assert.doesNotMatch(
+  source,
+  /\bonClick\s*:/,
+  "scene-control tools should not use Foundry 13's deprecated onClick callback",
+);
+
 assert.match(
   source,
   /const onCategoryChange = \(_event, active\) => \{\s*if \(active\) InfinityDashboardApp\.open\(\);/s,
