@@ -73,9 +73,10 @@ The v0.2.61 release-candidate code already has a useful foundation.
 - The GM and player surfaces share one source-aware outlook model, so individual
   packs, nominated stashes, the party stash, and party-wide pools are counted
   consistently.
-- Structural configuration is schema version 2. The legacy duplicated runtime
-  rules migrate once into the normal visible Foundry settings, which are now
-  the canonical values used by both Quartermaster and upkeep.
+- Structural configuration is schema version 3. The legacy duplicated runtime
+  rules migrate once into the normal visible Foundry settings, and the former
+  ambiguous default food keyword is repaired without changing customized
+  matcher lists.
 - GM-only resource structure and moving run state are cached from flags on the
   restricted private-state journal. Legacy world-setting copies are cleared
   only after a successful private migration. New worlds never store those
@@ -214,18 +215,19 @@ projections, not competing storage.
 
 ### Configuration versioning
 
-The current milestone moves the structural resource configuration to version 2.
-The migration must:
+The current structural resource configuration is version 3. The migration:
 
 1. Detect an unmigrated version 1 configuration.
 2. Copy each legacy runtime rule to its visible Foundry setting.
 3. Copy the legacy world-setting payload into the restricted private-state
    journal and clear the legacy setting only after the private write succeeds.
-4. Save only the structural version 2 shape in the private `resourceConfig`
-   flag.
-5. Be safe to run more than once.
-6. Preserve the old world's behavior on the first upgraded launch.
-7. Leave malformed or absent fields at registered defaults.
+4. Repair version 2's exact built-in food matcher by removing the singular
+   `ration` keyword, so it no longer claims `water ration`. Customized matcher
+   lists are left alone.
+5. Save only the current structural shape in the private `resourceConfig` flag.
+6. Be safe to run more than once.
+7. Preserve the old world's customized behavior on the first upgraded launch.
+8. Leave malformed or absent fields at registered defaults.
 
 All future changes follow the same pattern: normalize, migrate, serialize the
 current schema, then read it back in a test.

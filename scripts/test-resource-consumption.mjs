@@ -7,6 +7,7 @@ import {
   planConsumption,
   planDeposit,
 } from "./resource/consumption.js";
+import { createDefaultResourceConfig } from "./resource/store.js";
 
 const FOOD_DEF = {
   matching: {
@@ -82,6 +83,41 @@ function item(id, name, qty, extra = {}) {
 /* ------------------------------------------------------------------ *
  * Configuration diagnostics — forage and matcher ambiguity
  * ------------------------------------------------------------------ */
+{
+  const config = createDefaultResourceConfig();
+  const diagnostics = diagnoseResourceConfiguration(config.resources);
+  assert.equal(
+    diagnostics.ok,
+    true,
+    "the default food and water matchers must not overlap",
+  );
+
+  const food = config.resources.find((resource) => resource.id === "food");
+  const water = config.resources.find((resource) => resource.id === "water");
+  const waterRation = item("water-ration", "Water Ration", 4);
+  assert.equal(
+    matchResourceItems([waterRation], food).length,
+    0,
+    "a Water Ration is not counted as food",
+  );
+  assert.equal(
+    matchResourceItems([waterRation], water).length,
+    1,
+    "a Water Ration is counted as water",
+  );
+  assert.deepEqual(
+    matchResourceItems(
+      [
+        item("standard-rations", "Rations (1 day)", 5),
+        item("trail-ration", "Trail Ration", 2),
+      ],
+      food,
+    ).map((match) => match.id),
+    ["standard-rations", "trail-ration"],
+    "the collision fix keeps common food ration names matched",
+  );
+}
+
 {
   const diagnostics = diagnoseResourceConfiguration([
     {

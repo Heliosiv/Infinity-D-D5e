@@ -81,13 +81,56 @@ import {
 {
   const cfg = normalizeResourceConfig({});
   assert.equal(cfg.version, RESOURCE_CONFIG_VERSION);
-  assert.equal(RESOURCE_CONFIG_VERSION, 2, "current structural schema is v2");
+  assert.equal(RESOURCE_CONFIG_VERSION, 3, "current structural schema is v3");
   assert.equal(cfg.forageMode, "each");
   assert.equal(cfg.halfRations, false);
   assert.equal(cfg.waterEnabled, true);
   assert.equal(cfg.maxCatchUpDays, 7);
   assert.ok(cfg.resources.length >= 3, "seeds food/water/light");
   assert.ok(cfg.environments.length >= 3, "seeds environments");
+  assert.deepEqual(
+    cfg.resources.find((resource) => resource.id === "food")?.matching
+      ?.nameKeywords,
+    ["rations", "trail ration", "food"],
+    "fresh food defaults do not claim the water phrase 'water ration'",
+  );
+
+  const upgradedV2 = normalizeResourceConfig({
+    version: 2,
+    resources: [
+      {
+        id: "food",
+        forageYields: "food",
+        matching: {
+          nameKeywords: ["ration", "rations", "trail ration", "food"],
+          flagTag: "food",
+          itemUuids: [],
+        },
+      },
+    ],
+  });
+  assert.deepEqual(
+    upgradedV2.resources[0].matching.nameKeywords,
+    ["rations", "trail ration", "food"],
+    "the exact v2 food default is repaired during normalization",
+  );
+
+  const customizedV2 = normalizeResourceConfig({
+    version: 2,
+    resources: [
+      {
+        id: "food",
+        forageYields: "food",
+        matching: {
+          nameKeywords: ["ration", "rations", "trail ration", "food", "jerky"],
+        },
+      },
+    ],
+  });
+  assert.ok(
+    customizedV2.resources[0].matching.nameKeywords.includes("ration"),
+    "customized legacy matcher lists are preserved",
+  );
 
   // Idempotent.
   const again = normalizeResourceConfig(cfg);
@@ -144,7 +187,7 @@ import {
 }
 
 /* ------------------------------------------------------------------ *
- * serializeResourceConfig - v2 stores structure, not duplicate rule values
+ * serializeResourceConfig - current schema stores structure, not duplicate rules
  * ------------------------------------------------------------------ */
 {
   const serialized = serializeResourceConfig({
@@ -169,7 +212,7 @@ import {
       },
     ],
   });
-  assert.equal(serialized.version, 2);
+  assert.equal(serialized.version, RESOURCE_CONFIG_VERSION);
   assert.equal(serialized.forageTimeoutSeconds, 45);
   assert.equal(serialized.partyStashId, "stash-a");
   assert.equal(serialized.resources[0].id, "medicine");
@@ -395,7 +438,7 @@ import {
 }
 
 /* ------------------------------------------------------------------ *
- * loadResourceConfig - v2 overlays the four canonical visible settings
+ * loadResourceConfig - v3 overlays the four canonical visible settings
  * ------------------------------------------------------------------ */
 {
   const originalGame = globalThis.game;
@@ -404,7 +447,7 @@ import {
       [
         "resourceConfig",
         {
-          version: 2,
+          version: RESOURCE_CONFIG_VERSION,
           forageMode: "each",
           waterEnabled: true,
           halfRations: false,
@@ -445,7 +488,7 @@ import {
 }
 
 /* ------------------------------------------------------------------ *
- * migrateResourceConfig - v1 rules copy once, then storage becomes v2
+ * migrateResourceConfig - old rules and defaults migrate to the current schema
  * ------------------------------------------------------------------ */
 {
   const originalGame = globalThis.game;
@@ -504,7 +547,7 @@ import {
       "legacy runtime behavior moves into the visible settings",
     );
     assert.equal(writes[4].key, "resourceConfig");
-    assert.equal(writes[4].value.version, 2);
+    assert.equal(writes[4].value.version, RESOURCE_CONFIG_VERSION);
     assert.equal(writes[4].value.forageTimeoutSeconds, 30);
     assert.equal(writes[4].value.resources[0].id, "medicine");
     assert.equal(writes[5].key, "resourceRunState");
@@ -526,9 +569,39 @@ import {
 
     writes.length = 0;
     assert.equal(await migrateResourceConfig(), false);
-    assert.deepEqual(writes, [], "an already-v2 world is not rewritten");
+    assert.deepEqual(writes, [], "an already-current world is not rewritten");
+
+    stored = {
+      version: 2,
+      resources: [
+        {
+          id: "food",
+          label: "Food (Rations)",
+          scope: "per-character",
+          perDay: 1,
+          forageYields: "food",
+          matching: {
+            nameKeywords: ["ration", "rations", "trail ration", "food"],
+            flagTag: "food",
+            itemUuids: [],
+          },
+        },
+      ],
+    };
+    writes.length = 0;
+    assert.equal(await migrateResourceConfig(), true);
+    const matcherUpgrade = writes.find(
+      (write) => write.key === "resourceConfig",
+    );
+    assert.equal(matcherUpgrade.value.version, RESOURCE_CONFIG_VERSION);
+    assert.deepEqual(
+      matcherUpgrade.value.resources[0].matching.nameKeywords,
+      ["rations", "trail ration", "food"],
+      "v2 worlds persist the collision-free food matcher",
+    );
 
     stored = { ...raw };
+    writes.length = 0;
     globalThis.game.user = {
       id: "player-a",
       isGM: false,
@@ -763,7 +836,7 @@ import {
     assert.equal(
       isResourceAutomationReady(),
       false,
-      "config v2 alone cannot enable automation without versioned run state",
+      "current config alone cannot enable automation without versioned run state",
     );
     assert.equal(await migrateResourceConfig(), true);
     assert.equal(flags.resourceRunState.version, RESOURCE_RUN_STATE_VERSION);

@@ -64,7 +64,10 @@ snapshot without item-matching rules or raw actor inventory details.
 Roster actors can be marked as daily consumers or inventory-only sources, so a
 mule or NPC stash does not consume an extra ration. Quartermaster also warns
 about overlapping resource matchers and blocks unsafe inventory writes when a
-live item is claimed by more than one resource.
+live item is claimed by more than one resource. The built-in food and water
+rules are distinct, including `rations` for food and `water ration` for water.
+Advance Day accepts only one confirmation or run at a time, so repeated clicks
+cannot queue extra consumption.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in

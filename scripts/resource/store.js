@@ -33,13 +33,24 @@ import {
   normalizeEnvironmentCatalog,
 } from "./environment.js";
 
-export const RESOURCE_CONFIG_VERSION = 2;
+export const RESOURCE_CONFIG_VERSION = 3;
 export const RESOURCE_RUN_STATE_VERSION = 1;
 
 /** Resource consumption scope. Food/water are per-character; light is party-wide. */
 export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
 
 const FORAGE_MODES = Object.freeze(["each", "best"]);
+const LEGACY_DEFAULT_FOOD_KEYWORDS = Object.freeze([
+  "ration",
+  "rations",
+  "trail ration",
+  "food",
+]);
+const DEFAULT_FOOD_KEYWORDS = Object.freeze([
+  "rations",
+  "trail ration",
+  "food",
+]);
 
 /**
  * Runtime rules live in normal Foundry settings so the standard Module
@@ -110,7 +121,7 @@ function defaultResources() {
       perDay: 1,
       forageYields: "food",
       matching: {
-        nameKeywords: ["ration", "rations", "trail ration", "food"],
+        nameKeywords: [...DEFAULT_FOOD_KEYWORDS],
         flagTag: "food",
         itemUuids: [],
       },
@@ -253,6 +264,7 @@ export function normalizeResourceConfig(input) {
     seenResourceIds.add(resource.id);
     return true;
   });
+  repairLegacyDefaultFoodMatcher(resources, raw.version);
   return {
     version: RESOURCE_CONFIG_VERSION,
     forageMode: FORAGE_MODES.includes(raw.forageMode) ? raw.forageMode : "each",
@@ -271,6 +283,49 @@ export function normalizeResourceConfig(input) {
   };
 }
 
+/**
+ * v2 shipped a singular "ration" food keyword alongside the water phrase
+ * "water ration". That made a fresh configuration warn about itself and could
+ * let one concrete item be claimed by both resources. Repair only the exact
+ * former food default; customized keyword lists remain untouched.
+ */
+function repairLegacyDefaultFoodMatcher(resources, rawVersion) {
+  const version = Math.max(0, Math.floor(Number(rawVersion) || 0));
+  if (version >= RESOURCE_CONFIG_VERSION) return false;
+  const food = resources.find(
+    (resource) => resource.id === "food" || resource.forageYields === "food",
+  );
+  if (
+    !food ||
+    !sameKeywordList(food.matching?.nameKeywords, LEGACY_DEFAULT_FOOD_KEYWORDS)
+  ) {
+    return false;
+  }
+  food.matching.nameKeywords = [...DEFAULT_FOOD_KEYWORDS];
+  return true;
+}
+
+function sameKeywordList(actual, expected) {
+  const normalized = (values) =>
+    [
+      ...new Set(
+        (Array.isArray(values) ? values : [])
+          .map((value) =>
+            String(value ?? "")
+              .trim()
+              .toLowerCase(),
+          )
+          .filter(Boolean),
+      ),
+    ].sort();
+  const left = normalized(actual);
+  const right = normalized(expected);
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 /** Build a fresh config with all defaults (used on first run). */
 export function createDefaultResourceConfig() {
   return normalizeResourceConfig({
@@ -280,7 +335,7 @@ export function createDefaultResourceConfig() {
 }
 
 /**
- * Project a normalized runtime config down to the structural v2 setting shape.
+ * Project a normalized runtime config down to the current structural shape.
  * Rule fields deliberately do not persist here; their canonical values live in
  * the four visible settings listed in RESOURCE_RULE_SETTINGS.
  */
@@ -390,7 +445,7 @@ export function loadResourceConfig() {
     );
 
   // Preserve the behavior of an unmigrated v1 world until the active GM runs
-  // the ready migration. New/v2 worlds resolve every rule from Module Settings.
+  // the ready migration. v2/current worlds resolve rules from Module Settings.
   if (hasLegacyRuleValues) return config;
   return {
     ...config,
@@ -465,10 +520,11 @@ export async function resetResourceRules() {
 }
 
 /**
- * One-time v1 -> v2 migration. Private-state initialization first copies the
- * legacy world-setting object into the restricted Journal. This step moves its
- * runtime rules into visible settings, then replaces the private payload with
- * the structural v2 shape.
+ * One-time migration to the current structural schema. Private-state
+ * initialization first copies the legacy world-setting object into the
+ * restricted Journal. This step moves v1 runtime rules into visible settings,
+ * repairs the former overlapping default food matcher, then replaces the
+ * private payload with the current structural shape.
  */
 export async function migrateResourceConfig() {
   const game = globalThis.game;

@@ -55,6 +55,7 @@ import { isFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
+let manualAdvanceRequestInFlight = false;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -539,26 +540,36 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   /* -------------------- actions -------------------- */
 
   /** @this {ResourceManagerApp} */
-  static async _onAdvanceDay(_event, _target) {
+  static async _onAdvanceDay(_event, target) {
     if (!isAuthoritativeGM()) {
       notify("warn", `only the active GM can run daily upkeep.`);
       return;
     }
-    // Advancing a day consumes real supplies off character sheets and prompts
-    // players to forage — confirm first (it's separate from the world clock).
-    const party = discoverPartyActors();
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (party.length > 0 && typeof DialogV2?.confirm === "function") {
-      const ok = await DialogV2.confirm({
-        window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
-        content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s) and prompt online players to forage?</p><p style="opacity:0.8;">This is a manual day tick — it doesn't change the world clock, and runs even if auto-upkeep is off.</p>`,
-        rejectClose: false,
-      }).catch(() => false);
-      if (!ok) return;
+    if (manualAdvanceRequestInFlight) return;
+
+    manualAdvanceRequestInFlight = true;
+    setActionBusy(target, true);
+    try {
+      // Acquire the request guard before opening the dialog. Otherwise repeated
+      // clicks can queue multiple confirmations that resume one at a time after
+      // the service-level upkeep guard has already been released.
+      const party = discoverPartyActors();
+      const DialogV2 = foundry?.applications?.api?.DialogV2;
+      if (party.length > 0 && typeof DialogV2?.confirm === "function") {
+        const ok = await DialogV2.confirm({
+          window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
+          content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s) and prompt online players to forage?</p><p style="opacity:0.8;">This is a manual day tick — it doesn't change the world clock, and runs even if auto-upkeep is off.</p>`,
+          rejectClose: false,
+        }).catch(() => false);
+        if (!ok) return;
+      }
+      playModuleSound(SOUND_EVENTS.ROLL_START);
+      await advanceDayNow();
+      this.render(false);
+    } finally {
+      manualAdvanceRequestInFlight = false;
+      setActionBusy(target, false);
     }
-    playModuleSound(SOUND_EVENTS.ROLL_START);
-    await advanceDayNow();
-    this.render(false);
   }
 
   /** @this {ResourceManagerApp} */
@@ -858,6 +869,13 @@ function applyResourceField(res, field, value) {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
   }
+}
+
+function setActionBusy(target, busy) {
+  if (!target || typeof target !== "object") return;
+  target.disabled = busy;
+  if (busy) target.setAttribute?.("aria-busy", "true");
+  else target.removeAttribute?.("aria-busy");
 }
 
 /** Plain-language foraging note for a per-actor report row. Distinguishes
