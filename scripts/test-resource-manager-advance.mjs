@@ -9,7 +9,12 @@ let resolveConfirmation;
 const confirmation = new Promise((resolve) => {
   resolveConfirmation = resolve;
 });
+let resolveForagePrompt;
+const foragePrompt = new Promise((resolve) => {
+  resolveForagePrompt = resolve;
+});
 let confirmationCount = 0;
+let promptCount = 0;
 let renderCount = 0;
 
 const gm = {
@@ -56,6 +61,10 @@ try {
             confirmationCount += 1;
             return confirmation;
           },
+          prompt() {
+            promptCount += 1;
+            return foragePrompt;
+          },
         },
       },
     },
@@ -86,6 +95,7 @@ try {
 
   const { ResourceManagerApp } = await import("./resource-manager.js");
   const advanceDay = ResourceManagerApp.DEFAULT_OPTIONS.actions.advanceDay;
+  const forageDrive = ResourceManagerApp.DEFAULT_OPTIONS.actions.forageDrive;
   const app = {
     render() {
       renderCount += 1;
@@ -102,8 +112,9 @@ try {
     },
   };
 
-  const first = advanceDay.call(app, null, button);
-  const second = advanceDay.call(app, null, button);
+  const requests = Array.from({ length: 250 }, () =>
+    advanceDay.call(app, null, button),
+  );
   await Promise.resolve();
 
   assert.equal(
@@ -122,7 +133,7 @@ try {
   // focused UI test never reaches real inventory writes.
   users.activeGM = otherGm;
   resolveConfirmation(true);
-  await Promise.all([first, second]);
+  await Promise.all(requests);
 
   assert.equal(renderCount, 1, "the accepted request completes only once");
   assert.equal(
@@ -131,6 +142,33 @@ try {
     "the action is restored after completion",
   );
   assert.equal(button.attributes.has("aria-busy"), false);
+
+  users.activeGM = gm;
+  const forageButton = {
+    disabled: false,
+    attributes: new Map(),
+    setAttribute(name, value) {
+      this.attributes.set(name, String(value));
+    },
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    },
+  };
+  const forageRequests = Array.from({ length: 250 }, () =>
+    forageDrive.call(app, null, forageButton),
+  );
+  await Promise.resolve();
+  assert.equal(
+    promptCount,
+    1,
+    "only one Forage Drive request may await its prompt at a time",
+  );
+  assert.equal(forageButton.disabled, true);
+  assert.equal(forageButton.attributes.get("aria-busy"), "true");
+  resolveForagePrompt(null);
+  await Promise.all(forageRequests);
+  assert.equal(forageButton.disabled, false);
+  assert.equal(forageButton.attributes.has("aria-busy"), false);
 } finally {
   if (savedConst === undefined) delete globalThis.CONST;
   else globalThis.CONST = savedConst;

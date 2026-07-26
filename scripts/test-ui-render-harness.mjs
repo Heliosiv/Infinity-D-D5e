@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  16,
+  17,
   "harness covers all UI windows, both merchant tabs, and resource states",
 );
 
@@ -87,6 +87,7 @@ for (const expectedId of [
   "shop-picker",
   "shop-picker-empty",
   "resource-manager",
+  "resource-manager-locked",
   "resource-overview",
   "resource-overview-offline",
   "forage-prompt",
@@ -119,6 +120,17 @@ const suppliesOfflineView = views.find(
 );
 assert.ok(suppliesOfflineView, "harness includes Party Supplies offline state");
 assert.match(suppliesOfflineView.html, /No GM is online right now/);
+
+const lockedManagerView = views.find(
+  (view) => view.id === "resource-manager-locked",
+);
+assert.ok(
+  lockedManagerView,
+  "harness includes the interrupted Quartermaster state",
+);
+assert.match(lockedManagerView.html, /did not finish cleanly/);
+assert.match(lockedManagerView.html, /data-action="clearInterruptedRun"/);
+assert.match(lockedManagerView.html, /Clear after review/);
 
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.

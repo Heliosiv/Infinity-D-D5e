@@ -14,6 +14,7 @@ import {
   loadResourceConfig,
   saveResourceConfig,
   loadRunState,
+  clearUpkeepClaim,
   setCurrentEnvironment,
   createDefaultResourceConfig,
   isCanonicalPerCharacterResource,
@@ -56,6 +57,7 @@ import { isFullGM } from "./permissions.js";
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
 let manualAdvanceRequestInFlight = false;
+let manualForageRequestInFlight = false;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -77,6 +79,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     actions: {
       advanceDay: ResourceManagerApp._onAdvanceDay,
       forageDrive: ResourceManagerApp._onForageDrive,
+      clearInterruptedRun: ResourceManagerApp._onClearInterruptedRun,
       addResource: ResourceManagerApp._onAddResource,
       removeResource: ResourceManagerApp._onRemoveResource,
       addTag: ResourceManagerApp._onAddTag,
@@ -217,6 +220,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       (conflict) => conflict.isBlocking,
     );
     const isAuthoritative = isAuthoritativeGM();
+    const activeUpkeep = state.activeUpkeep;
     const overview = buildResourceOverview({
       config,
       state,
@@ -363,7 +367,24 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       maxCatchUpDays: config.maxCatchUpDays,
       autoTrigger,
       isAuthoritative,
-      canRunResourceWrites: isAuthoritative && !hasBlockingResourceConflicts,
+      canRunResourceWrites:
+        isAuthoritative && !hasBlockingResourceConflicts && !activeUpkeep,
+      hasActiveUpkeep: Boolean(activeUpkeep),
+      activeUpkeep: activeUpkeep
+        ? {
+            ...activeUpkeep,
+            triggerLabel:
+              activeUpkeep.trigger === "calendar"
+                ? "automatic day change"
+                : activeUpkeep.trigger === "forage"
+                  ? "forage drive"
+                  : "manual Advance Day",
+            dayLabel:
+              activeUpkeep.day == null
+                ? "unknown day"
+                : `day ${activeUpkeep.day}`,
+          }
+        : null,
       resourceConflictWarnings,
       hasResourceConflictWarnings: resourceConflictWarnings.length > 0,
       hasBlockingResourceConflicts,
@@ -548,8 +569,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     if (manualAdvanceRequestInFlight) return;
 
     manualAdvanceRequestInFlight = true;
-    setActionBusy(target, true);
     try {
+      setActionBusy(target, true);
       // Acquire the request guard before opening the dialog. Otherwise repeated
       // clicks can queue multiple confirmations that resume one at a time after
       // the service-level upkeep guard has already been released.
@@ -568,45 +589,53 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       this.render(false);
     } finally {
       manualAdvanceRequestInFlight = false;
-      setActionBusy(target, false);
+      try {
+        setActionBusy(target, false);
+      } catch {
+        // The request lock must still reset if a malformed action target throws.
+      }
     }
   }
 
   /** @this {ResourceManagerApp} */
-  static async _onForageDrive(_event, _target) {
+  static async _onForageDrive(_event, target) {
     if (!isAuthoritativeGM()) {
       notify("warn", `only the active GM can run a forage drive.`);
       return;
     }
-    // Push a one-off Survival check (GM-set DC) to chosen party members and
-    // deposit what they gather — no consumption, no day tick.
-    const { defaultDc, stashName, candidates } = describeForageDrive();
-    if (candidates.length === 0) {
-      ui.notifications?.info(
-        `${MODULE_ID}: add party members before running a forage drive.`,
-      );
-      return;
-    }
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (typeof DialogV2?.prompt !== "function") return;
+    if (manualForageRequestInFlight) return;
+    manualForageRequestInFlight = true;
+    try {
+      setActionBusy(target, true);
+      // Push a one-off Survival check (GM-set DC) to chosen party members and
+      // deposit what they gather — no consumption, no day tick.
+      const { defaultDc, stashName, candidates } = describeForageDrive();
+      if (candidates.length === 0) {
+        ui.notifications?.info(
+          `${MODULE_ID}: add party members before running a forage drive.`,
+        );
+        return;
+      }
+      const DialogV2 = foundry?.applications?.api?.DialogV2;
+      if (typeof DialogV2?.prompt !== "function") return;
 
-    const anyOnline = candidates.some((c) => c.online);
-    const rows = candidates
-      .map((c) => {
-        const dis = c.online ? "" : " disabled";
-        const tag = c.online
-          ? ""
-          : ' <span style="opacity:0.6;">(offline)</span>';
-        return `<label style="display:flex; align-items:center; gap:6px;">
+      const anyOnline = candidates.some((c) => c.online);
+      const rows = candidates
+        .map((c) => {
+          const dis = c.online ? "" : " disabled";
+          const tag = c.online
+            ? ""
+            : ' <span style="opacity:0.6;">(offline)</span>';
+          return `<label style="display:flex; align-items:center; gap:6px;">
           <input type="checkbox" name="forager" value="${escapeHtml(c.actorId)}" ${c.online ? "checked" : ""}${dis} />
           <span>${escapeHtml(c.name)}${tag}</span>
         </label>`;
-      })
-      .join("");
-    const destLine = stashName
-      ? `Gathered supplies go to <strong>${escapeHtml(stashName)}</strong>'s stash.`
-      : `No party stash set — each forager keeps their own haul.`;
-    const content = `
+        })
+        .join("");
+      const destLine = stashName
+        ? `Gathered supplies go to <strong>${escapeHtml(stashName)}</strong>'s stash.`
+        : `No party stash set — each forager keeps their own haul.`;
+      const content = `
       <p>Send a Wisdom (Survival) check to the selected players. Those who meet the DC add food &amp; water to the party's supplies.</p>
       <label class="rm-field" style="display:grid; gap:4px; margin-bottom:8px;">
         <span>Survival DC</span>
@@ -619,36 +648,65 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       <p style="opacity:0.8; margin:8px 0 0;">${destLine}</p>
       ${anyOnline ? "" : '<p style="color:#ef6f74; margin:6px 0 0;">No selected player is online to roll right now.</p>'}`;
 
-    let result = null;
-    try {
-      result = await DialogV2.prompt({
-        window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
-        content,
-        ok: {
-          label: "Send check",
-          icon: "fa-solid fa-paper-plane",
-          callback: (_e, button) => {
-            const form = button?.form;
-            if (!form) return null;
-            const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
-            const ids = Array.from(
-              form.querySelectorAll('input[name="forager"]:checked'),
-            ).map((el) => el.value);
-            return { dc, ids };
+      let result = null;
+      try {
+        result = await DialogV2.prompt({
+          window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
+          content,
+          ok: {
+            label: "Send check",
+            icon: "fa-solid fa-paper-plane",
+            callback: (_e, button) => {
+              const form = button?.form;
+              if (!form) return null;
+              const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
+              const ids = Array.from(
+                form.querySelectorAll('input[name="forager"]:checked'),
+              ).map((el) => el.value);
+              return { dc, ids };
+            },
           },
-        },
-        rejectClose: false,
-      });
-    } catch {
-      result = null;
+          rejectClose: false,
+        });
+      } catch {
+        result = null;
+      }
+      if (!result) return;
+      if (!Array.isArray(result.ids) || result.ids.length === 0) {
+        notify("info", `select at least one forager.`);
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.ROLL_START);
+      await runForageDrive({ dc: result.dc, targetActorIds: result.ids });
+      this.render(false);
+    } finally {
+      manualForageRequestInFlight = false;
+      try {
+        setActionBusy(target, false);
+      } catch {
+        // Keep the request lock recoverable even with a malformed target.
+      }
     }
-    if (!result) return;
-    if (!Array.isArray(result.ids) || result.ids.length === 0) {
-      notify("info", `select at least one forager.`);
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onClearInterruptedRun() {
+    if (!isAuthoritativeGM()) {
+      notify("warn", `only the active GM can clear an interrupted run.`);
       return;
     }
-    playModuleSound(SOUND_EVENTS.ROLL_START);
-    await runForageDrive({ dc: result.dc, targetActorIds: result.ids });
+    const activeUpkeep = loadRunState().activeUpkeep;
+    if (!activeUpkeep?.runId) return;
+    const confirmed = await confirmDestructive({
+      title: "Clear interrupted resource run?",
+      content:
+        "<p>This releases the safety lock only. It will not restore inventory or replay the interrupted run.</p>" +
+        "<p>Review the party's supplies first, then clear the lock to resume Quartermaster automation.</p>",
+      icon: "fa-solid fa-unlock",
+    });
+    if (!confirmed) return;
+    await clearUpkeepClaim(activeUpkeep.runId);
+    notify("info", `cleared the interrupted resource-run lock.`);
     this.render(false);
   }
 

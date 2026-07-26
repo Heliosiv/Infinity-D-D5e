@@ -21,8 +21,10 @@ import {
   loadResourceConfig,
   loadRunState,
   resolveDrawSourceId,
+  assertUpkeepClaimCurrent,
+  claimUpkeepRun,
+  completeUpkeepRun,
   setLastSeenDay,
-  setLastUpkeepResult,
 } from "./store.js";
 import { findEnvironment, isForageable } from "./environment.js";
 import {
@@ -52,6 +54,7 @@ import { escapeHtml, prettyEnvironment, prettyResource } from "../ui-util.js";
 import { isFullGM } from "../permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
+const UPKEEP_CLAIM_STABILIZATION_MS = 500;
 
 let registered = false;
 let upkeepInFlight = false;
@@ -144,6 +147,10 @@ async function onTimeMaybeChanged(reason) {
     const current = currentAbsoluteDay();
     if (current == null) return;
     const state = loadRunState();
+    if (state.activeUpkeep) {
+      blockActiveResourceRun("automatic upkeep", state.activeUpkeep);
+      return;
+    }
     const { elapsed, direction } = diffDays(state.lastSeenDay, current);
     if (direction === "seed" || direction === "backward") {
       await setLastSeenDay(current);
@@ -170,7 +177,9 @@ async function onTimeMaybeChanged(reason) {
       // A conflict is recoverable configuration work, not a completed upkeep
       // day. Keep the previous baseline so fixing the conflict can safely retry
       // the missed day instead of silently skipping it.
-      if (!result?.blocked) await setLastSeenDay(current);
+      if (!result?.blocked && loadRunState().lastSeenDay !== current) {
+        await setLastSeenDay(current);
+      }
     } finally {
       upkeepInFlight = false;
     }
@@ -190,6 +199,10 @@ export async function advanceDayNow() {
       `${MODULE_ID}: only the active GM can run daily upkeep.`,
     );
     return null;
+  }
+  const activeUpkeep = loadRunState().activeUpkeep;
+  if (activeUpkeep) {
+    return blockActiveResourceRun("daily upkeep", activeUpkeep);
   }
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
@@ -261,6 +274,10 @@ export async function runForageDrive({ dc, targetActorIds } = {}) {
     );
     return null;
   }
+  const activeUpkeep = loadRunState().activeUpkeep;
+  if (activeUpkeep) {
+    return blockActiveResourceRun("forage drive", activeUpkeep);
+  }
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
@@ -273,6 +290,7 @@ export async function runForageDrive({ dc, targetActorIds } = {}) {
 async function runForageDriveInner({ dc, targetActorIds }) {
   let cfg = loadResourceConfig();
   const state = loadRunState();
+  const runId = generateRunId();
   let roster = getPartyRoster(cfg);
   const operationFingerprint = resourceOperationFingerprint({
     config: cfg,
@@ -503,6 +521,16 @@ async function runForageDriveInner({ dc, targetActorIds }) {
   });
   if (finalConflict) return finalConflict;
 
+  const claimConflict = await claimResourceRun({
+    runId,
+    trigger: "forage",
+    day: currentAbsoluteDay(),
+    days: 1,
+    operation: "forage drive",
+  });
+  if (claimConflict) return claimConflict;
+  const assertWriteAllowed = () => assertResourceRunWriteAllowed(runId);
+
   // Apply the planned deposits against the real actors.
   let landedFood = 0;
   let landedWater = 0;
@@ -513,6 +541,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     if (foodRes && dep.food > 0) {
       const applied = await depositResource(sink, foodRes, dep.food, {
         templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
+        assertWriteAllowed,
       });
       landedFood += applied;
       if (applied < dep.food)
@@ -521,6 +550,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     if (waterRes && dep.water > 0) {
       const applied = await depositResource(sink, waterRes, dep.water, {
         templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
+        assertWriteAllowed,
       });
       landedWater += applied;
       if (applied < dep.water)
@@ -531,6 +561,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
   const stashActor = plan.stashActorId
     ? (actorById.get(plan.stashActorId) ?? null)
     : null;
+  await completeUpkeepRun({ runId, persistResult: false });
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   await postForageDriveReport({
     env: driveEnv,
@@ -541,6 +572,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     depositErrors,
   });
   return {
+    runId,
     dc: driveEnv.dc,
     perForager: plan.perForager,
     totalFood: landedFood,
@@ -695,6 +727,10 @@ export function resourceOperationFingerprint({
       environments: config.environments,
     },
     currentEnvironmentId: environmentId ?? state.currentEnvironmentId ?? null,
+    lastSeenDay:
+      state.lastSeenDay == null || !Number.isFinite(Number(state.lastSeenDay))
+        ? null
+        : Math.floor(Number(state.lastSeenDay)),
     roster: (Array.isArray(roster) ? roster : []).map((member) => ({
       actorId: String(member?.actor?.id ?? member?.actorId ?? ""),
       isStash: member?.isStash === true,
@@ -715,6 +751,81 @@ function blockChangedResourceContext(operation) {
     reason: "resource-context-changed",
     operation: label,
   };
+}
+
+function blockActiveResourceRun(operation, activeUpkeep) {
+  const label = String(operation ?? "resource automation").trim();
+  const runId = String(activeUpkeep?.runId ?? "").trim();
+  globalThis.ui?.notifications?.error?.(
+    `${MODULE_ID}: ${label} paused because an earlier resource run did not finish cleanly. Review Quartermaster and clear the interrupted-run lock before trying again.`,
+  );
+  return {
+    blocked: true,
+    status: "blocked",
+    reason: "active-resource-run",
+    operation: label,
+    runId,
+  };
+}
+
+function blockReservedCalendarDay(operation, day, lastSeenDay) {
+  const label = String(operation ?? "resource automation").trim();
+  globalThis.ui?.notifications?.info?.(
+    `${MODULE_ID}: ${label} skipped because day ${day} was already reserved by another GM client. No supplies were changed.`,
+  );
+  return {
+    blocked: true,
+    status: "blocked",
+    reason: "calendar-day-already-reserved",
+    operation: label,
+    day,
+    lastSeenDay,
+  };
+}
+
+function assertResourceRunWriteAllowed(runId) {
+  if (!isAuthoritativeGM()) {
+    throw new Error("ResourceUpkeepAuthorityChanged");
+  }
+  return assertUpkeepClaimCurrent(runId);
+}
+
+async function claimResourceRun({ runId, trigger, day, days, operation }) {
+  try {
+    await claimUpkeepRun({
+      runId,
+      trigger,
+      day,
+      days,
+      claimedAt: Date.now(),
+    });
+  } catch (error) {
+    if (
+      String(error?.message ?? error).includes("ResourceUpkeepAlreadyActive")
+    ) {
+      return blockActiveResourceRun(operation, loadRunState().activeUpkeep);
+    }
+    if (
+      trigger === "calendar" &&
+      String(error?.message ?? error).includes(
+        "ResourceUpkeepCalendarDayReserved",
+      )
+    ) {
+      return blockReservedCalendarDay(
+        operation,
+        day,
+        loadRunState().lastSeenDay,
+      );
+    }
+    throw error;
+  }
+  // Foundry Journal updates are unconditional. Give simultaneous GM clients a
+  // short propagation window, then prove this run still owns the canonical
+  // claim before the first Actor mutation. Per-write assertions below keep
+  // fencing authority/claim changes throughout the operation.
+  await wait(UPKEEP_CLAIM_STABILIZATION_MS);
+  assertResourceRunWriteAllowed(runId);
+  return null;
 }
 
 /**
@@ -964,6 +1075,7 @@ async function runDailyUpkeep({
   let cfg = config ?? loadResourceConfig();
   const days = Math.max(1, Math.floor(Number(elapsedDays) || 1));
   const state = loadRunState();
+  const runId = generateRunId();
   const env = resolveCurrentEnvironment(cfg, state);
   let roster = getPartyRoster(cfg);
   const operationFingerprint = resourceOperationFingerprint({
@@ -1150,6 +1262,16 @@ async function runDailyUpkeep({
   });
   if (finalConflict) return finalConflict;
 
+  const claimConflict = await claimResourceRun({
+    runId,
+    trigger: manual ? "manual" : "calendar",
+    day,
+    days,
+    operation: "daily upkeep",
+  });
+  if (claimConflict) return claimConflict;
+  const assertWriteAllowed = () => assertResourceRunWriteAllowed(runId);
+
   for (const actor of party) {
     const yld = foragedByActor.get(actor.id);
     if (!yld || !yld.success) continue;
@@ -1160,6 +1282,7 @@ async function runDailyUpkeep({
     if (foodRes && yld.food > 0) {
       yld.landedFood = await depositResource(sink, foodRes, yld.food, {
         templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
+        assertWriteAllowed,
       });
       if (yld.landedFood < yld.food)
         yld.depositErrors.push("food deposit failed");
@@ -1167,6 +1290,7 @@ async function runDailyUpkeep({
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
       yld.landedWater = await depositResource(sink, waterRes, yld.water, {
         templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
+        assertWriteAllowed,
       });
       if (yld.landedWater < yld.water)
         yld.depositErrors.push("water deposit failed");
@@ -1180,6 +1304,7 @@ async function runDailyUpkeep({
     sourceForMember,
     cfg,
     days,
+    assertWriteAllowed,
   });
 
   // Fold foraging into the per-actor report. `attempted` is true for actors who
@@ -1222,6 +1347,7 @@ async function runDailyUpkeep({
       fallbackDay: state.lastSeenDay,
       days,
       manual,
+      runId,
     }),
     environmentId: env?.id ?? null,
     resourceSnapshot: cfg.resources.map((resource) => ({
@@ -1235,7 +1361,7 @@ async function runDailyUpkeep({
     status: hasErrors ? "partial" : "complete",
     hasErrors,
   };
-  await setLastUpkeepResult(result);
+  await completeUpkeepRun({ runId, result });
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   emitResourceEvent(RESOURCE_EVENTS.UPKEEP_REPORT, {
     day: result.day,
@@ -1463,6 +1589,7 @@ export async function applyConsumption({
   sourceForMember,
   cfg,
   days,
+  assertWriteAllowed = null,
 }) {
   const perActorMap = new Map();
   const ensureRow = (member) => {
@@ -1500,14 +1627,21 @@ export async function applyConsumption({
     if (amount <= 0) continue;
 
     if (resource.scope === "party") {
-      const res = await consumePartyResource(roster, resource, amount);
+      const res = await consumePartyResource(roster, resource, amount, {
+        assertWriteAllowed,
+      });
       partyReport[resource.id] = res;
     } else {
       // Each member draws from its nominated source (own sheet or a shared
       // stash). Sequential awaits mean members sharing a stash deplete it in
       // roster order — whoever's last comes up short if the stash runs dry.
       for (const member of consumers) {
-        const res = await consumeFromActor(sourceFor(member), resource, amount);
+        const res = await consumeFromActor(
+          sourceFor(member),
+          resource,
+          amount,
+          { assertWriteAllowed },
+        );
         const row = ensureRow(member);
         recordConsumptionAccounting(row, resource, res);
       }
@@ -1574,10 +1708,17 @@ export function recordConsumptionAccounting(row, resource, result) {
   return row;
 }
 
-async function consumeFromActor(actor, resourceDef, amount) {
+async function consumeFromActor(
+  actor,
+  resourceDef,
+  amount,
+  { assertWriteAllowed = null } = {},
+) {
   const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
   const plan = planConsumption({ matches, amount });
-  const applied = await applyConsumptionOps(actor, plan.ops, matches);
+  const applied = await applyConsumptionOps(actor, plan.ops, matches, {
+    assertWriteAllowed,
+  });
   return {
     consumed: applied.consumed,
     shortfall: Math.max(0, Math.floor(Number(amount) || 0) - applied.consumed),
@@ -1590,7 +1731,12 @@ async function consumeFromActor(actor, resourceDef, amount) {
  * first, then everyone else, in turn. With no stash flagged this is just the
  * whole roster in order (the original behavior).
  */
-async function consumePartyResource(roster, resourceDef, amount) {
+async function consumePartyResource(
+  roster,
+  resourceDef,
+  amount,
+  { assertWriteAllowed = null } = {},
+) {
   const seen = new Set();
   const order = [];
   for (const r of roster) {
@@ -1610,7 +1756,9 @@ async function consumePartyResource(roster, resourceDef, amount) {
   const errors = [];
   for (const actor of order) {
     if (remaining <= 0) break;
-    const res = await consumeFromActor(actor, resourceDef, remaining);
+    const res = await consumeFromActor(actor, resourceDef, remaining, {
+      assertWriteAllowed,
+    });
     consumed += res.consumed;
     remaining -= res.consumed;
     if (res.error) errors.push(`${actor.name}: ${res.error}`);
@@ -1622,7 +1770,12 @@ async function consumePartyResource(roster, resourceDef, amount) {
   };
 }
 
-export async function applyConsumptionOps(actor, ops, matches = []) {
+export async function applyConsumptionOps(
+  actor,
+  ops,
+  matches = [],
+  { assertWriteAllowed = null } = {},
+) {
   const quantities = new Map(
     matches.map((match) => [
       String(match.id),
@@ -1636,6 +1789,7 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
   let consumed = 0;
   const failures = [];
   if (updates.length > 0) {
+    assertWriteAllowed?.();
     try {
       const updatedDocuments = await actor.updateEmbeddedDocuments(
         "Item",
@@ -1676,6 +1830,7 @@ export async function applyConsumptionOps(actor, ops, matches = []) {
     }
   }
   if (deletes.length > 0) {
+    assertWriteAllowed?.();
     try {
       const deletedDocuments = await actor.deleteEmbeddedDocuments(
         "Item",
@@ -1713,7 +1868,7 @@ export async function depositResource(
   actor,
   resourceDef,
   amount,
-  { templateItem = null } = {},
+  { templateItem = null, assertWriteAllowed = null } = {},
 ) {
   if (!amount || amount <= 0) return 0;
   const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
@@ -1723,6 +1878,9 @@ export async function depositResource(
       cloneSnapshot(templateItem) ??
       (await resolveResourceDepositTemplate(resourceDef));
     plan = planDeposit({ matches, amount, templateItem: template });
+  }
+  if (plan.op === "bump" || plan.op === "create") {
+    assertWriteAllowed?.();
   }
   try {
     if (plan.op === "bump") {

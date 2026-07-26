@@ -23,6 +23,40 @@ function lower(value) {
   return String(value ?? "").toLowerCase();
 }
 
+function isWordCharacter(value) {
+  return Boolean(value) && /[\p{L}\p{N}]/u.test(value);
+}
+
+/**
+ * Match a configured phrase on whole word boundaries. A singular final word
+ * also accepts a simple trailing "s" ("water ration" -> "Water Rations").
+ * This avoids accidental substring matches such as "rations" in
+ * "Preparations" or "Decorations".
+ */
+function nameMatchesKeyword(itemName, keyword) {
+  const name = lower(itemName);
+  const phrase = lower(keyword).trim();
+  if (!name || !phrase) return false;
+  let offset = 0;
+  while (offset <= name.length - phrase.length) {
+    const index = name.indexOf(phrase, offset);
+    if (index < 0) return false;
+    const before = index > 0 ? name[index - 1] : "";
+    let afterIndex = index + phrase.length;
+    if (
+      !phrase.endsWith("s") &&
+      name[afterIndex] === "s" &&
+      !isWordCharacter(name[afterIndex + 1])
+    ) {
+      afterIndex += 1;
+    }
+    const after = name[afterIndex] ?? "";
+    if (!isWordCharacter(before) && !isWordCharacter(after)) return true;
+    offset = index + 1;
+  }
+  return false;
+}
+
 /** The module resource tag on an item snapshot, if any. */
 function itemResourceTag(item) {
   return item?.flags?.[MODULE_ID]?.resourceTag ?? null;
@@ -79,6 +113,9 @@ function describeResources(resourceDefs) {
         itemUuids: uniqueValues(matching.itemUuids),
         flagTag: text(matching.flagTag),
         keywords: uniqueValues(matching.nameKeywords, { lowerCase: true }),
+        excludedKeywords: uniqueValues(matching.excludeNameKeywords, {
+          lowerCase: true,
+        }),
       };
     });
 }
@@ -255,6 +292,13 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
   )
     .map((k) => lower(k).trim())
     .filter(Boolean);
+  const excludedKeywords = (
+    Array.isArray(matching.excludeNameKeywords)
+      ? matching.excludeNameKeywords
+      : []
+  )
+    .map((k) => lower(k).trim())
+    .filter(Boolean);
 
   const out = [];
   for (const item of items) {
@@ -269,8 +313,15 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
     } else if (flagTag && itemResourceTag(item) === flagTag) {
       priority = 2;
     } else if (keywords.length > 0) {
-      const name = lower(item.name);
-      if (keywords.some((kw) => name.includes(kw))) priority = 1;
+      const excluded = excludedKeywords.some((keyword) =>
+        nameMatchesKeyword(item.name, keyword),
+      );
+      if (
+        !excluded &&
+        keywords.some((keyword) => nameMatchesKeyword(item.name, keyword))
+      ) {
+        priority = 1;
+      }
     }
     if (priority > 0) {
       out.push({

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   diagnoseResourceConfiguration,
@@ -105,16 +106,81 @@ function item(id, name, qty, extra = {}) {
     1,
     "a Water Ration is counted as water",
   );
+  for (const name of [
+    "Water Rations",
+    "Water Rations (1 day)",
+    "Fresh Water Rations",
+  ]) {
+    const stack = item(`water-${name}`, name, 4);
+    assert.equal(
+      matchResourceItems([stack], food).length,
+      0,
+      `${name} is explicitly excluded from food`,
+    );
+    assert.equal(
+      matchResourceItems([stack], water).length,
+      1,
+      `${name} is counted as water`,
+    );
+  }
   assert.deepEqual(
     matchResourceItems(
       [
         item("standard-rations", "Rations (1 day)", 5),
         item("trail-ration", "Trail Ration", 2),
+        item("iron-rations", "Iron Rations", 2),
+        item("emergency-ration", "Emergency Ration", 2),
       ],
       food,
     ).map((match) => match.id),
-    ["standard-rations", "trail-ration"],
+    ["standard-rations", "trail-ration", "iron-rations", "emergency-ration"],
     "the collision fix keeps common food ration names matched",
+  );
+  for (const name of [
+    "Create Food and Water",
+    "Purify Food and Drink",
+    "Spell Scroll: Purify Food and Drink",
+    "Preparations",
+    "Decorations",
+    "Greater Restoration",
+    "Ring of Regeneration",
+  ]) {
+    assert.equal(
+      matchResourceItems([item(`unrelated-${name}`, name, 1)], food).length,
+      0,
+      `${name} is not consumable food`,
+    );
+  }
+  assert.equal(
+    matchResourceItems([item("waterskin", "Waterskin", 1)], water).length,
+    0,
+    "a reusable Waterskin is not a disposable day-unit",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Pack-grounded default matcher audit — only intended supply Items match
+ * ------------------------------------------------------------------ */
+{
+  const config = createDefaultResourceConfig();
+  const food = config.resources.find((resource) => resource.id === "food");
+  const water = config.resources.find((resource) => resource.id === "water");
+  const packItems = readFileSync(
+    new URL("../packs/infinity-dnd5e-items.db", import.meta.url),
+    "utf8",
+  )
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    matchResourceItems(packItems, food).map((match) => match.name),
+    ["Rations"],
+    "food defaults do not claim spells, scrolls, or unrelated pack names",
+  );
+  assert.deepEqual(
+    matchResourceItems(packItems, water).map((match) => match.name),
+    [],
+    "water defaults do not consume the reusable Waterskin",
   );
 }
 

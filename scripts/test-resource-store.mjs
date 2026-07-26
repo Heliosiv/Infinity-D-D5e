@@ -10,6 +10,10 @@ import {
   normalizeRosterEntry,
   resolveDrawSourceId,
   normalizeRunState,
+  assertUpkeepClaimCurrent,
+  claimUpkeepRun,
+  clearUpkeepClaim,
+  completeUpkeepRun,
   observeResourceAuthorityTransition,
   createDefaultResourceConfig,
   isCanonicalPerCharacterResource,
@@ -43,6 +47,7 @@ import {
   assert.equal(r.perDay, 0, "negative perDay clamps to 0");
   assert.deepEqual(r.matching, {
     nameKeywords: [],
+    excludeNameKeywords: [],
     flagTag: "",
     itemUuids: [],
   });
@@ -81,7 +86,7 @@ import {
 {
   const cfg = normalizeResourceConfig({});
   assert.equal(cfg.version, RESOURCE_CONFIG_VERSION);
-  assert.equal(RESOURCE_CONFIG_VERSION, 3, "current structural schema is v3");
+  assert.equal(RESOURCE_CONFIG_VERSION, 4, "current structural schema is v4");
   assert.equal(cfg.forageMode, "each");
   assert.equal(cfg.halfRations, false);
   assert.equal(cfg.waterEnabled, true);
@@ -91,8 +96,28 @@ import {
   assert.deepEqual(
     cfg.resources.find((resource) => resource.id === "food")?.matching
       ?.nameKeywords,
-    ["rations", "trail ration", "food"],
-    "fresh food defaults do not claim the water phrase 'water ration'",
+    [
+      "rations",
+      "trail ration",
+      "iron ration",
+      "emergency ration",
+      "field ration",
+      "food ration",
+    ],
+    "fresh food defaults cover day-unit ration names without a broad food keyword",
+  );
+  const defaultFood = cfg.resources.find((resource) => resource.id === "food");
+  assert.deepEqual(defaultFood.matching.excludeNameKeywords, ["water ration"]);
+  assert.deepEqual(defaultFood.matching.itemUuids, [
+    "Compendium.dnd5e.items.Item.f4w4GxBi0nYXmhX4",
+  ]);
+  const defaultWater = cfg.resources.find(
+    (resource) => resource.id === "water",
+  );
+  assert.deepEqual(
+    defaultWater.matching.nameKeywords,
+    ["water ration", "water (1 day)"],
+    "a reusable Waterskin is not treated as disposable water",
   );
 
   const upgradedV2 = normalizeResourceConfig({
@@ -111,8 +136,48 @@ import {
   });
   assert.deepEqual(
     upgradedV2.resources[0].matching.nameKeywords,
-    ["rations", "trail ration", "food"],
+    [
+      "rations",
+      "trail ration",
+      "iron ration",
+      "emergency ration",
+      "field ration",
+      "food ration",
+    ],
     "the exact v2 food default is repaired during normalization",
+  );
+
+  const upgradedV3 = normalizeResourceConfig({
+    version: 3,
+    resources: [
+      {
+        id: "food",
+        forageYields: "food",
+        matching: {
+          nameKeywords: ["rations", "trail ration", "food"],
+          flagTag: "food",
+          itemUuids: [],
+        },
+      },
+      {
+        id: "water",
+        forageYields: "water",
+        matching: {
+          nameKeywords: ["waterskin", "water ration", "water (1 day)"],
+          flagTag: "water",
+          itemUuids: [],
+        },
+      },
+    ],
+  });
+  assert.ok(
+    !upgradedV3.resources[0].matching.nameKeywords.includes("food"),
+    "the v3 broad food keyword is removed",
+  );
+  assert.deepEqual(
+    upgradedV3.resources[1].matching.nameKeywords,
+    ["water ration", "water (1 day)"],
+    "the exact v3 water default no longer consumes Waterskins",
   );
 
   const customizedV2 = normalizeResourceConfig({
@@ -375,6 +440,7 @@ import {
   assert.equal(fresh.lastSeenDay, null);
   assert.equal(fresh.currentEnvironmentId, null);
   assert.equal(fresh.lastUpkeepResult, null);
+  assert.equal(fresh.activeUpkeep, null);
 
   const live = normalizeRunState({
     lastSeenDay: 12.9,
@@ -596,8 +662,15 @@ import {
     assert.equal(matcherUpgrade.value.version, RESOURCE_CONFIG_VERSION);
     assert.deepEqual(
       matcherUpgrade.value.resources[0].matching.nameKeywords,
-      ["rations", "trail ration", "food"],
-      "v2 worlds persist the collision-free food matcher",
+      [
+        "rations",
+        "trail ration",
+        "iron ration",
+        "emergency ration",
+        "field ration",
+        "food ration",
+      ],
+      "v2 worlds persist the boundary-safe food matcher",
     );
 
     stored = { ...raw };
@@ -1087,6 +1160,7 @@ import {
         lastSeenDay: 18,
         currentEnvironmentId: null,
         lastUpkeepResult: null,
+        activeUpkeep: null,
       },
       {
         version: RESOURCE_RUN_STATE_VERSION,
@@ -1096,6 +1170,7 @@ import {
         lastSeenDay: 18,
         currentEnvironmentId: "underdark",
         lastUpkeepResult: null,
+        activeUpkeep: null,
       },
       {
         version: RESOURCE_RUN_STATE_VERSION,
@@ -1105,9 +1180,112 @@ import {
         lastSeenDay: 18,
         currentEnvironmentId: "underdark",
         lastUpkeepResult: { day: 18, shortages: 2 },
+        activeUpkeep: null,
       },
     ]);
     assert.deepEqual(loadRunState(), normalizeRunState(writes[2]));
+  } finally {
+    resetResourceStoreForTests();
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Persisted upkeep claims reserve one writer across clients and atomically
+ * close with the report. Calendar claims reserve the day before Actor writes.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  try {
+    let stored = {
+      lastSeenDay: 21,
+      currentEnvironmentId: "road",
+      lastUpkeepResult: null,
+      activeUpkeep: null,
+    };
+    globalThis.game = {
+      settings: {
+        get(_moduleId, key) {
+          return key === "resourceRunState" ? stored : undefined;
+        },
+        async set(_moduleId, key, value) {
+          stored = structuredClone(value);
+          return value;
+        },
+      },
+    };
+
+    await claimUpkeepRun({
+      runId: "calendar-run",
+      trigger: "calendar",
+      day: 22,
+      days: 1,
+      claimedAt: 1234,
+    });
+    assert.equal(stored.lastSeenDay, 22, "the day is reserved with the claim");
+    assert.deepEqual(stored.activeUpkeep, {
+      runId: "calendar-run",
+      trigger: "calendar",
+      day: 22,
+      days: 1,
+      claimedAt: 1234,
+    });
+    assert.equal(assertUpkeepClaimCurrent("calendar-run"), true);
+    await assert.rejects(
+      claimUpkeepRun({
+        runId: "competing-run",
+        trigger: "calendar",
+        day: 22,
+        claimedAt: 1235,
+      }),
+      /ResourceUpkeepAlreadyActive/,
+      "a second run cannot replace the canonical lease",
+    );
+
+    const report = { runId: "calendar-run", status: "complete" };
+    await completeUpkeepRun({ runId: "calendar-run", result: report });
+    assert.equal(stored.activeUpkeep, null);
+    assert.deepEqual(stored.lastUpkeepResult, report);
+    assert.equal(stored.lastSeenDay, 22);
+
+    await assert.rejects(
+      claimUpkeepRun({
+        runId: "delayed-calendar-run",
+        trigger: "calendar",
+        day: 22,
+        claimedAt: 1900,
+      }),
+      /ResourceUpkeepCalendarDayReserved/,
+      "a delayed second client cannot claim a day after the first run closes",
+    );
+    await assert.rejects(
+      claimUpkeepRun({
+        runId: "stale-calendar-run",
+        trigger: "calendar",
+        day: 21,
+        claimedAt: 1950,
+      }),
+      /ResourceUpkeepCalendarDayReserved/,
+      "an older calendar day cannot overwrite the reserved baseline",
+    );
+    assert.equal(stored.activeUpkeep, null);
+    assert.equal(stored.lastSeenDay, 22);
+
+    await claimUpkeepRun({
+      runId: "manual-run",
+      trigger: "manual",
+      day: 99,
+      claimedAt: 2000,
+    });
+    assert.equal(
+      stored.lastSeenDay,
+      22,
+      "manual work never moves the calendar baseline",
+    );
+    await clearUpkeepClaim("manual-run");
+    assert.equal(stored.activeUpkeep, null);
+    assert.equal(stored.lastSeenDay, 22);
   } finally {
     resetResourceStoreForTests();
     if (originalGame === undefined) delete globalThis.game;
@@ -1159,6 +1337,7 @@ import {
       lastSeenDay: 4,
       currentEnvironmentId: "forest",
       lastUpkeepResult: { day: 5, shortages: 0 },
+      activeUpkeep: null,
     });
   } finally {
     if (originalGame === undefined) delete globalThis.game;

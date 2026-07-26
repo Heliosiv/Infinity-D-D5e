@@ -29,6 +29,17 @@
   <p class="rm-note rm-note--warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Another GM is the active one — daily upkeep runs on their client.</p>
   {{/unless}}
 
+  {{#if hasActiveUpkeep}}
+  <div class="rm-note rm-note--warn" role="alert">
+    <p><i class="fa-solid fa-lock" aria-hidden="true"></i> <strong>Resource writes are safety-locked.</strong>
+      The {{activeUpkeep.triggerLabel}} run for {{activeUpkeep.dayLabel}} did not finish cleanly. Quartermaster will not replay it or change more inventory until you review the supplies.
+    </p>
+    <button type="button" class="mw-btn mw-btn--ghost" data-action="clearInterruptedRun">
+      <i class="fa-solid fa-unlock" aria-hidden="true"></i> Clear after review
+    </button>
+  </div>
+  {{/if}}
+
   {{#if hasResourceConflictWarnings}}
   <div class="rm-note rm-note--warn" {{#if hasBlockingResourceConflicts}}role="alert"{{else}}role="status"{{/if}}>
     <p><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <strong>Resource rules need attention.</strong>

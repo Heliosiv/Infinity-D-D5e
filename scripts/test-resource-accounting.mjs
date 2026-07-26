@@ -221,11 +221,11 @@ import {
   ];
   const initial = resourceOperationFingerprint({
     config,
-    state: { currentEnvironmentId: "road" },
+    state: { currentEnvironmentId: "road", lastSeenDay: 98 },
     roster,
     environmentId: "road",
   });
-  assert.equal(
+  assert.notEqual(
     resourceOperationFingerprint({
       config: structuredClone(config),
       state: { currentEnvironmentId: "road", lastSeenDay: 99 },
@@ -233,7 +233,21 @@ import {
       environmentId: "road",
     }),
     initial,
-    "unrelated run-state changes do not invalidate a pending operation",
+    "a newly reserved calendar day invalidates a delayed client operation",
+  );
+  assert.equal(
+    resourceOperationFingerprint({
+      config: structuredClone(config),
+      state: {
+        currentEnvironmentId: "road",
+        lastSeenDay: 98,
+        lastUpkeepResult: { day: 98 },
+      },
+      roster: structuredClone(roster),
+      environmentId: "road",
+    }),
+    initial,
+    "completed-report details do not invalidate an otherwise current operation",
   );
 
   const changedRules = structuredClone(config);

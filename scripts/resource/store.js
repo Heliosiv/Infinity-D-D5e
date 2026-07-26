@@ -33,8 +33,8 @@ import {
   normalizeEnvironmentCatalog,
 } from "./environment.js";
 
-export const RESOURCE_CONFIG_VERSION = 3;
-export const RESOURCE_RUN_STATE_VERSION = 1;
+export const RESOURCE_CONFIG_VERSION = 4;
+export const RESOURCE_RUN_STATE_VERSION = 2;
 
 /** Resource consumption scope. Food/water are per-character; light is party-wide. */
 export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
@@ -46,11 +46,27 @@ const LEGACY_DEFAULT_FOOD_KEYWORDS = Object.freeze([
   "trail ration",
   "food",
 ]);
-const DEFAULT_FOOD_KEYWORDS = Object.freeze([
+const V3_DEFAULT_FOOD_KEYWORDS = Object.freeze([
   "rations",
   "trail ration",
   "food",
 ]);
+const DEFAULT_FOOD_KEYWORDS = Object.freeze([
+  "rations",
+  "trail ration",
+  "iron ration",
+  "emergency ration",
+  "field ration",
+  "food ration",
+]);
+const DEFAULT_FOOD_EXCLUDES = Object.freeze(["water ration"]);
+const LEGACY_DEFAULT_WATER_KEYWORDS = Object.freeze([
+  "waterskin",
+  "water ration",
+  "water (1 day)",
+]);
+const DEFAULT_WATER_KEYWORDS = Object.freeze(["water ration", "water (1 day)"]);
+const CORE_RATIONS_UUID = "Compendium.dnd5e.items.Item.f4w4GxBi0nYXmhX4";
 
 /**
  * Runtime rules live in normal Foundry settings so the standard Module
@@ -122,8 +138,9 @@ function defaultResources() {
       forageYields: "food",
       matching: {
         nameKeywords: [...DEFAULT_FOOD_KEYWORDS],
+        excludeNameKeywords: [...DEFAULT_FOOD_EXCLUDES],
         flagTag: "food",
-        itemUuids: [],
+        itemUuids: [CORE_RATIONS_UUID],
       },
     },
     {
@@ -136,7 +153,8 @@ function defaultResources() {
       // "Water Elemental" figurines, etc. The GM can tag a specific item or add
       // keywords in the Resource Manager.
       matching: {
-        nameKeywords: ["waterskin", "water ration", "water (1 day)"],
+        nameKeywords: [...DEFAULT_WATER_KEYWORDS],
+        excludeNameKeywords: [],
         flagTag: "water",
         itemUuids: [],
       },
@@ -149,6 +167,7 @@ function defaultResources() {
       forageYields: null,
       matching: {
         nameKeywords: ["torch", "torches"],
+        excludeNameKeywords: [],
         flagTag: "light",
         itemUuids: [],
       },
@@ -181,6 +200,7 @@ export function normalizeResource(raw) {
     forageYields,
     matching: {
       nameKeywords: toStrArray(matching.nameKeywords),
+      excludeNameKeywords: toStrArray(matching.excludeNameKeywords),
       flagTag: toStr(matching.flagTag),
       itemUuids: toStrArray(matching.itemUuids),
     },
@@ -264,7 +284,7 @@ export function normalizeResourceConfig(input) {
     seenResourceIds.add(resource.id);
     return true;
   });
-  repairLegacyDefaultFoodMatcher(resources, raw.version);
+  repairLegacyDefaultMatchers(resources, raw.version);
   return {
     version: RESOURCE_CONFIG_VERSION,
     forageMode: FORAGE_MODES.includes(raw.forageMode) ? raw.forageMode : "each",
@@ -284,25 +304,46 @@ export function normalizeResourceConfig(input) {
 }
 
 /**
- * v2 shipped a singular "ration" food keyword alongside the water phrase
- * "water ration". That made a fresh configuration warn about itself and could
- * let one concrete item be claimed by both resources. Repair only the exact
- * former food default; customized keyword lists remain untouched.
+ * Older defaults treated every name containing "food" as a ration, treated a
+ * reusable Waterskin as disposable water, and allowed plural Water Rations to
+ * overlap food. Repair only the exact former defaults; customized keyword
+ * lists remain untouched.
  */
-function repairLegacyDefaultFoodMatcher(resources, rawVersion) {
+function repairLegacyDefaultMatchers(resources, rawVersion) {
   const version = Math.max(0, Math.floor(Number(rawVersion) || 0));
   if (version >= RESOURCE_CONFIG_VERSION) return false;
+  let changed = false;
   const food = resources.find(
     (resource) => resource.id === "food" || resource.forageYields === "food",
   );
-  if (
-    !food ||
-    !sameKeywordList(food.matching?.nameKeywords, LEGACY_DEFAULT_FOOD_KEYWORDS)
-  ) {
-    return false;
+  const foodWasDefault =
+    food &&
+    (sameKeywordList(
+      food.matching?.nameKeywords,
+      LEGACY_DEFAULT_FOOD_KEYWORDS,
+    ) ||
+      sameKeywordList(food.matching?.nameKeywords, V3_DEFAULT_FOOD_KEYWORDS));
+  if (foodWasDefault) {
+    food.matching.nameKeywords = [...DEFAULT_FOOD_KEYWORDS];
+    if ((food.matching.excludeNameKeywords ?? []).length === 0) {
+      food.matching.excludeNameKeywords = [...DEFAULT_FOOD_EXCLUDES];
+    }
+    if ((food.matching.itemUuids ?? []).length === 0) {
+      food.matching.itemUuids = [CORE_RATIONS_UUID];
+    }
+    changed = true;
   }
-  food.matching.nameKeywords = [...DEFAULT_FOOD_KEYWORDS];
-  return true;
+  const water = resources.find(
+    (resource) => resource.id === "water" || resource.forageYields === "water",
+  );
+  if (
+    water &&
+    sameKeywordList(water.matching?.nameKeywords, LEGACY_DEFAULT_WATER_KEYWORDS)
+  ) {
+    water.matching.nameKeywords = [...DEFAULT_WATER_KEYWORDS];
+    changed = true;
+  }
+  return changed;
 }
 
 function sameKeywordList(actual, expected) {
@@ -351,6 +392,33 @@ export function serializeResourceConfig(input) {
   };
 }
 
+function normalizeActiveUpkeep(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const runId = toStr(input.runId);
+  if (!runId) return null;
+  const rawDay = input.day;
+  const day =
+    rawDay == null || !Number.isFinite(Number(rawDay))
+      ? null
+      : Math.floor(Number(rawDay));
+  const rawClaimedAt = Number(input.claimedAt);
+  return {
+    runId,
+    trigger:
+      input.trigger === "calendar"
+        ? "calendar"
+        : input.trigger === "forage"
+          ? "forage"
+          : "manual",
+    day,
+    days: Math.max(1, toInt(input.days, 1)),
+    claimedAt:
+      Number.isSafeInteger(rawClaimedAt) && rawClaimedAt >= 0
+        ? rawClaimedAt
+        : 0,
+  };
+}
+
 /** Normalize the run-state. lastSeenDay null means "never processed". */
 export function normalizeRunState(input) {
   const raw = input && typeof input === "object" ? input : {};
@@ -367,6 +435,7 @@ export function normalizeRunState(input) {
     lastSeenDay,
     currentEnvironmentId: toStr(raw.currentEnvironmentId) || null,
     lastUpkeepResult: result,
+    activeUpkeep: normalizeActiveUpkeep(raw.activeUpkeep),
   };
 }
 
@@ -397,6 +466,15 @@ function isPersistedRunState(raw) {
       Array.isArray(raw.lastUpkeepResult))
   ) {
     return false;
+  }
+  if (raw.activeUpkeep !== null) {
+    const activeUpkeep = normalizeActiveUpkeep(raw.activeUpkeep);
+    if (
+      !activeUpkeep ||
+      !persistedValuesEqual(raw.activeUpkeep, activeUpkeep)
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -961,6 +1039,92 @@ export async function setLastUpkeepResult(result) {
       : null;
   return updateRunState((state) => {
     state.lastUpkeepResult = value;
+  });
+}
+
+/**
+ * Persist the single cross-client upkeep lease immediately before Actor writes.
+ * Calendar claims reserve their day in the same verified run-state patch, so a
+ * failure after inventory mutation can never replay that day automatically.
+ */
+export async function claimUpkeepRun(claim) {
+  const value = normalizeActiveUpkeep(claim);
+  if (!value) throw new Error("ResourceUpkeepClaimInvalid");
+  if (value.trigger === "calendar" && value.day === null) {
+    throw new Error("ResourceUpkeepClaimInvalid");
+  }
+  return updateRunState((state) => {
+    if (state.activeUpkeep) {
+      throw new Error(
+        `ResourceUpkeepAlreadyActive: ${state.activeUpkeep.runId}`,
+      );
+    }
+    if (value.trigger === "calendar" && value.day !== null) {
+      if (state.lastSeenDay !== null && value.day <= state.lastSeenDay) {
+        throw new Error(
+          `ResourceUpkeepCalendarDayReserved: ${value.day} <= ${state.lastSeenDay}`,
+        );
+      }
+      state.lastSeenDay = value.day;
+    }
+    state.activeUpkeep = value;
+  });
+}
+
+/**
+ * Assert that this client still owns the canonical upkeep lease. This is
+ * intentionally read-only and is called immediately before every Actor write.
+ */
+export function assertUpkeepClaimCurrent(runId) {
+  const expectedRunId = toStr(runId);
+  if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
+  const fence = captureRunStateAuthorityFence();
+  assertRunStateAuthorityFence(fence);
+  const raw = readRawRunState();
+  const state = normalizeRunState(raw);
+  if (
+    !isPersistedRunState(raw) ||
+    state.activeUpkeep?.runId !== expectedRunId
+  ) {
+    throw new Error("ResourceUpkeepClaimLost");
+  }
+  return true;
+}
+
+/** Atomically store the report and release the matching upkeep lease. */
+export async function completeUpkeepRun({
+  runId,
+  result,
+  persistResult = true,
+} = {}) {
+  const expectedRunId = toStr(runId);
+  if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
+  const value =
+    result && typeof result === "object"
+      ? (globalThis.foundry?.utils?.deepClone?.(result) ??
+        structuredClone(result))
+      : null;
+  return updateRunState((state) => {
+    if (state.activeUpkeep?.runId !== expectedRunId) {
+      throw new Error("ResourceUpkeepClaimLost");
+    }
+    if (persistResult) state.lastUpkeepResult = value;
+    state.activeUpkeep = null;
+  });
+}
+
+/**
+ * Explicitly acknowledge an interrupted run without replaying it. Calendar
+ * claims have already reserved their day, so clearing only releases the lock.
+ */
+export async function clearUpkeepClaim(runId) {
+  const expectedRunId = toStr(runId);
+  if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
+  return updateRunState((state) => {
+    if (state.activeUpkeep?.runId !== expectedRunId) {
+      throw new Error("ResourceUpkeepClaimLost");
+    }
+    state.activeUpkeep = null;
   });
 }
 

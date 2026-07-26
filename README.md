@@ -14,7 +14,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.61 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading. Installed-world multi-client acceptance is still pending.
+**v0.2.61** - Loot generation, merchant economy, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
@@ -65,9 +65,13 @@ Roster actors can be marked as daily consumers or inventory-only sources, so a
 mule or NPC stash does not consume an extra ration. Quartermaster also warns
 about overlapping resource matchers and blocks unsafe inventory writes when a
 live item is claimed by more than one resource. The built-in food and water
-rules are distinct, including `rations` for food and `water ration` for water.
-Advance Day accepts only one confirmation or run at a time, so repeated clicks
-cannot queue extra consumption.
+rules are distinct, including whole-word ration names for food and disposable
+day-unit names such as `water ration` for water. Reusable Waterskins are not
+spent or multiplied as day-unit inventory. Advance Day and Forage Drive accept
+only one prompt and one authority-fenced resource run at a time. A persisted
+safety lease reserves an automatic calendar day before Actor inventory changes.
+After a short cross-client stabilization check, an interrupted run is locked for
+GM review instead of replaying consumption.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in
@@ -144,7 +148,7 @@ For a GitHub-Releases workflow:
 
 1. Tag the commit (`git tag v0.2.61 && git push --tags`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.61` and upload both `release/module.zip` and `release/module.json` as assets.
+3. Create a GitHub Release named `v0.2.61` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

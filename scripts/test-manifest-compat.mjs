@@ -4,12 +4,19 @@ import { spawnSync } from "node:child_process";
 
 const manifest = JSON.parse(readFileSync("module.json", "utf8"));
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const lock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 
 assert.equal(manifest.id, "infinity-dnd5e");
 assert.equal(
   manifest.version,
   pkg.version,
   "package and manifest versions match",
+);
+assert.equal(lock.version, pkg.version, "lockfile and package versions match");
+assert.equal(
+  lock.packages?.[""]?.version,
+  pkg.version,
+  "lockfile root package version matches",
 );
 
 // Cross-client play (shops, sessions, bargains) and broadcast audio all

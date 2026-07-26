@@ -150,6 +150,14 @@ export function buildHarnessViews() {
       { width: 880, height: 700 },
     ),
     view(
+      "resource-manager-locked",
+      "Quartermaster (interrupted run)",
+      "infinity-resource-manager",
+      "templates/resource-manager.hbs",
+      resourceManagerLockedContext(),
+      { width: 880, height: 700 },
+    ),
+    view(
       "resource-overview",
       "Party Supplies (player)",
       "infinity-resource-overview",
@@ -988,7 +996,8 @@ function resourceManagerContext() {
       label: "Food (Rations)",
       perDay: 1,
       scopeIsParty: false,
-      keywords: "ration, rations, food",
+      keywords:
+        "rations, trail ration, iron ration, emergency ration, field ration, food ration",
       flagTag: "food",
       tags: [],
     },
@@ -997,7 +1006,7 @@ function resourceManagerContext() {
       label: "Water",
       perDay: 1,
       scopeIsParty: false,
-      keywords: "waterskin, water ration",
+      keywords: "water ration, water (1 day)",
       flagTag: "water",
       tags: [],
     },
@@ -1029,7 +1038,7 @@ function resourceManagerContext() {
       id: "water",
       label: "Water",
       total: water,
-      detail: "Waterskin ×" + water,
+      detail: "Water Rations ×" + water,
       shared: false,
     },
     {
@@ -1171,6 +1180,18 @@ function resourceManagerContext() {
           hasError: false,
         },
       ],
+    },
+  };
+}
+
+function resourceManagerLockedContext() {
+  return {
+    ...resourceManagerContext(),
+    canRunResourceWrites: false,
+    hasActiveUpkeep: true,
+    activeUpkeep: {
+      triggerLabel: "automatic upkeep",
+      dayLabel: "day 42",
     },
   };
 }

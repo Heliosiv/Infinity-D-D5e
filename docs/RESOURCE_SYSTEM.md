@@ -37,7 +37,7 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.61 release-candidate code already has a useful foundation.
+The v0.2.61 release code has a useful foundation.
 
 ### Available now
 
@@ -73,10 +73,11 @@ The v0.2.61 release-candidate code already has a useful foundation.
 - The GM and player surfaces share one source-aware outlook model, so individual
   packs, nominated stashes, the party stash, and party-wide pools are counted
   consistently.
-- Structural configuration is schema version 3. The legacy duplicated runtime
-  rules migrate once into the normal visible Foundry settings, and the former
-  ambiguous default food keyword is repaired without changing customized
-  matcher lists.
+- Structural configuration is schema version 4. The legacy duplicated runtime
+  rules migrate once into the normal visible Foundry settings. Exact former
+  defaults are repaired to whole-word ration matching, broad `food` matching is
+  removed, reusable Waterskins are no longer disposable water, and customized
+  matcher lists remain unchanged.
 - GM-only resource structure and moving run state are cached from flags on the
   restricted private-state journal. Legacy world-setting copies are cleared
   only after a successful private migration. New worlds never store those
@@ -86,6 +87,11 @@ The v0.2.61 release-candidate code already has a useful foundation.
   read back, and recovered after a handoff; stale queued writes and
   equal-revision divergent payloads are rejected and the last accepted state
   is reasserted.
+- Daily upkeep and forage writes acquire a persisted, authority-fenced lease
+  immediately before the first Actor mutation. Calendar leases reserve the day
+  in that same write. A short stabilization window and per-write claim checks
+  stop a visible competing or interrupted run for explicit GM review instead of
+  replaying the whole operation.
 
 ### Current limits
 
@@ -98,8 +104,13 @@ The v0.2.61 release-candidate code already has a useful foundation.
   can lose the pending run even though actor or world state remains.
 - Only the latest upkeep result is retained. There is no durable, bounded run
   history or operation ledger.
-- A run ID correlates messages, but there is not yet a persisted idempotency
-  record that proves actor writes were applied exactly once.
+- A persisted active-run lease rejects automatic same-day replay and fences
+  competing clients after a short propagation check. Foundry Journal updates do
+  not provide a server-side compare-and-swap primitive, so this is not a proof
+  of atomic mutual exclusion between same-user clients under every network
+  partition. There is also not yet a per-operation ledger that can prove or
+  automatically resume every individual Actor write after a mid-run failure;
+  an interrupted lease therefore fails closed and requires GM review.
 - A forage result is bound to the exact prompted user and actor, and its
   Survival total must be a finite integer from -50 through 100 (or exactly zero
   for a skip). The total still originates on the player client and is not
@@ -215,19 +226,22 @@ projections, not competing storage.
 
 ### Configuration versioning
 
-The current structural resource configuration is version 3. The migration:
+The current structural resource configuration is version 4. The migration:
 
 1. Detect an unmigrated version 1 configuration.
 2. Copy each legacy runtime rule to its visible Foundry setting.
 3. Copy the legacy world-setting payload into the restricted private-state
    journal and clear the legacy setting only after the private write succeeds.
-4. Repair version 2's exact built-in food matcher by removing the singular
-   `ration` keyword, so it no longer claims `water ration`. Customized matcher
-   lists are left alone.
-5. Save only the current structural shape in the private `resourceConfig` flag.
-6. Be safe to run more than once.
-7. Preserve the old world's customized behavior on the first upgraded launch.
-8. Leave malformed or absent fields at registered defaults.
+4. Repair the exact former built-in food matcher by removing the broad `food`
+   keyword, using whole-word ration phrases, excluding water-ration names, and
+   binding the core Rations source UUID.
+5. Repair the exact former water matcher by removing `waterskin`; reusable
+   containers are not disposable day-unit stacks. Customized matcher lists are
+   left alone.
+6. Save only the current structural shape in the private `resourceConfig` flag.
+7. Be safe to run more than once.
+8. Preserve the old world's customized behavior on the first upgraded launch.
+9. Leave malformed or absent fields at registered defaults.
 
 All future changes follow the same pattern: normalize, migrate, serialize the
 current schema, then read it back in a test.
@@ -546,14 +560,14 @@ without importing an application class or directly reading private settings.
 | Settings and migration | v1 to v2 copy, registered defaults, repeated migration, Quartermaster-to-settings sync, settings-to-Quartermaster sync, reload round-trip | `npm run check`                    |
 | Environment            | Built-ins, CRUD, duplicate ID, formula validation, active deletion, import/export, forage disabled                                        | `npm run check` plus UI audit      |
 | Roster and stash       | Auto roster, explicit consumer, inventory-only NPC stash, missing actor, self draw, per-member stash, party stash, stale references       | `npm run check`                    |
-| Item matching          | UUID over flag over keyword, false-positive water names, deleted bound item, zero or malformed quantities                                 | `npm run check`                    |
+| Item matching          | UUID over flag over whole-word keyword, water-ration exclusion, spell/scroll false positives, reusable Waterskin, pack-wide names         | `npm run check`                    |
 | Consumption            | Exact stack, multi-stack, delete at zero, shortfall, party resource, half rations, water disabled, multi-day cap                          | `npm run check`                    |
 | Deposit                | Existing stack, create default stack, no template, shared stash, per-forager destination, partial document failure                        | `npm run check`                    |
 | Forage math            | Success, failure, negative Wisdom result clamp, dry region, each mode, best mode, offline, skip, timeout                                  | `npm run check`                    |
 | Calendar               | First seed, same-day dedupe, forward jump, capped jump, backward time, Simple Calendar fallback                                           | `npm run check`                    |
 | Snapshot privacy       | Correct totals, allowed fields only, hidden match detail absent, disabled view, no GM online, malformed request                           | `npm run check`                    |
 | Socket authority       | Spoofed origin, inactive sender, wrong actor owner, non-authoritative GM, wrong target, unknown event or version                          | `npm run check` plus multi-client  |
-| Idempotency            | Duplicate hook, duplicate result, duplicate deposit, duplicate consumption, late response, repeated close, retry after partial failure    | `npm run check` plus restart tests |
+| Idempotency            | Duplicate hook/prompt, claim failure before writes, competing lease, failed completion, same-day retry, authority loss                    | `npm run check` plus restart tests |
 | Resume                 | GM reload and player reload at each run state, authority handoff, stale prompt, completed-run replay                                      | Restart harness plus multi-client  |
 | Reports and exhaustion | All chat audiences, sanitized player data, shortfall reasons, cap at six, cancelled prompt, failed write visibility                       | `npm run check` plus multi-client  |
 | UI                     | GM and player launchers, empty/loading/error/low/healthy states, keyboard, narrow and phone widths, no unreachable controls               | `npm run ui:audit`                 |
