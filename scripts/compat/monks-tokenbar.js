@@ -5,12 +5,16 @@ let tokenEntryBuilder = null;
 
 export async function registerMonksTokenbarCompat({
   importModule = (path) => import(path),
+  documentRef = globalThis.document,
 } = {}) {
   if (!globalThis.game?.modules?.get?.(MONKS_TOKENBAR_ID)?.active) return;
 
+  const savingThrowModuleUrl =
+    findLoadedModuleUrl("apps/savingthrow.js", documentRef) ??
+    "/modules/monks-tokenbar/apps/savingthrow.js";
   let module;
   try {
-    module = await importModule("/modules/monks-tokenbar/apps/savingthrow.js");
+    module = await importModule(savingThrowModuleUrl);
   } catch (error) {
     console.warn(
       "infinity-dnd5e | failed to load Monk's TokenBar request-roll compat",
@@ -23,9 +27,10 @@ export async function registerMonksTokenbarCompat({
   if (!SavingThrowApp || SavingThrowApp[PATCH_MARKER]) return;
 
   try {
-    const tokenbarModule = await importModule(
-      "/modules/monks-tokenbar/monks-tokenbar.js",
-    );
+    const tokenbarModuleUrl =
+      findLoadedModuleUrl("monks-tokenbar.js", documentRef) ??
+      "/modules/monks-tokenbar/monks-tokenbar.js";
+    const tokenbarModule = await importModule(tokenbarModuleUrl);
     tokenEntryBuilder = tokenbarModule?.MonksTokenBar?.getTokenEntries ?? null;
   } catch {
     tokenEntryBuilder = globalThis.game?.MonksTokenBar?.getTokenEntries ?? null;
@@ -117,6 +122,32 @@ export async function registerMonksTokenbarCompat({
     value: true,
     configurable: false,
   });
+}
+
+function findLoadedModuleUrl(relativePath, documentRef) {
+  const normalizedRelativePath = String(relativePath ?? "").replace(/^\/+/, "");
+  if (!normalizedRelativePath) return null;
+
+  for (const script of Array.from(documentRef?.scripts ?? [])) {
+    const src = String(script?.src ?? "").trim();
+    if (!src) continue;
+    try {
+      const url = new URL(
+        src,
+        documentRef?.baseURI ?? globalThis.location?.href,
+      );
+      if (
+        url.pathname.includes(`/${MONKS_TOKENBAR_ID}/`) &&
+        url.pathname.endsWith(`/${normalizedRelativePath}`)
+      ) {
+        return src;
+      }
+    } catch {
+      // Ignore malformed script URLs and use the normal Foundry path fallback.
+    }
+  }
+
+  return null;
 }
 
 function ensurePlayerActorEntries(app, { force = false } = {}) {

@@ -84,6 +84,49 @@ async function registerTestCompat(SavingThrowApp) {
 }
 
 {
+  class SavingThrowApp {}
+
+  installFoundryGlobals({
+    actors: [],
+    users: makeUsers([]),
+    tokens: [],
+  });
+
+  const requestedUrls = [];
+  const forgeBase =
+    "https://assets.forge-vtt.com/bazaar/modules/monks-tokenbar/13.02";
+  const documentRef = {
+    baseURI: "https://example.forge-vtt.com/game",
+    scripts: [
+      { src: `${forgeBase}/monks-tokenbar.js` },
+      { src: `${forgeBase}/apps/savingthrow.js` },
+    ],
+  };
+
+  await registerMonksTokenbarCompat({
+    documentRef,
+    importModule: async (path) => {
+      requestedUrls.push(path);
+      if (path.endsWith("/apps/savingthrow.js")) return { SavingThrowApp };
+      if (path.endsWith("/monks-tokenbar.js")) {
+        return {
+          MonksTokenBar: {
+            getTokenEntries: (tokens) => tokens.map(makeTokenEntry),
+          },
+        };
+      }
+      throw new Error(`Unexpected import ${path}`);
+    },
+  });
+
+  assert.deepEqual(
+    requestedUrls,
+    [`${forgeBase}/apps/savingthrow.js`, `${forgeBase}/monks-tokenbar.js`],
+    "Forge compatibility imports reuse the Bazaar module URLs that Foundry already loaded",
+  );
+}
+
+{
   const actors = [
     {
       id: "b",

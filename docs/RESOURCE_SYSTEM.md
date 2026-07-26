@@ -37,7 +37,7 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.60 release-candidate code already has a useful foundation.
+The v0.2.61 release-candidate code already has a useful foundation.
 
 ### Available now
 

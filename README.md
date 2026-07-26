@@ -14,7 +14,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.60 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, and transport-authenticated socket authorization. Installed-world multi-client acceptance is still pending.
+**v0.2.61 release candidate** - Loot generation, merchant economy, party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading. Installed-world multi-client acceptance is still pending.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
@@ -139,9 +139,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.60 && git push --tags`).
+1. Tag the commit (`git tag v0.2.61 && git push --tags`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.60` and upload both `release/module.zip` and `release/module.json` as assets.
+3. Create a GitHub Release named `v0.2.61` and upload both `release/module.zip` and `release/module.json` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema
