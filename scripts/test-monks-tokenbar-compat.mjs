@@ -97,10 +97,7 @@ async function registerTestCompat(SavingThrowApp) {
     "https://assets.forge-vtt.com/bazaar/modules/monks-tokenbar/13.02";
   const documentRef = {
     baseURI: "https://example.forge-vtt.com/game",
-    scripts: [
-      { src: `${forgeBase}/monks-tokenbar.js` },
-      { src: `${forgeBase}/apps/savingthrow.js` },
-    ],
+    scripts: [{ src: `${forgeBase}/monks-tokenbar.js` }],
   };
 
   await registerMonksTokenbarCompat({
@@ -122,7 +119,12 @@ async function registerTestCompat(SavingThrowApp) {
   assert.deepEqual(
     requestedUrls,
     [`${forgeBase}/apps/savingthrow.js`, `${forgeBase}/monks-tokenbar.js`],
-    "Forge compatibility imports reuse the Bazaar module URLs that Foundry already loaded",
+    "Forge compatibility imports derive from the single Bazaar entry-module URL that Foundry loaded",
+  );
+  assert.equal(
+    requestedUrls.some((url) => url.startsWith("/modules/monks-tokenbar/")),
+    false,
+    "Forge compatibility never re-imports Monk's TokenBar through a second module URL",
   );
 }
 

@@ -1,4 +1,5 @@
 const MONKS_TOKENBAR_ID = "monks-tokenbar";
+const MONKS_TOKENBAR_ENTRY = "monks-tokenbar.js";
 const PATCH_MARKER = "__infinityDnd5ePlayerActorPatchV2";
 
 let tokenEntryBuilder = null;
@@ -138,9 +139,9 @@ function findLoadedModuleUrl(relativePath, documentRef) {
       );
       if (
         url.pathname.includes(`/${MONKS_TOKENBAR_ID}/`) &&
-        url.pathname.endsWith(`/${normalizedRelativePath}`)
+        url.pathname.endsWith(`/${MONKS_TOKENBAR_ENTRY}`)
       ) {
-        return src;
+        return new URL(normalizedRelativePath, new URL("./", url)).href;
       }
     } catch {
       // Ignore malformed script URLs and use the normal Foundry path fallback.
