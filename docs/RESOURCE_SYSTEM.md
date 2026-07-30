@@ -177,6 +177,10 @@ The v0.2.61 release code has a useful foundation.
 8. Repeated hooks, late messages, or reconnects return the recorded outcome and
    do not apply the run again.
 
+The private `forageTimeoutSeconds` value defaults to 120 seconds. An explicit
+`0` resolves the response window immediately, which is useful for no-wait
+automation and deterministic test worlds.
+
 ### 4. Manual upkeep
 
 1. The GM chooses **Advance Day**.

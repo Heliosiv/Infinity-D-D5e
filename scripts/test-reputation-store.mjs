@@ -17,12 +17,14 @@ import {
 } from "./reputation/standing.js";
 import {
   addPerCharacter,
+  adjustStanding,
   applyStandingChange,
   createBlankFaction,
   listRevealedForPlayers,
   loadFactions,
   removePerCharacter,
   sanitizeFactionForPlayers,
+  updateFaction,
   updatePerCharacter,
 } from "./reputation/store.js";
 import { prettyStanding } from "./ui-util.js";
@@ -278,6 +280,68 @@ import { prettyStanding } from "./ui-util.js";
   assert.equal(prettyStanding(0), "0 — Neutral");
   assert.equal(prettyStanding(-3), "−3 — Hostile");
   assert.equal(prettyStanding(99), "+5 — Exalted", "clamps high input");
+}
+
+/* ------------------------------------------------------------------ *
+ * Queued mutations always derive from the freshest stored faction.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  let stored = [
+    normalizeFaction({
+      id: "concurrent-faction",
+      name: "Original Name",
+      standing: 0,
+    }),
+  ];
+  globalThis.game = {
+    settings: {
+      get: (_moduleId, key) =>
+        key === "factions" ? structuredClone(stored) : undefined,
+      set: async (_moduleId, key, value) => {
+        assert.equal(key, "factions");
+        // Force the first queued write to yield. A mutation calculated outside
+        // the queue would now race with the next caller's stale snapshot.
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+        stored = structuredClone(value);
+        return value;
+      },
+    },
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      adjustStanding("concurrent-faction", 1, { reason: "first" }),
+      adjustStanding("concurrent-faction", 1, { reason: "second" }),
+    ]);
+    assert.equal(first.standing, 1);
+    assert.equal(second.standing, 2);
+    assert.equal(stored[0].standing, 2, "both rapid standing clicks are kept");
+    assert.deepEqual(
+      stored[0].history.map((entry) => entry.reason),
+      ["second", "first"],
+      "both history entries survive the write queue",
+    );
+
+    const [renamed, raised] = await Promise.all([
+      updateFaction("concurrent-faction", (faction) => ({
+        ...faction,
+        name: "Renamed",
+      })),
+      adjustStanding("concurrent-faction", 1, { reason: "third" }),
+    ]);
+    assert.equal(renamed.name, "Renamed");
+    assert.equal(raised.standing, 3);
+    assert.equal(stored[0].name, "Renamed");
+    assert.equal(
+      stored[0].standing,
+      3,
+      "a scalar save cannot roll back a queued standing change",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+  }
 }
 
 process.stdout.write("reputation store + standing validation passed\n");

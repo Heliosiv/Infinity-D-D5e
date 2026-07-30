@@ -18,6 +18,9 @@
  */
 
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { isFullGM } from "./permissions.js";
+
+const MODULE_ID = "infinity-dnd5e";
 
 /**
  * Open (or focus) a single-instance ApplicationV2 window.
@@ -43,6 +46,61 @@ export function openSingleton(Cls, factory) {
     app.render(true);
   }
   return app;
+}
+
+/**
+ * Close a privileged ApplicationV2 window if the current user stops being a
+ * full GM. Foundry still reports Assistant GMs as `isGM`, so checking that
+ * convenience flag alone leaves private editor contents visible after a role
+ * demotion.
+ *
+ * Returns an idempotent unsubscribe function for the application's `_onClose`.
+ */
+export function bindFullGmWindowGuard(application) {
+  const hooks = globalThis.Hooks;
+  if (!application || typeof hooks?.on !== "function") return () => {};
+
+  let bound = true;
+  let closing = false;
+  const eventName = "updateUser";
+  const hookId = hooks.on(eventName, (user) => {
+    const currentUserId = String(globalThis.game?.user?.id ?? "");
+    if (
+      !bound ||
+      closing ||
+      !currentUserId ||
+      String(user?.id ?? "") !== currentUserId ||
+      isFullGM(user)
+    ) {
+      return;
+    }
+
+    closing = true;
+    try {
+      const result = application.close?.();
+      if (result && typeof result.catch === "function") {
+        void result.catch((error) => {
+          closing = false;
+          console.warn(
+            `${MODULE_ID} | could not close a privileged window after role demotion`,
+            error,
+          );
+        });
+      }
+    } catch (error) {
+      closing = false;
+      console.warn(
+        `${MODULE_ID} | could not close a privileged window after role demotion`,
+        error,
+      );
+    }
+  });
+
+  return () => {
+    if (!bound) return;
+    bound = false;
+    hooks.off?.(eventName, hookId);
+  };
 }
 
 /**

@@ -16,7 +16,7 @@ import { runAsFullGM } from "./permissions.js";
 import { getTool, getTools } from "./tool-registry.js";
 import { prettyCategory, notify, escapeHtml } from "./ui-util.js";
 import { SETTING_KEYS, getSetting, setSetting } from "./settings.js";
-import { openSingleton } from "./infinity-app.js";
+import { bindFullGmWindowGuard, openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/dashboard.hbs`;
@@ -92,6 +92,11 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     });
   }
 
+  constructor(options = {}) {
+    super(options);
+    this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
+  }
+
   async _prepareContext() {
     InfinityDashboardApp._hydrateRecents();
     const tools = getTools();
@@ -126,6 +131,8 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    this._unbindFullGmWindowGuard?.();
+    this._unbindFullGmWindowGuard = null;
     InfinityDashboardApp._instance = null;
   }
 

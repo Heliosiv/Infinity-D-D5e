@@ -55,7 +55,7 @@ import {
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
-import { applyVisualPrefs } from "./infinity-app.js";
+import { applyVisualPrefs, bindFullGmWindowGuard } from "./infinity-app.js";
 import {
   captureScroll,
   restoreScroll,
@@ -182,6 +182,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     // real merchant/actor writes — so the GM can see exactly how the shop
     // behaves without consequences.
     this._previewMode = options.previewMode === true;
+    this._unbindFullGmWindowGuard = this._previewMode
+      ? bindFullGmWindowGuard(this)
+      : null;
     this._previewActor = options.previewActor ?? null;
     this._activeTab = "buy";
     this._seals = new Map(); // `${itemRefId}::${side}` → seal
@@ -238,6 +241,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    this._unbindFullGmWindowGuard?.();
+    this._unbindFullGmWindowGuard = null;
     for (const fn of this._unsubscribers) {
       try {
         fn();

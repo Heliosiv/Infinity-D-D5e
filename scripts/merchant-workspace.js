@@ -71,7 +71,12 @@ import {
 } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
-import { applyVisualPrefs, openSingleton } from "./infinity-app.js";
+import {
+  applyVisualPrefs,
+  bindFullGmWindowGuard,
+  openSingleton,
+} from "./infinity-app.js";
+import { runAsFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
@@ -136,19 +141,18 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   };
 
   static open() {
-    if (!globalThis.game?.user?.isGM) {
-      notify("warn", `Merchant Workspace is GM-only.`);
-      return null;
-    }
-    playModuleSound(SOUND_EVENTS.UI_OPEN);
-    return openSingleton(
-      MerchantWorkspaceApp,
-      () => new MerchantWorkspaceApp(),
-    );
+    return runAsFullGM(() => {
+      playModuleSound(SOUND_EVENTS.UI_OPEN);
+      return openSingleton(
+        MerchantWorkspaceApp,
+        () => new MerchantWorkspaceApp(),
+      );
+    }, "Merchant Workspace is available to full GMs only.");
   }
 
   constructor(options = {}) {
     super(options);
+    this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._selectedId = null;
     this._saveStatus = "All changes saved";
     this._itemCache = new Map(); // uuid → resolved item snapshot
@@ -163,6 +167,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    this._unbindFullGmWindowGuard?.();
+    this._unbindFullGmWindowGuard = null;
     for (const fn of this._unsubs ?? []) {
       try {
         fn();

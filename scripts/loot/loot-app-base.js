@@ -51,6 +51,7 @@ import {
 import { getItemMaxQty, isAmmunitionItem } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { runAsFullGM } from "../permissions.js";
+import { bindFullGmWindowGuard } from "../infinity-app.js";
 import { confirmDestructive, isInteractiveKeyboardTarget } from "../ui-util.js";
 import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
@@ -222,6 +223,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   constructor(options = {}) {
     super(options);
+    this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._loadingItems = false;
     this._cachedItems = null;
     this._cachedItemsAt = 0;
@@ -328,6 +330,8 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onClose(options) {
     super._onClose?.(options);
+    this._unbindFullGmWindowGuard?.();
+    this._unbindFullGmWindowGuard = null;
     // Clear any pending debounced work so a timer can't fire into a torn-down app.
     if (this._debounceTimers) {
       for (const id of this._debounceTimers.values()) {

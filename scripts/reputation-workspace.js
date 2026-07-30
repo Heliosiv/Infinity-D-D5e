@@ -17,6 +17,7 @@ import {
   removeFaction,
   removePerCharacter,
   setStanding,
+  updateFaction,
   updatePerCharacter,
   upsertFaction,
 } from "./reputation/store.js";
@@ -36,7 +37,12 @@ import {
 import { wireBackgroundImageFallback } from "./loot/loot-app-shared.js";
 import { prettyStanding, escapeHtml } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
-import { openSingleton, applyVisualPrefs } from "./infinity-app.js";
+import {
+  applyVisualPrefs,
+  bindFullGmWindowGuard,
+  openSingleton,
+} from "./infinity-app.js";
+import { runAsFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/reputation-workspace.hbs`;
@@ -85,19 +91,18 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
   };
 
   static open() {
-    if (!globalThis.game?.user?.isGM) {
-      ui.notifications?.warn(`${MODULE_ID}: Reputation Workspace is GM-only.`);
-      return null;
-    }
-    playModuleSound(SOUND_EVENTS.UI_OPEN);
-    return openSingleton(
-      ReputationWorkspaceApp,
-      () => new ReputationWorkspaceApp(),
-    );
+    return runAsFullGM(() => {
+      playModuleSound(SOUND_EVENTS.UI_OPEN);
+      return openSingleton(
+        ReputationWorkspaceApp,
+        () => new ReputationWorkspaceApp(),
+      );
+    }, "Reputation Workspace is available to full GMs only.");
   }
 
   constructor(options = {}) {
     super(options);
+    this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._selectedId = null;
     this._scroll = null;
     this._saveStatus = "All changes saved";
@@ -105,6 +110,8 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    this._unbindFullGmWindowGuard?.();
+    this._unbindFullGmWindowGuard = null;
     ReputationWorkspaceApp._instance = null;
   }
 
@@ -250,9 +257,9 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       else if (role === "pcNote") patch.note = target.value;
       else return;
       try {
-        const faction = findFaction(this._selectedId);
-        if (!faction) return;
-        await this._persist(updatePerCharacter(faction, rowId, patch));
+        await this._persistMutation((faction) =>
+          updatePerCharacter(faction, rowId, patch),
+        );
       } catch (error) {
         console.warn(`${MODULE_ID} | per-character update failed`, error);
         this._setSaveStatus("Save failed — retry");
@@ -267,21 +274,24 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const form = this.element?.querySelector?.('[data-form="faction-edit"]');
     if (!form) return;
-    const faction = findFaction(this._selectedId);
-    if (!faction) return;
     const data = readFormFields(form);
-    const next = normalizeFaction({
-      ...faction,
-      name: data.name ?? faction.name,
-      category: data.category ?? faction.category,
-      description: data.description ?? faction.description,
-      gmNotes: data.gmNotes ?? faction.gmNotes,
-      playerNote: data.playerNote ?? faction.playerNote,
-      revealed: data.revealed === "on",
-    });
     this._setSaveStatus("Saving…");
     try {
-      await upsertFaction(next);
+      const faction = await updateFaction(this._selectedId, (current) =>
+        normalizeFaction({
+          ...current,
+          name: data.name ?? current.name,
+          category: data.category ?? current.category,
+          description: data.description ?? current.description,
+          gmNotes: data.gmNotes ?? current.gmNotes,
+          playerNote: data.playerNote ?? current.playerNote,
+          revealed: data.revealed === "on",
+        }),
+      );
+      if (!faction) {
+        this._setSaveStatus("Faction no longer available");
+        return;
+      }
       this._setSaveStatus("Saved");
     } catch (error) {
       this._setSaveStatus("Save failed — retry");
@@ -295,14 +305,20 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     if (status) status.textContent = this._saveStatus;
   }
 
-  /** Save a faction, push the player projection, and re-render. */
-  async _persist(faction) {
+  /** Mutate the freshest faction, push the player projection, and re-render. */
+  async _persistMutation(mutation) {
+    if (!this._selectedId) return null;
     this._setSaveStatus("Saving…");
     try {
-      await upsertFaction(faction);
+      const faction = await updateFaction(this._selectedId, mutation);
+      if (!faction) {
+        this._setSaveStatus("Faction no longer available");
+        return null;
+      }
       this._setSaveStatus("Saved");
       broadcastReputationState();
       this.render(false);
+      return faction;
     } catch (error) {
       this._setSaveStatus("Save failed — retry");
       throw error;
@@ -416,25 +432,24 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
 
   static async _onAddCharacterNote() {
     if (!this._selectedId) return;
-    const faction = findFaction(this._selectedId);
-    if (!faction) return;
     const characters = listCharacterActors();
-    const next = addPerCharacter(faction, {
-      actorId: characters[0]?.id ?? "",
-      delta: 0,
-      note: "",
-    });
-    await this._persist(next);
+    await this._persistMutation((faction) =>
+      addPerCharacter(faction, {
+        actorId: characters[0]?.id ?? "",
+        delta: 0,
+        note: "",
+      }),
+    );
   }
 
   static async _onRemoveCharacterNote(_event, target) {
     if (!this._selectedId) return;
     const rowId = target?.dataset?.rowId;
     if (!rowId) return;
-    const faction = findFaction(this._selectedId);
-    if (!faction) return;
     playModuleSound(SOUND_EVENTS.ROSTER_REMOVE);
-    await this._persist(removePerCharacter(faction, rowId));
+    await this._persistMutation((faction) =>
+      removePerCharacter(faction, rowId),
+    );
   }
 
   static async _onSave() {

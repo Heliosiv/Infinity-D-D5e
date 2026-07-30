@@ -213,6 +213,34 @@ export function upsertFaction(faction) {
   });
 }
 
+/**
+ * Mutate one faction against the freshest stored record inside the write
+ * queue. Callers that derive a patch from a stale snapshot can otherwise
+ * overwrite a standing/history change that completed while their UI action was
+ * still pending.
+ */
+export function updateFaction(id, mutation) {
+  const want = String(id ?? "").trim();
+  if (!want || typeof mutation !== "function") return Promise.resolve(null);
+  return runFactionWrite(async () => {
+    const list = loadFactions();
+    const index = list.findIndex((faction) => faction.id === want);
+    if (index < 0) return null;
+    const candidate = await mutation(normalizeFaction(list[index]));
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
+      return null;
+    }
+    const next = normalizeFaction({ ...candidate, id: want });
+    list[index] = next;
+    await writeFactions(list);
+    return next;
+  });
+}
+
 /** Delete a faction by id; returns the saved list. */
 export function removeFaction(id) {
   const want = String(id ?? "").trim();
@@ -224,24 +252,20 @@ export function removeFaction(id) {
 
 /**
  * Apply a standing change to a stored faction and persist it. Convenience
- * wrapper over `applyStandingChange` + `upsertFaction`. Returns the updated
+ * wrapper over `applyStandingChange` + `updateFaction`. Returns the updated
  * faction, or null if the id isn't found.
  */
-export async function adjustStanding(id, delta, opts = {}) {
-  const faction = findFaction(id);
-  if (!faction) return null;
-  const next = applyStandingChange(faction, { delta, ...opts });
-  await upsertFaction(next);
-  return next;
+export function adjustStanding(id, delta, opts = {}) {
+  return updateFaction(id, (faction) =>
+    applyStandingChange(faction, { delta, ...opts }),
+  );
 }
 
 /** Set a stored faction's standing to an absolute value + persist + log. */
-export async function setStanding(id, value, opts = {}) {
-  const faction = findFaction(id);
-  if (!faction) return null;
-  const next = applyStandingChange(faction, { toStanding: value, ...opts });
-  await upsertFaction(next);
-  return next;
+export function setStanding(id, value, opts = {}) {
+  return updateFaction(id, (faction) =>
+    applyStandingChange(faction, { toStanding: value, ...opts }),
+  );
 }
 
 /** Clock read isolated so the pure helpers stay easy to reason about. */

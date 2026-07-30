@@ -1463,7 +1463,7 @@ async function runForagingWindow({ env, party, cfg }) {
     });
   }
 
-  const timeoutMs = Math.max(0, Number(cfg.forageTimeoutSeconds) || 120) * 1000;
+  const timeoutMs = resolveForageTimeoutMs(cfg.forageTimeoutSeconds);
   await Promise.race([done, wait(timeoutMs)]);
   pendingRuns.delete(runId);
 
@@ -1519,6 +1519,16 @@ async function runForagingWindow({ env, party, cfg }) {
     }
   }
   return out;
+}
+
+/**
+ * Convert the stored forage-response timeout to milliseconds. Zero is an
+ * intentional immediate-timeout value accepted by resource configuration;
+ * only missing or non-numeric values fall back to two minutes.
+ */
+export function resolveForageTimeoutMs(value) {
+  const seconds = Number(value);
+  return Math.max(0, Number.isFinite(seconds) ? seconds : 120) * 1000;
 }
 
 /** GM-side: record a player's Survival total; resolve the window when complete. */

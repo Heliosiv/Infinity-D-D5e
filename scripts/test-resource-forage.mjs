@@ -8,6 +8,7 @@ import {
 } from "./resource/forage.js";
 import {
   owningOnlineUserId,
+  resolveForageTimeoutMs,
   resolveExpectedForageActorId,
   validateForageResultPayload,
 } from "./resource/calendar-watcher.js";
@@ -27,6 +28,21 @@ const TOWN = {
   yieldFood: "0",
   yieldWater: "0",
 };
+
+/* ------------------------------------------------------------------ *
+ * Forage response timeout normalization.
+ * ------------------------------------------------------------------ */
+{
+  assert.equal(resolveForageTimeoutMs(undefined), 120_000);
+  assert.equal(resolveForageTimeoutMs("30"), 30_000);
+  assert.equal(
+    resolveForageTimeoutMs(0),
+    0,
+    "an explicit zero-second timeout is not replaced by the default",
+  );
+  assert.equal(resolveForageTimeoutMs(-5), 0);
+  assert.equal(resolveForageTimeoutMs("invalid"), 120_000);
+}
 
 /* ------------------------------------------------------------------ *
  * computeForageYield — success / failure by margin
