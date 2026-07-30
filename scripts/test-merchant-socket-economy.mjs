@@ -34,7 +34,11 @@ import {
   receiveMerchantPayload,
   commitMerchantWrite,
 } from "./merchant/socket.js";
-import { openSession, clearAllSessions } from "./merchant/session-state.js";
+import {
+  openSession,
+  closeSession,
+  clearAllSessions,
+} from "./merchant/session-state.js";
 import {
   MERCHANT_SETTING_KEY,
   findMerchant,
@@ -55,10 +59,28 @@ const savedFromUuid = globalThis.fromUuid;
  *  world (mirrors Foundry's world-scoped setting all clients can read). */
 function makeWorld(merchants = []) {
   let store = merchants.map(normalizeMerchant);
+  let failAfterNextSet = false;
+  let alterNextSet = false;
   return {
     get: (_module, key) => (key === MERCHANT_SETTING_KEY ? store : undefined),
     set: (_module, key, value) => {
-      if (key === MERCHANT_SETTING_KEY) store = value;
+      if (key === MERCHANT_SETTING_KEY) {
+        store = structuredClone(value);
+        if (alterNextSet) {
+          alterNextSet = false;
+          store[0].goldOnHand = Number(store[0].goldOnHand ?? 0) + 1;
+        }
+      }
+      if (failAfterNextSet) {
+        failAfterNextSet = false;
+        throw new Error("injected apply-then-throw setting failure");
+      }
+    },
+    failNextSetAfterApply() {
+      failAfterNextSet = true;
+    },
+    alterNextSet() {
+      alterNextSet = true;
     },
   };
 }
@@ -96,12 +118,20 @@ function makeUserDirectory({
 function makeWire(users = makeUserDirectory()) {
   const clients = new Map();
   const log = [];
+  let failNextType = null;
   return {
     users,
     register(client) {
       clients.set(client.id, client);
     },
+    failNext(type) {
+      failNextType = type;
+    },
     deliver(fromId, name, payload, options = {}) {
+      if (failNextType === payload?.type) {
+        failNextType = null;
+        throw new Error(`injected ${payload.type} transport failure`);
+      }
       const recipientIds = Array.isArray(options?.recipients)
         ? new Set(options.recipients.map(String))
         : null;
@@ -179,8 +209,13 @@ function makeActor(ownerId) {
       });
     },
     async deleteEmbeddedDocuments(_type, ids) {
-      for (const id of ids) itemMap.delete(id);
-      return ids;
+      const deleted = [];
+      for (const id of ids) {
+        const item = itemMap.get(id);
+        if (item) deleted.push(item);
+        itemMap.delete(id);
+      }
+      return deleted;
     },
   };
   const sword = makeOwnedItem(actor, {
@@ -904,6 +939,166 @@ try {
   }
 
   /* ============================================================== *
+   * 6a. Invalid quantities fail closed instead of being coerced
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.invalid-quantity", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 5, startingQty: 5, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+
+    const invalidQuantities = [undefined, 0, -1, 1.5, 10000];
+    for (const [index, qty] of invalidQuantities.entries()) {
+      const frame = {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        totalGp: 100,
+        commitId: `invalid-qty-${index}`,
+      };
+      if (qty !== undefined) frame.qty = qty;
+      await receiveMerchantPayload(frame, "p1");
+    }
+
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 0,
+        totalGp: 100,
+        commitId: "invalid-then-valid",
+      },
+      "p1",
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "invalid-then-valid",
+      },
+      "p1",
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: "owned-sword",
+        qty: 1.5,
+        totalGp: 50,
+        commitId: "invalid-sell-quantity",
+      },
+      "p1",
+    );
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 5, "invalid quantities change no stock");
+    assert.equal(stored.goldOnHand, 500, "invalid quantities change no gold");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      10000,
+      "invalid quantities cannot charge the actor",
+    );
+    const invalidResults = allOf(
+      player.inbox,
+      MERCHANT_EVENTS.COMMIT_RESULT,
+    ).filter((result) => result.reason === "invalid-quantity");
+    assert.equal(
+      invalidResults.length,
+      invalidQuantities.length + 2,
+      "each invalid request receives invalid-quantity",
+    );
+    assert.equal(
+      allOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)
+        .filter((result) => result.commitId === "invalid-then-valid")
+        .at(-1)?.reason,
+      "commit-id-conflict",
+      "a valid request cannot reuse an invalid request's commitId",
+    );
+    ok("zero, negative, fractional, missing, and oversized quantities reject");
+  }
+
+  /* ============================================================== *
+   * 6b. Overflow prices reject before actor or merchant mutation
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.overflow-price", Number.MAX_VALUE);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const actor = gm.actors.get("actor-p1");
+    actor.items.get("owned-sword").system.price.value = Number.MAX_VALUE;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 1,
+        commitId: "overflow-buy-price",
+      },
+      "p1",
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: "owned-sword",
+        qty: 1,
+        totalGp: 1,
+        commitId: "overflow-sell-price",
+      },
+      "p1",
+    );
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 2, "overflow changes no stock");
+    assert.equal(stored.goldOnHand, 500, "overflow changes no merchant gold");
+    assert.equal(actor.system.currency.gp, 10000, "overflow changes no wallet");
+    assert.equal(
+      actor.items.get("owned-sword").system.quantity,
+      10,
+      "overflow changes no inventory",
+    );
+    assert.equal(
+      allOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT).filter(
+        (result) => result.reason === "invalid-price",
+      ).length,
+      2,
+      "buy and sell both report invalid-price",
+    );
+    ok("overflow buy and sell prices reject before mutation");
+  }
+
+  /* ============================================================== *
    * 7. Commit IDs are replay-safe
    * ============================================================== */
   {
@@ -939,6 +1134,311 @@ try {
     ok(
       "duplicate commitId returns the cached result without a second mutation",
     );
+  }
+
+  /* ============================================================== *
+   * 7a. A commitId cannot be reused for a different request
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.replay-conflict", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 4, startingQty: 4, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+    const base = {
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "p1",
+      sessionId: session.sessionId,
+      itemUuid: item._uuid,
+      qty: 1,
+      totalGp: 100,
+      commitId: "reused-for-different-payload",
+    };
+
+    await receiveMerchantPayload(base, "p1");
+    await receiveMerchantPayload({ ...base, qty: 2, totalGp: 200 }, "p1");
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 3, "conflicting replay changes no stock");
+    assert.equal(stored.goldOnHand, 600, "conflicting replay changes no gold");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      9900,
+      "conflicting replay does not charge the actor",
+    );
+    assert.equal(
+      lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)?.reason,
+      "commit-id-conflict",
+      "the player receives an explicit commit-id conflict",
+    );
+    ok("commitId reuse with a different payload fails closed");
+  }
+
+  /* ============================================================== *
+   * 7b. A broadcast failure cannot make a durable commit replayable
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.broadcast-replay", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+    const frame = {
+      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      originUserId: "p1",
+      sessionId: session.sessionId,
+      itemUuid: item._uuid,
+      qty: 1,
+      totalGp: 100,
+      commitId: "broadcast-failure-replay",
+    };
+
+    wire.failNext(MERCHANT_EVENTS.STATE_UPDATE);
+    await receiveMerchantPayload(frame, "p1");
+    await receiveMerchantPayload(frame, "p1");
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 1, "stock is decremented only once");
+    assert.equal(stored.goldOnHand, 600, "merchant is credited only once");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      9900,
+      "the actor is charged only once",
+    );
+    assert.equal(
+      gm.actors
+        .get("actor-p1")
+        .items.contents.filter((owned) => owned.id !== "owned-sword").length,
+      1,
+      "the actor receives only one purchased stack",
+    );
+    assert.equal(
+      allOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT).length,
+      2,
+      "the original result and cached replay both reach the player",
+    );
+    ok("successful result is cached before a best-effort state broadcast");
+  }
+
+  /* ============================================================== *
+   * 7c. Canonical merchant read-back wins over apply-then-throw
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.applied-write", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+
+    world.failNextSetAfterApply();
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "merchant-applied-then-threw",
+      },
+      "p1",
+    );
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 1, "applied stock decrement is retained");
+    assert.equal(stored.goldOnHand, 600, "applied merchant credit is retained");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      9900,
+      "the matching canonical merchant write does not trigger actor rollback",
+    );
+    assert.equal(
+      lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)?.ok,
+      true,
+      "the canonically applied transaction is acknowledged as successful",
+    );
+    ok("canonical read-back accepts an applied merchant write that threw");
+  }
+
+  /* ============================================================== *
+   * 7d. Altered merchant writes restore both sides of the transaction
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.altered-write", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    const player = makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+
+    world.alterNextSet();
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "merchant-write-altered",
+      },
+      "p1",
+    );
+
+    const stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 2, "merchant stock is restored exactly");
+    assert.equal(stored.goldOnHand, 500, "merchant gold is restored exactly");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      10000,
+      "the actor wallet is restored exactly",
+    );
+    assert.equal(
+      gm.actors
+        .get("actor-p1")
+        .items.contents.filter((owned) => owned.id !== "owned-sword").length,
+      0,
+      "the delivered item is removed during compensation",
+    );
+    assert.equal(
+      lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT)?.reason,
+      "merchant-write-failed",
+      "the player receives a clean restored-write failure",
+    );
+    ok("altered merchant persistence restores actor and merchant state");
+  }
+
+  /* ============================================================== *
+   * 7e. Session and authority are revalidated after lock acquisition
+   * ============================================================== */
+  {
+    clearAllSessions();
+    const wire = makeWire();
+    const item = makeItem("Compendium.x.Item.closed-session", 100);
+    globalThis.fromUuid = async () => item;
+    const world = makeWorld([
+      makeMerchant({
+        items: [{ uuid: item._uuid, qty: 2, startingQty: 2, unlimited: false }],
+      }),
+    ]);
+    const gm = makeClient({ id: "gm", isGM: true, world, wire });
+    makeClient({ id: "p1", isGM: false, world, wire });
+    globalThis.game = gm.game;
+    const session = openSession({ merchantId: "m-1", viewerUserId: "p1" });
+    let releaseLock;
+    let lockEntered;
+    const entered = new Promise((resolve) => {
+      lockEntered = resolve;
+    });
+    const hold = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+    const blocker = commitMerchantWrite("m-1", async () => {
+      lockEntered();
+      await hold;
+      return null;
+    });
+    await entered;
+    const pending = receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: session.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "closed-while-queued",
+      },
+      "p1",
+    );
+    closeSession(session.sessionId);
+    releaseLock();
+    await Promise.all([blocker, pending]);
+
+    let stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 2, "closed session changes no stock");
+    assert.equal(stored.goldOnHand, 500, "closed session changes no gold");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      10000,
+      "closed session cannot charge after waiting for a lock",
+    );
+
+    const authoritySession = openSession({
+      merchantId: "m-1",
+      viewerUserId: "p1",
+    });
+    let releaseAuthorityLock;
+    let authorityLockEntered;
+    const authorityEntered = new Promise((resolve) => {
+      authorityLockEntered = resolve;
+    });
+    const authorityHold = new Promise((resolve) => {
+      releaseAuthorityLock = resolve;
+    });
+    const authorityBlocker = commitMerchantWrite("m-1", async () => {
+      authorityLockEntered();
+      await authorityHold;
+      return null;
+    });
+    await authorityEntered;
+    const authorityPending = receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "p1",
+        sessionId: authoritySession.sessionId,
+        itemUuid: item._uuid,
+        qty: 1,
+        totalGp: 100,
+        commitId: "authority-lost-while-queued",
+      },
+      "p1",
+    );
+    gm.game.user.isGM = false;
+    releaseAuthorityLock();
+    await Promise.all([authorityBlocker, authorityPending]);
+    gm.game.user.isGM = true;
+
+    stored = findMerchant("m-1");
+    assert.equal(stored.items[0].qty, 2, "lost authority changes no stock");
+    assert.equal(stored.goldOnHand, 500, "lost authority changes no gold");
+    assert.equal(
+      gm.actors.get("actor-p1").system.currency.gp,
+      10000,
+      "lost authority cannot charge after waiting for a lock",
+    );
+    ok("queued commits revalidate their live session and GM authority");
   }
 
   /* ============================================================== *

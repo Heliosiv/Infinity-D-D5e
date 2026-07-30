@@ -55,6 +55,7 @@ export function openSession({ merchantId, viewerUserId }) {
     bargains: new Map(), // bargainKey → { tier, deltaPct, sealId, side, itemUuid }
     openedAt: null,
     commits: new Map(),
+    failedCommitIds: [],
   };
   sessions.set(record.sessionId, record);
   return record;
@@ -161,7 +162,7 @@ export function consumeSeal(sessionId, sealId, { itemUuid, side } = {}) {
  * Commit idempotency
  * ------------------------------------------------------------------ */
 
-const MAX_COMMIT_RESULTS_PER_SESSION = 250;
+const MAX_FAILED_COMMIT_RESULTS_PER_SESSION = 250;
 
 export function getCommitResult(sessionId, commitId) {
   if (!sessionId || !commitId) return null;
@@ -175,8 +176,21 @@ export function recordCommitResult(sessionId, commitId, result) {
   if (existing) return existing;
   const recorded = Object.freeze({ ...result });
   session.commits.set(commitId, recorded);
-  while (session.commits.size > MAX_COMMIT_RESULTS_PER_SESSION) {
-    session.commits.delete(session.commits.keys().next().value);
+
+  // A successful actor/shop mutation must remain replay-safe for the complete
+  // lifetime of its in-memory session. Evicting an old success would allow the
+  // same commitId to mutate a second time. Failures are safe to retry with a new
+  // commitId, so only that subset is bounded.
+  if (recorded.ok !== true) {
+    session.failedCommitIds ??= [];
+    session.failedCommitIds.push(commitId);
+  }
+  while (
+    (session.failedCommitIds?.length ?? 0) >
+    MAX_FAILED_COMMIT_RESULTS_PER_SESSION
+  ) {
+    const oldestFailureId = session.failedCommitIds.shift();
+    if (oldestFailureId) session.commits.delete(oldestFailureId);
   }
   return recorded;
 }

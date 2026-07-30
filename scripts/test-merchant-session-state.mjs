@@ -1,7 +1,7 @@
 /**
  * Tests for the GM-side merchant session registry: session lifecycle,
- * viewer cleanup (logout GC), bargain-seal one-shot semantics, and the
- * per-merchant mutex that serializes stock writes.
+ * viewer cleanup (logout GC), bargain-seal one-shot semantics, commit
+ * idempotency retention, and the mutexes that serialize economy writes.
  */
 
 import assert from "node:assert/strict";
@@ -13,10 +13,12 @@ import {
   consumeSeal,
   findSessionFor,
   getBargain,
+  getCommitResult,
   getSession,
   listSessions,
   openSession,
   recordBargain,
+  recordCommitResult,
   runWithActorMutex,
   runWithMerchantMutex,
 } from "./merchant/session-state.js";
@@ -129,6 +131,70 @@ clearAllSessions();
   // Unknown session / seal → null, never throws.
   assert.equal(consumeSeal("nope", "x"), null);
   assert.equal(recordBargain("nope", { itemUuid: "i", side: "buy" }), null);
+}
+
+/* ------------------------------------------------------------------ *
+ * Commit results — successes stay replay-safe; only failures are bounded
+ * ------------------------------------------------------------------ */
+{
+  clearAllSessions();
+  const session = openSession({
+    merchantId: "merchant-1",
+    viewerUserId: "player-1",
+  });
+  const successful = recordCommitResult(session.sessionId, "success-early", {
+    ok: true,
+    requestFingerprint: "request-a",
+  });
+
+  for (let index = 0; index < 300; index += 1) {
+    recordCommitResult(session.sessionId, `failure-${index}`, {
+      ok: false,
+      reason: "expected-test-failure",
+      requestFingerprint: `failure-request-${index}`,
+    });
+  }
+
+  assert.equal(
+    getCommitResult(session.sessionId, "success-early"),
+    successful,
+    "successful commits remain cached after the failure bound is exceeded",
+  );
+  assert.equal(
+    getCommitResult(session.sessionId, "failure-0"),
+    null,
+    "the oldest failed commit is evicted",
+  );
+  assert.ok(
+    getCommitResult(session.sessionId, "failure-299"),
+    "the newest failed commit remains cached",
+  );
+
+  for (let index = 0; index < 300; index += 1) {
+    recordCommitResult(session.sessionId, `success-${index}`, {
+      ok: true,
+      requestFingerprint: `success-request-${index}`,
+    });
+  }
+  assert.ok(
+    getCommitResult(session.sessionId, "success-0"),
+    "successful commit results are retained for the session lifetime",
+  );
+  assert.ok(
+    getCommitResult(session.sessionId, "success-299"),
+    "new successful commit results are retained",
+  );
+
+  const duplicate = recordCommitResult(session.sessionId, "success-early", {
+    ok: false,
+    reason: "must-not-replace",
+    requestFingerprint: "request-b",
+  });
+  assert.equal(
+    duplicate,
+    successful,
+    "recording an existing commitId never replaces its original result",
+  );
 }
 
 /* ------------------------------------------------------------------ *

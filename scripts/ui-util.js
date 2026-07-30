@@ -146,12 +146,30 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "no-target": "That item isn't available anymore.",
   "out-of-stock": "That item just sold out.",
   "no-price": "That item has no price set.",
+  "invalid-price":
+    "That price is too large or invalid. Ask your GM to correct it.",
   "no-value": "That item has no resale value.",
   "bad-item": "That item couldn't be added — try again.",
   "create-failed": "That item couldn't be added to your sheet.",
+  "create-unconfirmed":
+    "The item delivery could not be confirmed, so you were not charged.",
+  "create-conflict":
+    "That delivery conflicts with an existing item. Ask your GM to review it.",
   "payment-failed": "Payment didn't go through — nothing was charged.",
+  "payment-unconfirmed":
+    "Payment could not be confirmed, so the purchase was restored.",
   "payout-failed": "The payout didn't go through — your item was kept.",
+  "payout-unconfirmed":
+    "The payout could not be confirmed, so the sale was restored.",
   "remove-failed": "That item couldn't be removed from your sheet.",
+  "remove-unconfirmed":
+    "The item removal could not be confirmed, so no sale was recorded.",
+  "invalid-wallet":
+    "Your coin totals are invalid. Ask your GM to correct the wallet first.",
+  "invalid-quantity": "Enter a whole quantity between 1 and 9,999.",
+  "not-stackable": "That item can only be purchased one at a time.",
+  "commit-id-conflict":
+    "That transaction ID was already used for a different request.",
   "insufficient-funds": "You can't afford that.",
   "not-sellable": "That item can't be sold.",
   "not-bought-here": "This merchant won't buy that.",

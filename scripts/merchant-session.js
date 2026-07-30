@@ -5,10 +5,9 @@
  * via the Merchant Workspace; the player's client receives a
  * `session-open` event and pops this window with the merchant snapshot.
  *
- * Mutations to the player's own actor (item create/delete + currency
- * adjust) run here on the player client — the player owns their actor.
- * Stock decrements + bargain seal issuance route to the GM via the
- * socket layer.
+ * The window submits idempotent requests to the authoritative GM, which owns
+ * both actor and merchant writes. Acknowledgements are tracked before emission
+ * and uncertain requests retry with the same transaction id.
  */
 
 import {
@@ -195,7 +194,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._earnedGp = 0; // running total earned this session
     this._bargainPending = new Set();
     this._bargainTimers = new Map(); // sealKey → timeout id (seal-wait watchdog)
-    this._pendingCommits = new Map(); // commitId → { side, itemName, timer }
+    this._pendingCommits = new Map(); // commitId → tracked request + watchdog
     this._closingFromExternal = false;
 
     this._title = `${this._previewMode ? "[Preview] " : ""}${this._merchant?.name ?? "Merchant"} — Shop`;
@@ -401,23 +400,64 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     if (this.rendered) this.render(false);
   }
 
-  /** Arm a watchdog for a just-emitted commit; if no GM ack lands, warn the
-   *  player rather than leave a silently-unrecorded trade. */
+  /** Register before emission so even a synchronous acknowledgement can find
+   *  its context. A timeout stays retryable and can still accept a late ack. */
   _trackCommit(commitId, ctx) {
+    const record = {
+      ...ctx,
+      payload: { ...(ctx.payload ?? {}) },
+      timer: null,
+      timedOut: false,
+    };
+    this._pendingCommits.set(commitId, record);
+    this._armCommitWatchdog(commitId);
+  }
+
+  _armCommitWatchdog(commitId) {
+    const ctx = this._pendingCommits.get(commitId);
+    if (!ctx) return;
+    globalThis.clearTimeout?.(ctx.timer);
+    ctx.timedOut = false;
     const timer = globalThis.setTimeout?.(() => {
-      if (!this._pendingCommits.delete(commitId)) return;
+      const current = this._pendingCommits.get(commitId);
+      if (!current) return;
+      current.timer = null;
+      current.timedOut = true;
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      const verb = ctx.side === "sell" ? "sale" : "purchase";
+      const verb = current.side === "sell" ? "sale" : "purchase";
       this._appendLog(
         "fail",
-        `No response from the GM on your ${verb} of ${ctx.itemName} — it may not have reached the shop.`,
+        `No response from the GM on your ${verb} of ${current.itemName} — the result is unconfirmed.`,
       );
       ui.notifications?.warn(
-        `${MODULE_ID}: no response from the GM on that ${verb}. No character changes were made; retry when a GM is connected.`,
+        `${MODULE_ID}: no response from the GM on that ${verb}. Your character may have changed; click the same item once to retry confirmation with the same transaction ID.`,
       );
       if (this.rendered) this.render(false);
     }, COMMIT_ACK_TIMEOUT_MS);
-    this._pendingCommits.set(commitId, { ...ctx, timer });
+    ctx.timer = timer;
+  }
+
+  /** Block rapid duplicates. An uncertain retry resends the exact request and
+   *  commit id rather than creating a second trade. */
+  _retryOrBlockPending(side, refId) {
+    for (const [commitId, ctx] of this._pendingCommits) {
+      if (ctx.side !== side || ctx.refId !== refId) continue;
+      if (!ctx.timedOut) {
+        ui.notifications?.info(
+          `${MODULE_ID}: that transaction is already waiting for the GM.`,
+        );
+        return true;
+      }
+      this._armCommitWatchdog(commitId);
+      this._appendLog(
+        "pending",
+        `Retrying confirmation for ${ctx.itemName} with the original transaction ID`,
+      );
+      emitMerchantEvent(ctx.eventType, ctx.payload);
+      if (this.rendered) this.render(false);
+      return true;
+    }
+    return false;
   }
 
   /* -------------------- context -------------------- */
@@ -792,6 +832,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   async _performBuy(uuid, qty) {
     if (!uuid) return;
     if (this._previewMode) return this._previewBuy(uuid, qty);
+    if (this._retryOrBlockPending("buy", uuid)) return;
     const row = this._merchant.items.find((r) => r.uuid === uuid);
     if (!row) return;
     const item = await fromUuid(uuid).catch(() => null);
@@ -859,7 +900,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     // Tell the GM to update stock + burn seal, and watch for the acknowledgement
     // so a trade can't silently half-complete if the GM didn't record it.
     const commitId = newCommitId();
-    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_PURCHASE, {
+    const payload = {
       sessionId: this._sessionId,
       itemUuid: uuid,
       qty,
@@ -867,9 +908,16 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       totalGp: result.totalGp,
       commitId,
       actorId: actor.id,
-    });
+    };
+    this._appendLog(
+      "pending",
+      `Purchase requested: ${result.qty}x ${result.itemName}`,
+    );
     this._trackCommit(commitId, {
       side: "buy",
+      refId: uuid,
+      eventType: MERCHANT_EVENTS.COMMIT_PURCHASE,
+      payload,
       itemName: result.itemName,
       qty: result.qty,
       unitGp: result.unitGp,
@@ -878,10 +926,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       seal,
       sealKey,
     });
-    this._appendLog(
-      "pending",
-      `Purchase requested: ${result.qty}x ${result.itemName}`,
-    );
+    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_PURCHASE, payload);
     this.render(false);
   }
 
@@ -893,6 +938,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   async _performSell(itemId, qty) {
     if (this._previewMode) return this._previewSell(itemId, qty);
+    if (!itemId) return;
+    if (this._retryOrBlockPending("sell", itemId)) return;
     const actor = resolvePlayerActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
@@ -901,7 +948,6 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       );
       return;
     }
-    if (!itemId) return;
     const ownedItem = actor.items?.get?.(itemId);
     if (!ownedItem) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
@@ -956,7 +1002,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       return;
     }
     const commitId = newCommitId();
-    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_SALE, {
+    const payload = {
       sessionId: this._sessionId,
       itemUuid: itemId,
       qty,
@@ -964,9 +1010,16 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       totalGp: result.totalGp,
       commitId,
       actorId: actor.id,
-    });
+    };
+    this._appendLog(
+      "pending",
+      `Sale requested: ${result.qty}x ${result.itemName}`,
+    );
     this._trackCommit(commitId, {
       side: "sell",
+      refId: itemId,
+      eventType: MERCHANT_EVENTS.COMMIT_SALE,
+      payload,
       itemName: result.itemName,
       qty: result.qty,
       unitGp: result.unitGp,
@@ -975,10 +1028,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       seal,
       sealKey,
     });
-    this._appendLog(
-      "pending",
-      `Sale requested: ${result.qty}x ${result.itemName}`,
-    );
+    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_SALE, payload);
     this.render(false);
   }
 

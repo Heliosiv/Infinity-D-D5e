@@ -19,7 +19,23 @@ import {
   roundGp,
 } from "./store.js";
 import { itemMatchesBuyFilter } from "./buy-filter.js";
-import { deductCurrency, planCurrencyDeduction } from "./currency.js";
+import {
+  deductCurrency,
+  ensureCurrency,
+  isSafeGpAmount,
+  planCurrencyDeduction,
+  readWalletStrict,
+  updateCurrencyVerified,
+} from "./currency.js";
+import {
+  createActorItemVerified,
+  deleteActorItemVerified,
+  ensureActorItemAbsent,
+  ensureActorItemPresent,
+  ensureActorItemsAbsent,
+  merchantItemId,
+  updateActorItemQuantityVerified,
+} from "./write-verification.js";
 import {
   currencyAddFromBreakdown,
   formatCoinBreakdown,
@@ -37,24 +53,6 @@ const NON_SELLABLE_ITEM_TYPES = new Set([
   "feat",
   "spell",
 ]);
-
-function snapshotCurrency(currency = {}) {
-  return Object.fromEntries(
-    ["pp", "gp", "ep", "sp", "cp"].map((denom) => [
-      denom,
-      Number(currency?.[denom]) || 0,
-    ]),
-  );
-}
-
-function currencyUpdate(currency) {
-  return Object.fromEntries(
-    Object.entries(snapshotCurrency(currency)).map(([denom, value]) => [
-      `system.currency.${denom}`,
-      value,
-    ]),
-  );
-}
 
 /* ------------------------------------------------------------------ *
  * Sell-eligibility
@@ -149,6 +147,7 @@ export async function executeBuy({
   seal = null,
   passivePct = 0,
   notify = true,
+  operationId = null,
 } = {}) {
   if (!actor || typeof actor.update !== "function") {
     return { ok: false, reason: "no-actor" };
@@ -156,18 +155,35 @@ export async function executeBuy({
   if (!merchant || !row || !item) {
     return { ok: false, reason: "no-target" };
   }
-  const count = Math.max(1, Math.floor(Number(qty) || 1));
+  const count = Number(qty);
+  if (!Number.isInteger(count) || count < 1 || count > 9999) {
+    return { ok: false, reason: "invalid-quantity" };
+  }
   if (!row.unlimited && Number(row.qty) < count) {
     return { ok: false, reason: "out-of-stock", available: row.qty };
   }
   const unitGp = resolveUnitBuyPrice({ merchant, row, item, seal, passivePct });
-  const totalGp = roundGp(unitGp * count);
-  if (totalGp <= 0) {
+  if (unitGp === 0) {
+    return { ok: false, reason: "no-price" };
+  }
+  if (!isSafeGpAmount(unitGp)) {
+    return { ok: false, reason: "invalid-price" };
+  }
+  const rawTotalGp = unitGp * count;
+  if (!isSafeGpAmount(rawTotalGp)) {
+    return { ok: false, reason: "invalid-price" };
+  }
+  const totalGp = roundGp(rawTotalGp);
+  if (!isSafeGpAmount(totalGp)) {
     return { ok: false, reason: "no-price" };
   }
 
   // 1. Funds check.
-  const before = snapshotCurrency(actor.system?.currency);
+  const initialWallet = readWalletStrict(actor.system?.currency);
+  if (!initialWallet.ok) {
+    return { ok: false, reason: "invalid-wallet" };
+  }
+  const before = initialWallet.wallet;
   const planned = planCurrencyDeduction(before, totalGp);
   if (!planned) {
     if (notify) {
@@ -184,6 +200,11 @@ export async function executeBuy({
     return { ok: false, reason: "bad-item" };
   }
   delete snapshot._id;
+  delete snapshot.id;
+  const resolvedOperationId =
+    String(operationId ?? "").trim() || newMerchantOperationId();
+  const createdItemId = merchantItemId(resolvedOperationId);
+  snapshot._id = createdItemId;
   if (snapshot.flags == null) snapshot.flags = {};
   if (snapshot.flags[MODULE_ID] == null) snapshot.flags[MODULE_ID] = {};
   snapshot.flags[MODULE_ID].purchasedFromMerchant = {
@@ -191,38 +212,49 @@ export async function executeBuy({
     pricePaidGp: totalGp,
     bargainTier: seal?.tier ?? null,
     timestamp: null,
+    operationId: resolvedOperationId,
   };
-  setItemQuantity(snapshot, count);
+  const supportsQuantity = setItemQuantity(snapshot, count);
+  if (count > 1 && !supportsQuantity) {
+    return { ok: false, reason: "not-stackable" };
+  }
 
-  let created = [];
-  try {
-    created = await actor.createEmbeddedDocuments("Item", [snapshot]);
-  } catch (error) {
-    console.error(`${MODULE_ID} | item create failed`, error);
+  const created = await createActorItemVerified(actor, snapshot, {
+    expectedQuantity: snapshot.system?.quantity ?? null,
+    expectedItemId: createdItemId,
+  });
+  if (!created.ok) {
+    const compensated = await ensureActorItemsAbsent(actor, created.itemIds);
+    const reason = compensated.ok ? created.reason : "compensation-failed";
+    if (created.error) {
+      console.error(`${MODULE_ID} | item create failed`, created.error);
+    }
     if (notify) {
       ui.notifications?.error(
-        `${MODULE_ID}: could not add item to ${actor.name}. See console.`,
+        reason === "compensation-failed"
+          ? `${MODULE_ID}: item delivery could not be confirmed or restored — ask the GM to reconcile the transaction.`
+          : `${MODULE_ID}: item delivery could not be confirmed — you were not charged.`,
       );
     }
-    return { ok: false, reason: "create-failed", error };
+    return {
+      ok: false,
+      reason,
+      error: created.error ?? compensated.error,
+    };
   }
 
   // 3. Deduct currency.
   const deduct = await deductCurrency(actor, totalGp);
   if (!deduct.ok) {
-    // Roll back the created item so the player doesn't get a freebie.
-    let rolledBack = true;
-    try {
-      const ids = (Array.isArray(created) ? created : [])
-        .map((doc) => doc?.id)
-        .filter(Boolean);
-      if (ids.length > 0) {
-        await actor.deleteEmbeddedDocuments("Item", ids);
-      }
-    } catch (rollbackError) {
-      rolledBack = false;
-      console.warn(`${MODULE_ID} | buy rollback failed`, rollbackError);
-    }
+    // A rejected or hook-altered payment may still have partially changed the
+    // wallet. Restore both sides and verify their canonical final state.
+    const rolledBack = await compensateBuyActorState(actor, {
+      itemIds: created.itemIds,
+      itemSnapshot: snapshot,
+      expectedQuantity: snapshot.system?.quantity ?? null,
+      currencyBefore: deduct.before ?? before,
+      currencyAfter: deduct.expectedAfter ?? planned,
+    });
     if (notify) {
       ui.notifications?.error(
         rolledBack
@@ -232,7 +264,11 @@ export async function executeBuy({
     }
     return {
       ok: false,
-      reason: rolledBack ? "payment-failed" : "compensation-failed",
+      reason: rolledBack
+        ? deduct.reason === "update-unconfirmed"
+          ? "payment-unconfirmed"
+          : "payment-failed"
+        : "compensation-failed",
       error: deduct.error,
     };
   }
@@ -255,10 +291,11 @@ export async function executeBuy({
     unitGp,
     totalGp,
     sealId: seal?.sealId ?? null,
-    createdItemIds: (Array.isArray(created) ? created : [])
-      .map((doc) => doc?.id)
-      .filter(Boolean),
-    currencyBefore: before,
+    createdItemIds: created.itemIds,
+    createdItemSnapshot: snapshot,
+    createdItemQuantity: snapshot.system?.quantity ?? null,
+    currencyBefore: deduct.before,
+    currencyAfter: deduct.after,
   };
 }
 
@@ -298,11 +335,14 @@ export async function executeSell({
   if (!itemMatchesBuyFilter(merchant.buyFilter, itemData)) {
     return { ok: false, reason: "not-bought-here" };
   }
-  const inStack = Math.max(
-    0,
-    Math.floor(Number(itemData.system?.quantity ?? 1)),
-  );
-  const count = Math.max(1, Math.floor(Number(qty) || 1));
+  const inStack = Number(itemData.system?.quantity ?? 1);
+  if (!Number.isInteger(inStack) || inStack < 0) {
+    return { ok: false, reason: "invalid-quantity" };
+  }
+  const count = Number(qty);
+  if (!Number.isInteger(count) || count < 1 || count > 9999) {
+    return { ok: false, reason: "invalid-quantity" };
+  }
   // A genuinely empty stack (qty 0) must not sell — the old `inStack > 0`
   // guard let a 0-quantity item through and pay out coin for nothing.
   if (inStack < count) {
@@ -314,70 +354,139 @@ export async function executeSell({
     seal,
     passivePct,
   });
-  const totalGp = roundGp(unitGp * count);
-  if (totalGp <= 0) {
+  if (unitGp === 0) {
+    return { ok: false, reason: "no-value" };
+  }
+  if (!isSafeGpAmount(unitGp)) {
+    return { ok: false, reason: "invalid-price" };
+  }
+  const rawTotalGp = unitGp * count;
+  if (!isSafeGpAmount(rawTotalGp)) {
+    return { ok: false, reason: "invalid-price" };
+  }
+  const totalGp = roundGp(rawTotalGp);
+  if (!isSafeGpAmount(totalGp)) {
     return { ok: false, reason: "no-value" };
   }
 
-  // Snapshot the pre-sale item so a failed payout can be rolled back —
-  // otherwise a payout error would delete the player's item for free.
-  const preSaleSnapshot = cloneItemSnapshot(ownedItem) ?? itemData;
-  const removedWholeStack = Math.max(0, inStack - count) <= 0;
-
-  // 1. Remove the requested quantity.
-  try {
-    if (removedWholeStack) {
-      await actor.deleteEmbeddedDocuments("Item", [ownedItem.id]);
-    } else {
-      await ownedItem.update({ "system.quantity": inStack - count });
-    }
-  } catch (error) {
-    console.error(`${MODULE_ID} | sell removal failed`, error);
-    if (notify) {
-      ui.notifications?.error(
-        `${MODULE_ID}: could not remove item from ${actor.name}.`,
-      );
-    }
-    return { ok: false, reason: "remove-failed", error };
+  const initialWallet = readWalletStrict(actor.system?.currency);
+  if (!initialWallet.ok) {
+    return { ok: false, reason: "invalid-wallet" };
   }
-
-  // 2. Credit currency. Derive every denomination from integer copper so none
-  //    can overflow its valid range — the old `floor(fractional*10)` / rounded
-  //    remainder split leaked a malformed cp:10 (with a short sp) for ~40% of
-  //    fractional gp totals (e.g. 2.4 gp). Total value is preserved either way.
   const cpTotal = Math.round(totalGp * 100);
   const add = currencyAddFromBreakdown({
     gp: Math.floor(cpTotal / 100),
     sp: Math.floor((cpTotal % 100) / 10),
     cp: cpTotal % 10,
   });
-  const cur = snapshotCurrency(actor.system?.currency);
-  try {
-    await actor.update({
-      "system.currency.pp": (cur.pp ?? 0) + add.pp,
-      "system.currency.gp": (cur.gp ?? 0) + add.gp,
-      "system.currency.ep": (cur.ep ?? 0) + add.ep,
-      "system.currency.sp": (cur.sp ?? 0) + add.sp,
-      "system.currency.cp": (cur.cp ?? 0) + add.cp,
+  const initialPayout = readWalletStrict({
+    pp: initialWallet.wallet.pp + add.pp,
+    gp: initialWallet.wallet.gp + add.gp,
+    ep: initialWallet.wallet.ep + add.ep,
+    sp: initialWallet.wallet.sp + add.sp,
+    cp: initialWallet.wallet.cp + add.cp,
+  });
+  if (!initialPayout.ok) {
+    return { ok: false, reason: "invalid-wallet" };
+  }
+
+  // Snapshot the pre-sale item so a failed payout can be rolled back —
+  // otherwise a payout error would delete the player's item for free.
+  const preSaleSnapshot = cloneItemSnapshot(ownedItem) ?? itemData;
+  const removedWholeStack = Math.max(0, inStack - count) <= 0;
+  const soldQuantity = Math.max(0, inStack - count);
+
+  // 1. Remove the requested quantity and confirm the exact canonical result.
+  const removal = removedWholeStack
+    ? await deleteActorItemVerified(actor, ownedItem.id, {
+        expectedBeforeQuantity: inStack,
+      })
+    : await updateActorItemQuantityVerified(actor, ownedItem, soldQuantity, {
+        expectedBeforeQuantity: inStack,
+      });
+  if (!removal.ok) {
+    const restored = await restoreSaleItem(actor, {
+      itemId: ownedItem.id,
+      itemSnapshot: preSaleSnapshot,
+      removedWholeStack,
+      previousQuantity: inStack,
     });
-  } catch (error) {
-    // Roll the removal back so the player doesn't lose the item for nothing.
-    let rolledBack = true;
-    try {
-      if (removedWholeStack) {
-        const restore = cloneItemSnapshot(preSaleSnapshot);
-        if (restore) {
-          delete restore._id;
-          await actor.createEmbeddedDocuments("Item", [restore]);
-        }
-      } else {
-        await ownedItem.update({ "system.quantity": inStack });
-      }
-    } catch (rollbackError) {
-      rolledBack = false;
-      console.warn(`${MODULE_ID} | sell rollback failed`, rollbackError);
+    if (removal.error) {
+      console.error(`${MODULE_ID} | sell removal failed`, removal.error);
     }
-    console.error(`${MODULE_ID} | sell payout failed`, error);
+    if (notify) {
+      ui.notifications?.error(
+        restored
+          ? `${MODULE_ID}: item removal could not be confirmed — no payout was recorded.`
+          : `${MODULE_ID}: item removal and restoration could not be confirmed — ask the GM to reconcile the transaction.`,
+      );
+    }
+    return {
+      ok: false,
+      reason: restored
+        ? removal.reason === "delete-unconfirmed" ||
+          removal.reason === "quantity-unconfirmed"
+          ? "remove-unconfirmed"
+          : "remove-failed"
+        : "compensation-failed",
+      error: removal.error,
+    };
+  }
+
+  // 2. Credit currency. Derive every denomination from integer copper so none
+  //    can overflow its valid range — the old `floor(fractional*10)` / rounded
+  //    remainder split leaked a malformed cp:10 (with a short sp) for ~40% of
+  //    fractional gp totals (e.g. 2.4 gp). Total value is preserved either way.
+  const currentWallet = readWalletStrict(actor.system?.currency);
+  if (!currentWallet.ok) {
+    const restored = await restoreSaleItem(actor, {
+      itemId: ownedItem.id,
+      itemSnapshot: preSaleSnapshot,
+      removedWholeStack,
+      previousQuantity: inStack,
+    });
+    return {
+      ok: false,
+      reason: restored ? "invalid-wallet" : "compensation-failed",
+    };
+  }
+  const cur = currentWallet.wallet;
+  const expectedCurrencyRead = readWalletStrict({
+    pp: (cur.pp ?? 0) + add.pp,
+    gp: (cur.gp ?? 0) + add.gp,
+    ep: (cur.ep ?? 0) + add.ep,
+    sp: (cur.sp ?? 0) + add.sp,
+    cp: (cur.cp ?? 0) + add.cp,
+  });
+  if (!expectedCurrencyRead.ok) {
+    const restored = await restoreSaleItem(actor, {
+      itemId: ownedItem.id,
+      itemSnapshot: preSaleSnapshot,
+      removedWholeStack,
+      previousQuantity: inStack,
+    });
+    return {
+      ok: false,
+      reason: restored ? "invalid-wallet" : "compensation-failed",
+    };
+  }
+  const expectedCurrency = expectedCurrencyRead.wallet;
+  const payout = await updateCurrencyVerified(actor, expectedCurrency);
+  if (!payout.ok) {
+    // A rejected or hook-altered payout may still have partially changed the
+    // wallet. Restore and verify both currency and item state.
+    const rolledBack = await compensateSaleActorState(actor, {
+      currencyBefore: cur,
+      itemId: ownedItem.id,
+      itemSnapshot: preSaleSnapshot,
+      removedWholeStack,
+      previousQuantity: inStack,
+      soldQuantity,
+      currencyAfter: expectedCurrency,
+    });
+    if (payout.error) {
+      console.error(`${MODULE_ID} | sell payout failed`, payout.error);
+    }
     if (notify) {
       ui.notifications?.error(
         rolledBack
@@ -387,8 +496,12 @@ export async function executeSell({
     }
     return {
       ok: false,
-      reason: rolledBack ? "payout-failed" : "compensation-failed",
-      error,
+      reason: rolledBack
+        ? payout.reason === "update-unconfirmed"
+          ? "payout-unconfirmed"
+          : "payout-failed"
+        : "compensation-failed",
+      error: payout.error,
     };
   }
 
@@ -424,72 +537,175 @@ export async function executeSell({
       itemSnapshot: preSaleSnapshot,
       removedWholeStack,
       previousQuantity: inStack,
+      soldQuantity,
+      currencyAfter: payout.actual,
     },
   };
+}
+
+async function compensateBuyActorState(
+  actor,
+  {
+    itemIds = [],
+    itemSnapshot = null,
+    expectedQuantity = null,
+    currencyBefore = null,
+    currencyAfter = null,
+  } = {},
+) {
+  const ids = [
+    ...new Set([...(Array.isArray(itemIds) ? itemIds : []), itemSnapshot?._id]),
+  ].filter(Boolean);
+  const itemResults = await Promise.all(
+    ids.map((itemId) =>
+      itemSnapshot && itemId === itemSnapshot._id
+        ? ensureActorItemAbsent(actor, itemId, {
+            expectedIdentity: itemSnapshot,
+          })
+        : ensureActorItemsAbsent(actor, [itemId]),
+    ),
+  );
+  const itemRemoved = {
+    ok: itemResults.every((result) => result.ok),
+  };
+  if (!itemRemoved.ok) {
+    if (itemSnapshot) {
+      await ensureActorItemPresent(actor, itemSnapshot, {
+        expectedItemId: itemSnapshot._id,
+        expectedQuantity,
+      });
+    }
+    if (currencyAfter) await ensureCurrency(actor, currencyAfter);
+    return false;
+  }
+
+  const currencyRestored = currencyBefore
+    ? await ensureCurrency(actor, currencyBefore)
+    : { ok: false };
+  if (currencyRestored.ok) return true;
+
+  // The item was removed but the refund did not settle. Recreate the exact
+  // transaction-owned item and reapply the completed wallet so the actor ends
+  // in one confirmed state instead of a hybrid.
+  if (itemSnapshot) {
+    await ensureActorItemPresent(actor, itemSnapshot, {
+      expectedItemId: itemSnapshot._id,
+      expectedQuantity,
+    });
+  }
+  if (currencyAfter) await ensureCurrency(actor, currencyAfter);
+  return false;
+}
+
+async function restoreSaleItem(
+  actor,
+  {
+    itemId,
+    itemSnapshot,
+    removedWholeStack = false,
+    previousQuantity = 0,
+  } = {},
+) {
+  const restore = cloneItemSnapshot(itemSnapshot);
+  if (!restore) return false;
+  delete restore.id;
+  restore._id = itemId;
+  setItemQuantity(restore, previousQuantity);
+  const restored = await ensureActorItemPresent(actor, restore, {
+    expectedItemId: itemId,
+    expectedQuantity: previousQuantity,
+  });
+  return restored.ok;
+}
+
+async function ensureSaleCompletedState(
+  actor,
+  { itemId, itemSnapshot, removedWholeStack = false, soldQuantity = 0 } = {},
+) {
+  if (removedWholeStack) {
+    return ensureActorItemAbsent(actor, itemId, {
+      expectedIdentity: itemSnapshot,
+    });
+  }
+  const sold = cloneItemSnapshot(itemSnapshot);
+  if (!sold) return { ok: false, reason: "quantity-unconfirmed" };
+  delete sold.id;
+  sold._id = itemId;
+  setItemQuantity(sold, soldQuantity);
+  return ensureActorItemPresent(actor, sold, {
+    expectedItemId: itemId,
+    expectedQuantity: soldQuantity,
+  });
+}
+
+async function compensateSaleActorState(
+  actor,
+  {
+    currencyBefore = {},
+    itemId,
+    itemSnapshot,
+    removedWholeStack = false,
+    previousQuantity = 0,
+    soldQuantity = 0,
+    currencyAfter = null,
+  } = {},
+) {
+  const currencyRestore = await ensureCurrency(actor, currencyBefore);
+  if (!currencyRestore.ok) {
+    await ensureSaleCompletedState(actor, {
+      itemId,
+      itemSnapshot,
+      removedWholeStack,
+      soldQuantity,
+    });
+    if (currencyAfter) await ensureCurrency(actor, currencyAfter);
+    return false;
+  }
+
+  const itemRestored = await restoreSaleItem(actor, {
+    itemId,
+    itemSnapshot,
+    removedWholeStack,
+    previousQuantity,
+  });
+  if (itemRestored) return true;
+
+  // Currency was reversed but the item could not be restored. Reapply the
+  // payout and the sold inventory state to avoid leaving a hybrid.
+  if (currencyAfter) await ensureCurrency(actor, currencyAfter);
+  await ensureSaleCompletedState(actor, {
+    itemId,
+    itemSnapshot,
+    removedWholeStack,
+    soldQuantity,
+  });
+  return false;
 }
 
 /** Compensate a completed buy when the merchant-side persistence fails. */
 export async function rollbackBuyTransaction(actor, result) {
   if (!actor || !result?.ok) return false;
-  let ok = true;
-  try {
-    const ids = Array.isArray(result.createdItemIds)
-      ? result.createdItemIds.filter(Boolean)
-      : [];
-    if (ids.length > 0) await actor.deleteEmbeddedDocuments("Item", ids);
-  } catch (error) {
-    ok = false;
-    console.error(
-      `${MODULE_ID} | buy compensation item rollback failed`,
-      error,
-    );
-  }
-  try {
-    await actor.update(currencyUpdate(result.currencyBefore));
-  } catch (error) {
-    ok = false;
-    console.error(
-      `${MODULE_ID} | buy compensation currency rollback failed`,
-      error,
-    );
-  }
-  return ok;
+  return compensateBuyActorState(actor, {
+    itemIds: result.createdItemIds,
+    itemSnapshot: result.createdItemSnapshot,
+    expectedQuantity: result.createdItemQuantity,
+    currencyBefore: result.currencyBefore,
+    currencyAfter: result.currencyAfter,
+  });
 }
 
 /** Compensate a completed sale when the merchant-side persistence fails. */
 export async function rollbackSellTransaction(actor, result) {
   if (!actor || !result?.ok || !result.rollback) return false;
-  let ok = true;
-  try {
-    await actor.update(currencyUpdate(result.rollback.currencyBefore));
-  } catch (error) {
-    ok = false;
-    console.error(
-      `${MODULE_ID} | sell compensation currency rollback failed`,
-      error,
-    );
-  }
-  try {
-    if (result.rollback.removedWholeStack) {
-      const snapshot = cloneItemSnapshot(result.rollback.itemSnapshot);
-      if (!snapshot) throw new Error("Missing sale rollback item snapshot");
-      delete snapshot._id;
-      await actor.createEmbeddedDocuments("Item", [snapshot]);
-    } else {
-      const item = actor.items?.get?.(result.itemId);
-      if (!item) throw new Error("Sale rollback item no longer exists");
-      await item.update({
-        "system.quantity": result.rollback.previousQuantity,
-      });
-    }
-  } catch (error) {
-    ok = false;
-    console.error(
-      `${MODULE_ID} | sell compensation item rollback failed`,
-      error,
-    );
-  }
-  return ok;
+  return compensateSaleActorState(actor, {
+    currencyBefore: result.rollback.currencyBefore,
+    itemId: result.itemId,
+    itemSnapshot: result.rollback.itemSnapshot,
+    removedWholeStack: result.rollback.removedWholeStack,
+    previousQuantity: result.rollback.previousQuantity,
+    soldQuantity: result.rollback.soldQuantity,
+    currencyAfter: result.rollback.currencyAfter,
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -588,8 +804,9 @@ function cloneItemSnapshot(item) {
 }
 
 function setItemQuantity(snapshot, qty) {
-  if (!snapshot) return;
-  const n = Math.max(1, Math.floor(Number(qty) || 1));
+  if (!snapshot) return false;
+  const raw = Number(qty);
+  const n = Number.isInteger(raw) && raw >= 0 ? raw : 1;
   snapshot.system = snapshot.system ?? {};
   const PHYSICAL = [
     "weapon",
@@ -602,5 +819,14 @@ function setItemQuantity(snapshot, qty) {
   ];
   if (PHYSICAL.includes(snapshot.type) || "quantity" in snapshot.system) {
     snapshot.system.quantity = n;
+    return true;
   }
+  return false;
+}
+
+function newMerchantOperationId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `merchant-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 }

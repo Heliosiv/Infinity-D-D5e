@@ -1,12 +1,62 @@
 import assert from "node:assert/strict";
 
 import {
+  deductCurrency,
   diffWallets,
+  ensureCurrency,
   planCurrencyDeduction,
+  readWalletStrict,
   sanitizeWallet,
   totalWalletCp,
   totalWalletGp,
+  updateCurrencyVerified,
 } from "./merchant/currency.js";
+
+function cloneWallet(wallet) {
+  return structuredClone(wallet);
+}
+
+function applyCurrencyUpdate(actor, update) {
+  for (const [path, value] of Object.entries(update)) {
+    const match = /^system\.currency\.(pp|gp|ep|sp|cp)$/.exec(path);
+    if (match) actor.system.currency[match[1]] = value;
+  }
+}
+
+function makeCurrencyActor({
+  id = "synthetic-hero",
+  wallet = { pp: 0, gp: 10, ep: 0, sp: 0, cp: 0 },
+  mode = "apply",
+  returnValue = "actor",
+} = {}) {
+  const actor = {
+    id,
+    system: { currency: cloneWallet(wallet) },
+    updateCalls: [],
+    async update(update) {
+      this.updateCalls.push(structuredClone(update));
+      if (mode === "throw") throw new Error("currency update denied");
+      if (mode === "apply") applyCurrencyUpdate(this, update);
+      if (mode === "alter") {
+        applyCurrencyUpdate(this, update);
+        this.system.currency.gp += 1;
+      }
+      if (mode === "invalid-after") {
+        applyCurrencyUpdate(this, update);
+        this.system.currency.gp = -1;
+      }
+      if (returnValue === "undefined") return undefined;
+      if (returnValue === "other-id") {
+        return { id: "different-actor", system: this.system };
+      }
+      if (returnValue === "same-id-copy") {
+        return { id: this.id, system: this.system };
+      }
+      return this;
+    },
+  };
+  return actor;
+}
 
 /* ------------------------------------------------------------------ *
  * sanitizeWallet
@@ -102,6 +152,20 @@ import {
   assert.deepEqual(after, sanitizeWallet(wallet));
 }
 
+for (const amount of [
+  Number.POSITIVE_INFINITY,
+  Number.NaN,
+  Number.MAX_VALUE,
+  -1,
+  0.001,
+]) {
+  assert.equal(
+    planCurrencyDeduction({ gp: 10 }, amount),
+    null,
+    `unsafe deduction ${String(amount)} is rejected`,
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * diffWallets
  * ------------------------------------------------------------------ */
@@ -109,6 +173,216 @@ import {
   const before = { gp: 100, sp: 5 };
   const after = { gp: 90, sp: 0 };
   assert.deepEqual(diffWallets(before, after), { gp: -10, sp: -5 });
+}
+
+/* ------------------------------------------------------------------ *
+ * Strict canonical wallet reads
+ * ------------------------------------------------------------------ */
+{
+  const result = readWalletStrict({ gp: "5", sp: 3 });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.wallet, {
+    pp: 0,
+    gp: 5,
+    ep: 0,
+    sp: 3,
+    cp: 0,
+  });
+}
+
+for (const [label, wallet] of [
+  ["negative", { gp: -1 }],
+  ["fractional", { gp: 1.5 }],
+  ["not numeric", { gp: "five" }],
+  ["not finite", { gp: Number.POSITIVE_INFINITY }],
+  ["NaN", { gp: Number.NaN }],
+  ["null denomination", { gp: null }],
+  ["blank denomination", { gp: "" }],
+  ["boolean denomination", { gp: false }],
+  ["unsafe denomination", { gp: Number.MAX_SAFE_INTEGER }],
+  ["missing wallet object", null],
+]) {
+  const result = readWalletStrict(wallet);
+  assert.equal(result.ok, false, `${label} canonical wallet is invalid`);
+  assert.equal(result.reason, "invalid-wallet");
+}
+
+/* ------------------------------------------------------------------ *
+ * Verified currency writes
+ * ------------------------------------------------------------------ */
+{
+  const actor = makeCurrencyActor();
+  const result = await updateCurrencyVerified(actor, { gp: 4, sp: 2 });
+  assert.equal(result.ok, true);
+  assert.deepEqual(actor.system.currency, {
+    pp: 0,
+    gp: 4,
+    ep: 0,
+    sp: 2,
+    cp: 0,
+  });
+  assert.equal(actor.updateCalls.length, 1);
+}
+
+{
+  const actor = makeCurrencyActor({ mode: "noop" });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "update-unconfirmed");
+  assert.equal(result.actual.gp, 10, "canonical no-op is detected");
+}
+
+{
+  const actor = makeCurrencyActor({
+    mode: "apply",
+    returnValue: "undefined",
+  });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "update-unconfirmed");
+  assert.equal(
+    actor.system.currency.gp,
+    4,
+    "canonical mutation alone does not satisfy primary write confirmation",
+  );
+}
+
+{
+  const actor = makeCurrencyActor({ mode: "alter" });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "update-unconfirmed");
+  assert.equal(result.actual.gp, 5, "hook-altered read-back is reported");
+}
+
+{
+  const actor = makeCurrencyActor({
+    mode: "apply",
+    returnValue: "other-id",
+  });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    "update-unconfirmed",
+    "another Actor cannot confirm this Actor's write",
+  );
+}
+
+{
+  const actor = makeCurrencyActor({ mode: "invalid-after" });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    "invalid-wallet",
+    "negative canonical read-back is distinguished from an ordinary mismatch",
+  );
+}
+
+{
+  const actor = makeCurrencyActor({ mode: "throw" });
+  const result = await updateCurrencyVerified(actor, { gp: 4 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "update-failed");
+  assert.match(result.error.message, /denied/);
+}
+
+/* ------------------------------------------------------------------ *
+ * Deduction rejects invalid canonical state before writing
+ * ------------------------------------------------------------------ */
+for (const wallet of [{ gp: -1 }, { gp: 1.5 }, { gp: Number.NaN }]) {
+  const actor = makeCurrencyActor({ wallet });
+  const result = await deductCurrency(actor, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid-wallet");
+  assert.equal(actor.updateCalls.length, 0);
+}
+
+{
+  const actor = makeCurrencyActor({ wallet: { gp: 10 } });
+  const result = await deductCurrency(actor, 3);
+  assert.equal(result.ok, true);
+  assert.equal(result.before.gp, 10);
+  assert.equal(result.after.gp, 7);
+}
+
+for (const amount of [Number.POSITIVE_INFINITY, Number.MAX_VALUE, 0.001]) {
+  const actor = makeCurrencyActor({ wallet: { gp: 10 } });
+  const result = await deductCurrency(actor, amount);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "invalid-amount");
+  assert.equal(actor.updateCalls.length, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * Compensation is judged by exact canonical final state
+ * ------------------------------------------------------------------ */
+{
+  const actor = makeCurrencyActor({
+    wallet: { gp: 10 },
+    mode: "apply",
+    returnValue: "undefined",
+  });
+  const result = await ensureCurrency(actor, { gp: 7 });
+  assert.equal(
+    result.ok,
+    true,
+    "compensation can succeed despite a missing API return when read-back is exact",
+  );
+  assert.equal(actor.system.currency.gp, 7);
+}
+
+{
+  const actor = makeCurrencyActor({ wallet: { gp: 10 }, mode: "noop" });
+  const result = await ensureCurrency(actor, { gp: 7 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "update-unconfirmed");
+  assert.equal(result.actual.gp, 10);
+}
+
+{
+  const actor = makeCurrencyActor({
+    wallet: { gp: -1 },
+    mode: "noop",
+  });
+  const result = await ensureCurrency(actor, { gp: 0 });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    "invalid-wallet",
+    "invalid canonical compensation state cannot masquerade as zero",
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Synthetic Actors remain the canonical write target
+ * ------------------------------------------------------------------ */
+{
+  const worldActor = makeCurrencyActor({
+    id: "shared-actor-id",
+    wallet: { gp: 99 },
+  });
+  const syntheticActor = makeCurrencyActor({
+    id: "shared-actor-id",
+    wallet: { gp: 10 },
+  });
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    actors: {
+      get: () => worldActor,
+    },
+  };
+  try {
+    const result = await updateCurrencyVerified(syntheticActor, { gp: 6 });
+    assert.equal(result.ok, true);
+    assert.equal(syntheticActor.system.currency.gp, 6);
+    assert.equal(worldActor.system.currency.gp, 99);
+    assert.equal(worldActor.updateCalls.length, 0);
+  } finally {
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
 }
 
 process.stdout.write("merchant-currency validation passed\n");

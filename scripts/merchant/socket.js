@@ -43,6 +43,7 @@ import {
   rollbackBuyTransaction,
   rollbackSellTransaction,
 } from "./transaction.js";
+import { isSafeGpAmount } from "./currency.js";
 import {
   computeBargainOutcome,
   computePassiveBargainPct,
@@ -523,7 +524,7 @@ function emitBargainFailure(payload, session, reason) {
 
 async function handleCommitPurchase(payload) {
   const { sessionId, itemUuid, qty, sealId } = payload;
-  const session = getSession(sessionId);
+  let session = getSession(sessionId);
   if (!session) {
     // Most common after a GM world reload (the in-memory session map is wiped):
     // tell the buyer so they don't sit on a silently-unrecorded purchase.
@@ -531,18 +532,47 @@ async function handleCommitPurchase(payload) {
     return;
   }
   if (session.viewerUserId !== payload.originUserId) return;
-  const requested = Math.max(1, Math.floor(Number(qty) || 1));
+  if (emitCachedCommitResult(payload)) return;
+  const requested = Number(qty);
+  if (!Number.isInteger(requested) || requested < 1 || requested > 9999) {
+    emitCommitResult(payload, false, "invalid-quantity");
+    return;
+  }
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
-  const actor = resolveSessionActor(session, payload.actorId);
+  let actor = resolveSessionActor(session, payload.actorId);
   if (!actor) {
     emitCommitResult(payload, false, "no-actor");
     return;
   }
 
   await runWithMerchantActorMutex(session.merchantId, actor.id, async () => {
-    const prior = getCommitResult(sessionId, payload.commitId);
-    if (prior) {
-      emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
+    // The request can wait behind another transaction. Re-check the transient
+    // session and GM authority after acquiring both locks so a GM handoff or a
+    // closed/replaced session cannot mutate actor or merchant state.
+    if (!isPrivateStateAuthorityReady()) {
+      console.warn(
+        `${MODULE_ID} | commit-purchase authority changed while waiting for the transaction lock`,
+      );
+      return;
+    }
+    const liveSession = getSession(sessionId);
+    if (
+      !liveSession ||
+      liveSession.merchantId !== session.merchantId ||
+      liveSession.viewerUserId !== payload.originUserId
+    ) {
+      emitCommitResult(payload, false, "no-session");
+      return;
+    }
+    session = liveSession;
+    const liveActor = resolveSessionActor(session, payload.actorId);
+    if (!liveActor || liveActor.id !== actor.id) {
+      emitCommitResult(payload, false, "no-actor");
+      return;
+    }
+    actor = liveActor;
+
+    if (emitCachedCommitResult(payload)) {
       return;
     }
     const merchant = findMerchant(session.merchantId);
@@ -591,6 +621,7 @@ async function handleCommitPurchase(payload) {
     // arbitrary figure into the GM-owned coffer.
     let trueTotal = 0;
     let unitGp = 0;
+    let invalidPrice = false;
     let item = null;
     let passivePct = 0;
     try {
@@ -607,8 +638,15 @@ async function handleCommitPurchase(payload) {
         seal,
         passivePct,
       });
-      if (Number.isFinite(unitGp) && unitGp > 0) {
-        trueTotal = roundGp(unitGp * requested);
+      const rawTotal = unitGp * requested;
+      if (unitGp === 0) {
+        trueTotal = 0;
+      } else if (isSafeGpAmount(unitGp) && isSafeGpAmount(rawTotal)) {
+        const rounded = roundGp(rawTotal);
+        if (isSafeGpAmount(rounded)) trueTotal = rounded;
+        else invalidPrice = true;
+      } else {
+        invalidPrice = true;
       }
     } catch (error) {
       console.warn(`${MODULE_ID} | commit-purchase reprice failed`, error);
@@ -618,8 +656,12 @@ async function handleCommitPurchase(payload) {
         `${MODULE_ID} | commit-purchase price mismatch (client ${clientTotalGp}, server ${trueTotal}) — using server price`,
       );
     }
-    if (!(trueTotal > 0)) {
-      emitCommitResult(payload, false, "no-price");
+    if (invalidPrice || !(trueTotal > 0)) {
+      emitCommitResult(
+        payload,
+        false,
+        invalidPrice ? "invalid-price" : "no-price",
+      );
       return;
     }
 
@@ -632,6 +674,7 @@ async function handleCommitPurchase(payload) {
       seal,
       passivePct,
       notify: false,
+      operationId: `${sessionId}:${payload.commitId}:${actor.uuid ?? actor.id}:buy`,
     });
     if (!actorResult.ok) {
       emitCommitResult(
@@ -654,43 +697,55 @@ async function handleCommitPurchase(payload) {
     }
     // The merchant gains the gold the player paid (no-op if unlimited purse).
     updated = adjustMerchantGold(updated, trueTotal);
-    try {
-      await upsertMerchant(updated);
-    } catch (error) {
+    const persisted = await persistMerchantVerified(updated, "purchase");
+    if (!persisted.ok) {
       console.error(
-        `${MODULE_ID} | purchase merchant persistence failed`,
-        error,
+        `${MODULE_ID} | purchase merchant persistence was not confirmed`,
+        persisted.error,
       );
       const rolledBack = await rollbackBuyTransaction(actor, actorResult);
+      const merchantRolledBack = await restoreMerchantVerified(
+        merchant,
+        "purchase",
+      );
       emitCommitResult(
         payload,
         false,
-        rolledBack ? "merchant-write-failed" : "compensation-failed",
+        rolledBack && merchantRolledBack
+          ? "merchant-write-failed"
+          : "compensation-failed",
       );
       return;
     }
+    updated = persisted.merchant;
     if (seal) consumeSeal(sessionId, sealId, { itemUuid, side: "buy" });
-    await broadcastState(updated);
-    emitCommitResult(payload, true, "", {
+    const recorded = recordCommitOutcome(payload, true, "", {
       totalGp: actorResult.totalGp,
       unitGp: actorResult.unitGp,
       qty: actorResult.qty,
       itemName: actorResult.itemName,
     });
+    await broadcastStateBestEffort(updated, "purchase");
+    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, recorded);
   });
 }
 
 async function handleCommitSale(payload) {
   const { sessionId, sealId, itemUuid } = payload;
-  const session = getSession(sessionId);
+  let session = getSession(sessionId);
   if (!session) {
     emitCommitResult(payload, false, "no-session");
     return;
   }
   if (session.viewerUserId !== payload.originUserId) return;
+  if (emitCachedCommitResult(payload)) return;
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
-  const requested = Math.max(1, Math.floor(Number(payload.qty) || 1));
-  const actor = resolveSessionActor(session, payload.actorId);
+  const requested = Number(payload.qty);
+  if (!Number.isInteger(requested) || requested < 1 || requested > 9999) {
+    emitCommitResult(payload, false, "invalid-quantity");
+    return;
+  }
+  let actor = resolveSessionActor(session, payload.actorId);
   if (!actor) {
     emitCommitResult(payload, false, "no-actor");
     return;
@@ -699,9 +754,30 @@ async function handleCommitSale(payload) {
   // checked before mutation; unlimited purses are a no-op. Seal consumption
   // runs inside the mutex too, matching the buy path.
   await runWithMerchantActorMutex(session.merchantId, actor.id, async () => {
-    const prior = getCommitResult(sessionId, payload.commitId);
-    if (prior) {
-      emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
+    if (!isPrivateStateAuthorityReady()) {
+      console.warn(
+        `${MODULE_ID} | commit-sale authority changed while waiting for the transaction lock`,
+      );
+      return;
+    }
+    const liveSession = getSession(sessionId);
+    if (
+      !liveSession ||
+      liveSession.merchantId !== session.merchantId ||
+      liveSession.viewerUserId !== payload.originUserId
+    ) {
+      emitCommitResult(payload, false, "no-session");
+      return;
+    }
+    session = liveSession;
+    const liveActor = resolveSessionActor(session, payload.actorId);
+    if (!liveActor || liveActor.id !== actor.id) {
+      emitCommitResult(payload, false, "no-actor");
+      return;
+    }
+    actor = liveActor;
+
+    if (emitCachedCommitResult(payload)) {
       return;
     }
     const ownedItem = actor.items?.get?.(itemUuid) ?? null;
@@ -730,6 +806,7 @@ async function handleCommitSale(payload) {
     // total is advisory only; the authoritative GM owns pricing and mutation.
     let trueTotal = 0;
     let priced = false;
+    let invalidPrice = false;
     const snap = ownedItem.toObject?.() ?? ownedItem;
     if (snap && typeof snap === "object") {
       try {
@@ -740,9 +817,19 @@ async function handleCommitSale(payload) {
           seal,
           passivePct,
         });
-        if (Number.isFinite(unitGp) && unitGp > 0) {
-          trueTotal = roundGp(unitGp * requested);
-          priced = true;
+        const rawTotal = unitGp * requested;
+        if (unitGp === 0) {
+          trueTotal = 0;
+        } else if (isSafeGpAmount(unitGp) && isSafeGpAmount(rawTotal)) {
+          const rounded = roundGp(rawTotal);
+          if (isSafeGpAmount(rounded)) {
+            trueTotal = rounded;
+            priced = true;
+          } else {
+            invalidPrice = true;
+          }
+        } else {
+          invalidPrice = true;
         }
       } catch (error) {
         console.warn(`${MODULE_ID} | commit-sale reprice failed`, error);
@@ -752,7 +839,11 @@ async function handleCommitSale(payload) {
     // couldn't derive a payout (missing/zero-price snapshot, forged frame),
     // reject rather than spending the client's claimed total.
     if (!priced) {
-      emitCommitResult(payload, false, "no-price");
+      emitCommitResult(
+        payload,
+        false,
+        invalidPrice ? "invalid-price" : "no-price",
+      );
       return;
     }
     if (Math.abs(trueTotal - clientTotalGp) > 0.01) {
@@ -785,27 +876,37 @@ async function handleCommitSale(payload) {
       );
       return;
     }
-    const updated = adjustMerchantGold(merchant, -payout);
-    try {
-      await upsertMerchant(updated);
-    } catch (error) {
-      console.error(`${MODULE_ID} | sale merchant persistence failed`, error);
+    let updated = adjustMerchantGold(merchant, -payout);
+    const persisted = await persistMerchantVerified(updated, "sale");
+    if (!persisted.ok) {
+      console.error(
+        `${MODULE_ID} | sale merchant persistence was not confirmed`,
+        persisted.error,
+      );
       const rolledBack = await rollbackSellTransaction(actor, actorResult);
+      const merchantRolledBack = await restoreMerchantVerified(
+        merchant,
+        "sale",
+      );
       emitCommitResult(
         payload,
         false,
-        rolledBack ? "merchant-write-failed" : "compensation-failed",
+        rolledBack && merchantRolledBack
+          ? "merchant-write-failed"
+          : "compensation-failed",
       );
       return;
     }
+    updated = persisted.merchant;
     if (seal) consumeSeal(sessionId, sealId, { itemUuid, side: "sell" });
-    await broadcastState(updated);
-    emitCommitResult(payload, true, "", {
+    const recorded = recordCommitOutcome(payload, true, "", {
       totalGp: actorResult.totalGp,
       unitGp: actorResult.unitGp,
       qty: actorResult.qty,
       itemName: actorResult.itemName,
     });
+    await broadcastStateBestEffort(updated, "sale");
+    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, recorded);
   });
 }
 
@@ -918,26 +1019,150 @@ export async function commitMerchantWrite(
   });
 }
 
-/** Acknowledge a commit back to the buyer/seller so a trade can't silently
- *  half-complete (actor mutated, shop never updated) without the player knowing.
- *  Scoped to the originating user; correlated by the player's commitId. */
-function emitCommitResult(commitPayload, ok, reason = "", details = {}) {
-  const result = {
+/**
+ * Bind an idempotency key to the complete mutation request. Fixed property
+ * order plus normalized numbers makes this stable across transport retries
+ * without relying on payload insertion order.
+ */
+function commitRequestFingerprint(commitPayload) {
+  const rawQuantity = commitPayload.qty;
+  const numericQuantity = Number(rawQuantity);
+  const validQuantity =
+    Number.isInteger(numericQuantity) &&
+    numericQuantity >= 1 &&
+    numericQuantity <= 9999;
+  return JSON.stringify({
+    version: 1,
+    type: commitPayload.type ?? "",
+    sessionId: commitPayload.sessionId ?? "",
+    originUserId: commitPayload.originUserId ?? "",
+    actorId: commitPayload.actorId ?? "",
+    itemUuid: commitPayload.itemUuid ?? "",
+    qty: validQuantity
+      ? { valid: true, value: numericQuantity }
+      : {
+          valid: false,
+          type: typeof rawQuantity,
+          value: String(rawQuantity),
+        },
+    totalGp: Number(commitPayload.totalGp),
+    sealId: commitPayload.sealId ?? "",
+  });
+}
+
+function buildCommitResult(commitPayload, ok, reason = "", details = {}) {
+  return {
     targetUserId: commitPayload.originUserId,
     sessionId: commitPayload.sessionId,
     commitId: commitPayload.commitId ?? null,
     side: commitPayload.type === MERCHANT_EVENTS.COMMIT_SALE ? "sell" : "buy",
     ok: ok === true,
     reason,
+    requestFingerprint: commitRequestFingerprint(commitPayload),
     ...details,
   };
+}
+
+function recordCommitOutcome(commitPayload, ok, reason = "", details = {}) {
+  const result = buildCommitResult(commitPayload, ok, reason, details);
   const recorded = recordCommitResult(
     commitPayload.sessionId,
     commitPayload.commitId,
     result,
   );
-  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, recorded ?? result);
   return recorded ?? result;
+}
+
+/**
+ * Return a cached result only when the commitId still names the exact same
+ * request. A reused ID with different fields is rejected without replacing the
+ * original cache entry or touching actor/shop state.
+ */
+function emitCachedCommitResult(commitPayload) {
+  const prior = getCommitResult(
+    commitPayload.sessionId,
+    commitPayload.commitId,
+  );
+  if (!prior) return false;
+  if (prior.requestFingerprint !== commitRequestFingerprint(commitPayload)) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(commitPayload, false, "commit-id-conflict"),
+    );
+    return true;
+  }
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, prior);
+  return true;
+}
+
+function merchantRecordsMatch(actual, expected) {
+  if (!actual || !expected) return false;
+  try {
+    return (
+      JSON.stringify(normalizeMerchant(actual)) ===
+      JSON.stringify(normalizeMerchant(expected))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A store write can apply and still reject (for example, an after-write hook or
+ * transport acknowledgement can fail). Canonical read-back is the authority:
+ * roll the actor back only when the expected merchant record is not present.
+ */
+async function persistMerchantVerified(expected, operation) {
+  let error = null;
+  try {
+    await upsertMerchant(expected);
+  } catch (caught) {
+    error = caught;
+  }
+  const merchant = findMerchant(expected?.id);
+  const ok = merchantRecordsMatch(merchant, expected);
+  if (ok && error) {
+    console.warn(
+      `${MODULE_ID} | ${operation} merchant write threw after canonical state was applied`,
+      error,
+    );
+  }
+  return { ok, merchant: ok ? normalizeMerchant(merchant) : null, error };
+}
+
+/** Restore the exact pre-transaction merchant after an unconfirmed write. */
+async function restoreMerchantVerified(original, operation) {
+  const restored = await persistMerchantVerified(
+    original,
+    `${operation} compensation`,
+  );
+  if (!restored.ok) {
+    console.error(
+      `${MODULE_ID} | ${operation} merchant compensation was not confirmed`,
+      restored.error,
+    );
+  }
+  return restored.ok;
+}
+
+async function broadcastStateBestEffort(merchant, operation) {
+  try {
+    await broadcastState(merchant);
+  } catch (error) {
+    console.error(
+      `${MODULE_ID} | ${operation} state broadcast failed after commit`,
+      error,
+    );
+  }
+}
+
+/** Acknowledge a commit back to the buyer/seller so a trade can't silently
+ *  half-complete (actor mutated, shop never updated) without the player knowing.
+ *  Scoped to the originating user; correlated by the player's commitId. */
+function emitCommitResult(commitPayload, ok, reason = "", details = {}) {
+  const result = recordCommitOutcome(commitPayload, ok, reason, details);
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, result);
+  return result;
 }
 
 /* ------------------------------------------------------------------ *

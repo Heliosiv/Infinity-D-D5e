@@ -56,6 +56,72 @@ export function sanitizeWallet(wallet) {
   return pool;
 }
 
+/**
+ * Read a canonical wallet without repairing malformed values.
+ *
+ * Missing denominations are valid and normalize to zero. A denomination that
+ * is present must be a finite, non-negative integer; merchant write
+ * verification must never let the lenient planning sanitizer hide corruption.
+ */
+export function readWalletStrict(wallet) {
+  const pool = { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 };
+  if (!wallet || typeof wallet !== "object") {
+    return { ok: false, reason: "invalid-wallet", wallet: pool };
+  }
+  for (const denom of DENOM_HIGH_TO_LOW) {
+    const raw = wallet[denom];
+    if (raw === undefined) continue;
+    if (raw === null || raw === "" || typeof raw === "boolean") {
+      return {
+        ok: false,
+        reason: "invalid-wallet",
+        denomination: denom,
+        value: raw,
+        wallet: pool,
+      };
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      return {
+        ok: false,
+        reason: "invalid-wallet",
+        denomination: denom,
+        value: raw,
+        wallet: pool,
+      };
+    }
+    pool[denom] = value;
+  }
+  let totalCopper = 0;
+  for (const denom of DENOM_HIGH_TO_LOW) {
+    const copper = pool[denom] * COIN_VALUE_CP[denom];
+    if (
+      !Number.isSafeInteger(copper) ||
+      !Number.isSafeInteger(totalCopper + copper)
+    ) {
+      return {
+        ok: false,
+        reason: "invalid-wallet",
+        denomination: denom,
+        value: pool[denom],
+        wallet: pool,
+      };
+    }
+    totalCopper += copper;
+  }
+  return { ok: true, reason: "", wallet: pool };
+}
+
+/** Whether a positive gp amount is exactly representable to the nearest cp. */
+export function isSafeGpAmount(value, { allowZero = false } = {}) {
+  const gp = Number(value);
+  if (!Number.isFinite(gp) || gp < 0 || (!allowZero && gp === 0)) return false;
+  const copper = Math.round(gp * 100);
+  return (
+    Number.isSafeInteger(copper) && (allowZero ? copper >= 0 : copper >= 1)
+  );
+}
+
 /** Total wallet value in copper pieces. */
 export function totalWalletCp(wallet) {
   const pool = sanitizeWallet(wallet);
@@ -70,6 +136,24 @@ export function totalWalletGp(wallet) {
   return totalWalletCp(wallet) / 100;
 }
 
+/** Whether two wallets have the exact same normalized denominations. */
+export function walletsEqual(left, right) {
+  const a = sanitizeWallet(left);
+  const b = sanitizeWallet(right);
+  return DENOM_HIGH_TO_LOW.every((denom) => a[denom] === b[denom]);
+}
+
+/** Build the flattened dnd5e Actor update for one normalized wallet. */
+export function currencyUpdate(wallet) {
+  const target = sanitizeWallet(wallet);
+  return Object.fromEntries(
+    DENOM_HIGH_TO_LOW.map((denom) => [
+      `system.currency.${denom}`,
+      target[denom],
+    ]),
+  );
+}
+
 /**
  * Plan a deduction from a wallet. Pure; returns a new wallet shape or
  * null when the wallet can't cover the amount.
@@ -79,12 +163,20 @@ export function totalWalletGp(wallet) {
  * @returns {object|null}         new wallet, or null on insufficient funds
  */
 export function planCurrencyDeduction(wallet, gpAmount) {
-  const owedCp = Math.round(Number(gpAmount) * 100);
-  if (!Number.isFinite(owedCp) || owedCp <= 0) {
+  const amount = Number(gpAmount);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const owedCp = Math.round(amount * 100);
+  if (!Number.isSafeInteger(owedCp)) return null;
+  if (owedCp === 0 && amount === 0) {
     return sanitizeWallet(wallet);
   }
+  if (owedCp < 1) return null;
   const pool = sanitizeWallet(wallet);
-  if (totalWalletCp(pool) < owedCp) return null;
+  const availableCp = DENOM_HIGH_TO_LOW.reduce(
+    (sum, denom) => sum + pool[denom] * COIN_VALUE_CP[denom],
+    0,
+  );
+  if (!Number.isSafeInteger(availableCp) || availableCp < owedCp) return null;
 
   let owe = owedCp;
   let safetyCounter = 0;
@@ -140,23 +232,144 @@ export async function deductCurrency(actor, gpAmount) {
   if (!actor || typeof actor.update !== "function") {
     return { ok: false, reason: "no-actor" };
   }
-  const before = sanitizeWallet(actor.system?.currency);
+  const read = readWalletStrict(actor.system?.currency);
+  if (!read.ok) {
+    return {
+      ok: false,
+      reason: "invalid-wallet",
+      before: null,
+      actual: actor.system?.currency ?? null,
+      gpAmount,
+    };
+  }
+  const before = read.wallet;
+  if (!isSafeGpAmount(gpAmount)) {
+    return { ok: false, reason: "invalid-amount", before, gpAmount };
+  }
   const after = planCurrencyDeduction(before, gpAmount);
   if (!after) return { ok: false, reason: "insufficient", before, gpAmount };
 
-  try {
-    await actor.update({
-      "system.currency.pp": after.pp,
-      "system.currency.gp": after.gp,
-      "system.currency.ep": after.ep,
-      "system.currency.sp": after.sp,
-      "system.currency.cp": after.cp,
-    });
-    return { ok: true, before, after, gpAmount };
-  } catch (error) {
-    console.error(`${MODULE_ID} | currency deduction failed`, error);
-    return { ok: false, reason: "update-failed", error, before, gpAmount };
+  const update = await updateCurrencyVerified(actor, after);
+  if (!update.ok) {
+    if (update.error) {
+      console.error(`${MODULE_ID} | currency deduction failed`, update.error);
+    }
+    return {
+      ok: false,
+      reason: update.reason,
+      error: update.error,
+      before,
+      after: update.actual,
+      expectedAfter: after,
+      gpAmount,
+    };
   }
+  return { ok: true, before, after: update.actual, gpAmount };
+}
+
+/**
+ * Write an exact wallet and require both a confirming Actor return value and
+ * canonical actor.system.currency read-back.
+ */
+export async function updateCurrencyVerified(actor, wallet) {
+  const expectedRead = readWalletStrict(wallet);
+  const expected = expectedRead.wallet;
+  if (!expectedRead.ok) {
+    return {
+      ok: false,
+      reason: "invalid-wallet",
+      expected,
+      actual: actor?.system?.currency ?? null,
+    };
+  }
+  if (!actor || typeof actor.update !== "function") {
+    return {
+      ok: false,
+      reason: "update-unconfirmed",
+      expected,
+      actual: actor?.system?.currency ?? null,
+    };
+  }
+  let returned;
+  try {
+    returned = await actor.update(currencyUpdate(expected));
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "update-failed",
+      error,
+      expected,
+      actual: readWalletStrict(actor.system?.currency).wallet,
+    };
+  }
+  const actualRead = readWalletStrict(actor.system?.currency);
+  const actual = actualRead.wallet;
+  const returnedActor =
+    Boolean(returned) &&
+    (returned === actor ||
+      (actor.id &&
+        String(returned?.id ?? returned?._id ?? "") === String(actor.id)));
+  const ok =
+    returnedActor &&
+    actualRead.ok &&
+    DENOM_HIGH_TO_LOW.every((denom) => actual[denom] === expected[denom]);
+  return {
+    ok,
+    reason: ok ? "" : actualRead.ok ? "update-unconfirmed" : "invalid-wallet",
+    expected,
+    actual,
+  };
+}
+
+/**
+ * Compensation helper. Exact canonical read-back is the success condition,
+ * including when a cancelled operation already left the desired wallet intact.
+ */
+export async function ensureCurrency(actor, wallet) {
+  const expectedRead = readWalletStrict(wallet);
+  const expected = expectedRead.wallet;
+  if (!expectedRead.ok) {
+    return {
+      ok: false,
+      reason: "invalid-wallet",
+      expected,
+      actual: actor?.system?.currency ?? null,
+    };
+  }
+  if (!actor || typeof actor.update !== "function") {
+    return {
+      ok: false,
+      reason: "update-unconfirmed",
+      expected,
+      actual: actor?.system?.currency ?? null,
+    };
+  }
+  let actualRead = readWalletStrict(actor.system?.currency);
+  let actual = actualRead.wallet;
+  if (
+    actualRead.ok &&
+    DENOM_HIGH_TO_LOW.every((denom) => actual[denom] === expected[denom])
+  ) {
+    return { ok: true, reason: "", expected, actual };
+  }
+  let error = null;
+  try {
+    await actor.update(currencyUpdate(expected));
+  } catch (caught) {
+    error = caught;
+  }
+  actualRead = readWalletStrict(actor.system?.currency);
+  actual = actualRead.wallet;
+  const ok =
+    actualRead.ok &&
+    DENOM_HIGH_TO_LOW.every((denom) => actual[denom] === expected[denom]);
+  return {
+    ok,
+    reason: ok ? "" : actualRead.ok ? "update-unconfirmed" : "invalid-wallet",
+    error,
+    expected,
+    actual,
+  };
 }
 
 /**
