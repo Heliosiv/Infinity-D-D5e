@@ -5,7 +5,8 @@
  * This script intentionally does not call the Image API. It prepares
  * deterministic batch inputs, validates generated WebP assets, protects
  * existing compendium icons, and only rewrites pack item.img paths for items
- * whose original artwork is absent.
+ * whose original artwork is absent or whose shared replacement explicitly
+ * opts in through the production plan.
  */
 
 import { existsSync } from "node:fs";
@@ -19,7 +20,7 @@ const repoRoot = path.resolve(here, "..");
 const PLAN_PATH = path.join(repoRoot, "assets", "item-art-plan.json");
 const PACK_PATH = path.join(repoRoot, "packs", "infinity-dnd5e-items.db");
 const TMP_IMAGEGEN_DIR = path.join(repoRoot, "tmp", "imagegen");
-const PLAN_SCHEMA = "infinity-dnd5e-item-art-plan-v2";
+const PLAN_SCHEMA = "infinity-dnd5e-item-art-plan-v3";
 const MODULE_ID = "infinity-dnd5e";
 
 const ABSENT_ART_PATHS = new Set([
@@ -187,6 +188,23 @@ export function validatePlanShape(plan) {
     if (assignmentIds.has(assignment.itemId)) {
       errors.push(`Duplicate assignment item id: ${assignment.itemId}`);
     }
+    if (assignment.replaceExisting === true) {
+      if (assignment.mode !== "reusable") {
+        errors.push(
+          `Existing-art replacement ${assignment.itemId} must use reusable mode`,
+        );
+      }
+      if (!String(assignment.assetId ?? "").startsWith("shared/")) {
+        errors.push(
+          `Existing-art replacement ${assignment.itemId} must use a shared asset`,
+        );
+      }
+      if (!assignment.batchId) {
+        errors.push(
+          `Existing-art replacement ${assignment.itemId} is missing batchId`,
+        );
+      }
+    }
     assignmentIds.add(assignment.itemId);
   }
 
@@ -208,6 +226,14 @@ export function validatePlanShape(plan) {
   if (plan?.counts?.items !== assignments.length) {
     errors.push(
       `Assignment item count mismatch: ${plan?.counts?.items} != ${assignments.length}`,
+    );
+  }
+  const replacementCount = assignments.filter(
+    (assignment) => assignment.replaceExisting === true,
+  ).length;
+  if (plan?.sharedBatch?.assignedItems !== replacementCount) {
+    errors.push(
+      `Shared batch assignment count mismatch: ${plan?.sharedBatch?.assignedItems} != ${replacementCount}`,
     );
   }
 
@@ -461,26 +487,30 @@ async function commandApply({ presentOnly = false } = {}) {
   let metadataUpdates = 0;
   let restoredExisting = 0;
   let appliedMissing = 0;
+  let appliedReplacements = 0;
 
   for (const item of packItems) {
     const existingArt = existingCompendiumArtPath(item);
     const absenceReason = artworkAbsenceReason(item);
     const assignment = assignmentByItem.get(item._id);
+    const replacesExisting = assignment?.replaceExisting === true;
 
     if (!absenceReason) {
-      if (assignment) {
+      if (assignment && !replacesExisting) {
         errors.push(
-          `${item._id} ${item.name ?? ""}: plan tries to replace existing artwork ${existingArt}`,
+          `${item._id} ${item.name ?? ""}: existing artwork replacement is not explicitly opted in`,
         );
         continue;
       }
-      if (markArtRestored(item)) metadataUpdates += 1;
-      if (existingArt && item.img !== existingArt) {
-        item.img = existingArt;
-        imageUpdates += 1;
-        restoredExisting += 1;
+      if (!assignment) {
+        if (markArtRestored(item)) metadataUpdates += 1;
+        if (existingArt && item.img !== existingArt) {
+          item.img = existingArt;
+          imageUpdates += 1;
+          restoredExisting += 1;
+        }
+        continue;
       }
-      continue;
     }
 
     if (!assignment) {
@@ -509,7 +539,11 @@ async function commandApply({ presentOnly = false } = {}) {
     if (item.img !== appliedPath) {
       item.img = appliedPath;
       imageUpdates += 1;
-      appliedMissing += 1;
+      if (absenceReason) {
+        appliedMissing += 1;
+      } else {
+        appliedReplacements += 1;
+      }
     }
   }
 
@@ -518,14 +552,14 @@ async function commandApply({ presentOnly = false } = {}) {
   }
 
   if (imageUpdates === 0 && metadataUpdates === 0) {
-    console.log("item-art apply: pack already matches the absent-art policy");
+    console.log("item-art apply: pack already matches the generated-art plan");
     return;
   }
 
   const body = packItems.map((item) => JSON.stringify(item)).join("\n");
   await writeFile(PACK_PATH, `${body}\n`, "utf8");
   console.log(
-    `item-art apply: updated ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s), restored ${restoredExisting} existing icon(s), applied ${appliedMissing} absent-art icon(s)`,
+    `item-art apply: updated ${imageUpdates} image path(s), ${metadataUpdates} art metadata record(s), restored ${restoredExisting} existing icon(s), applied ${appliedMissing} absent-art icon(s), applied ${appliedReplacements} opted-in shared replacement(s)`,
   );
 }
 

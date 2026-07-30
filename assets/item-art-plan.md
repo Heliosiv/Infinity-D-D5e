@@ -1,21 +1,27 @@
 # Infinity D&D5e Item Art Plan
 
-Absent-art-only generation plan. Existing compendium icons are preserved and are not overwritten by generated assets.
+Selective generated-art plan. Shared impact batch 1 explicitly replaces source icons for its assigned items; all other existing compendium icons remain protected. Missing-source items retain bespoke assignments.
 
 ## Counts
 
 - Pack items scanned: 1636
 - Existing artwork preserved: 1619
 - Items missing source artwork: 17
-- Reusable assignments: 0
+- Shared impact batch: shared-impact-1
+- Shared batch item assignments: 487
+- Reusable assignments: 487
 - Bespoke assignments: 17
-- Shared assets to generate: 0
+- Shared assets to generate: 5
 - Unique assets to generate: 17
-- Total generated assets: 17
+- Total generated assets: 22
 
-## Shared Assets With Most Assignments
+## Shared Impact Batch 1
 
-- None
+- Priority 1: shared/consumable-spells-spell-scrolls-batch-1: 329 items -> assets/item-art/shared/consumable-spells-spell-scrolls-batch-1.webp
+- Priority 2: shared/consumable-consumables-arcane-consumables-batch-1: 52 items -> assets/item-art/shared/consumable-consumables-arcane-consumables-batch-1.webp
+- Priority 3: shared/loot-sundries-adventuring-gear-general-loot-batch-1: 44 items -> assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp
+- Priority 4: shared/container-container-batch-1: 33 items -> assets/item-art/shared/container-container-batch-1.webp
+- Priority 5: shared/equipment-sundries-wondrous-items-apparel-accessories-batch-1: 29 items -> assets/item-art/shared/equipment-sundries-wondrous-items-apparel-accessories-batch-1.webp
 
 ## Absent Items
 

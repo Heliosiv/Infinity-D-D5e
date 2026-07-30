@@ -21,6 +21,62 @@ const PLAN_PATH = "assets/item-art-plan.json";
 const SUMMARY_PATH = "assets/item-art-plan.md";
 const SHARED_ROOT = "assets/item-art/shared";
 const UNIQUE_ROOT = "assets/item-art/unique";
+const SHARED_BATCH = Object.freeze({
+  id: "shared-impact-1",
+  sequence: 1,
+  maxAssets: 5,
+  fileSuffix: "batch-1",
+  selection: "highest-assignment-count",
+});
+
+const SHARED_ICON_SPECS = Object.freeze({
+  "consumable/spells-spell-scrolls": {
+    primaryRequest:
+      "one tightly rolled aged parchment scroll secured with a dark blue wax seal and a narrow silver cord, with a restrained violet-blue arcane glow leaking softly from the rolled edges",
+    constraints:
+      "exactly one primary scroll; blank visible parchment with no writing; no readable glyphs",
+    avoid:
+      "open book, stack of scrolls, photorealistic product photography, neon saturation, excessive particles, ornate border, clutter",
+  },
+  "consumable/consumables-arcane-consumables": {
+    primaryRequest:
+      "one palm-sized sealed crystal phial with a wax stopper and a narrow rune-etched silver band, holding a restrained violet-blue magical glow",
+    constraints: "exactly one primary item",
+    avoid:
+      "photorealistic product photography, neon saturation, excessive particles, ornate border, clutter",
+  },
+  "loot/sundries-adventuring-gear-general-loot": {
+    primaryRequest:
+      "one compact weathered leather utility satchel, buckled shut, with a short coil of cord and the handle of a small practical tool tucked neatly beneath the flap",
+    constraints: "one unified primary object; no loose treasure pile; no coins",
+    avoid:
+      "photorealistic product photography, neon saturation, excessive particles, ornate border, clutter",
+  },
+  "container/container": {
+    primaryRequest:
+      "one sturdy weathered leather travel backpack with a buckled flap, reinforced seams, compact bedroll straps, and a practical adventurer-made silhouette",
+    constraints:
+      "exactly one primary container; no contents spilling out; no modern hiking pack",
+    avoid:
+      "photorealistic product photography, neon saturation, excessive particles, ornate border, clutter",
+  },
+  "equipment/sundries-wondrous-items-apparel-accessories": {
+    primaryRequest:
+      "one ornate silver cloak clasp shaped as a restrained interlocking knot, set with a small deep-blue gemstone and a faint protective magical glow",
+    constraints:
+      "exactly one primary wearable accessory; no clothing mannequin; no crown",
+    avoid:
+      "photorealistic jewelry photography, neon saturation, excessive particles, ornate border, clutter",
+  },
+  "weapon/weapons-magic-weapons-martial-melee": {
+    primaryRequest:
+      "one elegant battle-worn enchanted longsword with a broad readable silhouette, weathered steel, a practical leather grip, and a restrained line of cool-blue runic light along the fuller",
+    constraints:
+      "exactly one weapon; no shield, scabbard, blood, or cropped blade",
+    avoid:
+      "oversized anime weapon, neon saturation, excessive particles, ornate border, clutter",
+  },
+});
 
 const BASIC_FOLDER_PATTERNS = [
   /adventuring-gear/,
@@ -284,6 +340,27 @@ function assetPrompt({ label, item, mode }) {
   ].join("\n");
 }
 
+function sharedAssetPrompt({ key, label, item }) {
+  const spec = SHARED_ICON_SPECS[key] ?? {
+    primaryRequest: `one representative ${label.toLowerCase()} item`,
+    constraints: "exactly one primary item",
+    avoid:
+      "photorealistic product photography, neon saturation, excessive particles, ornate border, clutter",
+  };
+  return [
+    "Use case: stylized-concept",
+    "Asset type: Foundry VTT item icon, square game UI inventory art",
+    `Primary request: Create a polished shared fantasy RPG icon representing ${label.toLowerCase()}: ${spec.primaryRequest}.`,
+    "Style/medium: premium hand-painted fantasy inventory icon; crisp silhouette; richly textured but uncluttered; consistent with a serious D&D compendium.",
+    "Composition/framing: centered single object in three-quarter view, generous padding, fully visible, unmistakable at 64px.",
+    "Lighting/mood: soft dramatic rim light, restrained highlights or magical glow when appropriate, high local contrast around the silhouette.",
+    "Scene/backdrop: dark neutral charcoal-brown vignette, opaque and quiet.",
+    `Constraints: ${spec.constraints}; no text, letters, numbers, watermark, logo, UI frame, hands, characters, creatures, scenery, or cropped edges.`,
+    `Avoid: ${spec.avoid}.`,
+    `Context: item type ${item?.type ?? "item"}, rarity ${rarity(item) || "common"}, folder ${folderPath(item) || "general"}.`,
+  ].join("\n");
+}
+
 function sharedLabel(assetId) {
   return assetId
     .replace(/^shared\//, "")
@@ -300,50 +377,24 @@ async function main() {
 
   const absentItems = items.filter(isArtworkAbsent);
   const existingArtItems = items.length - absentItems.length;
-  const sharedMap = new Map();
+  const itemById = new Map(items.map((item) => [item._id, item]));
+  const sharedCandidateMap = new Map();
   const uniqueAssets = [];
   const assignments = [];
 
   for (const item of absentItems) {
-    const mode = isBespokeCandidate(item) ? "bespoke" : "reusable";
     const absenceReason = artworkAbsenceReason(item);
     const currentImg = existingCompendiumArtPath(item);
-
-    if (mode === "bespoke") {
-      const assetId = `unique/${slugify(item.name)}-${item._id}`;
-      const assetPath = `${UNIQUE_ROOT}/${slugify(item.name)}-${item._id}.webp`;
-      uniqueAssets.push({
-        id: assetId,
-        itemId: item._id,
-        itemName: item.name,
-        path: assetPath,
-        prompt: assetPrompt({ label: item.name, item, mode }),
-      });
-      assignments.push({
-        itemId: item._id,
-        name: item.name,
-        mode,
-        assetId,
-        path: assetPath,
-        currentImg,
-        absenceReason,
-      });
-      continue;
-    }
-
-    const key = reusableKey(item);
-    const assetId = `shared/${slugify(key)}`;
-    const assetPath = `${SHARED_ROOT}/${slugify(key)}.webp`;
-    if (!sharedMap.has(assetId)) {
-      sharedMap.set(assetId, {
-        id: assetId,
-        label: sharedLabel(assetId),
-        path: assetPath,
-        assignedItemIds: [],
-        prompt: assetPrompt({ label: sharedLabel(assetId), item, mode }),
-      });
-    }
-    sharedMap.get(assetId).assignedItemIds.push(item._id);
+    const mode = "bespoke";
+    const assetId = `unique/${slugify(item.name)}-${item._id}`;
+    const assetPath = `${UNIQUE_ROOT}/${slugify(item.name)}-${item._id}.webp`;
+    uniqueAssets.push({
+      id: assetId,
+      itemId: item._id,
+      itemName: item.name,
+      path: assetPath,
+      prompt: assetPrompt({ label: item.name, item, mode }),
+    });
     assignments.push({
       itemId: item._id,
       name: item.name,
@@ -355,24 +406,83 @@ async function main() {
     });
   }
 
-  const sharedAssets = [...sharedMap.values()].sort((a, b) =>
-    a.id.localeCompare(b.id),
-  );
+  for (const item of items) {
+    if (isArtworkAbsent(item) || isBespokeCandidate(item)) continue;
+    const key = reusableKey(item);
+    const slug = slugify(key);
+    const assetId = `shared/${slug}-${SHARED_BATCH.fileSuffix}`;
+    if (!sharedCandidateMap.has(assetId)) {
+      sharedCandidateMap.set(assetId, {
+        id: assetId,
+        key,
+        label: sharedLabel(`shared/${slug}`),
+        path: `${SHARED_ROOT}/${slug}-${SHARED_BATCH.fileSuffix}.webp`,
+        assignedItemIds: [],
+        prompt: sharedAssetPrompt({
+          key,
+          label: sharedLabel(`shared/${slug}`),
+          item,
+        }),
+      });
+    }
+    sharedCandidateMap.get(assetId).assignedItemIds.push(item._id);
+  }
+
+  const sharedAssets = [...sharedCandidateMap.values()]
+    .sort(
+      (a, b) =>
+        b.assignedItemIds.length - a.assignedItemIds.length ||
+        a.id.localeCompare(b.id),
+    )
+    .slice(0, SHARED_BATCH.maxAssets)
+    .map((asset, index) => ({
+      ...asset,
+      batchId: SHARED_BATCH.id,
+      priority: index + 1,
+      impact: asset.assignedItemIds.length,
+    }));
+
+  for (const asset of sharedAssets) {
+    for (const itemId of asset.assignedItemIds) {
+      const item = itemById.get(itemId);
+      assignments.push({
+        itemId,
+        name: item.name,
+        mode: "reusable",
+        assetId: asset.id,
+        path: asset.path,
+        currentImg: existingCompendiumArtPath(item),
+        absenceReason: "",
+        replaceExisting: true,
+        batchId: SHARED_BATCH.id,
+      });
+    }
+  }
+
   uniqueAssets.sort((a, b) => a.id.localeCompare(b.id));
 
   const plan = {
-    schema: "infinity-dnd5e-item-art-plan-v2",
+    schema: "infinity-dnd5e-item-art-plan-v3",
     styleGuide:
       "Square hand-painted fantasy inventory icons, single readable object, no text, no watermark, dark neutral background.",
     paths: {
       sharedRoot: SHARED_ROOT,
       uniqueRoot: UNIQUE_ROOT,
     },
+    sharedBatch: {
+      id: SHARED_BATCH.id,
+      sequence: SHARED_BATCH.sequence,
+      selection: SHARED_BATCH.selection,
+      maxAssets: SHARED_BATCH.maxAssets,
+      assignedItems: assignments.filter(
+        (entry) => entry.batchId === SHARED_BATCH.id,
+      ).length,
+    },
     counts: {
       packItems: items.length,
       existingArtworkItems: existingArtItems,
       absentArtworkItems: absentItems.length,
-      items: absentItems.length,
+      items: assignments.length,
       reusableAssignments: assignments.filter(
         (entry) => entry.mode === "reusable",
       ).length,
@@ -393,7 +503,7 @@ async function main() {
   await writeFile(SUMMARY_PATH, `${buildSummary(plan)}\n`, "utf8");
 
   console.log(
-    `Planned ${plan.counts.totalAssetsToGenerate} generated art assets for ${absentItems.length} absent-art item(s).`,
+    `Planned ${plan.counts.totalAssetsToGenerate} generated art assets for ${assignments.length} item assignment(s).`,
   );
   console.log(`  scanned: ${items.length} pack items`);
   console.log(`  preserved: ${existingArtItems} existing artwork items`);
@@ -412,35 +522,39 @@ function buildSummary(plan) {
   return [
     "# Infinity D&D5e Item Art Plan",
     "",
-    "Absent-art-only generation plan. Existing compendium icons are preserved and are not overwritten by generated assets.",
+    "Selective generated-art plan. Shared impact batch 1 explicitly replaces source icons for its assigned items; all other existing compendium icons remain protected. Missing-source items retain bespoke assignments.",
     "",
     "## Counts",
     "",
     `- Pack items scanned: ${plan.counts.packItems}`,
     `- Existing artwork preserved: ${plan.counts.existingArtworkItems}`,
     `- Items missing source artwork: ${plan.counts.absentArtworkItems}`,
+    `- Shared impact batch: ${plan.sharedBatch.id}`,
+    `- Shared batch item assignments: ${plan.sharedBatch.assignedItems}`,
     `- Reusable assignments: ${plan.counts.reusableAssignments}`,
     `- Bespoke assignments: ${plan.counts.bespokeAssignments}`,
     `- Shared assets to generate: ${plan.counts.sharedAssets}`,
     `- Unique assets to generate: ${plan.counts.uniqueAssets}`,
     `- Total generated assets: ${plan.counts.totalAssetsToGenerate}`,
     "",
-    "## Shared Assets With Most Assignments",
+    "## Shared Impact Batch 1",
     "",
     ...(topShared.length > 0
       ? topShared.map(
           (asset) =>
-            `- ${asset.id}: ${asset.assignedItemIds.length} items -> ${asset.path}`,
+            `- Priority ${asset.priority}: ${asset.id}: ${asset.assignedItemIds.length} items -> ${asset.path}`,
         )
       : ["- None"]),
     "",
     "## Absent Items",
     "",
-    ...(plan.assignments.length > 0
-      ? plan.assignments.map(
-          (assignment) =>
-            `- ${assignment.name} (${assignment.itemId}): ${assignment.absenceReason}`,
-        )
+    ...(plan.assignments.some((assignment) => assignment.absenceReason)
+      ? plan.assignments
+          .filter((assignment) => assignment.absenceReason)
+          .map(
+            (assignment) =>
+              `- ${assignment.name} (${assignment.itemId}): ${assignment.absenceReason}`,
+          )
       : ["- None"]),
     "",
     "## Generation Style",

@@ -80,7 +80,7 @@ test matrix, and phased hardening plan live in
 
 ### Custom Item Art
 
-The generated-art queue lives in [assets/item-art-plan.json](assets/item-art-plan.json). It is absent-art-only: existing compendium icons are protected and `art:apply` refuses to replace them with generated assets. Use `art:restore` to put pack item images back on their source compendium icons, and `art:absent` to list the items that actually need new art.
+The generated-art queue lives in [assets/item-art-plan.json](assets/item-art-plan.json). Existing compendium icons are protected by default. The plan can explicitly opt a bounded shared-impact batch into replacement; all other source icons remain untouched. Missing-source items keep bespoke assignments. Use `art:restore` to put pack item images back on their source compendium icons, and `art:absent` to list items whose fallback art is still a placeholder.
 
 ```powershell
 npm run art:restore
