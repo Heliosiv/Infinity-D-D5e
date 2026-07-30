@@ -13,9 +13,12 @@
  * - Shop writes use a per-merchant mutex; wallet/inventory writes also use a
  *   per-actor mutex so transactions across different shops cannot race.
  *
- * Listeners receive every broadcast; non-target roles ignore them.
- * Only the active GM (when one exists) handles player→GM messages, so
- * a multi-GM table doesn't trigger double writes.
+ * Sensitive frames are recipient-scoped at the Foundry transport layer:
+ * player requests go only to the authoritative GM, and replies/session state
+ * go only to named viewers or peer-GM invalidation recipients. Receiver-side
+ * target checks remain as defense in depth. Only the authoritative GM handles
+ * player→GM messages, so a
+ * multi-GM table doesn't trigger double writes.
  */
 
 import {
@@ -59,8 +62,10 @@ import {
   runWithMerchantActorMutex,
   runWithMerchantMutex,
 } from "./session-state.js";
+import { projectMerchantForSession } from "./projection.js";
 import { escapeHtml } from "../ui-util.js";
 import {
+  authoritativeGMId,
   authenticateSocketPayload,
   isActiveSocketUser,
   isAuthoritativeGM,
@@ -86,7 +91,7 @@ export const MERCHANT_EVENTS = Object.freeze({
   SESSION_OPEN: "merchant:session-open",
   SESSION_CLOSE: "merchant:session-close",
   // Player→GM on (re)connect: "re-send any sessions still open for me".
-  // SESSION_OPEN is a one-shot broadcast with no replay, so without this a
+  // SESSION_OPEN is a one-shot delivery with no replay, so without this a
   // reload/relog would silently lose the pushed buy/sell window even though the
   // GM still holds the session. The GM answers by re-emitting SESSION_OPEN.
   SESSION_RESUME_REQUEST: "merchant:session-resume-request",
@@ -112,7 +117,6 @@ export const MERCHANT_EVENTS = Object.freeze({
 
 const MERCHANT_TYPES = new Set(Object.values(MERCHANT_EVENTS));
 const PLAYER_TO_GM_TYPES = new Set([
-  MERCHANT_EVENTS.SESSION_CLOSE,
   MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
   MERCHANT_EVENTS.BARGAIN_RESULT,
   MERCHANT_EVENTS.COMMIT_PURCHASE,
@@ -131,11 +135,10 @@ const GM_TO_CLIENT_TYPES = new Set([
 
 /**
  * Required-field rules per inbound type. `req` fields must be non-empty
- * strings; `num` fields, when present, must be finite numbers. The socket
- * can't authenticate the sender (originUserId is client-asserted — all
- * real authority decisions stay GM-side), so this is shape-hardening
- * against malformed/forged frames, not authentication. Unlisted types are
- * not field-validated (broadcasts the receiver already scopes by target).
+ * strings; `num` fields, when present, must be finite numbers. Foundry's
+ * transport-authenticated sender is checked separately; these rules harden the
+ * protocol shape against malformed frames. Unlisted types are not
+ * field-validated beyond their route and target contract.
  */
 const PAYLOAD_RULES = Object.freeze({
   [MERCHANT_EVENTS.COMMIT_PURCHASE]: {
@@ -231,8 +234,52 @@ export function registerMerchantSocket() {
  * Send
  * ------------------------------------------------------------------ */
 
-/** Emit a merchant event over the socket. Returns the payload sent. */
-export function emitMerchantEvent(type, data = {}) {
+function normalizeRecipientIds(values) {
+  const raw = Array.isArray(values) ? values : [values];
+  return [
+    ...new Set(
+      raw
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function resolveOutgoingRecipients(type, payload, explicitRecipients) {
+  if (explicitRecipients !== undefined) {
+    return normalizeRecipientIds(explicitRecipients);
+  }
+  if (type === MERCHANT_EVENTS.SESSION_CLOSE) {
+    return isAuthoritativeGM()
+      ? normalizeRecipientIds(payload.targetUserId)
+      : normalizeRecipientIds(authoritativeGMId());
+  }
+  if (PLAYER_TO_GM_TYPES.has(type)) {
+    return normalizeRecipientIds(authoritativeGMId());
+  }
+  if (GM_TO_CLIENT_TYPES.has(type)) {
+    return normalizeRecipientIds(payload.targetUserId);
+  }
+  return [];
+}
+
+/**
+ * Emit a merchant event over Foundry's recipient-scoped socket transport.
+ *
+ * Player requests are routed to the authoritative GM; GM replies are routed to
+ * `targetUserId`. The optional controls are internal/test conveniences used to
+ * prevent duplicate local renders while sending one state projection per
+ * viewer.
+ */
+export function emitMerchantEvent(
+  type,
+  data = {},
+  {
+    dispatchLocal = true,
+    emitSocket = true,
+    recipients: explicitRecipients,
+  } = {},
+) {
   if (!MERCHANT_TYPES.has(type)) {
     console.warn(`${MODULE_ID} | refused unknown merchant event "${type}"`);
     return null;
@@ -243,13 +290,23 @@ export function emitMerchantEvent(type, data = {}) {
     sentAt: null,
     ...data,
   };
+  const recipients = resolveOutgoingRecipients(
+    type,
+    payload,
+    explicitRecipients,
+  );
   const socket = globalThis.game?.socket;
-  if (typeof socket?.emit === "function") {
-    socket.emit(SOCKET_NAME, payload);
+  if (
+    emitSocket &&
+    recipients.length > 0 &&
+    typeof socket?.emit === "function"
+  ) {
+    socket.emit(SOCKET_NAME, payload, { recipients });
   }
-  // Always dispatch to local listeners so the originator sees its own
-  // payload — UIs can render optimistically without round-trip.
-  dispatchToListeners(type, payload);
+  if (dispatchLocal) {
+    // Preserve optimistic/local UI behavior without relying on a server echo.
+    dispatchToListeners(type, payload);
+  }
   return payload;
 }
 
@@ -265,7 +322,18 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
     return;
   }
 
-  // Suppress echo to self — we already dispatched locally on emit.
+  // Foundry 13 supplies the authenticated sender as the second socket callback
+  // argument. Payload-claimed identity is never sufficient for merchant
+  // authority or access control.
+  if (
+    typeof authenticatedSenderId !== "string" ||
+    !authenticatedSenderId.trim()
+  ) {
+    console.warn(
+      `${MODULE_ID} | dropped unauthenticated ${payload.type} frame`,
+    );
+    return;
+  }
   const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
   if (!senderId) {
     console.warn(
@@ -273,12 +341,39 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
     );
     return;
   }
+  // Suppress echo to self — we already dispatched locally on emit.
   if (senderId === globalThis.game?.user?.id) return;
-  if (PLAYER_TO_GM_TYPES.has(payload.type)) {
+  const fromAuthoritativeGM = isAuthoritativeGMSender(senderId);
+  const clientDirected =
+    GM_TO_CLIENT_TYPES.has(payload.type) ||
+    (payload.type === MERCHANT_EVENTS.SESSION_CLOSE && fromAuthoritativeGM);
+  const authorityDirected =
+    PLAYER_TO_GM_TYPES.has(payload.type) ||
+    (payload.type === MERCHANT_EVENTS.SESSION_CLOSE && !fromAuthoritativeGM);
+
+  if (clientDirected) {
+    const targetUserId =
+      typeof payload.targetUserId === "string"
+        ? payload.targetUserId.trim()
+        : "";
+    if (
+      !fromAuthoritativeGM ||
+      !targetUserId ||
+      targetUserId !== globalThis.game?.user?.id
+    ) {
+      return;
+    }
+  } else if (authorityDirected) {
     if (!isPrivateStateAuthorityReady() || !isActiveSocketUser(senderId))
       return;
-  } else if (GM_TO_CLIENT_TYPES.has(payload.type)) {
-    if (!isAuthoritativeGMSender(senderId)) return;
+    if (
+      payload.type === MERCHANT_EVENTS.SESSION_CLOSE &&
+      payload.targetUserId !== senderId
+    ) {
+      return;
+    }
+  } else {
+    return;
   }
   payload = withAuthenticatedOrigin(payload, senderId);
 
@@ -746,10 +841,51 @@ function resolveSessionActor(session, requestedActorId = null) {
 
 async function broadcastState(merchant) {
   if (!merchant) return;
-  emitMerchantEvent(MERCHANT_EVENTS.STATE_UPDATE, {
+  const projected = projectMerchantForSession(merchant);
+  const basePayload = {
     merchantId: merchant.id,
-    merchant: normalizeMerchant(merchant),
+    merchant: projected,
+  };
+
+  // The GM workspace needs one local invalidation regardless of viewer count.
+  emitMerchantEvent(MERCHANT_EVENTS.STATE_UPDATE, basePayload, {
+    emitSocket: false,
   });
+
+  // Send one recipient-scoped projection to each unique active viewer and one
+  // invalidation to each peer full GM. A per-recipient payload keeps the
+  // defense-in-depth target contract explicit without revealing who else has a
+  // shop open. Peer GMs reload the canonical private-state record; they do not
+  // treat this projection as their source of truth.
+  const recipientIds = [
+    ...new Set(
+      [
+        ...listSessions()
+          .filter((session) => session.merchantId === merchant.id)
+          .map((session) => session.viewerUserId),
+        ...(
+          globalThis.game?.users?.filter?.(
+            (user) =>
+              user?.active &&
+              isFullGM(user) &&
+              user.id !== globalThis.game?.user?.id,
+          ) ?? []
+        ).map((user) => user.id),
+      ]
+        .map((userId) => String(userId ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  for (const targetUserId of recipientIds) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.STATE_UPDATE,
+      {
+        ...basePayload,
+        targetUserId,
+      },
+      { dispatchLocal: false },
+    );
+  }
 }
 
 /**
@@ -813,10 +949,9 @@ function emitCommitResult(commitPayload, ok, reason = "", details = {}) {
  * the merchants they may self-open — never the raw world records (gold, markups,
  * overrides, allow-lists). canSelfOpen is the single gate (allowed + reachable).
  *
- * NB: like SESSION_OPEN / STATE_UPDATE, the reply is world-broadcast and scoped
- * client-side by targetUserId; the projection is the actual privacy guard. The
- * underlying MERCHANTS setting is world-scoped (every client can already read
- * the full raw records), so this is strictly the least-leaky path in the file.
+ * The reply is recipient-scoped to the authenticated requester and still
+ * checked against targetUserId on receipt. The projection is an additional
+ * least-privilege boundary if transport routing is ever bypassed.
  */
 function handleShopListRequest(payload) {
   const userId = payload.originUserId;
@@ -869,21 +1004,15 @@ function openSelfServiceSession(merchant, userId) {
   if (opened.length > 0 && isNew) notifyGmShopOpened(merchant, userId);
 }
 
-/** Non-blocking GM toast when a player self-opens a shop. Framed from the GM's
- *  side ("opened X for Y") rather than as a confident audit claim, since the
- *  requesting identity is client-asserted (Foundry's socket can't authenticate
- *  the sender). */
+/** Non-blocking GM toast when a player self-opens a shop. */
 function notifyGmShopOpened(merchant, userId) {
   globalThis.ui?.notifications?.info?.(
     `${MODULE_ID}: opened ${merchant.name} for ${lookupUserName(userId)}.`,
   );
 }
 
-/** Player→GM requests assert their own origin id; trust it only when it maps to
- *  a currently-connected non-GM user. This blocks opening a session "as" an
- *  offline/forged id (it can't fully stop impersonating another *online* allowed
- *  player — that needs server-verified sockets — but caps the blast radius to
- *  shops that player is already allowed at). */
+/** Player→GM requests carry a transport-authenticated origin id. Keep the
+ *  active non-GM check as a second gate before opening any session. */
 function isActiveNonGm(userId) {
   const user = userId ? globalThis.game?.users?.get?.(userId) : null;
   return Boolean(user && user.active && !isFullGM(user));
@@ -963,7 +1092,7 @@ function lookupUserName(userId) {
 
 /**
  * A (re)connecting player asked us to re-send whatever sessions are still open
- * for them. SESSION_OPEN is a one-shot broadcast with no replay, so a reload or
+ * for them. SESSION_OPEN is a one-shot delivery with no replay, so a reload or
  * relog would otherwise lose the pushed buy/sell window even though the GM still
  * holds the session. Re-emit SESSION_OPEN for each of the requester's live
  * sessions — race-free, because the player only asks AFTER its own auto-open
@@ -984,7 +1113,7 @@ function handleSessionResumeRequest(payload) {
     emitMerchantEvent(MERCHANT_EVENTS.SESSION_OPEN, {
       sessionId: session.sessionId,
       merchantId: merchant.id,
-      merchant: normalizeMerchant(merchant),
+      merchant: projectMerchantForSession(merchant),
       targetUserId: userId,
       // A resume re-pop, not a fresh GM push — the player UI uses this to skip
       // replaying the shop-open chime on every reload/relog.
@@ -1005,8 +1134,8 @@ function handleSessionResumeRequest(payload) {
 
 /**
  * Open a merchant session for one or more target users. Creates state
- * entries and broadcasts the session-open event so target clients pop
- * the buy/sell window.
+ * entries and sends a session-open event to each target client so their
+ * buy/sell window opens.
  */
 export function pushOpenSession({ merchant, targetUserIds }) {
   if (!merchant) throw new Error("pushOpenSession needs merchant");
@@ -1040,7 +1169,7 @@ export function pushOpenSession({ merchant, targetUserIds }) {
     emitMerchantEvent(MERCHANT_EVENTS.SESSION_OPEN, {
       sessionId: descriptor.sessionId,
       merchantId: merchant.id,
-      merchant: normalizeMerchant(merchant),
+      merchant: projectMerchantForSession(merchant),
       targetUserId: descriptor.viewerUserId,
     });
   }

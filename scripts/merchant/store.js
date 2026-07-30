@@ -649,10 +649,10 @@ export function promoteSelfServiceMode(mode, hadAllowed, nowAllowed) {
 
 /**
  * Project a merchant to the minimal, safe shape a player may see in the Shops
- * picker. The MERCHANTS setting is world-scoped (every client can read the raw
- * records), so the GM-side list reply MUST strip economy + permission internals
- * — goldOnHand, markups, priceOverrideGp, buyFilter, other players' allow-lists
- * — leaving only what's needed to render and pick a storefront.
+ * picker. The canonical records live in GM-only private state, and the targeted
+ * reply strips economy + permission internals — goldOnHand, markups,
+ * priceOverrideGp, buyFilter, other players' allow-lists — leaving only what's
+ * needed to render and pick a storefront.
  */
 export function sanitizeMerchantForList(merchant) {
   const m = normalizeMerchant(merchant);

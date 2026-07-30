@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 
 /**
- * Two-client socket ECONOMY integration harness.
+ * Multi-client socket ECONOMY integration harness.
  *
  * The existing test-merchant-socket.mjs covers routing (echo-suppression,
  * targeting, resume, malformed-frame rejection). This file covers the
- * money-moving COMMIT loop end-to-end by wiring a *fake transport* between a
- * simulated GM client and a player client: a player `emit()` is routed into the
- * GM's real `receiveMerchantPayload`, which runs the REAL handlers
+ * money-moving COMMIT loop end-to-end by wiring a *fake transport* between
+ * simulated GM and player clients: a player `emit()` is recipient-routed into
+ * the GM's real `receiveMerchantPayload`, which runs the REAL handlers
  * (handleCommitPurchase / handleCommitSale / handleBargainResult), the REAL
  * per-merchant mutex, and the REAL store reducers (decrementInventory,
  * adjustMerchantGold, normalizeMerchant, upsertMerchant). Only the socket
@@ -16,8 +16,8 @@ import assert from "node:assert/strict";
  * commit loop, not a re-implementation of it.
  *
  * Invariants asserted:
- *  - buy commit converges: GM stored merchant === the merchant the player's
- *    session view receives via STATE_UPDATE, and the buyer is acked ok:true;
+ *  - buy commit converges: the player's session view receives the exact
+ *    player-safe projection of the GM record, while a bystander sees no frame;
  *  - no double-charge / no oversell when two buys race the last unit (mutex);
  *  - one actor cannot spend the same wallet balance concurrently at two shops;
  *  - a GM edit racing a player purchase loses neither write (mutex, no
@@ -41,6 +41,7 @@ import {
   normalizeMerchant,
   upsertMerchant,
 } from "./merchant/store.js";
+import { projectMerchantForSession } from "./merchant/projection.js";
 
 /* ------------------------------------------------------------------ *
  * Fake transport + world fixture
@@ -62,21 +63,56 @@ function makeWorld(merchants = []) {
   };
 }
 
-/** A broadcast wire: every emit is delivered into every OTHER client's inbox
- *  (Foundry sockets broadcast to all clients; each filters by target). */
-function makeWire() {
+function makeUserDirectory({
+  activeGMId = "gm",
+  users = [
+    { id: "gm", isGM: true, active: true, name: "GM" },
+    { id: "p1", isGM: false, active: true, name: "p1" },
+    { id: "p2", isGM: false, active: true, name: "p2" },
+  ],
+} = {}) {
+  const records = new Map(
+    users.map((user) => [
+      user.id,
+      {
+        active: true,
+        isGM: false,
+        name: user.id,
+        ...user,
+      },
+    ]),
+  );
+  return {
+    get activeGM() {
+      return activeGMId ? (records.get(activeGMId) ?? null) : null;
+    },
+    get: (id) => records.get(id) ?? null,
+    forEach: (callback) => records.forEach(callback),
+    filter: (predicate) => [...records.values()].filter(predicate),
+  };
+}
+
+/** A recipient-aware wire matching Foundry's scoped socket transport. */
+function makeWire(users = makeUserDirectory()) {
   const clients = new Map();
   const log = [];
   return {
+    users,
     register(client) {
       clients.set(client.id, client);
     },
-    deliver(fromId, name, payload) {
-      log.push({ fromId, name, payload });
+    deliver(fromId, name, payload, options = {}) {
+      const recipientIds = Array.isArray(options?.recipients)
+        ? new Set(options.recipients.map(String))
+        : null;
+      const deliveredTo = [];
       for (const [id, client] of clients) {
         if (id === fromId) continue;
+        if (recipientIds && !recipientIds.has(id)) continue;
         client.inbox.push(payload);
+        deliveredTo.push(id);
       }
+      log.push({ fromId, name, payload, options, deliveredTo });
     },
     log,
   };
@@ -162,8 +198,8 @@ function makeActor(ownerId) {
 }
 
 /**
- * Build a client context. `users`/`actors` default to a lone-GM world; callers
- * override for multi-GM or player contexts. The socket is the fake transport.
+ * Build a client context. Every client on a wire shares the same authoritative
+ * world-user directory; callers can still override actors for focused cases.
  */
 function makeClient({ id, isGM, world, wire, users, actors }) {
   const actorList = [makeActor("p1"), makeActor("p2")];
@@ -177,22 +213,12 @@ function makeClient({ id, isGM, world, wire, users, actors }) {
     actors: actorCollection,
     game: {
       user: { id, isGM: Boolean(isGM) },
-      users: users ?? {
-        activeGM: { id },
-        get: (uid) => ({
-          id: uid,
-          active: true,
-          isGM: false,
-          name: uid,
-          character:
-            actorList.find((actor) => actor.id === `actor-${uid}`) ?? null,
-        }),
-        forEach() {},
-      },
+      users: users ?? wire.users,
       actors: actorCollection,
       settings: world,
       socket: {
-        emit: (name, payload) => wire.deliver(id, name, payload),
+        emit: (name, payload, options) =>
+          wire.deliver(id, name, payload, options),
         on() {},
       },
     },
@@ -271,6 +297,7 @@ try {
     ]);
     const gm = makeClient({ id: "gm", isGM: true, world, wire });
     const player = makeClient({ id: "p1", isGM: false, world, wire });
+    const bystander = makeClient({ id: "p2", isGM: false, world, wire });
     globalThis.game = gm.game;
 
     const sess = openSession({ merchantId: "m-1", viewerUserId: "p1" });
@@ -283,7 +310,7 @@ try {
         commitId: "c-buy-1",
       }),
     );
-    await receiveMerchantPayload(frame);
+    await receiveMerchantPayload(frame, "p1");
 
     const stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(stored.items[0].qty, 3, "stock 5 - 2 = 3 after buy");
@@ -301,17 +328,26 @@ try {
     assert.equal(stored.goldOnHand, 700, "merchant gained 200 gp (base 100×2)");
 
     const stateUpdate = lastOf(player.inbox, MERCHANT_EVENTS.STATE_UPDATE);
-    assert.ok(stateUpdate, "player received a STATE_UPDATE broadcast");
+    assert.ok(stateUpdate, "player received a targeted STATE_UPDATE");
     assert.deepEqual(
       stateUpdate.merchant,
-      stored,
-      "player session view converges with GM stored merchant",
+      projectMerchantForSession(stored),
+      "player session view converges with the safe projection of GM state",
     );
 
     const ack = lastOf(player.inbox, MERCHANT_EVENTS.COMMIT_RESULT);
     assert.ok(ack && ack.ok === true, "buyer acked ok:true");
     assert.equal(ack.commitId, "c-buy-1", "ack correlates by commitId");
-    ok("buy commit converges GM↔player state and acks the buyer");
+    assert.deepEqual(
+      bystander.inbox,
+      [],
+      "an unrelated player receives neither the request, state, nor result",
+    );
+    assert.ok(
+      wire.log.every((entry) => !entry.deliveredTo.includes("p2")),
+      "the transport never delivers this private transaction to the bystander",
+    );
+    ok("buy commit projects only to the buyer, preserves privacy, and acks");
   }
 
   /* ============================================================== *
@@ -355,7 +391,10 @@ try {
     );
     // Deliver both to the GM concurrently — the per-merchant mutex must
     // serialize them so only the first sees stock.
-    await Promise.all([receiveMerchantPayload(f1), receiveMerchantPayload(f2)]);
+    await Promise.all([
+      receiveMerchantPayload(f1, "p1"),
+      receiveMerchantPayload(f2, "p2"),
+    ]);
 
     const stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(
@@ -555,7 +594,7 @@ try {
     // other. Name/description don't affect buy price, so the outcome is
     // order-independent.
     await Promise.all([
-      receiveMerchantPayload(buyFrame),
+      receiveMerchantPayload(buyFrame, "p1"),
       commitMerchantWrite(
         "m-1",
         (fresh) => ({ ...fresh, name: "Restocked", description: "edited" }),
@@ -592,7 +631,15 @@ try {
    * ============================================================== */
   {
     clearAllSessions();
-    const wire = makeWire();
+    const users = makeUserDirectory({
+      activeGMId: null,
+      users: [
+        { id: "gm1", isGM: true, active: true, name: "GM 1" },
+        { id: "gm2", isGM: true, active: true, name: "GM 2" },
+        { id: "p1", isGM: false, active: true, name: "p1" },
+      ],
+    });
+    const wire = makeWire(users);
     const item = makeItem("Compendium.x.Item.gem", 100);
     globalThis.fromUuid = async (uuid) => (uuid === item._uuid ? item : null);
     const world = makeWorld([
@@ -600,35 +647,10 @@ try {
         items: [{ uuid: item._uuid, qty: 3, startingQty: 3, unlimited: false }],
       }),
     ]);
-    // No designated active GM (the connect/disconnect-churn window): both GMs
-    // would otherwise both handle the frame and double-decrement.
-    const gmUsers = () => ({
-      activeGM: null,
-      get: (uid) => ({
-        id: uid,
-        active: true,
-        isGM: uid.startsWith("gm"),
-        name: uid,
-      }),
-      forEach: (cb) => {
-        cb({ id: "gm1", isGM: true, active: true });
-        cb({ id: "gm2", isGM: true, active: true });
-      },
-    });
-    const gm1 = makeClient({
-      id: "gm1",
-      isGM: true,
-      world,
-      wire,
-      users: gmUsers(),
-    });
-    const gm2 = makeClient({
-      id: "gm2",
-      isGM: true,
-      world,
-      wire,
-      users: gmUsers(),
-    });
+    // No designated active GM (the connect/disconnect-churn window): the
+    // shared directory deterministically elects the lowest active full-GM id.
+    const gm1 = makeClient({ id: "gm1", isGM: true, world, wire });
+    const gm2 = makeClient({ id: "gm2", isGM: true, world, wire });
     const player = makeClient({ id: "p1", isGM: false, world, wire });
 
     globalThis.game = gm1.game; // openSession is GM-side state
@@ -642,11 +664,19 @@ try {
         commitId: "tie-1",
       }),
     );
-    // Broadcast delivers the frame to BOTH GM clients. Only the lowest id acts.
+    const purchaseDelivery = wire.log.find((entry) => entry.payload === frame);
+    assert.deepEqual(
+      purchaseDelivery?.deliveredTo,
+      ["gm1"],
+      "the request transport targets only the elected authoritative GM",
+    );
+
+    // Also offer the authenticated frame directly to the peer GM to retain the
+    // defense-in-depth tiebreak assertion even with recipient-scoped delivery.
     globalThis.game = gm1.game;
-    await receiveMerchantPayload(frame);
+    await receiveMerchantPayload(frame, "p1");
     globalThis.game = gm2.game;
-    await receiveMerchantPayload(frame);
+    await receiveMerchantPayload(frame, "p1");
 
     globalThis.game = gm1.game;
     const stored = findMerchant("m-1");
@@ -665,7 +695,25 @@ try {
       MERCHANT_EVENTS.COMMIT_RESULT,
     );
     assert.equal(results.length, 1, "exactly one GM emitted a COMMIT_RESULT");
-    ok("lowest-id GM tiebreaker prevents a double-write on a multi-GM table");
+    const peerState = lastOf(gm2.inbox, MERCHANT_EVENTS.STATE_UPDATE);
+    assert.ok(peerState, "the authoritative GM invalidates the active peer GM");
+    assert.equal(
+      peerState.targetUserId,
+      "gm2",
+      "peer invalidation names only the intended GM",
+    );
+    assert.deepEqual(
+      peerState.merchant,
+      projectMerchantForSession(stored),
+      "peer invalidation carries only the shared safe projection",
+    );
+    const peerDelivery = wire.log.find((entry) => entry.payload === peerState);
+    assert.deepEqual(
+      peerDelivery?.deliveredTo,
+      ["gm2"],
+      "peer invalidation is recipient-scoped at the transport",
+    );
+    ok("lowest-id GM writes once and targets a peer-GM invalidation");
   }
 
   /* ============================================================== *
@@ -698,7 +746,7 @@ try {
         skillId: "per",
       }),
     );
-    await receiveMerchantPayload(bargainFrame);
+    await receiveMerchantPayload(bargainFrame, "p1");
     const seal = lastOf(player.inbox, MERCHANT_EVENTS.BARGAIN_SEAL);
     assert.ok(seal && seal.sealId, "GM issued a bargain seal to the player");
     assert.equal(
@@ -718,7 +766,7 @@ try {
         commitId: "seal-buy-1",
       }),
     );
-    await receiveMerchantPayload(buyFrame);
+    await receiveMerchantPayload(buyFrame, "p1");
     let stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(
       stored.goldOnHand,
@@ -737,7 +785,7 @@ try {
         commitId: "seal-buy-2",
       }),
     );
-    await receiveMerchantPayload(buyFrame2);
+    await receiveMerchantPayload(buyFrame2, "p1");
     stored = asClient(gm, () => findMerchant("m-1"));
     assert.equal(
       stored.goldOnHand,
@@ -770,7 +818,7 @@ try {
         skillId: "per",
       }),
     );
-    await receiveMerchantPayload(bargainFrame);
+    await receiveMerchantPayload(bargainFrame, "p1");
     const seal = lastOf(player.inbox, MERCHANT_EVENTS.BARGAIN_SEAL);
     assert.ok(seal && seal.sealId, "GM issued a sell-side seal");
 
@@ -791,7 +839,7 @@ try {
         },
       }),
     );
-    await receiveMerchantPayload(sellFrame);
+    await receiveMerchantPayload(sellFrame, "p1");
     const stored = asClient(gm, () => findMerchant("m-1"));
     const seller = gm.actors.get("actor-p1");
     assert.equal(seller.items.get("owned-sword").system.quantity, 9);

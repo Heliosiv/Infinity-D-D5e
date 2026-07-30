@@ -6,9 +6,14 @@ import {
   emitMerchantEvent,
   receiveMerchantPayload,
   pushOpenSession,
+  pushCloseSession,
   requestMerchantSessionResume,
 } from "./merchant/socket.js";
-import { openSession, clearAllSessions } from "./merchant/session-state.js";
+import {
+  openSession,
+  getSession,
+  clearAllSessions,
+} from "./merchant/session-state.js";
 
 /**
  * The socket receive→dispatch path is what makes a GM-pushed session pop on the
@@ -82,7 +87,8 @@ try {
     user: { id: "player1", isGM: false },
     users: { activeGM: { id: "gm", isGM: true } },
     socket: {
-      emit: (name, payload) => emitted.push({ name, payload }),
+      emit: (name, payload, options) =>
+        emitted.push({ name, payload, options }),
       on() {},
     },
   };
@@ -91,13 +97,16 @@ try {
   {
     const seen = [];
     const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.SESSION_OPEN,
-      originUserId: "gm",
-      targetUserId: "player1",
-      sessionId: "s-1",
-      merchantId: "m-1",
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_OPEN,
+        originUserId: "gm",
+        targetUserId: "player1",
+        sessionId: "s-1",
+        merchantId: "m-1",
+      },
+      "gm",
+    );
     off();
     assert.equal(seen.length, 1, "player receives the GM's SESSION_OPEN");
     assert.equal(seen[0].targetUserId, "player1");
@@ -109,12 +118,15 @@ try {
   {
     const seen = [];
     const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.SESSION_OPEN,
-      originUserId: "player1", // same as game.user.id
-      targetUserId: "player1",
-      sessionId: "s-echo",
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_OPEN,
+        originUserId: "player1", // same as game.user.id
+        targetUserId: "player1",
+        sessionId: "s-echo",
+      },
+      "player1",
+    );
     off();
     assert.equal(seen.length, 0, "own echo is suppressed on receive");
   }
@@ -137,34 +149,68 @@ try {
     const off = subscribe(MERCHANT_EVENTS.SHOP_LIST_REQUEST, (p) =>
       seen.push(p),
     );
-    const payload = emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
+    const payload = emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {
+      targetUserId: "someone-else",
+    });
     off();
     assert.equal(seen.length, 1, "local subscriber sees the emitted event");
     assert.equal(payload.originUserId, "player1", "stamps the sender id");
-    assert.equal(emitted.length, 1, "broadcast over the socket");
+    assert.equal(emitted.length, 1, "sends one socket frame");
     assert.equal(emitted[0].payload.type, MERCHANT_EVENTS.SHOP_LIST_REQUEST);
+    assert.deepEqual(
+      emitted[0].options,
+      { recipients: ["gm"] },
+      "player request is routed only to the authoritative GM",
+    );
   }
 
-  /* A SESSION_OPEN aimed at a DIFFERENT user still dispatches locally — the
-     per-app handlers (auto-open / shop picker) are responsible for filtering by
-     targetUserId, which keeps the routing rule in one place. */
+  /* Defense in depth: even if transport routing is bypassed, a SESSION_OPEN
+     aimed at a different user never reaches local subscribers. */
   {
     const seen = [];
     const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.SESSION_OPEN,
-      originUserId: "gm",
-      targetUserId: "someone-else",
-      sessionId: "s-2",
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_OPEN,
+        originUserId: "gm",
+        targetUserId: "someone-else",
+        sessionId: "s-2",
+      },
+      "gm",
+    );
     off();
     assert.equal(
       seen.length,
-      1,
-      "dispatch is target-agnostic; handlers filter",
+      0,
+      "receiver rejects a differently targeted frame",
     );
-    assert.equal(seen[0].targetUserId, "someone-else");
   }
+
+  /* Transport identity is mandatory and must match any claimed origin. */
+  {
+    const seen = [];
+    const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
+    const frame = {
+      type: MERCHANT_EVENTS.SESSION_OPEN,
+      originUserId: "gm",
+      targetUserId: "player1",
+      sessionId: "s-auth",
+    };
+    await receiveMerchantPayload(frame);
+    await receiveMerchantPayload(frame, "someone-else");
+    await receiveMerchantPayload({ ...frame, targetUserId: null }, "gm");
+    await receiveMerchantPayload(
+      { ...frame, originUserId: "someone-else" },
+      "someone-else",
+    );
+    off();
+    assert.equal(
+      seen.length,
+      0,
+      "missing or mismatched transport identity fails closed",
+    );
+  }
+
   /* pushOpenSession emits SESSION_OPEN for every ALLOWED target — including a
      player who holds an elevated (assistant-GM) role — and skips users who
      aren't on the merchant's allow-list. Regression: it used to drop any
@@ -173,16 +219,29 @@ try {
     emitted.length = 0;
     const seen = [];
     const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
+    const savedUser = globalThis.game.user;
+    globalThis.game.user = { id: "gm", isGM: true };
     const merchant = {
       id: "m-shop",
       name: "Sundries",
       allowedUserIds: ["player1", "assistant-gm"],
-      items: [],
+      selfServiceMode: "open",
+      chatHidden: true,
+      pool: { mode: "secret-pool" },
+      items: [
+        {
+          uuid: "Compendium.infinity-dnd5e.items.Item.safe",
+          qty: 2,
+          startingQty: 9,
+          notes: "GM only",
+        },
+      ],
     };
     const opened = pushOpenSession({
       merchant,
       targetUserIds: ["player1", "assistant-gm", "stranger"],
     });
+    globalThis.game.user = savedUser;
     off();
     assert.deepEqual(
       opened.map((d) => d.viewerUserId).sort(),
@@ -197,6 +256,23 @@ try {
     assert.ok(
       seen.every((p) => p.merchantId === "m-shop"),
       "each SESSION_OPEN carries the merchant id",
+    );
+    assert.deepEqual(
+      emitted.map((entry) => entry.options?.recipients),
+      [["player1"], ["assistant-gm"]],
+      "each open is transport-scoped to its intended viewer",
+    );
+    assert.ok(
+      seen.every(
+        ({ merchant: projection }) =>
+          !("allowedUserIds" in projection) &&
+          !("selfServiceMode" in projection) &&
+          !("chatHidden" in projection) &&
+          !("pool" in projection) &&
+          !("startingQty" in projection.items[0]) &&
+          !("notes" in projection.items[0]),
+      ),
+      "session opens carry only the player-safe merchant projection",
     );
   }
 
@@ -214,8 +290,9 @@ try {
     assert.equal(
       emitted.at(-1)?.payload?.type,
       MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
-      "resume request is broadcast to the GM",
+      "resume request is sent to the GM",
     );
+    assert.deepEqual(emitted.at(-1)?.options, { recipients: ["gm"] });
 
     const savedUsers = globalThis.game.users;
     globalThis.game.users = { activeGM: null };
@@ -254,10 +331,13 @@ try {
     };
     const seen = [];
     const off = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (p) => seen.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
-      originUserId: "player1",
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+        originUserId: "player1",
+      },
+      "player1",
+    );
     off();
     globalThis.game = savedInner;
     assert.equal(
@@ -273,6 +353,97 @@ try {
     );
     clearAllSessions();
   }
+
+  /* SESSION_CLOSE is duplex but never ambiguous: a player may close only their
+     own recorded session, while a GM-forced close is delivered only to that
+     session's viewer. */
+  {
+    clearAllSessions();
+    const savedInner = globalThis.game;
+    const closeEmitted = [];
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      users: {
+        activeGM: { id: "gm", isGM: true },
+        get: (id) => ({ id, active: true, isGM: id === "gm" }),
+      },
+      socket: {
+        emit: (name, payload, options) =>
+          closeEmitted.push({ name, payload, options }),
+        on() {},
+      },
+    };
+
+    const voluntary = openSession({
+      merchantId: "m-close",
+      viewerUserId: "player1",
+    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_CLOSE,
+        originUserId: "player1",
+        targetUserId: "player1",
+        sessionId: voluntary.sessionId,
+      },
+      "player1",
+    );
+    assert.equal(
+      getSession(voluntary.sessionId),
+      null,
+      "player close removes that player's session",
+    );
+
+    const forced = openSession({
+      merchantId: "m-close",
+      viewerUserId: "player1",
+    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_CLOSE,
+        originUserId: "player1",
+        targetUserId: "player2",
+        sessionId: forced.sessionId,
+      },
+      "player1",
+    );
+    assert.ok(
+      getSession(forced.sessionId),
+      "a player cannot close a session under another claimed target",
+    );
+
+    assert.equal(pushCloseSession(forced.sessionId), true);
+    const forcedFrame = closeEmitted.at(-1);
+    assert.deepEqual(
+      forcedFrame?.options,
+      { recipients: ["player1"] },
+      "GM close is transport-scoped to the viewer",
+    );
+
+    globalThis.game = savedInner;
+    const intended = [];
+    const offIntended = subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) =>
+      intended.push(payload),
+    );
+    await receiveMerchantPayload(forcedFrame.payload, "gm");
+    offIntended();
+    assert.equal(intended.length, 1, "intended viewer receives the GM close");
+
+    globalThis.game = {
+      ...savedInner,
+      user: { id: "player2", isGM: false },
+    };
+    const bystander = [];
+    const offBystander = subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) =>
+      bystander.push(payload),
+    );
+    await receiveMerchantPayload(forcedFrame.payload, "gm");
+    offBystander();
+    assert.equal(bystander.length, 0, "bystander rejects the GM close");
+
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
+
   /* COMMIT ack: a buy/sell whose session is gone (e.g. the GM reloaded the world
      and the in-memory session map was wiped) must tell the buyer via COMMIT_RESULT
      ok:false — not silently swallow it, leaving the actor changed but the shop not. */
@@ -290,15 +461,18 @@ try {
     ]) {
       const seen = [];
       const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => seen.push(p));
-      await receiveMerchantPayload({
-        type,
-        originUserId: "player1",
-        sessionId: "ghost-session",
-        commitId: "cx1",
-        itemUuid: "Compendium.x.Item.y",
-        qty: 1,
-        totalGp: 5,
-      });
+      await receiveMerchantPayload(
+        {
+          type,
+          originUserId: "player1",
+          sessionId: "ghost-session",
+          commitId: "cx1",
+          itemUuid: "Compendium.x.Item.y",
+          qty: 1,
+          totalGp: 5,
+        },
+        "player1",
+      );
       off();
       assert.equal(seen.length, 1, `${type}: a no-session commit is acked`);
       assert.equal(seen[0].ok, false, "ack reports failure");
@@ -346,20 +520,23 @@ try {
     };
     const acks = [];
     const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.COMMIT_SALE,
-      originUserId: "player1",
-      sessionId: rec.sessionId,
-      commitId: "cs1",
-      itemUuid: "owned-item-id",
-      qty: 1,
-      totalGp: 9999, // forged/wrong — must be ignored
-      itemSnapshot: {
-        name: "Longsword",
-        type: "weapon",
-        system: { price: { value: 100, denomination: "gp" } },
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "cs1",
+        itemUuid: "owned-item-id",
+        qty: 1,
+        totalGp: 9999, // forged/wrong — must be ignored
+        itemSnapshot: {
+          name: "Longsword",
+          type: "weapon",
+          system: { price: { value: 100, denomination: "gp" } },
+        },
       },
-    });
+      "player1",
+    );
     off();
     const merchant = savedList.find((m) => m.id === "m-sell");
     // base 100 gp × sellRatio 0.5 = 50 server payout → 1000 − 50 = 950 (NOT 0).
@@ -405,15 +582,18 @@ try {
     };
     const acks = [];
     const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
-      originUserId: "player1",
-      sessionId: rec.sessionId,
-      commitId: "co1",
-      itemUuid: "Compendium.x.Item.last",
-      qty: 2,
-      totalGp: 10,
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "co1",
+        itemUuid: "Compendium.x.Item.last",
+        qty: 2,
+        totalGp: 10,
+      },
+      "player1",
+    );
     off();
     assert.ok(
       acks.some(
@@ -444,14 +624,17 @@ try {
     };
     const acks = [];
     const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
-      originUserId: "player1",
-      commitId: "cbad",
-      itemUuid: "Compendium.x.Item.y",
-      qty: 1,
-      // sessionId omitted → invalid shape
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "player1",
+        commitId: "cbad",
+        itemUuid: "Compendium.x.Item.y",
+        qty: 1,
+        // sessionId omitted → invalid shape
+      },
+      "player1",
+    );
     off();
     assert.equal(
       acks.length,
@@ -493,16 +676,19 @@ try {
     };
     const acks = [];
     const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.COMMIT_SALE,
-      originUserId: "player1",
-      sessionId: rec.sessionId,
-      commitId: "cs2",
-      itemUuid: "owned-item-id",
-      qty: 1,
-      totalGp: 9999, // forged — no snapshot to recompute against
-      // itemSnapshot deliberately omitted
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "cs2",
+        itemUuid: "owned-item-id",
+        qty: 1,
+        totalGp: 9999, // forged — no snapshot to recompute against
+        // itemSnapshot deliberately omitted
+      },
+      "player1",
+    );
     off();
     const merchant = savedList.find((m) => m.id === "m-sell2");
     assert.equal(
@@ -556,15 +742,18 @@ try {
     };
     const acks = [];
     const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (p) => acks.push(p));
-    await receiveMerchantPayload({
-      type: MERCHANT_EVENTS.COMMIT_PURCHASE,
-      originUserId: "player1",
-      sessionId: rec.sessionId,
-      commitId: "cb1",
-      itemUuid: "Compendium.x.Item.free",
-      qty: 1,
-      totalGp: 9999, // forged — must not be credited to the coffer
-    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_PURCHASE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "cb1",
+        itemUuid: "Compendium.x.Item.free",
+        qty: 1,
+        totalGp: 9999, // forged — must not be credited to the coffer
+      },
+      "player1",
+    );
     off();
     const merchant = savedList.find((m) => m.id === "m-buy");
     assert.equal(
