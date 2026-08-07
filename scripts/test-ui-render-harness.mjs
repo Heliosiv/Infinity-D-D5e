@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  17,
+  18,
   "harness covers all UI windows, both merchant tabs, and resource states",
 );
 
@@ -88,6 +88,7 @@ for (const expectedId of [
   "shop-picker-empty",
   "resource-manager",
   "resource-manager-locked",
+  "resource-manager-custom-environment",
   "resource-overview",
   "resource-overview-offline",
   "forage-prompt",
@@ -131,6 +132,18 @@ assert.ok(
 assert.match(lockedManagerView.html, /did not finish cleanly/);
 assert.match(lockedManagerView.html, /data-action="clearInterruptedRun"/);
 assert.match(lockedManagerView.html, /Clear after review/);
+
+const customEnvironmentView = views.find(
+  (view) => view.id === "resource-manager-custom-environment",
+);
+assert.ok(
+  customEnvironmentView,
+  "harness includes the Quartermaster custom-region editor",
+);
+assert.match(customEnvironmentView.html, /Edit current custom environment/);
+assert.match(customEnvironmentView.html, /data-environment-field="label"/);
+assert.match(customEnvironmentView.html, /data-environment-field="yieldFood"/);
+assert.match(customEnvironmentView.html, /Ashen March/);
 
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.

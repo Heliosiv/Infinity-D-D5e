@@ -158,6 +158,14 @@ export function buildHarnessViews() {
       { width: 880, height: 700 },
     ),
     view(
+      "resource-manager-custom-environment",
+      "Quartermaster (custom region)",
+      "infinity-resource-manager",
+      "templates/resource-manager.hbs",
+      resourceManagerCustomEnvironmentContext(),
+      { width: 880, height: 700 },
+    ),
+    view(
       "resource-overview",
       "Party Supplies (player)",
       "infinity-resource-overview",
@@ -1062,6 +1070,16 @@ function resourceManagerContext() {
       { id: "settlement", optionLabel: "Settlement", selected: false },
       { id: "underground", optionLabel: "Underground", selected: false },
     ],
+    currentEnvironment: {
+      id: "limited",
+      label: "Limited (hills, farmland, woods)",
+      dc: 15,
+      forageable: true,
+      yieldFood: "1d6",
+      yieldWater: "1d6",
+      isCustom: false,
+    },
+    canCopyEnvironment: true,
     currentEnvLabel: "Limited",
     currentEnvForageable: true,
     currentEnvDc: 15,
@@ -1193,6 +1211,32 @@ function resourceManagerLockedContext() {
       triggerLabel: "automatic upkeep",
       dayLabel: "day 42",
     },
+  };
+}
+
+function resourceManagerCustomEnvironmentContext() {
+  const context = resourceManagerContext();
+  const custom = {
+    id: "custom-ashen-march",
+    label: "Ashen March",
+    dc: 18,
+    forageable: true,
+    yieldFood: "1d4",
+    yieldWater: "1d6-1",
+    isCustom: true,
+  };
+  return {
+    ...context,
+    environments: [
+      ...context.environments.map((environment) => ({
+        ...environment,
+        selected: false,
+      })),
+      { ...custom, optionLabel: custom.label, selected: true },
+    ],
+    currentEnvironment: custom,
+    currentEnvLabel: custom.label,
+    currentEnvDc: custom.dc,
   };
 }
 

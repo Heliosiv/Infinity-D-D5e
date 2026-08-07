@@ -88,6 +88,84 @@
   font-size: 0.85rem;
 }
 
+.infinity-dnd5e .rm-environment-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.infinity-dnd5e .rm-environment-editor__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.infinity-dnd5e .rm-environment-editor__head strong,
+.infinity-dnd5e .rm-environment-editor__head span {
+  display: block;
+}
+
+.infinity-dnd5e .rm-environment-editor__head span,
+.infinity-dnd5e .rm-environment-editor__head code {
+  color: var(--lf-muted);
+  font-size: 0.72rem;
+}
+
+.infinity-dnd5e .rm-environment-editor__head code {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .rm-environment-editor__grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) auto minmax(90px, 0.6fr) repeat(
+      2,
+      minmax(110px, 1fr)
+    );
+  gap: 8px;
+  align-items: end;
+}
+
+.infinity-dnd5e .rm-environment-editor__toggle {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .infinity-dnd5e .rm-environment-editor__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .infinity-dnd5e .rm-environment-editor__name {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 460px) {
+  .infinity-dnd5e .rm-environment-editor__head {
+    flex-direction: column;
+  }
+
+  .infinity-dnd5e .rm-environment-editor__head code {
+    max-width: 100%;
+  }
+
+  .infinity-dnd5e .rm-environment-editor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-dnd5e .rm-environment-editor__name {
+    grid-column: auto;
+  }
+}
+
 .infinity-dnd5e .rm-outlook__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));

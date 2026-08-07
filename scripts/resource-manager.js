@@ -33,7 +33,12 @@ import {
   runForageDrive,
 } from "./resource/calendar-watcher.js";
 import { buildResourceOverview } from "./resource/overview.js";
-import { findEnvironment } from "./resource/environment.js";
+import {
+  duplicateEnvironment,
+  findEnvironment,
+  isCustomEnvironment,
+  updateEnvironmentFields,
+} from "./resource/environment.js";
 import {
   diagnoseResourceConfiguration,
   diagnoseResourceItemOverlaps,
@@ -86,6 +91,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       removeTag: ResourceManagerApp._onRemoveTag,
       addRosterMember: ResourceManagerApp._onAddRosterMember,
       removeRosterMember: ResourceManagerApp._onRemoveRosterMember,
+      copyEnvironment: ResourceManagerApp._onCopyEnvironment,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
     },
@@ -177,7 +183,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const environments = config.environments.map((env) => ({
       ...env,
       // Plain short name for the dropdown; the status pill carries forageability.
-      optionLabel: prettyEnvironment(env.id) || env.label,
+      optionLabel: environmentDisplayLabel(env),
       selected: env.id === currentEnv?.id,
     }));
 
@@ -353,9 +359,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     return {
       resources,
       environments,
-      currentEnvLabel: currentEnv
-        ? prettyEnvironment(currentEnv.id) || currentEnv.label
-        : "—",
+      currentEnvironment: currentEnv
+        ? {
+            ...currentEnv,
+            isCustom: isCustomEnvironment(currentEnv),
+          }
+        : null,
+      canCopyEnvironment: isAuthoritative && Boolean(currentEnv),
+      currentEnvLabel: currentEnv ? environmentDisplayLabel(currentEnv) : "—",
       currentEnvForageable: currentEnv
         ? currentEnv.forageable !== false
         : false,
@@ -402,7 +413,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         icon: resourceIcon(resource.id),
       })),
       hasOverviewResources: overview.resources.length > 0,
-      report: presentOverviewReport(overview.lastUpkeep),
+      report: presentOverviewReport(overview.lastUpkeep, config.environments),
     };
   }
 
@@ -453,6 +464,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     for (const input of root.querySelectorAll("[data-config-path]")) {
       input.addEventListener("change", (event) =>
         this._onConfigInput(event.currentTarget),
+      );
+    }
+
+    // Built-in environments are immutable presets. A copied custom region is
+    // edited through the validated pure catalog helpers.
+    for (const input of root.querySelectorAll("[data-environment-field]")) {
+      input.addEventListener("change", (event) =>
+        this._onEnvironmentInput(event.currentTarget),
       );
     }
 
@@ -518,14 +537,69 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     await this._renderPreservingFocus(input);
   }
 
+  async _onEnvironmentInput(input) {
+    const environmentId = String(input?.dataset?.environmentId ?? "").trim();
+    const field = String(input?.dataset?.environmentField ?? "").trim();
+    if (!environmentId || !field) return;
+
+    const editor = input.closest?.(".rm-environment-editor");
+    const controls = Array.from(
+      editor?.querySelectorAll?.("[data-environment-field]") ?? [input],
+    ).filter(
+      (control) =>
+        String(control?.dataset?.environmentId ?? "").trim() === environmentId,
+    );
+    const patch = Object.fromEntries(
+      controls.map((control) => [
+        String(control.dataset.environmentField),
+        control.type === "checkbox"
+          ? control.checked
+          : String(control.value ?? ""),
+      ]),
+    );
+    const config = loadResourceConfig();
+    const updated = updateEnvironmentFields(
+      config.environments,
+      environmentId,
+      patch,
+    );
+    if (!updated.ok) {
+      for (const control of controls) {
+        const controlField = String(control.dataset.environmentField);
+        control.setCustomValidity?.(updated.errors?.[controlField] ?? "");
+      }
+      const firstInvalid = controls.find(
+        (control) => updated.errors?.[control.dataset.environmentField],
+      );
+      const fallbackMessage =
+        updated.errors?.environment ??
+        updated.errors?.environmentId ??
+        Object.values(updated.errors ?? {})[0] ??
+        "This environment value is not valid.";
+      if (!firstInvalid) input.setCustomValidity?.(fallbackMessage);
+      (firstInvalid ?? input).reportValidity?.();
+      return;
+    }
+
+    for (const control of controls) control.setCustomValidity?.("");
+    config.environments = updated.catalog;
+    await saveResourceConfig(config);
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    await this._renderPreservingFocus(input);
+  }
+
   async _renderPreservingFocus(activeElement) {
     const configPath = activeElement?.dataset?.configPath;
     const role = activeElement?.dataset?.role;
+    const environmentId = activeElement?.dataset?.environmentId;
+    const environmentField = activeElement?.dataset?.environmentField;
     const selector = configPath
       ? `[data-config-path="${cssEscape(configPath)}"]`
-      : role
-        ? `[data-role="${cssEscape(role)}"]`
-        : null;
+      : environmentId && environmentField
+        ? `[data-environment-id="${cssEscape(environmentId)}"][data-environment-field="${cssEscape(environmentField)}"]`
+        : role
+          ? `[data-role="${cssEscape(role)}"]`
+          : null;
     const start = activeElement?.selectionStart;
     const end = activeElement?.selectionEnd;
     await this.render(false);
@@ -846,6 +920,47 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
+  static async _onCopyEnvironment() {
+    if (!isAuthoritativeGM()) {
+      notify(
+        "warn",
+        "only the active GM can copy and activate an environment.",
+      );
+      return;
+    }
+    const config = loadResourceConfig();
+    const state = loadRunState();
+    const requestedEnvironmentId =
+      state.currentEnvironmentId ||
+      getSetting(SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT) ||
+      "limited";
+    const sourceEnvironment =
+      findEnvironment(config.environments, requestedEnvironmentId) ??
+      config.environments[0] ??
+      null;
+    const copied = duplicateEnvironment(
+      config.environments,
+      sourceEnvironment?.id,
+    );
+    if (!copied.ok || !copied.environment) {
+      notify(
+        "warn",
+        copied.errors?.environment ??
+          Object.values(copied.errors ?? {})[0] ??
+          "the current environment could not be copied.",
+      );
+      return;
+    }
+
+    config.environments = copied.catalog;
+    await saveResourceConfig(config);
+    await setCurrentEnvironment(copied.environment.id);
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    notify("info", `created custom region ${copied.environment.label}.`);
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
   static async _onResetConfig(_event, _target) {
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     let ok = true;
@@ -953,12 +1068,15 @@ function forageNote(foraged) {
   return "foraged nothing";
 }
 
-function presentOverviewReport(report) {
+function presentOverviewReport(report, environments = []) {
   if (!report || typeof report !== "object") return null;
+  const reportEnvironment = findEnvironment(environments, report.environmentId);
   return {
     ...report,
     environmentLabel: report.environmentId
-      ? prettyEnvironment(report.environmentId) || report.environmentId
+      ? reportEnvironment
+        ? environmentDisplayLabel(reportEnvironment)
+        : prettyEnvironment(report.environmentId) || report.environmentId
       : "—",
     rows: report.rows.map((row) => ({
       ...row,
@@ -966,6 +1084,16 @@ function presentOverviewReport(report) {
       ok: row.supplied && !row.hasErrors,
     })),
   };
+}
+
+function environmentDisplayLabel(environment) {
+  if (!environment) return "";
+  if (isCustomEnvironment(environment)) {
+    return String(environment.label ?? environment.id ?? "").trim();
+  }
+  return (
+    prettyEnvironment(environment.id) || environment.label || environment.id
+  );
 }
 
 function resourceIcon(id) {

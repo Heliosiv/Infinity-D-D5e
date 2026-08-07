@@ -37,7 +37,8 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.61 release code has a useful foundation.
+The v0.2.64 source has a useful foundation; its installed-world acceptance
+status remains bounded by the release gates below.
 
 ### Available now
 
@@ -53,6 +54,10 @@ The v0.2.61 release code has a useful foundation.
   keyword. UUID and flag matches take priority over keywords.
 - Default environments cover abundant, limited, sparse, settlement, and
   underground travel.
+- The active environment can be copied into a collision-safe custom region and
+  edited in Quartermaster. Custom names, forage availability, Survival DCs,
+  and bounded food/water yield formulas are validated before persistence;
+  built-in presets remain immutable.
 - The GM can change the current environment, manually advance one upkeep day,
   or start a forage-only drive.
 - Automatic upkeep can react to Simple Calendar or core world-time day changes.
@@ -98,8 +103,9 @@ The v0.2.61 release code has a useful foundation.
 - The player Supplies surface and its synthetic responsive fixtures are
   implemented in source, but the milestone still needs installed-world,
   multi-client acceptance proof before it is treated as release-complete.
-- The environment catalog is data-driven, but the Quartermaster currently acts
-  mainly as an environment selector rather than a complete catalog editor.
+- The environment catalog now supports the first editor slice: copy and safely
+  edit a custom region. Creating a blank region, reordering or removing regions,
+  previewing presets, and versioned import/export are not implemented yet.
 - Active forage runs live in client memory. A reload, GM handoff, or disconnect
   can lose the pending run even though actor or world state remains.
 - Only the latest upkeep result is retained. There is no durable, bounded run
@@ -430,6 +436,11 @@ snapshot requests reveal nothing, and `npm run check`, `npm run format:check`,
 and `npm run ui:audit` pass.
 
 ### Milestone 2 - Environment editor and presets
+
+The first vertical slice is implemented in source: a GM can copy the current
+preset or custom region, immediately activate the copy, and safely edit its
+name, forage availability, DC, and food/water yields. The remaining deliverables
+below cover full catalog management, preset previews, and portable files.
 
 #### Deliverables
 

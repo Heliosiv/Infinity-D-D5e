@@ -20,6 +20,7 @@ import {
   getSurvivalPassive,
   getWisMod,
 } from "./resource/roll.js";
+import { isCustomEnvironment } from "./resource/environment.js";
 import { prettyEnvironment } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
@@ -117,7 +118,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get title() {
     const env = this._environment;
-    const label = env ? prettyEnvironment(env.id) || env.label : "";
+    const label = environmentDisplayLabel(env);
     return label ? `Daily Foraging — ${label}` : "Daily Foraging";
   }
 
@@ -142,7 +143,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       actorName: actor?.name ?? this._actorName ?? null,
       noActor: !actor,
-      environmentLabel: prettyEnvironment(env.id) || env.label || "the wild",
+      environmentLabel: environmentDisplayLabel(env) || "the wild",
       dc: env.dc ?? null,
       passiveLabel:
         passive == null ? "" : `Your passive Survival is ${passive}`,
@@ -245,6 +246,16 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static _onDismiss(_event, _target) {
     this.close();
   }
+}
+
+function environmentDisplayLabel(environment) {
+  if (!environment) return "";
+  if (isCustomEnvironment(environment)) {
+    return String(environment.label ?? environment.id ?? "").trim();
+  }
+  return (
+    prettyEnvironment(environment.id) || environment.label || environment.id
+  );
 }
 
 /* ------------------------------------------------------------------ *

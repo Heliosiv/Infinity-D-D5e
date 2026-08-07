@@ -14,7 +14,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.63** - Loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
+**v0.2.64 (unreleased)** - Adds safe custom travel regions to the existing loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -73,6 +73,12 @@ only one prompt and one authority-fenced resource run at a time. A persisted
 safety lease reserves an automatic calendar day before Actor inventory changes.
 After a short cross-client stabilization check, an interrupted run is locked for
 GM review instead of replaying consumption.
+
+Campaign-specific regions can be created directly in Quartermaster: select the
+closest built-in environment, choose **Copy as custom**, then edit its name,
+forage availability, Survival DC, and food/water yield formulas. Built-in
+presets remain unchanged, custom IDs are collision-safe, and new yield formulas
+are validated and bounded before they are saved.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in
@@ -147,9 +153,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.63 && git push origin refs/tags/v0.2.63`).
+1. Tag the commit (`git tag v0.2.64 && git push origin refs/tags/v0.2.64`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.63` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.2.64` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema
