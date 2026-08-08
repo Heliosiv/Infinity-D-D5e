@@ -40,42 +40,46 @@ export const SOUND_EVENTS = Object.freeze({
 });
 
 export const SOUND_REGISTRY = Object.freeze({
-  [SOUND_EVENTS.LOADING_SHIMMER]: sound("loading-shimmer.wav", 0.35, 1400),
-  [SOUND_EVENTS.ROLL_START]: sound("roll-start.wav", 0.55, 300),
-  [SOUND_EVENTS.RESULT_CASCADE]: sound("result-cascade.wav", 0.42, 450),
-  [SOUND_EVENTS.HOARD_CASCADE]: sound("hoard-cascade.wav", 0.48, 600),
-  [SOUND_EVENTS.RARE_CHIME]: sound("rare-chime.wav", 0.38, 700),
-  [SOUND_EVENTS.LEGENDARY_CHIME]: sound("legendary-chime.wav", 0.42, 900),
-  [SOUND_EVENTS.UI_OPEN]: sound("ui-open.wav", 0.35, 220),
-  [SOUND_EVENTS.ITEM_OPEN]: sound("item-open.wav", 0.32, 220),
-  [SOUND_EVENTS.PRESET_APPLY]: sound("preset-apply.wav", 0.3, 160),
-  [SOUND_EVENTS.ROSTER_ADD]: sound("roster-add.wav", 0.34, 120),
-  [SOUND_EVENTS.ROSTER_REMOVE]: sound("roster-remove.wav", 0.3, 120),
-  [SOUND_EVENTS.LOCK_TOGGLE]: sound("lock-toggle.wav", 0.42, 120),
-  [SOUND_EVENTS.CHAT_SEND]: sound("chat-send.wav", 0.4, 250),
-  [SOUND_EVENTS.DEPOSIT]: sound("deposit.wav", 0.5, 350),
-  [SOUND_EVENTS.CLEAR_RESET]: sound("clear-reset.wav", 0.34, 200),
-  [SOUND_EVENTS.WARNING_MUTED]: sound("warning-muted.wav", 0.36, 350),
+  [SOUND_EVENTS.LOADING_SHIMMER]: sound("loading-shimmer", 2, 0.35, 1400),
+  [SOUND_EVENTS.ROLL_START]: sound("roll-start", 3, 0.55, 300),
+  [SOUND_EVENTS.RESULT_CASCADE]: sound("result-cascade", 3, 0.42, 450),
+  [SOUND_EVENTS.HOARD_CASCADE]: sound("hoard-cascade", 2, 0.48, 600),
+  [SOUND_EVENTS.RARE_CHIME]: sound("rare-chime", 2, 0.38, 700),
+  [SOUND_EVENTS.LEGENDARY_CHIME]: sound("legendary-chime", 2, 0.42, 900),
+  [SOUND_EVENTS.UI_OPEN]: sound("ui-open", 3, 0.35, 220),
+  [SOUND_EVENTS.ITEM_OPEN]: sound("item-open", 3, 0.32, 220),
+  [SOUND_EVENTS.PRESET_APPLY]: sound("preset-apply", 3, 0.3, 160),
+  [SOUND_EVENTS.ROSTER_ADD]: sound("roster-add", 2, 0.34, 120),
+  [SOUND_EVENTS.ROSTER_REMOVE]: sound("roster-remove", 2, 0.3, 120),
+  [SOUND_EVENTS.LOCK_TOGGLE]: sound("lock-toggle", 2, 0.42, 120),
+  [SOUND_EVENTS.CHAT_SEND]: sound("chat-send", 2, 0.4, 250),
+  [SOUND_EVENTS.DEPOSIT]: sound("deposit", 3, 0.5, 350),
+  [SOUND_EVENTS.CLEAR_RESET]: sound("clear-reset", 2, 0.34, 200),
+  [SOUND_EVENTS.WARNING_MUTED]: sound("warning-muted", 3, 0.36, 350),
   [SOUND_EVENTS.MERCHANT_SESSION_OPEN]: sound(
-    "merchant-session-open.wav",
+    "merchant-session-open",
+    2,
     0.4,
     250,
   ),
-  [SOUND_EVENTS.MERCHANT_PURCHASE]: sound("merchant-purchase.wav", 0.45, 300),
-  [SOUND_EVENTS.MERCHANT_SALE]: sound("merchant-sale.wav", 0.45, 300),
+  [SOUND_EVENTS.MERCHANT_PURCHASE]: sound("merchant-purchase", 3, 0.45, 300),
+  [SOUND_EVENTS.MERCHANT_SALE]: sound("merchant-sale", 3, 0.45, 300),
   [SOUND_EVENTS.MERCHANT_BARGAIN_WIN]: sound(
-    "merchant-bargain-win.wav",
+    "merchant-bargain-win",
+    2,
     0.45,
     400,
   ),
   [SOUND_EVENTS.MERCHANT_BARGAIN_FAIL]: sound(
-    "merchant-bargain-fail.wav",
+    "merchant-bargain-fail",
+    2,
     0.45,
     400,
   ),
 });
 
 const lastPlayedAt = new Map();
+const lastLocalVariantIndex = new Map();
 const seenSocketSoundEvents = new Set();
 let soundSocketRegistered = false;
 
@@ -113,7 +117,8 @@ export function playModuleSound(eventKey, options = {}) {
   pruneCooldownMap(now);
 
   const delayMs = Math.max(0, Number(options.delayMs ?? 0));
-  const play = () => playFoundrySound(entry, options);
+  const src = selectSoundSource(entry, options.variantKey);
+  const play = () => playFoundrySound(entry, src, options);
   if (delayMs > 0) {
     globalThis.setTimeout(play, delayMs);
     return null;
@@ -148,7 +153,10 @@ export function playSoundEvent(eventKey, options = {}) {
 
   const eventId = options.eventId ?? createSoundEventId(eventKey);
   rememberSocketSoundEvent(eventId);
-  const localResult = playModuleSound(eventKey, playbackOptions);
+  const localResult = playModuleSound(eventKey, {
+    ...playbackOptions,
+    variantKey: eventId,
+  });
   const socket = globalThis.game?.socket;
   if (typeof socket?.emit === "function") {
     socket.emit(SOCKET_NAME, {
@@ -180,6 +188,7 @@ export function receiveSoundEventPayload(payload, authenticatedSenderId) {
   return playModuleSound(payload.eventKey, {
     ...payload.options,
     automation: true,
+    variantKey: payload.id,
   });
 }
 
@@ -223,7 +232,7 @@ function audioHelper() {
 }
 
 export async function preloadModuleSounds() {
-  const sources = Object.values(SOUND_REGISTRY).map((entry) => entry.src);
+  const sources = Object.values(SOUND_REGISTRY).flatMap((entry) => entry.srcs);
   const helper = audioHelper();
   for (const src of sources) {
     try {
@@ -238,14 +247,14 @@ export async function preloadModuleSounds() {
   }
 }
 
-function playFoundrySound(entry, options) {
+function playFoundrySound(entry, src, options) {
   const masterVolume = clamp01(getSetting(SETTING_KEYS.SOUND_VOLUME) ?? 0.35);
   const eventVolume = clamp01(options.volume ?? entry.volume);
   const volume = clamp01(masterVolume * eventVolume);
   if (volume <= 0) return null;
 
   const data = {
-    src: entry.src,
+    src,
     volume,
     loop: false,
     autoplay: true,
@@ -258,7 +267,7 @@ function playFoundrySound(entry, options) {
       return helper.play(data, false);
     }
     if (typeof globalThis.game?.audio?.play === "function") {
-      return globalThis.game.audio.play(entry.src, {
+      return globalThis.game.audio.play(src, {
         volume,
         loop: false,
         context: globalThis.game.audio.interface,
@@ -271,6 +280,30 @@ function playFoundrySound(entry, options) {
     });
   }
   return null;
+}
+
+function selectSoundSource(entry, variantKey) {
+  if (entry.srcs.length <= 1) return entry.src;
+
+  if (variantKey !== undefined && variantKey !== null) {
+    return entry.srcs[stableVariantIndex(variantKey, entry.srcs.length)];
+  }
+
+  const previousIndex = lastLocalVariantIndex.get(entry.id);
+  const nextIndex =
+    previousIndex === undefined ? 0 : (previousIndex + 1) % entry.srcs.length;
+  lastLocalVariantIndex.set(entry.id, nextIndex);
+  return entry.srcs[nextIndex];
+}
+
+function stableVariantIndex(variantKey, variantCount) {
+  const value = String(variantKey).slice(0, 512);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % variantCount;
 }
 
 function soundCooldownKey(eventKey, options) {
@@ -368,12 +401,25 @@ function highestRarity(items) {
   }, 0);
 }
 
-function sound(fileName, volume, cooldownMs) {
-  const id = fileName.replace(/\.wav$/i, "");
+function sound(id, variantCount, volume, cooldownMs) {
+  const files = Object.freeze(
+    Array.from(
+      { length: variantCount },
+      (_, index) =>
+        `${SOUND_DIR}/${id}-${String(index + 1).padStart(2, "0")}.wav`,
+    ),
+  );
+  const srcs = Object.freeze(
+    files.map(
+      (file) => `${MODULE_SOUND_DIR}/${file.slice(SOUND_DIR.length + 1)}`,
+    ),
+  );
   return Object.freeze({
     id,
-    file: `${SOUND_DIR}/${fileName}`,
-    src: `${MODULE_SOUND_DIR}/${fileName}`,
+    files,
+    srcs,
+    file: files[0],
+    src: srcs[0],
     volume,
     cooldownMs,
   });

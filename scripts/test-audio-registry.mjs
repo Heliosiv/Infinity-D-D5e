@@ -23,17 +23,56 @@ assert.deepEqual(
   "registry covers every exported sound event",
 );
 
+const expectedVariantCounts = {
+  [SOUND_EVENTS.LOADING_SHIMMER]: 2,
+  [SOUND_EVENTS.ROLL_START]: 3,
+  [SOUND_EVENTS.RESULT_CASCADE]: 3,
+  [SOUND_EVENTS.HOARD_CASCADE]: 2,
+  [SOUND_EVENTS.RARE_CHIME]: 2,
+  [SOUND_EVENTS.LEGENDARY_CHIME]: 2,
+  [SOUND_EVENTS.UI_OPEN]: 3,
+  [SOUND_EVENTS.ITEM_OPEN]: 3,
+  [SOUND_EVENTS.PRESET_APPLY]: 3,
+  [SOUND_EVENTS.ROSTER_ADD]: 2,
+  [SOUND_EVENTS.ROSTER_REMOVE]: 2,
+  [SOUND_EVENTS.LOCK_TOGGLE]: 2,
+  [SOUND_EVENTS.CHAT_SEND]: 2,
+  [SOUND_EVENTS.DEPOSIT]: 3,
+  [SOUND_EVENTS.CLEAR_RESET]: 2,
+  [SOUND_EVENTS.WARNING_MUTED]: 3,
+  [SOUND_EVENTS.MERCHANT_SESSION_OPEN]: 2,
+  [SOUND_EVENTS.MERCHANT_PURCHASE]: 3,
+  [SOUND_EVENTS.MERCHANT_SALE]: 3,
+  [SOUND_EVENTS.MERCHANT_BARGAIN_WIN]: 2,
+  [SOUND_EVENTS.MERCHANT_BARGAIN_FAIL]: 2,
+};
+
 const files = new Set();
 for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
   assert.equal(entry.id, eventKey, `${eventKey}: id matches event key`);
-  assert.match(entry.file, /^assets\/sounds\/[-a-z]+\.wav$/);
   assert.equal(
-    entry.src,
-    `modules/infinity-dnd5e/${entry.file}`,
-    `${eventKey}: Foundry module src is derived from asset path`,
+    entry.files.length,
+    expectedVariantCounts[eventKey],
+    `${eventKey}: expected variant count`,
   );
-  assert.ok(!files.has(entry.file), `${entry.file} should not be reused`);
-  files.add(entry.file);
+  assert.equal(entry.srcs.length, entry.files.length, `${eventKey}: src count`);
+  assert.equal(entry.file, entry.files[0], `${eventKey}: first file alias`);
+  assert.equal(entry.src, entry.srcs[0], `${eventKey}: first src alias`);
+  for (const [index, file] of entry.files.entries()) {
+    const suffix = String(index + 1).padStart(2, "0");
+    assert.equal(
+      file,
+      `assets/sounds/${eventKey}-${suffix}.wav`,
+      `${eventKey}: numbered variant path`,
+    );
+    assert.equal(
+      entry.srcs[index],
+      `modules/infinity-dnd5e/${file}`,
+      `${eventKey}: Foundry module src is derived from asset path`,
+    );
+    assert.ok(!files.has(file), `${file} should not be reused`);
+    files.add(file);
+  }
   assert.ok(entry.volume >= 0 && entry.volume <= 1, `${eventKey}: volume`);
   assert.ok(entry.cooldownMs >= 0, `${eventKey}: cooldown`);
 }
@@ -93,6 +132,67 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
 
 {
   const originalGame = globalThis.game;
+  const originalFoundry = globalThis.foundry;
+  const originalAudioHelper = globalThis.AudioHelper;
+  const calls = [];
+  globalThis.game = {
+    settings: {
+      get(moduleId, key) {
+        if (moduleId !== "infinity-dnd5e") return undefined;
+        if (key === "soundsEnabled") return true;
+        if (key === "soundVolume") return 0.5;
+        return undefined;
+      },
+    },
+  };
+  delete globalThis.foundry;
+  globalThis.AudioHelper = {
+    play(data) {
+      calls.push(data);
+      return { id: data.src };
+    },
+  };
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY, { cooldownMs: 0 });
+    }
+    const rotatingSources = calls.slice(0, 4).map((call) => call.src);
+    assert.equal(
+      new Set(rotatingSources.slice(0, 3)).size,
+      3,
+      "direct local calls rotate through every variant before repeating",
+    );
+    assert.equal(
+      rotatingSources[3],
+      rotatingSources[0],
+      "direct local variant rotation wraps deterministically",
+    );
+
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED, {
+      cooldownMs: 0,
+      variantKey: "stable-socket-event",
+    });
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED, {
+      cooldownMs: 0,
+      variantKey: "stable-socket-event",
+    });
+    assert.equal(
+      calls.at(-1).src,
+      calls.at(-2).src,
+      "the same variant key always selects the same source",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalFoundry === undefined) delete globalThis.foundry;
+    else globalThis.foundry = originalFoundry;
+    if (originalAudioHelper === undefined) delete globalThis.AudioHelper;
+    else globalThis.AudioHelper = originalAudioHelper;
+  }
+}
+
+{
+  const originalGame = globalThis.game;
   const originalAudioHelper = globalThis.AudioHelper;
   const calls = [];
   const socketPayloads = [];
@@ -135,9 +235,24 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
     assert.equal(socketPayloads[0].payload.eventKey, SOUND_EVENTS.ROLL_START);
     assert.equal(socketPayloads[0].payload.originUserId, "user-a");
     assert.equal(
+      socketPayloads[0].payload.file,
+      undefined,
+      "broadcast payload does not expose an asset file",
+    );
+    assert.equal(
+      socketPayloads[0].payload.src,
+      undefined,
+      "broadcast payload does not expose a Foundry source",
+    );
+    assert.equal(
       socketPayloads[0].payload.options.volume,
       undefined,
       "broadcast payload stays semantic and does not include sender volume",
+    );
+    assert.equal(
+      socketPayloads[0].payload.options.variantKey,
+      undefined,
+      "broadcast payload derives variants from its event id",
     );
 
     receiveSoundEventPayload(socketPayloads[0].payload);
@@ -145,6 +260,20 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
       calls.length,
       1,
       "a local echo of the same socket event is ignored",
+    );
+
+    const remoteAudio = await import(`./audio.js?remote-client=${Date.now()}`);
+    globalThis.game.user = { id: "user-b" };
+    remoteAudio.receiveSoundEventPayload(socketPayloads[0].payload, "user-a");
+    assert.equal(
+      calls.length,
+      2,
+      "a remote client plays the socket event once",
+    );
+    assert.equal(
+      calls[1].data.src,
+      calls[0].data.src,
+      "sender and receiver derive the same variant from the event id",
     );
   } finally {
     if (originalGame === undefined) delete globalThis.game;
@@ -246,7 +375,7 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
       { cooldownMs: 0, chimeDelayMs: 0 },
     );
     assert.ok(
-      calls.some((call) => call.data.src.endsWith("/legendary-chime.wav")),
+      calls.some((call) => /\/legendary-chime-\d{2}\.wav$/.test(call.data.src)),
       "legendary result plays legendary chime",
     );
   } finally {
@@ -286,6 +415,36 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
   }
 }
 
-assert.equal(typeof preloadModuleSounds, "function");
+{
+  const originalFoundry = globalThis.foundry;
+  const originalAudioHelper = globalThis.AudioHelper;
+  const preloaded = [];
+  globalThis.foundry = {
+    audio: {
+      AudioHelper: {
+        async preloadSound(src) {
+          preloaded.push(src);
+        },
+      },
+    },
+  };
+  delete globalThis.AudioHelper;
+  try {
+    await preloadModuleSounds();
+    const expectedSources = Object.values(SOUND_REGISTRY).flatMap(
+      (entry) => entry.srcs,
+    );
+    assert.deepEqual(
+      preloaded.toSorted(),
+      expectedSources.toSorted(),
+      "preloadModuleSounds preloads every registered variant",
+    );
+  } finally {
+    if (originalFoundry === undefined) delete globalThis.foundry;
+    else globalThis.foundry = originalFoundry;
+    if (originalAudioHelper === undefined) delete globalThis.AudioHelper;
+    else globalThis.AudioHelper = originalAudioHelper;
+  }
+}
 
 process.stdout.write("audio registry validation passed\n");

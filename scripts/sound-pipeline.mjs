@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -17,67 +20,416 @@ const CHANNELS = 2;
 const BYTES_PER_SAMPLE = 2;
 const MAX_DURATION_SECONDS = 1.2;
 const MAX_FILE_BYTES = 240_000;
+const MAX_FOLEY_DURATION_SECONDS = 4;
+const MAX_FOLEY_FILE_BYTES = 1_500_000;
+const MIN_FOLEY_DURATION_SECONDS = 0.025;
+const MIN_FOLEY_PEAK = 0.0005;
+const MIN_FOLEY_RMS = 0.00002;
+const MAX_FOLEY_DC_OFFSET = 0.01;
+const MAX_FOLEY_CREST_DB = 34;
+const MAX_FOLEY_STEREO_BALANCE_DB = 6;
 const TAU = Math.PI * 2;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
+const soundRoot = path.join(root, "assets", "sounds");
+const foleyRoot = path.join(soundRoot, "foley");
+const previewPath = path.join(
+  root,
+  "output",
+  "infinity-dnd5e-sound-preview.wav",
+);
+
+const FOLEY_GROUPS = Object.freeze({
+  page: Object.freeze(["page-01.wav", "page-02.wav", "page-03.wav"]),
+  wood: Object.freeze(["wood-01.wav", "wood-02.wav", "wood-03.wav"]),
+  metal: Object.freeze(["metal-01.wav", "metal-02.wav", "metal-03.wav"]),
+  coin: Object.freeze(["coin-01.wav", "coin-02.wav", "coin-03.wav"]),
+  cloth: Object.freeze(["cloth-01.wav", "cloth-02.wav"]),
+});
+
+// These are the normalized, redistributable source takes approved for this
+// module. Pinning their bytes makes accidental replacement, format drift, and
+// provenance mistakes fail before any committed output can be regenerated.
+const FOLEY_SHA256 = Object.freeze({
+  "page-01.wav":
+    "c2efe256d0503dcb4c7cc552702c088c23982e5304ea88df5e6befab4135c6d5",
+  "page-02.wav":
+    "c509e67424fa4d94182e0fb6d9974f923c53d7404d79480242d83ced4a3a3773",
+  "page-03.wav":
+    "bb6764b98f55807bc6f918163d72a7a1469bf3f0df1f9e834b960bf1125ba81f",
+  "wood-01.wav":
+    "ae467980b7a733796a2a5ee2fb38ffbf145a7e3a958d3d43ab9983645bf12c50",
+  "wood-02.wav":
+    "7dcebe6090b7e88b47a1861d02766558804c590f547b6c6e79f52d12614c2a24",
+  "wood-03.wav":
+    "37efbc4ef953e897ea93b7c7afb6538f284bd5685de2b7cf247fd3d877a9efc6",
+  "metal-01.wav":
+    "8ed0c1f1de06c2a41a09b47e6152ca331c43308b0501fd832b60e1ba2ba7ef66",
+  "metal-02.wav":
+    "2ba43ecee330b9ad89a4664c1bde77c23090a0b9a56d3fdb990895dfa0e4c729",
+  "metal-03.wav":
+    "2b4b2f204c249c68c3aedf75af14aef14b18d2240a17eb0624d176750a1f030c",
+  "coin-01.wav":
+    "109cc7c4720678ecc3328083d6bb9de31b192965925518e0cfa86f01fdd94155",
+  "coin-02.wav":
+    "1ebdf9b0e84a3bd9d2a83718c50292d28aed7340b073c01861e267497e7e68dd",
+  "coin-03.wav":
+    "4d66fad9761008383abbe15100f40c71ea3adc06159572ac97171f1b0afdcaa9",
+  "cloth-01.wav":
+    "c6bf3fa7b66ace37dbbd3fd42a15a1c25343650ad00e9e394786900ca9665163",
+  "cloth-02.wav":
+    "ff22ce534f9751763c582f4aa521cf78c1027bc2bc596f561dd236cf88caaef1",
+});
+
+const MASTERING_PROFILES = Object.freeze({
+  atmosphere: Object.freeze({
+    targetPeak: 0.56,
+    minimumRms: 0.018,
+    maximumRms: 0.25,
+    maximumCrestDb: 32,
+    maximumStereoBalanceDb: 2.2,
+    lowPassHz: 14_500,
+    limiterDrive: 1.08,
+    accentPeakRatio: 0.22,
+  }),
+  action: Object.freeze({
+    targetPeak: 0.7,
+    minimumRms: 0.01,
+    maximumRms: 0.32,
+    maximumCrestDb: 36,
+    maximumStereoBalanceDb: 2.4,
+    lowPassHz: 15_200,
+    limiterDrive: 1.16,
+    accentPeakRatio: 0.2,
+  }),
+  reward: Object.freeze({
+    targetPeak: 0.66,
+    minimumRms: 0.012,
+    maximumRms: 0.3,
+    maximumCrestDb: 35.5,
+    maximumStereoBalanceDb: 2.5,
+    lowPassHz: 15_800,
+    limiterDrive: 1.12,
+    accentPeakRatio: 0.26,
+  }),
+  chime: Object.freeze({
+    targetPeak: 0.68,
+    minimumRms: 0.014,
+    maximumRms: 0.28,
+    maximumCrestDb: 32,
+    maximumStereoBalanceDb: 2.6,
+    lowPassHz: 16_000,
+    limiterDrive: 1.08,
+    accentPeakRatio: 0.32,
+  }),
+  interface: Object.freeze({
+    targetPeak: 0.55,
+    minimumRms: 0.014,
+    maximumRms: 0.3,
+    maximumCrestDb: 33,
+    maximumStereoBalanceDb: 2,
+    lowPassHz: 13_800,
+    limiterDrive: 1.15,
+    accentPeakRatio: 0.18,
+  }),
+  transaction: Object.freeze({
+    targetPeak: 0.63,
+    minimumRms: 0.01,
+    maximumRms: 0.32,
+    maximumCrestDb: 36,
+    maximumStereoBalanceDb: 2.4,
+    lowPassHz: 15_000,
+    limiterDrive: 1.16,
+    accentPeakRatio: 0.2,
+  }),
+  warning: Object.freeze({
+    targetPeak: 0.5,
+    minimumRms: 0.009,
+    maximumRms: 0.34,
+    maximumCrestDb: 35,
+    maximumStereoBalanceDb: 1.5,
+    lowPassHz: 11_500,
+    limiterDrive: 1.2,
+    accentPeakRatio: 0.14,
+  }),
+});
+
+const ROOM_PROFILES = Object.freeze({
+  close: Object.freeze({
+    amount: 0.04,
+    spread: 0.78,
+    taps: Object.freeze([
+      [6, 0.62],
+      [13, 0.34],
+      [23, 0.16],
+    ]),
+  }),
+  folio: Object.freeze({
+    amount: 0.055,
+    spread: 0.9,
+    taps: Object.freeze([
+      [8, 0.68],
+      [17, 0.42],
+      [31, 0.23],
+      [47, 0.12],
+    ]),
+  }),
+  desk: Object.freeze({
+    amount: 0.07,
+    spread: 0.84,
+    taps: Object.freeze([
+      [9, 0.72],
+      [21, 0.46],
+      [38, 0.26],
+      [59, 0.13],
+    ]),
+  }),
+  table: Object.freeze({
+    amount: 0.09,
+    spread: 1.02,
+    taps: Object.freeze([
+      [11, 0.72],
+      [25, 0.5],
+      [43, 0.3],
+      [69, 0.15],
+    ]),
+  }),
+  shop: Object.freeze({
+    amount: 0.105,
+    spread: 1.14,
+    taps: Object.freeze([
+      [13, 0.7],
+      [29, 0.48],
+      [51, 0.29],
+      [83, 0.15],
+    ]),
+  }),
+  hall: Object.freeze({
+    amount: 0.14,
+    spread: 1.28,
+    taps: Object.freeze([
+      [17, 0.72],
+      [37, 0.52],
+      [67, 0.33],
+      [103, 0.18],
+    ]),
+  }),
+  vault: Object.freeze({
+    amount: 0.16,
+    spread: 1.36,
+    taps: Object.freeze([
+      [19, 0.75],
+      [43, 0.54],
+      [79, 0.34],
+      [119, 0.18],
+    ]),
+  }),
+  muted: Object.freeze({
+    amount: 0.035,
+    spread: 0.72,
+    taps: Object.freeze([
+      [7, 0.58],
+      [15, 0.28],
+      [27, 0.11],
+    ]),
+  }),
+});
 
 const SOUND_SPECS = Object.freeze({
   "loading-shimmer": {
     duration: 1.0,
-    peak: 0.56,
+    family: "atmosphere",
+    room: "folio",
+    primary: foleyLayer("page", [0, 1], 0.86, { width: 1.05 }),
+    secondary: foleyLayer("cloth", [0, 1], 0.24, {
+      start: 0.045,
+      pan: -0.1,
+    }),
+    accentGain: 0.2,
     render: renderLoadingShimmer,
   },
-  "roll-start": { duration: 0.62, peak: 0.7, render: renderRollStart },
+  "roll-start": {
+    duration: 0.62,
+    family: "action",
+    room: "table",
+    primary: foleyLayer("wood", [0, 1, 2], 0.88),
+    secondary: foleyLayer("coin", [2, 0, 1], 0.32, { start: 0.035 }),
+    accentGain: 0.17,
+    render: renderRollStart,
+  },
   "result-cascade": {
     duration: 0.68,
-    peak: 0.6,
+    family: "reward",
+    room: "shop",
+    primary: foleyLayer("coin", [0, 1, 2], 0.86, { width: 1.08 }),
+    secondary: foleyLayer("cloth", [0, 1, 0], 0.2),
+    accentGain: 0.16,
     render: renderResultCascade,
   },
-  "hoard-cascade": { duration: 1.0, peak: 0.74, render: renderHoardCascade },
-  "rare-chime": { duration: 0.82, peak: 0.66, render: renderRareChime },
+  "hoard-cascade": {
+    duration: 1.0,
+    family: "reward",
+    room: "vault",
+    peakScale: 1.06,
+    primary: foleyLayer("coin", [1, 2], 0.92, { width: 1.15 }),
+    secondary: foleyLayer("wood", [0, 2], 0.27, { start: 0.02 }),
+    accentGain: 0.18,
+    render: renderHoardCascade,
+  },
+  "rare-chime": {
+    duration: 0.82,
+    family: "chime",
+    room: "hall",
+    primary: foleyLayer("metal", [0, 1], 0.82, { width: 1.08 }),
+    accentGain: 0.2,
+    render: renderRareChime,
+  },
   "legendary-chime": {
     duration: 1.12,
-    peak: 0.7,
+    family: "chime",
+    room: "vault",
+    peakScale: 1.03,
+    primary: foleyLayer("metal", [1, 2], 0.86, { width: 1.14 }),
+    secondary: foleyLayer("wood", [2, 1], 0.14, { start: 0.012 }),
+    accentGain: 0.24,
     render: renderLegendaryChime,
   },
-  "ui-open": { duration: 0.3, peak: 0.56, render: renderUiOpen },
-  "item-open": { duration: 0.42, peak: 0.52, render: renderItemOpen },
+  "ui-open": {
+    duration: 0.3,
+    family: "interface",
+    room: "folio",
+    primary: foleyLayer("page", [0, 1, 2], 0.9, { width: 1.05 }),
+    secondary: foleyLayer("wood", [2, 0, 1], 0.15),
+    accentGain: 0.12,
+    render: renderUiOpen,
+  },
+  "item-open": {
+    duration: 0.42,
+    family: "interface",
+    room: "folio",
+    primary: foleyLayer("page", [1, 2, 0], 0.92, { width: 1.08 }),
+    secondary: foleyLayer("wood", [1, 2, 0], 0.12, { start: 0.11 }),
+    accentGain: 0.1,
+    render: renderItemOpen,
+  },
   "preset-apply": {
     duration: 0.32,
-    peak: 0.52,
+    family: "interface",
+    room: "desk",
+    primary: foleyLayer("wood", [0, 1, 2], 0.9),
+    secondary: foleyLayer("page", [2, 0, 1], 0.16),
+    accentGain: 0.12,
     render: renderPresetApply,
   },
-  "roster-add": { duration: 0.26, peak: 0.52, render: renderRosterAdd },
+  "roster-add": {
+    duration: 0.26,
+    family: "interface",
+    room: "close",
+    primary: foleyLayer("coin", [0, 1], 0.84),
+    secondary: foleyLayer("cloth", [0, 1], 0.23),
+    accentGain: 0.11,
+    render: renderRosterAdd,
+  },
   "roster-remove": {
     duration: 0.28,
-    peak: 0.46,
+    family: "interface",
+    room: "close",
+    peakScale: 0.9,
+    primary: foleyLayer("cloth", [0, 1], 0.92, { width: 1.04 }),
+    secondary: foleyLayer("coin", [1, 2], 0.12, { start: 0.04 }),
+    accentGain: 0.08,
     render: renderRosterRemove,
   },
-  "lock-toggle": { duration: 0.22, peak: 0.6, render: renderLockToggle },
-  "chat-send": { duration: 0.52, peak: 0.55, render: renderChatSend },
-  deposit: { duration: 0.6, peak: 0.66, render: renderDeposit },
-  "clear-reset": { duration: 0.38, peak: 0.52, render: renderClearReset },
-  "warning-muted": { duration: 0.34, peak: 0.45, render: renderWarningMuted },
+  "lock-toggle": {
+    duration: 0.22,
+    family: "interface",
+    room: "desk",
+    peakScale: 1.08,
+    primary: foleyLayer("metal", [0, 1], 0.9),
+    secondary: foleyLayer("wood", [1, 2], 0.18),
+    accentGain: 0.12,
+    render: renderLockToggle,
+  },
+  "chat-send": {
+    duration: 0.52,
+    family: "interface",
+    room: "folio",
+    primary: foleyLayer("page", [1, 2], 0.9, { width: 1.12 }),
+    secondary: foleyLayer("wood", [0, 2], 0.13, { start: 0.25 }),
+    accentGain: 0.08,
+    render: renderChatSend,
+  },
+  deposit: {
+    duration: 0.6,
+    family: "transaction",
+    room: "table",
+    primary: foleyLayer("coin", [0, 1, 2], 0.9, { width: 1.1 }),
+    secondary: foleyLayer("cloth", [0, 1, 0], 0.23),
+    accentGain: 0.14,
+    render: renderDeposit,
+  },
+  "clear-reset": {
+    duration: 0.38,
+    family: "interface",
+    room: "folio",
+    primary: foleyLayer("page", [2, 0], 0.94, { width: 1.15 }),
+    secondary: foleyLayer("cloth", [1, 0], 0.13),
+    accentGain: 0.08,
+    render: renderClearReset,
+  },
+  "warning-muted": {
+    duration: 0.34,
+    family: "warning",
+    room: "muted",
+    primary: foleyLayer("wood", [0, 1, 2], 0.94),
+    secondary: foleyLayer("cloth", [0, 1, 0], 0.16),
+    accentGain: 0.08,
+    render: renderWarningMuted,
+  },
   "merchant-session-open": {
     duration: 0.42,
-    peak: 0.58,
+    family: "transaction",
+    room: "shop",
+    primary: foleyLayer("metal", [0, 2], 0.82, { width: 1.06 }),
+    secondary: foleyLayer("wood", [1, 0], 0.22),
+    accentGain: 0.15,
     render: renderMerchantSessionOpen,
   },
   "merchant-purchase": {
     duration: 0.6,
-    peak: 0.64,
+    family: "transaction",
+    room: "shop",
+    primary: foleyLayer("coin", [0, 1, 2], 0.9, { width: 1.08 }),
+    secondary: foleyLayer("wood", [2, 0, 1], 0.18),
+    accentGain: 0.13,
     render: renderMerchantPurchase,
   },
-  "merchant-sale": { duration: 0.58, peak: 0.6, render: renderMerchantSale },
+  "merchant-sale": {
+    duration: 0.58,
+    family: "transaction",
+    room: "shop",
+    primary: foleyLayer("coin", [2, 0, 1], 0.88, { width: 1.1 }),
+    secondary: foleyLayer("cloth", [1, 0, 1], 0.14),
+    accentGain: 0.12,
+    render: renderMerchantSale,
+  },
   "merchant-bargain-win": {
     duration: 0.78,
-    peak: 0.66,
+    family: "reward",
+    room: "shop",
+    primary: foleyLayer("metal", [0, 2], 0.84, { width: 1.12 }),
+    secondary: foleyLayer("coin", [1, 2], 0.28, { start: 0.035 }),
+    accentGain: 0.18,
     render: renderMerchantBargainWin,
   },
   "merchant-bargain-fail": {
     duration: 0.5,
-    peak: 0.5,
+    family: "warning",
+    room: "muted",
+    primary: foleyLayer("wood", [1, 2], 0.94),
+    secondary: foleyLayer("metal", [2, 0], 0.12, { start: 0.035 }),
+    accentGain: 0.08,
     render: renderMerchantBargainFail,
   },
 });
@@ -88,76 +440,852 @@ if (isMainModule()) {
     generateSounds();
   } else if (command === "validate") {
     validateSoundAssets();
+  } else if (command === "preview") {
+    generateSoundPreview();
   } else {
-    console.error("Usage: node scripts/sound-pipeline.mjs <generate|validate>");
+    console.error(
+      "Usage: node scripts/sound-pipeline.mjs <generate|validate|preview>",
+    );
     process.exit(1);
   }
 }
 
 export function generateSounds() {
-  for (const entry of Object.values(SOUND_REGISTRY)) {
-    const spec = SOUND_SPECS[entry.id];
-    if (!spec) throw new Error(`No sound spec for ${entry.id}`);
-    const filePath = path.join(root, entry.file);
+  const contracts = validateRegistryContract();
+  const foleyLibrary = loadFoleyLibrary();
+  const outputs = buildSoundOutputs(contracts, foleyLibrary);
+  for (const output of outputs) {
+    const filePath = resolveOwnedPath(output.file, soundRoot, "sound output");
     mkdirSync(path.dirname(filePath), { recursive: true });
-    const buffer = createBuffer(spec.duration);
-    spec.render(buffer, makeRng(hashString(entry.id)));
-    finishBuffer(buffer, spec.peak);
-    writeFileSync(filePath, encodeWav(buffer));
+    writeFileSync(filePath, output.wav);
   }
+  const prunedFiles = pruneUnexpectedOutputWavs(outputs);
   console.log(
-    `generated ${Object.keys(SOUND_REGISTRY).length} procedural sound asset(s)`,
+    `generated ${outputs.length} hybrid recorded-foley sound variant(s)`,
   );
+  if (prunedFiles.length > 0) {
+    console.log(
+      `pruned ${prunedFiles.length} obsolete top-level sound WAV(s): ${prunedFiles.join(", ")}`,
+    );
+  } else {
+    console.log("pruned 0 obsolete top-level sound WAV(s)");
+  }
+  return {
+    assetCount: outputs.length,
+    eventCount: contracts.length,
+    prunedCount: prunedFiles.length,
+  };
 }
 
 export function validateSoundAssets() {
-  const seenIds = new Set();
-  const seenFiles = new Set();
-  for (const [key, entry] of Object.entries(SOUND_REGISTRY)) {
-    if (seenIds.has(entry.id))
-      throw new Error(`Duplicate sound id ${entry.id}`);
-    seenIds.add(entry.id);
-    if (seenFiles.has(entry.file)) {
-      throw new Error(`Duplicate sound file ${entry.file}`);
-    }
-    seenFiles.add(entry.file);
+  const contracts = validateRegistryContract();
+  const foleyLibrary = loadFoleyLibrary();
+  const outputs = buildSoundOutputs(contracts, foleyLibrary);
+  rejectUnexpectedOutputWavs(outputs);
 
-    const spec = SOUND_SPECS[entry.id];
-    if (!spec) throw new Error(`${key} has no procedural spec`);
-    if (entry.volume < 0 || entry.volume > 1) {
-      throw new Error(`${key} volume ${entry.volume} must be between 0 and 1`);
+  const outputHashes = new Map();
+  for (const output of outputs) {
+    const filePath = resolveOwnedPath(output.file, soundRoot, "sound output");
+    if (!existsSync(filePath)) {
+      throw new Error(
+        `Generated sound output is missing: ${output.file}. Run npm run sound:generate.`,
+      );
     }
-
-    const filePath = path.join(root, entry.file);
-    if (!existsSync(filePath)) throw new Error(`${entry.file} is missing`);
     const stat = statSync(filePath);
-    if (stat.size <= 44) throw new Error(`${entry.file} is too small`);
+    if (!stat.isFile()) throw new Error(`${output.file} is not a regular file`);
+    if (stat.size <= 44) throw new Error(`${output.file} is too small`);
     if (stat.size > MAX_FILE_BYTES) {
-      throw new Error(`${entry.file} is too large (${stat.size} bytes)`);
+      throw new Error(`${output.file} is too large (${stat.size} bytes)`);
     }
 
-    const wav = inspectWav(readFileSync(filePath));
+    const actualBytes = readFileSync(filePath);
+    const wav = parsePcmWav(actualBytes, output.file);
     if (wav.sampleRate !== SAMPLE_RATE) {
-      throw new Error(`${entry.file} sample rate ${wav.sampleRate} != 44100`);
+      throw new Error(`${output.file} sample rate ${wav.sampleRate} != 44100`);
     }
     if (wav.channels !== CHANNELS) {
-      throw new Error(`${entry.file} channel count ${wav.channels} != 2`);
+      throw new Error(`${output.file} channel count ${wav.channels} != 2`);
     }
     if (wav.bitsPerSample !== 16) {
-      throw new Error(`${entry.file} bit depth ${wav.bitsPerSample} != 16`);
+      throw new Error(`${output.file} bit depth ${wav.bitsPerSample} != 16`);
     }
     if (
       wav.durationSeconds <= 0 ||
       wav.durationSeconds > MAX_DURATION_SECONDS
     ) {
       throw new Error(
-        `${entry.file} duration ${wav.durationSeconds.toFixed(3)}s is invalid`,
+        `${output.file} duration ${wav.durationSeconds.toFixed(3)}s is invalid`,
       );
     }
+    if (wav.frameCount !== output.buffer.left.length) {
+      throw new Error(
+        `${output.file} frame count ${wav.frameCount} != ${output.buffer.left.length}`,
+      );
+    }
+
+    const decoded = decodePcmWav(actualBytes, output.file, wav);
+    validateOutputMetrics(output, analyzeStereo(decoded.left, decoded.right));
+    if (!actualBytes.equals(output.wav)) {
+      throw new Error(
+        `${output.file} is not the byte-for-byte deterministic render. Run npm run sound:generate.`,
+      );
+    }
+
+    const outputHash = sha256(actualBytes);
+    const duplicate = outputHashes.get(outputHash);
+    if (duplicate) {
+      throw new Error(
+        `Sound outputs must be acoustically distinct: ${duplicate} and ${output.file} have identical bytes`,
+      );
+    }
+    outputHashes.set(outputHash, output.file);
   }
+
   console.log(
-    `sound asset validation passed (${Object.keys(SOUND_REGISTRY).length} WAV assets)`,
+    `sound asset validation passed (${outputs.length} WAV variants, ${foleyLibrary.size} recorded foley sources)`,
   );
+  return {
+    assetCount: outputs.length,
+    eventCount: contracts.length,
+    sourceCount: foleyLibrary.size,
+  };
+}
+
+export function generateSoundPreview() {
+  const contracts = validateRegistryContract();
+  const foleyLibrary = loadFoleyLibrary();
+  const outputs = buildSoundOutputs(contracts, foleyLibrary);
+  const preview = buildPreviewBuffer(contracts, outputs);
+  mkdirSync(path.dirname(previewPath), { recursive: true });
+  writeFileSync(previewPath, encodeWav(preview));
+  console.log(
+    `wrote ${path.relative(root, previewPath)} (${outputs.length} variants, ${(preview.left.length / SAMPLE_RATE).toFixed(2)}s)`,
+  );
+  return previewPath;
+}
+
+function foleyLayer(group, takes, gain, options = {}) {
+  return Object.freeze({
+    group,
+    takes: Object.freeze([...takes]),
+    gain,
+    start: options.start ?? 0,
+    pan: options.pan ?? 0,
+    width: options.width ?? 1,
+  });
+}
+
+function validateRegistryContract() {
+  const seenIds = new Set();
+  const seenFiles = new Set();
+  const contracts = [];
+  for (const [key, entry] of Object.entries(SOUND_REGISTRY)) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`${key} has no sound registry entry`);
+    }
+    if (entry.id !== key || !/^[a-z][a-z0-9-]*$/.test(entry.id)) {
+      throw new Error(
+        `${key} has an invalid or mismatched sound id ${entry.id}`,
+      );
+    }
+    if (seenIds.has(entry.id))
+      throw new Error(`Duplicate sound id ${entry.id}`);
+    seenIds.add(entry.id);
+    if (!Array.isArray(entry.files) || entry.files.length === 0) {
+      throw new Error(`${key} must declare at least one sound variant file`);
+    }
+    if (
+      !Array.isArray(entry.srcs) ||
+      entry.srcs.length !== entry.files.length
+    ) {
+      throw new Error(`${key} files/srcs variant counts do not match`);
+    }
+    if (entry.file !== entry.files[0] || entry.src !== entry.srcs[0]) {
+      throw new Error(`${key} compatibility file/src must point to variant 01`);
+    }
+    if (
+      !Number.isFinite(entry.volume) ||
+      entry.volume < 0 ||
+      entry.volume > 1
+    ) {
+      throw new Error(`${key} volume ${entry.volume} must be between 0 and 1`);
+    }
+
+    const spec = SOUND_SPECS[entry.id];
+    if (!spec) throw new Error(`${key} has no hybrid sound spec`);
+    validateSoundSpec(entry, spec);
+    for (let index = 0; index < entry.files.length; index += 1) {
+      const expectedFile = `assets/sounds/${entry.id}-${String(index + 1).padStart(2, "0")}.wav`;
+      const expectedSrc = `modules/infinity-dnd5e/${expectedFile}`;
+      if (entry.files[index] !== expectedFile) {
+        throw new Error(
+          `${key} variant ${index + 1} must be named ${expectedFile}; found ${entry.files[index]}`,
+        );
+      }
+      if (entry.srcs[index] !== expectedSrc) {
+        throw new Error(
+          `${key} variant ${index + 1} source must be ${expectedSrc}; found ${entry.srcs[index]}`,
+        );
+      }
+      resolveOwnedPath(entry.files[index], soundRoot, "sound output");
+      if (seenFiles.has(entry.files[index])) {
+        throw new Error(`Duplicate sound file ${entry.files[index]}`);
+      }
+      seenFiles.add(entry.files[index]);
+    }
+
+    const primaryFiles = entry.files.map((_, variantIndex) =>
+      foleyFileForLayer(spec.primary, variantIndex),
+    );
+    if (new Set(primaryFiles).size !== entry.files.length) {
+      throw new Error(
+        `${key} must use a different recorded primary take for every variant`,
+      );
+    }
+    contracts.push({ key, entry, spec });
+  }
+
+  const extraSpecs = Object.keys(SOUND_SPECS).filter((id) => !seenIds.has(id));
+  if (extraSpecs.length > 0) {
+    throw new Error(
+      `Hybrid sound specs are not registered: ${extraSpecs.join(", ")}`,
+    );
+  }
+  return contracts;
+}
+
+function validateSoundSpec(entry, spec) {
+  if (
+    !Number.isFinite(spec.duration) ||
+    spec.duration <= 0 ||
+    spec.duration > MAX_DURATION_SECONDS
+  ) {
+    throw new Error(`${entry.id} has invalid duration ${spec.duration}`);
+  }
+  if (typeof spec.render !== "function") {
+    throw new Error(`${entry.id} has no synthesis-accent renderer`);
+  }
+  if (!MASTERING_PROFILES[spec.family]) {
+    throw new Error(`${entry.id} has unknown mastering family ${spec.family}`);
+  }
+  if (!ROOM_PROFILES[spec.room]) {
+    throw new Error(`${entry.id} has unknown room profile ${spec.room}`);
+  }
+  validateFoleyLayer(entry.id, spec.primary, entry.files.length, "primary");
+  if (spec.secondary) {
+    validateFoleyLayer(
+      entry.id,
+      spec.secondary,
+      entry.files.length,
+      "secondary",
+    );
+  }
+  if (
+    !Number.isFinite(spec.accentGain) ||
+    spec.accentGain < 0 ||
+    spec.accentGain > 0.35
+  ) {
+    throw new Error(`${entry.id} has invalid synthesis accent gain`);
+  }
+  if (
+    spec.peakScale !== undefined &&
+    (!Number.isFinite(spec.peakScale) ||
+      spec.peakScale < 0.75 ||
+      spec.peakScale > 1.1)
+  ) {
+    throw new Error(`${entry.id} has invalid peak scale ${spec.peakScale}`);
+  }
+}
+
+function validateFoleyLayer(eventId, layer, variantCount, role) {
+  if (!layer || !FOLEY_GROUPS[layer.group]) {
+    throw new Error(
+      `${eventId} has unknown ${role} foley group ${layer?.group}`,
+    );
+  }
+  if (!Array.isArray(layer.takes) || layer.takes.length < variantCount) {
+    throw new Error(
+      `${eventId} does not declare enough ${role} recorded takes`,
+    );
+  }
+  for (const take of layer.takes) {
+    if (!Number.isInteger(take) || !FOLEY_GROUPS[layer.group][take]) {
+      throw new Error(`${eventId} has invalid ${role} foley take ${take}`);
+    }
+  }
+  for (const [label, value, minimum, maximum] of [
+    ["gain", layer.gain, 0, 1.2],
+    ["start", layer.start, 0, MAX_DURATION_SECONDS],
+    ["pan", layer.pan, -1, 1],
+    ["width", layer.width, 0, 1.5],
+  ]) {
+    if (!Number.isFinite(value) || value < minimum || value > maximum) {
+      throw new Error(`${eventId} has invalid ${role} ${label} ${value}`);
+    }
+  }
+}
+
+function loadFoleyLibrary() {
+  const expectedFiles = new Set(Object.values(FOLEY_GROUPS).flat());
+  const pinnedFiles = new Set(Object.keys(FOLEY_SHA256));
+  if (
+    expectedFiles.size !== pinnedFiles.size ||
+    [...expectedFiles].some((fileName) => !pinnedFiles.has(fileName))
+  ) {
+    throw new Error(
+      "Internal foley source list and SHA-256 manifest do not match",
+    );
+  }
+  const manifestAssets = loadFoleyManifest(expectedFiles);
+  if (!existsSync(foleyRoot)) {
+    throw new Error(
+      "Normalized foley directory is missing: assets/sounds/foley. Expected page-01.wav through cloth-02.wav.",
+    );
+  }
+  const unexpectedWavs = readdirSync(foleyRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.wav$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .filter((name) => !expectedFiles.has(name))
+    .sort();
+  if (unexpectedWavs.length > 0) {
+    throw new Error(
+      `Unexpected normalized foley WAV(s): ${unexpectedWavs.join(", ")}`,
+    );
+  }
+
+  const library = new Map();
+  const sourceHashes = new Map();
+  for (const [group, files] of Object.entries(FOLEY_GROUPS)) {
+    for (let takeIndex = 0; takeIndex < files.length; takeIndex += 1) {
+      const fileName = files[takeIndex];
+      const relativeFile = `assets/sounds/foley/${fileName}`;
+      const filePath = path.join(foleyRoot, fileName);
+      if (!existsSync(filePath)) {
+        throw new Error(`Missing normalized foley source: ${relativeFile}`);
+      }
+      const stat = statSync(filePath);
+      if (!stat.isFile()) {
+        throw new Error(
+          `Normalized foley source is not a file: ${relativeFile}`,
+        );
+      }
+      if (stat.size <= 44 || stat.size > MAX_FOLEY_FILE_BYTES) {
+        throw new Error(
+          `Normalized foley source has unsafe byte size: ${relativeFile} (${stat.size})`,
+        );
+      }
+      const manifestAsset = manifestAssets.get(fileName);
+      if (stat.size !== manifestAsset.byteCount) {
+        throw new Error(
+          `Normalized foley source byte count differs from its provenance manifest: ${relativeFile} (${stat.size} != ${manifestAsset.byteCount})`,
+        );
+      }
+      const payload = readFileSync(filePath);
+      let wav;
+      let decoded;
+      try {
+        wav = parsePcmWav(payload, relativeFile);
+        decoded = decodePcmWav(payload, relativeFile, wav);
+      } catch (error) {
+        throw new Error(
+          `Invalid normalized foley source ${relativeFile}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      validateFoleySource(relativeFile, wav, decoded);
+      if (
+        Math.abs(wav.durationSeconds - manifestAsset.durationSeconds) >
+        1 / SAMPLE_RATE
+      ) {
+        throw new Error(
+          `Normalized foley source duration differs from its provenance manifest: ${relativeFile}`,
+        );
+      }
+      const sourceHash = sha256(payload);
+      const expectedHash = FOLEY_SHA256[fileName];
+      if (sourceHash !== expectedHash) {
+        throw new Error(
+          `Normalized foley source hash mismatch for ${relativeFile}: expected ${expectedHash}, found ${sourceHash}`,
+        );
+      }
+      const duplicate = sourceHashes.get(sourceHash);
+      if (duplicate) {
+        throw new Error(
+          `Recorded foley takes must be different: ${duplicate} and ${relativeFile} have identical bytes`,
+        );
+      }
+      sourceHashes.set(sourceHash, relativeFile);
+      library.set(`${group}:${takeIndex}`, {
+        ...decoded,
+        file: relativeFile,
+        metrics: analyzeStereo(decoded.left, decoded.right),
+      });
+    }
+  }
+  return library;
+}
+
+function loadFoleyManifest(expectedFiles) {
+  const manifestPath = path.join(foleyRoot, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      "Foley provenance manifest is missing: assets/sounds/foley/manifest.json",
+    );
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Foley provenance manifest is invalid JSON: ${error.message}`,
+      {
+        cause: error,
+      },
+    );
+  }
+  if (manifest.schemaVersion !== 1) {
+    throw new Error(
+      `Unsupported foley provenance schema version ${manifest.schemaVersion}`,
+    );
+  }
+  if (manifest.licensePolicy?.acceptedLicense !== "CC0-1.0") {
+    throw new Error(
+      "Foley provenance manifest must accept only CC0-1.0 sources",
+    );
+  }
+  if (manifest.licensePolicy?.rawSourceArchivesCommitted !== false) {
+    throw new Error(
+      "Foley provenance manifest must record that raw source archives are not committed",
+    );
+  }
+  if (
+    manifest.normalization?.sampleRateHz !== SAMPLE_RATE ||
+    manifest.normalization?.channels !== 1 ||
+    manifest.normalization?.sampleWidthBits !== 16 ||
+    manifest.normalization?.codec !== "pcm_s16le"
+  ) {
+    throw new Error("Foley provenance normalization contract has drifted");
+  }
+
+  if (
+    !Array.isArray(manifest.sourcePackages) ||
+    manifest.sourcePackages.length === 0
+  ) {
+    throw new Error("Foley provenance manifest has no source packages");
+  }
+  const packageIds = new Set();
+  for (const sourcePackage of manifest.sourcePackages) {
+    if (
+      typeof sourcePackage?.id !== "string" ||
+      !/^[a-z][a-z0-9-]*$/.test(sourcePackage.id) ||
+      packageIds.has(sourcePackage.id)
+    ) {
+      throw new Error(
+        `Foley provenance manifest has an invalid or duplicate source package id: ${sourcePackage?.id}`,
+      );
+    }
+    if (sourcePackage.license !== "CC0-1.0") {
+      throw new Error(
+        `Foley source package ${sourcePackage.id} is not recorded as CC0-1.0`,
+      );
+    }
+    if (!/^https:\/\//.test(sourcePackage.sourcePageUrl ?? "")) {
+      throw new Error(
+        `Foley source package ${sourcePackage.id} has no HTTPS source page`,
+      );
+    }
+    if (!/^https:\/\//.test(sourcePackage.downloadUrl ?? "")) {
+      throw new Error(
+        `Foley source package ${sourcePackage.id} has no HTTPS download URL`,
+      );
+    }
+    if (
+      !Number.isSafeInteger(sourcePackage.archiveBytes) ||
+      sourcePackage.archiveBytes <= 0
+    ) {
+      throw new Error(
+        `Foley source package ${sourcePackage.id} has an invalid archive byte count`,
+      );
+    }
+    if (!isSha256(sourcePackage.archiveSha256)) {
+      throw new Error(
+        `Foley source package ${sourcePackage.id} has an invalid archive SHA-256`,
+      );
+    }
+    packageIds.add(sourcePackage.id);
+  }
+
+  if (!Array.isArray(manifest.assets)) {
+    throw new Error("Foley provenance manifest has no asset records");
+  }
+  const assets = new Map();
+  for (const asset of manifest.assets) {
+    const fileName = path.basename(asset?.file ?? "");
+    const expectedRelativeFile = `assets/sounds/foley/${fileName}`;
+    if (
+      asset?.file !== expectedRelativeFile ||
+      !expectedFiles.has(fileName) ||
+      assets.has(fileName)
+    ) {
+      throw new Error(
+        `Foley provenance manifest has an invalid, unexpected, or duplicate asset path: ${asset?.file}`,
+      );
+    }
+    if (!packageIds.has(asset.sourcePackageId)) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} references unknown source package ${asset.sourcePackageId}`,
+      );
+    }
+    if (!isSha256(asset.sourceSha256)) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} has an invalid source-member SHA-256`,
+      );
+    }
+    if (!isSha256(asset.sha256) || asset.sha256 !== FOLEY_SHA256[fileName]) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} does not match the pinned normalized WAV SHA-256`,
+      );
+    }
+    if (!Number.isSafeInteger(asset.byteCount) || asset.byteCount <= 44) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} has an invalid normalized byte count`,
+      );
+    }
+    if (!Number.isFinite(asset.durationSeconds) || asset.durationSeconds <= 0) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} has an invalid normalized duration`,
+      );
+    }
+    if (!Number.isFinite(asset.targetPeakDbfs) || asset.targetPeakDbfs > 0) {
+      throw new Error(
+        `Foley provenance asset ${asset.id} has an invalid target peak`,
+      );
+    }
+    assets.set(fileName, asset);
+  }
+  if (
+    assets.size !== expectedFiles.size ||
+    [...expectedFiles].some((fileName) => !assets.has(fileName))
+  ) {
+    throw new Error(
+      "Foley provenance manifest does not cover every pinned source WAV",
+    );
+  }
+  return assets;
+}
+
+function isSha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function validateFoleySource(relativeFile, wav, decoded) {
+  if (wav.audioFormat !== 1) {
+    throw new Error(`${relativeFile} must use integer PCM encoding`);
+  }
+  if (wav.sampleRate !== SAMPLE_RATE) {
+    throw new Error(
+      `${relativeFile} sample rate ${wav.sampleRate} must be ${SAMPLE_RATE}`,
+    );
+  }
+  if (wav.channels !== 1 && wav.channels !== 2) {
+    throw new Error(`${relativeFile} must be mono or stereo PCM`);
+  }
+  if (wav.bitsPerSample !== 16) {
+    throw new Error(
+      `${relativeFile} bit depth ${wav.bitsPerSample} must be 16`,
+    );
+  }
+  if (
+    wav.durationSeconds < MIN_FOLEY_DURATION_SECONDS ||
+    wav.durationSeconds > MAX_FOLEY_DURATION_SECONDS
+  ) {
+    throw new Error(
+      `${relativeFile} duration ${wav.durationSeconds.toFixed(3)}s is outside ${MIN_FOLEY_DURATION_SECONDS}..${MAX_FOLEY_DURATION_SECONDS}s`,
+    );
+  }
+  const metrics = analyzeStereo(decoded.left, decoded.right);
+  if (metrics.peak < MIN_FOLEY_PEAK || metrics.rms < MIN_FOLEY_RMS) {
+    throw new Error(
+      `${relativeFile} is silent or too quiet (peak=${metrics.peak.toFixed(5)}, rms=${metrics.rms.toFixed(5)})`,
+    );
+  }
+  if (metrics.dcOffset > MAX_FOLEY_DC_OFFSET) {
+    throw new Error(
+      `${relativeFile} DC offset ${metrics.dcOffset.toFixed(6)} exceeds ${MAX_FOLEY_DC_OFFSET}`,
+    );
+  }
+  if (metrics.crestDb > MAX_FOLEY_CREST_DB) {
+    throw new Error(
+      `${relativeFile} crest ${metrics.crestDb.toFixed(2)} dB exceeds ${MAX_FOLEY_CREST_DB} dB`,
+    );
+  }
+  if (metrics.stereoBalanceDb > MAX_FOLEY_STEREO_BALANCE_DB) {
+    throw new Error(
+      `${relativeFile} stereo balance ${metrics.stereoBalanceDb.toFixed(2)} dB exceeds ${MAX_FOLEY_STEREO_BALANCE_DB} dB`,
+    );
+  }
+}
+
+function buildSoundOutputs(contracts, foleyLibrary) {
+  return contracts.flatMap(({ entry, spec }) =>
+    entry.files.map((file, variantIndex) => {
+      const buffer = renderSoundVariant(
+        entry.id,
+        file,
+        variantIndex,
+        spec,
+        foleyLibrary,
+      );
+      return {
+        eventId: entry.id,
+        family: spec.family,
+        file,
+        variantIndex,
+        buffer,
+        wav: encodeWav(buffer),
+      };
+    }),
+  );
+}
+
+function renderSoundVariant(eventId, file, variantIndex, spec, foleyLibrary) {
+  const buffer = createBuffer(spec.duration);
+  addRecordedLayer(
+    buffer,
+    resolveFoleyTake(foleyLibrary, spec.primary, variantIndex),
+    spec.primary,
+  );
+  if (spec.secondary) {
+    addRecordedLayer(
+      buffer,
+      resolveFoleyTake(foleyLibrary, spec.secondary, variantIndex),
+      spec.secondary,
+    );
+  }
+
+  const accent = createBuffer(spec.duration);
+  const rng = makeRng(hashString(`${eventId}\0${variantIndex + 1}\0${file}`));
+  spec.render(accent, rng);
+  const mastering = MASTERING_PROFILES[spec.family];
+  addSubtleAccent(buffer, accent, spec.accentGain, mastering.accentPeakRatio);
+  addRoomTail(buffer, { profile: spec.room });
+  finishBuffer(buffer, spec);
+  return buffer;
+}
+
+function resolveFoleyTake(library, layer, variantIndex) {
+  const takeIndex = layer.takes[variantIndex];
+  const source = library.get(`${layer.group}:${takeIndex}`);
+  if (!source) {
+    throw new Error(
+      `Recorded foley source was not loaded: ${foleyFileForLayer(layer, variantIndex)}`,
+    );
+  }
+  return source;
+}
+
+function foleyFileForLayer(layer, variantIndex) {
+  const takeIndex = layer.takes[variantIndex];
+  const fileName = FOLEY_GROUPS[layer.group]?.[takeIndex];
+  return fileName ? `assets/sounds/foley/${fileName}` : "<invalid foley take>";
+}
+
+function addRecordedLayer(target, source, layer) {
+  const startFrame = Math.round(layer.start * SAMPLE_RATE);
+  const sourceBounds = activeSampleBounds(source.left, source.right);
+  const availableFrames = Math.max(0, target.left.length - startFrame);
+  const frameCount = Math.min(
+    sourceBounds.end - sourceBounds.start,
+    availableFrames,
+  );
+  if (frameCount <= 0) return;
+
+  const fadeInFrames = Math.min(
+    Math.round(0.004 * SAMPLE_RATE),
+    frameCount >> 1,
+  );
+  const fadeOutFrames = Math.min(
+    Math.round(0.025 * SAMPLE_RATE),
+    frameCount >> 1,
+  );
+  const [leftPan, rightPan] = panGains(layer.pan);
+  const panNormalization = Math.SQRT2;
+  // Normalize each pinned recording before applying creative gain. The source
+  // library contains both close, hot transients and deliberately quiet cloth
+  // detail; this keeps every real take in charge of the rendered texture.
+  const sourceNormalization = 0.62 / source.metrics.peak;
+  for (let index = 0; index < frameCount; index += 1) {
+    const sourceIndex = sourceBounds.start + index;
+    const left = source.left[sourceIndex];
+    const right = source.right[sourceIndex];
+    const mid = (left + right) * 0.5;
+    const side = (left - right) * 0.5 * layer.width;
+    let envelope = 1;
+    if (fadeInFrames > 0 && index < fadeInFrames) {
+      envelope *= smoothstep(index / fadeInFrames);
+    }
+    const remaining = frameCount - index - 1;
+    if (fadeOutFrames > 0 && remaining < fadeOutFrames) {
+      envelope *= smoothstep(remaining / fadeOutFrames);
+    }
+    const outputIndex = startFrame + index;
+    const gain = layer.gain * envelope * panNormalization * sourceNormalization;
+    target.left[outputIndex] += (mid + side) * gain * leftPan;
+    target.right[outputIndex] += (mid - side) * gain * rightPan;
+  }
+}
+
+function activeSampleBounds(left, right) {
+  let peak = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    peak = Math.max(peak, Math.abs(left[index]), Math.abs(right[index]));
+  }
+  const threshold = Math.max(1 / 32768, peak * 0.018);
+  let start = 0;
+  while (
+    start < left.length &&
+    Math.max(Math.abs(left[start]), Math.abs(right[start])) < threshold
+  ) {
+    start += 1;
+  }
+  let end = left.length;
+  while (
+    end > start &&
+    Math.max(Math.abs(left[end - 1]), Math.abs(right[end - 1])) < threshold
+  ) {
+    end -= 1;
+  }
+  const padding = Math.round(0.006 * SAMPLE_RATE);
+  return {
+    start: Math.max(0, start - padding),
+    end: Math.min(left.length, end + padding),
+  };
+}
+
+function addSubtleAccent(target, accent, requestedGain, maximumPeakRatio) {
+  const targetPeak = stereoPeak(target);
+  const accentPeak = stereoPeak(accent);
+  if (targetPeak <= 0 || accentPeak <= 0 || requestedGain <= 0) return;
+  const gain = Math.min(
+    requestedGain,
+    (targetPeak * maximumPeakRatio) / accentPeak,
+  );
+  for (let index = 0; index < target.left.length; index += 1) {
+    target.left[index] += accent.left[index] * gain;
+    target.right[index] += accent.right[index] * gain;
+  }
+}
+
+function rejectUnexpectedOutputWavs(outputs) {
+  const expectedNames = new Set(
+    outputs.map((output) => path.basename(output.file)),
+  );
+  const unexpected = readdirSync(soundRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.wav$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .filter((name) => !expectedNames.has(name))
+    .sort();
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Unexpected top-level sound output WAV(s): ${unexpected.join(", ")}`,
+    );
+  }
+}
+
+function pruneUnexpectedOutputWavs(outputs) {
+  const expectedNames = new Set(
+    outputs.map((output) => path.basename(output.file)),
+  );
+  const obsoleteNames = readdirSync(soundRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.wav$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .filter((name) => !expectedNames.has(name))
+    .sort();
+  for (const name of obsoleteNames) {
+    const filePath = path.join(soundRoot, name);
+    if (path.dirname(filePath) !== soundRoot) {
+      throw new Error(
+        `Refusing to prune sound WAV outside assets/sounds: ${name}`,
+      );
+    }
+    unlinkSync(filePath);
+  }
+  return obsoleteNames;
+}
+
+function validateOutputMetrics(output, metrics) {
+  const spec = SOUND_SPECS[output.eventId];
+  const mastering = MASTERING_PROFILES[output.family];
+  const targetPeak = mastering.targetPeak * (spec.peakScale ?? 1);
+  if (metrics.rms < mastering.minimumRms) {
+    throw new Error(
+      `${output.file} is silent or too quiet (RMS ${metrics.rms.toFixed(5)} < ${mastering.minimumRms})`,
+    );
+  }
+  if (metrics.rms > mastering.maximumRms) {
+    throw new Error(
+      `${output.file} RMS ${metrics.rms.toFixed(5)} exceeds ${mastering.maximumRms}`,
+    );
+  }
+  if (Math.abs(metrics.peak - targetPeak) > 0.001) {
+    throw new Error(
+      `${output.file} peak ${metrics.peak.toFixed(5)} does not match family target ${targetPeak.toFixed(5)}`,
+    );
+  }
+  if (metrics.dcOffset > 0.002) {
+    throw new Error(
+      `${output.file} DC offset ${metrics.dcOffset.toFixed(6)} exceeds 0.002`,
+    );
+  }
+  if (metrics.crestDb > mastering.maximumCrestDb) {
+    throw new Error(
+      `${output.file} crest ${metrics.crestDb.toFixed(2)} dB exceeds ${mastering.maximumCrestDb} dB`,
+    );
+  }
+  if (metrics.stereoBalanceDb > mastering.maximumStereoBalanceDb) {
+    throw new Error(
+      `${output.file} stereo balance ${metrics.stereoBalanceDb.toFixed(2)} dB exceeds ${mastering.maximumStereoBalanceDb} dB`,
+    );
+  }
+}
+
+function buildPreviewBuffer(contracts, outputs) {
+  const variantGapFrames = Math.round(0.18 * SAMPLE_RATE);
+  const eventGapFrames = Math.round(0.48 * SAMPLE_RATE);
+  const outputByEvent = new Map();
+  for (const output of outputs) {
+    const variants = outputByEvent.get(output.eventId) ?? [];
+    variants.push(output);
+    outputByEvent.set(output.eventId, variants);
+  }
+
+  let totalFrames = 0;
+  for (const [eventIndex, contract] of contracts.entries()) {
+    const variants = outputByEvent.get(contract.entry.id) ?? [];
+    for (const [variantIndex, output] of variants.entries()) {
+      totalFrames += output.buffer.left.length;
+      if (variantIndex < variants.length - 1) totalFrames += variantGapFrames;
+    }
+    if (eventIndex < contracts.length - 1) totalFrames += eventGapFrames;
+  }
+
+  const preview = {
+    left: new Float32Array(totalFrames),
+    right: new Float32Array(totalFrames),
+  };
+  let cursor = 0;
+  for (const [eventIndex, contract] of contracts.entries()) {
+    const variants = outputByEvent.get(contract.entry.id) ?? [];
+    for (const [variantIndex, output] of variants.entries()) {
+      preview.left.set(output.buffer.left, cursor);
+      preview.right.set(output.buffer.right, cursor);
+      cursor += output.buffer.left.length;
+      if (variantIndex < variants.length - 1) cursor += variantGapFrames;
+    }
+    if (eventIndex < contracts.length - 1) cursor += eventGapFrames;
+  }
+  return preview;
 }
 
 function renderLoadingShimmer(buffer, rng) {
@@ -739,16 +1867,19 @@ function createBuffer(duration) {
   };
 }
 
-function finishBuffer(buffer, peak) {
+function finishBuffer(buffer, spec) {
+  const mastering = MASTERING_PROFILES[spec.family];
+  if (!mastering) {
+    throw new Error(`Unknown mastering family ${spec.family}`);
+  }
   removeDc(buffer.left);
   removeDc(buffer.right);
-  // Gentle high-frequency roll-off to take the digital fizz / harsh edge off
-  // the noise + soft-limiter before normalizing.
-  lowPass(buffer.left, 13_500);
-  lowPass(buffer.right, 13_500);
+  lowPass(buffer.left, mastering.lowPassHz);
+  lowPass(buffer.right, mastering.lowPassHz);
   fadeEdges(buffer, 0.005);
-  softLimit(buffer, 1.12);
-  normalize(buffer, peak);
+  softLimit(buffer, mastering.limiterDrive);
+  balanceStereo(buffer, mastering.maximumStereoBalanceDb);
+  normalize(buffer, mastering.targetPeak * (spec.peakScale ?? 1));
 }
 
 function lowPass(samples, cutoffHz) {
@@ -1140,8 +2271,11 @@ function addFilteredNoise(
  * stone-hall ambience without the metallic slap-back ring the old single tap
  * produced. `amount` is the wet level; `room` scales the tap spacing.
  */
-function addRoomTail(buffer, { amount = 0.1, room = 1 }) {
-  const taps = [
+function addRoomTail(buffer, { amount, room = 1, profile } = {}) {
+  const roomProfile = profile ? ROOM_PROFILES[profile] : null;
+  if (profile && !roomProfile)
+    throw new Error(`Unknown room profile ${profile}`);
+  const taps = roomProfile?.taps ?? [
     [9, 0.72],
     [17, 0.52],
     [26, 0.38],
@@ -1150,18 +2284,20 @@ function addRoomTail(buffer, { amount = 0.1, room = 1 }) {
     [65, 0.12],
     [83, 0.08],
   ];
+  const wetAmount = amount ?? roomProfile?.amount ?? 0.1;
+  const stereoSpread = roomProfile?.spread ?? 1.18;
   const srcLeft = buffer.left.slice();
   const srcRight = buffer.right.slice();
   const length = buffer.left.length;
   for (const [ms, gain] of taps) {
-    const wet = gain * amount;
+    const wet = gain * wetAmount;
     const delayLeft = Math.max(
       1,
       Math.round(((ms * room) / 1000) * SAMPLE_RATE),
     );
     const delayRight = Math.max(
       1,
-      Math.round(((ms * room * 1.18) / 1000) * SAMPLE_RATE),
+      Math.round(((ms * room * stereoSpread) / 1000) * SAMPLE_RATE),
     );
     // Cross-feed (left tail fed from the right source and vice versa) widens
     // the image, mixing a little same-side energy for body.
@@ -1219,9 +2355,34 @@ function normalize(buffer, peak) {
     for (const sample of samples) max = Math.max(max, Math.abs(sample));
   }
   if (max === 0) return;
-  const gain = Math.min(12, peak / max);
+  const gain = peak / max;
   for (const samples of [buffer.left, buffer.right]) {
     for (let i = 0; i < samples.length; i += 1) samples[i] *= gain;
+  }
+}
+
+function balanceStereo(buffer, maximumBalanceDb) {
+  let leftSquareSum = 0;
+  let rightSquareSum = 0;
+  for (let index = 0; index < buffer.left.length; index += 1) {
+    leftSquareSum += buffer.left[index] * buffer.left[index];
+    rightSquareSum += buffer.right[index] * buffer.right[index];
+  }
+  const leftRms = Math.sqrt(leftSquareSum / buffer.left.length);
+  const rightRms = Math.sqrt(rightSquareSum / buffer.right.length);
+  if (leftRms <= Number.EPSILON || rightRms <= Number.EPSILON) return;
+
+  const maximumRatio = 10 ** (maximumBalanceDb / 20);
+  if (leftRms > rightRms * maximumRatio) {
+    const gain = (rightRms * maximumRatio) / leftRms;
+    for (let index = 0; index < buffer.left.length; index += 1) {
+      buffer.left[index] *= gain;
+    }
+  } else if (rightRms > leftRms * maximumRatio) {
+    const gain = (leftRms * maximumRatio) / rightRms;
+    for (let index = 0; index < buffer.right.length; index += 1) {
+      buffer.right[index] *= gain;
+    }
   }
 }
 
@@ -1266,29 +2427,218 @@ function encodeWav(buffer) {
   return wav;
 }
 
-function inspectWav(buffer) {
-  if (buffer.toString("ascii", 0, 4) !== "RIFF") {
-    throw new Error("Missing RIFF header");
+function parsePcmWav(payload, label = "WAV") {
+  if (!Buffer.isBuffer(payload))
+    throw new Error(`${label} is not a byte buffer`);
+  if (payload.length < 12)
+    throw new Error(`${label} is shorter than a RIFF header`);
+  if (payload.toString("ascii", 0, 4) !== "RIFF") {
+    throw new Error(`${label} is missing its RIFF header`);
   }
-  if (buffer.toString("ascii", 8, 12) !== "WAVE") {
-    throw new Error("Missing WAVE signature");
+  if (payload.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error(`${label} is missing its WAVE signature`);
   }
-  if (buffer.toString("ascii", 12, 16) !== "fmt ") {
-    throw new Error("Missing fmt chunk");
+  const declaredBytes = payload.readUInt32LE(4) + 8;
+  if (declaredBytes !== payload.length) {
+    throw new Error(
+      `${label} RIFF size declares ${declaredBytes} bytes but file has ${payload.length}`,
+    );
   }
-  if (buffer.toString("ascii", 36, 40) !== "data") {
-    throw new Error("Missing data chunk");
+
+  let format = null;
+  let data = null;
+  let offset = 12;
+  while (offset < payload.length) {
+    if (offset + 8 > payload.length) {
+      throw new Error(
+        `${label} has a truncated chunk header at byte ${offset}`,
+      );
+    }
+    const chunkId = payload.toString("ascii", offset, offset + 4);
+    const chunkBytes = payload.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    const chunkEnd = chunkStart + chunkBytes;
+    if (chunkEnd > payload.length) {
+      throw new Error(
+        `${label} chunk ${JSON.stringify(chunkId)} overruns the file (${chunkBytes} bytes at ${chunkStart})`,
+      );
+    }
+
+    if (chunkId === "fmt ") {
+      if (format) throw new Error(`${label} has more than one fmt chunk`);
+      if (chunkBytes < 16)
+        throw new Error(`${label} fmt chunk is shorter than 16 bytes`);
+      format = {
+        audioFormat: payload.readUInt16LE(chunkStart),
+        channels: payload.readUInt16LE(chunkStart + 2),
+        sampleRate: payload.readUInt32LE(chunkStart + 4),
+        byteRate: payload.readUInt32LE(chunkStart + 8),
+        blockAlign: payload.readUInt16LE(chunkStart + 12),
+        bitsPerSample: payload.readUInt16LE(chunkStart + 14),
+      };
+    } else if (chunkId === "data") {
+      if (data) throw new Error(`${label} has more than one data chunk`);
+      data = { dataOffset: chunkStart, dataBytes: chunkBytes };
+    }
+
+    offset = chunkEnd + (chunkBytes & 1);
+    if (offset > payload.length) {
+      throw new Error(
+        `${label} is missing padding after chunk ${JSON.stringify(chunkId)}`,
+      );
+    }
   }
-  const channels = buffer.readUInt16LE(22);
-  const sampleRate = buffer.readUInt32LE(24);
-  const bitsPerSample = buffer.readUInt16LE(34);
-  const dataBytes = buffer.readUInt32LE(40);
+  if (!format) throw new Error(`${label} has no fmt chunk`);
+  if (!data) throw new Error(`${label} has no data chunk`);
+  if (format.audioFormat !== 1) {
+    throw new Error(
+      `${label} uses WAV format ${format.audioFormat}; only integer PCM is allowed`,
+    );
+  }
+  if (format.channels !== 1 && format.channels !== 2) {
+    throw new Error(
+      `${label} has ${format.channels} channels; only mono or stereo is allowed`,
+    );
+  }
+  if (format.bitsPerSample !== 16) {
+    throw new Error(
+      `${label} is ${format.bitsPerSample}-bit; only PCM16 is allowed`,
+    );
+  }
+  if (!Number.isInteger(format.sampleRate) || format.sampleRate <= 0) {
+    throw new Error(`${label} has invalid sample rate ${format.sampleRate}`);
+  }
+  const expectedBlockAlign = format.channels * BYTES_PER_SAMPLE;
+  if (format.blockAlign !== expectedBlockAlign) {
+    throw new Error(
+      `${label} block alignment ${format.blockAlign} does not match ${expectedBlockAlign}`,
+    );
+  }
+  const expectedByteRate = format.sampleRate * expectedBlockAlign;
+  if (format.byteRate !== expectedByteRate) {
+    throw new Error(
+      `${label} byte rate ${format.byteRate} does not match ${expectedByteRate}`,
+    );
+  }
+  if (data.dataBytes === 0 || data.dataBytes % expectedBlockAlign !== 0) {
+    throw new Error(
+      `${label} data size ${data.dataBytes} is empty or not aligned to ${expectedBlockAlign} bytes`,
+    );
+  }
+  const frameCount = data.dataBytes / expectedBlockAlign;
   return {
-    channels,
-    sampleRate,
-    bitsPerSample,
-    durationSeconds: dataBytes / (sampleRate * channels * (bitsPerSample / 8)),
+    ...format,
+    ...data,
+    frameCount,
+    durationSeconds: frameCount / format.sampleRate,
   };
+}
+
+function decodePcmWav(
+  payload,
+  label = "WAV",
+  parsed = parsePcmWav(payload, label),
+) {
+  const left = new Float32Array(parsed.frameCount);
+  const right = new Float32Array(parsed.frameCount);
+  for (let frame = 0; frame < parsed.frameCount; frame += 1) {
+    const frameOffset = parsed.dataOffset + frame * parsed.blockAlign;
+    left[frame] = payload.readInt16LE(frameOffset) / 32768;
+    right[frame] =
+      parsed.channels === 1
+        ? left[frame]
+        : payload.readInt16LE(frameOffset + BYTES_PER_SAMPLE) / 32768;
+  }
+  return { left, right };
+}
+
+function analyzeStereo(left, right) {
+  if (
+    !(left instanceof Float32Array) ||
+    !(right instanceof Float32Array) ||
+    left.length === 0 ||
+    left.length !== right.length
+  ) {
+    throw new Error(
+      "Stereo analysis requires equal, non-empty Float32 channels",
+    );
+  }
+  let peak = 0;
+  let leftSum = 0;
+  let rightSum = 0;
+  let leftSquareSum = 0;
+  let rightSquareSum = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftSample = left[index];
+    const rightSample = right[index];
+    peak = Math.max(peak, Math.abs(leftSample), Math.abs(rightSample));
+    leftSum += leftSample;
+    rightSum += rightSample;
+    leftSquareSum += leftSample * leftSample;
+    rightSquareSum += rightSample * rightSample;
+  }
+  const leftRms = Math.sqrt(leftSquareSum / left.length);
+  const rightRms = Math.sqrt(rightSquareSum / right.length);
+  const rms = Math.sqrt((leftSquareSum + rightSquareSum) / (left.length * 2));
+  const dcOffset = Math.max(
+    Math.abs(leftSum / left.length),
+    Math.abs(rightSum / right.length),
+  );
+  let stereoBalanceDb = 0;
+  if (leftRms > Number.EPSILON || rightRms > Number.EPSILON) {
+    stereoBalanceDb =
+      leftRms > Number.EPSILON && rightRms > Number.EPSILON
+        ? Math.abs(20 * Math.log10(leftRms / rightRms))
+        : Number.POSITIVE_INFINITY;
+  }
+  return {
+    peak,
+    rms,
+    leftRms,
+    rightRms,
+    dcOffset,
+    crestDb:
+      rms > Number.EPSILON
+        ? 20 * Math.log10(peak / rms)
+        : Number.POSITIVE_INFINITY,
+    stereoBalanceDb,
+  };
+}
+
+function stereoPeak(buffer) {
+  let peak = 0;
+  for (let index = 0; index < buffer.left.length; index += 1) {
+    peak = Math.max(
+      peak,
+      Math.abs(buffer.left[index]),
+      Math.abs(buffer.right[index]),
+    );
+  }
+  return peak;
+}
+
+function sha256(payload) {
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+function resolveOwnedPath(relativePath, ownedRoot, label) {
+  if (typeof relativePath !== "string" || relativePath.length === 0) {
+    throw new Error(`${label} path must be a non-empty string`);
+  }
+  if (path.isAbsolute(relativePath)) {
+    throw new Error(`${label} path must be relative: ${relativePath}`);
+  }
+  const resolved = path.resolve(root, relativePath);
+  const relativeToOwnedRoot = path.relative(path.resolve(ownedRoot), resolved);
+  if (
+    relativeToOwnedRoot === "" ||
+    relativeToOwnedRoot.startsWith(`..${path.sep}`) ||
+    relativeToOwnedRoot === ".." ||
+    path.isAbsolute(relativeToOwnedRoot)
+  ) {
+    throw new Error(`${label} path escapes assets/sounds: ${relativePath}`);
+  }
+  return resolved;
 }
 
 function toInt16(sample) {

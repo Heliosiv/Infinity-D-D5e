@@ -26,6 +26,16 @@ not support deterministic seeding, so individual images cannot be regenerated
 byte-for-byte from their prompts; the generation prompts and per-asset metadata
 are recorded in `assets/item-art-plan.json`.
 
+## Recorded sound-effect layers (`assets/sounds/foley/`)
+
+The module's hybrid sound palette includes selected, processed recordings from
+**10 Book Page Flips** by StarNinjas, **100 CC0 metal and wood SFX** by
+rubberduck, and **RPG Sound Pack** by artisticdude. Each source's individual
+OpenGameArt listing identifies the package as dedicated to the public domain
+under Creative Commons Zero 1.0. Attribution is not required but is retained
+voluntarily. Exact source, license, hash, and processing evidence is recorded in
+`assets/sounds/PROVENANCE.md` and `assets/sounds/foley/manifest.json`.
+
 ## Foundry VTT / dnd5e system
 
 "Foundry Virtual Tabletop" is a product of Foundry Gaming LLC. The "dnd5e"

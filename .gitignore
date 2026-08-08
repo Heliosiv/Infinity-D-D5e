@@ -4,6 +4,7 @@ tmp/
 .DS_Store
 *.log
 release/
+output/
 .vscode/
 .idea/
 .claude/
