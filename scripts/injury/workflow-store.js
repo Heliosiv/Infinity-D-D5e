@@ -23,12 +23,15 @@ const STORE_KEY = "criticalInjuryWorkflow";
 const CHECKPOINT_KEY = "criticalInjuryWorkflowCheckpoint";
 const STORE_VERSION = 2;
 const RECORD_SCHEMA = 1;
+const TREATMENT_SCHEMA = 1;
 const MAX_ID_LENGTH = 160;
 const MAX_COMPLETED_RECEIPTS = 200;
+const MAX_COMPLETED_TREATMENTS_PER_INJURY = 100;
 const DEFAULT_APPLICATION_LEASE_MS = 60_000;
 const MIN_APPLICATION_LEASE_MS = 5_000;
 const MAX_APPLICATION_LEASE_MS = 300_000;
 const VALID_STATES = new Set(["approved", "resolving", "completed"]);
+const VALID_TREATMENT_STATES = new Set(["requested", "resolving", "completed"]);
 
 let writeQueue = Promise.resolve();
 let observerRegistered = false;
@@ -63,6 +66,26 @@ function finiteTimestamp(value, fallback = null) {
 function nonNegativeInteger(value, fallback = null) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : fallback;
+}
+
+function finiteInteger(value, fallback = null) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : fallback;
+}
+
+function normalizePersistedObject(raw, { exact = false } = {}) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  try {
+    const normalized = JSON.parse(JSON.stringify(raw));
+    const valid =
+      normalized &&
+      typeof normalized === "object" &&
+      !Array.isArray(normalized) &&
+      (!exact || persistedValuesEqual(raw, normalized));
+    return valid ? normalized : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeResolution(raw) {
@@ -166,6 +189,197 @@ function normalizeResult(raw) {
   return clone(raw);
 }
 
+function normalizeTreatmentConsumptionStep(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const actorId = toId(raw.actorId);
+  const itemId = toId(raw.itemId);
+  const before = nonNegativeInteger(raw.before);
+  const spend = nonNegativeInteger(raw.spend);
+  const after = nonNegativeInteger(raw.after);
+  if (
+    !actorId ||
+    !itemId ||
+    before == null ||
+    spend == null ||
+    after == null ||
+    spend > before ||
+    after !== before - spend
+  ) {
+    return null;
+  }
+  return { actorId, itemId, before, spend, after };
+}
+
+function normalizeTreatmentResolution(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const effectId = toId(raw.effectId);
+  const healerActorId = toId(raw.healerActorId);
+  const injuryKey = toId(raw.injuryKey);
+  const tableVersion = nonNegativeInteger(raw.tableVersion);
+  const treatmentStartTs =
+    raw.treatmentStartTs == null ? null : finiteTimestamp(raw.treatmentStartTs);
+  const treatmentDc = nonNegativeInteger(raw.treatmentDc);
+  const treatmentSkill = String(raw.treatmentSkill ?? "").trim();
+  const checkWasProvided = raw.checkTotal != null;
+  const checkTotal = checkWasProvided ? finiteInteger(raw.checkTotal) : null;
+  const kitRequired = nonNegativeInteger(raw.kitRequired);
+  const receiptToken = toId(raw.receiptToken);
+  const injuryBefore = normalizePersistedObject(raw.injuryBefore, {
+    exact: true,
+  });
+  const injuryAfter = normalizePersistedObject(raw.injuryAfter, {
+    exact: true,
+  });
+  const previousCalendarEntryId = toId(raw.previousCalendarEntryId);
+  const resolvedBy = toId(raw.resolvedBy);
+  const resolvedAt =
+    raw.resolvedAt == null ? null : finiteTimestamp(raw.resolvedAt);
+  const consumptionSteps = [];
+  const consumptionSources = new Set();
+  for (const entry of Array.isArray(raw.consumptionSteps)
+    ? raw.consumptionSteps
+    : []) {
+    const step = normalizeTreatmentConsumptionStep(entry);
+    const source = step ? `${step.actorId}:${step.itemId}` : "";
+    if (!step || consumptionSources.has(source)) return null;
+    consumptionSources.add(source);
+    consumptionSteps.push(step);
+  }
+  const consumed = consumptionSteps.reduce(
+    (total, step) => total + step.spend,
+    0,
+  );
+  if (
+    !effectId ||
+    !healerActorId ||
+    !injuryKey ||
+    tableVersion == null ||
+    tableVersion < 1 ||
+    treatmentStartTs == null ||
+    treatmentDc == null ||
+    treatmentSkill.length > 100 ||
+    (checkWasProvided && checkTotal == null) ||
+    typeof raw.passed !== "boolean" ||
+    kitRequired == null ||
+    consumed !== kitRequired ||
+    !receiptToken ||
+    !injuryBefore ||
+    !injuryAfter ||
+    !resolvedBy ||
+    resolvedAt == null
+  ) {
+    return null;
+  }
+  return {
+    schema: TREATMENT_SCHEMA,
+    effectId,
+    healerActorId,
+    injuryKey,
+    tableVersion,
+    treatmentStartTs,
+    treatmentDc,
+    treatmentSkill,
+    checkTotal,
+    passed: raw.passed,
+    kitRequired,
+    receiptToken,
+    consumptionSteps,
+    injuryBefore,
+    injuryAfter,
+    previousCalendarEntryId,
+    resolvedBy,
+    resolvedAt,
+  };
+}
+
+function normalizeTreatmentResult(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const treatmentId = toId(raw.treatmentId);
+  const injuryId = toId(raw.injuryId);
+  if (!treatmentId || !injuryId || typeof raw.success !== "boolean") {
+    return null;
+  }
+  const normalized = normalizePersistedObject(raw);
+  return normalized
+    ? { ...normalized, treatmentId, injuryId, success: raw.success }
+    : null;
+}
+
+function normalizeTreatmentRecord(raw, expectedInjuryId = "") {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const treatmentId = toId(raw.treatmentId);
+  const injuryId = toId(raw.injuryId);
+  const requestedBy = toId(raw.requestedBy);
+  const requestedAt =
+    raw.requestedAt == null ? null : finiteTimestamp(raw.requestedAt);
+  if (
+    !treatmentId ||
+    !injuryId ||
+    (expectedInjuryId && injuryId !== expectedInjuryId) ||
+    !requestedBy ||
+    requestedAt == null
+  ) {
+    return null;
+  }
+
+  let state = VALID_TREATMENT_STATES.has(raw.state) ? raw.state : "requested";
+  const resolution = normalizeTreatmentResolution(raw.resolution);
+  const applicationLease = normalizeApplicationLease(raw.applicationLease);
+  const result = normalizeTreatmentResult(raw.result);
+  const completedBy = toId(raw.completedBy);
+  const completedAt =
+    raw.completedAt == null ? null : finiteTimestamp(raw.completedAt);
+  if (state === "resolving" && !resolution) state = "requested";
+  if (
+    state === "completed" &&
+    (!result ||
+      result.treatmentId !== treatmentId ||
+      result.injuryId !== injuryId ||
+      !completedBy ||
+      completedAt == null)
+  ) {
+    state = "resolving";
+  }
+
+  return {
+    schema: TREATMENT_SCHEMA,
+    treatmentId,
+    injuryId,
+    requestedBy,
+    requestedAt,
+    state,
+    resolution: state === "requested" ? null : resolution,
+    applicationLease: state === "completed" ? null : applicationLease,
+    result: state === "completed" ? result : null,
+    completedBy: state === "completed" ? completedBy : "",
+    completedAt: state === "completed" ? completedAt : null,
+  };
+}
+
+function pruneTreatmentRecords(records) {
+  const unresolved = records.filter((record) => record.state !== "completed");
+  const completed = records
+    .filter((record) => record.state === "completed")
+    .sort(
+      (left, right) =>
+        Number(right.completedAt ?? 0) - Number(left.completedAt ?? 0),
+    )
+    .slice(0, MAX_COMPLETED_TREATMENTS_PER_INJURY);
+  return [...unresolved, ...completed];
+}
+
+function normalizeTreatmentRecords(raw, expectedInjuryId) {
+  const records = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    const record = normalizeTreatmentRecord(entry, expectedInjuryId);
+    if (!record || seen.has(record.treatmentId)) continue;
+    seen.add(record.treatmentId);
+    records.push(record);
+  }
+  return pruneTreatmentRecords(records);
+}
+
 function normalizeRecord(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const pendingId = toId(raw.pendingId);
@@ -197,7 +411,7 @@ function normalizeRecord(raw) {
     state = "resolving";
   }
 
-  return {
+  const normalized = {
     schema: RECORD_SCHEMA,
     pendingId,
     actorId,
@@ -213,18 +427,48 @@ function normalizeRecord(raw) {
     completedBy: state === "completed" ? completedBy : "",
     completedAt: state === "completed" ? completedAt : null,
   };
+  if (state === "completed") {
+    const injuryId = toId(resolution?.injuryId) || toId(result?.id);
+    const treatments = normalizeTreatmentRecords(raw.treatments, injuryId);
+    // Existing version-2 envelopes predate treatment attempts. Omitting an
+    // empty collection preserves their exact normalized shape and therefore
+    // their validity under raw-versus-normalized replica verification.
+    if (treatments.length > 0) normalized.treatments = treatments;
+  }
+  return normalized;
 }
 
 function pruneRecords(records) {
-  const unresolved = records.filter((record) => record.state !== "completed");
+  const unresolved = records.filter(
+    (record) =>
+      record.state !== "completed" ||
+      (record.treatments ?? []).some(
+        (treatment) => treatment.state !== "completed",
+      ),
+  );
   const completed = records
-    .filter((record) => record.state === "completed")
+    .filter(
+      (record) =>
+        record.state === "completed" &&
+        !(record.treatments ?? []).some(
+          (treatment) => treatment.state !== "completed",
+        ),
+    )
     .sort(
       (left, right) =>
-        Number(right.completedAt ?? 0) - Number(left.completedAt ?? 0),
+        latestRecordTimestamp(right) - latestRecordTimestamp(left),
     )
     .slice(0, MAX_COMPLETED_RECEIPTS);
   return [...unresolved, ...completed];
+}
+
+function latestRecordTimestamp(record) {
+  return Math.max(
+    Number(record?.completedAt ?? 0),
+    ...(record?.treatments ?? []).map((treatment) =>
+      Number(treatment?.completedAt ?? 0),
+    ),
+  );
 }
 
 export function normalizeCriticalInjuryWorkflowStore(raw) {
@@ -588,6 +832,11 @@ function nextWriteIdentity(fence, ...snapshots) {
 }
 
 function enqueueWrite(operation) {
+  // Known boundary: this queue serializes one browser client. Two tabs logged
+  // in as the same GM do not have a server-side compare-and-swap primitive;
+  // replica read-back detects conflicts but cannot make simultaneous tab
+  // claims atomic. Treatment invariants below still fail closed once either
+  // write becomes canonical.
   const fence = captureAuthorityFence();
   const queued = writeQueue.then(
     () => operation(fence),
@@ -760,6 +1009,40 @@ export function getCriticalInjuryWorkflowRecord(pendingId) {
   if (!id) return null;
   const record = loadCriticalInjuryWorkflowStore().records.find(
     (entry) => entry.pendingId === id,
+  );
+  return record ? clone(record) : null;
+}
+
+function recordInjuryId(record) {
+  return toId(record?.resolution?.injuryId) || toId(record?.result?.id);
+}
+
+function recordMatchesInjury(record, actorId, injuryId) {
+  return Boolean(
+    record?.state === "completed" &&
+    record.actorId === actorId &&
+    recordInjuryId(record) === injuryId,
+  );
+}
+
+/** Find the completed private injury receipt that authorizes treatment. */
+export function getCriticalInjuryWorkflowForInjury(actorId, injuryId) {
+  const actor = toId(actorId);
+  const injury = toId(injuryId);
+  if (!actor || !injury) return null;
+  const matches = loadCriticalInjuryWorkflowStore().records.filter((record) =>
+    recordMatchesInjury(record, actor, injury),
+  );
+  return matches.length === 1 ? clone(matches[0]) : null;
+}
+
+export function getCriticalInjuryTreatmentRecord(pendingId, treatmentId) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  if (!pending || !treatment) return null;
+  const parent = getCriticalInjuryWorkflowRecord(pending);
+  const record = parent?.treatments?.find(
+    (entry) => entry.treatmentId === treatment,
   );
   return record ? clone(record) : null;
 }
@@ -1126,6 +1409,484 @@ export async function completeCriticalInjuryWorkflow(
         record: completedRecord,
         completedNow: true,
       }),
+    };
+  });
+}
+
+function treatmentFromParent(parent, treatmentId) {
+  const id = toId(treatmentId);
+  if (!parent || !id) return null;
+  return (
+    parent.treatments?.find((treatment) => treatment.treatmentId === id) ?? null
+  );
+}
+
+function treatmentMutationResult(treatmentId, extra = {}) {
+  return (parent) => ({
+    record: clone(treatmentFromParent(parent, treatmentId)),
+    parent: clone(parent),
+    ...extra,
+  });
+}
+
+function matchingTreatmentParents(store, actorId, injuryId) {
+  return store.records.filter((record) =>
+    recordMatchesInjury(record, actorId, injuryId),
+  );
+}
+
+/** Create or recover a client-stable treatment attempt under its injury. */
+export async function createCriticalInjuryTreatmentRequest({
+  actorId,
+  injuryId,
+  treatmentId,
+  requestedBy,
+  requestedAt = getCriticalInjuryWorkflowLeaseTimestamp(),
+  allowRequesterHandoff = false,
+} = {}) {
+  const actor = toId(actorId);
+  const injury = toId(injuryId);
+  const treatment = toId(treatmentId);
+  const requester = toId(requestedBy);
+  const draft = normalizeTreatmentRecord(
+    {
+      treatmentId: treatment,
+      injuryId: injury,
+      requestedBy: requester,
+      requestedAt,
+      state: "requested",
+    },
+    injury,
+  );
+  if (!actor || !injury || !treatment || !requester || !draft) {
+    throw new Error("CriticalInjuryTreatmentRequestInvalid");
+  }
+
+  return mutateStore((store) => {
+    const collisions = store.records
+      .flatMap((record) =>
+        (record.treatments ?? []).map((entry) => ({ record, entry })),
+      )
+      .filter(({ entry }) => entry.treatmentId === treatment);
+    if (collisions.length > 0) {
+      if (collisions.length !== 1) {
+        throw new Error("CriticalInjuryTreatmentRequestCollision");
+      }
+      const [collision] = collisions;
+      const requesterChanged = collision.entry.requestedBy !== requester;
+      if (
+        !recordMatchesInjury(collision.record, actor, injury) ||
+        collision.entry.injuryId !== injury ||
+        (requesterChanged && allowRequesterHandoff !== true)
+      ) {
+        throw new Error("CriticalInjuryTreatmentRequestCollision");
+      }
+      return {
+        store,
+        pendingId: collision.record.pendingId,
+        mapResult: treatmentMutationResult(treatment, {
+          createdNow: false,
+          requesterHandedOff: requesterChanged,
+        }),
+      };
+    }
+
+    const parents = matchingTreatmentParents(store, actor, injury);
+    if (parents.length === 0) {
+      throw new Error("CriticalInjuryTreatmentParentNotFound");
+    }
+    if (parents.length !== 1) {
+      throw new Error("CriticalInjuryTreatmentParentCollision");
+    }
+    const parent = parents[0];
+    const unresolvedSibling = (parent.treatments ?? []).find(
+      (entry) => entry.state !== "completed",
+    );
+    if (unresolvedSibling) {
+      return {
+        store,
+        pendingId: parent.pendingId,
+        mapResult: treatmentMutationResult(unresolvedSibling.treatmentId, {
+          createdNow: false,
+          resumeTreatmentId: unresolvedSibling.treatmentId,
+        }),
+      };
+    }
+    parent.treatments ??= [];
+    parent.treatments.push(draft);
+    return {
+      store,
+      pendingId: parent.pendingId,
+      mapResult: treatmentMutationResult(treatment, { createdNow: true }),
+    };
+  });
+}
+
+/**
+ * Claim the one live treatment lease available across the workflow store. A
+ * different active GM can resume the same attempt immediately; another tab
+ * for the same GM, or any other live treatment attempt, receives
+ * claimedNow=false without mutating the store.
+ */
+export async function claimCriticalInjuryTreatmentApplication(
+  pendingId,
+  treatmentId,
+  { id: leaseId, claimedBy = "", leaseDurationMs } = {},
+) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  const claimedId = toId(leaseId);
+  const requestedClaimant = toId(claimedBy);
+  const authority = toId(authoritativeGMId());
+  const duration = normalizeApplicationLeaseDuration(leaseDurationMs);
+  if (
+    !pending ||
+    !treatment ||
+    !claimedId ||
+    !authority ||
+    (requestedClaimant && requestedClaimant !== authority)
+  ) {
+    throw new Error("CriticalInjuryTreatmentLeaseInvalid");
+  }
+
+  return mutateStore((store) => {
+    const parent = store.records.find((record) => record.pendingId === pending);
+    if (!parent || parent.state !== "completed") {
+      throw new Error("CriticalInjuryTreatmentParentNotFound");
+    }
+    const record = treatmentFromParent(parent, treatment);
+    if (!record) throw new Error("CriticalInjuryTreatmentNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, { claimedNow: false }),
+      };
+    }
+
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const globalBlocker = store.records
+      .flatMap((candidateParent) =>
+        (candidateParent.treatments ?? []).map((entry) => ({
+          parent: candidateParent,
+          entry,
+        })),
+      )
+      .find(({ parent: candidateParent, entry }) => {
+        const isTarget =
+          candidateParent.pendingId === pending &&
+          entry.treatmentId === treatment;
+        if (isTarget || entry.state === "completed") return false;
+        const lease = normalizeApplicationLease(entry.applicationLease);
+        return Boolean(lease && lease.expiresAt > now);
+      });
+    if (globalBlocker) {
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, { claimedNow: false }),
+      };
+    }
+
+    const existing = normalizeApplicationLease(record.applicationLease);
+    if (existing?.expiresAt > now) {
+      if (existing.id === claimedId && existing.claimedBy === authority) {
+        return {
+          store,
+          pendingId: pending,
+          mapResult: treatmentMutationResult(treatment, { claimedNow: true }),
+        };
+      }
+      if (existing.claimedBy === authority) {
+        return {
+          store,
+          pendingId: pending,
+          mapResult: treatmentMutationResult(treatment, {
+            claimedNow: false,
+          }),
+        };
+      }
+    }
+
+    record.applicationLease = {
+      id: claimedId,
+      claimedBy: authority,
+      claimedAt: now,
+      expiresAt: now + duration,
+    };
+    return {
+      store,
+      pendingId: pending,
+      mapResult: treatmentMutationResult(treatment, { claimedNow: true }),
+    };
+  });
+}
+
+export async function renewCriticalInjuryTreatmentApplication(
+  pendingId,
+  treatmentId,
+  leaseId,
+  { leaseDurationMs } = {},
+) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  const claimedId = toId(leaseId);
+  const authority = toId(authoritativeGMId());
+  const duration = normalizeApplicationLeaseDuration(leaseDurationMs);
+  if (!pending || !treatment || !claimedId || !authority) {
+    throw new Error("CriticalInjuryTreatmentLeaseInvalid");
+  }
+
+  return mutateStore((store) => {
+    const parent = store.records.find((record) => record.pendingId === pending);
+    if (!parent || parent.state !== "completed") {
+      throw new Error("CriticalInjuryTreatmentParentNotFound");
+    }
+    const record = treatmentFromParent(parent, treatment);
+    if (!record) throw new Error("CriticalInjuryTreatmentNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, { renewedNow: false }),
+      };
+    }
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const existing = normalizeApplicationLease(record.applicationLease);
+    if (
+      !existing ||
+      existing.id !== claimedId ||
+      existing.claimedBy !== authority ||
+      existing.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryTreatmentLeaseLost");
+    }
+    let renewedNow = false;
+    if (existing.expiresAt - now <= duration / 2) {
+      record.applicationLease = {
+        ...existing,
+        expiresAt: now + duration,
+      };
+      renewedNow = true;
+    }
+    return {
+      store,
+      pendingId: pending,
+      mapResult: treatmentMutationResult(treatment, { renewedNow }),
+    };
+  });
+}
+
+export async function releaseCriticalInjuryTreatmentApplication(
+  pendingId,
+  treatmentId,
+  leaseId,
+) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  const claimedId = toId(leaseId);
+  if (!pending || !treatment || !claimedId) return null;
+  return mutateStore((store) => {
+    const parent = store.records.find((record) => record.pendingId === pending);
+    if (!parent) return { store, pendingId: "" };
+    const record = treatmentFromParent(parent, treatment);
+    let releasedNow = false;
+    if (record?.applicationLease?.id === claimedId) {
+      record.applicationLease = null;
+      releasedNow = true;
+    }
+    return {
+      store,
+      pendingId: pending,
+      mapResult: treatmentMutationResult(treatment, { releasedNow }),
+    };
+  });
+}
+
+export async function persistCriticalInjuryTreatmentResolution(
+  pendingId,
+  treatmentId,
+  resolution,
+  { applicationLeaseId = "" } = {},
+) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  const normalized = normalizeTreatmentResolution(resolution);
+  const claimedId = toId(applicationLeaseId);
+  const authority = toId(authoritativeGMId());
+  if (
+    !pending ||
+    !treatment ||
+    !normalized ||
+    normalized.resolvedBy !== authority
+  ) {
+    throw new Error("CriticalInjuryTreatmentResolutionInvalid");
+  }
+
+  return mutateStore((store) => {
+    const parent = store.records.find((record) => record.pendingId === pending);
+    if (!parent || parent.state !== "completed") {
+      throw new Error("CriticalInjuryTreatmentParentNotFound");
+    }
+    const record = treatmentFromParent(parent, treatment);
+    if (!record) throw new Error("CriticalInjuryTreatmentNotFound");
+    if (
+      toId(normalized.injuryBefore?.id) !== record.injuryId ||
+      toId(normalized.injuryAfter?.id) !== record.injuryId ||
+      (parent.effectId && normalized.effectId !== parent.effectId) ||
+      (parent.resolution?.injuryKey &&
+        normalized.injuryKey !== parent.resolution.injuryKey) ||
+      (parent.resolution?.tableVersion &&
+        normalized.tableVersion !== parent.resolution.tableVersion) ||
+      (toId(normalized.injuryBefore?.injuryKey) &&
+        toId(normalized.injuryBefore?.injuryKey) !== normalized.injuryKey) ||
+      (toId(normalized.injuryBefore?.pendingId) &&
+        toId(normalized.injuryBefore?.pendingId) !== parent.pendingId) ||
+      (toId(normalized.injuryAfter?.pendingId) &&
+        toId(normalized.injuryAfter?.pendingId) !== parent.pendingId)
+    ) {
+      throw new Error("CriticalInjuryTreatmentResolutionMismatch");
+    }
+    const tokenCollision = (parent.treatments ?? []).some(
+      (entry) =>
+        entry.treatmentId !== treatment &&
+        entry.resolution?.receiptToken === normalized.receiptToken,
+    );
+    if (tokenCollision) {
+      throw new Error("CriticalInjuryTreatmentReceiptCollision");
+    }
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, {
+          persistedNow: false,
+        }),
+      };
+    }
+    const consumptionSources = new Set(
+      normalized.consumptionSteps.map(
+        (step) => `${step.actorId}:${step.itemId}`,
+      ),
+    );
+    const reservationConflict = store.records
+      .flatMap((candidateParent) =>
+        (candidateParent.treatments ?? []).map((entry) => ({
+          parent: candidateParent,
+          entry,
+        })),
+      )
+      .some(({ parent: candidateParent, entry }) => {
+        const isTarget =
+          candidateParent.pendingId === pending &&
+          entry.treatmentId === treatment;
+        if (isTarget || entry.state === "completed" || !entry.resolution) {
+          return false;
+        }
+        return entry.resolution.consumptionSteps.some((step) =>
+          consumptionSources.has(`${step.actorId}:${step.itemId}`),
+        );
+      });
+    if (reservationConflict) {
+      throw new Error("CriticalInjuryTreatmentItemReservationConflict");
+    }
+    if (record.state === "resolving") {
+      if (!persistedValuesEqual(record.resolution, normalized)) {
+        throw new Error("CriticalInjuryTreatmentResolutionCollision");
+      }
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, {
+          persistedNow: false,
+        }),
+      };
+    }
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const lease = normalizeApplicationLease(record.applicationLease);
+    if (
+      !claimedId ||
+      !lease ||
+      lease.id !== claimedId ||
+      lease.claimedBy !== authority ||
+      lease.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryTreatmentLeaseLost");
+    }
+    record.state = "resolving";
+    record.resolution = normalized;
+    return {
+      store,
+      pendingId: pending,
+      mapResult: treatmentMutationResult(treatment, { persistedNow: true }),
+    };
+  });
+}
+
+export async function completeCriticalInjuryTreatmentWorkflow(
+  pendingId,
+  treatmentId,
+  { result, completedAt = null, applicationLeaseId = "" } = {},
+) {
+  const pending = toId(pendingId);
+  const treatment = toId(treatmentId);
+  const normalizedResult = normalizeTreatmentResult(result);
+  const claimedId = toId(applicationLeaseId);
+  const authority = toId(authoritativeGMId());
+  if (!pending || !treatment || !normalizedResult || !authority) {
+    throw new Error("CriticalInjuryTreatmentCompletionInvalid");
+  }
+
+  return mutateStore((store) => {
+    const parent = store.records.find((record) => record.pendingId === pending);
+    if (!parent || parent.state !== "completed") {
+      throw new Error("CriticalInjuryTreatmentParentNotFound");
+    }
+    const record = treatmentFromParent(parent, treatment);
+    if (!record) throw new Error("CriticalInjuryTreatmentNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: pending,
+        mapResult: treatmentMutationResult(treatment, {
+          completedNow: false,
+        }),
+      };
+    }
+    if (
+      normalizedResult.treatmentId !== treatment ||
+      normalizedResult.injuryId !== record.injuryId ||
+      (toId(normalizedResult.actorId) &&
+        toId(normalizedResult.actorId) !== parent.actorId) ||
+      (toId(normalizedResult.effectId) &&
+        (!record.resolution ||
+          toId(normalizedResult.effectId) !== record.resolution.effectId)) ||
+      (!record.resolution &&
+        (normalizedResult.success ||
+          nonNegativeInteger(normalizedResult.consumed, 0) > 0))
+    ) {
+      throw new Error("CriticalInjuryTreatmentCompletionMismatch");
+    }
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const lease = normalizeApplicationLease(record.applicationLease);
+    if (
+      !claimedId ||
+      !lease ||
+      lease.id !== claimedId ||
+      lease.claimedBy !== authority ||
+      lease.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryTreatmentLeaseLost");
+    }
+    record.state = "completed";
+    record.result = normalizedResult;
+    record.applicationLease = null;
+    record.completedBy = authority;
+    record.completedAt = finiteTimestamp(completedAt ?? now, now);
+    return {
+      store,
+      pendingId: pending,
+      mapResult: treatmentMutationResult(treatment, { completedNow: true }),
     };
   });
 }

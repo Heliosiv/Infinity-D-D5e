@@ -79,14 +79,50 @@ maximum-HP loss for Deep Cut, and the affected ability for Nerve Damage.
 
 ## Healer's Kit treatment
 
-The player requests treatment from the injury window. The active GM sees the
-exact charge cost, inventory sources, required check, and a healer selector.
-Charges can be drawn from Healer's Kit items carried by owned player
-characters; the injured character's and selected healer's kits are preferred.
+The player requests treatment from the injury window. The request is sent only
+to the active GM and contains the Actor, injury, and a client-stable treatment
+identifier. The player cannot choose the healer, dice result, inventory plan,
+or outcome. The active GM verifies Actor ownership and the private completed
+injury receipt, then sees the exact charge cost, inventory sources, required
+check, and a healer selector. Charges can be drawn from Healer's Kit items
+carried by owned player characters; the injured character's and selected
+healer's kits are preferred.
 
-All required sources are checked before the first write, each charge change is
-read back, and charges are consumed even when the treatment check fails. A
-successful treatment stabilizes the injury, so its recovery progresses twice
+Before the first Item, Active Effect, or calendar change, the module saves the
+chosen healer, hidden treatment check, exact charge plan, starting injury, and
+resulting injury in the restricted recovery record. Each charge change is read
+back and marked with that private treatment receipt. If an update succeeds but
+its response is lost, the retry adopts only the exact matching charge instead
+of spending it again. Charges are consumed even when the treatment check fails.
+Only one treatment can hold the planning lease at a time, and each persisted
+Actor/kit Item source stays privately reserved until that treatment completes.
+This prevents two different injuries from spending against the same starting
+charge count while allowing an interrupted treatment that uses other kits to
+be recovered independently.
+
+The treatment identifier and a server-clock application lease keep timeouts,
+reconnects, duplicate clicks, and active-GM handoffs on the same persisted
+plan. A completed request replays its stored player result without another GM
+prompt, check, kit spend, effect change, calendar note, or treatment chat
+message. If the player starts a new request while their earlier one is still
+unresolved, the player window is directed back to that earlier identifier so
+the next click resumes it. Calendar retries use both the injury and treatment
+markers, retain one deterministic recovery note, and remove only verified
+marker-identical duplicates.
+
+Run privileged Critical Injury work from one browser session per GM account.
+Foundry does not provide an atomic compare-and-swap for the module's private
+Journal replicas, so two simultaneous tabs logged in as the same active GM are
+not a supported authority topology. Different-GM handoff and ordinary
+same-session retries are covered by the persisted lease and receipts.
+
+The private receipt and player retry path are the authoritative treatment
+record. The whispered treatment summary is best-effort and deliberately
+at-most-once: a browser closing after receipt completion but before chat
+delivery can omit that convenience message, while reopening the injury window
+and retrying still returns the stored treatment result.
+
+A successful treatment stabilizes the injury, so its recovery progresses twice
 as fast. Broken Arm also downgrades to Crippling Injury and halves its remaining
 days. The kit action is unavailable for permanent injuries and table entries
 that do not permit kit treatment.
@@ -105,6 +141,12 @@ social context, first-initiative-of-the-day disadvantage, and magical or quest
 recovery. Those rules remain clearly visible on the Actor effect and in the
 player window for the GM to adjudicate. The GM can remove a permanent Active
 Effect after the required magic or narrative resolution.
+
+Infection's long-rest save is triggered from the dnd5e rest-completed hook.
+That hook currently has only a short in-process duplicate guard; do not process
+the same rest completion from multiple active GM browser sessions. Durable
+rest-event receipts are a separate automation slice from the treatment receipt
+described above.
 
 ## Integrations
 

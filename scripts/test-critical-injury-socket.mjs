@@ -72,8 +72,49 @@ assert.deepEqual(
     ...base,
     type: CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
     injuryId: "injury-1",
+    treatmentId: "treatment-1",
+    targetUserId: "gm-1",
   }),
   { ok: true, reason: null },
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
+    injuryId: "injury-1",
+    treatmentId: "treatment-1",
+    targetUserId: "gm-1",
+    healerActorId: "actor-2",
+  }).reason,
+  "client-treatment-data-not-allowed",
+);
+assert.deepEqual(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
+    injuryId: "injury-1",
+    treatmentId: "treatment-1",
+    targetUserId: "player-1",
+    success: false,
+    retryable: true,
+    message: "Retrying this stored treatment is safe.",
+    resumeTreatmentId: "treatment-unresolved",
+  }),
+  { ok: true, reason: null },
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
+    injuryId: "injury-1",
+    treatmentId: "treatment-1",
+    targetUserId: "player-1",
+    success: false,
+    retryable: true,
+    message: "Retrying this stored treatment is safe.",
+    resumeTreatmentId: "",
+  }).reason,
+  "invalid-treatment-resume-id",
 );
 assert.equal(
   validateCriticalInjuryPayload({

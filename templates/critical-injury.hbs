@@ -120,7 +120,10 @@
             </dl>
 
             {{#if canTreat}}
-              <div class="ci-treatment">
+              <div
+                class="ci-treatment"
+                aria-busy="{{#if treating}}true{{else}}false{{/if}}"
+              >
                 <div>
                   <strong>Healer's Kit: {{kitCharges}} charge(s)</strong>
                   <span>{{treatmentCheck}}</span>
@@ -128,6 +131,7 @@
                 <button
                   type="button"
                   data-action="requestTreatment"
+                  aria-disabled="{{#if treating}}true{{else}}false{{/if}}"
                   data-injury-id="{{id}}" {{#if treating}}disabled{{/if}}
                 >
                   {{#if treating}}

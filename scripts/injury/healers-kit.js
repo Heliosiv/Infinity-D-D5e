@@ -1,5 +1,8 @@
 /** Healer's Kit discovery, planning, and verified charge consumption. */
 
+const MODULE_ID = "infinity-dnd5e";
+const TREATMENT_RECEIPT_FLAG = "criticalInjuryTreatmentReceipt";
+
 export function normalizeHealersKitText(value) {
   return String(value ?? "")
     .toLowerCase()
@@ -132,7 +135,14 @@ export async function consumeHealersKitPlan(plan) {
   for (const step of plan.steps ?? []) {
     const before = getHealersKitAvailable(step.item);
     const wantedAfter = Math.max(0, before - step.spend);
-    await setHealersKitAvailable(step.item, wantedAfter);
+    try {
+      await setHealersKitAvailable(step.item, wantedAfter);
+    } catch (error) {
+      // A Foundry document update can commit and still reject when the client
+      // loses the acknowledgement. Canonical read-back is the only safe way
+      // to decide whether this individual write took effect.
+      if (getHealersKitAvailable(step.item) !== wantedAfter) throw error;
+    }
     const after = getHealersKitAvailable(step.item);
     const actual = Math.max(0, before - after);
     details.push({
@@ -157,7 +167,174 @@ export async function consumeHealersKitPlan(plan) {
   return { ok: consumed === plan.required, consumed, missing: 0, details };
 }
 
-async function setHealersKitAvailable(item, available) {
+/**
+ * Apply a previously persisted treatment plan exactly once.
+ *
+ * Each Item update stores a GM-generated receipt token in the same document
+ * update as its absolute remaining-charge value. A retry may adopt the write
+ * only when both the canonical value and the private token match; merely
+ * observing the expected quantity is intentionally insufficient.
+ */
+export async function applyPersistedHealersKitPlan(
+  plan,
+  { treatmentId = "", receiptToken = "" } = {},
+) {
+  const id = normalizeReceiptId(treatmentId);
+  const token = normalizeReceiptId(receiptToken);
+  const required = Math.max(0, Math.floor(Number(plan?.required) || 0));
+  const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+  if (!plan?.ok || !id || !token || required <= 0) {
+    return failedApplication(required, "invalid-plan");
+  }
+
+  const expectedSpend = steps.reduce(
+    (sum, step) => sum + Math.max(0, Math.floor(Number(step?.spend) || 0)),
+    0,
+  );
+  if (expectedSpend !== required) {
+    return failedApplication(required, "invalid-plan-total");
+  }
+
+  const details = [];
+  let consumed = 0;
+  for (const [index, step] of steps.entries()) {
+    const item = step?.item;
+    const before = Math.max(0, Math.floor(Number(step?.before) || 0));
+    const spend = Math.max(0, Math.floor(Number(step?.spend) || 0));
+    const after = Math.max(0, Math.floor(Number(step?.after) || 0));
+    if (!item || !spend || before - spend !== after) {
+      return failedApplication(required, "invalid-plan-step", {
+        consumed,
+        details,
+      });
+    }
+
+    const expectedReceipt = {
+      schema: 1,
+      treatmentId: id,
+      receiptToken: token,
+      step: index,
+      actorId: String(step?.actorId ?? ""),
+      itemId: String(step?.itemId ?? item?.id ?? ""),
+      before,
+      spent: spend,
+      after,
+    };
+    let current = getHealersKitAvailable(item);
+    const existingReceipt = readTreatmentReceipt(item);
+    let adopted = false;
+
+    if (receiptMatches(existingReceipt, expectedReceipt)) {
+      if (current !== after) {
+        return failedApplication(required, "receipt-value-conflict", {
+          consumed,
+          details,
+        });
+      }
+      adopted = true;
+    } else {
+      if (current !== before) {
+        return failedApplication(required, "charges-changed", {
+          consumed,
+          details,
+        });
+      }
+      try {
+        await setHealersKitAvailable(item, after, {
+          [`flags.${MODULE_ID}.${TREATMENT_RECEIPT_FLAG}`]: expectedReceipt,
+        });
+      } catch (error) {
+        current = getHealersKitAvailable(item);
+        const recoveredReceipt = readTreatmentReceipt(item);
+        if (
+          current !== after ||
+          !receiptMatches(recoveredReceipt, expectedReceipt)
+        ) {
+          return failedApplication(required, "write-rejected", {
+            consumed,
+            details,
+            error,
+          });
+        }
+        adopted = true;
+      }
+    }
+
+    current = getHealersKitAvailable(item);
+    if (
+      current !== after ||
+      !receiptMatches(readTreatmentReceipt(item), expectedReceipt)
+    ) {
+      return failedApplication(required, "write-verification-failed", {
+        consumed,
+        details,
+      });
+    }
+    consumed += spend;
+    details.push({
+      actorId: expectedReceipt.actorId,
+      actorName: String(step?.actorName ?? "Unknown Character"),
+      itemId: expectedReceipt.itemId,
+      itemName: String(step?.itemName ?? "Healer's Kit"),
+      spent: spend,
+      remaining: after,
+      adopted,
+    });
+  }
+
+  return {
+    ok: consumed === required,
+    consumed,
+    missing: Math.max(0, required - consumed),
+    details,
+    reason: consumed === required ? null : "write-verification-failed",
+  };
+}
+
+function failedApplication(
+  required,
+  reason,
+  { consumed = 0, details = [], error = null } = {},
+) {
+  return {
+    ok: false,
+    consumed,
+    missing: Math.max(0, required - consumed),
+    details,
+    reason,
+    ...(error ? { error } : {}),
+  };
+}
+
+function normalizeReceiptId(value) {
+  const id = String(value ?? "").trim();
+  return id.length > 0 && id.length <= 160 ? id : "";
+}
+
+function readTreatmentReceipt(item) {
+  return (
+    item?.getFlag?.(MODULE_ID, TREATMENT_RECEIPT_FLAG) ??
+    item?.flags?.[MODULE_ID]?.[TREATMENT_RECEIPT_FLAG] ??
+    null
+  );
+}
+
+function receiptMatches(actual, expected) {
+  return Boolean(
+    actual &&
+    Number(actual.schema) === expected.schema &&
+    String(actual.treatmentId ?? "") === expected.treatmentId &&
+    String(actual.receiptToken ?? "") === expected.receiptToken &&
+    Number(actual.step) === expected.step &&
+    String(actual.actorId ?? "") === expected.actorId &&
+    String(actual.itemId ?? "") === expected.itemId &&
+    Number(actual.before) === expected.before &&
+    Number(actual.spent) === expected.spent &&
+    Number(actual.after) === expected.after,
+  );
+}
+
+async function setHealersKitAvailable(item, available, extraUpdates = {}) {
   const next = Math.max(0, Math.floor(Number(available) || 0));
   const max = Number(item?.system?.uses?.max);
   if (Number.isFinite(max) && item?.system?.uses?.spent !== undefined) {
@@ -165,15 +342,15 @@ async function setHealersKitAvailable(item, available) {
       0,
       Math.min(Math.floor(max), Math.floor(max) - next),
     );
-    await item.update({ "system.uses.spent": spent });
+    await item.update({ "system.uses.spent": spent, ...extraUpdates });
     return;
   }
   if (item?.system?.uses?.value !== undefined) {
-    await item.update({ "system.uses.value": next });
+    await item.update({ "system.uses.value": next, ...extraUpdates });
     return;
   }
   if (item?.system?.quantity !== undefined) {
-    await item.update({ "system.quantity": next });
+    await item.update({ "system.quantity": next, ...extraUpdates });
     return;
   }
   throw new Error("HealersKitChargesNotWritable");

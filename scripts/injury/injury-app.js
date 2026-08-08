@@ -10,6 +10,7 @@ import {
 } from "./socket.js";
 import {
   findActorCriticalInjuryEffect,
+  generateCriticalInjuryId,
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
 } from "./effects.js";
@@ -132,7 +133,26 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   static handleTreatmentResult(payload) {
     const app = CriticalInjuryApp.open({ actorId: payload?.actorId });
     if (!app) return;
-    app._treating.delete(String(payload?.injuryId ?? ""));
+    const injuryId = String(payload?.injuryId ?? "");
+    const treatmentId = String(payload?.treatmentId ?? "");
+    const request = app._treatmentRequests.get(injuryId);
+    // A delayed response from an older deliberate attempt must not release or
+    // overwrite the status of a newer treatment request.
+    if (request && request.treatmentId !== treatmentId) return;
+    app._clearTreatmentTimer(injuryId);
+    app._treating.delete(injuryId);
+    if (payload?.retryable === true && treatmentId) {
+      const resumeTreatmentId = String(
+        payload?.resumeTreatmentId ?? treatmentId,
+      );
+      app._treatmentRequests.set(injuryId, {
+        treatmentId: resumeTreatmentId,
+        authorityId: null,
+        timer: null,
+      });
+    } else {
+      app._treatmentRequests.delete(injuryId);
+    }
     app._statusMessage = String(payload?.message ?? "Treatment resolved.");
     if (payload?.result) app._latestResult = payload.result;
     app.render(false);
@@ -148,6 +168,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     this._requestedAuthorityId = null;
     this._statusMessage = "";
     this._treating = new Set();
+    this._treatmentRequests = new Map();
     this._resolvedPendingIds = new Set();
     this._waitTimer = null;
   }
@@ -164,6 +185,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   _onClose(options) {
     super._onClose?.(options);
     this._clearWaitTimer();
+    this._clearAllTreatmentTimers();
     instances.delete(this._actorId);
   }
 
@@ -171,6 +193,19 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     if (this._waitTimer == null) return;
     globalThis.clearTimeout?.(this._waitTimer);
     this._waitTimer = null;
+  }
+
+  _clearTreatmentTimer(injuryId) {
+    const id = String(injuryId ?? "");
+    const request = this._treatmentRequests.get(id);
+    if (request?.timer != null) globalThis.clearTimeout?.(request.timer);
+    if (request) request.timer = null;
+  }
+
+  _clearAllTreatmentTimers() {
+    for (const injuryId of this._treatmentRequests.keys()) {
+      this._clearTreatmentTimer(injuryId);
+    }
   }
 
   async _prepareContext() {
@@ -339,14 +374,82 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     ) {
       return;
     }
+    if (getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) === false) {
+      this._statusMessage =
+        "Critical Injury automation is disabled. No treatment was requested.";
+      this.render(false);
+      return;
+    }
+    const gmId = authoritativeGMId();
+    if (!gmId) {
+      this._statusMessage =
+        "No active GM is available. Your Healer's Kit has not been used.";
+      this.render(false);
+      return;
+    }
+    if (!isFullGM() && typeof globalThis.game?.socket?.emit !== "function") {
+      this._statusMessage =
+        "The game connection is unavailable. Your Healer's Kit has not been used.";
+      this.render(false);
+      return;
+    }
+
+    const existing = this._treatmentRequests.get(injuryId);
+    const treatmentId =
+      existing?.treatmentId ??
+      `treatment-${generateCriticalInjuryId().replace(/^injury-/, "")}`;
+    // Mark the request busy before local socket dispatch. A full GM can be the
+    // player-facing requester and receive an immediate local failure.
+    this._treating.add(injuryId);
+    this._treatmentRequests.set(injuryId, {
+      treatmentId,
+      authorityId: gmId,
+      timer: null,
+    });
+    this._statusMessage = "Treatment request sent to the active GM…";
+    this.render(false);
     const emitted = emitCriticalInjuryEvent(
       CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
-      { actorId: actor.id, injuryId },
+      {
+        actorId: actor.id,
+        injuryId,
+        treatmentId,
+        targetUserId: gmId,
+      },
     );
-    if (!emitted) return;
-    this._treating.add(injuryId);
-    this._statusMessage = "Treatment request sent to the GM…";
-    this.render(false);
+    if (!emitted) {
+      this._treating.delete(injuryId);
+      const request = this._treatmentRequests.get(injuryId);
+      if (request) request.authorityId = null;
+      this._statusMessage =
+        "The treatment request could not be sent. No kit charges were used.";
+      this.render(false);
+      return;
+    }
+    const request = this._treatmentRequests.get(injuryId);
+    if (
+      !request ||
+      request.treatmentId !== treatmentId ||
+      !this._treating.has(injuryId)
+    ) {
+      return;
+    }
+    request.timer = globalThis.setTimeout?.(() => {
+      const current = this._treatmentRequests.get(injuryId);
+      if (
+        !current ||
+        current.treatmentId !== treatmentId ||
+        !this._treating.has(injuryId)
+      ) {
+        return;
+      }
+      current.timer = null;
+      current.authorityId = null;
+      this._treating.delete(injuryId);
+      this._statusMessage =
+        "No treatment result arrived yet. Retrying this request is safe; it will not spend the kit twice.";
+      this.render(false);
+    }, RESULT_TIMEOUT_MS);
   }
 
   /** @this {CriticalInjuryApp} */
@@ -398,20 +501,38 @@ export function registerCriticalInjuryApp() {
     const releaseStaleAuthorityWaits = () => {
       const currentAuthorityId = String(authoritativeGMId() ?? "");
       for (const app of instances.values()) {
+        let changed = false;
         if (
-          !app._waitingForRoll ||
-          !app._requestedAuthorityId ||
-          String(app._requestedAuthorityId) === currentAuthorityId
+          app._waitingForRoll &&
+          app._requestedAuthorityId &&
+          String(app._requestedAuthorityId) !== currentAuthorityId
         ) {
-          continue;
+          app._clearWaitTimer();
+          app._waitingForRoll = false;
+          app._requestedAuthorityId = null;
+          app._statusMessage = currentAuthorityId
+            ? "The active GM changed. Click Roll d100 again to send the request to the new GM."
+            : "No active GM is available. This approved roll will stay pending.";
+          changed = true;
         }
-        app._clearWaitTimer();
-        app._waitingForRoll = false;
-        app._requestedAuthorityId = null;
-        app._statusMessage = currentAuthorityId
-          ? "The active GM changed. Click Roll d100 again to send the request to the new GM."
-          : "No active GM is available. This approved roll will stay pending.";
-        app.render?.(false);
+
+        for (const [injuryId, request] of app._treatmentRequests) {
+          if (
+            !app._treating.has(injuryId) ||
+            !request.authorityId ||
+            String(request.authorityId) === currentAuthorityId
+          ) {
+            continue;
+          }
+          app._clearTreatmentTimer(injuryId);
+          request.authorityId = null;
+          app._treating.delete(injuryId);
+          app._statusMessage = currentAuthorityId
+            ? "The active GM changed. Request treatment again to resume the same safe attempt."
+            : "No active GM is available. Your Healer's Kit has not been used again.";
+          changed = true;
+        }
+        if (changed) app.render?.(false);
       }
     };
     Hooks.on("updateUser", releaseStaleAuthorityWaits);

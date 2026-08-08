@@ -33,6 +33,7 @@ const TARGETED = new Set([
   CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
   CRITICAL_INJURY_EVENTS.RESULT,
   CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
+  CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
   CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
 ]);
 
@@ -108,9 +109,9 @@ export function validateCriticalInjuryPayload(payload) {
       CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
       CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
     ].includes(payload.type) &&
-    !boundedId(payload.injuryId)
+    (!boundedId(payload.injuryId) || !boundedId(payload.treatmentId))
   ) {
-    return { ok: false, reason: "invalid-injury-id" };
+    return { ok: false, reason: "invalid-treatment-id" };
   }
   if (payload.type === CRITICAL_INJURY_EVENTS.ROLL_REQUEST) {
     // The button is player-triggered, but every die is evaluated by the
@@ -127,6 +128,37 @@ export function validateCriticalInjuryPayload(payload) {
     }
     if (typeof payload.retryable !== "boolean") {
       return { ok: false, reason: "invalid-failure-retry-state" };
+    }
+  }
+  if (payload.type === CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST) {
+    const allowed = new Set([
+      "type",
+      "actorId",
+      "injuryId",
+      "treatmentId",
+      "targetUserId",
+      "originUserId",
+    ]);
+    if (Object.keys(payload).some((key) => !allowed.has(key))) {
+      return { ok: false, reason: "client-treatment-data-not-allowed" };
+    }
+  }
+  if (payload.type === CRITICAL_INJURY_EVENTS.TREATMENT_RESULT) {
+    const message = String(payload.message ?? "").trim();
+    if (!message || message.length > 500) {
+      return { ok: false, reason: "invalid-treatment-message" };
+    }
+    if (
+      typeof payload.success !== "boolean" ||
+      typeof payload.retryable !== "boolean"
+    ) {
+      return { ok: false, reason: "invalid-treatment-result-state" };
+    }
+    if (
+      Object.hasOwn(payload, "resumeTreatmentId") &&
+      !boundedId(payload.resumeTreatmentId)
+    ) {
+      return { ok: false, reason: "invalid-treatment-resume-id" };
     }
   }
   if (

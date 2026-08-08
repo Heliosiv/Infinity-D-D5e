@@ -37,8 +37,9 @@ import {
   updateCriticalInjuryEffect,
 } from "./effects.js";
 import {
+  applyPersistedHealersKitPlan,
   buildHealersKitConsumptionPlan,
-  consumeHealersKitPlan,
+  isHealersKitItem,
 } from "./healers-kit.js";
 import {
   addInjuryCalendarDays,
@@ -52,17 +53,26 @@ import {
   authorizeCriticalInjuryWorkflowRequest,
   claimCriticalInjuryApplication,
   completeCriticalInjuryWorkflow,
+  completeCriticalInjuryTreatmentWorkflow,
   createCriticalInjuryApproval,
+  createCriticalInjuryTreatmentRequest,
   discardCriticalInjuryApproval,
   ensureCriticalInjuryWorkflowAuthority,
+  getCriticalInjuryTreatmentRecord,
+  getCriticalInjuryWorkflowForInjury,
   getCriticalInjuryWorkflowRecord,
   loadCriticalInjuryWorkflowStore,
   persistCriticalInjuryResolution,
+  persistCriticalInjuryTreatmentResolution,
+  claimCriticalInjuryTreatmentApplication,
   releaseCriticalInjuryApplication,
+  releaseCriticalInjuryTreatmentApplication,
   renewCriticalInjuryApplication,
+  renewCriticalInjuryTreatmentApplication,
   registerCriticalInjuryWorkflowObserver,
   retargetCriticalInjuryWorkflow,
 } from "./workflow-store.js";
+import { persistedValuesEqual } from "../utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PENDING_FLAG = "criticalInjuryPending";
@@ -896,217 +906,865 @@ function sendCriticalInjuryRollFailure(payload, { retryable, message } = {}) {
 }
 
 async function handleCriticalInjuryTreatmentRequest(payload) {
-  if (!isAuthoritativeGM() || !criticalInjuriesEnabled()) return;
-  const key = `${payload.actorId}:${payload.injuryId}`;
-  if (treatmentInFlight.has(key)) return;
+  if (!isAuthoritativeGM()) return;
+  if (!criticalInjuriesEnabled()) {
+    sendTreatmentResult(payload, null, false, {
+      retryable: false,
+      message:
+        "Critical Injury automation is disabled. No kit charges were used.",
+    });
+    return;
+  }
+  const treatmentId = String(payload?.treatmentId ?? "");
+  const key = [payload?.actorId, payload?.injuryId, treatmentId]
+    .map((value) => String(value ?? ""))
+    .join(":");
+  if (treatmentInFlight.has(key)) {
+    sendTreatmentResult(payload, null, false, {
+      retryable: true,
+      message:
+        "This treatment request is already in progress. Wait for its result, then retry safely if needed.",
+    });
+    return;
+  }
   treatmentInFlight.add(key);
+  let pendingId = "";
+  let applicationLeaseId = "";
   let consumedCharges = 0;
   try {
+    await ensureCriticalInjuryWorkflowAuthority();
+    assertCriticalInjuryAuthority();
     const actor = game.actors?.get?.(payload.actorId);
-    if (!actor || !userCanOperateActor(actor, payload.originUserId)) return;
+    if (!actor) {
+      sendTreatmentResult(payload, null, false, {
+        retryable: false,
+        message:
+          "That character is no longer available. No kit charges were used.",
+      });
+      return;
+    }
+    if (!userCanOperateActor(actor, payload.originUserId)) {
+      sendTreatmentResult(payload, actor, false, {
+        retryable: false,
+        message:
+          "You do not control this character. No treatment or kit change was applied.",
+      });
+      return;
+    }
+
+    let parent = getCriticalInjuryWorkflowForInjury(actor.id, payload.injuryId);
+    if (!parent?.resolution || parent.state !== "completed") {
+      sendTreatmentResult(payload, actor, false, {
+        retryable: false,
+        message:
+          "This injury has no valid private Critical Injury receipt. No kit charges were used.",
+      });
+      return;
+    }
+    pendingId = parent.pendingId;
+
+    const existingAttempt = getCriticalInjuryTreatmentRecord(
+      pendingId,
+      treatmentId,
+    );
+    if (existingAttempt?.state === "completed" && existingAttempt.result) {
+      emitStoredCriticalInjuryTreatmentResult(
+        parent,
+        existingAttempt,
+        payload.originUserId,
+      );
+      return;
+    }
+
+    const unresolvedSibling = Array.from(parent.treatments ?? []).find(
+      (attempt) =>
+        attempt?.state !== "completed" &&
+        String(attempt?.treatmentId ?? "") !== treatmentId,
+    );
+    if (unresolvedSibling) {
+      sendTreatmentResult(payload, actor, false, {
+        retryable: true,
+        resumeTreatmentId: String(unresolvedSibling.treatmentId ?? ""),
+        message:
+          "An earlier treatment attempt is still open. Request treatment again to resume its stored plan safely.",
+      });
+      return;
+    }
+
+    const previousFinalTreatment = Array.from(parent.treatments ?? []).find(
+      (attempt) =>
+        attempt?.state === "completed" &&
+        (attempt?.result?.success === true ||
+          attempt?.result?.result?.permanent === true),
+    );
+    if (previousFinalTreatment) {
+      sendTreatmentResult(payload, actor, false, {
+        retryable: false,
+        message: "This injury has already reached its final treated state.",
+      });
+      return;
+    }
+
     const effect = findActorCriticalInjuryEffect(actor, payload.injuryId);
     const initial = getCriticalInjuryData(effect);
-    if (!effect || !initial) return;
+    const persistedTreatmentResolution = existingAttempt?.resolution ?? null;
+    const effectMatchesTreatmentResolution = Boolean(
+      persistedTreatmentResolution &&
+      String(persistedTreatmentResolution.effectId ?? "") ===
+        String(effect?.id ?? effect?._id ?? "") &&
+      (persistedValuesEqual(
+        initial,
+        persistedTreatmentResolution.injuryBefore,
+      ) ||
+        persistedValuesEqual(
+          initial,
+          persistedTreatmentResolution.injuryAfter,
+        ) ||
+        injuryDataMatchesExceptCalendar(
+          initial,
+          persistedTreatmentResolution.injuryAfter,
+        )),
+    );
+    const effectMatchesOriginalReceipt = Boolean(
+      String(parent.effectId || parent.resolution.effectDocumentId || "") ===
+        String(effect?.id ?? effect?._id ?? "") &&
+      sameNullableNumber(
+        parent.resolution.recoveryDueTs,
+        initial?.recoveryDueTs,
+      ) &&
+      Number(parent.resolution.recoveryDays) ===
+        Number(initial?.remainingDays) &&
+      String(parent.calendarEntryId ?? "") ===
+        String(initial?.calendarEntryId ?? ""),
+    );
     if (
-      initial.permanent ||
-      initial.stabilized ||
-      Number(initial.kitCharges) <= 0
+      !effect ||
+      !initial ||
+      String(initial.pendingId ?? "") !== parent.pendingId ||
+      String(parent.resolution.injuryId ?? "") !== String(initial.id ?? "") ||
+      (String(parent.resolution.injuryKey ?? "") !==
+        String(initial.injuryKey ?? "") &&
+        String(persistedTreatmentResolution?.injuryAfter?.injuryKey ?? "") !==
+          String(initial.injuryKey ?? "")) ||
+      Number(parent.resolution.injuryRoll) !== Number(initial.injuryRoll) ||
+      Number(parent.resolution.tableVersion) !== Number(initial.tableVersion) ||
+      (!effectMatchesTreatmentResolution && !effectMatchesOriginalReceipt)
     ) {
       sendTreatmentResult(payload, actor, false, {
+        retryable: false,
+        message:
+          "The verified injury effect is no longer available. No kit charges were used.",
+      });
+      return;
+    }
+
+    if (initial.permanent || initial.stabilized) {
+      sendTreatmentResult(payload, actor, false, {
+        retryable: false,
         message: initial.stabilized
           ? "This injury has already been treated."
           : "This injury cannot be treated with a Healer's Kit.",
       });
       return;
     }
-    const treatmentNow = getCurrentInjuryTimestamp();
+
+    const created = await createCriticalInjuryTreatmentRequest({
+      actorId: actor.id,
+      injuryId: payload.injuryId,
+      treatmentId,
+      requestedBy: String(payload.originUserId ?? ""),
+      allowRequesterHandoff: true,
+    });
+    parent = created?.parent ?? parent;
+    let treatment = created?.record;
     if (
-      Number.isFinite(Number(initial.recoveryDueTs)) &&
-      Number(initial.recoveryDueTs) <= treatmentNow
+      treatment?.state !== "completed" &&
+      String(treatment?.treatmentId ?? "") !== treatmentId
     ) {
-      await processExpiredCriticalInjuries();
       sendTreatmentResult(payload, actor, false, {
+        retryable: true,
+        resumeTreatmentId: String(
+          created?.resumeTreatmentId ?? treatment?.treatmentId ?? "",
+        ),
         message:
-          "This injury's recovery deadline has passed. Its healed or permanent state was resolved before treatment.",
+          "An earlier treatment attempt is still open. Request treatment again to resume its stored plan safely.",
       });
       return;
     }
+    if (treatment?.state === "completed" && treatment.result) {
+      emitStoredCriticalInjuryTreatmentResult(
+        parent,
+        treatment,
+        payload.originUserId,
+      );
+      return;
+    }
 
-    const partyActors = listPlayerCharacters();
-    const previewPlan = buildHealersKitConsumptionPlan({
-      actors: partyActors,
-      preferredActorIds: [actor.id],
-      requiredCharges: initial.kitCharges,
-    });
-    if (!previewPlan.ok) {
+    applicationLeaseId = `treatment-application-${generateCriticalInjuryEffectDocumentId()}`;
+    const claim = await claimCriticalInjuryTreatmentApplication(
+      pendingId,
+      treatmentId,
+      {
+        id: applicationLeaseId,
+        claimedBy: String(authoritativeGMId() ?? ""),
+        leaseDurationMs: APPLICATION_LEASE_MS,
+      },
+    );
+    parent = claim?.parent ?? parent;
+    treatment = claim?.record;
+    if (treatment?.state === "completed" && treatment.result) {
+      applicationLeaseId = "";
+      emitStoredCriticalInjuryTreatmentResult(
+        parent,
+        treatment,
+        payload.originUserId,
+      );
+      return;
+    }
+    if (
+      claim?.claimedNow !== true ||
+      treatment?.applicationLease?.id !== applicationLeaseId
+    ) {
+      applicationLeaseId = "";
       sendTreatmentResult(payload, actor, false, {
-        message: `The party is short ${previewPlan.missing} Healer's Kit charge(s).`,
+        retryable: true,
+        message:
+          "Another treatment is being planned or applied. Wait for its result, then retry this stored request safely.",
       });
       return;
     }
 
-    const healer = await promptGmForTreatmentHealer({
-      actor,
-      injury: initial,
-      actors: partyActors,
-      plan: previewPlan,
-    });
-    if (!healer) {
-      sendTreatmentResult(payload, actor, false, {
-        message: "The GM declined or cancelled the treatment.",
+    let resolution = treatment?.resolution ?? null;
+    if (!resolution) {
+      const terminal = await prepareCriticalInjuryTreatmentResolution({
+        payload,
+        actor,
+        effect,
+        initial,
+        parent,
+        applicationLeaseId,
       });
-      return;
+      if (terminal?.terminal) {
+        await completeTerminalCriticalInjuryTreatment({
+          payload,
+          actor,
+          parent,
+          pendingId,
+          treatmentId,
+          applicationLeaseId,
+          ...terminal.terminal,
+        });
+        applicationLeaseId = "";
+        return;
+      }
+      treatment = terminal?.record;
+      parent = terminal?.parent ?? parent;
+      resolution = treatment?.resolution ?? null;
     }
+    if (!resolution)
+      throw new Error("CriticalInjuryTreatmentResolutionMissing");
 
-    const plan = buildHealersKitConsumptionPlan({
-      actors: partyActors,
-      preferredActorIds: [actor.id, healer.id],
-      requiredCharges: initial.kitCharges,
+    await renewCriticalInjuryTreatmentLease(
+      pendingId,
+      treatmentId,
+      applicationLeaseId,
+    );
+    const persistedPlan = hydrateCriticalInjuryTreatmentPlan(resolution);
+    const consumed = await applyPersistedHealersKitPlan(persistedPlan, {
+      treatmentId,
+      receiptToken: resolution.receiptToken,
     });
-    const consumed = await consumeHealersKitPlan(plan);
     consumedCharges = Math.max(0, Number(consumed.consumed ?? 0));
     if (!consumed.ok) {
-      sendTreatmentResult(payload, actor, false, {
-        message:
-          consumed.consumed > 0
-            ? `Only ${consumed.consumed} charge(s) could be verified as consumed.`
-            : "Healer's Kit charges changed before treatment could begin.",
-      });
-      return;
+      const error = new Error(
+        `CriticalInjuryTreatmentKitApplicationFailed:${consumed.reason}`,
+      );
+      error.consumedCharges = consumedCharges;
+      throw error;
     }
 
-    const check = await rollTreatmentCheck({ actor, healer, injury: initial });
-    let injury = { ...initial };
-    const now = getCurrentInjuryTimestamp();
-    if (!check.passed) {
-      if (injury.injuryKey === "nerve-damage" && injury.canBecomePermanent) {
-        injury.permanent = true;
-        injury.recoveryDueTs = null;
-        await updateCriticalInjuryEffect(effect, injury, {
-          startTime: now,
-          dueTimestamp: null,
-        });
-        const calendar = await scheduleCriticalInjuryNote({
-          actor,
-          injury,
-          existingEntryId: injury.calendarEntryId,
-          verifiedReplacement: criticalInjuryHasPrivateReceipt(actor, injury),
-        });
-        if (calendar.entryId) {
-          injury.calendarEntryId = calendar.entryId;
-          await updateCriticalInjuryEffect(effect, injury, {
-            startTime: now,
-            dueTimestamp: null,
-          });
-          await removeVerifiedCriticalInjuryNote(
-            actor,
-            injury,
-            calendar.previousEntryId,
-          );
-        }
-      }
-      const message = `Treatment failed after consuming ${consumed.consumed} Healer's Kit charge(s).`;
-      sendTreatmentResult(payload, actor, false, {
-        message,
-        rollTotal: check.total,
-        dc: initial.treatmentDc,
-        consumed: consumed.consumed,
-      });
-      await postTreatmentChat(actor, injury, message, payload.originUserId);
-      return;
-    }
-
-    injury.stabilized = true;
-    const elapsedRemaining = getRemainingInjuryCalendarDays(
-      injury.recoveryDueTs,
-      now,
+    await renewCriticalInjuryTreatmentLease(
+      pendingId,
+      treatmentId,
+      applicationLeaseId,
     );
-    if (Number.isFinite(elapsedRemaining)) {
-      injury.remainingDays = Math.max(
-        1,
-        Math.min(
-          Math.max(1, Number(injury.remainingDays) || 1),
-          elapsedRemaining,
+    const application = await applyPersistedCriticalInjuryTreatment({
+      actor,
+      effect,
+      parent,
+      treatmentId,
+      resolution,
+      pendingId,
+      applicationLeaseId,
+    });
+
+    const injury = application.injury;
+    const success = resolution.passed === true;
+    const checkDetail = resolution.treatmentDc
+      ? ` (roll ${resolution.checkTotal} vs DC ${resolution.treatmentDc})`
+      : "";
+    const message = success
+      ? `Treatment succeeded${checkDetail}. ${consumed.consumed} Healer's Kit charge(s) consumed; recovery is due ${formatInjuryTimestamp(injury.recoveryDueTs)}.`
+      : `Treatment failed${checkDetail} after consuming ${consumed.consumed} Healer's Kit charge(s).`;
+    const result = buildStoredTreatmentResult({
+      treatmentId,
+      injuryId: payload.injuryId,
+      success,
+      retryable: false,
+      outcome: success ? "succeeded" : "failed-check",
+      message,
+      rollTotal: resolution.checkTotal,
+      dc: resolution.treatmentDc,
+      consumed: consumed.consumed,
+      consumptionDetails: consumed.details,
+      result: sanitizeInjuryForClient(injury, {
+        calendarScheduled: application.calendar.scheduled,
+      }),
+      effectId: String(effect?.id ?? ""),
+      calendarEntryId: String(application.calendar.entryId ?? ""),
+      calendarScheduled: application.calendar.scheduled,
+    });
+    const completion = await completeCriticalInjuryTreatmentWorkflow(
+      pendingId,
+      treatmentId,
+      {
+        result,
+        applicationLeaseId,
+      },
+    );
+    applicationLeaseId = "";
+    if (!completion?.record?.result) {
+      throw new Error("CriticalInjuryTreatmentCompletionReceiptMissing");
+    }
+    assertCriticalInjuryAuthority();
+    const emitted = emitStoredCriticalInjuryTreatmentResult(
+      completion.parent ?? parent,
+      completion.record,
+      payload.originUserId,
+    );
+    if (emitted && completion.completedNow) {
+      void postTreatmentChat(
+        actor,
+        injury,
+        message,
+        payload.originUserId,
+      ).catch((error) =>
+        console.warn(
+          `${MODULE_ID} | critical injury treatment chat failed`,
+          error,
         ),
       );
     }
-    if (injury.injuryKey === "broken-arm" && injury.downgradeTo) {
-      const next = getCriticalInjuryDefinition(injury.downgradeTo);
-      if (next) {
-        injury.injuryKey = next.key;
-        injury.injuryName = next.label;
-        injury.effect = buildCriticalInjuryEffectText(next, {
-          type: "body-part",
-          key: "injured-arm",
-          label: "Injured arm",
-          kind: "arm",
-        });
-        injury.detail = {
-          type: "body-part",
-          key: "injured-arm",
-          label: "Injured arm",
-          kind: "arm",
-        };
-        injury.recoveryRule = next.recovery;
-        injury.kitCharges = Number(next.kitCharges ?? 0);
-        injury.treatmentDc = Number(next.treatmentDc ?? 0);
-        injury.treatmentSkill = String(next.treatmentSkill ?? "");
-      }
-      injury.remainingDays = Math.max(
-        1,
-        Math.ceil(Number(injury.remainingDays ?? 0) / 2),
-      );
-    }
-    const calendarDays = effectiveRecoveryCalendarDays(injury);
-    injury.recoveryDueTs = addInjuryCalendarDays(now, calendarDays);
-    await updateCriticalInjuryEffect(effect, injury, {
-      startTime: now,
-      dueTimestamp: injury.recoveryDueTs,
-    });
-    const calendar = await scheduleCriticalInjuryNote({
-      actor,
-      injury,
-      existingEntryId: injury.calendarEntryId,
-      verifiedReplacement: criticalInjuryHasPrivateReceipt(actor, injury),
-    });
-    if (calendar.entryId) {
-      injury.calendarEntryId = calendar.entryId;
-      await updateCriticalInjuryEffect(effect, injury, {
-        startTime: now,
-        dueTimestamp: injury.recoveryDueTs,
-      });
-      await removeVerifiedCriticalInjuryNote(
-        actor,
-        injury,
-        calendar.previousEntryId,
-      );
-    }
-
-    const message = `Treatment succeeded. ${consumed.consumed} Healer's Kit charge(s) consumed; recovery is due ${formatInjuryTimestamp(injury.recoveryDueTs)}.`;
-    sendTreatmentResult(payload, actor, true, {
-      message,
-      rollTotal: check.total,
-      dc: initial.treatmentDc,
-      consumed: consumed.consumed,
-      result: sanitizeInjuryForClient(injury, {
-        calendarScheduled: calendar.scheduled,
-      }),
-    });
-    await postTreatmentChat(actor, injury, message, payload.originUserId);
   } catch (error) {
+    if (applicationLeaseId && isAuthoritativeGM()) {
+      await releaseCriticalInjuryTreatmentApplication(
+        pendingId,
+        treatmentId,
+        applicationLeaseId,
+      ).catch((releaseError) =>
+        console.warn(
+          `${MODULE_ID} | could not release a failed treatment application lease`,
+          releaseError,
+        ),
+      );
+    }
     console.error(`${MODULE_ID} | critical injury treatment failed`, error);
-    const actor = game.actors?.get?.(payload.actorId);
-    if (actor) {
+    if (isAuthoritativeGM()) {
+      const actor = game.actors?.get?.(payload.actorId);
       sendTreatmentResult(payload, actor, false, {
+        retryable: true,
         message:
-          consumedCharges > 0
-            ? `Treatment could not be completed after ${consumedCharges} Healer's Kit charge(s) were consumed. The GM should review the injury and kit inventory.`
-            : "Treatment could not be completed. No injury or kit change was applied.",
+          consumedCharges > 0 || Number(error?.consumedCharges ?? 0) > 0
+            ? "Treatment was interrupted after a kit write. Retrying the same request is safe; the GM should review any reported inventory conflict."
+            : "Treatment could not be completed. Retrying the same request is safe and will reuse any stored roll.",
       });
     }
   } finally {
     treatmentInFlight.delete(key);
   }
+}
+
+async function prepareCriticalInjuryTreatmentResolution({
+  payload,
+  actor,
+  effect,
+  initial,
+  parent,
+  applicationLeaseId,
+}) {
+  const definition = getCriticalInjuryDefinition(initial.injuryKey);
+  const requiredCharges = Math.max(0, Number(definition?.kitCharges ?? 0));
+  if (!definition || requiredCharges <= 0) {
+    return {
+      terminal: {
+        outcome: "not-treatable",
+        message: "This injury cannot be treated with a Healer's Kit.",
+      },
+    };
+  }
+
+  const treatmentNow = getCurrentInjuryTimestamp();
+  if (
+    Number.isFinite(Number(initial.recoveryDueTs)) &&
+    Number(initial.recoveryDueTs) <= treatmentNow
+  ) {
+    await processExpiredCriticalInjuries();
+    return {
+      terminal: {
+        outcome: "recovery-expired",
+        message:
+          "This injury's recovery deadline has passed. Its healed or permanent state was resolved before treatment.",
+      },
+    };
+  }
+
+  const canonicalInjury = buildInjuryFromResolution(
+    parent.pendingId,
+    actor,
+    parent.resolution,
+  );
+  canonicalInjury.schema = 1;
+  canonicalInjury.tableVersion = Number(parent.resolution.tableVersion);
+  canonicalInjury.calendarEntryId = String(parent.calendarEntryId ?? "");
+  canonicalInjury.infectionHpLoss = Math.max(
+    0,
+    Math.floor(Number(initial.infectionHpLoss) || 0),
+  );
+  const partyActors = listPlayerCharacters();
+  const previewPlan = buildHealersKitConsumptionPlan({
+    actors: partyActors,
+    preferredActorIds: [actor.id],
+    requiredCharges,
+  });
+  if (!previewPlan.ok) {
+    return {
+      terminal: {
+        outcome: "insufficient-charges",
+        message: `The party is short ${previewPlan.missing} Healer's Kit charge(s).`,
+      },
+    };
+  }
+
+  const previewInjury = {
+    ...cloneCriticalInjuryTreatmentSnapshot(canonicalInjury),
+    kitCharges: requiredCharges,
+    treatmentDc: Math.max(0, Number(definition.treatmentDc ?? 0)),
+    treatmentSkill: String(definition.treatmentSkill ?? ""),
+  };
+  const healer = await promptGmForTreatmentHealer({
+    actor,
+    injury: previewInjury,
+    actors: partyActors,
+    plan: previewPlan,
+  });
+  await renewCriticalInjuryTreatmentLease(
+    parent.pendingId,
+    payload.treatmentId,
+    applicationLeaseId,
+  );
+  if (!healer) {
+    return {
+      terminal: {
+        outcome: "declined",
+        message: "The GM declined or cancelled the treatment.",
+      },
+    };
+  }
+
+  const plan = buildHealersKitConsumptionPlan({
+    actors: partyActors,
+    preferredActorIds: [actor.id, healer.id],
+    requiredCharges,
+  });
+  if (!plan.ok) {
+    return {
+      terminal: {
+        outcome: "charges-changed",
+        message:
+          "Healer's Kit charges changed before treatment could begin. No charges were used.",
+      },
+    };
+  }
+
+  const check = await rollTreatmentCheck({
+    actor,
+    healer,
+    injury: previewInjury,
+    chatMessage: false,
+  });
+  await renewCriticalInjuryTreatmentLease(
+    parent.pendingId,
+    payload.treatmentId,
+    applicationLeaseId,
+  );
+  const injuryBefore = cloneCriticalInjuryTreatmentSnapshot(initial);
+  const injuryAfter = buildCriticalInjuryTreatmentOutcome(
+    injuryBefore,
+    canonicalInjury,
+    {
+      passed: check.passed,
+      treatmentNow,
+    },
+  );
+  const persisted = await persistCriticalInjuryTreatmentResolution(
+    parent.pendingId,
+    payload.treatmentId,
+    {
+      effectId: String(effect.id ?? ""),
+      healerActorId: String(healer.id ?? ""),
+      injuryKey: String(initial.injuryKey ?? ""),
+      tableVersion: Number(parent.resolution.tableVersion),
+      treatmentStartTs: treatmentNow,
+      treatmentDc: previewInjury.treatmentDc,
+      treatmentSkill: previewInjury.treatmentSkill,
+      checkTotal: check.total,
+      passed: check.passed,
+      kitRequired: requiredCharges,
+      receiptToken: `kit-${generateCriticalInjuryEffectDocumentId()}`,
+      consumptionSteps: plan.steps.map((step) => ({
+        actorId: String(step.actorId ?? ""),
+        itemId: String(step.itemId ?? ""),
+        before: Math.max(0, Number(step.available ?? 0)),
+        spend: Math.max(0, Number(step.spend ?? 0)),
+        after: Math.max(0, Number(step.after ?? 0)),
+      })),
+      injuryBefore,
+      injuryAfter,
+      previousCalendarEntryId: String(initial.calendarEntryId ?? ""),
+      resolvedBy: String(authoritativeGMId() ?? ""),
+      resolvedAt: Date.now(),
+    },
+    { applicationLeaseId },
+  );
+  return persisted;
+}
+
+function buildCriticalInjuryTreatmentOutcome(
+  injuryBefore,
+  canonicalInjury,
+  { passed, treatmentNow },
+) {
+  if (!passed) {
+    if (
+      canonicalInjury.injuryKey === "nerve-damage" &&
+      canonicalInjury.canBecomePermanent
+    ) {
+      const injury = cloneCriticalInjuryTreatmentSnapshot(canonicalInjury);
+      injury.permanent = true;
+      injury.recoveryDueTs = null;
+      return injury;
+    }
+    return cloneCriticalInjuryTreatmentSnapshot(injuryBefore);
+  }
+
+  const injury = cloneCriticalInjuryTreatmentSnapshot(canonicalInjury);
+  injury.stabilized = true;
+  const elapsedRemaining = getRemainingInjuryCalendarDays(
+    injury.recoveryDueTs,
+    treatmentNow,
+  );
+  if (Number.isFinite(elapsedRemaining)) {
+    injury.remainingDays = Math.max(
+      1,
+      Math.min(
+        Math.max(1, Number(injury.remainingDays) || 1),
+        elapsedRemaining,
+      ),
+    );
+  }
+  if (injury.injuryKey === "broken-arm" && injury.downgradeTo) {
+    const next = getCriticalInjuryDefinition(injury.downgradeTo);
+    if (next) {
+      injury.injuryKey = next.key;
+      injury.injuryName = next.label;
+      injury.effect = buildCriticalInjuryEffectText(next, {
+        type: "body-part",
+        key: "injured-arm",
+        label: "Injured arm",
+        kind: "arm",
+      });
+      injury.detail = {
+        type: "body-part",
+        key: "injured-arm",
+        label: "Injured arm",
+        kind: "arm",
+      };
+      injury.recoveryRule = next.recovery;
+      injury.kitCharges = Number(next.kitCharges ?? 0);
+      injury.treatmentDc = Number(next.treatmentDc ?? 0);
+      injury.treatmentSkill = String(next.treatmentSkill ?? "");
+    }
+    injury.remainingDays = Math.max(
+      1,
+      Math.ceil(Number(injury.remainingDays ?? 0) / 2),
+    );
+  }
+  const calendarDays = effectiveRecoveryCalendarDays(injury);
+  injury.recoveryDueTs = addInjuryCalendarDays(treatmentNow, calendarDays);
+  return injury;
+}
+
+async function applyPersistedCriticalInjuryTreatment({
+  actor,
+  effect,
+  parent,
+  treatmentId,
+  resolution,
+  pendingId,
+  applicationLeaseId,
+}) {
+  const injuryBefore = cloneInjuryData(resolution.injuryBefore);
+  let injury = cloneInjuryData(resolution.injuryAfter);
+  const changesEffect = !persistedValuesEqual(injuryBefore, injury);
+  let calendar = {
+    scheduled: Boolean(injury.calendarEntryId),
+    entryId: String(injury.calendarEntryId ?? ""),
+    previousEntryId: "",
+  };
+  if (!changesEffect) return { injury, calendar };
+
+  const current = getCriticalInjuryData(effect);
+  const afterIgnoringCalendar = injuryDataMatchesExceptCalendar(
+    current,
+    injury,
+  );
+  if (
+    !persistedValuesEqual(current, injuryBefore) &&
+    !persistedValuesEqual(current, injury) &&
+    !afterIgnoringCalendar
+  ) {
+    throw new Error("CriticalInjuryTreatmentEffectConflict");
+  }
+  if (
+    !afterIgnoringCalendar ||
+    String(current?.calendarEntryId ?? "") ===
+      String(injury.calendarEntryId ?? "")
+  ) {
+    await updateCriticalInjuryEffectReplaySafe(effect, injury, {
+      startTime: resolution.treatmentStartTs,
+      dueTimestamp: injury.recoveryDueTs,
+    });
+  }
+
+  await renewCriticalInjuryTreatmentLease(
+    pendingId,
+    treatmentId,
+    applicationLeaseId,
+  );
+  calendar = await scheduleCriticalInjuryNote({
+    actor,
+    injury,
+    existingEntryId: resolution.previousCalendarEntryId,
+    verifiedReplacement: criticalInjuryHasPrivateReceipt(actor, injury),
+    operationId: treatmentId,
+  });
+  await renewCriticalInjuryTreatmentLease(
+    pendingId,
+    treatmentId,
+    applicationLeaseId,
+  );
+  if (calendar.entryId) {
+    injury.calendarEntryId = calendar.entryId;
+    await updateCriticalInjuryEffectReplaySafe(effect, injury, {
+      startTime: resolution.treatmentStartTs,
+      dueTimestamp: injury.recoveryDueTs,
+    });
+    await renewCriticalInjuryTreatmentLease(
+      pendingId,
+      treatmentId,
+      applicationLeaseId,
+    );
+    await removeVerifiedCriticalInjuryNote(
+      actor,
+      injury,
+      calendar.previousEntryId,
+    );
+  }
+  return { injury, calendar };
+}
+
+async function updateCriticalInjuryEffectReplaySafe(effect, injury, timing) {
+  const expected = getCriticalInjuryData(
+    buildCriticalInjuryEffectData(injury, timing),
+  );
+  if (persistedValuesEqual(getCriticalInjuryData(effect), expected)) {
+    return effect;
+  }
+  try {
+    await updateCriticalInjuryEffect(effect, injury, timing);
+  } catch (error) {
+    if (!persistedValuesEqual(getCriticalInjuryData(effect), expected)) {
+      throw error;
+    }
+  }
+  if (!persistedValuesEqual(getCriticalInjuryData(effect), expected)) {
+    throw new Error("CriticalInjuryTreatmentEffectWriteVerificationFailed");
+  }
+  return effect;
+}
+
+function injuryDataMatchesExceptCalendar(left, right) {
+  if (!left || !right) return false;
+  const leftCopy = cloneInjuryData(left);
+  const rightCopy = cloneInjuryData(right);
+  delete leftCopy.calendarEntryId;
+  delete rightCopy.calendarEntryId;
+  return persistedValuesEqual(leftCopy, rightCopy);
+}
+
+function hydrateCriticalInjuryTreatmentPlan(resolution) {
+  const steps = [];
+  for (const persisted of resolution.consumptionSteps ?? []) {
+    const sourceActor = game.actors?.get?.(persisted.actorId);
+    const items = sourceActor?.items?.contents ?? sourceActor?.items ?? [];
+    const item =
+      sourceActor?.items?.get?.(persisted.itemId) ??
+      Array.from(items ?? []).find(
+        (candidate) => String(candidate?.id ?? "") === persisted.itemId,
+      );
+    if (!sourceActor || !item || !isHealersKitItem(item)) {
+      return { ok: false, required: resolution.kitRequired, steps: [] };
+    }
+    steps.push({
+      ...persisted,
+      actor: sourceActor,
+      actorName: String(sourceActor.name ?? "Unknown Character"),
+      item,
+      itemName: String(item.name ?? "Healer's Kit"),
+    });
+  }
+  return {
+    ok: steps.length > 0,
+    required: resolution.kitRequired,
+    steps,
+  };
+}
+
+async function renewCriticalInjuryTreatmentLease(
+  pendingId,
+  treatmentId,
+  leaseId,
+) {
+  assertCriticalInjuryAuthority();
+  const renewed = await renewCriticalInjuryTreatmentApplication(
+    pendingId,
+    treatmentId,
+    leaseId,
+    { leaseDurationMs: APPLICATION_LEASE_MS },
+  );
+  assertCriticalInjuryAuthority();
+  if (
+    renewed?.record?.state === "completed" ||
+    renewed?.record?.applicationLease?.id !== leaseId
+  ) {
+    throw new Error("CriticalInjuryTreatmentApplicationLeaseLost");
+  }
+  return renewed;
+}
+
+async function completeTerminalCriticalInjuryTreatment({
+  payload,
+  actor,
+  parent,
+  pendingId,
+  treatmentId,
+  applicationLeaseId,
+  outcome,
+  message,
+}) {
+  const result = buildStoredTreatmentResult({
+    treatmentId,
+    injuryId: payload.injuryId,
+    success: false,
+    retryable: false,
+    outcome,
+    message,
+    consumed: 0,
+  });
+  const completion = await completeCriticalInjuryTreatmentWorkflow(
+    pendingId,
+    treatmentId,
+    { result, applicationLeaseId },
+  );
+  emitStoredCriticalInjuryTreatmentResult(
+    completion?.parent ?? parent,
+    completion?.record,
+    payload.originUserId,
+  );
+  return completion;
+}
+
+function buildStoredTreatmentResult(details) {
+  return {
+    treatmentId: String(details?.treatmentId ?? ""),
+    injuryId: String(details?.injuryId ?? ""),
+    outcome: String(details?.outcome ?? "unknown"),
+    success: Boolean(details?.success),
+    retryable: Boolean(details?.retryable),
+    message: String(details?.message ?? "Treatment resolved."),
+    consumed: Math.max(0, Number(details?.consumed ?? 0)),
+    consumptionDetails: Array.isArray(details?.consumptionDetails)
+      ? details.consumptionDetails
+      : [],
+    rollTotal: details?.rollTotal ?? null,
+    dc: Math.max(0, Number(details?.dc ?? 0)),
+    result: details?.result ?? null,
+    effectId: String(details?.effectId ?? ""),
+    calendarEntryId: String(details?.calendarEntryId ?? ""),
+    calendarScheduled: Boolean(details?.calendarScheduled),
+  };
+}
+
+function emitStoredCriticalInjuryTreatmentResult(
+  parent,
+  treatment,
+  requestingUserId,
+) {
+  if (!isAuthoritativeGM() || !treatment?.result) return null;
+  const requester = String(requestingUserId ?? "");
+  const actor = game.actors?.get?.(parent?.actorId);
+  const allowed = new Set([
+    String(treatment.requestedBy ?? ""),
+    String(authoritativeGMId() ?? ""),
+  ]);
+  if (
+    !requester ||
+    (!allowed.has(requester) && !userCanOperateActor(actor, requester))
+  ) {
+    return null;
+  }
+  return emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.TREATMENT_RESULT, {
+    actorId: String(parent?.actorId ?? ""),
+    injuryId: String(treatment.injuryId ?? ""),
+    treatmentId: String(treatment.treatmentId ?? ""),
+    targetUserId: requester,
+    ...treatment.result,
+  });
+}
+
+function cloneInjuryData(value) {
+  return (
+    globalThis.foundry?.utils?.deepClone?.(value) ?? structuredClone(value)
+  );
+}
+
+function cloneCriticalInjuryTreatmentSnapshot(value) {
+  const snapshot = cloneInjuryData(value);
+  let serialized = "";
+  try {
+    serialized = JSON.stringify(snapshot);
+  } catch {
+    throw new Error("CriticalInjuryTreatmentSnapshotInvalid");
+  }
+  if (!serialized || serialized.length > 25_000) {
+    throw new Error("CriticalInjuryTreatmentSnapshotInvalid");
+  }
+  return JSON.parse(serialized);
+}
+
+function sameNullableNumber(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  return Number(left) === Number(right);
 }
 
 async function handleInfectionRest(payload) {
@@ -1319,7 +1977,12 @@ async function promptGmForTreatmentHealer({ actor, injury, actors, plan }) {
   }
 }
 
-async function rollTreatmentCheck({ actor, healer, injury }) {
+async function rollTreatmentCheck({
+  actor,
+  healer,
+  injury,
+  chatMessage = false,
+}) {
   const dc = Math.max(0, Number(injury?.treatmentDc ?? 0));
   const skill = String(injury?.treatmentSkill ?? "");
   if (!dc || !skill) return { passed: true, total: null };
@@ -1327,33 +1990,47 @@ async function rollTreatmentCheck({ actor, healer, injury }) {
     skill === "con"
       ? await rollAbilitySave(actor, "con", {
           flavor: `${actor.name}: Nerve Damage treatment — DC ${dc}`,
+          chatMessage,
         })
       : await rollSkill(healer, skill === "ins" ? "ins" : "med", {
           flavor: `${healer.name}: Treat ${actor.name}'s ${injury.injuryName} — DC ${dc}`,
+          chatMessage,
         });
   const total = Number(roll?.total);
   return { passed: Number.isFinite(total) && total >= dc, total };
 }
 
-async function rollSkill(actor, skillId, { flavor = "" } = {}) {
+async function rollSkill(
+  actor,
+  skillId,
+  { flavor = "", chatMessage = true } = {},
+) {
   if (typeof actor?.rollSkill !== "function") return { total: 0 };
   return await actor.rollSkill(skillId, {
     fastForward: true,
-    chatMessage: true,
+    chatMessage,
     flavor,
   });
 }
 
-async function rollAbilitySave(actor, abilityId, { flavor = "" } = {}) {
+async function rollAbilitySave(
+  actor,
+  abilityId,
+  { flavor = "", chatMessage = true } = {},
+) {
   if (typeof actor?.rollAbilitySave === "function") {
     return await actor.rollAbilitySave(abilityId, {
       fastForward: true,
-      chatMessage: true,
+      chatMessage,
       flavor,
     });
   }
   if (typeof actor?.rollSavingThrow === "function") {
-    return await actor.rollSavingThrow({ ability: abilityId, flavor });
+    return await actor.rollSavingThrow({
+      ability: abilityId,
+      flavor,
+      chatMessage,
+    });
   }
   return { total: 0 };
 }
@@ -1405,11 +2082,14 @@ async function removePendingInjury(actor, pendingId) {
 }
 
 function sendTreatmentResult(payload, actor, success, details) {
-  emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.TREATMENT_RESULT, {
-    actorId: actor.id,
-    injuryId: payload.injuryId,
-    targetUserId: payload.originUserId,
-    success,
+  if (!isAuthoritativeGM()) return null;
+  return emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.TREATMENT_RESULT, {
+    actorId: String(actor?.id ?? payload?.actorId ?? ""),
+    injuryId: String(payload?.injuryId ?? ""),
+    treatmentId: String(payload?.treatmentId ?? ""),
+    targetUserId: String(payload?.originUserId ?? ""),
+    success: Boolean(success),
+    retryable: Boolean(details?.retryable),
     ...details,
   });
 }

@@ -30,7 +30,7 @@ globalThis.SimpleCalendar = {
     }),
     getNotes() {
       calls.push(["get"]);
-      return notes;
+      return structuredClone(notes);
     },
     async addNote(...args) {
       calls.push(["add", args]);
@@ -47,6 +47,9 @@ globalThis.SimpleCalendar = {
     },
     async removeNote(id) {
       calls.push(["remove", id]);
+      const index = notes.findIndex((note) => note.id === id);
+      if (index < 0) return false;
+      notes.splice(index, 1);
       return true;
     },
   },
@@ -126,6 +129,160 @@ assert.equal(
   "an add-note response failure reuses the note that was already committed",
 );
 
+const treatmentInjury = {
+  ...injury,
+  id: "injury-treatment",
+  pendingId: "pending-treatment",
+};
+const treatmentAddsBefore = calls.filter(([type]) => type === "add").length;
+const [concurrentLeft, concurrentRight] = await Promise.all([
+  scheduleCriticalInjuryNote({
+    actor,
+    injury: treatmentInjury,
+    existingEntryId: "note-treatment-old",
+    verifiedReplacement: true,
+    operationId: "treatment-concurrent",
+  }),
+  scheduleCriticalInjuryNote({
+    actor,
+    injury: treatmentInjury,
+    existingEntryId: "note-treatment-old",
+    verifiedReplacement: true,
+    operationId: "treatment-concurrent",
+  }),
+]);
+assert.equal(
+  calls.filter(([type]) => type === "add").length - treatmentAddsBefore,
+  2,
+  "concurrent authorities can both reach Simple Calendar before reconciliation",
+);
+assert.equal(concurrentLeft.scheduled, true);
+assert.equal(concurrentRight.scheduled, true);
+assert.equal(
+  concurrentLeft.entryId,
+  concurrentRight.entryId,
+  "both authorities converge on the same deterministic calendar entry",
+);
+const concurrentContent = notes.find(
+  (note) => note.id === concurrentLeft.entryId,
+)?.pages?.contents?.[0]?.text?.content;
+assert.match(concurrentContent, /critical-injury%3Av1/);
+assert.match(concurrentContent, /critical-injury-treatment%3Av1/);
+assert.equal(
+  notes.filter((note) =>
+    note.pages?.contents?.some((page) =>
+      page.text?.content?.includes("treatment-concurrent"),
+    ),
+  ).length,
+  1,
+  "marker-identical concurrent notes are reconciled to one survivor",
+);
+
+const canonicalTreatmentNote = notes.find(
+  (note) => note.id === concurrentLeft.entryId,
+);
+notes.push({
+  id: "zz-treatment-duplicate",
+  pages: structuredClone(canonicalTreatmentNote.pages),
+});
+notes.push({
+  id: "unrelated-operation-marker-only",
+  pages: {
+    contents: [
+      {
+        text: {
+          content:
+            canonicalTreatmentNote.pages.contents[0].text.content.replace(
+              /<p><small>Infinity D&amp;D5e recovery tracking:.*?<\/small><\/p>/,
+              "",
+            ),
+        },
+      },
+    ],
+  },
+});
+const reconciledDuplicate = await scheduleCriticalInjuryNote({
+  actor,
+  injury: treatmentInjury,
+  existingEntryId: "note-treatment-old",
+  verifiedReplacement: true,
+  operationId: "treatment-concurrent",
+});
+assert.equal(reconciledDuplicate.entryId, concurrentLeft.entryId);
+assert.equal(
+  notes.some((note) => note.id === "zz-treatment-duplicate"),
+  false,
+  "an exact duplicate carrying both markers is removed",
+);
+assert.equal(
+  notes.some((note) => note.id === "unrelated-operation-marker-only"),
+  true,
+  "a note without the matching base injury marker is never removed",
+);
+
+notes.push({
+  id: "zz-treatment-removal-uncertain",
+  pages: structuredClone(canonicalTreatmentNote.pages),
+});
+const verifiedRemoveNote = globalThis.SimpleCalendar.api.removeNote;
+globalThis.SimpleCalendar.api.removeNote = async (id) => {
+  calls.push(["remove-uncertain", id]);
+  throw new Error("simulated uncertain duplicate removal");
+};
+const uncertainRemoval = await scheduleCriticalInjuryNote({
+  actor,
+  injury: treatmentInjury,
+  existingEntryId: "note-treatment-old",
+  verifiedReplacement: true,
+  operationId: "treatment-concurrent",
+});
+assert.equal(uncertainRemoval.scheduled, false);
+assert.match(uncertainRemoval.reason, /removal-unverified/);
+assert.equal(
+  notes.some((note) => note.id === "zz-treatment-removal-uncertain"),
+  true,
+  "an unverified removal fails closed without claiming one note is canonical",
+);
+globalThis.SimpleCalendar.api.removeNote = verifiedRemoveNote;
+const verifiedCleanup = await scheduleCriticalInjuryNote({
+  actor,
+  injury: treatmentInjury,
+  existingEntryId: "note-treatment-old",
+  verifiedReplacement: true,
+  operationId: "treatment-concurrent",
+});
+assert.equal(verifiedCleanup.scheduled, true);
+assert.equal(
+  notes.some((note) => note.id === "zz-treatment-removal-uncertain"),
+  false,
+  "a later verified pass safely removes the exact duplicate",
+);
+
+const interruptedTreatmentInjury = {
+  ...injury,
+  id: "injury-treatment-interrupted",
+  pendingId: "pending-treatment-interrupted",
+};
+throwAfterAdd = true;
+const recoveredTreatmentAfterThrow = await scheduleCriticalInjuryNote({
+  actor,
+  injury: interruptedTreatmentInjury,
+  existingEntryId: "note-treatment-interrupted-old",
+  verifiedReplacement: true,
+  operationId: "treatment-interrupted",
+});
+assert.equal(recoveredTreatmentAfterThrow.scheduled, true);
+assert.equal(recoveredTreatmentAfterThrow.reused, true);
+assert.equal(
+  notes.filter((note) =>
+    note.pages?.contents?.some((page) =>
+      page.text?.content?.includes("treatment-interrupted"),
+    ),
+  ).length,
+  1,
+  "an apply-then-throw treatment add is recovered and reconciled",
+);
+
 const result = await scheduleCriticalInjuryNote({
   actor,
   injury,
@@ -135,12 +292,13 @@ const result = await scheduleCriticalInjuryNote({
 
 assert.deepEqual(result, {
   scheduled: true,
-  entryId: "note-3",
+  entryId: result.entryId,
   created: true,
   reused: false,
   previousEntryId: "note-old",
   reason: "",
 });
+assert.match(result.entryId, /^note-\d+$/);
 const replacementAddIndex = calls.findLastIndex(
   ([type, args]) => type === "add" && args[0].includes("Shattered Knee"),
 );
@@ -154,7 +312,12 @@ assert.deepEqual(
   ["default"],
   "calendar note is player-visible",
 );
-notes.push({ id: "note-old", pages: structuredClone(notes[2].pages) });
+notes.push({
+  id: "note-old",
+  pages: structuredClone(
+    notes.find((note) => note.id === result.entryId).pages,
+  ),
+});
 assert.equal(
   await removeCriticalInjuryNote("note-old", {
     actor,
