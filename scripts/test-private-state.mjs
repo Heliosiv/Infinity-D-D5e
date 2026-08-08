@@ -128,11 +128,15 @@ async function waitFor(predicate, message) {
 }
 
 function makeStoreData({
-  schemaVersion = 2,
+  schemaVersion = 4,
   merchants = [],
   factions = [],
   resourceConfig = {},
   resourceRunState = {},
+  criticalInjuryWorkflow = {},
+  criticalInjuryWorkflowCheckpoint = {},
+  includeCriticalInjuryWorkflow = true,
+  includeCriticalInjuryWorkflowCheckpoint = true,
 } = {}) {
   return {
     name: "[Infinity D&D5e] Private State",
@@ -145,6 +149,10 @@ function makeStoreData({
         factions,
         resourceConfig,
         resourceRunState,
+        ...(includeCriticalInjuryWorkflow ? { criticalInjuryWorkflow } : {}),
+        ...(includeCriticalInjuryWorkflowCheckpoint
+          ? { criticalInjuryWorkflowCheckpoint }
+          : {}),
       },
     },
   };
@@ -243,9 +251,11 @@ try {
       "secret-stash",
     );
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 42);
+    assert.deepEqual(getPrivateState("criticalInjuryWorkflow"), {});
+    assert.deepEqual(getPrivateState("criticalInjuryWorkflowCheckpoint"), {});
     assert.equal(
       activeJournal.entries[0].getFlag(MODULE_ID, "schemaVersion"),
-      2,
+      4,
     );
     assert.deepEqual(state.cleared.sort(), [
       "factions",
@@ -576,6 +586,8 @@ try {
         schemaVersion: 1,
         resourceConfig: null,
         resourceRunState: null,
+        includeCriticalInjuryWorkflow: false,
+        includeCriticalInjuryWorkflowCheckpoint: false,
       }),
     );
     store.ignoreNextUpdate(`flags.${MODULE_ID}.resourceConfig`);
@@ -620,6 +632,16 @@ try {
       "must-survive-failed-copy",
     );
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 7);
+    assert.deepEqual(
+      getPrivateState("criticalInjuryWorkflow"),
+      {},
+      "the schema migration installs the restricted injury workflow field",
+    );
+    assert.deepEqual(
+      getPrivateState("criticalInjuryWorkflowCheckpoint"),
+      {},
+      "the schema migration installs the redundant injury workflow checkpoint",
+    );
     assert.deepEqual(state.cleared.sort(), [
       "privateStateStoreId",
       "resourceConfig",

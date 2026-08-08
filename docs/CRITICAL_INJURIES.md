@@ -10,21 +10,46 @@ removed.
    dead/unconscious/defeated state is removed while it has positive HP.
 2. The active full GM receives a **Critical Injury?** Yes/No prompt. No injury
    is created unless the GM approves it.
-3. The approved roll is stored on the Actor and sent only to an assigned or
-   owning player. If that player reconnects, the pending roll reopens.
-4. The player clicks **Roll d100**. The active GM authenticates the socket
-   sender and verifies the Actor, pending approval, and d100 range before any
-   mutation.
-5. The result's secondary detail and recovery duration are rolled. An Active
-   Effect is added to the character, the result is whispered to the player and
-   GMs, and the recovery interval is added to Simple Calendar when available.
+3. The canonical approval is stored in the restricted GM-only state. A
+   sanitized pending button is mirrored to the Actor and sent to an
+   assigned or owning player. The active GM also sees the approved roll as a
+   fallback. If either user reconnects, the pending roll reopens for them.
+4. The player clicks **Roll d100**. The request contains no dice result and is
+   sent only to the active GM. That GM authenticates the socket sender and
+   verifies the Actor against the private approval record.
+5. The active GM rolls the d100, secondary detail, and recovery duration, then
+   persists every value to a revisioned primary record and restricted recovery
+   checkpoint. Before the first die, it claims a server-clock lease that is
+   revalidated through the effect, calendar, and completion phases. A
+   deterministic Active Effect ID and stable calendar marker let an interrupted
+   retry adopt only the exact matching documents. The result is whispered to
+   the player and GMs, and the recovery interval is added to Simple Calendar
+   when available. Duplicate or retried requests reuse the same stored rolls
+   and completed receipt, including across an active-GM handoff, without
+   duplicating the public chat result.
+
+Calendar replacements are written back to the injury before the prior note is
+removed. Cleanup requires both the private completed receipt and the exact note
+marker, so an owner-edited Actor flag cannot direct the GM to delete an
+unrelated calendar entry.
 6. When the due time arrives, temporary effects are removed. Shattered Knee
    and Nerve Damage become permanent if their required treatment was not
    completed in time.
 
-Pending rolls and applied injuries live on the Actor, not in client-local
-state. Actor, inventory, Active Effect, and calendar writes are performed only
-by the authoritative full GM.
+The pending-button projection and applied injuries live on the Actor, not in
+client-local state. The authorization and replay receipt live in the restricted
+private-state Journal, which players cannot read or write. Actor, inventory,
+Active Effect, private-state, and calendar writes are performed only by the
+authoritative full GM.
+
+On upgrade, old Actor-only pending buttons cannot prove that a GM approved the
+roll. The active GM clears those unverified buttons and receives a warning so
+the roll can be approved again if it is still needed. A rejected or failed
+request sends a targeted explanation back to the requester; if a success
+message is lost, the player window retains a safe receipt-retry button instead
+of trusting an owner-writable effect as proof of completion. If the recorded
+player no longer controls the Actor, the private approval and visible button
+are moved to the active GM.
 
 ## Version 2 table
 

@@ -20,6 +20,16 @@ export function generateCriticalInjuryId() {
   return `injury-${random()}${random()}${random()}`;
 }
 
+export function generateCriticalInjuryEffectDocumentId() {
+  const randomId = globalThis.foundry?.utils?.randomID;
+  if (typeof randomId === "function") return String(randomId(16));
+  return generateCriticalInjuryId()
+    .replace(/^injury-/, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .padEnd(16, "0")
+    .slice(0, 16);
+}
+
 export function getCriticalInjuryData(effect) {
   return (
     effect?.getFlag?.(MODULE_ID, EFFECT_FLAG) ??
@@ -150,13 +160,56 @@ export async function createCriticalInjuryEffect(actor, injury, timing = {}) {
     ...timing,
     modes: activeEffectModes(),
   });
+  const documentId = String(timing?.documentId ?? "").trim();
+  if (documentId) data._id = documentId;
   if (actor.uuid) data.origin = actor.uuid;
-  const created = await actor.createEmbeddedDocuments("ActiveEffect", [data]);
-  const effect = created?.[0] ?? null;
-  if (!effect || !findActorCriticalInjuryEffect(actor, injury.id)) {
+  let created;
+  try {
+    created = await actor.createEmbeddedDocuments(
+      "ActiveEffect",
+      [data],
+      documentId ? { keepId: true } : {},
+    );
+  } catch (error) {
+    const existing = findActorEffectByDocumentId(actor, documentId);
+    if (existing && criticalInjuryEffectMatches(existing, injury)) {
+      return existing;
+    }
+    if (existing) {
+      throw new Error("CriticalInjuryEffectDocumentCollision", {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  const effect =
+    findActorEffectByDocumentId(actor, documentId) ?? created?.[0] ?? null;
+  if (!effect || !criticalInjuryEffectMatches(effect, injury)) {
     throw new Error("CriticalInjuryEffectCreateVerificationFailed");
   }
   return effect;
+}
+
+function findActorEffectByDocumentId(actor, documentId) {
+  const id = String(documentId ?? "").trim();
+  if (!id) return null;
+  const direct = actor?.effects?.get?.(id);
+  if (direct) return direct;
+  const effects = actor?.effects?.contents ?? actor?.effects ?? [];
+  return (
+    Array.from(effects ?? []).find(
+      (effect) => String(effect?.id ?? effect?._id ?? "") === id,
+    ) ?? null
+  );
+}
+
+function criticalInjuryEffectMatches(effect, injury) {
+  const existing = getCriticalInjuryData(effect);
+  return Boolean(
+    existing &&
+    String(existing.id ?? "") === String(injury?.id ?? "") &&
+    String(existing.pendingId ?? "") === String(injury?.pendingId ?? ""),
+  );
 }
 
 export async function updateCriticalInjuryEffect(effect, injury, timing = {}) {

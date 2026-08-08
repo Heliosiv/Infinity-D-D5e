@@ -2,7 +2,7 @@
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
   "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, track party resources and reputation, and automate Critical Injury Table V2 recovery workflows.",
-  "version": "0.2.65",
+  "version": "0.2.66",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "13",

@@ -109,8 +109,14 @@ assert.match(
 
 assert.match(
   source,
-  /safeInitializeSubsystem\([\s\S]*?"critical injury socket"[\s\S]*?"critical injury service"[\s\S]*?"critical injury player app"/,
-  "critical-injury socket, authority service, and player app should initialize independently",
+  /function registerPrivateDependentServices\(\)[\s\S]*?"critical injury service"[\s\S]*?registerCriticalInjuryService/,
+  "the authority service should wait for the restricted private workflow store",
+);
+
+assert.match(
+  source,
+  /"critical injury socket"[\s\S]*?registerCriticalInjurySocket[\s\S]*?"critical injury player app"[\s\S]*?registerCriticalInjuryApp/,
+  "the socket and player app should initialize while private-state recovery is pending",
 );
 
 /* ---- Private-state recovery and promoted-GM resource authority ---- */

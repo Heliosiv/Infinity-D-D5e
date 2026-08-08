@@ -4,8 +4,10 @@
  * Foundry world settings are readable by every connected client even when
  * `config:false`. Merchant economy and unrevealed faction records therefore
  * live on a JournalEntry with default NONE ownership and are cached only on
- * full-GM clients. Other roles receive typed empty defaults. Legacy settings
- * are migrated once and then cleared.
+ * full-GM clients. Critical Injury approvals and replay receipts use the same
+ * boundary because player-owned Actor flags are not authorization records.
+ * Other roles receive typed empty defaults. Legacy settings are migrated once
+ * and then cleared.
  */
 
 import { isFullGM } from "./permissions.js";
@@ -15,7 +17,7 @@ import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
-const STORE_SCHEMA = 2;
+const STORE_SCHEMA = 4;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
 const PRIVATE_STATE_FIELDS = Object.freeze({
@@ -27,6 +29,14 @@ const PRIVATE_STATE_FIELDS = Object.freeze({
   }),
   resourceRunState: Object.freeze({
     legacyKey: "resourceRunState",
+    type: "object",
+  }),
+  criticalInjuryWorkflow: Object.freeze({
+    legacyKey: null,
+    type: "object",
+  }),
+  criticalInjuryWorkflowCheckpoint: Object.freeze({
+    legacyKey: null,
     type: "object",
   }),
 });
@@ -92,6 +102,13 @@ function valuesEqual(left, right) {
 
 function readLegacyValue(key) {
   const definition = fieldDefinition(key);
+  if (!definition.legacyKey) {
+    return {
+      available: false,
+      raw: undefined,
+      value: defaultValue(key),
+    };
+  }
   try {
     const raw = globalThis.game?.settings?.get?.(
       MODULE_ID,
@@ -844,7 +861,7 @@ export async function setPrivateState(
     }
     await globalThis.game.settings.set(
       MODULE_ID,
-      definition.legacyKey,
+      definition.legacyKey ?? key,
       cleaned,
     );
     if (typeof afterWrite === "function" && afterWrite() !== true) {

@@ -29,14 +29,15 @@
     <p class="ci-status" aria-live="polite">{{statusMessage}}</p>
 
     {{#if hasPending}}
-      <section class="ci-roll-card" aria-labelledby="ci-roll-heading">
+      <section class="ci-roll-card" aria-labelledby="ci-roll-heading" {{#if waitingForRoll}}aria-busy="true"{{/if}}>
         <span class="ci-roll-icon"><i class="fa-solid fa-dice-d20"></i></span>
         <div>
           <p class="ci-eyebrow">GM approved</p>
           <h3 id="ci-roll-heading">Roll your critical injury</h3>
           <p>
             Your character recovered from 0 hit points or the dead state. The
-            d100 result will be verified and applied by the active GM.
+            active GM securely rolls and applies the d100 result when you
+            click below.
           </p>
           {{#if pendingCount}}
             <small>{{pendingCount}} approved roll(s) waiting</small>
@@ -48,7 +49,7 @@
           data-action="rollInjury" {{#if waitingForRoll}}disabled{{/if}}
         >
           {{#if waitingForRoll}}
-            <i class="fa-solid fa-spinner fa-spin"></i> Applying…
+            <i class="fa-solid fa-spinner fa-spin"></i> Waiting for GM…
           {{else}}
             <i class="fa-solid fa-dice"></i> Roll d100
           {{/if}}
@@ -60,7 +61,7 @@
       <section class="ci-result" aria-labelledby="ci-result-heading">
         <div class="ci-result-roll">{{latestResult.injuryRoll}}</div>
         <div>
-          <p class="ci-eyebrow">Latest result</p>
+          <p class="ci-eyebrow">GM-authoritative result</p>
           <h3 id="ci-result-heading">{{latestResult.injuryName}}</h3>
           {{#if latestResult.detailLabel}}
             <p><strong>{{latestResult.detailLabel}}</strong></p>

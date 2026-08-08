@@ -16,6 +16,7 @@ export const CRITICAL_INJURY_EVENTS = Object.freeze({
   PROMPT: "critical-injury:prompt",
   ROLL_REQUEST: "critical-injury:roll-request",
   RESULT: "critical-injury:result",
+  ROLL_FAILURE: "critical-injury:roll-failure",
   TREATMENT_REQUEST: "critical-injury:treatment-request",
   TREATMENT_RESULT: "critical-injury:treatment-result",
   REST_COMPLETED: "critical-injury:rest-completed",
@@ -29,7 +30,9 @@ const PLAYER_TO_GM = new Set([
 ]);
 const TARGETED = new Set([
   CRITICAL_INJURY_EVENTS.PROMPT,
+  CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
   CRITICAL_INJURY_EVENTS.RESULT,
+  CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
   CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
 ]);
 
@@ -94,6 +97,7 @@ export function validateCriticalInjuryPayload(payload) {
       CRITICAL_INJURY_EVENTS.PROMPT,
       CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
       CRITICAL_INJURY_EVENTS.RESULT,
+      CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
     ].includes(payload.type) &&
     !boundedId(payload.pendingId)
   ) {
@@ -109,9 +113,20 @@ export function validateCriticalInjuryPayload(payload) {
     return { ok: false, reason: "invalid-injury-id" };
   }
   if (payload.type === CRITICAL_INJURY_EVENTS.ROLL_REQUEST) {
-    const roll = Number(payload.rollTotal);
-    if (!Number.isInteger(roll) || roll < 1 || roll > 100) {
-      return { ok: false, reason: "invalid-injury-roll" };
+    // The button is player-triggered, but every die is evaluated by the
+    // authoritative GM. Reject even an in-range client total so an old or
+    // modified client cannot choose its table entry.
+    if (Object.hasOwn(payload, "rollTotal")) {
+      return { ok: false, reason: "client-roll-total-not-allowed" };
+    }
+  }
+  if (payload.type === CRITICAL_INJURY_EVENTS.ROLL_FAILURE) {
+    const message = String(payload.message ?? "").trim();
+    if (!message || message.length > 500) {
+      return { ok: false, reason: "invalid-failure-message" };
+    }
+    if (typeof payload.retryable !== "boolean") {
+      return { ok: false, reason: "invalid-failure-retry-state" };
     }
   }
   if (

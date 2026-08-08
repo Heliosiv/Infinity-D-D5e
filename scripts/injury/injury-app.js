@@ -2,6 +2,7 @@
 
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { isFullGM } from "../permissions.js";
+import { authoritativeGMId } from "../socket-authority.js";
 import {
   CRITICAL_INJURY_EVENTS,
   emitCriticalInjuryEvent,
@@ -94,12 +95,37 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       result: payload?.result,
     });
     if (!app) return;
+    const resolvedPendingId = String(payload?.pendingId ?? "");
+    if (resolvedPendingId) app._resolvedPendingIds.add(resolvedPendingId);
     app._clearWaitTimer();
     app._waitingForRoll = false;
+    app._requestedAuthorityId = null;
     app._pendingId = null;
+    app._pendingSnapshot = null;
     app._statusMessage = payload?.result?.calendarScheduled
       ? "The injury was applied and added to the calendar."
       : "The injury was applied. Calendar scheduling was unavailable.";
+    app.render(false);
+  }
+
+  static handleRollFailure(payload) {
+    const app = CriticalInjuryApp.open({
+      actorId: payload?.actorId,
+      pendingId: payload?.pendingId,
+    });
+    if (!app) return;
+    const pendingId = String(payload?.pendingId ?? "");
+    if (pendingId && payload?.retryable !== true) {
+      app._resolvedPendingIds.add(pendingId);
+      app._pendingId = null;
+      app._pendingSnapshot = null;
+    }
+    app._clearWaitTimer();
+    app._waitingForRoll = false;
+    app._requestedAuthorityId = null;
+    app._statusMessage = String(
+      payload?.message ?? "The Critical Injury roll could not be applied.",
+    );
     app.render(false);
   }
 
@@ -116,10 +142,13 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     super(options);
     this._actorId = String(options.actorId ?? "");
     this._pendingId = options.pendingId ?? null;
+    this._pendingSnapshot = null;
     this._latestResult = null;
     this._waitingForRoll = false;
+    this._requestedAuthorityId = null;
     this._statusMessage = "";
     this._treating = new Set();
+    this._resolvedPendingIds = new Set();
     this._waitTimer = null;
   }
 
@@ -147,17 +176,40 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   async _prepareContext() {
     const actor = this._resolveActor();
     const currentUserId = String(globalThis.game?.user?.id ?? "");
-    const pendingList = getActorPendingCriticalInjuries(actor).filter(
+    const currentUserIsAuthority =
+      currentUserId === String(authoritativeGMId() ?? "");
+    const actorPending = getActorPendingCriticalInjuries(actor);
+    const actorEffects = getActorCriticalInjuryEffects(actor);
+    for (const pendingId of this._resolvedPendingIds) {
+      if (!actorPending.some((entry) => String(entry.id) === pendingId)) {
+        this._resolvedPendingIds.delete(pendingId);
+      }
+    }
+    const pendingList = actorPending.filter(
       (entry) =>
-        String(entry.targetUserId ?? "") === currentUserId || isFullGM(),
+        !this._resolvedPendingIds.has(String(entry.id ?? "")) &&
+        (String(entry.targetUserId ?? "") === currentUserId ||
+          currentUserIsAuthority),
     );
+    if (
+      this._pendingSnapshot &&
+      !this._resolvedPendingIds.has(String(this._pendingSnapshot.id ?? "")) &&
+      !pendingList.some(
+        (entry) =>
+          String(entry.id ?? "") === String(this._pendingSnapshot.id ?? ""),
+      ) &&
+      (String(this._pendingSnapshot.targetUserId ?? "") === currentUserId ||
+        currentUserIsAuthority)
+    ) {
+      pendingList.push(this._pendingSnapshot);
+    }
     const pending =
       pendingList.find((entry) => entry.id === this._pendingId) ??
       pendingList[0] ??
       null;
     if (pending && !this._pendingId) this._pendingId = pending.id;
 
-    const activeInjuries = getActorCriticalInjuryEffects(actor)
+    const activeInjuries = actorEffects
       .map((effect) => buildInjuryView(effect, this._treating))
       .filter(Boolean)
       .sort((a, b) => b.createdAt - a.createdAt);
@@ -206,42 +258,68 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     const actor = this._resolveActor();
     const pendingId = String(this._pendingId ?? "");
     if (!actor || !pendingId) return;
-    const pending = getActorPendingCriticalInjuries(actor).find(
-      (entry) => entry.id === pendingId,
-    );
+    if (getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) === false) {
+      this._statusMessage =
+        "Critical Injury automation is disabled. This approved roll will stay pending.";
+      this.render(false);
+      return;
+    }
+    const pending =
+      getActorPendingCriticalInjuries(actor).find(
+        (entry) => entry.id === pendingId,
+      ) ??
+      (String(this._pendingSnapshot?.id ?? "") === pendingId
+        ? this._pendingSnapshot
+        : null);
     if (!pending) {
       this._statusMessage = "That injury roll is no longer pending.";
       this.render(false);
       return;
     }
-    const RollClass = globalThis.Roll;
-    if (typeof RollClass !== "function") {
-      ui.notifications?.error?.("Foundry's dice roller is unavailable.");
+    const gmId = authoritativeGMId();
+    if (!gmId) {
+      this._statusMessage =
+        "No active GM is available. This approved roll will stay pending.";
+      this.render(false);
       return;
     }
-    const roll = await new RollClass("1d100").evaluate();
-    await roll.toMessage?.({
-      speaker: globalThis.ChatMessage?.getSpeaker?.({ actor }),
-      flavor: `${actor.name}: Critical Injury Table V2`,
-    });
+    if (!isFullGM() && typeof globalThis.game?.socket?.emit !== "function") {
+      this._statusMessage =
+        "The game connection is unavailable. This approved roll will stay pending.";
+      this.render(false);
+      return;
+    }
+    // Disable synchronously before emitting so a double click cannot create
+    // duplicate requests. The GM-side workflow is also durably replay-safe.
+    this._waitingForRoll = true;
+    this._requestedAuthorityId = gmId;
+    this._pendingSnapshot = { ...pending };
+    this._statusMessage =
+      "Roll requested. Waiting for the active GM to roll and apply it…";
+    this.render(false);
     const emitted = emitCriticalInjuryEvent(
       CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
       {
         actorId: actor.id,
         pendingId,
-        rollTotal: Math.max(1, Math.min(100, Math.floor(Number(roll.total)))),
+        targetUserId: gmId,
       },
     );
-    if (!emitted) return;
-    this._waitingForRoll = true;
-    this._statusMessage = "Roll sent to the GM for application…";
-    this.render(false);
+    if (!emitted) {
+      this._waitingForRoll = false;
+      this._requestedAuthorityId = null;
+      this._statusMessage =
+        "The roll request could not be sent. This approved roll is still pending.";
+      this.render(false);
+      return;
+    }
     this._clearWaitTimer();
     this._waitTimer = globalThis.setTimeout?.(() => {
       if (!this._waitingForRoll) return;
       this._waitingForRoll = false;
+      this._requestedAuthorityId = null;
       this._statusMessage =
-        "The GM did not finish applying the roll. You can try the pending roll again.";
+        "No result arrived yet. The active GM may have changed; if the Roll d100 button remains, retrying is safe.";
       this.render(false);
     }, RESULT_TIMEOUT_MS);
   }
@@ -294,6 +372,10 @@ export function registerCriticalInjuryApp() {
     if (String(payload?.targetUserId) !== String(game.user?.id)) return;
     CriticalInjuryApp.handleResult(payload);
   });
+  subscribeCriticalInjury(CRITICAL_INJURY_EVENTS.ROLL_FAILURE, (payload) => {
+    if (String(payload?.targetUserId) !== String(game.user?.id)) return;
+    CriticalInjuryApp.handleRollFailure(payload);
+  });
   subscribeCriticalInjury(
     CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
     (payload) => {
@@ -310,6 +392,30 @@ export function registerCriticalInjuryApp() {
     Hooks.on("createActiveEffect", refreshEffectActor);
     Hooks.on("updateActiveEffect", refreshEffectActor);
     Hooks.on("deleteActiveEffect", refreshEffectActor);
+    Hooks.on("updateActor", (actor) => {
+      instances.get(String(actor?.id ?? ""))?.render?.(false);
+    });
+    const releaseStaleAuthorityWaits = () => {
+      const currentAuthorityId = String(authoritativeGMId() ?? "");
+      for (const app of instances.values()) {
+        if (
+          !app._waitingForRoll ||
+          !app._requestedAuthorityId ||
+          String(app._requestedAuthorityId) === currentAuthorityId
+        ) {
+          continue;
+        }
+        app._clearWaitTimer();
+        app._waitingForRoll = false;
+        app._requestedAuthorityId = null;
+        app._statusMessage = currentAuthorityId
+          ? "The active GM changed. Click Roll d100 again to send the request to the new GM."
+          : "No active GM is available. This approved roll will stay pending.";
+        app.render?.(false);
+      }
+    };
+    Hooks.on("updateUser", releaseStaleAuthorityWaits);
+    Hooks.on("userConnected", releaseStaleAuthorityWaits);
     Hooks.on("dnd5e.restCompleted", (actor, result) => {
       if (!result?.longRest || !currentUserCanOperateActor(actor)) return;
       emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.REST_COMPLETED, {
@@ -319,9 +425,13 @@ export function registerCriticalInjuryApp() {
     });
   }
 
+  const currentUserId = String(game.user?.id ?? "");
+  const currentUserIsAuthority =
+    currentUserId === String(authoritativeGMId() ?? "");
   for (const actor of game.actors?.contents ?? []) {
     const pending = getActorPendingCriticalInjuries(actor).find(
-      (entry) => String(entry.targetUserId) === String(game.user?.id),
+      (entry) =>
+        String(entry.targetUserId) === currentUserId || currentUserIsAuthority,
     );
     if (pending) {
       CriticalInjuryApp.open({ actorId: actor.id, pendingId: pending.id });

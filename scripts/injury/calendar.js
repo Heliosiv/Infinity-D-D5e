@@ -3,6 +3,7 @@
 const MODULE_ID = "infinity-dnd5e";
 const SIMPLE_CALENDAR_ID = "foundryvtt-simple-calendar";
 const FALLBACK_SECONDS_PER_DAY = 86_400;
+const INJURY_NOTE_MARKER_PREFIX = `${MODULE_ID}:critical-injury:v1`;
 
 export function isSimpleCalendarAvailable() {
   const module = globalThis.game?.modules?.get?.(SIMPLE_CALENDAR_ID);
@@ -70,16 +71,45 @@ export async function scheduleCriticalInjuryNote({
   actor,
   injury,
   existingEntryId = "",
+  verifiedReplacement = false,
 } = {}) {
   if (!isSimpleCalendarAvailable()) {
-    return { scheduled: false, entryId: "", reason: "calendar-inactive" };
+    return calendarNoteResult({ reason: "calendar-inactive" });
   }
   const api = globalThis.SimpleCalendar?.api;
   if (typeof api?.addNote !== "function") {
-    return { scheduled: false, entryId: "", reason: "add-note-unavailable" };
+    return calendarNoteResult({ reason: "add-note-unavailable" });
   }
 
   const oldId = String(existingEntryId ?? "").trim();
+  const marker = buildCriticalInjuryNoteMarker(actor, injury);
+  if (!oldId && marker) {
+    if (typeof api?.getNotes !== "function") {
+      return calendarNoteResult({ reason: "get-notes-unavailable" });
+    }
+    try {
+      const existingNote = findCriticalInjuryNote(await api.getNotes(), marker);
+      if (existingNote) {
+        const entryId = extractDocumentId(existingNote);
+        return calendarNoteResult({
+          scheduled: Boolean(entryId),
+          entryId,
+          reused: true,
+          reason: entryId ? "" : "existing-note-id-unavailable",
+        });
+      }
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | could not search for an existing critical injury note`,
+        error,
+      );
+      return calendarNoteResult({
+        reason: `note-discovery-failed: ${String(
+          error?.message ?? error ?? "unknown",
+        )}`,
+      });
+    }
+  }
 
   const now = getCurrentInjuryTimestamp();
   const due = Number(injury?.recoveryDueTs);
@@ -89,7 +119,7 @@ export async function scheduleCriticalInjuryNote({
   const startDate = toCalendarDate(api, now);
   const endDate = toCalendarDate(api, safeDue);
   if (!startDate || !endDate) {
-    return { scheduled: false, entryId: "", reason: "date-conversion-failed" };
+    return calendarNoteResult({ reason: "date-conversion-failed" });
   }
 
   const injuryName = String(injury?.injuryName ?? "Critical Injury");
@@ -103,6 +133,9 @@ export async function scheduleCriticalInjuryNote({
     `<p>${escapeHtml(String(injury?.effect ?? ""))}</p>`,
     `<p><strong>Recovery:</strong> ${escapeHtml(recovery)}</p>`,
     `<p><strong>Rule:</strong> ${escapeHtml(String(injury?.recoveryRule ?? ""))}</p>`,
+    marker
+      ? `<p><small>Infinity D&amp;D5e recovery tracking: <code>${escapeHtml(marker)}</code></small></p>`
+      : "",
   ].join("");
 
   try {
@@ -120,36 +153,74 @@ export async function scheduleCriticalInjuryNote({
       ["default"],
     );
     const entryId = extractDocumentId(note);
-    // Create the replacement before removing the current note so a calendar
-    // failure never erases the last verified recovery entry.
-    if (entryId && oldId && oldId !== entryId) {
-      await removeCriticalInjuryNote(oldId);
-    }
-    return {
+    return calendarNoteResult({
       scheduled: Boolean(note && entryId),
       entryId,
+      created: Boolean(note),
+      previousEntryId:
+        verifiedReplacement && entryId && oldId && oldId !== entryId
+          ? oldId
+          : "",
       reason: entryId
         ? ""
         : note
           ? "note-id-unavailable"
           : "add-note-returned-empty",
-    };
+    });
   } catch (error) {
+    if (marker && typeof api?.getNotes === "function") {
+      try {
+        const recoveredNote = findCriticalInjuryNote(
+          await api.getNotes(),
+          marker,
+          { excludeEntryId: oldId },
+        );
+        const recoveredEntryId = extractDocumentId(recoveredNote);
+        if (recoveredEntryId) {
+          return calendarNoteResult({
+            scheduled: true,
+            entryId: recoveredEntryId,
+            reused: true,
+            previousEntryId:
+              verifiedReplacement && oldId && oldId !== recoveredEntryId
+                ? oldId
+                : "",
+          });
+        }
+      } catch (discoveryError) {
+        console.warn(
+          `${MODULE_ID} | could not recover a committed critical injury note`,
+          discoveryError,
+        );
+      }
+    }
     console.warn(`${MODULE_ID} | could not schedule critical injury`, error);
-    return {
-      scheduled: false,
-      entryId: "",
+    return calendarNoteResult({
       reason: String(error?.message ?? error ?? "unknown"),
-    };
+    });
   }
 }
 
-export async function removeCriticalInjuryNote(entryId) {
+export async function removeCriticalInjuryNote(
+  entryId,
+  { actor, injury } = {},
+) {
   const id = String(entryId ?? "").trim();
   if (!id || !isSimpleCalendarAvailable()) return false;
   const api = globalThis.SimpleCalendar?.api;
-  if (typeof api?.removeNote !== "function") return false;
+  const marker = buildCriticalInjuryNoteMarker(actor, injury);
+  if (
+    !marker ||
+    typeof api?.getNotes !== "function" ||
+    typeof api?.removeNote !== "function"
+  ) {
+    return false;
+  }
   try {
+    const verified = findCriticalInjuryNote(await api.getNotes(), marker, {
+      entryId: id,
+    });
+    if (!verified) return false;
     return (await api.removeNote(id)) !== false;
   } catch (error) {
     console.warn(`${MODULE_ID} | could not remove critical injury note`, error);
@@ -172,6 +243,66 @@ function toCalendarDate(api, timestamp) {
 function extractDocumentId(value) {
   if (typeof value === "string") return value;
   return String(value?.id ?? value?._id ?? value?.document?.id ?? "");
+}
+
+function buildCriticalInjuryNoteMarker(actor, injury) {
+  const actorId = String(actor?.id ?? "").trim();
+  const injuryId = String(injury?.id ?? "").trim();
+  const workflowId = String(injury?.pendingId ?? "").trim();
+  if (!actorId || (!injuryId && !workflowId)) return "";
+  return [INJURY_NOTE_MARKER_PREFIX, actorId, injuryId, workflowId]
+    .map((part) => encodeURIComponent(part))
+    .join(":");
+}
+
+function findCriticalInjuryNote(
+  notes,
+  marker,
+  { entryId = "", excludeEntryId = "" } = {},
+) {
+  if (!marker) return null;
+  return (
+    Array.from(notes ?? []).find(
+      (note) =>
+        (!entryId || extractDocumentId(note) === String(entryId)) &&
+        extractDocumentId(note) !== String(excludeEntryId ?? "") &&
+        getCalendarNoteContent(note).some((content) =>
+          content.includes(marker),
+        ),
+    ) ?? null
+  );
+}
+
+function getCalendarNoteContent(note) {
+  const content = [note?.content, note?.text?.content];
+  const pages =
+    note?.pages?.contents ?? note?.pages ?? note?._source?.pages ?? [];
+  for (const page of Array.from(pages ?? [])) {
+    content.push(
+      page?.text?.content,
+      page?._source?.text?.content,
+      page?.content,
+    );
+  }
+  return content.filter((value) => typeof value === "string");
+}
+
+function calendarNoteResult({
+  scheduled = false,
+  entryId = "",
+  created = false,
+  reused = false,
+  previousEntryId = "",
+  reason = "",
+} = {}) {
+  return {
+    scheduled: Boolean(scheduled),
+    entryId: String(entryId ?? ""),
+    created: Boolean(created),
+    reused: Boolean(reused),
+    previousEntryId: String(previousEntryId ?? ""),
+    reason: String(reason ?? ""),
+  };
 }
 
 function escapeHtml(value) {

@@ -121,6 +121,7 @@ const injuryView = views.find((view) => view.id === "critical-injury");
 assert.ok(injuryView, "harness includes the player Critical Injuries view");
 assert.match(injuryView.html, /Critical Injury Table V2/);
 assert.match(injuryView.html, /data-action="rollInjury"/);
+assert.match(injuryView.html, /active GM securely rolls and applies/i);
 assert.match(injuryView.html, /data-action="requestTreatment"/);
 assert.match(injuryView.html, /Shattered Knee/);
 assert.match(injuryView.html, /12 Eleasis, 1492 DR/);

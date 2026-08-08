@@ -120,6 +120,10 @@ function registerPrivateDependentServices() {
     registerResourceCalendarWatcher,
   );
   safeInitializeSubsystem("reputation socket", registerReputationSocket);
+  safeInitializeSubsystem(
+    "critical injury service",
+    registerCriticalInjuryService,
+  );
 }
 
 function clearPrivateRecoveryTimer() {
@@ -635,10 +639,6 @@ Hooks.once("ready", async () => {
       registerCriticalInjurySocket,
     );
     safeInitializeSubsystem(
-      "critical injury service",
-      registerCriticalInjuryService,
-    );
-    safeInitializeSubsystem(
       "critical injury player app",
       registerCriticalInjuryApp,
     );
@@ -652,7 +652,7 @@ Hooks.once("ready", async () => {
     );
     if (!privateStateAvailable && isFullGM()) {
       globalThis.ui?.notifications?.error?.(
-        `${MODULE_ID}: private data could not be loaded yet. Merchant, resource automation, and reputation services will retry automatically.`,
+        `${MODULE_ID}: private data could not be loaded yet. Merchant, resource automation, reputation, and critical injury services will retry automatically.`,
       );
       schedulePrivateStateRecovery();
     } else if (

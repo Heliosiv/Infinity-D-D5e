@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.65 (unreleased)** - Adds Critical Injury Table V2 recovery automation to the existing loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
+**v0.2.66 (unreleased)** - Adds GM-authoritative, replay-safe Critical Injury Table V2 recovery automation to the existing loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -26,7 +26,7 @@ Three ways to open the dashboard:
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions with canonical item, wallet, and merchant read-back, verified compensation, and request-bound replay protection.
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
-- **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and expose rules-based Healer's Kit treatment.
+- **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and expose rules-based Healer's Kit treatment.
 - **Player launchers**: `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
@@ -62,9 +62,17 @@ Registered settings live in [scripts/settings.js](scripts/settings.js).
 Enable or disable **Critical Injury Table V2** in module settings. When an owned
 player character recovers from 0 HP or a dead/unconscious state, the active full
 GM gets a Yes/No approval prompt. Approval pushes a d100 button to the assigned
-or owning player. The authenticated result applies a persistent Actor effect,
-rolls any injury detail and the exact V2 recovery formula, whispers the result,
-and creates a Simple Calendar recovery interval when that module is active.
+or owning player. Clicking it sends an authenticated request only to the active
+GM. The GM verifies the restricted approval record, rolls and persists the d100,
+injury detail, and exact V2 recovery formula, then applies the Actor effect,
+whispers the result, and creates a Simple Calendar recovery interval when that
+module is active. Safe retries reuse the same stored dice and completed result;
+a redundant private checkpoint, server-clock application lease claimed before
+the first die, deterministic effect ID, and discoverable calendar marker protect
+those receipts and external changes during an active-GM handoff. The active GM
+can roll any approved result as a fallback. Invalid legacy buttons are cleared
+with a GM warning, and failed or duplicate roll requests return an immediate
+status to the requester instead of silently timing out.
 
 The player window lists every active injury and can request rules-based
 Healer's Kit treatment. The GM chooses the healer, sees the inventory charges
@@ -173,9 +181,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.65 && git push origin refs/tags/v0.2.65`).
+1. Tag the commit (`git tag v0.2.66 && git push origin refs/tags/v0.2.66`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.65` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.2.66` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

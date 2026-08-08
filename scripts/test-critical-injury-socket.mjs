@@ -15,7 +15,7 @@ assert.deepEqual(
     ...base,
     type: CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
     pendingId: "pending-1",
-    rollTotal: 100,
+    targetUserId: "gm-1",
   }),
   { ok: true, reason: null },
 );
@@ -24,9 +24,18 @@ assert.equal(
     ...base,
     type: CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
     pendingId: "pending-1",
-    rollTotal: 101,
+    targetUserId: "gm-1",
+    rollTotal: 61,
   }).reason,
-  "invalid-injury-roll",
+  "client-roll-total-not-allowed",
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.ROLL_REQUEST,
+    pendingId: "pending-1",
+  }).reason,
+  "invalid-target-user-id",
 );
 assert.equal(
   validateCriticalInjuryPayload({
@@ -35,6 +44,28 @@ assert.equal(
     pendingId: "pending-1",
   }).reason,
   "invalid-target-user-id",
+);
+assert.deepEqual(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
+    pendingId: "pending-1",
+    targetUserId: "player-1",
+    retryable: true,
+    message: "The roll remains pending.",
+  }),
+  { ok: true, reason: null },
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
+    pendingId: "pending-1",
+    targetUserId: "player-1",
+    retryable: "yes",
+    message: "The roll remains pending.",
+  }).reason,
+  "invalid-failure-retry-state",
 );
 assert.deepEqual(
   validateCriticalInjuryPayload({
