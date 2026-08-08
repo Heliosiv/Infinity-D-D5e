@@ -55,6 +55,7 @@ export const SETTING_KEYS = Object.freeze({
   RESOURCE_REPORT_MODE: "resourceReportMode",
   // Critical Injury Table V2 workflow.
   CRITICAL_INJURIES_ENABLED: "criticalInjuriesEnabled",
+  CRITICAL_INJURY_HUD_ENABLED: "criticalInjuryHudEnabled",
   // Hidden resource stores (no config UI) — edited via the Resource Manager.
   RESOURCE_CONFIG: "resourceConfig",
   RESOURCE_RUNSTATE: "resourceRunState",
@@ -469,6 +470,15 @@ export const SETTINGS = Object.freeze([
       "When an owned player character recovers from 0 HP or the dead state, " +
       "ask the active GM whether to send that player a critical-injury roll.",
     scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  },
+  {
+    key: SETTING_KEYS.CRITICAL_INJURY_HUD_ENABLED,
+    name: "Critical Injury Body HUD",
+    hint: "Show a small body silhouette when your assigned or directly owned character has active Critical Injuries. Hover or focus a wound marker for details and Healer's Kit treatment.",
+    scope: "client",
     config: true,
     type: Boolean,
     default: true,

@@ -93,9 +93,13 @@ async function auditPage() {
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
-      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell",
+      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell, .ci-hud-shell",
     );
+    const isOverlay = root.matches(".infinity-critical-injury-hud");
     for (const element of [content, shell].filter(Boolean)) {
+      // The HUD's pinned card deliberately escapes its 124px silhouette root.
+      // Its controls and nested contents are still audited below.
+      if (isOverlay) continue;
       if (element.scrollWidth > element.clientWidth + 2) {
         issues.push(
           `${root.dataset.harnessWindow}: horizontal overflow in ${describe(element)} (${element.scrollWidth}px > ${element.clientWidth}px)`,

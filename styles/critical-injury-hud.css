@@ -1,0 +1,585 @@
+/* Player-facing wound silhouette. The geometric figure is original module
+   artwork; only the body-location interaction pattern is genre-inspired. */
+.infinity-critical-injury-hud {
+  position: fixed !important;
+  top: auto !important;
+  right: calc(var(--sidebar-width, 300px) + 16px) !important;
+  bottom: 96px !important;
+  left: auto !important;
+  z-index: 70;
+  width: 124px !important;
+  min-width: 0 !important;
+  height: 242px !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+
+.infinity-critical-injury-hud,
+.infinity-critical-injury-hud *,
+.infinity-critical-injury-hud *::before,
+.infinity-critical-injury-hud *::after {
+  box-sizing: border-box;
+}
+
+.infinity-critical-injury-hud > .window-header {
+  display: none;
+}
+
+.infinity-critical-injury-hud .window-content {
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  pointer-events: none;
+}
+
+.infinity-critical-injury-hud .ci-hud-shell {
+  position: relative;
+  width: 124px;
+  height: 242px;
+  overflow: visible;
+  color: var(--lf-text, #e7ecf6);
+  pointer-events: none;
+  animation: ci-hud-reveal 180ms ease-out both;
+}
+
+.infinity-critical-injury-hud .ci-hud-figure {
+  position: absolute;
+  inset: 10px 2px 12px;
+  width: 120px;
+  height: 220px;
+  overflow: visible;
+  fill: rgba(151, 163, 193, 0.2);
+  stroke: rgba(231, 236, 246, 0.44);
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.32));
+  pointer-events: none;
+  transition:
+    fill 140ms ease,
+    stroke 140ms ease;
+}
+
+.infinity-critical-injury-hud .ci-hud-shell:hover .ci-hud-figure,
+.infinity-critical-injury-hud .ci-hud-shell:focus-within .ci-hud-figure {
+  fill: rgba(151, 163, 193, 0.28);
+  stroke: rgba(255, 255, 255, 0.58);
+}
+
+.infinity-critical-injury-hud .ci-hud-figure__head,
+.infinity-critical-injury-hud .ci-hud-figure__body {
+  stroke-width: 1.5;
+}
+
+.infinity-critical-injury-hud .ci-hud-figure__limb {
+  fill: none;
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.infinity-critical-injury-hud .ci-hud-figure__center {
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.38;
+}
+
+.infinity-critical-injury-hud .ci-hud-open,
+.infinity-critical-injury-hud .ci-hud-marker,
+.infinity-critical-injury-hud .ci-hud-card button {
+  font: inherit;
+}
+
+.infinity-critical-injury-hud .ci-hud-open {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 42px;
+  min-height: 36px;
+  padding: 5px 8px;
+  border: 1px solid
+    color-mix(in srgb, var(--lf-danger, #ef6f74) 62%, transparent);
+  border-radius: var(--lf-radius-pill, 999px);
+  background: rgba(29, 35, 48, 0.8);
+  color: var(--lf-text-strong, #fff);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.infinity-critical-injury-hud .ci-hud-open:hover {
+  border-color: var(--lf-danger, #ef6f74);
+  background: rgba(44, 53, 72, 0.94);
+}
+
+.infinity-critical-injury-hud .ci-hud-region {
+  position: absolute;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  pointer-events: auto;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--mind {
+  top: 5%;
+  left: 50%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--head {
+  top: 17%;
+  left: 50%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--torso {
+  top: 43%;
+  left: 50%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--whole-body {
+  top: 58%;
+  left: 50%;
+}
+
+/* The figure faces the viewer, so anatomical left appears screen-right. */
+.infinity-critical-injury-hud .ci-hud-region--left-arm {
+  top: 43%;
+  left: 84%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--right-arm {
+  top: 43%;
+  left: 16%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--left-leg {
+  top: 78%;
+  left: 67%;
+}
+
+.infinity-critical-injury-hud .ci-hud-region--right-leg {
+  top: 78%;
+  left: 33%;
+}
+
+.infinity-critical-injury-hud .ci-hud-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lf-text-strong, #fff);
+  cursor: pointer;
+}
+
+.infinity-critical-injury-hud .ci-hud-marker__glyph {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--lf-text-strong, #fff);
+  border-radius: 4px;
+  background: var(--lf-danger, #ef6f74);
+  box-shadow:
+    0 0 0 3px rgba(29, 35, 48, 0.72),
+    0 0 12px rgba(239, 111, 116, 0.72);
+  rotate: 45deg;
+  transition:
+    scale 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.infinity-critical-injury-hud .ci-hud-marker__count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--lf-text-strong, #fff);
+  border-radius: var(--lf-radius-pill, 999px);
+  background: var(--lf-bg, #1d2330);
+  color: var(--lf-text-strong, #fff);
+  font-size: 0.67rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.infinity-critical-injury-hud .ci-hud-marker:hover .ci-hud-marker__glyph,
+.infinity-critical-injury-hud
+  .ci-hud-marker:focus-visible
+  .ci-hud-marker__glyph,
+.infinity-critical-injury-hud .ci-hud-region.is-pinned .ci-hud-marker__glyph {
+  scale: 1.18;
+  box-shadow:
+    0 0 0 4px rgba(29, 35, 48, 0.84),
+    0 0 16px rgba(239, 111, 116, 0.92);
+}
+
+.infinity-critical-injury-hud .ci-hud-preview {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  z-index: 8;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: 210px;
+  padding: 7px 9px;
+  border: 1px solid var(--lf-border-strong, #6473a0);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: rgba(29, 35, 48, 0.94);
+  color: var(--lf-text, #e7ecf6);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.38);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  opacity: 0;
+  visibility: hidden;
+  translate: 4px -50%;
+  pointer-events: none;
+  transition:
+    opacity 100ms ease,
+    translate 100ms ease,
+    visibility 100ms linear;
+}
+
+.infinity-critical-injury-hud .ci-hud-preview strong {
+  color: var(--lf-text-strong, #fff);
+}
+
+.infinity-critical-injury-hud .ci-hud-preview__injury {
+  color: var(--lf-muted, #97a3c1);
+}
+
+.infinity-critical-injury-hud
+  .ci-hud-region:not(.is-pinned):hover
+  .ci-hud-preview,
+.infinity-critical-injury-hud
+  .ci-hud-region:not(.is-pinned):focus-within
+  .ci-hud-preview {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 -50%;
+}
+
+.infinity-critical-injury-hud .ci-hud-card {
+  position: fixed;
+  right: calc(var(--sidebar-width, 300px) + 152px);
+  bottom: 96px;
+  z-index: 9;
+  width: min(330px, calc(100vw - var(--sidebar-width, 300px) - 176px));
+  max-height: min(560px, calc(100vh - 120px));
+  padding: 13px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--lf-border-strong, #6473a0);
+  border-radius: var(--lf-radius, 10px);
+  background: rgba(29, 35, 48, 0.94);
+  color: var(--lf-text, #e7ecf6);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  pointer-events: auto;
+}
+
+.infinity-critical-injury-hud .ci-hud-card__header,
+.infinity-critical-injury-hud .ci-hud-wound__heading,
+.infinity-critical-injury-hud .ci-hud-treatment {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.infinity-critical-injury-hud .ci-hud-card h2,
+.infinity-critical-injury-hud .ci-hud-card h3,
+.infinity-critical-injury-hud .ci-hud-card p {
+  margin: 0;
+}
+
+.infinity-critical-injury-hud .ci-hud-card h2 {
+  font-size: 1.1rem;
+}
+
+.infinity-critical-injury-hud .ci-hud-card h3 {
+  font-size: 1rem;
+}
+
+.infinity-critical-injury-hud .ci-hud-eyebrow {
+  color: #e7a2a2;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.infinity-critical-injury-hud .ci-hud-card__close {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.infinity-critical-injury-hud .ci-hud-card__injuries {
+  display: grid;
+  gap: 10px;
+  margin-top: 11px;
+}
+
+.infinity-critical-injury-hud .ci-hud-wound {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--lf-border, #475070);
+  border-left: 3px solid var(--lf-danger, #ef6f74);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: rgba(44, 53, 72, 0.76);
+}
+
+.infinity-critical-injury-hud .ci-hud-wound--permanent {
+  border-color: color-mix(in srgb, var(--lf-danger, #ef6f74) 62%, transparent);
+}
+
+.infinity-critical-injury-hud .ci-hud-wound--stabilized {
+  border-left-color: var(--lf-success, #6dd5a2);
+}
+
+.infinity-critical-injury-hud .ci-hud-wound__effect {
+  line-height: 1.42;
+}
+
+.infinity-critical-injury-hud .ci-hud-wound__recovery {
+  color: #d8c48e;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.infinity-critical-injury-hud .ci-hud-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: var(--lf-radius-pill, 999px);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.infinity-critical-injury-hud .ci-hud-tag--danger {
+  background: rgba(239, 111, 116, 0.18);
+  color: #ffb0b3;
+}
+
+.infinity-critical-injury-hud .ci-hud-tag--success {
+  background: rgba(109, 213, 162, 0.18);
+  color: #a3e9c5;
+}
+
+.infinity-critical-injury-hud .ci-hud-treatment {
+  align-items: stretch;
+  padding-top: 9px;
+  border-top: 1px solid var(--lf-border, #475070);
+}
+
+.infinity-critical-injury-hud .ci-hud-treatment > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.infinity-critical-injury-hud .ci-hud-treatment span,
+.infinity-critical-injury-hud .ci-hud-treatment__message {
+  color: var(--lf-muted, #97a3c1);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.infinity-critical-injury-hud .ci-hud-treatment button,
+.infinity-critical-injury-hud .ci-hud-card__all {
+  min-height: 38px;
+  padding: 6px 10px;
+}
+
+.infinity-critical-injury-hud .ci-hud-treatment button {
+  flex: 0 0 auto;
+}
+
+.infinity-critical-injury-hud .ci-hud-card__all {
+  width: 100%;
+  margin-top: 11px;
+}
+
+.infinity-critical-injury-hud .ci-hud-sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.infinity-critical-injury-hud .ci-hud-no-anim,
+.infinity-critical-injury-hud .ci-hud-no-anim *,
+.infinity-critical-injury-hud .ci-hud-no-anim *::before,
+.infinity-critical-injury-hud .ci-hud-no-anim *::after,
+.infinity-critical-injury-hud.cih-no-anim,
+.infinity-critical-injury-hud.cih-no-anim *,
+.infinity-critical-injury-hud.cih-no-anim *::before,
+.infinity-critical-injury-hud.cih-no-anim *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@keyframes ci-hud-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .infinity-critical-injury-hud {
+    right: 14px !important;
+    bottom: 88px !important;
+    width: 94px !important;
+    height: 184px !important;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-shell {
+    width: 94px;
+    height: 184px;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-figure {
+    inset: 7px 2px 5px;
+    width: 90px;
+    height: 172px;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-open {
+    right: -2px;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-region--mind {
+    top: -2%;
+    left: 34%;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-region--whole-body {
+    top: 62%;
+    left: 0;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-card {
+    right: 122px;
+    bottom: 88px;
+    width: min(330px, calc(100vw - 146px));
+  }
+}
+
+@media (max-width: 520px) {
+  .infinity-critical-injury-hud {
+    right: 8px !important;
+    bottom: 82px !important;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-card {
+    right: 8px;
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    left: 8px;
+    width: auto;
+    max-height: min(58vh, 500px);
+  }
+
+  .infinity-critical-injury-hud .ci-hud-preview {
+    position: fixed;
+    right: 8px;
+    bottom: 274px;
+    left: auto;
+    top: auto;
+    max-width: min(220px, calc(100vw - 16px));
+    translate: 0 4px;
+  }
+
+  .infinity-critical-injury-hud
+    .ci-hud-region:not(.is-pinned):hover
+    .ci-hud-preview,
+  .infinity-critical-injury-hud
+    .ci-hud-region:not(.is-pinned):focus-within
+    .ci-hud-preview {
+    translate: 0;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-treatment {
+    flex-direction: column;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-treatment button {
+    width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .infinity-critical-injury-hud .ci-hud-marker {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-region {
+    width: 44px;
+    height: 44px;
+    margin: -22px 0 0 -22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infinity-critical-injury-hud,
+  .infinity-critical-injury-hud *,
+  .infinity-critical-injury-hud *::before,
+  .infinity-critical-injury-hud *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-critical-injury-hud .ci-hud-figure {
+    fill: transparent;
+    stroke: CanvasText;
+  }
+
+  .infinity-critical-injury-hud .ci-hud-marker__glyph,
+  .infinity-critical-injury-hud .ci-hud-marker__count,
+  .infinity-critical-injury-hud .ci-hud-card,
+  .infinity-critical-injury-hud .ci-hud-preview {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+}

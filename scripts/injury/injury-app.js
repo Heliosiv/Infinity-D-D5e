@@ -10,13 +10,18 @@ import {
 } from "./socket.js";
 import {
   findActorCriticalInjuryEffect,
-  generateCriticalInjuryId,
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
 } from "./effects.js";
 import { getActorPendingCriticalInjuries } from "./service.js";
 import { formatInjuryTimestamp } from "./calendar.js";
 import { treatmentSkillLabel } from "./table.js";
+import {
+  getCriticalInjuryTreatmentState,
+  handleCriticalInjuryTreatmentResult,
+  requestCriticalInjuryTreatment,
+  subscribeCriticalInjuryTreatmentState,
+} from "./treatment-client.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/critical-injury.hbs`;
@@ -131,31 +136,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   }
 
   static handleTreatmentResult(payload) {
-    const app = CriticalInjuryApp.open({ actorId: payload?.actorId });
-    if (!app) return;
-    const injuryId = String(payload?.injuryId ?? "");
-    const treatmentId = String(payload?.treatmentId ?? "");
-    const request = app._treatmentRequests.get(injuryId);
-    // A delayed response from an older deliberate attempt must not release or
-    // overwrite the status of a newer treatment request.
-    if (request && request.treatmentId !== treatmentId) return;
-    app._clearTreatmentTimer(injuryId);
-    app._treating.delete(injuryId);
-    if (payload?.retryable === true && treatmentId) {
-      const resumeTreatmentId = String(
-        payload?.resumeTreatmentId ?? treatmentId,
-      );
-      app._treatmentRequests.set(injuryId, {
-        treatmentId: resumeTreatmentId,
-        authorityId: null,
-        timer: null,
-      });
-    } else {
-      app._treatmentRequests.delete(injuryId);
-    }
-    app._statusMessage = String(payload?.message ?? "Treatment resolved.");
-    if (payload?.result) app._latestResult = payload.result;
-    app.render(false);
+    return handleCriticalInjuryTreatmentResult(payload);
   }
 
   constructor(options = {}) {
@@ -167,10 +148,16 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     this._waitingForRoll = false;
     this._requestedAuthorityId = null;
     this._statusMessage = "";
-    this._treating = new Set();
-    this._treatmentRequests = new Map();
     this._resolvedPendingIds = new Set();
     this._waitTimer = null;
+    this._treatmentStateUnsubscribe = subscribeCriticalInjuryTreatmentState(
+      (state) => {
+        if (String(state?.actorId ?? "") !== this._actorId) return;
+        this._statusMessage = String(state?.message ?? "");
+        if (state?.result) this._latestResult = state.result;
+        if (this.rendered) this.render(false);
+      },
+    );
   }
 
   get title() {
@@ -185,7 +172,8 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   _onClose(options) {
     super._onClose?.(options);
     this._clearWaitTimer();
-    this._clearAllTreatmentTimers();
+    this._treatmentStateUnsubscribe?.();
+    this._treatmentStateUnsubscribe = null;
     instances.delete(this._actorId);
   }
 
@@ -193,19 +181,6 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     if (this._waitTimer == null) return;
     globalThis.clearTimeout?.(this._waitTimer);
     this._waitTimer = null;
-  }
-
-  _clearTreatmentTimer(injuryId) {
-    const id = String(injuryId ?? "");
-    const request = this._treatmentRequests.get(id);
-    if (request?.timer != null) globalThis.clearTimeout?.(request.timer);
-    if (request) request.timer = null;
-  }
-
-  _clearAllTreatmentTimers() {
-    for (const injuryId of this._treatmentRequests.keys()) {
-      this._clearTreatmentTimer(injuryId);
-    }
   }
 
   async _prepareContext() {
@@ -244,8 +219,22 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       null;
     if (pending && !this._pendingId) this._pendingId = pending.id;
 
+    const treatmentStates = actorEffects
+      .map((effect) => {
+        const injuryId = String(getCriticalInjuryData(effect)?.id ?? "");
+        return getCriticalInjuryTreatmentState(this._actorId, injuryId);
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
     const activeInjuries = actorEffects
-      .map((effect) => buildInjuryView(effect, this._treating))
+      .map((effect) => {
+        const injuryId = String(getCriticalInjuryData(effect)?.id ?? "");
+        const treatmentState = getCriticalInjuryTreatmentState(
+          this._actorId,
+          injuryId,
+        );
+        return buildInjuryView(effect, treatmentState?.busy === true);
+      })
       .filter(Boolean)
       .sort((a, b) => b.createdAt - a.createdAt);
     const midiActive =
@@ -269,7 +258,8 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       hasLatestResult: Boolean(this._latestResult),
       activeInjuries,
       hasActiveInjuries: activeInjuries.length > 0,
-      statusMessage: this._statusMessage,
+      statusMessage:
+        this._statusMessage || String(treatmentStates[0]?.message ?? ""),
       integrations: {
         midiActive,
         daeActive,
@@ -363,7 +353,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   static _onRequestTreatment(_event, target) {
     const actor = this._resolveActor();
     const injuryId = String(target?.dataset?.injuryId ?? "");
-    if (!actor || !injuryId || this._treating.has(injuryId)) return;
+    if (!actor || !injuryId) return;
     const effect = findActorCriticalInjuryEffect(actor, injuryId);
     const injury = getCriticalInjuryData(effect);
     if (
@@ -374,82 +364,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     ) {
       return;
     }
-    if (getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) === false) {
-      this._statusMessage =
-        "Critical Injury automation is disabled. No treatment was requested.";
-      this.render(false);
-      return;
-    }
-    const gmId = authoritativeGMId();
-    if (!gmId) {
-      this._statusMessage =
-        "No active GM is available. Your Healer's Kit has not been used.";
-      this.render(false);
-      return;
-    }
-    if (!isFullGM() && typeof globalThis.game?.socket?.emit !== "function") {
-      this._statusMessage =
-        "The game connection is unavailable. Your Healer's Kit has not been used.";
-      this.render(false);
-      return;
-    }
-
-    const existing = this._treatmentRequests.get(injuryId);
-    const treatmentId =
-      existing?.treatmentId ??
-      `treatment-${generateCriticalInjuryId().replace(/^injury-/, "")}`;
-    // Mark the request busy before local socket dispatch. A full GM can be the
-    // player-facing requester and receive an immediate local failure.
-    this._treating.add(injuryId);
-    this._treatmentRequests.set(injuryId, {
-      treatmentId,
-      authorityId: gmId,
-      timer: null,
-    });
-    this._statusMessage = "Treatment request sent to the active GM…";
-    this.render(false);
-    const emitted = emitCriticalInjuryEvent(
-      CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
-      {
-        actorId: actor.id,
-        injuryId,
-        treatmentId,
-        targetUserId: gmId,
-      },
-    );
-    if (!emitted) {
-      this._treating.delete(injuryId);
-      const request = this._treatmentRequests.get(injuryId);
-      if (request) request.authorityId = null;
-      this._statusMessage =
-        "The treatment request could not be sent. No kit charges were used.";
-      this.render(false);
-      return;
-    }
-    const request = this._treatmentRequests.get(injuryId);
-    if (
-      !request ||
-      request.treatmentId !== treatmentId ||
-      !this._treating.has(injuryId)
-    ) {
-      return;
-    }
-    request.timer = globalThis.setTimeout?.(() => {
-      const current = this._treatmentRequests.get(injuryId);
-      if (
-        !current ||
-        current.treatmentId !== treatmentId ||
-        !this._treating.has(injuryId)
-      ) {
-        return;
-      }
-      current.timer = null;
-      current.authorityId = null;
-      this._treating.delete(injuryId);
-      this._statusMessage =
-        "No treatment result arrived yet. Retrying this request is safe; it will not spend the kit twice.";
-      this.render(false);
-    }, RESULT_TIMEOUT_MS);
+    requestCriticalInjuryTreatment({ actorId: actor.id, injuryId });
   }
 
   /** @this {CriticalInjuryApp} */
@@ -479,14 +394,6 @@ export function registerCriticalInjuryApp() {
     if (String(payload?.targetUserId) !== String(game.user?.id)) return;
     CriticalInjuryApp.handleRollFailure(payload);
   });
-  subscribeCriticalInjury(
-    CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
-    (payload) => {
-      if (String(payload?.targetUserId) !== String(game.user?.id)) return;
-      CriticalInjuryApp.handleTreatmentResult(payload);
-    },
-  );
-
   if (typeof globalThis.Hooks?.on === "function") {
     const refreshEffectActor = (effect) => {
       const actorId = String(effect?.parent?.id ?? "");
@@ -516,22 +423,6 @@ export function registerCriticalInjuryApp() {
           changed = true;
         }
 
-        for (const [injuryId, request] of app._treatmentRequests) {
-          if (
-            !app._treating.has(injuryId) ||
-            !request.authorityId ||
-            String(request.authorityId) === currentAuthorityId
-          ) {
-            continue;
-          }
-          app._clearTreatmentTimer(injuryId);
-          request.authorityId = null;
-          app._treating.delete(injuryId);
-          app._statusMessage = currentAuthorityId
-            ? "The active GM changed. Request treatment again to resume the same safe attempt."
-            : "No active GM is available. Your Healer's Kit has not been used again.";
-          changed = true;
-        }
         if (changed) app.render?.(false);
       }
     };
@@ -588,7 +479,7 @@ function buildInjuryView(effect, treating) {
     treatmentCheck,
     canTreat:
       !injury.permanent && !injury.stabilized && Number(injury.kitCharges) > 0,
-    treating: treating.has(String(injury.id)),
+    treating: Boolean(treating),
     automatedChanges: Array.isArray(effect?.changes)
       ? effect.changes.length
       : 0,
@@ -631,10 +522,22 @@ function currentUserCanOperateActor(actor) {
   if (isFullGM(user)) return true;
   const characterId =
     typeof user?.character === "string" ? user.character : user?.character?.id;
-  return characterId === actor?.id || hasDirectOwnerPermission(actor, user?.id);
+  return (
+    characterId === actor?.id || hasEffectiveOwnerPermission(actor, user?.id)
+  );
 }
 
 function hasDirectOwnerPermission(actor, userId) {
+  const id = String(userId ?? "");
+  if (!id) return false;
+  const ownership = actor?.ownership ?? {};
+  if (!Object.hasOwn(ownership, id)) return false;
+  const level = ownership[id];
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  return Number(level) >= Number(OWNER);
+}
+
+function hasEffectiveOwnerPermission(actor, userId) {
   const id = String(userId ?? "");
   if (!id) return false;
   const ownership = actor?.ownership ?? {};

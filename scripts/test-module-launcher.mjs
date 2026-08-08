@@ -97,6 +97,12 @@ assert.match(
 
 assert.match(
   source,
+  /openCriticalInjuryHud: \(\) => CriticalInjuryHudApp\.reconcile\(\)/,
+  "the module API should expose compact injury HUD reconciliation",
+);
+
+assert.match(
+  source,
   /game\.keybindings\.register\(MODULE_ID, "openCriticalInjuries"/,
   "a player Critical Injuries keybinding should be registered",
 );
@@ -117,6 +123,18 @@ assert.match(
   source,
   /"critical injury socket"[\s\S]*?registerCriticalInjurySocket[\s\S]*?"critical injury player app"[\s\S]*?registerCriticalInjuryApp/,
   "the socket and player app should initialize while private-state recovery is pending",
+);
+
+assert.match(
+  source,
+  /"critical injury body HUD"[\s\S]*?registerCriticalInjuryHud/,
+  "the compact body HUD should initialize independently of private-state recovery",
+);
+
+assert.doesNotMatch(
+  source,
+  /safeInitializeSubsystem\([\s\S]{0,100}"critical injury body HUD"[\s\S]{0,160}CriticalInjuryApp\.open/,
+  "HUD startup must not automatically open the large injury window",
 );
 
 /* ---- Private-state recovery and promoted-GM resource authority ---- */

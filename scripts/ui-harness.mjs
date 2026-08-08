@@ -28,6 +28,7 @@ const CSS_FILES = [
   "styles/resource-overview.css",
   "styles/forage-prompt.css",
   "styles/critical-injury.css",
+  "styles/critical-injury-hud.css",
   "styles/reputation-workspace.css",
   "styles/reputation-view.css",
 ];
@@ -199,6 +200,14 @@ export function buildHarnessViews() {
       { width: 520, height: 700 },
     ),
     view(
+      "critical-injury-hud",
+      "Critical Injury Body HUD (player overlay)",
+      "infinity-critical-injury-hud",
+      "templates/critical-injury-hud.hbs",
+      criticalInjuryHudContext(),
+      { width: 700, height: 620, overlay: true },
+    ),
+    view(
       "reputation-workspace",
       "Reputation Workspace",
       "infinity-reputation-workspace",
@@ -328,6 +337,43 @@ export function buildUiHarnessDocument() {
       min-height: 0;
       box-sizing: border-box;
     }
+
+    .ui-harness__overlay-stage {
+      position: relative;
+      width: min(var(--harness-width), calc(100vw - 36px));
+      height: min(var(--harness-height), calc(100vh - 76px));
+      min-height: 560px;
+      overflow: hidden;
+      border: 1px dashed rgba(23, 32, 51, 0.5);
+      border-radius: 8px;
+      background: rgba(23, 32, 51, 0.08);
+    }
+
+    .ui-harness__overlay-stage .infinity-critical-injury-hud {
+      position: absolute !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+
+    .ui-harness__overlay-stage .ci-hud-card {
+      position: absolute;
+      right: 54px;
+      bottom: -33px;
+    }
+
+    @media (max-width: 520px) {
+      .ui-harness__overlay-stage .infinity-critical-injury-hud {
+        right: 8px !important;
+        bottom: 16px !important;
+      }
+
+      .ui-harness__overlay-stage .ci-hud-card {
+        right: 40px;
+        bottom: 88px;
+        left: auto;
+        width: min(260px, calc(100vw - 40px));
+      }
+    }
   </style>
 </head>
 <body>
@@ -369,6 +415,24 @@ function view(id, label, rootClass, template, context, size) {
 }
 
 function renderHarnessWindow(entry) {
+  if (entry.overlay) {
+    return `<section data-harness-section="${escapeHtml(entry.id)}">
+      <h2 class="ui-harness__label">${escapeHtml(entry.label)}</h2>
+      <section
+        class="ui-harness__overlay-stage"
+        style="--harness-width: ${entry.width}px; --harness-height: ${entry.height}px;"
+      >
+        <aside
+          class="application infinity-dnd5e ${escapeHtml(entry.rootClass)}"
+          data-harness-window="${escapeHtml(entry.id)}"
+        >
+          <section class="window-content">
+            ${entry.html}
+          </section>
+        </aside>
+      </section>
+    </section>`;
+  }
   return `<section data-harness-section="${escapeHtml(entry.id)}">
     <h2 class="ui-harness__label">${escapeHtml(entry.label)}</h2>
     <section
@@ -1442,6 +1506,81 @@ function criticalInjuryContext() {
       calendarActive: true,
       automationReady: true,
     },
+  };
+}
+
+function criticalInjuryHudContext() {
+  return {
+    actorName: "Aric the Ranger",
+    injuryCount: 3,
+    statusMessage: "The active GM is ready to review treatment.",
+    animationsEnabled: true,
+    markers: [
+      {
+        key: "head",
+        label: "Head",
+        count: 1,
+        accessibleLabel: "Head: 1 active injury — Concussion",
+        pinned: false,
+        injuries: [
+          {
+            id: "injury-concussion",
+            name: "Concussion",
+            effect: "Disadvantage on Intelligence checks.",
+            recoveryLabel: "4 recovery day(s)",
+            dueLabel: "9 Eleasis, 1492 DR",
+            locationLabel: "Head",
+            canTreat: true,
+            treating: false,
+            kitCharges: 1,
+            treatmentCheck: "DC 12 Medicine",
+            treatmentMessage: "",
+            permanent: false,
+            stabilized: false,
+          },
+        ],
+      },
+      {
+        key: "left-leg",
+        label: "Left leg",
+        count: 2,
+        accessibleLabel:
+          "Left leg: 2 active injuries — Shattered Knee, Lost Limb",
+        pinned: true,
+        injuries: [
+          {
+            id: "injury-knee",
+            name: "Shattered Knee",
+            effect: "Speed is halved and the character cannot Dash.",
+            recoveryLabel: "7 recovery day(s)",
+            dueLabel: "12 Eleasis, 1492 DR",
+            locationLabel: "Left leg",
+            canTreat: true,
+            treating: false,
+            kitCharges: 3,
+            treatmentCheck: "No check",
+            treatmentMessage: "The active GM is ready to review treatment.",
+            permanent: false,
+            stabilized: false,
+          },
+          {
+            id: "injury-lost-leg",
+            name: "Lost Limb",
+            effect: "The left leg is lost.",
+            recoveryLabel: "Permanent",
+            dueLabel: "",
+            locationLabel: "Left leg",
+            canTreat: false,
+            treating: false,
+            kitCharges: 0,
+            treatmentCheck: "No check",
+            treatmentMessage: "",
+            permanent: true,
+            stabilized: false,
+          },
+        ],
+      },
+    ],
   };
 }
 

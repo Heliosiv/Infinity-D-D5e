@@ -127,6 +127,37 @@ as fast. Broken Arm also downgrades to Crippling Injury and halves its remaining
 days. The kit action is unavailable for permanent injuries and table entries
 that do not permit kit treatment.
 
+## Player body HUD
+
+An assigned or directly owned character with at least one active injury gets a
+small translucent body silhouette on that player's Foundry screen. Each marker
+is a real button: hover or keyboard focus previews the wounds at that location,
+while click, touch, Enter, or Space pins the detail card. The card shows the
+effect, recovery timing, treatment cost, and a **Treat with Healer's Kit**
+button when the table permits treatment. Escape, the close button, or clicking
+elsewhere dismisses the pinned card. The wound-count button opens the complete
+Critical Injuries window.
+
+The silhouette is an original geometric module graphic. Body locations are a
+presentation projection of the verified injury record; the HUD never grants
+authority. Treatment still sends only the Actor and injury identifiers through
+the authenticated request path, and the active GM still chooses the healer,
+rolls any check, persists the exact plan, and applies the result.
+
+The table records an exact side only for Lost Limb and Crippling Injury. Those
+results mark the rolled arm or leg. When a rule names an arm, shoulder, knee,
+or limb type without recording left or right, both possible markers are shown
+and labelled as side unspecified rather than inventing a location. Head,
+torso, mind, and whole-body injuries use stable rule-based fallbacks. Multiple
+wounds at one location share a numbered marker and remain individually
+available in its card.
+
+The HUD refreshes automatically as injury Active Effects are created, updated,
+stabilized, or removed, and disappears when no injury effects remain. It is
+enabled by default and can be hidden per client with **Critical Injury Body
+HUD** in Module Settings without changing the world-level Critical Injury
+automation setting.
+
 ## Automation boundaries
 
 Core Active Effects plus Midi-QOL flags apply penalties that have exact data

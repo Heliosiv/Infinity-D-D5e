@@ -108,7 +108,10 @@ try {
   };
   globalThis.setTimeout = (callback) => {
     const id = ++nextTimerId;
-    timers.set(id, callback);
+    timers.set(id, () => {
+      timers.delete(id);
+      callback();
+    });
     return id;
   };
   globalThis.clearTimeout = (id) => timers.delete(id);
@@ -128,11 +131,19 @@ try {
     },
   };
 
-  const [socket, appModule] = await Promise.all([
+  const [socket, appModule, treatmentClient] = await Promise.all([
     import("./injury/socket.js"),
     import("./injury/injury-app.js"),
+    import("./injury/treatment-client.js"),
   ]);
   const { CriticalInjuryApp, registerCriticalInjuryApp } = appModule;
+  const {
+    getCriticalInjuryTreatmentState,
+    handleCriticalInjuryTreatmentResult,
+    releaseStaleCriticalInjuryTreatmentAuthority,
+    requestCriticalInjuryTreatment,
+    subscribeCriticalInjuryTreatmentState,
+  } = treatmentClient;
   const action = CriticalInjuryApp.DEFAULT_OPTIONS.actions.requestTreatment;
   const app = CriticalInjuryApp.open({ actorId: actor.id });
   const target = { dataset: { injuryId: injury.id } };
@@ -145,10 +156,9 @@ try {
     socket.CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
     (payload) => {
       synchronousRequest = structuredClone(payload);
+      const state = getCriticalInjuryTreatmentState(actor.id, injury.id);
       synchronousBusyObserved =
-        app._treating.has(injury.id) &&
-        app._treatmentRequests.get(injury.id)?.treatmentId ===
-          payload.treatmentId;
+        state?.busy === true && state?.treatmentId === payload.treatmentId;
       CriticalInjuryApp.handleTreatmentResult({
         type: socket.CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
         actorId: actor.id,
@@ -165,8 +175,14 @@ try {
   assert.equal(synchronousBusyObserved, true);
   assert.ok(synchronousRequest.treatmentId.startsWith("treatment-"));
   assert.equal(synchronousRequest.targetUserId, gmA.id);
-  assert.equal(app._treating.has(injury.id), false);
-  assert.equal(app._treatmentRequests.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
+    null,
+  );
   assert.match(app._statusMessage, /declined immediately/i);
   assert.equal(timers.size, 0, "a synchronous result leaves no timeout behind");
   unsubscribe();
@@ -176,7 +192,10 @@ try {
   injuriesEnabled = false;
   action.call(app, null, target);
   assert.equal(emitted.length, preflightFrameCount);
-  assert.equal(app._treating.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
   assert.match(app._statusMessage, /automation is disabled/i);
 
   injuriesEnabled = true;
@@ -185,7 +204,10 @@ try {
   gmB.active = false;
   action.call(app, null, target);
   assert.equal(emitted.length, preflightFrameCount);
-  assert.equal(app._treating.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
   assert.match(app._statusMessage, /no active GM/i);
 
   users.activeGM = gmA;
@@ -194,7 +216,10 @@ try {
   delete globalThis.game.socket.emit;
   action.call(app, null, target);
   assert.equal(emitted.length, preflightFrameCount);
-  assert.equal(app._treating.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
   assert.match(app._statusMessage, /connection is unavailable/i);
   globalThis.game.socket.emit = socketEmit;
 
@@ -203,28 +228,42 @@ try {
   action.call(app, null, target);
   const timeoutRequest = emitted.at(-1).payload;
   assert.equal(timeoutRequest.targetUserId, gmA.id);
-  assert.equal(app._treating.has(injury.id), true);
-  const timeoutState = app._treatmentRequests.get(injury.id);
+  const timeoutState = getCriticalInjuryTreatmentState(actor.id, injury.id);
+  assert.equal(timeoutState.busy, true);
   assert.equal(timeoutState.treatmentId, timeoutRequest.treatmentId);
-  assert.ok(timeoutState.timer != null);
-  timers.get(timeoutState.timer)();
-  assert.equal(app._treating.has(injury.id), false);
+  assert.equal(timers.size, 1);
+  const inFlightFrameCount = emitted.length;
+  action.call(app, null, target);
   assert.equal(
-    app._treatmentRequests.get(injury.id).treatmentId,
+    emitted.length,
+    inFlightFrameCount,
+    "a second click cannot emit while this injury request is busy",
+  );
+  assert.equal(timers.size, 1);
+  [...timers.values()][0]();
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
     timeoutRequest.treatmentId,
   );
-  assert.equal(app._treatmentRequests.get(injury.id).authorityId, null);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).authorityId,
+    null,
+  );
   assert.match(app._statusMessage, /retrying this request is safe/i);
 
   action.call(app, null, target);
   const timeoutRetry = emitted.at(-1).payload;
   assert.equal(timeoutRetry.treatmentId, timeoutRequest.treatmentId);
-  assert.equal(app._treating.has(injury.id), true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
 
   // A different unresolved attempt may already own the injury-level lease.
   // The server tells this client which durable ID to resume on its next click.
   const serverResumeId = "treatment-server-unresolved";
-  CriticalInjuryApp.handleTreatmentResult({
+  handleCriticalInjuryTreatmentResult({
     actorId: actor.id,
     injuryId: injury.id,
     treatmentId: timeoutRetry.treatmentId,
@@ -234,38 +273,51 @@ try {
     retryable: true,
     message: "Resume the earlier stored treatment.",
   });
-  assert.equal(app._treating.has(injury.id), false);
   assert.equal(
-    app._treatmentRequests.get(injury.id).treatmentId,
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
     serverResumeId,
   );
-  assert.equal(app._treatmentRequests.get(injury.id).authorityId, null);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).authorityId,
+    null,
+  );
   assert.match(app._statusMessage, /resume the earlier/i);
 
   action.call(app, null, target);
   const serverResumeRetry = emitted.at(-1).payload;
   assert.equal(serverResumeRetry.treatmentId, serverResumeId);
   assert.equal(serverResumeRetry.targetUserId, gmA.id);
-  assert.equal(app._treating.has(injury.id), true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
 
   // Hook-driven active-GM changes release only this attempt's busy state and
   // keep its treatment ID for the replacement authority to resume.
   registerCriticalInjuryApp();
   users.activeGM = gmB;
   globalThis.Hooks.call("updateUser", gmA);
-  assert.equal(app._treating.has(injury.id), false);
   assert.equal(
-    app._treatmentRequests.get(injury.id).treatmentId,
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
     serverResumeId,
   );
-  assert.equal(app._treatmentRequests.get(injury.id).authorityId, null);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).authorityId,
+    null,
+  );
+  assert.equal(releaseStaleCriticalInjuryTreatmentAuthority(), 0);
   assert.match(app._statusMessage, /active GM changed/i);
 
   action.call(app, null, target);
   const handoffRetry = emitted.at(-1).payload;
   assert.equal(handoffRetry.targetUserId, gmB.id);
   assert.equal(handoffRetry.treatmentId, serverResumeId);
-  assert.equal(app._treating.has(injury.id), true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
 
   CriticalInjuryApp.handleTreatmentResult({
     actorId: actor.id,
@@ -276,13 +328,19 @@ try {
     retryable: false,
     message: "The first attempt ended.",
   });
-  assert.equal(app._treatmentRequests.has(injury.id), false);
-  assert.equal(app._treating.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
+    null,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
 
   action.call(app, null, target);
   const newerRequest = emitted.at(-1).payload;
   assert.notEqual(newerRequest.treatmentId, serverResumeId);
-  assert.equal(app._treating.has(injury.id), true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
   const statusBeforeStaleResult = app._statusMessage;
   CriticalInjuryApp.handleTreatmentResult({
     actorId: actor.id,
@@ -293,9 +351,9 @@ try {
     retryable: false,
     message: "Stale success that must be ignored.",
   });
-  assert.equal(app._treating.has(injury.id), true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
   assert.equal(
-    app._treatmentRequests.get(injury.id).treatmentId,
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
     newerRequest.treatmentId,
   );
   assert.equal(app._statusMessage, statusBeforeStaleResult);
@@ -310,9 +368,64 @@ try {
     message: "Current request completed.",
     result: { ...injury, stabilized: true },
   });
-  assert.equal(app._treating.has(injury.id), false);
-  assert.equal(app._treatmentRequests.has(injury.id), false);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).busy,
+    false,
+  );
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
+    null,
+  );
   assert.match(app._statusMessage, /current request completed/i);
+
+  // Closing the large window does not discard the shared treatment state, and
+  // a controller-only request/result never reopens that window. This is the
+  // path the persistent injury HUD uses.
+  app._onClose({});
+  const renderCountAfterClose = renderCount;
+  const observedStates = [];
+  const unsubscribeState = subscribeCriticalInjuryTreatmentState((state) =>
+    observedStates.push(state),
+  );
+  const controllerRequest = requestCriticalInjuryTreatment({
+    actorId: actor.id,
+    injuryId: injury.id,
+  });
+  assert.equal(controllerRequest.ok, true);
+  assert.equal(getCriticalInjuryTreatmentState(actor.id, injury.id).busy, true);
+  assert.equal(renderCount, renderCountAfterClose);
+  const controllerTreatmentId = controllerRequest.treatmentId;
+  assert.equal(
+    CriticalInjuryApp.handleTreatmentResult({
+      actorId: actor.id,
+      injuryId: injury.id,
+      treatmentId: controllerTreatmentId,
+      targetUserId: player.id,
+      success: false,
+      retryable: false,
+      message: "Controller-only treatment ended.",
+    }),
+    true,
+  );
+  assert.equal(renderCount, renderCountAfterClose);
+  assert.equal(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).treatmentId,
+    null,
+  );
+  assert.match(
+    getCriticalInjuryTreatmentState(actor.id, injury.id).message,
+    /controller-only treatment ended/i,
+  );
+  assert.ok(observedStates.length >= 2);
+  unsubscribeState();
+
+  const reopened = CriticalInjuryApp.open({ actorId: actor.id });
+  assert.equal(renderCount, renderCountAfterClose + 1);
+  const reopenedContext = await reopened._prepareContext();
+  assert.match(
+    reopenedContext.statusMessage,
+    /controller-only treatment ended/i,
+  );
   assert.ok(renderCount > 0);
 } finally {
   for (const [key, value] of Object.entries(saved)) {

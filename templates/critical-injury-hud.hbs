@@ -1,0 +1,175 @@
+<div
+  class="ci-hud-shell{{#unless animationsEnabled}} ci-hud-no-anim{{/unless}}"
+  role="region"
+  aria-label="Active injuries for {{actorName}}"
+>
+  <button
+    type="button"
+    class="ci-hud-open"
+    data-action="openInjuries"
+    aria-label="Open all {{injuryCount}} active injuries for {{actorName}}"
+  >
+    <i class="fa-solid fa-heart-crack" aria-hidden="true"></i>
+    <span>{{injuryCount}}</span>
+  </button>
+
+  <svg
+    class="ci-hud-figure"
+    viewBox="0 0 120 220"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle class="ci-hud-figure__head" cx="60" cy="25" r="16"></circle>
+    <path
+      class="ci-hud-figure__body"
+      d="M45 48 Q60 41 75 48 L82 103 Q75 116 60 119 Q45 116 38 103 Z"
+    ></path>
+    <path class="ci-hud-figure__limb" d="M42 55 L22 104 L16 139"></path>
+    <path class="ci-hud-figure__limb" d="M78 55 L98 104 L104 139"></path>
+    <path class="ci-hud-figure__limb" d="M51 114 L44 164 L37 208"></path>
+    <path class="ci-hud-figure__limb" d="M69 114 L76 164 L83 208"></path>
+    <path class="ci-hud-figure__center" d="M60 48 L60 116"></path>
+  </svg>
+
+  {{#each markers}}
+    <div
+      class="ci-hud-region ci-hud-region--{{key}}{{#if pinned}} is-pinned{{/if}}"
+      data-region-key="{{key}}"
+    >
+      <button
+        type="button"
+        class="ci-hud-marker"
+        data-action="pinRegion"
+        data-region-key="{{key}}"
+        aria-label="{{accessibleLabel}}"
+        aria-describedby="ci-hud-preview-{{key}}"
+        aria-expanded="{{#if pinned}}true{{else}}false{{/if}}"
+        {{#if pinned}}aria-controls="ci-hud-card-{{key}}"{{/if}}
+      >
+        <span class="ci-hud-marker__glyph" aria-hidden="true"></span>
+        <span class="ci-hud-marker__count" aria-hidden="true">{{count}}</span>
+      </button>
+
+      <span
+        class="ci-hud-preview"
+        id="ci-hud-preview-{{key}}"
+        role="tooltip"
+      >
+        <strong>{{label}}</strong>
+        <span>{{count}} active wound(s)</span>
+        {{#each injuries}}
+          <span class="ci-hud-preview__injury">{{name}}</span>
+        {{/each}}
+      </span>
+
+      {{#if pinned}}
+        <section
+          class="ci-hud-card"
+          id="ci-hud-card-{{key}}"
+          aria-label="{{label}} injuries"
+        >
+        <header class="ci-hud-card__header">
+          <div>
+            <p class="ci-hud-eyebrow">Wound location</p>
+            <h2>{{label}}</h2>
+          </div>
+          <button
+            type="button"
+            class="ci-hud-card__close"
+            data-action="closeRegion"
+            data-region-key="{{key}}"
+            aria-label="Close {{label}} wound details"
+          >
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <div class="ci-hud-card__injuries">
+          {{#each injuries}}
+            <article
+              class="ci-hud-wound{{#if permanent}} ci-hud-wound--permanent{{else if stabilized}} ci-hud-wound--stabilized{{/if}}"
+              aria-labelledby="ci-hud-wound-{{id}}"
+            >
+              <div class="ci-hud-wound__heading">
+                <div>
+                  <p class="ci-hud-eyebrow">{{locationLabel}}</p>
+                  <h3 id="ci-hud-wound-{{id}}">{{name}}</h3>
+                </div>
+                {{#if permanent}}
+                  <span class="ci-hud-tag ci-hud-tag--danger">
+                    <i class="fa-solid fa-infinity" aria-hidden="true"></i>
+                    Permanent
+                  </span>
+                {{else if stabilized}}
+                  <span class="ci-hud-tag ci-hud-tag--success">
+                    <i class="fa-solid fa-check" aria-hidden="true"></i>
+                    Stabilized
+                  </span>
+                {{/if}}
+              </div>
+
+              <p class="ci-hud-wound__effect">{{effect}}</p>
+              <p class="ci-hud-wound__recovery">
+                <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+                {{recoveryLabel}}{{#if dueLabel}} &middot; {{dueLabel}}{{/if}}
+              </p>
+
+              {{#if canTreat}}
+                <div
+                  class="ci-hud-treatment"
+                  aria-busy="{{#if treating}}true{{else}}false{{/if}}"
+                >
+                  <div>
+                    <strong>
+                      Costs {{kitCharges}} Healer's Kit charge(s)
+                    </strong>
+                    <span>{{treatmentCheck}}</span>
+                    {{#if treatmentMessage}}
+                      <span class="ci-hud-treatment__message">
+                        {{treatmentMessage}}
+                      </span>
+                    {{/if}}
+                  </div>
+                  <button
+                    type="button"
+                    data-action="requestTreatment"
+                    data-injury-id="{{id}}"
+                    aria-disabled="{{#if treating}}true{{else}}false{{/if}}"
+                    {{#if treating}}disabled{{/if}}
+                  >
+                    {{#if treating}}
+                      <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                      Waiting for GM&hellip;
+                    {{else}}
+                      <i class="fa-solid fa-kit-medical" aria-hidden="true"></i>
+                      Treat with Healer's Kit
+                    {{/if}}
+                  </button>
+                </div>
+              {{else if treatmentMessage}}
+                <p class="ci-hud-treatment__message">{{treatmentMessage}}</p>
+              {{/if}}
+            </article>
+          {{/each}}
+        </div>
+
+        <button
+          type="button"
+          class="ci-hud-card__all"
+          data-action="openInjuries"
+        >
+          <i class="fa-solid fa-list" aria-hidden="true"></i>
+          View all injuries
+        </button>
+        </section>
+      {{/if}}
+    </div>
+  {{/each}}
+
+  <p
+    class="ci-hud-sr-status"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+  >{{statusMessage}}</p>
+</div>

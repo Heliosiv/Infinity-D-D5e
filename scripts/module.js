@@ -30,6 +30,10 @@ import {
   CriticalInjuryApp,
   registerCriticalInjuryApp,
 } from "./injury/injury-app.js";
+import {
+  CriticalInjuryHudApp,
+  registerCriticalInjuryHud,
+} from "./injury/injury-hud.js";
 import { registerCriticalInjurySocket } from "./injury/socket.js";
 import { registerCriticalInjuryService } from "./injury/service.js";
 import {
@@ -250,12 +254,14 @@ function buildApi() {
     openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
     openPartySupplies: () => ResourceOverviewApp.open(),
     openCriticalInjuries: () => CriticalInjuryApp.openForCurrentUser(),
+    openCriticalInjuryHud: () => CriticalInjuryHudApp.reconcile(),
     openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
     ForagePromptApp,
     CriticalInjuryApp,
+    CriticalInjuryHudApp,
     criticalInjuries: {
       tableVersion: CRITICAL_INJURY_TABLE_VERSION,
       table: CRITICAL_INJURY_TABLE,
@@ -641,6 +647,10 @@ Hooks.once("ready", async () => {
     safeInitializeSubsystem(
       "critical injury player app",
       registerCriticalInjuryApp,
+    );
+    safeInitializeSubsystem(
+      "critical injury body HUD",
+      registerCriticalInjuryHud,
     );
     safeInitializeSubsystem(
       "player supplies control refresh",

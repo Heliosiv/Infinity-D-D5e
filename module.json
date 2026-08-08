@@ -2,7 +2,7 @@
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
   "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, track party resources and reputation, and automate Critical Injury Table V2 recovery workflows.",
-  "version": "0.2.67",
+  "version": "0.2.68",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "13",
@@ -23,7 +23,8 @@
     "styles/forage-prompt.css",
     "styles/reputation-workspace.css",
     "styles/reputation-view.css",
-    "styles/critical-injury.css"
+    "styles/critical-injury.css",
+    "styles/critical-injury-hud.css"
   ],
   "templates": [
     "templates/dashboard.hbs",
@@ -38,7 +39,8 @@
     "templates/forage-prompt.hbs",
     "templates/reputation-workspace.hbs",
     "templates/reputation-view.hbs",
-    "templates/critical-injury.hbs"
+    "templates/critical-injury.hbs",
+    "templates/critical-injury-hud.hbs"
   ],
   "system": ["dnd5e"],
   "socket": true,

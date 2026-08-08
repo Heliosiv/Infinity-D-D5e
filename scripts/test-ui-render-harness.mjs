@@ -12,8 +12,8 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  19,
-  "harness covers all UI windows, both merchant tabs, and resource states",
+  20,
+  "harness covers all UI windows, overlays, merchant tabs, and resource states",
 );
 
 for (const view of views) {
@@ -93,6 +93,7 @@ for (const expectedId of [
   "resource-overview-offline",
   "forage-prompt",
   "critical-injury",
+  "critical-injury-hud",
   "reputation-workspace",
   "reputation-view",
   "reputation-view-empty",
@@ -125,6 +126,24 @@ assert.match(injuryView.html, /active GM securely rolls and applies/i);
 assert.match(injuryView.html, /data-action="requestTreatment"/);
 assert.match(injuryView.html, /Shattered Knee/);
 assert.match(injuryView.html, /12 Eleasis, 1492 DR/);
+
+const injuryHudView = views.find((view) => view.id === "critical-injury-hud");
+assert.ok(injuryHudView, "harness includes the player injury body HUD");
+assert.match(injuryHudView.html, /class="ci-hud-shell/);
+assert.match(injuryHudView.html, /ci-hud-region--left-leg is-pinned/);
+assert.match(injuryHudView.html, /Left leg: 2 active injuries/);
+assert.match(injuryHudView.html, /data-action="pinRegion"/);
+assert.match(injuryHudView.html, /data-action="closeRegion"/);
+assert.match(injuryHudView.html, /data-action="openInjuries"/);
+assert.match(injuryHudView.html, /data-action="requestTreatment"/);
+assert.match(injuryHudView.html, /Treat with Healer's Kit/);
+assert.match(injuryHudView.html, /Lost Limb/);
+assert.match(injuryHudView.html, /Permanent/);
+assert.match(
+  documentHtml,
+  /class="ui-harness__overlay-stage"[\s\S]*?data-harness-window="critical-injury-hud"/,
+  "the HUD renders as a frameless overlay rather than a large application window",
+);
 
 const suppliesOfflineView = views.find(
   (view) => view.id === "resource-overview-offline",

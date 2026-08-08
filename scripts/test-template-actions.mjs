@@ -78,6 +78,11 @@ const CHECKS = [
     template: "templates/critical-injury.hbs",
     script: "./injury/injury-app.js",
   },
+  {
+    name: "critical injury body HUD",
+    template: "templates/critical-injury-hud.hbs",
+    script: "./injury/injury-hud.js",
+  },
 ];
 
 for (const check of CHECKS) {

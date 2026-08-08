@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.67 (unreleased)** - Adds GM-authoritative, replay-safe Critical Injury Table V2 rolls and durable Healer's Kit treatment to the existing loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
+**v0.2.68 (unreleased)** - Adds an automatic body-silhouette HUD to the GM-authoritative, replay-safe Critical Injury Table V2 workflow alongside the existing loot generation, verified merchant transactions, hardened party resources, faction reputation, player workflows, transport-authenticated socket authorization, and Forge-safe module compatibility loading.
 
 - GM dashboard with six dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -26,7 +26,7 @@ Three ways to open the dashboard:
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions with canonical item, wallet, and merchant read-back, verified compensation, and request-bound replay protection.
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
-- **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and expose durable, rules-based Healer's Kit treatment.
+- **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable, rules-based Healer's Kit treatment.
 - **Player launchers**: `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
@@ -87,6 +87,15 @@ conditional narrative restrictions stay in the effect description for GM
 adjudication. See [docs/CRITICAL_INJURIES.md](docs/CRITICAL_INJURIES.md) for the
 full d100 table, treatment behavior, integration details, and automation
 boundaries.
+
+When the assigned or directly owned character has an active injury, a compact
+translucent body silhouette appears automatically on that player's screen.
+Wound markers follow the stored body-part detail when the table rolled one and
+use honest multi-limb or whole-body fallbacks when the rules did not record a
+side. Hovering or keyboard-focusing a marker previews the wound; clicking or
+tapping pins its details and offers the same authoritative Healer's Kit action
+as the full window. Players can disable **Critical Injury Body HUD** in their
+client settings without disabling injury automation.
 
 ### Party resources
 
@@ -186,9 +195,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.67 && git push origin refs/tags/v0.2.67`).
+1. Tag the commit (`git tag v0.2.68 && git push origin refs/tags/v0.2.68`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.67` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.2.68` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema
