@@ -53,6 +53,22 @@ import { registerMerchantSocket } from "./merchant/socket.js";
 import { ReputationWorkspaceApp } from "./reputation-workspace.js";
 import { ReputationViewApp } from "./reputation-view.js";
 import { registerReputationSocket } from "./reputation/socket.js";
+import { DowntimeWorkspaceApp } from "./downtime-workspace.js";
+import { DowntimeActivitiesApp } from "./downtime-activities.js";
+import {
+  configureDowntimePlayerAutoOpen,
+  getDowntimePlayerAdapter,
+} from "./downtime/ui-adapter.js";
+import {
+  downtimeWorkspaceAdapter,
+  registerDowntimeService,
+} from "./downtime/service.js";
+import {
+  notifyLongRest,
+  notifySharpenDamage,
+  registerDowntimeSocket,
+} from "./downtime/socket.js";
+import { registerSharpeningHooks } from "./downtime/effects.js";
 import {
   SOUND_EVENTS,
   SOUND_REGISTRY,
@@ -128,6 +144,7 @@ function registerPrivateDependentServices() {
     "critical injury service",
     registerCriticalInjuryService,
   );
+  safeInitializeSubsystem("downtime service", registerDowntimeService);
 }
 
 function clearPrivateRecoveryTimer() {
@@ -257,6 +274,9 @@ function buildApi() {
     openCriticalInjuryHud: () => CriticalInjuryHudApp.reconcile(),
     openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
+    openDowntimeWorkspace: () => runAsFullGM(() => DowntimeWorkspaceApp.open()),
+    openDowntimeActivities: (options = {}) =>
+      DowntimeActivitiesApp.open(options),
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
     ForagePromptApp,
@@ -450,6 +470,17 @@ function registerBuiltinTools() {
   });
 
   registerTool({
+    id: "downtime-workspace",
+    title: "Downtime Workspace",
+    description:
+      "Give every eligible character an hour budget, collect queued city activities, preview hidden outcomes, and apply exact receipts.",
+    icon: "fa-solid fa-hourglass-half",
+    category: "party",
+    status: "available",
+    open: () => DowntimeWorkspaceApp.open(),
+  });
+
+  registerTool({
     id: "reputation",
     title: "Reputation & Factions",
     description:
@@ -497,6 +528,16 @@ Hooks.once("init", () => {
     registerBuiltinTools();
   } catch (error) {
     console.error(`${MODULE_ID} | registerBuiltinTools failed`, error);
+  }
+  try {
+    DowntimeWorkspaceApp.configure({
+      adapterFactory: () => downtimeWorkspaceAdapter,
+    });
+    DowntimeActivitiesApp.configure({
+      adapterFactory: () => getDowntimePlayerAdapter(),
+    });
+  } catch (error) {
+    console.error(`${MODULE_ID} | downtime UI configuration failed`, error);
   }
   console.log(`${MODULE_ID} | init hook complete`);
 });
@@ -569,6 +610,16 @@ function registerKeybindings() {
       },
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
+    game.keybindings.register(MODULE_ID, "openDowntimeActivities", {
+      name: "Open Infinity D&D5e Downtime Activities",
+      hint: "Plan activities for your eligible character during an active downtime block.",
+      editable: [{ key: "KeyD", modifiers: ["Shift"] }],
+      onDown: () => {
+        DowntimeActivitiesApp.open();
+        return true;
+      },
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to register keybindings`, error);
   }
@@ -598,6 +649,9 @@ Hooks.once("ready", async () => {
     );
     console.log(
       `${MODULE_ID} | dashboard access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openDashboard()`,
+    );
+    console.log(
+      `${MODULE_ID} | downtime access: GM dashboard tile; player scene control, Shift+D, or game.modules.get("${MODULE_ID}").api.openDowntimeActivities()`,
     );
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
@@ -631,6 +685,20 @@ Hooks.once("ready", async () => {
     // unable to receive a pushed shop session.
     safeInitializeSubsystem("sound socket", registerSoundSocket);
     safeInitializeSubsystem("sound automation", registerSoundAutomation);
+    safeInitializeSubsystem("downtime socket", registerDowntimeSocket);
+    safeInitializeSubsystem("downtime player auto-open", () =>
+      configureDowntimePlayerAutoOpen(({ actorId }) =>
+        DowntimeActivitiesApp.open({ actorId }),
+      ),
+    );
+    safeInitializeSubsystem("downtime sharpening hooks", () =>
+      registerSharpeningHooks({
+        onDamage: ({ item, rollId, effectId, operationId }) =>
+          notifySharpenDamage(item, rollId, { effectId, operationId }),
+        onLongRest: ({ actor, references }) =>
+          notifyLongRest(actor, { references }),
+      }),
+    );
     if (privateStateAvailable) {
       registerPrivateDependentServices();
     }
@@ -662,7 +730,7 @@ Hooks.once("ready", async () => {
     );
     if (!privateStateAvailable && isFullGM()) {
       globalThis.ui?.notifications?.error?.(
-        `${MODULE_ID}: private data could not be loaded yet. Merchant, resource automation, reputation, and critical injury services will retry automatically.`,
+        `${MODULE_ID}: private data could not be loaded yet. Merchant, downtime, resource automation, reputation, and critical injury services will retry automatically.`,
       );
       schedulePrivateStateRecovery();
     } else if (
@@ -824,8 +892,8 @@ function registerGmSceneControls(controls) {
 }
 
 /**
- * Player launchers: Shops, Reputation, Critical Injuries, and (when the GM
- * shares it) Party Supplies. These are separate from the GM dashboard.
+ * Player launchers: Downtime, Shops, Reputation, Critical Injuries, and (when
+ * the GM shares it) Party Supplies. These are separate from the GM dashboard.
  */
 function registerPlayerSceneControls(controls) {
   const shopsToolName = "infinity-dnd5e-shops-tool";
@@ -935,6 +1003,31 @@ function registerPlayerSceneControls(controls) {
     tools,
   });
 
+  const downtimeToolName = "infinity-dnd5e-downtime-tool";
+  const downtimeCategory = "infinity-dnd5e-downtime";
+  const downtimeBaseTool = {
+    name: downtimeToolName,
+    title: "Downtime Activities",
+    icon: "fa-solid fa-hourglass-half",
+    button: true,
+    visible: true,
+    toggle: false,
+    order: 0,
+    onChange: () => DowntimeActivitiesApp.open(),
+  };
+  const downtimeCategoryEntry = (tools) => ({
+    name: downtimeCategory,
+    title: "Downtime Activities",
+    icon: "fa-solid fa-hourglass-half",
+    visible: true,
+    activeTool: downtimeToolName,
+    order: 95,
+    onChange: (_event, active) => {
+      if (active) DowntimeActivitiesApp.open();
+    },
+    tools,
+  });
+
   if (Array.isArray(controls)) {
     // Idempotent guard for a re-fired hook (Array push isn't self-deduping).
     if (!controls.some((c) => c?.name === category)) {
@@ -965,6 +1058,9 @@ function registerPlayerSceneControls(controls) {
       );
       if (existingIndex >= 0) controls.splice(existingIndex, 1);
     }
+    if (!controls.some((c) => c?.name === downtimeCategory)) {
+      controls.push(downtimeCategoryEntry([{ ...downtimeBaseTool }]));
+    }
   } else if (controls && typeof controls === "object") {
     controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
     controls[repCategory] = repCategoryEntry({
@@ -984,6 +1080,9 @@ function registerPlayerSceneControls(controls) {
     } else {
       delete controls[injuriesCategory];
     }
+    controls[downtimeCategory] = downtimeCategoryEntry({
+      [downtimeToolName]: { ...downtimeBaseTool },
+    });
   } else {
     console.warn(
       `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
@@ -991,7 +1090,7 @@ function registerPlayerSceneControls(controls) {
     return;
   }
   console.log(
-    `${MODULE_ID} | registered player Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""}${injuriesEnabled ? " + Critical Injuries" : ""} scene controls`,
+    `${MODULE_ID} | registered player Downtime + Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""}${injuriesEnabled ? " + Critical Injuries" : ""} scene controls`,
   );
 }
 

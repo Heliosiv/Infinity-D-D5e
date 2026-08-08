@@ -138,4 +138,20 @@ assert.ok(
   "manifest uses esmodules, not legacy scripts",
 );
 
+for (const stylesheet of ["styles/downtime.css"]) {
+  assert.ok(
+    manifest.styles?.includes(stylesheet),
+    `manifest should load downtime stylesheet ${stylesheet}`,
+  );
+}
+for (const template of [
+  "templates/downtime-workspace.hbs",
+  "templates/downtime-activities.hbs",
+]) {
+  assert.ok(
+    manifest.templates?.includes(template),
+    `manifest should preload downtime template ${template}`,
+  );
+}
+
 process.stdout.write("manifest compatibility validation passed\n");

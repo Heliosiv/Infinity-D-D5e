@@ -56,6 +56,8 @@ function hasActorItemLookup(actor) {
 function operationMarker(item) {
   return String(
     itemSource(item)?.flags?.[MODULE_ID]?.purchasedFromMerchant?.operationId ??
+      itemSource(item)?.flags?.[MODULE_ID]?.stolen?.operationId ??
+      itemSource(item)?.flags?.[MODULE_ID]?.downtimeCraft?.operationId ??
       "",
   ).trim();
 }

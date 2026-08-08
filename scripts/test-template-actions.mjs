@@ -83,6 +83,16 @@ const CHECKS = [
     template: "templates/critical-injury-hud.hbs",
     script: "./injury/injury-hud.js",
   },
+  {
+    name: "downtime workspace",
+    template: "templates/downtime-workspace.hbs",
+    script: "./downtime-workspace.js",
+  },
+  {
+    name: "downtime activities",
+    template: "templates/downtime-activities.hbs",
+    script: "./downtime-activities.js",
+  },
 ];
 
 for (const check of CHECKS) {

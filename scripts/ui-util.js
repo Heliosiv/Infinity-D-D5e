@@ -172,6 +172,8 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
     "That transaction ID was already used for a different request.",
   "insufficient-funds": "You can't afford that.",
   "not-sellable": "That item can't be sold.",
+  "stolen-requires-fence":
+    "That item is marked as stolen and requires the Fence Stolen Goods downtime activity.",
   "not-bought-here": "This merchant won't buy that.",
   "not-enough": "You don't have that many to sell.",
   "merchant-cannot-afford":

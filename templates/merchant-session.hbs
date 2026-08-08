@@ -88,7 +88,7 @@
   <section class="ms-rows" id="ms-panel-sell-{{domId}}" role="tabpanel" aria-labelledby="ms-tab-sell-{{domId}}" aria-label="Your sellable items">
     {{#if sellRows.length}}
       {{#each sellRows}}
-      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}}" data-item-id="{{itemId}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
+      <article class="ms-row {{#if rarity}}ms-row--{{rarity}}{{/if}} {{#if stolen}}is-stolen{{/if}}" data-item-id="{{itemId}}" data-uuid="{{uuid}}" title="Double-click to open sheet">
         <span class="ms-row__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
         <div class="ms-row__copy">
           <strong class="ms-row__name">{{name}}</strong>
@@ -97,12 +97,14 @@
             You have {{ownedQty}}
             {{#if sealLabel}}<span class="ms-seal" title="Bargained payout">{{sealLabel}}</span>{{/if}}
             {{#if passiveActive}}<span class="ms-haggle" title="Automatic payout change from your character's people skills — bargain to roll for more.">{{haggleLabel}}</span>{{/if}}
-            {{#if cannotSell}}<span class="ms-row__warn">merchant low on gold</span>{{/if}}
+            {{#if cannotSellReason}}<span class="ms-row__warn">{{cannotSellReason}}</span>{{/if}}
             {{#if goldLimited}}<span class="ms-row__warn">{{affordLabel}}</span>{{/if}}
           </span>
         </div>
         <div class="ms-row__price">
-          {{#if priceDeltaLabel}}
+          {{#if stolen}}
+          <strong class="ms-row__final"><i class="fa-solid fa-mask-face" aria-hidden="true"></i>Fencing only</strong>
+          {{else if priceDeltaLabel}}
           <span class="ms-row__base">{{baseLabel}}</span>
           <strong class="ms-row__final"><i class="fa-solid fa-coins ms-coin" aria-hidden="true"></i>{{finalLabel}}</strong>
           <span class="ms-row__delta {{deltaClass}}">{{priceDeltaLabel}}</span>

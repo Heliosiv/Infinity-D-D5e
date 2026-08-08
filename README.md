@@ -1,11 +1,11 @@
 # Infinity D&D5e
 
-Loot, commerce, party-resource, reputation, and critical-injury tools for D&D
-5e on Foundry VTT.
+Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
+for D&D 5e on Foundry VTT.
 
 ## What This Module Is
 
-A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches six dedicated tools, while players receive permission-scoped shops, reputation, party-supplies, forage, and Critical Injury Table V2 workflows.
+A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches seven dedicated tools, while players receive permission-scoped shops, downtime, reputation, party-supplies, forage, and Critical Injury Table V2 workflows.
 
 Three ways to open the dashboard:
 
@@ -15,19 +15,20 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.69 (unreleased)** - Makes Infection long-rest saves durable and replay-safe across interrupted writes, reconnects, and active-GM handoffs while retaining the body-silhouette Critical Injury HUD, durable Healer's Kit treatment, and the module's existing loot, commerce, resource, and reputation workflows.
+**v0.2.70 (unreleased)** - Adds an hour-budgeted Downtime Workspace with crafting, weapon sharpening, market trading, pickpocketing, shoplifting, fencing, local Heat, and durable preview-before-apply recovery.
 
-- GM dashboard with six dedicated tools and scene-control launchers.
+- GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, scale-shaped rarity defaults, and filter-aware chips while preserving valid coin-only rolls.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
 - Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions with canonical item, wallet, and merchant read-back, verified compensation, and request-bound replay protection.
+- **Downtime & City Actions**: the GM assigns the same hour budget to each eligible character; players queue several routine, commerce, and crime activities; the GM locks an immutable hidden-roll preview before applying exact receipts. Local Heat and stolen-goods provenance persist by settlement.
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
-- **Player launchers**: `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
+- **Player launchers**: `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
 
@@ -56,6 +57,44 @@ Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts
 Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
+
+### Downtime and city actions
+
+The full GM opens **Downtime Workspace** from the dashboard. Create or select a
+settlement, choose eligible characters, and assign a shared productive-hour
+budget. Each selected character receives that full budget independently. Day
+presets use eight productive hours per day, unused hours are allowed, and a
+character can queue several activities before submitting. This workflow does
+not advance Foundry's clock or run Quartermaster upkeep.
+
+Players open **Downtime Activities** from scene controls or `Shift + D`. The
+window explains unmet prerequisites, shows remaining hours and local Heat, and
+supports a reorderable queue. The built-in catalog includes ammunition
+crafting, weapon sharpening, market trading, pickpocketing, finite-stock
+shoplifting, fencing stolen goods, and laying low. Routine activities repeat in
+fixed batches; commerce and crime offer bounded extra time where the rules
+allow it.
+
+When submissions are ready, the GM locks the block and generates a durable,
+immutable preview. All hidden checks, DCs, consequences, rewards, operation
+IDs, and projected writes are persisted before anything changes. Apply uses
+that exact plan, continues independent characters if one character's state has
+drifted, and exposes recovery instead of guessing whether an uncertain write
+succeeded. Players receive only their own safe receipt; hidden settlement
+security, other queues, unrevealed factions, and merchant internals remain
+private.
+
+The full GM may cancel while a block is collecting, locked, or awaiting
+application. Once application starts, cancellation closes and the saved
+recovery flow takes over.
+
+Sharpening grants +1 damage—not attack—for the next three eligible damage rolls
+or until the next long rest. Stolen goods keep settlement and source
+provenance, remain separate from clean stacks, and cannot be sold through an
+ordinary merchant; they must be fenced during downtime. See
+[docs/DOWNTIME_SYSTEM.md](docs/DOWNTIME_SYSTEM.md) for the complete activity
+rules, settlement setup, Heat behavior, recovery model, and automation
+boundaries.
 
 ### Critical injuries
 
@@ -195,9 +234,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.69 && git push origin refs/tags/v0.2.69`).
+1. Tag the commit (`git tag v0.2.70 && git push origin refs/tags/v0.2.70`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.69` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.2.70` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

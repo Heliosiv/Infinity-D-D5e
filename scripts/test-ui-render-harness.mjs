@@ -12,8 +12,8 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  20,
-  "harness covers all UI windows, overlays, merchant tabs, and resource states",
+  33,
+  "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
 for (const view of views) {
@@ -91,6 +91,19 @@ for (const expectedId of [
   "resource-manager-custom-environment",
   "resource-overview",
   "resource-overview-offline",
+  "downtime-workspace-empty",
+  "downtime-workspace-collecting",
+  "downtime-workspace-locked",
+  "downtime-workspace-preview",
+  "downtime-workspace-recovery",
+  "downtime-workspace-applying",
+  "downtime-workspace-history-completed",
+  "downtime-activities-available",
+  "downtime-activities-pending",
+  "downtime-activities-locked",
+  "downtime-activities-applying",
+  "downtime-activities-resolved",
+  "downtime-activities-no-gm",
   "forage-prompt",
   "critical-injury",
   "critical-injury-hud",
@@ -110,6 +123,158 @@ assert.match(encounterView.html, /Roll Chances/);
 assert.match(encounterView.html, /First item of a fresh Generate/);
 assert.match(encounterView.html, /data-chance-group="category"/);
 assert.match(encounterView.html, /mixed bundles stop at one spell scroll/i);
+
+const dashboardView = views.find((view) => view.id === "dashboard");
+assert.ok(dashboardView, "harness includes the GM dashboard");
+assert.match(dashboardView.html, /Downtime Workspace/);
+
+const merchantSellView = views.find(
+  (view) => view.id === "merchant-session-sell",
+);
+assert.ok(merchantSellView, "harness includes the merchant sell tab");
+assert.match(merchantSellView.html, /Stolen Signet Ring/);
+assert.match(merchantSellView.html, /require fencing during downtime/);
+assert.match(merchantSellView.html, /Fencing only/);
+
+const downtimeEmptyView = views.find(
+  (view) => view.id === "downtime-workspace-empty",
+);
+assert.ok(downtimeEmptyView, "harness includes empty GM downtime state");
+assert.match(downtimeEmptyView.html, /Open a downtime block/);
+assert.match(downtimeEmptyView.html, /data-action="createBlock"/);
+assert.match(downtimeEmptyView.html, /8 productive hours per day/);
+
+const downtimeCollectingView = views.find(
+  (view) => view.id === "downtime-workspace-collecting",
+);
+assert.ok(
+  downtimeCollectingView,
+  "harness includes collecting GM downtime state",
+);
+assert.match(downtimeCollectingView.html, /Player queues/);
+assert.match(downtimeCollectingView.html, /1 \/ 2 submitted/);
+assert.match(downtimeCollectingView.html, /data-action="lockBlock"/);
+
+const downtimeLockedView = views.find(
+  (view) => view.id === "downtime-workspace-locked",
+);
+assert.ok(downtimeLockedView, "harness includes locked GM downtime state");
+assert.match(downtimeLockedView.html, /2 \/ 2 submitted/);
+const lockedPlanButton = downtimeLockedView.html.match(
+  /<button\b[^>]*data-action="planBlock"[^>]*>/,
+)?.[0];
+assert.ok(lockedPlanButton, "locked state renders the preview action");
+assert.doesNotMatch(lockedPlanButton, /\bdisabled\b/);
+
+const downtimePreviewView = views.find(
+  (view) => view.id === "downtime-workspace-preview",
+);
+assert.ok(downtimePreviewView, "harness includes immutable GM preview");
+assert.match(downtimePreviewView.html, /Immutable write plan/);
+assert.match(downtimePreviewView.html, /GM Preview/);
+assert.match(downtimePreviewView.html, /never rerolls/);
+assert.match(downtimePreviewView.html, /data-action="applyBlock"/);
+assert.match(downtimePreviewView.html, /margin \+5/);
+
+const downtimeRecoveryView = views.find(
+  (view) => view.id === "downtime-workspace-recovery",
+);
+assert.ok(downtimeRecoveryView, "harness includes downtime recovery state");
+assert.match(downtimeRecoveryView.html, /Recovery checkpoint available/);
+assert.match(downtimeRecoveryView.html, /external inventory drift/);
+assert.match(downtimeRecoveryView.html, /data-action="recoverBlock"/);
+
+const downtimeApplyingView = views.find(
+  (view) => view.id === "downtime-workspace-applying",
+);
+assert.ok(downtimeApplyingView, "harness includes applying GM downtime state");
+assert.match(downtimeApplyingView.html, /aria-busy="true"/);
+assert.match(downtimeApplyingView.html, /Applying the saved operation plan/);
+for (const action of ["applyBlock", "cancelBlock"]) {
+  const button = downtimeApplyingView.html.match(
+    new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*>`),
+  )?.[0];
+  assert.ok(button, `applying state renders ${action}`);
+  assert.match(button, /\bdisabled\b/);
+}
+
+const downtimeHistoryView = views.find(
+  (view) => view.id === "downtime-workspace-history-completed",
+);
+assert.ok(downtimeHistoryView, "harness includes completed GM history");
+assert.match(downtimeHistoryView.html, /Downtime History/);
+assert.match(downtimeHistoryView.html, /1 receipts/);
+assert.match(downtimeHistoryView.html, /2 character receipts applied/);
+assert.match(downtimeHistoryView.html, /Completed/);
+
+const downtimeAvailableView = views.find(
+  (view) => view.id === "downtime-activities-available",
+);
+assert.ok(
+  downtimeAvailableView,
+  "harness includes available player downtime activities",
+);
+assert.match(downtimeAvailableView.html, /Time budget/);
+assert.match(downtimeAvailableView.html, /Local Heat/);
+assert.match(downtimeAvailableView.html, /Distracted pilgrim/);
+assert.match(downtimeAvailableView.html, /No eligible finite merchant stock/);
+assert.match(downtimeAvailableView.html, /data-action="submitQueue"/);
+assert.match(downtimeAvailableView.html, /name="targetIds" multiple/);
+assert.match(downtimeAvailableView.html, /Ctrl or Cmd/);
+assert.match(downtimeAvailableView.html, /name="stakeGp" min="0\.01"/);
+
+const downtimePendingView = views.find(
+  (view) => view.id === "downtime-activities-pending",
+);
+assert.ok(downtimePendingView, "harness includes pending player downtime");
+assert.match(downtimePendingView.html, /GM reviewing preview/);
+assert.match(downtimePendingView.html, /Your queue is submitted/);
+
+const downtimePlayerLockedView = views.find(
+  (view) => view.id === "downtime-activities-locked",
+);
+assert.ok(
+  downtimePlayerLockedView,
+  "harness includes locked player downtime state",
+);
+assert.match(downtimePlayerLockedView.html, /Submissions locked/);
+assert.match(downtimePlayerLockedView.html, /Your queue is submitted/);
+
+const downtimePlayerApplyingView = views.find(
+  (view) => view.id === "downtime-activities-applying",
+);
+assert.ok(
+  downtimePlayerApplyingView,
+  "harness includes applying player downtime state",
+);
+assert.match(downtimePlayerApplyingView.html, /aria-busy="true"/);
+assert.match(downtimePlayerApplyingView.html, /Resolving/);
+
+const downtimeResolvedView = views.find(
+  (view) => view.id === "downtime-activities-resolved",
+);
+assert.ok(downtimeResolvedView, "harness includes resolved player downtime");
+assert.match(downtimeResolvedView.html, /Latest Results/);
+assert.match(downtimeResolvedView.html, /Spent 5 sp and added 20 arrows/);
+assert.match(
+  downtimeResolvedView.html,
+  /Quartermaster upkeep were not advanced/,
+);
+assert.match(downtimeResolvedView.html, /No active downtime block/);
+assert.doesNotMatch(
+  downtimeResolvedView.html,
+  /Character downtime summary|Your Queue/,
+  "a completed history receipt is not presented as a still-active block",
+);
+
+const downtimeNoGmView = views.find(
+  (view) => view.id === "downtime-activities-no-gm",
+);
+assert.ok(downtimeNoGmView, "harness includes no-GM player downtime state");
+assert.match(downtimeNoGmView.html, /No full GM is online/);
+assert.match(downtimeNoGmView.html, /Latest Results/);
+assert.match(downtimeNoGmView.html, /Spent 5 sp and added 20 arrows/);
+assert.doesNotMatch(downtimeNoGmView.html, /Character downtime summary/);
 
 const suppliesView = views.find((view) => view.id === "resource-overview");
 assert.ok(suppliesView, "harness includes the player Party Supplies view");

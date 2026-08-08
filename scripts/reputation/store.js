@@ -219,7 +219,7 @@ export function upsertFaction(faction) {
  * overwrite a standing/history change that completed while their UI action was
  * still pending.
  */
-export function updateFaction(id, mutation) {
+export function updateFaction(id, mutation, { authorizeWrite = null } = {}) {
   const want = String(id ?? "").trim();
   if (!want || typeof mutation !== "function") return Promise.resolve(null);
   return runFactionWrite(async () => {
@@ -236,6 +236,9 @@ export function updateFaction(id, mutation) {
     }
     const next = normalizeFaction({ ...candidate, id: want });
     list[index] = next;
+    if (typeof authorizeWrite === "function" && authorizeWrite() !== true) {
+      throw new Error("FactionWriteAuthorityLost");
+    }
     await writeFactions(list);
     return next;
   });

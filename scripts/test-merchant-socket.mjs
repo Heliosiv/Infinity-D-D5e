@@ -511,9 +511,10 @@ try {
       user: { id: "gm", isGM: true },
       ...actorAccess(actor),
       settings: {
-        get: () => savedList,
-        set: (_m, _k, v) => {
-          savedList = v;
+        get: (_moduleId, key) => (key === "merchants" ? savedList : undefined),
+        set: (_moduleId, key, value) => {
+          if (key === "merchants") savedList = value;
+          return value;
         },
       },
       socket: { emit() {}, on() {} },
@@ -549,6 +550,133 @@ try {
       acks.some((a) => a.commitId === "cs1" && a.ok === true),
       "a successful sale is acked ok:true",
     );
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
+
+  /* Private issuance is authoritative even if an Actor owner strips the
+     visible stolen flag before attempting an ordinary merchant sale. */
+  {
+    clearAllSessions();
+    const rec = openSession({
+      merchantId: "m-ledger-sell",
+      viewerUserId: "player1",
+    });
+    let savedList = [
+      {
+        id: "m-ledger-sell",
+        name: "Pawn",
+        sellRatio: 0.5,
+        goldOnHand: 100,
+        allowedUserIds: ["player1"],
+        items: [],
+      },
+    ];
+    const actor = makeTransactionActor({
+      id: "issued-stolen-item",
+      name: "Silver Ring",
+      type: "loot",
+      system: { quantity: 1, price: { value: 10, denomination: "gp" } },
+      flags: {},
+    });
+    const downtimeConfig = {
+      version: 2,
+      settlements: [],
+      heat: {},
+      sharpeningLifecycle: {},
+      stolenGoods: {
+        "issued-stolen-item": {
+          itemId: "issued-stolen-item",
+          actorId: actor.id,
+          operationId: "theft-ledger-operation",
+          provenance: {
+            settlementId: "greyhaven",
+            targetType: "generated-mark",
+            sourceId: "mark-ledger",
+            merchantId: null,
+            operationId: "theft-ledger-operation",
+            timestamp: 1_000,
+            appraisedValueCp: 1_000,
+          },
+          state: "issued",
+          issuedAt: 1_000,
+          consumedByOperationId: null,
+          consumedAt: 0,
+        },
+      },
+    };
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      ...actorAccess(actor),
+      settings: {
+        get: (_moduleId, key) => {
+          if (key === "merchants") return savedList;
+          if (key === "downtimeConfig") return downtimeConfig;
+          return undefined;
+        },
+        set: (_moduleId, key, value) => {
+          if (key === "merchants") savedList = value;
+          return value;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) =>
+      acks.push(payload),
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "issued-sale-attempt",
+        itemUuid: "issued-stolen-item",
+        qty: 1,
+        totalGp: 5,
+      },
+      "player1",
+    );
+    assert.ok(
+      acks.some(
+        (ack) =>
+          ack.commitId === "issued-sale-attempt" &&
+          ack.ok === false &&
+          ack.reason === "stolen-requires-fence",
+      ),
+      "the GM rejects a stripped-flag item that remains active in the private issuance ledger",
+    );
+    downtimeConfig.stolenGoods["issued-stolen-item"] = {
+      ...downtimeConfig.stolenGoods["issued-stolen-item"],
+      state: "consumed",
+      consumedByOperationId: "fence-operation",
+      consumedAt: 2_000,
+    };
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "consumed-id-sale-attempt",
+        itemUuid: "issued-stolen-item",
+        qty: 1,
+        totalGp: 5,
+      },
+      "player1",
+    );
+    off();
+    assert.ok(
+      acks.some(
+        (ack) =>
+          ack.commitId === "consumed-id-sale-attempt" &&
+          ack.ok === false &&
+          ack.reason === "stolen-requires-fence",
+      ),
+      "the GM also rejects a recreated item whose deterministic ID was already consumed by fencing",
+    );
+    assert.ok(actor.items.get("issued-stolen-item"));
+    assert.equal(savedList[0].goldOnHand, 100);
     globalThis.game = savedInner;
     clearAllSessions();
   }

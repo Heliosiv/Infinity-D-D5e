@@ -128,15 +128,21 @@ async function waitFor(predicate, message) {
 }
 
 function makeStoreData({
-  schemaVersion = 4,
+  schemaVersion = 5,
   merchants = [],
   factions = [],
   resourceConfig = {},
   resourceRunState = {},
   criticalInjuryWorkflow = {},
   criticalInjuryWorkflowCheckpoint = {},
+  downtimeConfig = {},
+  downtimeWorkflow = {},
+  downtimeWorkflowCheckpoint = {},
   includeCriticalInjuryWorkflow = true,
   includeCriticalInjuryWorkflowCheckpoint = true,
+  includeDowntimeConfig = true,
+  includeDowntimeWorkflow = true,
+  includeDowntimeWorkflowCheckpoint = true,
 } = {}) {
   return {
     name: "[Infinity D&D5e] Private State",
@@ -152,6 +158,11 @@ function makeStoreData({
         ...(includeCriticalInjuryWorkflow ? { criticalInjuryWorkflow } : {}),
         ...(includeCriticalInjuryWorkflowCheckpoint
           ? { criticalInjuryWorkflowCheckpoint }
+          : {}),
+        ...(includeDowntimeConfig ? { downtimeConfig } : {}),
+        ...(includeDowntimeWorkflow ? { downtimeWorkflow } : {}),
+        ...(includeDowntimeWorkflowCheckpoint
+          ? { downtimeWorkflowCheckpoint }
           : {}),
       },
     },
@@ -253,9 +264,12 @@ try {
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 42);
     assert.deepEqual(getPrivateState("criticalInjuryWorkflow"), {});
     assert.deepEqual(getPrivateState("criticalInjuryWorkflowCheckpoint"), {});
+    assert.deepEqual(getPrivateState("downtimeConfig"), {});
+    assert.deepEqual(getPrivateState("downtimeWorkflow"), {});
+    assert.deepEqual(getPrivateState("downtimeWorkflowCheckpoint"), {});
     assert.equal(
       activeJournal.entries[0].getFlag(MODULE_ID, "schemaVersion"),
-      4,
+      5,
     );
     assert.deepEqual(state.cleared.sort(), [
       "factions",
@@ -588,6 +602,9 @@ try {
         resourceRunState: null,
         includeCriticalInjuryWorkflow: false,
         includeCriticalInjuryWorkflowCheckpoint: false,
+        includeDowntimeConfig: false,
+        includeDowntimeWorkflow: false,
+        includeDowntimeWorkflowCheckpoint: false,
       }),
     );
     store.ignoreNextUpdate(`flags.${MODULE_ID}.resourceConfig`);
@@ -641,6 +658,21 @@ try {
       getPrivateState("criticalInjuryWorkflowCheckpoint"),
       {},
       "the schema migration installs the redundant injury workflow checkpoint",
+    );
+    assert.deepEqual(
+      getPrivateState("downtimeConfig"),
+      {},
+      "the schema migration installs the restricted downtime configuration",
+    );
+    assert.deepEqual(
+      getPrivateState("downtimeWorkflow"),
+      {},
+      "the schema migration installs the authoritative downtime workflow",
+    );
+    assert.deepEqual(
+      getPrivateState("downtimeWorkflowCheckpoint"),
+      {},
+      "the schema migration installs the redundant downtime checkpoint",
     );
     assert.deepEqual(state.cleared.sort(), [
       "privateStateStoreId",

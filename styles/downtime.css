@@ -1,0 +1,1451 @@
+/* Infinity D&D5e - Downtime Workspace and Downtime Activities. */
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) {
+  --dt-accent: var(--lf-accent, #f0a55f);
+  --dt-accent-contrast: var(--lf-accent-contrast, #20150c);
+  --dt-bg: var(--lf-bg, #1d2330);
+  --dt-bg-alt: var(--lf-bg-alt, #242b3b);
+  --dt-surface: var(--lf-surface, #2c3448);
+  --dt-surface-elev: var(--lf-surface-elev, #364159);
+  --dt-border: var(--lf-border, #475070);
+  --dt-text: var(--lf-text, #e7ecf6);
+  --dt-strong: var(--lf-text-strong, #f6f7fb);
+  --dt-muted: var(--lf-muted, #97a3c1);
+  --dt-success: var(--lf-success, #6dd5a2);
+  --dt-warning: var(--lf-warn, #f2bd61);
+  --dt-danger: var(--lf-danger, #ef6f74);
+  --dt-radius: var(--lf-radius, 10px);
+  --dt-radius-sm: var(--lf-radius-sm, 6px);
+  color: var(--dt-text);
+  background: var(--dt-bg);
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities),
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .window-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  box-sizing: border-box;
+  overflow: auto;
+  color: var(--dt-text);
+  background:
+    radial-gradient(
+      circle at 20% -20%,
+      color-mix(in srgb, var(--dt-accent) 13%, transparent),
+      transparent 36%
+    ),
+    var(--dt-bg);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-shell *,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-shell
+  *::before,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-shell
+  *::after {
+  box-sizing: border-box;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--dt-accent) 45%, var(--dt-border));
+  border-radius: var(--dt-radius);
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--dt-surface-elev) 88%, #24170d),
+    var(--dt-surface)
+  );
+  box-shadow: inset 4px 0 0 var(--dt-accent);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-head__copy {
+  min-width: 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 1px 0 4px;
+  color: var(--dt-strong);
+  font-family: "Modesto Condensed", "Signika", serif;
+  font-size: 1.55rem;
+  letter-spacing: 0.02em;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-head h2 i {
+  color: var(--dt-accent);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-head
+  p:not(.dt-eyebrow) {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-head__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-eyebrow {
+  margin: 0;
+  color: var(--dt-accent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-icon-button,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-queue__actions
+  button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-text);
+  background: var(--dt-bg-alt);
+  cursor: pointer;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(button, input, select, textarea):focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--dt-accent);
+  outline-offset: 2px;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  button:hover:not([disabled]) {
+  border-color: var(--dt-accent);
+  filter: brightness(1.08);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-phase {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--dt-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-phase--accent {
+  color: var(--dt-accent);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-phase--success {
+  color: var(--dt-success);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-phase--danger {
+  color: var(--dt-danger);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-phase--muted {
+  color: var(--dt-muted);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-tabs,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-categories,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-actor-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-bg-alt);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-tabs, .dt-categories, .dt-actor-tabs)
+  button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--dt-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-tabs, .dt-categories, .dt-actor-tabs)
+  button.is-active {
+  border-color: var(--dt-border);
+  color: var(--dt-strong);
+  background: var(--dt-surface-elev);
+  box-shadow: inset 0 -2px 0 var(--dt-accent);
+}
+
+.infinity-downtime-workspace .dt-tabs button {
+  flex: 1 1 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-notice {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-warning);
+  background: color-mix(in srgb, var(--dt-warning) 10%, var(--dt-bg-alt));
+  font-size: 0.8rem;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-notice
+  div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-notice p {
+  margin: 2px 0 0;
+  color: var(--dt-text);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-notice--danger {
+  color: var(--dt-danger);
+  background: color-mix(in srgb, var(--dt-danger) 10%, var(--dt-bg-alt));
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-notice--recovery {
+  border-color: color-mix(in srgb, var(--dt-warning) 65%, var(--dt-border));
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-text);
+  background: var(--dt-surface);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-button--primary {
+  border-color: var(--dt-accent);
+  color: var(--dt-accent-contrast);
+  background: var(--dt-accent);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-button--success {
+  border-color: var(--dt-success);
+  color: #12261e;
+  background: var(--dt-success);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-button--warning {
+  border-color: var(--dt-warning);
+  color: #2b210c;
+  background: var(--dt-warning);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-button--danger {
+  border-color: color-mix(in srgb, var(--dt-danger) 65%, var(--dt-border));
+  color: var(--dt-danger);
+  background: color-mix(in srgb, var(--dt-danger) 8%, var(--dt-surface));
+}
+
+/* Current block and GM workflow. */
+.infinity-downtime-workspace .dt-current,
+.infinity-downtime-workspace .dt-history {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.infinity-downtime-workspace .dt-block-head,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.infinity-downtime-workspace .dt-block-head {
+  padding: 12px 14px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius);
+  background: var(--dt-surface);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-block-head, .dt-section__head)
+  h3 {
+  margin: 2px 0 0;
+  color: var(--dt-strong);
+  font-size: 1rem;
+}
+
+.infinity-downtime-workspace .dt-block-head > div > p:not(.dt-eyebrow) {
+  margin: 3px 0 0;
+  color: var(--dt-muted);
+  font-size: 0.8rem;
+}
+
+.infinity-downtime-workspace .dt-command-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-workspace .dt-command-bar__cancel {
+  margin-left: auto;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius);
+  background: var(--dt-bg-alt);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-section__head
+  > span {
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.infinity-downtime-workspace .dt-participant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 8px;
+}
+
+.infinity-downtime-workspace .dt-participant,
+.infinity-downtime-workspace .dt-plan-list > article {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--dt-border);
+  border-left: 3px solid var(--dt-muted);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-participant.is-submitted {
+  border-left-color: var(--dt-success);
+}
+
+.infinity-downtime-workspace .dt-participant > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-downtime-workspace .dt-participant > header img,
+.infinity-downtime-activities .dt-actor-tabs img,
+.infinity-downtime-activities .dt-player-summary__actor img {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--dt-border);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.infinity-downtime-workspace .dt-participant h4,
+.infinity-downtime-workspace .dt-plan-list h4,
+.infinity-downtime-workspace .dt-history h4 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--dt-strong);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-workspace .dt-participant header span,
+.infinity-downtime-workspace .dt-participant header > strong {
+  color: var(--dt-muted);
+  font-size: 0.7rem;
+}
+
+.infinity-downtime-workspace .dt-compact-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0 0 0 22px;
+}
+
+.infinity-downtime-workspace .dt-compact-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 5px;
+  border-radius: 4px;
+  background: var(--dt-bg-alt);
+  font-size: 0.74rem;
+}
+
+.infinity-downtime-workspace .dt-compact-list li > span:first-child {
+  min-width: 0;
+}
+
+.infinity-downtime-workspace .dt-compact-list small {
+  color: var(--dt-muted);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result--exceptional,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result-row--exceptional {
+  color: #8fdcf2;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result--success,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result-row--success {
+  color: var(--dt-success);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result--setback,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-result-row--setback {
+  color: var(--dt-warning);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-result--failure, .dt-result--serious),
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-result-row--failure, .dt-result-row--serious) {
+  color: var(--dt-danger);
+}
+
+.infinity-downtime-workspace .dt-receipt-summary {
+  margin: 7px 0 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--dt-border);
+  color: var(--dt-muted);
+  font-size: 0.72rem;
+}
+
+.infinity-downtime-workspace .dt-preview {
+  border-color: color-mix(in srgb, var(--dt-accent) 50%, var(--dt-border));
+}
+
+.infinity-downtime-workspace .dt-preview__warning {
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-warning);
+  background: color-mix(in srgb, var(--dt-warning) 8%, var(--dt-surface));
+  font-size: 0.75rem;
+}
+
+.infinity-downtime-workspace .dt-plan-list {
+  display: grid;
+  gap: 8px;
+}
+
+.infinity-downtime-workspace .dt-plan-list > article > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-downtime-workspace .dt-plan-list > article > header span {
+  color: var(--dt-muted);
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+
+/* Forms and empty states. */
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-empty-panel,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-state-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-empty-panel__intro {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.infinity-downtime-workspace .dt-empty-panel__intro > i {
+  color: var(--dt-accent);
+  font-size: 2.2rem;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-empty-panel
+  h3,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-state-panel
+  h3 {
+  margin: 2px 0 3px;
+  color: var(--dt-strong);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-empty-panel
+  p:not(.dt-eyebrow),
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-state-panel
+  p {
+  margin: 0;
+  color: var(--dt-muted);
+  line-height: 1.45;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-form-grid,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-activity-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-field--wide {
+  grid-column: 1 / -1;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  :is(.dt-field, .dt-hours-row)
+  :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-text);
+  background: var(--dt-bg);
+  font: inherit;
+}
+
+.infinity-downtime-workspace .dt-hours-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) repeat(3, auto);
+  gap: 6px;
+}
+
+.infinity-downtime-workspace .dt-hours-row button {
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-text);
+  background: var(--dt-surface);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-field
+  small {
+  color: var(--dt-muted);
+  font-weight: 400;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-fieldset {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-bg-alt);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-fieldset
+  legend {
+  padding: 0 5px;
+  color: var(--dt-accent);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-fieldset
+  > p {
+  margin: 0 0 8px;
+  color: var(--dt-muted);
+  font-size: 0.73rem;
+}
+
+.infinity-downtime-workspace .dt-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 6px;
+}
+
+.infinity-downtime-workspace .dt-check {
+  display: grid;
+  grid-template-columns: auto 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+  cursor: pointer;
+}
+
+.infinity-downtime-workspace .dt-check img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.infinity-downtime-workspace .dt-check span {
+  display: grid;
+  min-width: 0;
+  color: var(--dt-strong);
+  font-size: 0.78rem;
+}
+
+.infinity-downtime-workspace .dt-check small {
+  overflow: hidden;
+  color: var(--dt-muted);
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-workspace .dt-check.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.infinity-downtime-workspace .dt-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.infinity-downtime-workspace .dt-chip {
+  position: relative;
+  cursor: pointer;
+}
+
+.infinity-downtime-workspace .dt-chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.infinity-downtime-workspace .dt-chip span {
+  display: inline-flex;
+  padding: 5px 9px;
+  border: 1px solid var(--dt-border);
+  border-radius: 999px;
+  color: var(--dt-muted);
+  background: var(--dt-surface);
+  font-size: 0.72rem;
+}
+
+.infinity-downtime-workspace .dt-chip input:checked + span {
+  border-color: var(--dt-accent);
+  color: var(--dt-accent-contrast);
+  background: var(--dt-accent);
+}
+
+.infinity-downtime-workspace .dt-chip input:focus-visible + span {
+  outline: 2px solid var(--dt-accent);
+  outline-offset: 2px;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-form__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--dt-border);
+}
+
+.infinity-downtime-workspace .dt-form-reason {
+  margin: 0;
+  color: var(--dt-warning);
+  font-size: 0.75rem;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-empty,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-inline-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-muted);
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+/* Settlement editor and history. */
+.infinity-downtime-workspace .dt-settlement-layout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(210px, 270px) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+}
+
+.infinity-downtime-workspace .dt-rail,
+.infinity-downtime-workspace .dt-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-rail {
+  padding: 8px;
+}
+
+.infinity-downtime-workspace .dt-rail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 5px 9px;
+  border-bottom: 1px solid var(--dt-border);
+}
+
+.infinity-downtime-workspace .dt-rail__head h3 {
+  margin: 2px 0 0;
+  color: var(--dt-strong);
+  font-size: 0.95rem;
+}
+
+.infinity-downtime-workspace .dt-rail__list {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infinity-downtime-workspace .dt-rail__list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-text);
+  background: var(--dt-bg-alt);
+  text-align: left;
+  cursor: pointer;
+}
+
+.infinity-downtime-workspace .dt-rail__list button.is-selected {
+  border-color: var(--dt-accent);
+  box-shadow: inset 3px 0 0 var(--dt-accent);
+  background: var(--dt-surface-elev);
+}
+
+.infinity-downtime-workspace .dt-rail__list strong,
+.infinity-downtime-workspace .dt-rail__list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-workspace .dt-rail__list span {
+  color: var(--dt-muted);
+  font-size: 0.68rem;
+}
+
+.infinity-downtime-workspace .dt-editor {
+  padding: 14px;
+}
+
+.infinity-downtime-workspace .dt-editor__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 240px;
+  color: var(--dt-muted);
+  text-align: center;
+}
+
+.infinity-downtime-workspace .dt-editor__empty > i {
+  color: var(--dt-accent);
+  font-size: 2rem;
+}
+
+.infinity-downtime-workspace .dt-history__list {
+  display: grid;
+  gap: 7px;
+}
+
+.infinity-downtime-workspace .dt-history__list article {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-history__list p,
+.infinity-downtime-workspace .dt-history__list small {
+  margin: 2px 0 0;
+  color: var(--dt-muted);
+  font-size: 0.72rem;
+}
+
+/* Player character, time, and heat summary. */
+.infinity-downtime-activities .dt-actor-tabs img {
+  width: 24px;
+  height: 24px;
+}
+
+.infinity-downtime-activities .dt-player-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.5fr) minmax(
+      120px,
+      0.7fr
+    );
+  gap: 8px;
+}
+
+.infinity-downtime-activities .dt-player-summary > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-activities .dt-player-summary__actor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-downtime-activities .dt-player-summary__actor div,
+.infinity-downtime-activities .dt-time-meter,
+.infinity-downtime-activities .dt-heat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.infinity-downtime-activities .dt-player-summary__actor strong,
+.infinity-downtime-activities .dt-time-meter strong {
+  overflow: hidden;
+  color: var(--dt-strong);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-activities .dt-player-summary :is(span, small) {
+  overflow: hidden;
+  color: var(--dt-muted);
+  font-size: 0.67rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-activities .dt-time-meter > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-downtime-activities .dt-time-meter progress {
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dt-bg);
+}
+
+.infinity-downtime-activities .dt-time-meter progress::-webkit-progress-bar {
+  background: var(--dt-bg);
+}
+
+.infinity-downtime-activities .dt-time-meter progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dt-accent), var(--dt-warning));
+}
+
+.infinity-downtime-activities .dt-heat__pips {
+  display: flex;
+  gap: 4px;
+}
+
+.infinity-downtime-activities .dt-heat__pips i {
+  color: color-mix(in srgb, var(--dt-muted) 30%, transparent);
+  font-size: 0.85rem;
+}
+
+.infinity-downtime-activities .dt-heat__pips i.is-active {
+  color: var(--dt-danger);
+  filter: drop-shadow(
+    0 0 4px color-mix(in srgb, var(--dt-danger) 60%, transparent)
+  );
+}
+
+.infinity-downtime-activities.dt-no-glow .dt-heat__pips i.is-active {
+  filter: none;
+}
+
+.infinity-downtime-activities .dt-categories {
+  padding: 3px;
+}
+
+.infinity-downtime-activities .dt-categories button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+}
+
+.infinity-downtime-activities .dt-player-layout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.8fr);
+  gap: 10px;
+  min-height: 0;
+}
+
+.infinity-downtime-activities .dt-activity-pane,
+.infinity-downtime-activities .dt-queue,
+.infinity-downtime-activities .dt-receipt {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-activities .dt-activity-pane,
+.infinity-downtime-activities .dt-queue {
+  min-height: 0;
+  overflow: auto;
+}
+
+.infinity-downtime-activities .dt-activity-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.infinity-downtime-activities .dt-activity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dt-border);
+  border-left: 3px solid var(--dt-accent);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-activities .dt-activity-card.is-unavailable {
+  border-left-color: var(--dt-muted);
+  opacity: 0.74;
+}
+
+.infinity-downtime-activities .dt-activity-card > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.infinity-downtime-activities .dt-activity-card__icon,
+.infinity-downtime-activities .dt-queue__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-accent);
+  background: var(--dt-bg);
+}
+
+.infinity-downtime-activities .dt-activity-card header span,
+.infinity-downtime-activities .dt-activity-card header > strong {
+  color: var(--dt-muted);
+  font-size: 0.66rem;
+}
+
+.infinity-downtime-activities .dt-activity-card h4 {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--dt-strong);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-activities .dt-activity-card > p {
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.infinity-downtime-activities
+  :is(.dt-activity-card__cost, .dt-activity-card__limit) {
+  color: var(--dt-muted);
+  font-size: 0.68rem;
+}
+
+.infinity-downtime-activities .dt-activity-card__cost i {
+  color: var(--dt-warning);
+}
+
+.infinity-downtime-activities .dt-activity-card__add {
+  align-self: flex-end;
+}
+
+.infinity-downtime-activities .dt-prerequisite,
+.infinity-downtime-activities .dt-state-inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px dashed var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-muted);
+  background: var(--dt-bg-alt);
+  font-size: 0.72rem;
+}
+
+.infinity-downtime-activities .dt-state-inline {
+  margin-top: 9px;
+}
+
+.infinity-downtime-activities .dt-state-inline p {
+  margin: 0;
+}
+
+/* Player queue. Up/down buttons provide keyboard-accessible reordering. */
+.infinity-downtime-activities .dt-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.infinity-downtime-activities .dt-queue__list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infinity-downtime-activities .dt-queue__list > li {
+  display: grid;
+  grid-template-columns: 22px 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-activities .dt-queue__position {
+  color: var(--dt-muted);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.infinity-downtime-activities .dt-queue__icon {
+  width: 30px;
+  height: 30px;
+}
+
+.infinity-downtime-activities .dt-queue__list > li > div:nth-child(3) {
+  display: grid;
+  min-width: 0;
+}
+
+.infinity-downtime-activities .dt-queue__list strong,
+.infinity-downtime-activities .dt-queue__list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-activities .dt-queue__list strong {
+  color: var(--dt-strong);
+  font-size: 0.76rem;
+}
+
+.infinity-downtime-activities .dt-queue__list div > span {
+  color: var(--dt-muted);
+  font-size: 0.65rem;
+}
+
+.infinity-downtime-activities .dt-queue__actions {
+  display: flex;
+  gap: 3px;
+}
+
+.infinity-downtime-activities .dt-queue__actions button {
+  width: 25px;
+  height: 25px;
+  font-size: 0.68rem;
+}
+
+.infinity-downtime-activities .dt-queue__actions button.is-danger {
+  color: var(--dt-danger);
+}
+
+.infinity-downtime-activities .dt-queue__footer {
+  display: grid;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid var(--dt-border);
+}
+
+.infinity-downtime-activities .dt-queue__footer > p {
+  margin: 0;
+  color: var(--dt-warning);
+  font-size: 0.68rem;
+}
+
+.infinity-downtime-activities .dt-submitted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--dt-success);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.infinity-downtime-activities .dt-state-panel {
+  align-items: center;
+  justify-content: center;
+  min-height: 190px;
+  text-align: center;
+}
+
+.infinity-downtime-activities .dt-state-panel > i {
+  color: var(--dt-accent);
+  font-size: 2.2rem;
+}
+
+.infinity-downtime-activities .dt-receipt {
+  display: grid;
+  gap: 8px;
+  flex: 0 0 auto;
+  border-color: color-mix(in srgb, var(--dt-success) 45%, var(--dt-border));
+}
+
+.infinity-downtime-activities .dt-receipt > p {
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: 0.76rem;
+}
+
+.infinity-downtime-activities .dt-receipt ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infinity-downtime-activities .dt-result-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.5fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--dt-surface);
+  font-size: 0.73rem;
+}
+
+.infinity-downtime-activities .dt-result-row span {
+  color: var(--dt-text);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities).dt-no-anim
+  .dt-shell
+  *,
+:is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-no-anim * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (max-width: 820px) {
+  .infinity-downtime-workspace .dt-settlement-layout,
+  .infinity-downtime-activities .dt-player-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-activities .dt-player-layout {
+    flex: 0 0 auto;
+    grid-auto-rows: max-content;
+    min-height: auto;
+  }
+
+  .infinity-downtime-workspace .dt-rail {
+    max-height: 210px;
+  }
+
+  .infinity-downtime-activities .dt-activity-pane,
+  .infinity-downtime-activities .dt-queue {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .infinity-downtime-activities .dt-player-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .infinity-downtime-activities .dt-time-meter {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 620px) {
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-shell {
+    padding: 9px;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-head {
+    flex-direction: column;
+    gap: 9px;
+    padding: 11px 12px;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-head__actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-tabs
+    button {
+    flex: 0 0 auto;
+  }
+
+  .infinity-downtime-workspace .dt-command-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .infinity-downtime-workspace .dt-command-bar__cancel {
+    margin-left: 0;
+  }
+
+  .infinity-downtime-workspace .dt-command-bar .dt-button {
+    width: 100%;
+  }
+
+  .infinity-downtime-workspace .dt-hours-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .infinity-downtime-workspace .dt-hours-row input {
+    grid-column: 1 / -1;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-form-grid,
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-activity-fields {
+    grid-template-columns: 1fr;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-field--wide {
+    grid-column: auto;
+  }
+
+  .infinity-downtime-activities .dt-player-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-activities .dt-time-meter {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .infinity-downtime-activities .dt-queue__list > li {
+    grid-template-columns: 20px 30px minmax(0, 1fr);
+  }
+
+  .infinity-downtime-activities .dt-queue__actions {
+    grid-column: 2 / -1;
+    justify-content: flex-end;
+  }
+
+  .infinity-downtime-activities .dt-result-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-notice {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
+    .dt-notice
+    .dt-button {
+    width: 100%;
+  }
+}

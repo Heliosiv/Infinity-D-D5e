@@ -759,6 +759,36 @@ export function upsertMerchant(merchant) {
   });
 }
 
+/**
+ * Mutate one merchant against the freshest stored record inside the global
+ * store queue. Downtime theft uses this together with the merchant mutex so a
+ * purchase, workspace edit, and shoplift cannot overwrite one another.
+ */
+export function updateMerchant(id, mutation, { authorizeWrite = null } = {}) {
+  const want = toStr(id);
+  if (!want || typeof mutation !== "function") return Promise.resolve(null);
+  return runStoreWrite(async () => {
+    const list = loadMerchants();
+    const index = list.findIndex((merchant) => merchant.id === want);
+    if (index < 0) return null;
+    const candidate = await mutation(normalizeMerchant(list[index]));
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
+      return null;
+    }
+    const next = normalizeMerchant({ ...candidate, id: want });
+    list[index] = next;
+    if (typeof authorizeWrite === "function" && authorizeWrite() !== true) {
+      throw new Error("MerchantWriteAuthorityLost");
+    }
+    await writeMerchants(list);
+    return next;
+  });
+}
+
 /** Delete a merchant by id; returns the saved list. */
 export function deleteMerchant(id) {
   const want = toStr(id);

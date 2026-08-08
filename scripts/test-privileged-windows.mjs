@@ -82,6 +82,7 @@ for (const file of [
   "scripts/loot/loot-app-base.js",
   "scripts/merchant-workspace.js",
   "scripts/reputation-workspace.js",
+  "scripts/downtime-workspace.js",
 ]) {
   assert.match(
     readFileSync(file, "utf8"),
@@ -95,6 +96,7 @@ const reputationWorkspace = readFileSync(
   "scripts/reputation-workspace.js",
   "utf8",
 );
+const downtimeWorkspace = readFileSync("scripts/downtime-workspace.js", "utf8");
 for (const [label, source] of [
   ["Merchant Workspace", merchantWorkspace],
   ["Reputation Workspace", reputationWorkspace],
@@ -110,6 +112,17 @@ for (const [label, source] of [
     `${label} should not use Foundry's broader isGM flag as its open gate`,
   );
 }
+
+assert.match(
+  downtimeWorkspace,
+  /static open\(\{[\s\S]*?return runAsFullGM\(/,
+  "Downtime Workspace should reject Assistant GMs before constructing its editor",
+);
+assert.doesNotMatch(
+  downtimeWorkspace,
+  /static open\(\{[\s\S]{0,500}?game\?\.user\?\.isGM/,
+  "Downtime Workspace should not use Foundry's broader isGM flag as its open gate",
+);
 
 const merchantSession = readFileSync("scripts/merchant-session.js", "utf8");
 assert.match(

@@ -1,0 +1,352 @@
+{{!-- Infinity D&D5e - full-GM Downtime Workspace. --}}
+<div class="dt-shell dt-shell--workspace" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
+  <header class="dt-head">
+    <div class="dt-head__copy">
+      <p class="dt-eyebrow">City actions and personal projects</p>
+      <h2><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Downtime Workspace</h2>
+      <p>Assign productive hours, collect each character's queue, then preview and apply one immutable plan.</p>
+    </div>
+    <div class="dt-head__actions">
+      <span class="dt-phase dt-phase--{{workflowTone}}">{{workflowStatusLabel}}</span>
+      <button type="button" class="dt-icon-button" data-action="refresh" title="Refresh downtime" aria-label="Refresh downtime" {{#if busy}}disabled{{/if}}>
+        <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  <nav class="dt-tabs" aria-label="Downtime workspace views">
+    <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}}>
+      <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block
+    </button>
+    <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}}>
+      <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements
+    </button>
+    <button type="button" data-action="setView" data-view="history" {{#if viewHistory}}class="is-active" aria-current="page"{{/if}}>
+      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> History
+    </button>
+  </nav>
+
+  <p class="dt-sr-status" role="status" aria-live="polite" aria-atomic="true">
+    {{#if busy}}{{statusMessage}}{{else if hasError}}{{errorMessage}}{{else}}{{statusMessage}}{{/if}}
+  </p>
+
+  {{#if hasError}}
+  <div class="dt-notice dt-notice--danger" role="alert">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    <span>{{errorMessage}}</span>
+  </div>
+  {{/if}}
+
+  {{#if needsRecovery}}
+  <div class="dt-notice dt-notice--recovery" role="alert">
+    <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
+    <div>
+      <strong>Recovery checkpoint available</strong>
+      <p>{{recoveryMessage}}</p>
+    </div>
+    <button type="button" class="dt-button dt-button--warning" data-action="recoverBlock" {{#if busy}}disabled{{/if}}>
+      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Verify and recover
+    </button>
+  </div>
+  {{/if}}
+
+  <main class="dt-main">
+    {{#if viewCurrent}}
+      {{#if hasCurrentBlock}}
+      <section class="dt-current" data-block-id="{{currentBlock.id}}" aria-labelledby="dt-current-heading">
+        <div class="dt-block-head">
+          <div>
+            <p class="dt-eyebrow">{{currentBlock.dayLabel}}</p>
+            <h3 id="dt-current-heading">{{currentBlock.settlementName}}</h3>
+            <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. Unused time is allowed.</p>
+          </div>
+          <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
+        </div>
+
+        <div class="dt-command-bar" aria-label="Downtime workflow actions">
+          <button type="button" class="dt-button" data-action="openForPlayers" {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open for players
+          </button>
+          <button type="button" class="dt-button" data-action="lockBlock" title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-lock" aria-hidden="true"></i> Lock submissions
+          </button>
+          <button type="button" class="dt-button dt-button--primary" data-action="planBlock" title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> Generate preview
+          </button>
+          <button type="button" class="dt-button dt-button--success" data-action="applyBlock" title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-check-double" aria-hidden="true"></i> Apply exact plan
+          </button>
+          <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
+          </button>
+          {{#if currentBlock.canStartNext}}
+          <button type="button" class="dt-button dt-button--primary" data-action="beginNextBlock" {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Start next block
+          </button>
+          {{/if}}
+        </div>
+
+        <section class="dt-section" aria-labelledby="dt-submissions-heading">
+          <div class="dt-section__head">
+            <div>
+              <p class="dt-eyebrow">Player queues</p>
+              <h3 id="dt-submissions-heading">Submissions</h3>
+            </div>
+            <span>{{currentBlock.submittedCount}} / {{currentBlock.participants.length}} submitted</span>
+          </div>
+          {{#if currentBlock.hasParticipants}}
+          <div class="dt-participant-grid">
+            {{#each currentBlock.participants}}
+            <article class="dt-participant {{#if submitted}}is-submitted{{/if}}">
+              <header>
+                <img src="{{img}}" alt="" />
+                <div>
+                  <h4>{{name}}</h4>
+                  <span>{{submissionLabel}} · {{usedHours}} / {{budgetHours}} hours</span>
+                </div>
+                <strong>{{remainingHours}}h left</strong>
+              </header>
+              {{#if hasQueue}}
+              <ol class="dt-compact-list">
+                {{#each queue}}
+                <li>
+                  <span><strong>{{label}}</strong>{{#if detail}} <small>{{detail}}</small>{{/if}}</span>
+                  <span>{{hours}}h{{#if hasOutcome}} · <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>{{/if}}</span>
+                </li>
+                {{/each}}
+              </ol>
+              {{else}}
+              <p class="dt-inline-empty">No activities queued.</p>
+              {{/if}}
+              {{#if hasReceipt}}<p class="dt-receipt-summary">{{receipt}}</p>{{/if}}
+            </article>
+            {{/each}}
+          </div>
+          {{else}}
+          <p class="dt-empty">No eligible characters were assigned to this block.</p>
+          {{/if}}
+        </section>
+
+        {{#if currentBlock.hasPlan}}
+        <section class="dt-section dt-preview" aria-labelledby="dt-preview-heading">
+          <div class="dt-section__head">
+            <div>
+              <p class="dt-eyebrow">Immutable write plan {{#if currentBlock.planId}}· {{currentBlock.planId}}{{/if}}</p>
+              <h3 id="dt-preview-heading">GM Preview</h3>
+            </div>
+            {{#if currentBlock.plannedAt}}<span>Generated {{currentBlock.plannedAt}}</span>{{/if}}
+          </div>
+          <div class="dt-preview__warning">
+            <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
+            Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.
+          </div>
+          <div class="dt-plan-list">
+            {{#each currentBlock.planCharacters}}
+            <article>
+              <header><h4>{{name}}</h4><span>{{status}}</span></header>
+              <ol class="dt-compact-list">
+                {{#each operations}}
+                <li>
+                  <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
+                  <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
+                </li>
+                {{/each}}
+              </ol>
+            </article>
+            {{/each}}
+          </div>
+        </section>
+        {{/if}}
+      </section>
+      {{else}}
+      <section class="dt-empty-panel" aria-labelledby="dt-new-block-heading">
+        <div class="dt-empty-panel__intro">
+          <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i>
+          <div>
+            <p class="dt-eyebrow">No active block</p>
+            <h3 id="dt-new-block-heading">Open a downtime block</h3>
+            <p>This assigns the same productive-hour budget to every selected character. Campaign time and Quartermaster upkeep are unchanged.</p>
+          </div>
+        </div>
+        <form class="dt-form" data-form="new-block">
+          <label class="dt-field">
+            <span>Settlement</span>
+            <select name="settlementId" required {{#unless hasSettlements}}disabled{{/unless}}>
+              {{#each settlements}}<option value="{{id}}">{{name}} · {{wealthLabel}} / {{securityLabel}}</option>{{/each}}
+            </select>
+          </label>
+          <div class="dt-field">
+            <span>Productive hours per character</span>
+            <div class="dt-hours-row">
+              <input type="number" name="hours" min="1" max="240" step="1" value="8" required />
+              <button type="button" data-action="setHourPreset" data-hours="8">1 day</button>
+              <button type="button" data-action="setHourPreset" data-hours="16">2 days</button>
+              <button type="button" data-action="setHourPreset" data-hours="40">5 days</button>
+            </div>
+            <small>Day presets use 8 productive hours per day.</small>
+          </div>
+          <fieldset class="dt-fieldset">
+            <legend>Eligible characters</legend>
+            {{#if hasActors}}
+            <div class="dt-check-grid">
+              {{#each actors}}
+              <label class="dt-check {{#unless eligible}}is-disabled{{/unless}}" title="{{reason}}">
+                <input type="checkbox" name="actorIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#unless eligible}}disabled{{/unless}} />
+                <img src="{{img}}" alt="" />
+                <span>{{name}}{{#if reason}}<small>{{reason}}</small>{{/if}}</span>
+              </label>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="dt-inline-empty">No character Actors are available.</p>
+            {{/if}}
+          </fieldset>
+          {{#if createBlockReason}}<p class="dt-form-reason">{{createBlockReason}}</p>{{/if}}
+          <footer class="dt-form__actions">
+            <button type="button" class="dt-button" data-action="setView" data-view="settlements">
+              <i class="fa-solid fa-city" aria-hidden="true"></i> Manage settlements
+            </button>
+            <button type="button" class="dt-button dt-button--primary" data-action="createBlock" title="{{createBlockReason}}" {{#unless canCreateBlock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+              <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Open block
+            </button>
+          </footer>
+        </form>
+      </section>
+      {{/if}}
+    {{/if}}
+
+    {{#if viewSettlements}}
+    <section class="dt-settlement-layout" aria-labelledby="dt-settlements-heading">
+      <aside class="dt-rail">
+        <div class="dt-rail__head">
+          <div><p class="dt-eyebrow">Saved city profiles</p><h3 id="dt-settlements-heading">Settlements</h3></div>
+          <button type="button" class="dt-icon-button" data-action="newSettlement" title="New settlement" aria-label="New settlement">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          </button>
+        </div>
+        {{#if hasSettlements}}
+        <ul class="dt-rail__list">
+          {{#each settlements}}
+          <li>
+            <button type="button" data-action="selectSettlement" data-settlement-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}}>
+              <strong>{{name}}</strong>
+              <span>{{wealthLabel}} · {{securityLabel}} · {{merchantCount}} merchants</span>
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+        {{else}}
+        <p class="dt-inline-empty">No settlements saved yet.</p>
+        {{/if}}
+      </aside>
+
+      <div class="dt-editor">
+        {{#if hasSelectedSettlement}}
+        <form class="dt-form" data-form="settlement-edit">
+          <input type="hidden" name="id" value="{{selectedSettlement.id}}" />
+          <div class="dt-section__head">
+            <div>
+              <p class="dt-eyebrow">{{#if selectedSettlement.creating}}New profile{{else}}Settlement profile{{/if}}</p>
+              <h3>{{#if selectedSettlement.name}}{{selectedSettlement.name}}{{else}}New Settlement{{/if}}</h3>
+            </div>
+          </div>
+          <div class="dt-form-grid">
+            <label class="dt-field dt-field--wide">
+              <span>Name</span>
+              <input type="text" name="name" value="{{selectedSettlement.name}}" maxlength="100" required />
+            </label>
+            <label class="dt-field">
+              <span>Wealth tier</span>
+              <select name="wealthTier">
+                {{#each selectedSettlement.wealthOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="dt-field">
+              <span>Security tier</span>
+              <select name="securityTier">
+                {{#each selectedSettlement.securityOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="dt-field">
+              <span>Market DC</span>
+              <input type="number" name="marketDc" min="1" max="40" step="1" value="{{selectedSettlement.marketDc}}" required />
+            </label>
+            <label class="dt-field">
+              <span>Linked faction</span>
+              <select name="factionId">
+                {{#each selectedSettlement.factionOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="dt-fieldset">
+            <legend>Enabled activities</legend>
+            <div class="dt-chip-grid">
+              {{#each selectedSettlement.activityOptions}}
+              <label class="dt-chip"><input type="checkbox" name="enabledActivities" value="{{id}}" {{#if checked}}checked{{/if}} /><span>{{label}}</span></label>
+              {{/each}}
+            </div>
+          </fieldset>
+
+          <fieldset class="dt-fieldset">
+            <legend>Linked merchants</legend>
+            <p>Only finite, non-quest stock from these merchants can become a shoplifting target.</p>
+            {{#if selectedSettlement.hasMerchants}}
+            <div class="dt-chip-grid">
+              {{#each selectedSettlement.merchantOptions}}
+              <label class="dt-chip"><input type="checkbox" name="merchantIds" value="{{id}}" {{#if checked}}checked{{/if}} /><span>{{label}}</span></label>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="dt-inline-empty">No merchants are available to link.</p>
+            {{/if}}
+          </fieldset>
+
+          <footer class="dt-form__actions">
+            {{#if selectedSettlement.id}}
+            <button type="button" class="dt-button dt-button--danger" data-action="deleteSettlement" {{#if busy}}disabled{{/if}}>
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete
+            </button>
+            {{/if}}
+            <button type="button" class="dt-button dt-button--primary" data-action="saveSettlement" {{#if busy}}disabled{{/if}}>
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save settlement
+            </button>
+          </footer>
+        </form>
+        {{else}}
+        <div class="dt-editor__empty">
+          <i class="fa-solid fa-city" aria-hidden="true"></i>
+          <p>Select a settlement or create a new one.</p>
+          <button type="button" class="dt-button dt-button--primary" data-action="newSettlement">New settlement</button>
+        </div>
+        {{/if}}
+      </div>
+    </section>
+    {{/if}}
+
+    {{#if viewHistory}}
+    <section class="dt-history" aria-labelledby="dt-history-heading">
+      <div class="dt-section__head">
+        <div><p class="dt-eyebrow">Applied and cancelled blocks</p><h3 id="dt-history-heading">Downtime History</h3></div>
+        <span>{{history.length}} receipts</span>
+      </div>
+      {{#if hasHistory}}
+      <div class="dt-history__list">
+        {{#each history}}
+        <article>
+          <div>
+            <h4>{{settlementName}}</h4>
+            <p>{{hours}} hours · {{characterCount}} characters{{#if when}} · {{when}}{{/if}}</p>
+            {{#if summary}}<small>{{summary}}</small>{{/if}}
+          </div>
+          <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
+        </article>
+        {{/each}}
+      </div>
+      {{else}}
+      <p class="dt-empty">No downtime blocks have been completed or cancelled yet.</p>
+      {{/if}}
+    </section>
+    {{/if}}
+  </main>
+</div>

@@ -741,6 +741,56 @@ for (const [label, firstWrite] of [
   assertWallet(actor, wallet({ gp: 102, sp: 4 }));
 }
 
+/* Stolen goods never enter an ordinary sale and retain their exact state. */
+{
+  const source = ownedItemSource({
+    id: "stolen-fencing-only",
+    quantity: 1,
+    flags: {
+      "infinity-dnd5e": {
+        stolen: {
+          settlementId: "rivergate",
+          operationId: "theft-1",
+        },
+      },
+    },
+  });
+  const actor = makeActor({ items: [source] });
+  const before = actorState(actor);
+  const result = await executeSell({
+    actor,
+    merchant,
+    ownedItem: actor.items.get(source._id),
+    qty: 1,
+    notify: false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "stolen-requires-fence");
+  assert.deepEqual(actorState(actor), before);
+}
+
+/* The authoritative issuance ledger still blocks a sale after flag stripping. */
+{
+  const source = ownedItemSource({
+    id: "ledger-issued-flag-stripped",
+    quantity: 1,
+    flags: {},
+  });
+  const actor = makeActor({ items: [source] });
+  const before = actorState(actor);
+  const result = await executeSell({
+    actor,
+    merchant,
+    ownedItem: actor.items.get(source._id),
+    qty: 1,
+    notify: false,
+    requiresFencing: true,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "stolen-requires-fence");
+  assert.deepEqual(actorState(actor), before);
+}
+
 /* Successful buy rollback is exact and idempotent. */
 {
   const actor = makeActor();

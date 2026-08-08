@@ -75,6 +75,8 @@ import {
 } from "../socket-authority.js";
 import { isFullGM } from "../permissions.js";
 import { isPrivilegedPrivateStateReady } from "../private-state.js";
+import { loadDowntimeConfig } from "../downtime/store.js";
+import { hasStolenGoodsIssuance } from "../downtime/stolen-ledger.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SOCKET_NAME = `module.${MODULE_ID}`;
@@ -867,6 +869,11 @@ async function handleCommitSale(payload) {
       seal,
       passivePct,
       notify: false,
+      requiresFencing: hasStolenGoodsIssuance(
+        loadDowntimeConfig(),
+        actor.id,
+        ownedItem.id,
+      ),
     });
     if (!actorResult.ok) {
       emitCommitResult(

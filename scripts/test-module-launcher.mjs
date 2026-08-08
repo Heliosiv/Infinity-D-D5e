@@ -113,6 +113,77 @@ assert.match(
   "the non-full-GM scene controls should expose Critical Injuries",
 );
 
+/* ---- Downtime GM workspace + player activities launchers ---- */
+
+assert.match(
+  source,
+  /openDowntimeWorkspace: \(\) =>\s*runAsFullGM\(\(\) => DowntimeWorkspaceApp\.open\(\)\)/,
+  "the module API should expose the full-GM Downtime Workspace",
+);
+
+assert.match(
+  source,
+  /openDowntimeActivities: \(options = \{\}\) =>\s*DowntimeActivitiesApp\.open\(options\)/,
+  "the module API should expose the player Downtime Activities window",
+);
+
+const publicApiSource = source.slice(
+  source.indexOf("function buildApi()"),
+  source.indexOf("function registerBuiltinTools()"),
+);
+assert.doesNotMatch(
+  publicApiSource,
+  /\b(?:create|lock|plan|apply|cancel|recover)Downtime(?:Block|Workflow)?\s*:/i,
+  "the first downtime API should expose launchers, not public mutation methods",
+);
+assert.doesNotMatch(
+  publicApiSource,
+  /\bdowntime\s*:\s*\{/i,
+  "the first downtime API should not expose a nested mutable service",
+);
+
+assert.match(
+  source,
+  /id: "downtime-workspace"[\s\S]*?open: \(\) => DowntimeWorkspaceApp\.open\(\)/,
+  "the full-GM dashboard should register the Downtime Workspace tile",
+);
+
+assert.match(
+  source,
+  /game\.keybindings\.register\(MODULE_ID, "openDowntimeActivities"[\s\S]*?KeyD[\s\S]*?DowntimeActivitiesApp\.open\(\)/,
+  "Shift+D should be registered as a rebindable downtime launcher",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?controls\.push\(downtimeCategoryEntry\(/,
+  "V12 player controls should expose a Downtime Activities category",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?controls\[downtimeCategory\] = downtimeCategoryEntry\(/,
+  "V13 player controls should expose a Downtime Activities category",
+);
+
+assert.match(
+  source,
+  /function registerPrivateDependentServices\(\)[\s\S]*?"downtime service"[\s\S]*?registerDowntimeService/,
+  "the authoritative downtime service should wait for restricted private state",
+);
+
+assert.match(
+  source,
+  /"downtime socket"[\s\S]*?registerDowntimeSocket[\s\S]*?"downtime player auto-open"[\s\S]*?configureDowntimePlayerAutoOpen/,
+  "the player downtime socket and targeted auto-open should initialize independently",
+);
+
+assert.match(
+  source,
+  /registerSharpeningHooks\(\{[\s\S]*?notifySharpenDamage[\s\S]*?notifyLongRest/,
+  "D&D5e damage and long-rest hooks should route sharpening changes authoritatively",
+);
+
 assert.match(
   source,
   /function registerPrivateDependentServices\(\)[\s\S]*?"critical injury service"[\s\S]*?registerCriticalInjuryService/,

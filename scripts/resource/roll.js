@@ -2,13 +2,13 @@
  * Infinity D&D5e — Survival roll (Foundry-touching)
  *
  * Thin wrapper around dnd5e's `actor.rollSkill('sur', …)` for the foraging
- * gather check, reusing the v3/v4 return-shape normalization the merchant
- * bargain engine already solved (`rollSkillCompat`). The roll runs on the
+ * gather check, reusing the shared v4/v5 argument- and return-shape
+ * normalization (`rollSkillCompat`). The roll runs on the
  * player's own client so their bonuses, dice-so-nice, and advantage prompts
  * all apply; only the resulting total travels to the GM.
  */
 
-import { rollSkillCompat } from "../merchant/bargain.js";
+import { rollSkillCompat } from "../dnd5e-roll.js";
 
 const MODULE_ID = "infinity-dnd5e";
 

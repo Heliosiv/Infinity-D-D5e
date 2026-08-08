@@ -1,0 +1,256 @@
+{{!-- Infinity D&D5e - player-facing Downtime Activities. --}}
+<div class="dt-shell dt-shell--activities" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
+  <header class="dt-head dt-player-head">
+    <div class="dt-head__copy">
+      <p class="dt-eyebrow">{{#if hasActiveBlock}}{{settlementName}}{{else}}City actions and personal projects{{/if}}</p>
+      <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
+      <p>Spend only the hours you want. Your queue resolves from top to bottom after the GM locks it.</p>
+    </div>
+    <div class="dt-head__actions">
+      <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
+      <button type="button" class="dt-icon-button" data-action="refresh" title="Refresh downtime" aria-label="Refresh downtime" {{#if busy}}disabled{{/if}}>
+        <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  <p class="dt-sr-status" role="status" aria-live="polite" aria-atomic="true">
+    {{#if busy}}{{statusMessage}}{{else if hasError}}{{errorMessage}}{{else}}{{statusMessage}}{{/if}}
+  </p>
+
+  {{#if hasError}}
+  <div class="dt-notice dt-notice--danger" role="alert">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    <span>{{errorMessage}}</span>
+  </div>
+  {{/if}}
+
+  {{#if needsRecovery}}
+  <div class="dt-notice dt-notice--recovery" role="status">
+    <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
+    <div><strong>The GM is reviewing this block</strong><p>{{recoveryMessage}}</p></div>
+  </div>
+  {{/if}}
+
+  {{#if noGm}}
+  <div class="dt-state-panel" role="status">
+    <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+    <h3>No full GM is online</h3>
+    <p>Your last receipt is still shown below. New queues can be loaded and submitted after a full GM reconnects.</p>
+  </div>
+  {{else if hasActiveBlock}}
+    {{#if actor}}
+      {{#if hasMultipleActors}}
+      <nav class="dt-actor-tabs" aria-label="Eligible characters">
+        {{#each actors}}
+          {{#if eligible}}
+          <button type="button" data-action="selectActor" data-actor-id="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}}>
+            <img src="{{img}}" alt="" /> <span>{{name}}</span>
+          </button>
+          {{/if}}
+        {{/each}}
+      </nav>
+      {{/if}}
+
+      <section class="dt-player-summary" aria-label="Character downtime summary">
+        <div class="dt-player-summary__actor">
+          <img src="{{actor.img}}" alt="" />
+          <div><strong>{{actor.name}}</strong><span>{{settlementName}}</span></div>
+        </div>
+        <div class="dt-time-meter">
+          <div><span>Time budget</span><strong>{{usedHours}} / {{budgetHours}} hours</strong></div>
+          <progress max="{{budgetHours}}" value="{{usedHours}}">{{progressPercent}}%</progress>
+          <small>{{remainingHours}} hours unassigned · unused time is allowed</small>
+        </div>
+        <div class="dt-heat" title="Heat is personal and applies only in this settlement">
+          <span>Local Heat</span>
+          <div class="dt-heat__pips" aria-label="Heat {{heat}} out of 5">
+            {{#each heatPips}}<i class="fa-solid fa-fire-flame-curved {{#if active}}is-active{{/if}}" aria-hidden="true"></i>{{/each}}
+          </div>
+          {{#if heatBlocked}}<small>Crime is blocked until you Lay Low.</small>{{else if heatMessage}}<small>{{heatMessage}}</small>{{else}}<small>{{heat}} / 5</small>{{/if}}
+        </div>
+      </section>
+
+      {{#if editable}}
+      <nav class="dt-categories" aria-label="Activity categories">
+        {{#each categories}}
+        <button type="button" data-action="selectCategory" data-category="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}}>{{label}}</button>
+        {{/each}}
+      </nav>
+      {{/if}}
+
+      <div class="dt-player-layout">
+        <section class="dt-activity-pane" aria-labelledby="dt-activity-heading">
+          <div class="dt-section__head">
+            <div><p class="dt-eyebrow">Choose work</p><h3 id="dt-activity-heading">Activities</h3></div>
+          </div>
+          {{#if editable}}
+            {{#if hasActivities}}
+            <div class="dt-activity-list" data-activity-list tabindex="-1">
+              {{#each activities}}
+              <article class="dt-activity-card {{#unless available}}is-unavailable{{/unless}}" data-activity-id="{{id}}" data-fixed-hours="{{fixedHours}}">
+                <header>
+                  <span class="dt-activity-card__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
+                  <div><span>{{categoryLabel}}</span><h4>{{label}}</h4></div>
+                  <strong data-selected-hours>{{selectedHoursLabel}}</strong>
+                </header>
+                <p>{{description}}</p>
+                {{#if costLabel}}<small class="dt-activity-card__cost"><i class="fa-solid fa-coins" aria-hidden="true"></i> {{costLabel}}</small>{{/if}}
+                {{#if limitLabel}}<small class="dt-activity-card__limit"><i class="fa-solid fa-gauge" aria-hidden="true"></i> {{limitLabel}}</small>{{/if}}
+
+                {{#if available}}
+                <div class="dt-activity-fields">
+                  {{#if hasHourOptions}}
+                  <label class="dt-field">
+                    <span>Time</span>
+                    <select name="hours" data-activity-input>
+                      {{#each hourOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  {{else}}
+                  <input type="hidden" name="hours" value="{{fixedHours}}" data-activity-input />
+                  {{/if}}
+
+                  {{#if hasSkills}}
+                  <label class="dt-field">
+                    <span>Approach</span>
+                    <select name="skill" data-activity-input>
+                      {{#each skills}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  {{/if}}
+
+                  {{#if hasTargets}}
+                  <label class="dt-field dt-field--wide">
+                    <span>{{#if multiTarget}}Goods to fence{{else}}Target{{/if}}</span>
+                    {{#if multiTarget}}
+                    <select name="targetIds" multiple size="5" data-activity-input required>
+                      {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
+                    </select>
+                    <small>Select any combination that fits this activity's value capacity. Use Ctrl or Cmd to select more than one.</small>
+                    {{else}}
+                    <select name="targetId" data-activity-input>
+                      {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
+                    </select>
+                    {{/if}}
+                  </label>
+                  {{/if}}
+
+                  {{#if hasItems}}
+                  <label class="dt-field dt-field--wide">
+                    <span>Item</span>
+                    <select name="{{targetField}}" data-activity-input>
+                      {{#each items}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
+                    </select>
+                  </label>
+                  {{/if}}
+
+                  {{#if stakeAllowed}}
+                  <label class="dt-field">
+                    <span>Stake (gp)</span>
+                    <input type="number" name="stakeGp" min="{{stakeStepGp}}" max="{{maxStakeGp}}" step="{{stakeStepGp}}" value="{{stakeValueGp}}" data-activity-input required />
+                  </label>
+                  {{/if}}
+                </div>
+                <button type="button" class="dt-button dt-button--primary dt-activity-card__add" data-action="addActivity" {{#if ../busy}}disabled{{/if}}>
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i> Add to queue
+                </button>
+                {{else}}
+                <div class="dt-prerequisite" role="note">
+                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{unavailableReason}}
+                </div>
+                {{/if}}
+              </article>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="dt-empty">No activities match this category.</p>
+            {{/if}}
+          {{else}}
+          <div class="dt-state-inline">
+            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            <p>{{#if submitted}}Your queue is submitted. Recall it while the block is collecting if you need to edit.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
+          </div>
+          {{/if}}
+        </section>
+
+        <aside class="dt-queue" aria-labelledby="dt-queue-heading">
+          <div class="dt-section__head">
+            <div><p class="dt-eyebrow">Resolves in order</p><h3 id="dt-queue-heading">Your Queue</h3></div>
+            <span>{{usedHours}}h</span>
+          </div>
+          {{#if hasQueue}}
+          <ol class="dt-queue__list" data-queue-list tabindex="-1">
+            {{#each queue}}
+            <li data-queue-entry-id="{{id}}" tabindex="-1">
+              <span class="dt-queue__position">{{position}}</span>
+              <span class="dt-queue__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
+              <div><strong>{{label}}</strong><span>{{hours}} hours{{#if detail}} · {{detail}}{{/if}}</span></div>
+              <div class="dt-queue__actions">
+                <button type="button" data-action="moveActivityUp" data-queue-entry-id="{{id}}" title="Move earlier" aria-label="Move {{label}} earlier" {{#unless canMoveUp}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}}>
+                  <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+                </button>
+                <button type="button" data-action="moveActivityDown" data-queue-entry-id="{{id}}" title="Move later" aria-label="Move {{label}} later" {{#unless canMoveDown}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}}>
+                  <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="is-danger" data-action="removeActivity" data-queue-entry-id="{{id}}" title="Remove" aria-label="Remove {{label}}" {{#unless ../editable}}disabled{{/unless}}>
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+            </li>
+            {{/each}}
+          </ol>
+          {{else}}
+          <p class="dt-inline-empty">Choose an activity to start your queue.</p>
+          {{/if}}
+
+          <footer class="dt-queue__footer">
+            {{#if submitReason}}<p>{{submitReason}}</p>{{/if}}
+            {{#if submitted}}
+              {{#if canRecall}}
+              <button type="button" class="dt-button" data-action="recallSubmission" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-pen" aria-hidden="true"></i> Recall and edit
+              </button>
+              {{else}}
+              <span class="dt-submitted"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Submitted</span>
+              {{/if}}
+            {{else}}
+            <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Submit queue
+            </button>
+            {{/if}}
+          </footer>
+        </aside>
+      </div>
+    {{else}}
+    <div class="dt-state-panel" role="status">
+      <i class="fa-solid fa-user-slash" aria-hidden="true"></i>
+      <h3>No eligible character</h3>
+      <p>The GM has not assigned one of your characters to this downtime block.</p>
+    </div>
+    {{/if}}
+  {{else}}
+  <div class="dt-state-panel" role="status">
+    <i class="fa-solid fa-hourglass" aria-hidden="true"></i>
+    <h3>No active downtime block</h3>
+    <p>The GM will assign a settlement, eligible characters, and a productive-hour budget when downtime begins.</p>
+  </div>
+  {{/if}}
+
+  {{#if hasReceipt}}
+  <section class="dt-receipt" aria-labelledby="dt-receipt-heading">
+    <div class="dt-section__head">
+      <div><p class="dt-eyebrow">GM-and-owner receipt</p><h3 id="dt-receipt-heading">Latest Results</h3></div>
+      {{#if receipt.completedAt}}<span>{{receipt.completedAt}}</span>{{/if}}
+    </div>
+    {{#if receipt.summary}}<p>{{receipt.summary}}</p>{{/if}}
+    {{#if receipt.hasActivities}}
+    <ul>
+      {{#each receipt.activities}}
+      <li class="dt-result-row dt-result-row--{{tone}}"><strong>{{label}}</strong><span>{{summary}}</span></li>
+      {{/each}}
+    </ul>
+    {{/if}}
+  </section>
+  {{/if}}
+</div>

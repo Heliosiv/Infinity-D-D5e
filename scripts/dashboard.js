@@ -168,7 +168,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     const content = buildHelpHtml();
     if (typeof DialogV2?.prompt !== "function") {
       ui.notifications?.info(
-        "Pick a tool tile to roll treasure, run a shop, or manage travel supplies. Players can open Party Supplies with Shift+Q.",
+        "Pick a tool tile to roll treasure, run a shop, schedule downtime, or manage travel supplies. Players can open Downtime Activities with Shift+D.",
       );
       return;
     }
@@ -187,7 +187,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     } catch (error) {
       console.warn(`${MODULE_ID} | could not open help dialog`, error);
       ui.notifications?.info(
-        "Pick a tool tile to roll treasure, run a shop, or manage travel supplies. Players can open Party Supplies with Shift+Q.",
+        "Pick a tool tile to roll treasure, run a shop, schedule downtime, or manage travel supplies. Players can open Downtime Activities with Shift+D.",
       );
     }
   }
@@ -272,10 +272,11 @@ function buildHelpHtml() {
       <h4>Shops &amp; Merchants</h4>
       <p>The Merchant tools let you set up a shop and open a buy/sell window for a player, with optional haggling.</p>
       <h4>Party &amp; Travel</h4>
-      <p><strong>Quartermaster</strong> lets the GM choose the environment, configure resource matching, review the supply outlook, and run daily upkeep. Players get a separate read-only <strong>Party Supplies</strong> view. <strong>Reputation &amp; Factions</strong> tracks standings and reveals selected factions to players.</p>
+      <p><strong>Downtime Workspace</strong> gives each eligible character the GM's full hour budget for crafting, trading, crime, and other queued city actions. <strong>Quartermaster</strong> lets the GM choose the environment, configure resource matching, review the supply outlook, and run daily upkeep. Players get separate <strong>Downtime Activities</strong> and read-only <strong>Party Supplies</strong> views. <strong>Reputation &amp; Factions</strong> tracks standings and reveals selected factions to players.</p>
       <h4>Keyboard shortcuts</h4>
       <ul>
         <li><strong>Shift+I</strong> — open this dashboard anytime.</li>
+        <li><strong>Shift+D</strong> — open Downtime Activities.</li>
         <li><strong>Shift+O</strong> — open available shops (players).</li>
         <li><strong>Shift+Q</strong> — open Party Supplies.</li>
         <li><strong>Shift+R</strong> — open revealed faction reputation.</li>

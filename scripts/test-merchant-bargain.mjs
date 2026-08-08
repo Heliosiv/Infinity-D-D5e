@@ -113,10 +113,9 @@ import {
 /* ------------------------------------------------------------------ *
  * rollSkillCompat — dnd5e argument-shape compatibility
  *
- * dnd5e v4+/v5 removed the legacy (skillId, options) signature; the skill must
- * ride in a config object as `config.skill`. Passing a bare string on v5 rolls
- * with NO skill modifier (a silently broken haggle/forage roll). These tests
- * pin the per-version call shape so that regression can't return.
+ * dnd5e v4.0.4 retains the legacy (skillId, options) signature. D&D5e v5 uses
+ * a config object with the skill in `config.skill`; passing a bare string there
+ * rolls with no skill modifier. These tests pin both supported call shapes.
  * ------------------------------------------------------------------ */
 function makeRollActor(returnValue) {
   const calls = [];
@@ -161,6 +160,34 @@ function makeRollActor(returnValue) {
       message,
       { create: false },
       "chatMessage:false maps to message.create:false on v5",
+    );
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+  }
+}
+
+// Target baseline dnd5e v4.0.4: legacy string-first signature.
+{
+  const originalGame = globalThis.game;
+  try {
+    globalThis.game = { system: { version: "4.0.4" } };
+    const fakeRoll = { total: 15 };
+    const actor = makeRollActor(fakeRoll);
+    const result = await rollSkillCompat(actor, "slt", {
+      disadvantage: true,
+      chatMessage: false,
+      fastForward: true,
+    });
+    assert.equal(result, fakeRoll, "the v4.0.4 roll is returned unchanged");
+    const [skillId, options] = actor.calls[0];
+    assert.equal(skillId, "slt", "v4.0.4 passes a string skill id");
+    assert.equal(options.disadvantage, true, "v4.0.4 forwards disadvantage");
+    assert.equal(options.chatMessage, false, "v4.0.4 suppresses the chat card");
+    assert.equal(
+      options.fastForward,
+      true,
+      "v4.0.4 can skip the roll dialog for hidden authoritative checks",
     );
   } finally {
     if (originalGame === undefined) delete globalThis.game;

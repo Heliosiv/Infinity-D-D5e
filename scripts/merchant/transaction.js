@@ -60,8 +60,8 @@ const NON_SELLABLE_ITEM_TYPES = new Set([
 
 /**
  * Whether the player can sell this item to a merchant. Defaults to
- * permissive — only blocks well-defined non-physical types, items
- * flagged as quest items, and items the module has explicitly marked
+ * permissive — only blocks well-defined non-physical types, stolen goods that
+ * require fencing, quest items, and items the module has explicitly marked
  * `flags.infinity-dnd5e.unsellable`.
  */
 export function isSellable(item) {
@@ -69,6 +69,7 @@ export function isSellable(item) {
   const data = item.toObject?.() ?? item;
   if (NON_SELLABLE_ITEM_TYPES.has(data.type)) return false;
   const flags = data.flags ?? {};
+  if (flags?.[MODULE_ID]?.stolen) return false;
   if (flags?.["infinity-dnd5e"]?.unsellable === true) return false;
   if (flags?.dnd5e?.questItem === true) return false;
   // Equipped + attuned magic items: still sellable, but caller may want
@@ -319,12 +320,19 @@ export async function executeSell({
   seal = null,
   passivePct = 0,
   notify = true,
+  requiresFencing = false,
 } = {}) {
   if (!actor || typeof actor.update !== "function") {
     return { ok: false, reason: "no-actor" };
   }
   if (!merchant || !ownedItem) {
     return { ok: false, reason: "no-target" };
+  }
+  if (
+    requiresFencing === true ||
+    (ownedItem.toObject?.() ?? ownedItem)?.flags?.[MODULE_ID]?.stolen
+  ) {
+    return { ok: false, reason: "stolen-requires-fence" };
   }
   if (!isSellable(ownedItem)) {
     return { ok: false, reason: "not-sellable" };

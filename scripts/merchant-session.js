@@ -86,6 +86,11 @@ const SCROLL_TARGETS = [
   { key: "log", selector: ".ms-log" },
 ];
 
+function isStolenForFencing(item) {
+  const data = item?.toObject?.() ?? item;
+  return Boolean(data?.flags?.[MODULE_ID]?.stolen);
+}
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 /** Map<sessionId, MerchantSessionApp> */
@@ -488,9 +493,15 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
     const sellRows = actor
       ? actor.items
-          .filter(isSellable)
+          .filter((doc) => isSellable(doc) || isStolenForFencing(doc))
           // "Buys From Players" filter: only show what this merchant will buy.
-          .filter((doc) => itemMatchesBuyFilter(this._merchant.buyFilter, doc))
+          // Stolen goods stay visible as disabled rows so the player receives
+          // the explicit fencing instruction instead of a silent omission.
+          .filter(
+            (doc) =>
+              isStolenForFencing(doc) ||
+              itemMatchesBuyFilter(this._merchant.buyFilter, doc),
+          )
           .map((doc) => this._buildSellRow(doc, passivePct))
           .filter(Boolean)
       : [];
@@ -617,6 +628,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
   _buildSellRow(doc, passivePct = 0) {
     const data = doc.toObject?.() ?? doc;
+    const stolen = isStolenForFencing(data);
     const ownedQty = Math.max(
       0,
       Math.floor(Number(data.system?.quantity ?? 1)),
@@ -640,7 +652,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         passivePct,
       }),
     );
-    if (listGp <= 0) return null; // hide free items
+    if (listGp <= 0 && !stolen) return null; // hide ordinary free items
     const effectiveDeltaPct = seal
       ? Number(seal.deltaPct) || 0
       : Number(passivePct) || 0;
@@ -652,7 +664,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ? ownedQty
       : Math.floor((Number(merchantGold) || 0) / Math.max(0.01, finalGp));
     const sellableQty = Math.max(0, Math.min(ownedQty, affordableQty));
-    const cannotSell = sellableQty < 1;
+    const cannotSell = stolen || sellableQty < 1;
     // Partly-sellable: the merchant can afford some but not the whole stack.
     const goldLimited = !cannotSell && sellableQty < ownedQty;
     return {
@@ -667,6 +679,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ownedQty,
       maxSellQty: Math.max(1, sellableQty),
       cannotSell,
+      cannotSellReason: stolen
+        ? "Stolen goods require fencing during downtime."
+        : cannotSell
+          ? "Merchant low on gold."
+          : "",
+      stolen,
       goldLimited,
       affordLabel: goldLimited ? `Shop can afford ${sellableQty}` : "",
       baseLabel: `${listGp.toFixed(2)} gp`,
@@ -675,7 +693,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       priceDeltaLabel: showDelta ? formatDelta(-effectiveDeltaPct) : "",
       deltaClass: effectiveDeltaPct < 0 ? "down" : "up",
       passiveActive: !seal && showDelta,
-      bargainLocked: Boolean(seal) || this._bargainPending.has(sealKey),
+      bargainLocked:
+        stolen || Boolean(seal) || this._bargainPending.has(sealKey),
       bargainPending: !seal && this._bargainPending.has(sealKey),
       sealLabel: seal ? sealLabel(seal) : "",
       haggleLabel: effectiveDeltaPct < 0 ? "Charm bonus" : "Tough seller",

@@ -387,6 +387,7 @@ async function writeNotes(manifest) {
       "- **Shift+I** from anywhere in the game",
       "",
       "All are GM-only. Click any of them and the dashboard opens.",
+      "Players can open **Downtime Activities** from its scene control or with **Shift+D** once the module is enabled.",
       "",
     ].join("\n"),
     "utf8",

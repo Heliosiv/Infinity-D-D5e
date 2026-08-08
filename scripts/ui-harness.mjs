@@ -31,6 +31,7 @@ const CSS_FILES = [
   "styles/critical-injury-hud.css",
   "styles/reputation-workspace.css",
   "styles/reputation-view.css",
+  "styles/downtime.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -182,6 +183,110 @@ export function buildHarnessViews() {
       "templates/resource-overview.hbs",
       resourceOverviewOfflineContext(),
       { width: 540, height: 420 },
+    ),
+    view(
+      "downtime-workspace-empty",
+      "Downtime Workspace (empty)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceEmptyContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-collecting",
+      "Downtime Workspace (collecting)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceCollectingContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-locked",
+      "Downtime Workspace (locked)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceLockedContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-preview",
+      "Downtime Workspace (immutable preview)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspacePreviewContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-recovery",
+      "Downtime Workspace (recovery)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceRecoveryContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-applying",
+      "Downtime Workspace (applying)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceApplyingContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-history-completed",
+      "Downtime Workspace (completed history)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceCompletedHistoryContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-activities-available",
+      "Downtime Activities (available)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesAvailableContext(),
+      { width: 780, height: 720 },
+    ),
+    view(
+      "downtime-activities-pending",
+      "Downtime Activities (pending)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesPendingContext(),
+      { width: 780, height: 650 },
+    ),
+    view(
+      "downtime-activities-locked",
+      "Downtime Activities (locked)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesLockedContext(),
+      { width: 780, height: 650 },
+    ),
+    view(
+      "downtime-activities-applying",
+      "Downtime Activities (applying)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesApplyingContext(),
+      { width: 780, height: 650 },
+    ),
+    view(
+      "downtime-activities-resolved",
+      "Downtime Activities (resolved)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesResolvedContext(),
+      { width: 780, height: 680 },
+    ),
+    view(
+      "downtime-activities-no-gm",
+      "Downtime Activities (GM offline)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesNoGmContext(),
+      { width: 620, height: 500 },
     ),
     view(
       "forage-prompt",
@@ -492,6 +597,15 @@ function dashboardContext() {
       title: "Faction Reputation",
       description: "Track party standing and player-facing faction notes.",
       icon: "fa-solid fa-handshake",
+      category: "party",
+      status: "available",
+    },
+    {
+      id: "downtime-workspace",
+      title: "Downtime Workspace",
+      description:
+        "Assign productive hours, collect activity queues, and apply one immutable plan.",
+      icon: "fa-solid fa-hourglass-half",
       category: "party",
       status: "available",
     },
@@ -1022,6 +1136,29 @@ function merchantSessionContext(activeTab = "buy") {
         sealLabel: "Great deal +20%",
         haggleLabel: "Charm bonus",
       },
+      {
+        itemId: "Item.stolen-ring",
+        uuid: "Actor.harness.Item.stolen-ring",
+        name: "Stolen Signet Ring",
+        img: iconDataUri("#5f4a72", "SR"),
+        rarity: "common",
+        rarityLabel: "Common",
+        ownedQty: 1,
+        maxSellQty: 1,
+        cannotSell: true,
+        cannotSellReason: "Stolen goods require fencing during downtime.",
+        stolen: true,
+        goldLimited: false,
+        affordLabel: "",
+        baseLabel: "5.00 gp",
+        finalLabel: "2.50 gp",
+        priceDeltaLabel: "",
+        deltaClass: "",
+        bargainLocked: true,
+        bargainPending: false,
+        sealLabel: "",
+        haggleLabel: "",
+      },
     ],
     log: [
       { kind: "buy", text: "Bought 1× Potion of Healing for 48.00 gp" },
@@ -1421,6 +1558,839 @@ function resourceOverviewOfflineContext() {
     hasResources: false,
     resources: [],
     lastUpkeep: null,
+  };
+}
+
+function downtimeWorkspaceEmptyContext() {
+  return downtimeWorkspaceBaseContext({
+    workflowStatus: "idle",
+    workflowStatusLabel: "No active block",
+    workflowTone: "neutral",
+    hasCurrentBlock: false,
+    currentBlock: null,
+    canCreateBlock: true,
+  });
+}
+
+function downtimeWorkspaceCollectingContext() {
+  return downtimeWorkspaceBaseContext({
+    workflowStatus: "collecting",
+    workflowStatusLabel: "Collecting",
+    workflowTone: "neutral",
+    hasCurrentBlock: true,
+    currentBlock: downtimeBlockContext("collecting"),
+    canCreateBlock: false,
+    createBlockReason: "Finish or cancel the current block first.",
+  });
+}
+
+function downtimeWorkspaceLockedContext() {
+  const block = downtimeBlockContext("locked");
+  for (const participant of block.participants) {
+    participant.submitted = true;
+    participant.submissionLabel = "Submitted";
+  }
+  block.submittedCount = block.participants.length;
+  return downtimeWorkspaceBaseContext({
+    workflowStatus: "locked",
+    workflowStatusLabel: "Locked",
+    workflowTone: "neutral",
+    hasCurrentBlock: true,
+    currentBlock: block,
+    canCreateBlock: false,
+    createBlockReason: "Finish or cancel the current block first.",
+  });
+}
+
+function downtimeWorkspacePreviewContext() {
+  const block = downtimeBlockContext("planned");
+  block.planId = "plan-haven-001";
+  block.plannedAt = "Aug 8, 2026, 3:20 PM";
+  block.hasPlan = true;
+  block.planCharacters = [
+    {
+      actorId: "actor-aric",
+      name: "Aric the Ranger",
+      status: "planned",
+      operations: [
+        {
+          id: "operation-aric-ammo",
+          label: "Craft Ammunition",
+          hours: 4,
+          rollLabel: "",
+          hasRoll: false,
+          outcome: "Spend 5 sp and add 20 arrows.",
+          tone: "success",
+        },
+        {
+          id: "operation-aric-trade",
+          label: "Market Trading",
+          hours: 4,
+          rollLabel: "18 total vs. DC 13 (margin +5)",
+          hasRoll: true,
+          outcome: "Success: return 55 gp from a 50 gp stake.",
+          tone: "success",
+        },
+      ],
+    },
+    {
+      actorId: "actor-mira",
+      name: "Mira Quickstep",
+      status: "planned",
+      operations: [
+        {
+          id: "operation-mira-pickpocket",
+          label: "Pickpocket",
+          hours: 4,
+          rollLabel: "11 total vs. DC 13 (margin -2)",
+          hasRoll: true,
+          outcome: "Setback: no goods and local Heat rises to 2.",
+          tone: "setback",
+        },
+      ],
+    },
+  ];
+  return downtimeWorkspaceBaseContext({
+    workflowStatus: "planned",
+    workflowStatusLabel: "Preview ready",
+    workflowTone: "accent",
+    hasCurrentBlock: true,
+    currentBlock: block,
+    canCreateBlock: false,
+    createBlockReason: "Finish or cancel the current block first.",
+  });
+}
+
+function downtimeWorkspaceRecoveryContext() {
+  const block = downtimeBlockContext("needs-review");
+  block.participants[0].resultStatus = "applied";
+  block.participants[0].receipt = "Ammunition write verified.";
+  block.participants[0].hasReceipt = true;
+  block.participants[1].resultStatus = "needs-review";
+  block.participants[1].receipt =
+    "Merchant stock changed while applying; dependent operations stopped.";
+  block.participants[1].hasReceipt = true;
+  return downtimeWorkspaceBaseContext({
+    workflowStatus: "needs-review",
+    workflowStatusLabel: "Needs review",
+    workflowTone: "danger",
+    hasCurrentBlock: true,
+    currentBlock: block,
+    canCreateBlock: false,
+    createBlockReason: "Recover the current block first.",
+    needsRecovery: true,
+    recoveryMessage:
+      "One character encountered external inventory drift. Recovery will verify saved operation IDs before retrying anything.",
+    recovery: { available: true },
+  });
+}
+
+function downtimeWorkspaceApplyingContext() {
+  const context = downtimeWorkspacePreviewContext();
+  context.workflowStatus = "applying";
+  context.workflowStatusLabel = "Applying";
+  context.workflowTone = "accent";
+  context.busy = true;
+  context.statusMessage = "Applying the saved operation plan…";
+  context.currentBlock.status = "applying";
+  context.currentBlock.statusLabel = "Applying";
+  context.currentBlock.statusTone = "accent";
+  context.currentBlock.canApply = false;
+  context.currentBlock.canCancel = false;
+  context.currentBlock.canRecover = false;
+  context.currentBlock.applyReason = "Application is already in progress.";
+  context.currentBlock.cancelReason =
+    "This block can no longer be cancelled after application begins.";
+  return context;
+}
+
+function downtimeWorkspaceCompletedHistoryContext() {
+  return downtimeWorkspaceBaseContext({
+    view: "history",
+    viewCurrent: false,
+    viewSettlements: false,
+    viewHistory: true,
+    workflowStatus: "idle",
+    workflowStatusLabel: "No active block",
+    workflowTone: "neutral",
+    hasCurrentBlock: false,
+    currentBlock: null,
+    history: [
+      {
+        id: "downtime-block-haven",
+        settlementName: "Haven",
+        hours: 8,
+        characterCount: 2,
+        when: "Aug 8, 2026, 3:24 PM",
+        summary: "2 character receipts applied from the immutable plan.",
+        statusLabel: "Completed",
+        statusTone: "success",
+      },
+    ],
+    hasHistory: true,
+  });
+}
+
+function downtimeWorkspaceBaseContext(overrides = {}) {
+  return {
+    view: "current",
+    viewCurrent: true,
+    viewSettlements: false,
+    viewHistory: false,
+    hasCurrentBlock: false,
+    currentBlock: null,
+    workflowStatus: "idle",
+    workflowStatusLabel: "No active block",
+    workflowTone: "neutral",
+    needsRecovery: false,
+    recoveryMessage: "",
+    settlements: [
+      {
+        id: "settlement-haven",
+        name: "Haven",
+        wealthLabel: "Prosperous",
+        securityLabel: "Guarded",
+        merchantCount: 2,
+        selected: true,
+      },
+      {
+        id: "settlement-dustfall",
+        name: "Dustfall",
+        wealthLabel: "Modest",
+        securityLabel: "Secure",
+        merchantCount: 1,
+        selected: false,
+      },
+    ],
+    hasSettlements: true,
+    selectedSettlement: null,
+    hasSelectedSettlement: false,
+    actors: [
+      {
+        id: "actor-aric",
+        name: "Aric the Ranger",
+        img: iconDataUri("#496f4e", "AR"),
+        checked: true,
+        eligible: true,
+        reason: "",
+      },
+      {
+        id: "actor-mira",
+        name: "Mira Quickstep",
+        img: iconDataUri("#6f496c", "MQ"),
+        checked: true,
+        eligible: true,
+        reason: "",
+      },
+    ],
+    hasActors: true,
+    canCreateBlock: true,
+    createBlockReason: "",
+    history: [],
+    hasHistory: false,
+    recovery: null,
+    busy: false,
+    statusMessage: "",
+    errorMessage: "",
+    hasError: false,
+    ...overrides,
+  };
+}
+
+function downtimeBlockContext(status) {
+  const labels = {
+    collecting: "Collecting",
+    locked: "Locked",
+    planned: "Preview ready",
+    applying: "Applying",
+    "needs-review": "Needs review",
+  };
+  const tones = {
+    collecting: "neutral",
+    locked: "neutral",
+    planned: "accent",
+    applying: "accent",
+    "needs-review": "danger",
+  };
+  return {
+    id: "downtime-block-haven",
+    status,
+    statusLabel: labels[status] ?? status,
+    statusTone: tones[status] ?? "neutral",
+    settlementId: "settlement-haven",
+    settlementName: "Haven",
+    hours: 8,
+    dayLabel: "1 productive day",
+    participants: [
+      {
+        actorId: "actor-aric",
+        name: "Aric the Ranger",
+        img: iconDataUri("#496f4e", "AR"),
+        submitted: true,
+        submissionLabel: "Submitted",
+        usedHours: 8,
+        budgetHours: 8,
+        remainingHours: 0,
+        queue: [
+          {
+            id: "queue-aric-ammo",
+            label: "Craft Ammunition",
+            hours: 4,
+            detail: "20 arrows",
+            outcome: "",
+            hasOutcome: false,
+            tone: "neutral",
+          },
+          {
+            id: "queue-aric-trade",
+            label: "Market Trading",
+            hours: 4,
+            detail: "Persuasion · 50 gp stake",
+            outcome: "",
+            hasOutcome: false,
+            tone: "neutral",
+          },
+        ],
+        hasQueue: true,
+        resultStatus: "",
+        receipt: "",
+        hasReceipt: false,
+      },
+      {
+        actorId: "actor-mira",
+        name: "Mira Quickstep",
+        img: iconDataUri("#6f496c", "MQ"),
+        submitted: false,
+        submissionLabel: "Draft",
+        usedHours: 4,
+        budgetHours: 8,
+        remainingHours: 4,
+        queue: [
+          {
+            id: "queue-mira-pickpocket",
+            label: "Pickpocket",
+            hours: 4,
+            detail: "Distracted pilgrim",
+            outcome: "",
+            hasOutcome: false,
+            tone: "neutral",
+          },
+        ],
+        hasQueue: true,
+        resultStatus: "",
+        receipt: "",
+        hasReceipt: false,
+      },
+    ],
+    hasParticipants: true,
+    submittedCount: 1,
+    planCharacters: [],
+    hasPlan: false,
+    planId: "",
+    plannedAt: "",
+    completedAt: "",
+    canOpenForPlayers: status === "collecting",
+    canLock: status === "collecting",
+    canPlan: status === "locked",
+    canApply: status === "planned",
+    canCancel: ["collecting", "locked", "planned"].includes(status),
+    canRecover: status === "needs-review",
+    canStartNext: false,
+    lockReason: status === "collecting" ? "" : "Submissions are closed.",
+    planReason:
+      status === "planned"
+        ? "Preview already generated."
+        : "Lock submissions first.",
+    applyReason:
+      status === "planned" ? "" : "Generate the immutable preview first.",
+    cancelReason: ["collecting", "locked", "planned"].includes(status)
+      ? ""
+      : "This block can no longer be cancelled.",
+  };
+}
+
+function downtimeActivitiesAvailableContext() {
+  return downtimeActivitiesBaseContext({
+    status: "collecting",
+    statusLabel: "Planning",
+    statusTone: "neutral",
+    hasActiveBlock: true,
+    editable: true,
+    canSubmit: true,
+    submitReason: "",
+    activities: downtimeActivityCards(),
+    hasActivities: true,
+    queue: [
+      {
+        id: "queue-aric-ammo",
+        position: 1,
+        label: "Craft Ammunition",
+        icon: "fa-solid fa-arrows-left-right-to-line",
+        hours: 4,
+        detail: "20 arrows",
+        canMoveUp: false,
+        canMoveDown: false,
+      },
+    ],
+    hasQueue: true,
+    usedHours: 4,
+    remainingHours: 4,
+    progressPercent: 50,
+  });
+}
+
+function downtimeActivitiesPendingContext() {
+  return downtimeActivitiesBaseContext({
+    status: "planned",
+    statusLabel: "GM reviewing preview",
+    statusTone: "accent",
+    hasActiveBlock: true,
+    submitted: true,
+    editable: false,
+    canSubmit: false,
+    submitReason: "Your queue is already submitted.",
+    canRecall: false,
+    activities: [],
+    hasActivities: false,
+    queue: downtimeSubmittedQueue(),
+    hasQueue: true,
+    usedHours: 8,
+    remainingHours: 0,
+    progressPercent: 100,
+  });
+}
+
+function downtimeActivitiesLockedContext() {
+  return downtimeActivitiesBaseContext({
+    status: "locked",
+    statusLabel: "Submissions locked",
+    statusTone: "neutral",
+    hasActiveBlock: true,
+    submitted: true,
+    editable: false,
+    canSubmit: false,
+    submitReason: "Submissions are locked while the GM generates the preview.",
+    canRecall: false,
+    activities: [],
+    hasActivities: false,
+    queue: downtimeSubmittedQueue(),
+    hasQueue: true,
+    usedHours: 8,
+    remainingHours: 0,
+    progressPercent: 100,
+  });
+}
+
+function downtimeActivitiesApplyingContext() {
+  return downtimeActivitiesBaseContext({
+    status: "applying",
+    statusLabel: "Resolving",
+    statusTone: "accent",
+    hasActiveBlock: true,
+    submitted: true,
+    editable: false,
+    canSubmit: false,
+    submitReason: "The GM is applying the saved plan.",
+    canRecall: false,
+    activities: [],
+    hasActivities: false,
+    queue: downtimeSubmittedQueue(),
+    hasQueue: true,
+    usedHours: 8,
+    remainingHours: 0,
+    progressPercent: 100,
+    busy: true,
+    statusMessage: "Applying the immutable downtime plan…",
+  });
+}
+
+function downtimeActivitiesResolvedContext() {
+  return downtimeActivitiesBaseContext({
+    status: "completed",
+    statusLabel: "Completed",
+    statusTone: "success",
+    hasActiveBlock: false,
+    submitted: false,
+    actor: null,
+    actors: [],
+    hasActors: false,
+    hasMultipleActors: false,
+    editable: false,
+    canSubmit: false,
+    submitReason: "This downtime block is complete.",
+    canRecall: false,
+    activities: [],
+    hasActivities: false,
+    queue: [],
+    hasQueue: false,
+    budgetHours: 0,
+    usedHours: 0,
+    remainingHours: 0,
+    progressPercent: 0,
+    receipt: downtimeReceiptContext(),
+    hasReceipt: true,
+    completionMessage: "Your downtime has been applied.",
+  });
+}
+
+function downtimeActivitiesNoGmContext() {
+  return downtimeActivitiesBaseContext({
+    status: "idle",
+    statusLabel: "No active downtime",
+    statusTone: "neutral",
+    hasActiveBlock: false,
+    noGm: true,
+    actor: null,
+    actors: [],
+    hasActors: false,
+    hasMultipleActors: false,
+    editable: false,
+    canSubmit: false,
+    submitReason: "An active full GM is required.",
+    activities: [],
+    hasActivities: false,
+    queue: [],
+    hasQueue: false,
+    usedHours: 0,
+    remainingHours: 0,
+    progressPercent: 0,
+    receipt: downtimeReceiptContext(),
+    hasReceipt: true,
+  });
+}
+
+function downtimeActivitiesBaseContext(overrides = {}) {
+  const aric = {
+    id: "actor-aric",
+    name: "Aric the Ranger",
+    img: iconDataUri("#496f4e", "AR"),
+    eligible: true,
+    reason: "",
+    selected: true,
+  };
+  const mira = {
+    id: "actor-mira",
+    name: "Mira Quickstep",
+    img: iconDataUri("#6f496c", "MQ"),
+    eligible: true,
+    reason: "",
+    selected: false,
+  };
+  return {
+    status: "collecting",
+    statusLabel: "Planning",
+    statusTone: "neutral",
+    hasActiveBlock: true,
+    noGm: false,
+    needsRecovery: false,
+    recoveryMessage: "",
+    settlementName: "Haven",
+    blockId: "downtime-block-haven",
+    actors: [aric, mira],
+    hasActors: true,
+    hasMultipleActors: true,
+    actor: aric,
+    heat: 1,
+    heatPips: [true, false, false, false, false].map((active) => ({
+      active,
+    })),
+    heatBlocked: false,
+    heatMessage: "",
+    budgetHours: 8,
+    usedHours: 0,
+    remainingHours: 8,
+    progressPercent: 0,
+    categories: [
+      { id: "all", label: "All", selected: true },
+      { id: "crafting", label: "Crafting", selected: false },
+      { id: "commerce", label: "Commerce", selected: false },
+      { id: "crime", label: "Crime", selected: false },
+    ],
+    activities: [],
+    hasActivities: false,
+    queue: [],
+    hasQueue: false,
+    submitted: false,
+    editable: false,
+    canSubmit: false,
+    submitReason: "Add at least one activity.",
+    canRecall: false,
+    receipt: null,
+    hasReceipt: false,
+    completionMessage: "",
+    busy: false,
+    statusMessage: "",
+    errorMessage: "",
+    hasError: false,
+    ...overrides,
+  };
+}
+
+function downtimeActivityCards() {
+  return [
+    {
+      id: "craft-ammunition",
+      label: "Craft Ammunition",
+      description:
+        "Use appropriate tools and materials worth half the finished market value to make 20 standard arrows.",
+      category: "crafting",
+      categoryLabel: "Crafting",
+      icon: "fa-solid fa-arrows-left-right-to-line",
+      available: true,
+      unavailableReason: "",
+      hourOptions: [],
+      hasHourOptions: false,
+      fixedHours: 4,
+      selectedHoursLabel: "4 hours",
+      skills: [],
+      hasSkills: false,
+      targets: [],
+      hasTargets: false,
+      items: [
+        {
+          id: "arrow",
+          label: "Arrows",
+          detail: "20 per batch",
+          selected: true,
+          disabled: false,
+        },
+      ],
+      hasItems: true,
+      targetField: "ammunitionType",
+      stakeAllowed: false,
+      maxStakeGp: 0,
+      stakeStepGp: 0.01,
+      stakeValueGp: 0,
+      costLabel: "5 sp in materials",
+      limitLabel: "Repeatable while time, tools, and coin remain",
+    },
+    {
+      id: "market-trading",
+      label: "Market Trading",
+      description:
+        "Stake coin and negotiate through the settlement market. More time improves the check.",
+      category: "commerce",
+      categoryLabel: "Commerce",
+      icon: "fa-solid fa-scale-balanced",
+      available: true,
+      unavailableReason: "",
+      hourOptions: [2, 4, 6, 8].map((value) => ({
+        value,
+        label: `${value} hours`,
+        selected: value === 4,
+      })),
+      hasHourOptions: true,
+      fixedHours: 0,
+      selectedHoursLabel: "4 hours",
+      skills: [
+        { id: "persuasion", label: "Persuasion", selected: true },
+        { id: "deception", label: "Deception", selected: false },
+      ],
+      hasSkills: true,
+      targets: [],
+      hasTargets: false,
+      items: [],
+      hasItems: false,
+      targetField: "targetId",
+      stakeAllowed: true,
+      maxStakeGp: 250,
+      stakeStepGp: 0.01,
+      stakeValueGp: 50,
+      costLabel: "Stake up to 250 gp",
+      limitLabel: "One trade per character this block",
+    },
+    {
+      id: "pickpocket",
+      label: "Pickpocket",
+      description:
+        "Choose one generated city mark. The GM resolves Sleight of Hand against hidden settlement security.",
+      category: "crime",
+      categoryLabel: "Crime",
+      icon: "fa-solid fa-hand",
+      available: true,
+      unavailableReason: "",
+      hourOptions: [2, 4].map((value) => ({
+        value,
+        label: `${value} hours${value === 4 ? " (+2)" : ""}`,
+        selected: value === 2,
+      })),
+      hasHourOptions: true,
+      fixedHours: 0,
+      selectedHoursLabel: "2 hours",
+      skills: [
+        { id: "sleight-of-hand", label: "Sleight of Hand", selected: true },
+      ],
+      hasSkills: true,
+      targets: [
+        {
+          id: "mark-pilgrim",
+          label: "Distracted pilgrim",
+          detail: "mundane purse",
+          selected: true,
+          disabled: false,
+        },
+        {
+          id: "mark-courier",
+          label: "Hurried courier",
+          detail: "sealed satchel",
+          selected: false,
+          disabled: false,
+        },
+        {
+          id: "mark-gambler",
+          label: "Celebrating gambler",
+          detail: "heavy pockets",
+          selected: false,
+          disabled: false,
+        },
+      ],
+      hasTargets: true,
+      items: [],
+      hasItems: false,
+      targetField: "targetId",
+      stakeAllowed: false,
+      maxStakeGp: 0,
+      stakeStepGp: 0.01,
+      stakeValueGp: 0,
+      costLabel: "",
+      limitLabel: "Crime attempt 1 of 3 · Heat 1",
+    },
+    {
+      id: "fence-stolen-goods",
+      label: "Fence Stolen Goods",
+      description:
+        "Choose any bundle of provenanced stolen goods that fits the value capacity, then negotiate a discreet sale.",
+      category: "crime",
+      categoryLabel: "Crime",
+      icon: "fa-solid fa-sack-dollar",
+      available: true,
+      unavailableReason: "",
+      hourOptions: [2, 4, 6, 8].map((value) => ({
+        value,
+        label: `${value} hours`,
+        selected: value === 4,
+      })),
+      hasHourOptions: true,
+      fixedHours: 0,
+      selectedHoursLabel: "4 hours",
+      skills: [
+        { id: "persuasion", label: "Persuasion", selected: true },
+        { id: "deception", label: "Deception", selected: false },
+      ],
+      hasSkills: true,
+      targets: [
+        {
+          id: "stolen-brooch",
+          label: "Silver brooch",
+          detail: "15 gp",
+          selected: true,
+          disabled: false,
+        },
+        {
+          id: "stolen-comb",
+          label: "Ivory comb",
+          detail: "8 gp",
+          selected: true,
+          disabled: false,
+        },
+        {
+          id: "stolen-ring",
+          label: "Signet ring",
+          detail: "25 gp",
+          selected: false,
+          disabled: false,
+        },
+      ],
+      hasTargets: true,
+      multiTarget: true,
+      items: [],
+      hasItems: false,
+      targetField: "targetIds",
+      stakeAllowed: false,
+      maxStakeGp: 0,
+      stakeStepGp: 0.01,
+      stakeValueGp: 0,
+      costLabel: "Selected goods must fit the 50 gp capacity",
+      limitLabel: "One fencing attempt per character this block",
+    },
+    {
+      id: "shoplift",
+      label: "Shoplift",
+      description:
+        "Steal one finite stock unit from a merchant linked to this settlement.",
+      category: "crime",
+      categoryLabel: "Crime",
+      icon: "fa-solid fa-bag-shopping",
+      available: false,
+      unavailableReason:
+        "No eligible finite merchant stock is currently available in Haven.",
+      hourOptions: [],
+      hasHourOptions: false,
+      fixedHours: 4,
+      selectedHoursLabel: "4 hours",
+      skills: [],
+      hasSkills: false,
+      targets: [],
+      hasTargets: false,
+      items: [],
+      hasItems: false,
+      targetField: "itemId",
+      stakeAllowed: false,
+      maxStakeGp: 0,
+      stakeStepGp: 0.01,
+      stakeValueGp: 0,
+      costLabel: "",
+      limitLabel: "Requires finite linked-merchant stock",
+    },
+  ];
+}
+
+function downtimeSubmittedQueue() {
+  return [
+    {
+      id: "queue-aric-ammo",
+      position: 1,
+      label: "Craft Ammunition",
+      icon: "fa-solid fa-arrows-left-right-to-line",
+      hours: 4,
+      detail: "20 arrows",
+      canMoveUp: false,
+      canMoveDown: true,
+    },
+    {
+      id: "queue-aric-trade",
+      position: 2,
+      label: "Market Trading",
+      icon: "fa-solid fa-scale-balanced",
+      hours: 4,
+      detail: "Persuasion · 50 gp stake",
+      canMoveUp: true,
+      canMoveDown: false,
+    },
+  ];
+}
+
+function downtimeReceiptContext() {
+  return {
+    settlementName: "Haven",
+    completedAt: "Aug 8, 2026, 3:26 PM",
+    activities: [
+      {
+        id: "operation-aric-ammo",
+        label: "Craft Ammunition",
+        summary: "Spent 5 sp and added 20 arrows.",
+        tone: "success",
+      },
+      {
+        id: "operation-aric-trade",
+        label: "Market Trading",
+        summary: "Returned 55 gp from a 50 gp stake.",
+        tone: "success",
+      },
+    ],
+    hasActivities: true,
+    summary:
+      "All saved operations were verified. Campaign time and Quartermaster upkeep were not advanced.",
   };
 }
 

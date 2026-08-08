@@ -49,13 +49,16 @@ try {
 
   const flags = {
     privateStateStore: true,
-    schemaVersion: 4,
+    schemaVersion: 5,
     merchants: [],
     factions: [],
     resourceConfig: {},
     resourceRunState: {},
     criticalInjuryWorkflow: {},
     criticalInjuryWorkflowCheckpoint: {},
+    downtimeConfig: {},
+    downtimeWorkflow: {},
+    downtimeWorkflowCheckpoint: {},
   };
   let blockedUpdate = null;
   let primaryFailuresRemaining = 0;

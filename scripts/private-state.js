@@ -17,7 +17,7 @@ import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
-const STORE_SCHEMA = 4;
+const STORE_SCHEMA = 5;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
 const PRIVATE_STATE_FIELDS = Object.freeze({
@@ -36,6 +36,18 @@ const PRIVATE_STATE_FIELDS = Object.freeze({
     type: "object",
   }),
   criticalInjuryWorkflowCheckpoint: Object.freeze({
+    legacyKey: null,
+    type: "object",
+  }),
+  downtimeConfig: Object.freeze({
+    legacyKey: null,
+    type: "object",
+  }),
+  downtimeWorkflow: Object.freeze({
+    legacyKey: null,
+    type: "object",
+  }),
+  downtimeWorkflowCheckpoint: Object.freeze({
     legacyKey: null,
     type: "object",
   }),
