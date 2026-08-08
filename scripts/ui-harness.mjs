@@ -27,6 +27,7 @@ const CSS_FILES = [
   "styles/resource-manager.css",
   "styles/resource-overview.css",
   "styles/forage-prompt.css",
+  "styles/critical-injury.css",
   "styles/reputation-workspace.css",
   "styles/reputation-view.css",
 ];
@@ -188,6 +189,14 @@ export function buildHarnessViews() {
       "templates/forage-prompt.hbs",
       foragePromptContext(),
       { width: 460, height: 400 },
+    ),
+    view(
+      "critical-injury",
+      "Critical Injuries (player)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryContext(),
+      { width: 520, height: 700 },
     ),
     view(
       "reputation-workspace",
@@ -1363,6 +1372,76 @@ function foragePromptContext() {
     passiveLabel: "Your passive Survival is 14",
     wisLabel: "Wisdom +2",
     result: { success: false, food: 0, water: 0 },
+  };
+}
+
+function criticalInjuryContext() {
+  return {
+    actorName: "Aric the Ranger",
+    actorImg: iconDataUri("#8a3f43", "AR"),
+    noActor: false,
+    pending: {
+      id: "pending-aric",
+      actorId: "a-aric",
+      actorName: "Aric the Ranger",
+    },
+    hasPending: true,
+    pendingCount: 1,
+    waitingForRoll: false,
+    latestResult: {
+      injuryRoll: 47,
+      injuryName: "Shattered Knee",
+      detailLabel: "Left knee",
+      effect: "Cannot Dash. Speed is halved and movement is painful.",
+      recoveryLabel: "7 recovery day(s)",
+      dueLabel: "12 Eleasis, 1492 DR",
+    },
+    hasLatestResult: true,
+    activeInjuries: [
+      {
+        id: "injury-knee",
+        name: "Shattered Knee",
+        roll: 47,
+        detailLabel: "Left knee",
+        effect: "Cannot Dash. Speed is halved and movement is painful.",
+        recoveryLabel: "7 recovery day(s)",
+        dueLabel: "12 Eleasis, 1492 DR",
+        recoveryRule:
+          "1 week or 3 Healer's Kit charges. It becomes permanent if untreated.",
+        permanent: false,
+        stabilized: false,
+        kitCharges: 3,
+        treatmentCheck: "No check",
+        canTreat: true,
+        treating: false,
+        automatedChanges: 1,
+      },
+      {
+        id: "injury-scar",
+        name: "Deep Scar",
+        roll: 74,
+        detailLabel: "Visible facial scar",
+        effect: "+1 Intimidation and -1 Persuasion while the scar is visible.",
+        recoveryLabel: "Permanent",
+        dueLabel: "",
+        recoveryRule: "Permanent.",
+        permanent: true,
+        stabilized: false,
+        kitCharges: 0,
+        treatmentCheck: "No check",
+        canTreat: false,
+        treating: false,
+        automatedChanges: 2,
+      },
+    ],
+    hasActiveInjuries: true,
+    statusMessage: "The injury was applied and added to the calendar.",
+    integrations: {
+      midiActive: true,
+      daeActive: true,
+      calendarActive: true,
+      automationReady: true,
+    },
   };
 }
 

@@ -1,8 +1,8 @@
 {
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
-  "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot from a curated 1,636-item compendium, run player-facing merchant sessions, track party resources and time, and manage faction reputation from dedicated ApplicationV2 workflows.",
-  "version": "0.2.64",
+  "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, track party resources and reputation, and automate Critical Injury Table V2 recovery workflows.",
+  "version": "0.2.65",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "13",
@@ -22,7 +22,8 @@
     "styles/resource-overview.css",
     "styles/forage-prompt.css",
     "styles/reputation-workspace.css",
-    "styles/reputation-view.css"
+    "styles/reputation-view.css",
+    "styles/critical-injury.css"
   ],
   "templates": [
     "templates/dashboard.hbs",
@@ -36,7 +37,8 @@
     "templates/resource-overview.hbs",
     "templates/forage-prompt.hbs",
     "templates/reputation-workspace.hbs",
-    "templates/reputation-view.hbs"
+    "templates/reputation-view.hbs",
+    "templates/critical-injury.hbs"
   ],
   "system": ["dnd5e"],
   "socket": true,
@@ -57,6 +59,12 @@
         "type": "system",
         "compatibility": { "minimum": "4.0.0", "verified": "4.0.4" }
       }
+    ],
+    "recommends": [
+      { "id": "midi-qol", "type": "module" },
+      { "id": "dae", "type": "module" },
+      { "id": "foundryvtt-simple-calendar", "type": "module" },
+      { "id": "times-up", "type": "module" }
     ]
   },
   "url": "",

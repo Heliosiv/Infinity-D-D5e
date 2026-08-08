@@ -94,6 +94,7 @@ import { RARITIES } from "./loot/tag-vocabulary.js";
   assert.equal(getSetting("not-a-real-key"), undefined);
   assert.equal(getSetting(SETTING_KEYS.SOUNDS_ENABLED), true);
   assert.equal(getSetting(SETTING_KEYS.SOUND_VOLUME), 0.35);
+  assert.equal(getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED), true);
 }
 
 /* ------------------------------------------------------------------ *

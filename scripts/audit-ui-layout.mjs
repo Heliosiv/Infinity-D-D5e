@@ -93,7 +93,7 @@ async function auditPage() {
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
-      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell",
+      ".lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell",
     );
     for (const element of [content, shell].filter(Boolean)) {
       if (element.scrollWidth > element.clientWidth + 2) {

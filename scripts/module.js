@@ -27,6 +27,16 @@ import {
 import { registerResourceSocket } from "./resource/socket.js";
 import { registerResourceOverviewService } from "./resource/overview-service.js";
 import {
+  CriticalInjuryApp,
+  registerCriticalInjuryApp,
+} from "./injury/injury-app.js";
+import { registerCriticalInjurySocket } from "./injury/socket.js";
+import { registerCriticalInjuryService } from "./injury/service.js";
+import {
+  CRITICAL_INJURY_TABLE,
+  CRITICAL_INJURY_TABLE_VERSION,
+} from "./injury/table.js";
+import {
   registerResourceCalendarWatcher,
   advanceDayNow,
 } from "./resource/calendar-watcher.js";
@@ -235,11 +245,17 @@ function buildApi() {
     openShops: () => ShopPickerApp.open(),
     openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
     openPartySupplies: () => ResourceOverviewApp.open(),
+    openCriticalInjuries: () => CriticalInjuryApp.openForCurrentUser(),
     openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
     ForagePromptApp,
+    CriticalInjuryApp,
+    criticalInjuries: {
+      tableVersion: CRITICAL_INJURY_TABLE_VERSION,
+      table: CRITICAL_INJURY_TABLE,
+    },
     SOUND_EVENTS,
     SOUND_REGISTRY,
     playSoundEvent: (eventKey, options = {}) =>
@@ -533,6 +549,16 @@ function registerKeybindings() {
       },
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
+    game.keybindings.register(MODULE_ID, "openCriticalInjuries", {
+      name: "Open Infinity D&D5e Critical Injuries",
+      hint: "Roll an approved injury and review your character's active injuries.",
+      editable: [{ key: "KeyJ", modifiers: ["Shift"] }],
+      onDown: () => {
+        CriticalInjuryApp.openForCurrentUser();
+        return true;
+      },
+      precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
+    });
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to register keybindings`, error);
   }
@@ -604,6 +630,18 @@ Hooks.once("ready", async () => {
     );
     // Quartermaster / party-resource feature.
     safeInitializeSubsystem("resource socket", registerResourceSocket);
+    safeInitializeSubsystem(
+      "critical injury socket",
+      registerCriticalInjurySocket,
+    );
+    safeInitializeSubsystem(
+      "critical injury service",
+      registerCriticalInjuryService,
+    );
+    safeInitializeSubsystem(
+      "critical injury player app",
+      registerCriticalInjuryApp,
+    );
     safeInitializeSubsystem(
       "player supplies control refresh",
       registerPlayerSuppliesControlRefresh,
@@ -776,8 +814,8 @@ function registerGmSceneControls(controls) {
 }
 
 /**
- * Player launchers: Shops, Reputation, and (when the GM shares it) Party
- * Supplies. These are separate from the GM dashboard.
+ * Player launchers: Shops, Reputation, Critical Injuries, and (when the GM
+ * shares it) Party Supplies. These are separate from the GM dashboard.
  */
 function registerPlayerSceneControls(controls) {
   const shopsToolName = "infinity-dnd5e-shops-tool";
@@ -860,6 +898,33 @@ function registerPlayerSceneControls(controls) {
     tools,
   });
 
+  const injuriesEnabled =
+    getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) !== false;
+  const injuriesToolName = "infinity-dnd5e-injuries-tool";
+  const injuriesCategory = "infinity-dnd5e-injuries";
+  const injuriesBaseTool = {
+    name: injuriesToolName,
+    title: "Critical Injuries",
+    icon: "fa-solid fa-heart-crack",
+    button: true,
+    visible: true,
+    toggle: false,
+    order: 0,
+    onChange: () => CriticalInjuryApp.openForCurrentUser(),
+  };
+  const injuriesCategoryEntry = (tools) => ({
+    name: injuriesCategory,
+    title: "Critical Injuries",
+    icon: "fa-solid fa-heart-crack",
+    visible: true,
+    activeTool: injuriesToolName,
+    order: 96,
+    onChange: (_event, active) => {
+      if (active) CriticalInjuryApp.openForCurrentUser();
+    },
+    tools,
+  });
+
   if (Array.isArray(controls)) {
     // Idempotent guard for a re-fired hook (Array push isn't self-deduping).
     if (!controls.some((c) => c?.name === category)) {
@@ -879,6 +944,17 @@ function registerPlayerSceneControls(controls) {
       );
       if (existingIndex >= 0) controls.splice(existingIndex, 1);
     }
+    if (
+      injuriesEnabled &&
+      !controls.some((c) => c?.name === injuriesCategory)
+    ) {
+      controls.push(injuriesCategoryEntry([{ ...injuriesBaseTool }]));
+    } else if (!injuriesEnabled) {
+      const existingIndex = controls.findIndex(
+        (control) => control?.name === injuriesCategory,
+      );
+      if (existingIndex >= 0) controls.splice(existingIndex, 1);
+    }
   } else if (controls && typeof controls === "object") {
     controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
     controls[repCategory] = repCategoryEntry({
@@ -891,6 +967,13 @@ function registerPlayerSceneControls(controls) {
     } else {
       delete controls[suppliesCategory];
     }
+    if (injuriesEnabled) {
+      controls[injuriesCategory] = injuriesCategoryEntry({
+        [injuriesToolName]: { ...injuriesBaseTool },
+      });
+    } else {
+      delete controls[injuriesCategory];
+    }
   } else {
     console.warn(
       `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
@@ -898,7 +981,7 @@ function registerPlayerSceneControls(controls) {
     return;
   }
   console.log(
-    `${MODULE_ID} | registered player Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""} scene controls`,
+    `${MODULE_ID} | registered player Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""}${injuriesEnabled ? " + Critical Injuries" : ""} scene controls`,
   );
 }
 
@@ -910,7 +993,11 @@ function registerPlayerSuppliesControlRefresh() {
       rawKey === `${MODULE_ID}.${SETTING_KEYS.RESOURCE_PLAYER_VIEW}` ||
       (String(setting?.namespace ?? "") === MODULE_ID &&
         rawKey === SETTING_KEYS.RESOURCE_PLAYER_VIEW);
-    if (!isPlayerViewSetting) return;
+    const isCriticalInjurySetting =
+      rawKey === `${MODULE_ID}.${SETTING_KEYS.CRITICAL_INJURIES_ENABLED}` ||
+      (String(setting?.namespace ?? "") === MODULE_ID &&
+        rawKey === SETTING_KEYS.CRITICAL_INJURIES_ENABLED);
+    if (!isPlayerViewSetting && !isCriticalInjurySetting) return;
     try {
       globalThis.ui?.controls?.render?.({ force: true });
     } catch (error) {

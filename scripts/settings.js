@@ -53,6 +53,8 @@ export const SETTING_KEYS = Object.freeze({
   RESOURCE_HALF_RATIONS: "resourceHalfRations",
   RESOURCE_MAX_CATCHUP_DAYS: "resourceMaxCatchUpDays",
   RESOURCE_REPORT_MODE: "resourceReportMode",
+  // Critical Injury Table V2 workflow.
+  CRITICAL_INJURIES_ENABLED: "criticalInjuriesEnabled",
   // Hidden resource stores (no config UI) — edited via the Resource Manager.
   RESOURCE_CONFIG: "resourceConfig",
   RESOURCE_RUNSTATE: "resourceRunState",
@@ -459,6 +461,17 @@ export const SETTINGS = Object.freeze([
       "whisper-gm-owner": "Whisper to GMs and each affected player",
       public: "Public — visible to everyone",
     },
+  },
+  {
+    key: SETTING_KEYS.CRITICAL_INJURIES_ENABLED,
+    name: "Critical Injury Table V2",
+    hint:
+      "When an owned player character recovers from 0 HP or the dead state, " +
+      "ask the active GM whether to send that player a critical-injury roll.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
   },
   {
     key: SETTING_KEYS.PRIVATE_STATE_STORE_ID,

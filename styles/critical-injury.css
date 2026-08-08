@@ -1,0 +1,297 @@
+.infinity-critical-injury {
+  min-width: 360px;
+}
+
+.infinity-critical-injury .window-content {
+  padding: 0;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(170, 54, 54, 0.16), transparent 34%),
+    var(--lf-bg, #161719);
+  color: var(--lf-text, #ece8de);
+}
+
+.ci-shell {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.ci-shell button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.ci-hero {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.ci-portrait {
+  width: 64px;
+  height: 64px;
+  border: 2px solid rgba(226, 99, 99, 0.7);
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.ci-hero h2,
+.ci-shell h3,
+.ci-shell h4,
+.ci-shell p {
+  margin: 0;
+}
+
+.ci-hero h2 {
+  font-size: 1.35rem;
+}
+
+.ci-hero > div > p:last-child {
+  margin-top: 4px;
+  color: var(--lf-muted, #b8b3aa);
+}
+
+.ci-eyebrow {
+  color: #e7a2a2;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ci-notice {
+  padding: 10px 12px;
+  border: 1px solid rgba(221, 173, 82, 0.35);
+  border-radius: 8px;
+  background: rgba(221, 173, 82, 0.09);
+  color: var(--lf-muted, #d8d2c6);
+  line-height: 1.4;
+}
+
+.ci-notice--danger {
+  border-color: rgba(225, 87, 87, 0.45);
+  background: rgba(225, 87, 87, 0.12);
+}
+
+.ci-status:empty {
+  display: none;
+}
+
+.ci-status {
+  padding: 8px 10px;
+  border-left: 3px solid #d46565;
+  color: var(--lf-muted, #d8d2c6);
+}
+
+.ci-roll-card,
+.ci-result,
+.ci-injury,
+.ci-list {
+  border: 1px solid var(--lf-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: var(--lf-surface, rgba(255, 255, 255, 0.045));
+}
+
+.ci-roll-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 13px;
+  align-items: center;
+  padding: 15px;
+  border-color: rgba(226, 99, 99, 0.48);
+  box-shadow: 0 0 24px rgba(180, 49, 49, 0.12);
+}
+
+.ci-roll-card p:not(.ci-eyebrow) {
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+.ci-roll-card small {
+  display: block;
+  margin-top: 6px;
+  color: var(--lf-muted, #b8b3aa);
+}
+
+.ci-roll-icon,
+.ci-result-roll {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #bd4545, #713131);
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.ci-primary {
+  min-height: 38px;
+  padding-inline: 14px;
+  border-color: #d56868;
+  background: linear-gradient(#b84545, #8f3535);
+  color: #fff;
+  font-weight: 750;
+}
+
+.ci-result {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 13px;
+  align-items: start;
+  padding: 14px;
+}
+
+.ci-result p:not(.ci-eyebrow) {
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+.ci-recovery {
+  color: #c7b380;
+}
+
+.ci-list {
+  padding: 14px;
+}
+
+.ci-section-heading,
+.ci-injury-heading,
+.ci-treatment,
+.ci-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ci-section-heading > span {
+  min-width: 28px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  text-align: center;
+}
+
+.ci-injury {
+  margin-top: 12px;
+  padding: 13px;
+}
+
+.ci-injury--permanent {
+  border-color: rgba(226, 99, 99, 0.34);
+}
+
+.ci-injury > p {
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+.ci-injury-heading > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ci-roll-badge,
+.ci-tag {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ci-tag--danger {
+  background: rgba(220, 75, 75, 0.18);
+  color: #f0a3a3;
+}
+
+.ci-tag--success {
+  background: rgba(66, 174, 117, 0.18);
+  color: #95e4b9;
+}
+
+.ci-facts {
+  display: grid;
+  gap: 7px;
+  margin: 11px 0 0;
+}
+
+.ci-facts > div {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 9px;
+}
+
+.ci-facts dt {
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.ci-facts dd {
+  margin: 0;
+}
+
+.ci-treatment {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--lf-border, rgba(255, 255, 255, 0.1));
+}
+
+.ci-treatment > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ci-treatment span {
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.8rem;
+}
+
+.ci-empty {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 120px;
+  color: var(--lf-muted, #b8b3aa);
+}
+
+.ci-empty i {
+  font-size: 1.7rem;
+  color: #77b68e;
+}
+
+.ci-footer {
+  justify-content: flex-end;
+}
+
+.ci-no-anim *,
+.ci-no-anim *::before,
+.ci-no-anim *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (max-width: 520px) {
+  .ci-roll-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .ci-roll-card .ci-primary {
+    grid-column: 1 / -1;
+  }
+
+  .ci-treatment {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

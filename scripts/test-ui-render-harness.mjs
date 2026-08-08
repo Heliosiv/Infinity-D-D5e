@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  18,
+  19,
   "harness covers all UI windows, both merchant tabs, and resource states",
 );
 
@@ -92,6 +92,7 @@ for (const expectedId of [
   "resource-overview",
   "resource-overview-offline",
   "forage-prompt",
+  "critical-injury",
   "reputation-workspace",
   "reputation-view",
   "reputation-view-empty",
@@ -115,6 +116,14 @@ assert.match(suppliesView.html, /Updated Jul 25, 2026, 2:14 PM/);
 assert.match(suppliesView.html, /aria-live="polite"/);
 assert.match(suppliesView.html, /Supply outlook/);
 assert.match(suppliesView.html, /Last upkeep/);
+
+const injuryView = views.find((view) => view.id === "critical-injury");
+assert.ok(injuryView, "harness includes the player Critical Injuries view");
+assert.match(injuryView.html, /Critical Injury Table V2/);
+assert.match(injuryView.html, /data-action="rollInjury"/);
+assert.match(injuryView.html, /data-action="requestTreatment"/);
+assert.match(injuryView.html, /Shattered Knee/);
+assert.match(injuryView.html, /12 Eleasis, 1492 DR/);
 
 const suppliesOfflineView = views.find(
   (view) => view.id === "resource-overview-offline",

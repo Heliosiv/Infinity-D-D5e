@@ -73,6 +73,11 @@ const CHECKS = [
     template: "templates/forage-prompt.hbs",
     script: "./forage-prompt.js",
   },
+  {
+    name: "critical injury",
+    template: "templates/critical-injury.hbs",
+    script: "./injury/injury-app.js",
+  },
 ];
 
 for (const check of CHECKS) {

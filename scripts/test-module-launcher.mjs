@@ -89,6 +89,30 @@ assert.match(
   "the non-full-GM scene controls should expose Party Supplies",
 );
 
+assert.match(
+  source,
+  /openCriticalInjuries: \(\) => CriticalInjuryApp\.openForCurrentUser\(\)/,
+  "the module API should expose the player Critical Injuries window",
+);
+
+assert.match(
+  source,
+  /game\.keybindings\.register\(MODULE_ID, "openCriticalInjuries"/,
+  "a player Critical Injuries keybinding should be registered",
+);
+
+assert.match(
+  source,
+  /function registerPlayerSceneControls[\s\S]*?CriticalInjuryApp\.openForCurrentUser\(\)/,
+  "the non-full-GM scene controls should expose Critical Injuries",
+);
+
+assert.match(
+  source,
+  /safeInitializeSubsystem\([\s\S]*?"critical injury socket"[\s\S]*?"critical injury service"[\s\S]*?"critical injury player app"/,
+  "critical-injury socket, authority service, and player app should initialize independently",
+);
+
 /* ---- Private-state recovery and promoted-GM resource authority ---- */
 
 assert.match(

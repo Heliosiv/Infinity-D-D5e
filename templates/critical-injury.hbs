@@ -1,0 +1,156 @@
+<div class="ci-shell">
+  <header class="ci-hero">
+    <img class="ci-portrait" src="{{actorImg}}" alt="" />
+    <div>
+      <p class="ci-eyebrow">Critical Injury Table V2</p>
+      <h2>{{actorName}}</h2>
+      <p>Roll approved injuries, follow recovery, and request treatment.</p>
+    </div>
+  </header>
+
+  {{#if noActor}}
+    <div class="ci-notice ci-notice--danger" role="alert">
+      This character is no longer available.
+    </div>
+  {{else}}
+    {{#unless integrations.automationReady}}
+      <div class="ci-notice" role="status">
+        Midi-QOL and DAE are recommended for automatic penalties. The injury
+        record and recovery rules will still be applied without them.
+      </div>
+    {{/unless}}
+    {{#unless integrations.calendarActive}}
+      <div class="ci-notice" role="status">
+        Simple Calendar is not active, so recovery dates cannot be added to the
+        campaign calendar.
+      </div>
+    {{/unless}}
+
+    <p class="ci-status" aria-live="polite">{{statusMessage}}</p>
+
+    {{#if hasPending}}
+      <section class="ci-roll-card" aria-labelledby="ci-roll-heading">
+        <span class="ci-roll-icon"><i class="fa-solid fa-dice-d20"></i></span>
+        <div>
+          <p class="ci-eyebrow">GM approved</p>
+          <h3 id="ci-roll-heading">Roll your critical injury</h3>
+          <p>
+            Your character recovered from 0 hit points or the dead state. The
+            d100 result will be verified and applied by the active GM.
+          </p>
+          {{#if pendingCount}}
+            <small>{{pendingCount}} approved roll(s) waiting</small>
+          {{/if}}
+        </div>
+        <button
+          type="button"
+          class="ci-primary"
+          data-action="rollInjury" {{#if waitingForRoll}}disabled{{/if}}
+        >
+          {{#if waitingForRoll}}
+            <i class="fa-solid fa-spinner fa-spin"></i> Applying…
+          {{else}}
+            <i class="fa-solid fa-dice"></i> Roll d100
+          {{/if}}
+        </button>
+      </section>
+    {{/if}}
+
+    {{#if hasLatestResult}}
+      <section class="ci-result" aria-labelledby="ci-result-heading">
+        <div class="ci-result-roll">{{latestResult.injuryRoll}}</div>
+        <div>
+          <p class="ci-eyebrow">Latest result</p>
+          <h3 id="ci-result-heading">{{latestResult.injuryName}}</h3>
+          {{#if latestResult.detailLabel}}
+            <p><strong>{{latestResult.detailLabel}}</strong></p>
+          {{/if}}
+          <p>{{latestResult.effect}}</p>
+          <p class="ci-recovery">
+            <i class="fa-regular fa-calendar"></i>
+            {{latestResult.recoveryLabel}}
+            {{#if latestResult.dueLabel}} · {{latestResult.dueLabel}}{{/if}}
+          </p>
+        </div>
+      </section>
+    {{/if}}
+
+    <section class="ci-list" aria-labelledby="ci-active-heading">
+      <div class="ci-section-heading">
+        <div>
+          <p class="ci-eyebrow">Character effects</p>
+          <h3 id="ci-active-heading">Active injuries</h3>
+        </div>
+        <span>{{activeInjuries.length}}</span>
+      </div>
+
+      {{#if hasActiveInjuries}}
+        {{#each activeInjuries}}
+          <article class="ci-injury{{#if permanent}} ci-injury--permanent{{/if}}">
+            <div class="ci-injury-heading">
+              <div>
+                <span class="ci-roll-badge">d100 {{roll}}</span>
+                <h4>{{name}}</h4>
+              </div>
+              {{#if permanent}}
+                <span class="ci-tag ci-tag--danger">Permanent</span>
+              {{else if stabilized}}
+                <span class="ci-tag ci-tag--success">Stabilized</span>
+              {{/if}}
+            </div>
+
+            {{#if detailLabel}}<p><strong>{{detailLabel}}</strong></p>{{/if}}
+            <p>{{effect}}</p>
+            <dl class="ci-facts">
+              <div>
+                <dt>Recovery</dt>
+                <dd>{{recoveryLabel}}{{#if dueLabel}} · {{dueLabel}}{{/if}}</dd>
+              </div>
+              <div>
+                <dt>Rule</dt>
+                <dd>{{recoveryRule}}</dd>
+              </div>
+              {{#if automatedChanges}}
+                <div>
+                  <dt>Automation</dt>
+                  <dd>{{automatedChanges}} character penalty change(s)</dd>
+                </div>
+              {{/if}}
+            </dl>
+
+            {{#if canTreat}}
+              <div class="ci-treatment">
+                <div>
+                  <strong>Healer's Kit: {{kitCharges}} charge(s)</strong>
+                  <span>{{treatmentCheck}}</span>
+                </div>
+                <button
+                  type="button"
+                  data-action="requestTreatment"
+                  data-injury-id="{{id}}" {{#if treating}}disabled{{/if}}
+                >
+                  {{#if treating}}
+                    <i class="fa-solid fa-spinner fa-spin"></i> Waiting…
+                  {{else}}
+                    <i class="fa-solid fa-kit-medical"></i> Request treatment
+                  {{/if}}
+                </button>
+              </div>
+            {{/if}}
+          </article>
+        {{/each}}
+      {{else}}
+        <div class="ci-empty">
+          <i class="fa-solid fa-shield-heart"></i>
+          <p>No active critical injuries.</p>
+        </div>
+      {{/if}}
+    </section>
+  {{/if}}
+
+  <footer class="ci-footer">
+    <button type="button" data-action="dismiss">
+      <i class="fa-solid fa-xmark"></i> Close
+    </button>
+  </footer>
+</div>
