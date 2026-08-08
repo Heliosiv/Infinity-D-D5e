@@ -120,9 +120,109 @@ assert.equal(
   validateCriticalInjuryPayload({
     ...base,
     type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-message-1",
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
     longRest: false,
   }).reason,
   "invalid-rest-kind",
+);
+assert.deepEqual(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-message-1",
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
+    longRest: true,
+  }),
+  { ok: true, reason: null },
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
+    longRest: true,
+  }).ok,
+  false,
+  "a rest request without a durable correlation id fails closed",
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-message-1",
+    restMessageId: "message-1",
+    longRest: true,
+  }).ok,
+  false,
+  "a rest request must target the active GM",
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-message-1",
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
+    longRest: true,
+    saveTotals: [1, 20],
+  }).ok,
+  false,
+  "the client cannot supply Infection save totals or outcomes",
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-a-different-message",
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
+    longRest: true,
+  }).ok,
+  false,
+  "the rest id must be derived from the Actor and server message ids",
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    restId: "rest-actor-1-message-1",
+    restMessageId: "message-1",
+    targetUserId: "gm-1",
+    longRest: true,
+    extra: "not-allowed",
+  }).ok,
+  false,
+  "rest requests use an exact schema",
+);
+assert.deepEqual(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_RESULT,
+    restId: "rest-actor-1-message-1",
+    targetUserId: "player-1",
+    success: true,
+    retryable: false,
+    message: "The Infection rest check is complete.",
+  }),
+  { ok: true, reason: null },
+);
+assert.equal(
+  validateCriticalInjuryPayload({
+    ...base,
+    type: CRITICAL_INJURY_EVENTS.REST_RESULT,
+    restId: "rest-actor-1-message-1",
+    targetUserId: "player-1",
+    success: true,
+    retryable: false,
+    message: "The Infection rest check is complete.",
+    outcome: { saveTotal: 20 },
+  }).ok,
+  false,
+  "rest acknowledgements cannot leak private save outcomes",
 );
 
 process.stdout.write("critical injury socket payload validation passed\n");

@@ -24,14 +24,17 @@ const CHECKPOINT_KEY = "criticalInjuryWorkflowCheckpoint";
 const STORE_VERSION = 2;
 const RECORD_SCHEMA = 1;
 const TREATMENT_SCHEMA = 1;
+const REST_EVENT_SCHEMA = 1;
 const MAX_ID_LENGTH = 160;
 const MAX_COMPLETED_RECEIPTS = 200;
 const MAX_COMPLETED_TREATMENTS_PER_INJURY = 100;
+const MAX_DETAILED_COMPLETED_RESTS = 200;
 const DEFAULT_APPLICATION_LEASE_MS = 60_000;
 const MIN_APPLICATION_LEASE_MS = 5_000;
 const MAX_APPLICATION_LEASE_MS = 300_000;
 const VALID_STATES = new Set(["approved", "resolving", "completed"]);
 const VALID_TREATMENT_STATES = new Set(["requested", "resolving", "completed"]);
+const VALID_REST_STATES = new Set(["requested", "resolving", "completed"]);
 
 let writeQueue = Promise.resolve();
 let observerRegistered = false;
@@ -171,6 +174,167 @@ function normalizeApplicationLeaseDuration(value) {
     MAX_APPLICATION_LEASE_MS,
     Math.max(MIN_APPLICATION_LEASE_MS, Math.floor(duration)),
   );
+}
+
+function normalizeRestOutcome(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const effectId = toId(raw.effectId);
+  const injuryId = toId(raw.injuryId);
+  const pendingId = toId(raw.pendingId);
+  const receiptToken = toId(raw.receiptToken);
+  const saveTotal = finiteInteger(raw.saveTotal);
+  const infectionHpLossBefore = nonNegativeInteger(raw.infectionHpLossBefore);
+  const infectionHpLossAfter = nonNegativeInteger(raw.infectionHpLossAfter);
+  if (
+    !effectId ||
+    !injuryId ||
+    !pendingId ||
+    !receiptToken ||
+    saveTotal == null ||
+    typeof raw.passed !== "boolean" ||
+    infectionHpLossBefore == null ||
+    infectionHpLossAfter == null ||
+    (raw.passed && infectionHpLossAfter !== infectionHpLossBefore) ||
+    (!raw.passed && infectionHpLossAfter !== infectionHpLossBefore + 1)
+  ) {
+    return null;
+  }
+  return {
+    effectId,
+    injuryId,
+    pendingId,
+    saveTotal,
+    passed: raw.passed,
+    infectionHpLossBefore,
+    infectionHpLossAfter,
+    receiptToken,
+  };
+}
+
+function normalizeRestResolution(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const resolvedBy = toId(raw.resolvedBy);
+  const resolvedAt = finiteTimestamp(raw.resolvedAt);
+  if (!resolvedBy || resolvedAt == null || !Array.isArray(raw.outcomes)) {
+    return null;
+  }
+  const outcomes = [];
+  const effectIds = new Set();
+  const injuryIds = new Set();
+  const pendingIds = new Set();
+  const receiptTokens = new Set();
+  for (const entry of raw.outcomes) {
+    const outcome = normalizeRestOutcome(entry);
+    if (
+      !outcome ||
+      effectIds.has(outcome.effectId) ||
+      injuryIds.has(outcome.injuryId) ||
+      pendingIds.has(outcome.pendingId) ||
+      receiptTokens.has(outcome.receiptToken)
+    ) {
+      return null;
+    }
+    effectIds.add(outcome.effectId);
+    injuryIds.add(outcome.injuryId);
+    pendingIds.add(outcome.pendingId);
+    receiptTokens.add(outcome.receiptToken);
+    outcomes.push(outcome);
+  }
+  outcomes.sort((left, right) => left.effectId.localeCompare(right.effectId));
+  return {
+    schema: REST_EVENT_SCHEMA,
+    resolvedBy,
+    resolvedAt,
+    outcomes,
+  };
+}
+
+function normalizeRestResult(raw, expectedRestId = "", expectedActorId = "") {
+  const normalized = normalizePersistedObject(raw);
+  if (!normalized) return null;
+  const restId = toId(raw.restId);
+  const actorId = toId(raw.actorId);
+  if (
+    !restId ||
+    !actorId ||
+    (expectedRestId && restId !== expectedRestId) ||
+    (expectedActorId && actorId !== expectedActorId)
+  ) {
+    return null;
+  }
+  return { ...normalized, restId, actorId };
+}
+
+function normalizeRestRecord(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const restId = toId(raw.restId);
+  const actorId = toId(raw.actorId);
+  const requestedBy = toId(raw.requestedBy);
+  const requestedAt = finiteTimestamp(raw.requestedAt);
+  if (!restId || !actorId || !requestedBy || requestedAt == null) return null;
+
+  let state = VALID_REST_STATES.has(raw.state) ? raw.state : "requested";
+  const resolution = normalizeRestResolution(raw.resolution);
+  const applicationLease = normalizeApplicationLease(raw.applicationLease);
+  const result = normalizeRestResult(raw.result, restId, actorId);
+  const completedBy = toId(raw.completedBy);
+  const completedAt =
+    raw.completedAt == null ? null : finiteTimestamp(raw.completedAt);
+  if (state === "resolving" && !resolution) state = "requested";
+  if (
+    state === "completed" &&
+    (!result || !completedBy || completedAt == null)
+  ) {
+    state = resolution ? "resolving" : "requested";
+  }
+
+  return {
+    schema: REST_EVENT_SCHEMA,
+    restId,
+    actorId,
+    requestedBy,
+    requestedAt,
+    state,
+    resolution: state === "requested" ? null : resolution,
+    applicationLease: state === "completed" ? null : applicationLease,
+    result: state === "completed" ? result : null,
+    completedBy: state === "completed" ? completedBy : "",
+    completedAt: state === "completed" ? completedAt : null,
+  };
+}
+
+function compactCompletedRestRecord(record) {
+  return {
+    ...record,
+    resolution: null,
+  };
+}
+
+function pruneRestRecords(records) {
+  const unresolved = records.filter((record) => record.state !== "completed");
+  const completed = records
+    .filter((record) => record.state === "completed")
+    .sort(
+      (left, right) =>
+        Number(right.completedAt ?? 0) - Number(left.completedAt ?? 0),
+    );
+  const detailed = completed.slice(0, MAX_DETAILED_COMPLETED_RESTS);
+  const tombstones = completed
+    .slice(MAX_DETAILED_COMPLETED_RESTS)
+    .map(compactCompletedRestRecord);
+  return [...unresolved, ...detailed, ...tombstones];
+}
+
+function normalizeRestRecords(raw) {
+  const records = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    const record = normalizeRestRecord(entry);
+    if (!record || seen.has(record.restId)) continue;
+    seen.add(record.restId);
+    records.push(record);
+  }
+  return pruneRestRecords(records);
 }
 
 /** Use Foundry's synchronized server clock when available for lease fencing. */
@@ -438,10 +602,17 @@ function normalizeRecord(raw) {
   return normalized;
 }
 
-function pruneRecords(records) {
+function pruneRecords(
+  records,
+  { pinnedPendingIds = new Set(), pinnedActorIds = new Set() } = {},
+) {
+  const pinnedByRest = (record) =>
+    pinnedPendingIds.has(record.pendingId) ||
+    pinnedActorIds.has(record.actorId);
   const unresolved = records.filter(
     (record) =>
       record.state !== "completed" ||
+      pinnedByRest(record) ||
       (record.treatments ?? []).some(
         (treatment) => treatment.state !== "completed",
       ),
@@ -450,6 +621,7 @@ function pruneRecords(records) {
     .filter(
       (record) =>
         record.state === "completed" &&
+        !pinnedByRest(record) &&
         !(record.treatments ?? []).some(
           (treatment) => treatment.state !== "completed",
         ),
@@ -474,6 +646,16 @@ function latestRecordTimestamp(record) {
 export function normalizeCriticalInjuryWorkflowStore(raw) {
   const source =
     raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const restEvents = normalizeRestRecords(source.restEvents);
+  const pinnedPendingIds = new Set();
+  const pinnedActorIds = new Set();
+  for (const event of restEvents) {
+    if (event.state === "completed") continue;
+    if (event.state === "requested") pinnedActorIds.add(event.actorId);
+    for (const outcome of event.resolution?.outcomes ?? []) {
+      pinnedPendingIds.add(outcome.pendingId);
+    }
+  }
   const records = [];
   const seen = new Set();
   for (const entry of Array.isArray(source.records) ? source.records : []) {
@@ -483,14 +665,18 @@ export function normalizeCriticalInjuryWorkflowStore(raw) {
     records.push(record);
   }
   const revision = nonNegativeInteger(source.revision, 0);
-  return {
+  const normalized = {
     version: STORE_VERSION,
     revision,
     authorityId: toId(source.authorityId) || null,
     authorityEpoch: toId(source.authorityEpoch) || null,
     writeToken: toId(source.writeToken) || null,
-    records: pruneRecords(records),
+    records: pruneRecords(records, { pinnedPendingIds, pinnedActorIds }),
   };
+  // Version-2 envelopes predate Infection rest receipts. Omitting an empty
+  // collection preserves their exact normalized shape for replica validation.
+  if (restEvents.length > 0) normalized.restEvents = restEvents;
+  return normalized;
 }
 
 function isFoundryEnvironment() {
@@ -787,12 +973,16 @@ function serializeEnvelope(store, { revision, authorityId, authorityEpoch }) {
   ) {
     throw new Error("CriticalInjuryWorkflowIdentityInvalid");
   }
-  return {
+  const envelope = {
     version: STORE_VERSION,
     revision,
     ...identity,
     records: normalized.records,
   };
+  if (normalized.restEvents?.length > 0) {
+    envelope.restEvents = normalized.restEvents;
+  }
+  return envelope;
 }
 
 function nextWriteIdentity(fence, ...snapshots) {
@@ -1047,6 +1237,430 @@ export function getCriticalInjuryTreatmentRecord(pendingId, treatmentId) {
   return record ? clone(record) : null;
 }
 
+function restEventFromStore(store, restId) {
+  const id = toId(restId);
+  if (!id) return null;
+  return store?.restEvents?.find((event) => event.restId === id) ?? null;
+}
+
+function compareRestEvents(left, right) {
+  const timestamp =
+    Number(left?.requestedAt ?? 0) - Number(right?.requestedAt ?? 0);
+  return (
+    timestamp ||
+    String(left?.restId ?? "").localeCompare(String(right?.restId ?? ""))
+  );
+}
+
+function restMutationResult(restId, extra = {}) {
+  return (_record, persistedStore) => ({
+    record: clone(restEventFromStore(persistedStore, restId)),
+    ...extra,
+  });
+}
+
+/** Read one durable Infection long-rest receipt. */
+export function getCriticalInjuryRestRecord(restId) {
+  const record = restEventFromStore(loadCriticalInjuryWorkflowStore(), restId);
+  return record ? clone(record) : null;
+}
+
+/** List unfinished rest receipts in stable actor/request order for resumption. */
+export function listUnresolvedCriticalInjuryRestRecords() {
+  return clone(
+    (loadCriticalInjuryWorkflowStore().restEvents ?? [])
+      .filter((record) => record.state !== "completed")
+      .sort(
+        (left, right) =>
+          left.actorId.localeCompare(right.actorId) ||
+          compareRestEvents(left, right),
+      ),
+  );
+}
+
+/** Persist or recover a client-stable long-rest event before any save is rolled. */
+export async function createCriticalInjuryRestRequest({
+  restId,
+  actorId,
+  requestedBy,
+  requestedAt = getCriticalInjuryWorkflowLeaseTimestamp(),
+} = {}) {
+  const rest = toId(restId);
+  const actor = toId(actorId);
+  const requester = toId(requestedBy);
+  const draft = normalizeRestRecord({
+    restId: rest,
+    actorId: actor,
+    requestedBy: requester,
+    requestedAt,
+    state: "requested",
+  });
+  if (!rest || !actor || !requester || !draft) {
+    throw new Error("CriticalInjuryRestRequestInvalid");
+  }
+
+  return mutateStore((store) => {
+    const existing = restEventFromStore(store, rest);
+    if (existing) {
+      if (existing.actorId !== actor || existing.requestedBy !== requester) {
+        throw new Error("CriticalInjuryRestRequestCollision");
+      }
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { createdNow: false }),
+      };
+    }
+    store.restEvents ??= [];
+    store.restEvents.push(draft);
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { createdNow: true }),
+    };
+  });
+}
+
+function liveTreatmentLeaseExists(store, now, authorityId) {
+  return store.records
+    .flatMap((parent) => parent.treatments ?? [])
+    .some((treatment) => {
+      if (treatment.state === "completed") return false;
+      const lease = normalizeApplicationLease(treatment.applicationLease);
+      return Boolean(
+        lease && lease.claimedBy === authorityId && lease.expiresAt > now,
+      );
+    });
+}
+
+function liveRestLeaseExists(store, now, authorityId, excludedRestId = "") {
+  return (store.restEvents ?? []).some((event) => {
+    if (event.state === "completed" || event.restId === excludedRestId) {
+      return false;
+    }
+    const lease = normalizeApplicationLease(event.applicationLease);
+    return Boolean(
+      lease && lease.claimedBy === authorityId && lease.expiresAt > now,
+    );
+  });
+}
+
+function earlierUnresolvedActorRest(store, target) {
+  return (
+    (store.restEvents ?? [])
+      .filter(
+        (event) =>
+          event.state !== "completed" &&
+          event.actorId === target.actorId &&
+          event.restId !== target.restId &&
+          compareRestEvents(event, target) < 0,
+      )
+      .sort(compareRestEvents)[0] ?? null
+  );
+}
+
+/**
+ * Claim the single live rest/treatment mutation lease. Rests for one Actor are
+ * additionally serialized by their first authoritative receipt timestamp.
+ */
+export async function claimCriticalInjuryRestApplication(
+  restId,
+  { id: leaseId, claimedBy = "", leaseDurationMs } = {},
+) {
+  const rest = toId(restId);
+  const claimedId = toId(leaseId);
+  const requestedClaimant = toId(claimedBy);
+  const authority = toId(authoritativeGMId());
+  const duration = normalizeApplicationLeaseDuration(leaseDurationMs);
+  if (
+    !rest ||
+    !claimedId ||
+    !authority ||
+    (requestedClaimant && requestedClaimant !== authority)
+  ) {
+    throw new Error("CriticalInjuryRestLeaseInvalid");
+  }
+
+  return mutateStore((store) => {
+    const record = restEventFromStore(store, rest);
+    if (!record) throw new Error("CriticalInjuryRestNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { claimedNow: false }),
+      };
+    }
+    const earlier = earlierUnresolvedActorRest(store, record);
+    if (earlier) {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, {
+          claimedNow: false,
+          blockedByRestId: earlier.restId,
+        }),
+      };
+    }
+
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    if (
+      liveTreatmentLeaseExists(store, now, authority) ||
+      liveRestLeaseExists(store, now, authority, rest)
+    ) {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { claimedNow: false }),
+      };
+    }
+
+    const existing = normalizeApplicationLease(record.applicationLease);
+    if (existing?.expiresAt > now) {
+      if (existing.id === claimedId && existing.claimedBy === authority) {
+        return {
+          store,
+          pendingId: "",
+          mapResult: restMutationResult(rest, { claimedNow: true }),
+        };
+      }
+      if (existing.claimedBy === authority) {
+        return {
+          store,
+          pendingId: "",
+          mapResult: restMutationResult(rest, { claimedNow: false }),
+        };
+      }
+    }
+
+    record.applicationLease = {
+      id: claimedId,
+      claimedBy: authority,
+      claimedAt: now,
+      expiresAt: now + duration,
+    };
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { claimedNow: true }),
+    };
+  });
+}
+
+export async function renewCriticalInjuryRestApplication(
+  restId,
+  leaseId,
+  { leaseDurationMs } = {},
+) {
+  const rest = toId(restId);
+  const claimedId = toId(leaseId);
+  const authority = toId(authoritativeGMId());
+  const duration = normalizeApplicationLeaseDuration(leaseDurationMs);
+  if (!rest || !claimedId || !authority) {
+    throw new Error("CriticalInjuryRestLeaseInvalid");
+  }
+
+  return mutateStore((store) => {
+    const record = restEventFromStore(store, rest);
+    if (!record) throw new Error("CriticalInjuryRestNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { renewedNow: false }),
+      };
+    }
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const existing = normalizeApplicationLease(record.applicationLease);
+    if (
+      !existing ||
+      existing.id !== claimedId ||
+      existing.claimedBy !== authority ||
+      existing.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryRestLeaseLost");
+    }
+    let renewedNow = false;
+    if (existing.expiresAt - now <= duration / 2) {
+      record.applicationLease = {
+        ...existing,
+        expiresAt: now + duration,
+      };
+      renewedNow = true;
+    }
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { renewedNow }),
+    };
+  });
+}
+
+export async function releaseCriticalInjuryRestApplication(restId, leaseId) {
+  const rest = toId(restId);
+  const claimedId = toId(leaseId);
+  if (!rest || !claimedId) return null;
+  return mutateStore((store) => {
+    const record = restEventFromStore(store, rest);
+    let releasedNow = false;
+    if (record?.applicationLease?.id === claimedId) {
+      record.applicationLease = null;
+      releasedNow = true;
+    }
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { releasedNow }),
+    };
+  });
+}
+
+function restResolutionMatchesPrivateParents(store, record, resolution) {
+  return resolution.outcomes.every((outcome) => {
+    const parents = store.records.filter((parent) => {
+      const expectedEffectId =
+        parent.effectId || parent.resolution?.effectDocumentId || "";
+      return Boolean(
+        parent.pendingId === outcome.pendingId &&
+        recordMatchesInjury(parent, record.actorId, outcome.injuryId) &&
+        expectedEffectId === outcome.effectId,
+      );
+    });
+    return parents.length === 1;
+  });
+}
+
+export async function persistCriticalInjuryRestResolution(
+  restId,
+  resolution,
+  { applicationLeaseId = "" } = {},
+) {
+  const rest = toId(restId);
+  const normalized = normalizeRestResolution(resolution);
+  const claimedId = toId(applicationLeaseId);
+  const authority = toId(authoritativeGMId());
+  if (
+    !rest ||
+    !normalized ||
+    !authority ||
+    normalized.resolvedBy !== authority
+  ) {
+    throw new Error("CriticalInjuryRestResolutionInvalid");
+  }
+
+  return mutateStore((store) => {
+    const record = restEventFromStore(store, rest);
+    if (!record) throw new Error("CriticalInjuryRestNotFound");
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { persistedNow: false }),
+      };
+    }
+    if (!restResolutionMatchesPrivateParents(store, record, normalized)) {
+      throw new Error("CriticalInjuryRestResolutionParentMismatch");
+    }
+    const tokenCollision = (store.restEvents ?? []).some(
+      (event) =>
+        event.restId !== rest &&
+        (event.resolution?.outcomes ?? []).some((candidate) =>
+          normalized.outcomes.some(
+            (outcome) => outcome.receiptToken === candidate.receiptToken,
+          ),
+        ),
+    );
+    if (tokenCollision) {
+      throw new Error("CriticalInjuryRestReceiptCollision");
+    }
+    if (record.state === "resolving") {
+      if (!persistedValuesEqual(record.resolution, normalized)) {
+        throw new Error("CriticalInjuryRestResolutionCollision");
+      }
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { persistedNow: false }),
+      };
+    }
+
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const lease = normalizeApplicationLease(record.applicationLease);
+    if (
+      !claimedId ||
+      !lease ||
+      lease.id !== claimedId ||
+      lease.claimedBy !== authority ||
+      lease.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryRestLeaseLost");
+    }
+    record.state = "resolving";
+    record.resolution = normalized;
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { persistedNow: true }),
+    };
+  });
+}
+
+export async function completeCriticalInjuryRestWorkflow(
+  restId,
+  { result, completedAt = null, applicationLeaseId = "" } = {},
+) {
+  const rest = toId(restId);
+  const claimedId = toId(applicationLeaseId);
+  const authority = toId(authoritativeGMId());
+  if (!rest || !authority) {
+    throw new Error("CriticalInjuryRestCompletionInvalid");
+  }
+
+  return mutateStore((store) => {
+    const record = restEventFromStore(store, rest);
+    if (!record) throw new Error("CriticalInjuryRestNotFound");
+    const normalizedResult = normalizeRestResult(
+      result,
+      record.restId,
+      record.actorId,
+    );
+    if (!normalizedResult) {
+      throw new Error("CriticalInjuryRestCompletionInvalid");
+    }
+    if (record.state === "completed") {
+      return {
+        store,
+        pendingId: "",
+        mapResult: restMutationResult(rest, { completedNow: false }),
+      };
+    }
+    if (!record.resolution) {
+      throw new Error("CriticalInjuryRestResolutionNotFound");
+    }
+    const now = getCriticalInjuryWorkflowLeaseTimestamp();
+    const lease = normalizeApplicationLease(record.applicationLease);
+    if (
+      !claimedId ||
+      !lease ||
+      lease.id !== claimedId ||
+      lease.claimedBy !== authority ||
+      lease.expiresAt <= now
+    ) {
+      throw new Error("CriticalInjuryRestLeaseLost");
+    }
+    record.state = "completed";
+    record.result = normalizedResult;
+    record.applicationLease = null;
+    record.completedBy = authority;
+    record.completedAt = finiteTimestamp(completedAt ?? now, now);
+    return {
+      store,
+      pendingId: "",
+      mapResult: restMutationResult(rest, { completedNow: true }),
+    };
+  });
+}
+
 /** Pure request gate shared by the authoritative service and focused tests. */
 export function authorizeCriticalInjuryWorkflowRequest(
   record,
@@ -1079,7 +1693,15 @@ async function mutateStore(mutator) {
     const current = normalizeCriticalInjuryWorkflowStore(ensured);
     const mutation = mutator(clone(current));
     const next = normalizeCriticalInjuryWorkflowStore(mutation.store);
-    const persisted = persistedValuesEqual(current.records, next.records)
+    const currentPayload = {
+      records: current.records,
+      restEvents: current.restEvents ?? [],
+    };
+    const nextPayload = {
+      records: next.records,
+      restEvents: next.restEvents ?? [],
+    };
+    const persisted = persistedValuesEqual(currentPayload, nextPayload)
       ? ensured
       : await commitEnvelope(next, {
           fence,
@@ -1093,7 +1715,7 @@ async function mutateStore(mutator) {
       : null;
     const clonedRecord = record ? clone(record) : null;
     return typeof mutation.mapResult === "function"
-      ? mutation.mapResult(clonedRecord)
+      ? mutation.mapResult(clonedRecord, clone(persisted))
       : clonedRecord;
   });
 }
@@ -1580,7 +2202,7 @@ export async function claimCriticalInjuryTreatmentApplication(
         const lease = normalizeApplicationLease(entry.applicationLease);
         return Boolean(lease && lease.expiresAt > now);
       });
-    if (globalBlocker) {
+    if (globalBlocker || liveRestLeaseExists(store, now, authority)) {
       return {
         store,
         pendingId: pending,

@@ -5,6 +5,7 @@ import { isFullGM } from "../permissions.js";
 import { authoritativeGMId } from "../socket-authority.js";
 import {
   CRITICAL_INJURY_EVENTS,
+  buildCriticalInjuryRestId,
   emitCriticalInjuryEvent,
   subscribeCriticalInjury,
 } from "./socket.js";
@@ -26,6 +27,10 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/critical-injury.hbs`;
 const RESULT_TIMEOUT_MS = 30_000;
+const REST_RESULT_TIMEOUT_MS = 3_000;
+const MAX_REST_SEND_ATTEMPTS = 5;
+const REST_NONCE_OPTION = "infinityDnd5eCriticalInjuryRestNonce";
+const REST_NONCE_FLAG = "criticalInjuryRestNonce";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const instances = new Map();
@@ -374,6 +379,11 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
 }
 
 let autoOpenRegistered = false;
+const completedRestEvidence = new WeakMap();
+const pendingRestMessages = new Map();
+const pendingRestNonces = new Map();
+const restMessagesByNonce = new Map();
+const pendingRestRequests = new Map();
 
 export function registerCriticalInjuryApp() {
   if (autoOpenRegistered) return true;
@@ -393,6 +403,9 @@ export function registerCriticalInjuryApp() {
   subscribeCriticalInjury(CRITICAL_INJURY_EVENTS.ROLL_FAILURE, (payload) => {
     if (String(payload?.targetUserId) !== String(game.user?.id)) return;
     CriticalInjuryApp.handleRollFailure(payload);
+  });
+  subscribeCriticalInjury(CRITICAL_INJURY_EVENTS.REST_RESULT, (payload) => {
+    handleLongRestResult(payload);
   });
   if (typeof globalThis.Hooks?.on === "function") {
     const refreshEffectActor = (effect) => {
@@ -425,15 +438,52 @@ export function registerCriticalInjuryApp() {
 
         if (changed) app.render?.(false);
       }
+      retargetPendingLongRestRequests(currentAuthorityId);
     };
     Hooks.on("updateUser", releaseStaleAuthorityWaits);
     Hooks.on("userConnected", releaseStaleAuthorityWaits);
-    Hooks.on("dnd5e.restCompleted", (actor, result) => {
+    Hooks.on("dnd5e.preRestCompleted", prepareLongRestNonce);
+    Hooks.on("preCreateChatMessage", tagLongRestMessage);
+    Hooks.on("createChatMessage", captureLongRestMessage);
+    Hooks.on("dnd5e.longRest", (actor, config) => {
+      if (!currentUserCanOperateActor(actor)) return;
+      const hasInfection = getActorCriticalInjuryEffects(actor).some(
+        (effect) => getCriticalInjuryData(effect)?.injuryKey === "infection",
+      );
+      // A persisted D&D5e rest message is the evidence used by the GM to
+      // distinguish a real completed rest from a forged socket request.
+      if (hasInfection && config && typeof config === "object") {
+        config.chat = true;
+      }
+    });
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
       if (!result?.longRest || !currentUserCanOperateActor(actor)) return;
-      emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.REST_COMPLETED, {
+      const hasInfection = getActorCriticalInjuryEffects(actor).some(
+        (effect) => getCriticalInjuryData(effect)?.injuryKey === "infection",
+      );
+      if (!hasInfection) return;
+      const evidence = resolveLongRestEvidence(actor, result, config);
+      if (!evidence) {
+        ui.notifications?.warn?.(
+          "The Infection rest check was not sent because the D&D5e long-rest receipt could not be verified.",
+        );
+        return;
+      }
+      const targetUserId = String(authoritativeGMId() ?? "");
+      const request = {
         actorId: actor.id,
+        restId: evidence.restId,
+        restMessageId: evidence.restMessageId,
         longRest: true,
-      });
+      };
+      rememberLongRestRequest(request);
+      if (!targetUserId) {
+        ui.notifications?.warn?.(
+          "The Infection rest check is queued until an active GM connects.",
+        );
+        return;
+      }
+      sendPendingLongRestRequest(request.restId, targetUserId);
     });
   }
 
@@ -450,6 +500,244 @@ export function registerCriticalInjuryApp() {
     }
   }
   return true;
+}
+
+function rememberLongRestRequest(request) {
+  const restId = String(request?.restId ?? "");
+  if (!restId) return;
+  const existing = pendingRestRequests.get(restId);
+  if (existing) {
+    Object.assign(existing, request);
+    return;
+  }
+  pendingRestRequests.set(restId, {
+    ...request,
+    lastAuthorityId: "",
+    attemptAuthorityId: "",
+    attempts: 0,
+    retryTimer: null,
+  });
+  while (pendingRestRequests.size > 20) {
+    const oldestId = pendingRestRequests.keys().next().value;
+    clearPendingLongRestTimer(pendingRestRequests.get(oldestId));
+    pendingRestRequests.delete(oldestId);
+  }
+}
+
+function sendPendingLongRestRequest(
+  restId,
+  targetUserId,
+  { force = false } = {},
+) {
+  const request = pendingRestRequests.get(String(restId ?? ""));
+  const target = String(targetUserId ?? "");
+  if (!request || !target || (!force && request.lastAuthorityId === target)) {
+    return null;
+  }
+  if (request.attemptAuthorityId !== target) {
+    request.attemptAuthorityId = target;
+    request.attempts = 0;
+  }
+  if (request.attempts >= MAX_REST_SEND_ATTEMPTS) return null;
+  clearPendingLongRestTimer(request);
+  request.lastAuthorityId = target;
+  request.attempts += 1;
+  const emitted = emitCriticalInjuryEvent(
+    CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+    {
+      actorId: request.actorId,
+      restId: request.restId,
+      restMessageId: request.restMessageId,
+      longRest: true,
+      targetUserId: target,
+    },
+  );
+  if (!emitted) {
+    request.lastAuthorityId = "";
+    return null;
+  }
+  if (pendingRestRequests.get(request.restId) === request) {
+    schedulePendingLongRestRetry(request, target, REST_RESULT_TIMEOUT_MS);
+  }
+  return emitted;
+}
+
+function retargetPendingLongRestRequests(targetUserId) {
+  const target = String(targetUserId ?? "");
+  if (!target) {
+    for (const request of pendingRestRequests.values()) {
+      clearPendingLongRestTimer(request);
+      request.lastAuthorityId = "";
+    }
+    return;
+  }
+  for (const restId of pendingRestRequests.keys()) {
+    sendPendingLongRestRequest(restId, target);
+  }
+}
+
+function handleLongRestResult(payload) {
+  if (String(payload?.targetUserId ?? "") !== String(game.user?.id ?? "")) {
+    return;
+  }
+  const restId = String(payload?.restId ?? "");
+  const request = pendingRestRequests.get(restId);
+  if (!request || request.actorId !== String(payload?.actorId ?? "")) return;
+  clearPendingLongRestTimer(request);
+  if (payload.success || !payload.retryable) {
+    pendingRestRequests.delete(restId);
+    if (!payload.success) ui.notifications?.warn?.(String(payload.message));
+    return;
+  }
+  request.lastAuthorityId = "";
+  const target = String(authoritativeGMId() ?? "");
+  if (target) schedulePendingLongRestRetry(request, target, 750);
+}
+
+function schedulePendingLongRestRetry(request, targetUserId, delay) {
+  clearPendingLongRestTimer(request);
+  request.retryTimer = globalThis.setTimeout?.(() => {
+    request.retryTimer = null;
+    if (pendingRestRequests.get(request.restId) !== request) return;
+    request.lastAuthorityId = "";
+    sendPendingLongRestRequest(request.restId, targetUserId, { force: true });
+  }, delay);
+  request.retryTimer?.unref?.();
+}
+
+function clearPendingLongRestTimer(request) {
+  if (request?.retryTimer != null) {
+    globalThis.clearTimeout?.(request.retryTimer);
+    request.retryTimer = null;
+  }
+}
+
+function prepareLongRestNonce(actor, result, config) {
+  if (!result?.longRest || !currentUserCanOperateActor(actor)) return;
+  const hasInfection = getActorCriticalInjuryEffects(actor).some(
+    (effect) => getCriticalInjuryData(effect)?.injuryKey === "infection",
+  );
+  if (!hasInfection) return;
+  const actorId = documentId(actor);
+  const userId = String(globalThis.game?.user?.id ?? "");
+  if (!actorId || !userId || !config || typeof config !== "object") return;
+  const nonce = `rest-nonce-${createOpaqueRestToken()}`;
+  config[REST_NONCE_OPTION] = nonce;
+  const key = restMessageKey(actorId, userId);
+  const queue = pendingRestNonces.get(key) ?? [];
+  queue.push({ nonce, createdAt: Date.now() });
+  pendingRestNonces.set(key, queue.slice(-10));
+}
+
+function tagLongRestMessage(message, data) {
+  const rest =
+    data?.["flags.dnd5e.rest"] ??
+    data?.flags?.dnd5e?.rest ??
+    message?.getFlag?.("dnd5e", "rest") ??
+    message?.flags?.dnd5e?.rest;
+  if (String(rest?.type ?? "") !== "long") return;
+  const actorId = documentId(data?.speaker?.actor ?? message?.speaker?.actor);
+  const userId = documentId(data?.user ?? message?.user ?? message?.author);
+  if (userId !== String(globalThis.game?.user?.id ?? "")) return;
+  const key = restMessageKey(actorId, userId);
+  const queue = (pendingRestNonces.get(key) ?? []).filter(
+    (entry) => Date.now() - Number(entry?.createdAt ?? 0) <= 120_000,
+  );
+  // The newest rest owns the next locally-created rest message. This prevents
+  // an Actor-update failure from leaving an abandoned nonce at the head of the
+  // queue and poisoning every later completed rest.
+  const nonce = String(queue.pop()?.nonce ?? "");
+  if (queue.length > 0) pendingRestNonces.set(key, queue);
+  else pendingRestNonces.delete(key);
+  if (!nonce) return;
+  message?.updateSource?.({
+    [`flags.${MODULE_ID}.${REST_NONCE_FLAG}`]: nonce,
+  });
+  if (data && typeof data === "object") {
+    data.flags ??= {};
+    data.flags[MODULE_ID] ??= {};
+    data.flags[MODULE_ID][REST_NONCE_FLAG] = nonce;
+  }
+}
+
+function captureLongRestMessage(message) {
+  const rest =
+    message?.getFlag?.("dnd5e", "rest") ?? message?.flags?.dnd5e?.rest;
+  if (String(rest?.type ?? "") !== "long") return;
+  const actorId = documentId(message?.speaker?.actor);
+  const userId = documentId(message?.user ?? message?.author);
+  const messageId = documentId(message);
+  const currentUserId = String(globalThis.game?.user?.id ?? "");
+  if (!actorId || !messageId || !userId || userId !== currentUserId) return;
+  const key = restMessageKey(actorId, userId);
+  const queue = pendingRestMessages.get(key) ?? [];
+  queue.push({ messageId, message });
+  pendingRestMessages.set(key, queue.slice(-10));
+  const nonce = String(
+    message?.getFlag?.(MODULE_ID, REST_NONCE_FLAG) ??
+      message?.flags?.[MODULE_ID]?.[REST_NONCE_FLAG] ??
+      "",
+  );
+  if (nonce) {
+    restMessagesByNonce.set(nonce, { messageId, message });
+    while (restMessagesByNonce.size > 20) {
+      restMessagesByNonce.delete(restMessagesByNonce.keys().next().value);
+    }
+  }
+}
+
+function resolveLongRestEvidence(actor, result, config) {
+  if (result && typeof result === "object") {
+    const existing = completedRestEvidence.get(result);
+    if (existing) return existing;
+  }
+  const actorId = documentId(actor);
+  const userId = String(globalThis.game?.user?.id ?? "");
+  const key = restMessageKey(actorId, userId);
+  const nonce = String(config?.[REST_NONCE_OPTION] ?? "");
+  let candidate = nonce ? (restMessagesByNonce.get(nonce) ?? null) : null;
+  if (nonce) restMessagesByNonce.delete(nonce);
+  if (nonce && !candidate) return null;
+  if (!nonce) {
+    const queue = pendingRestMessages.get(key) ?? [];
+    candidate = queue.pop() ?? null;
+    if (queue.length > 0) pendingRestMessages.set(key, queue);
+    else pendingRestMessages.delete(key);
+  } else {
+    const queue = pendingRestMessages.get(key) ?? [];
+    const remaining = queue.filter(
+      (entry) => entry.messageId !== candidate.messageId,
+    );
+    if (remaining.length > 0) pendingRestMessages.set(key, remaining);
+    else pendingRestMessages.delete(key);
+  }
+  if (!candidate) return null;
+  const restMessageId = String(candidate.messageId ?? "");
+  const restId = buildCriticalInjuryRestId(actorId, restMessageId);
+  if (!restId) return null;
+  const evidence = Object.freeze({ restId, restMessageId });
+  if (result && typeof result === "object") {
+    completedRestEvidence.set(result, evidence);
+  }
+  return evidence;
+}
+
+function createOpaqueRestToken() {
+  const randomId = globalThis.foundry?.utils?.randomID;
+  if (typeof randomId === "function") return String(randomId(20));
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID().replaceAll("-", "");
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function restMessageKey(actorId, userId) {
+  return `${String(actorId ?? "")}:${String(userId ?? "")}`;
+}
+
+function documentId(value) {
+  if (typeof value === "string") return value.trim();
+  return String(value?.id ?? value?._id ?? "").trim();
 }
 
 function buildInjuryView(effect, treating) {

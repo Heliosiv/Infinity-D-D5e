@@ -13,6 +13,7 @@ import { isFullGM } from "../permissions.js";
 import { isAuthoritativeGM, authoritativeGMId } from "../socket-authority.js";
 import {
   CRITICAL_INJURY_EVENTS,
+  buildCriticalInjuryRestId,
   emitCriticalInjuryEvent,
   subscribeCriticalInjury,
 } from "./socket.js";
@@ -54,21 +55,30 @@ import {
   claimCriticalInjuryApplication,
   completeCriticalInjuryWorkflow,
   completeCriticalInjuryTreatmentWorkflow,
+  completeCriticalInjuryRestWorkflow,
   createCriticalInjuryApproval,
+  createCriticalInjuryRestRequest,
   createCriticalInjuryTreatmentRequest,
   discardCriticalInjuryApproval,
   ensureCriticalInjuryWorkflowAuthority,
   getCriticalInjuryTreatmentRecord,
+  getCriticalInjuryRestRecord,
   getCriticalInjuryWorkflowForInjury,
   getCriticalInjuryWorkflowRecord,
+  getCriticalInjuryWorkflowLeaseTimestamp,
+  listUnresolvedCriticalInjuryRestRecords,
   loadCriticalInjuryWorkflowStore,
   persistCriticalInjuryResolution,
+  persistCriticalInjuryRestResolution,
   persistCriticalInjuryTreatmentResolution,
   claimCriticalInjuryTreatmentApplication,
+  claimCriticalInjuryRestApplication,
   releaseCriticalInjuryApplication,
   releaseCriticalInjuryTreatmentApplication,
+  releaseCriticalInjuryRestApplication,
   renewCriticalInjuryApplication,
   renewCriticalInjuryTreatmentApplication,
+  renewCriticalInjuryRestApplication,
   registerCriticalInjuryWorkflowObserver,
   retargetCriticalInjuryWorkflow,
 } from "./workflow-store.js";
@@ -76,16 +86,17 @@ import { persistedValuesEqual } from "../utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PENDING_FLAG = "criticalInjuryPending";
+const REST_NONCE_FLAG = "criticalInjuryRestNonce";
 const RECOVERY_DEDUPE_MS = 2500;
-const REST_DEDUPE_MS = 3000;
 const APPLICATION_LEASE_MS = 60_000;
 
 let registered = false;
 const promptInFlight = new Set();
 const rollInFlight = new Set();
 const treatmentInFlight = new Set();
+const restInFlight = new Set();
+const restRetryTimers = new Map();
 const recentRecovery = new Map();
-const recentRest = new Map();
 const processedCombats = new Set();
 
 export function registerCriticalInjuryService() {
@@ -117,6 +128,8 @@ export function registerCriticalInjuryService() {
   hooks.on("deleteCombat", (combat) =>
     processedCombats.delete(String(combat?.id)),
   );
+  hooks.on("updateUser", requestCriticalInjuryStartupMaintenance);
+  hooks.on("userConnected", requestCriticalInjuryStartupMaintenance);
   hooks.on("updateWorldTime", () => void processExpiredCriticalInjuries());
   const calendarHook = globalThis.SimpleCalendar?.Hooks?.DateTimeChange;
   if (calendarHook) {
@@ -132,7 +145,16 @@ function requestCriticalInjuryStartupMaintenance() {
       await ensureCriticalInjuryWorkflowAuthority();
       await reconcileCriticalInjuryPendingProjections();
       await processExpiredCriticalInjuries();
+      await discoverUnprocessedInfectionRests();
+      await resumeUnresolvedInfectionRests();
     } catch (error) {
+      if (
+        !isAuthoritativeGM() ||
+        String(error?.message ?? "").includes("RequiresAuthority") ||
+        String(error?.message ?? "").includes("AuthorityChanged")
+      ) {
+        return;
+      }
       console.error(
         `${MODULE_ID} | critical injury startup maintenance failed`,
         error,
@@ -1769,36 +1791,498 @@ function sameNullableNumber(left, right) {
 
 async function handleInfectionRest(payload) {
   if (!isAuthoritativeGM() || !payload?.longRest) return;
+  if (!criticalInjuriesEnabled()) {
+    sendInfectionRestResult(payload, false, {
+      retryable: false,
+      message: "Critical Injuries are disabled. No Infection save was rolled.",
+    });
+    return;
+  }
+  const restId = String(payload.restId ?? "");
   const actor = game.actors?.get?.(payload.actorId);
-  if (!actor || !userCanOperateActor(actor, payload.originUserId)) return;
-  const now = Date.now();
-  if (now - Number(recentRest.get(actor.id) ?? 0) < REST_DEDUPE_MS) return;
-  recentRest.set(actor.id, now);
+  const persisted = getCriticalInjuryRestRecord(restId);
+  const hasPersistedAuthorization = Boolean(
+    persisted &&
+    persisted.actorId === String(actor?.id ?? "") &&
+    persisted.requestedBy === String(payload.originUserId ?? ""),
+  );
+  if (actor?.type !== "character") {
+    sendInfectionRestResult(payload, false, {
+      retryable: false,
+      message: "That player character is no longer available.",
+    });
+    return;
+  }
+  if (
+    !hasPersistedAuthorization &&
+    !userHasEffectiveOwnerPermission(actor, payload.originUserId)
+  ) {
+    sendInfectionRestResult(payload, false, {
+      retryable: false,
+      message: "You do not have Owner permission for that character.",
+    });
+    return;
+  }
+  if (!hasPersistedAuthorization) {
+    const evidence = validateLongRestMessage(payload);
+    if (!evidence.ok) {
+      sendInfectionRestResult(payload, false, {
+        retryable: evidence.retryable,
+        message: evidence.message,
+      });
+      return;
+    }
+  }
+  if (!restId) return;
+  if (restInFlight.has(restId)) {
+    sendInfectionRestResult(payload, false, {
+      retryable: true,
+      message: "The Infection rest check is already being processed.",
+    });
+    return;
+  }
+  const retryTimer = restRetryTimers.get(restId);
+  if (retryTimer != null) globalThis.clearTimeout?.(retryTimer);
+  restRetryTimers.delete(restId);
 
-  const infections = getActorCriticalInjuryEffects(actor).filter(
+  restInFlight.add(restId);
+  let applicationLeaseId = "";
+  try {
+    await ensureCriticalInjuryWorkflowAuthority();
+    assertCriticalInjuryAuthority();
+    const created = await createCriticalInjuryRestRequest({
+      restId,
+      actorId: actor.id,
+      requestedBy: payload.originUserId,
+      requestedAt: getCriticalInjuryWorkflowLeaseTimestamp(),
+    });
+    let record = created?.record ?? getCriticalInjuryRestRecord(restId);
+    if (!record) throw new Error("CriticalInjuryRestRecordMissing");
+    if (record.state === "completed") {
+      sendInfectionRestResult(payload, true, {
+        retryable: false,
+        message: "The Infection rest check was already completed safely.",
+      });
+      return;
+    }
+
+    applicationLeaseId = `rest-lease-${generateCriticalInjuryEffectDocumentId()}`;
+    const claimed = await claimCriticalInjuryRestApplication(restId, {
+      id: applicationLeaseId,
+      claimedBy: authoritativeGMId(),
+      leaseDurationMs: APPLICATION_LEASE_MS,
+    });
+    record = claimed?.record ?? record;
+    if (!claimed?.claimedNow) {
+      scheduleInfectionRestRetry(record);
+      sendInfectionRestResult(payload, false, {
+        retryable: true,
+        message:
+          "The Infection rest check is queued behind another injury update.",
+      });
+      return;
+    }
+
+    if (!record.resolution) {
+      record = await prepareCriticalInjuryRestResolution({
+        actor,
+        record,
+        applicationLeaseId,
+      });
+    }
+    const resolution = record?.resolution;
+    if (!resolution) throw new Error("CriticalInjuryRestResolutionMissing");
+
+    let skipped = 0;
+    for (const outcome of resolution.outcomes) {
+      await renewCriticalInjuryRestLease(restId, applicationLeaseId);
+      const applied = await applyPersistedInfectionRestOutcome({
+        actor,
+        restId,
+        outcome,
+      });
+      if (!applied) skipped += 1;
+    }
+    await renewCriticalInjuryRestLease(restId, applicationLeaseId);
+    const completion = await completeCriticalInjuryRestWorkflow(restId, {
+      result: {
+        restId,
+        actorId: actor.id,
+        processed: resolution.outcomes.length - skipped,
+        skipped,
+        passed: resolution.outcomes.filter((outcome) => outcome.passed).length,
+        worsened: resolution.outcomes.filter((outcome) => !outcome.passed)
+          .length,
+      },
+      applicationLeaseId,
+    });
+    applicationLeaseId = "";
+    if (!completion?.completedNow) return;
+    assertCriticalInjuryAuthority();
+    sendInfectionRestResult(payload, true, {
+      retryable: false,
+      message: "The Infection rest check is complete.",
+    });
+    const notificationUserId = infectionRestNotificationUserId(
+      actor,
+      record.requestedBy,
+    );
+    for (const outcome of resolution.outcomes) {
+      if (outcome.passed) continue;
+      const effect = findActorEffectById(actor, outcome.effectId);
+      const injury = getCriticalInjuryData(effect);
+      if (!injury || !infectionRestReceiptMatches(injury, restId, outcome)) {
+        continue;
+      }
+      await postTreatmentChat(
+        actor,
+        injury,
+        `The infection worsened after the long rest: maximum HP is reduced by ${outcome.infectionHpLossAfter}.`,
+        notificationUserId,
+      );
+    }
+  } catch (error) {
+    if (applicationLeaseId && isAuthoritativeGM()) {
+      await releaseCriticalInjuryRestApplication(
+        restId,
+        applicationLeaseId,
+      ).catch((releaseError) =>
+        console.warn(
+          `${MODULE_ID} | could not release a failed Infection rest lease`,
+          releaseError,
+        ),
+      );
+    }
+    console.error(
+      `${MODULE_ID} | critical injury infection rest failed`,
+      error,
+    );
+    if (isAuthoritativeGM()) {
+      const requiresReview =
+        /Collision|ReceiptMissing|EffectMismatch|EffectConflict/.test(
+          String(error?.message ?? ""),
+        );
+      sendInfectionRestResult(payload, false, {
+        retryable: !requiresReview,
+        message: requiresReview
+          ? "This Infection or rest receipt conflicts with the private workflow record. The GM must review it."
+          : "The Infection rest check was interrupted. Retrying the same rest is safe.",
+      });
+    }
+  } finally {
+    restInFlight.delete(restId);
+  }
+}
+
+async function resumeUnresolvedInfectionRests() {
+  if (!isAuthoritativeGM() || !criticalInjuriesEnabled()) return 0;
+  let attempted = 0;
+  for (const record of listUnresolvedCriticalInjuryRestRecords()) {
+    const actor = game.actors?.get?.(record.actorId);
+    if (actor?.type !== "character") continue;
+    attempted += 1;
+    await handleInfectionRest({
+      actorId: record.actorId,
+      restId: record.restId,
+      originUserId: record.requestedBy,
+      longRest: true,
+    });
+  }
+  return attempted;
+}
+
+async function discoverUnprocessedInfectionRests() {
+  if (!isAuthoritativeGM() || !criticalInjuriesEnabled()) return 0;
+  let discovered = 0;
+  for (const message of globalThis.game?.messages?.contents ?? []) {
+    const rest =
+      message?.getFlag?.("dnd5e", "rest") ?? message?.flags?.dnd5e?.rest;
+    const nonce = String(
+      message?.getFlag?.(MODULE_ID, REST_NONCE_FLAG) ??
+        message?.flags?.[MODULE_ID]?.[REST_NONCE_FLAG] ??
+        "",
+    );
+    if (rest?.type !== "long" || !nonce) continue;
+    const messageId = String(message?.id ?? message?._id ?? "");
+    const actorId =
+      typeof message?.speaker?.actor === "string"
+        ? message.speaker.actor
+        : String(message?.speaker?.actor?.id ?? "");
+    const requestedBy =
+      typeof message?.user === "string"
+        ? message.user
+        : String(message?.user?.id ?? message?.author?.id ?? "");
+    const restId = buildCriticalInjuryRestId(actorId, messageId);
+    if (!restId || getCriticalInjuryRestRecord(restId)) continue;
+    const actor = game.actors?.get?.(actorId);
+    if (
+      actor?.type !== "character" ||
+      !userHasEffectiveOwnerPermission(actor, requestedBy) ||
+      !getActorCriticalInjuryEffects(actor).some(
+        (effect) => getCriticalInjuryData(effect)?.injuryKey === "infection",
+      )
+    ) {
+      continue;
+    }
+    discovered += 1;
+    await handleInfectionRest({
+      actorId,
+      restId,
+      restMessageId: messageId,
+      originUserId: requestedBy,
+      longRest: true,
+    });
+  }
+  return discovered;
+}
+
+function scheduleInfectionRestRetry(record) {
+  const restId = String(record?.restId ?? "");
+  if (!restId || restRetryTimers.has(restId)) return;
+  const now = getCriticalInjuryWorkflowLeaseTimestamp();
+  const expiresAt = Number(record?.applicationLease?.expiresAt);
+  const delay = Number.isFinite(expiresAt)
+    ? Math.max(250, Math.min(APPLICATION_LEASE_MS, expiresAt - now + 50))
+    : 1_000;
+  const timer = globalThis.setTimeout?.(() => {
+    restRetryTimers.delete(restId);
+    if (!isAuthoritativeGM()) return;
+    void handleInfectionRest({
+      actorId: record.actorId,
+      restId,
+      originUserId: record.requestedBy,
+      longRest: true,
+    });
+  }, delay);
+  if (timer != null) {
+    timer?.unref?.();
+    restRetryTimers.set(restId, timer);
+  }
+}
+
+async function prepareCriticalInjuryRestResolution({
+  actor,
+  record,
+  applicationLeaseId,
+}) {
+  const candidates = getActorCriticalInjuryEffects(actor).filter(
     (effect) => getCriticalInjuryData(effect)?.injuryKey === "infection",
   );
+  const infections = candidates
+    .filter((effect) => {
+      const injury = getCriticalInjuryData(effect);
+      const parent = getCriticalInjuryWorkflowForInjury(actor.id, injury?.id);
+      return Boolean(
+        parent?.state === "completed" &&
+        parent.pendingId === String(injury?.pendingId ?? "") &&
+        String(parent.effectId || parent.resolution?.effectDocumentId || "") ===
+          String(effect?.id ?? effect?._id ?? ""),
+      );
+    })
+    .sort((left, right) =>
+      String(left?.id ?? left?._id ?? "").localeCompare(
+        String(right?.id ?? right?._id ?? ""),
+      ),
+    );
+  if (infections.length !== candidates.length) {
+    throw new Error("CriticalInjuryRestInfectionReceiptMissing");
+  }
+  const outcomes = [];
   for (const effect of infections) {
-    const injury = { ...getCriticalInjuryData(effect) };
+    await renewCriticalInjuryRestLease(record.restId, applicationLeaseId);
+    if (
+      typeof actor?.rollAbilitySave !== "function" &&
+      typeof actor?.rollSavingThrow !== "function"
+    ) {
+      throw new Error("CriticalInjuryInfectionSaveUnavailable");
+    }
+    const injury = getCriticalInjuryData(effect);
     const roll = await rollAbilitySave(actor, "con", {
       flavor: `${actor.name}: Infection — DC 15 Constitution`,
+      chatMessage: false,
     });
-    if (Number(roll?.total) >= 15) continue;
-    injury.infectionHpLoss = Math.max(
+    await renewCriticalInjuryRestLease(record.restId, applicationLeaseId);
+    const saveTotal = Number(roll?.total);
+    if (!Number.isFinite(saveTotal)) {
+      throw new Error("CriticalInjuryInfectionSaveInvalid");
+    }
+    const before = Math.max(
       0,
-      Number(injury.infectionHpLoss ?? 0) + 1,
+      Math.floor(Number(injury?.infectionHpLoss) || 0),
     );
-    await updateCriticalInjuryEffect(effect, injury, {
-      startTime: getCurrentInjuryTimestamp(),
-      dueTimestamp: injury.recoveryDueTs,
+    const passed = saveTotal >= 15;
+    outcomes.push({
+      effectId: String(effect?.id ?? effect?._id ?? ""),
+      injuryId: String(injury?.id ?? ""),
+      pendingId: String(injury?.pendingId ?? ""),
+      saveTotal,
+      passed,
+      infectionHpLossBefore: before,
+      infectionHpLossAfter: passed ? before : before + 1,
+      receiptToken: `rest-effect-${generateCriticalInjuryEffectDocumentId()}`,
     });
-    await postTreatmentChat(
-      actor,
-      injury,
-      `The infection worsened after the long rest: maximum HP is reduced by ${injury.infectionHpLoss}.`,
-      payload.originUserId,
-    );
   }
+  const persisted = await persistCriticalInjuryRestResolution(
+    record.restId,
+    {
+      resolvedBy: String(authoritativeGMId() ?? ""),
+      resolvedAt: getCriticalInjuryWorkflowLeaseTimestamp(),
+      outcomes,
+    },
+    { applicationLeaseId },
+  );
+  return persisted?.record ?? persisted;
+}
+
+async function applyPersistedInfectionRestOutcome({ actor, restId, outcome }) {
+  const effect = findActorEffectById(actor, outcome.effectId);
+  if (!effect) return false;
+  const current = getCriticalInjuryData(effect);
+  if (
+    current?.injuryKey !== "infection" ||
+    String(current?.id ?? "") !== String(outcome.injuryId ?? "") ||
+    String(current?.pendingId ?? "") !== String(outcome.pendingId ?? "")
+  ) {
+    throw new Error("CriticalInjuryRestEffectMismatch");
+  }
+  if (infectionRestReceiptMatches(current, restId, outcome)) return true;
+  if (
+    Math.max(0, Math.floor(Number(current.infectionHpLoss) || 0)) !==
+    Number(outcome.infectionHpLossBefore)
+  ) {
+    throw new Error("CriticalInjuryRestEffectConflict");
+  }
+  const injury = cloneInjuryData(current);
+  injury.infectionHpLoss = Number(outcome.infectionHpLossAfter);
+  injury.infectionRestReceipt = buildInfectionRestReceipt(restId, outcome);
+  await updateCriticalInjuryEffectReplaySafe(effect, injury, {
+    startTime: Number(effect?.duration?.startTime ?? injury.createdAt ?? 0),
+    dueTimestamp: injury.recoveryDueTs,
+  });
+  if (
+    !infectionRestReceiptMatches(getCriticalInjuryData(effect), restId, outcome)
+  ) {
+    throw new Error("CriticalInjuryRestEffectWriteVerificationFailed");
+  }
+  return true;
+}
+
+function buildInfectionRestReceipt(restId, outcome) {
+  return {
+    schema: 1,
+    restId: String(restId ?? ""),
+    receiptToken: String(outcome?.receiptToken ?? ""),
+    effectId: String(outcome?.effectId ?? ""),
+    injuryId: String(outcome?.injuryId ?? ""),
+    before: Number(outcome?.infectionHpLossBefore),
+    after: Number(outcome?.infectionHpLossAfter),
+    saveTotal: Number(outcome?.saveTotal),
+    passed: Boolean(outcome?.passed),
+  };
+}
+
+function infectionRestReceiptMatches(injury, restId, outcome) {
+  return Boolean(
+    Number(injury?.infectionHpLoss) === Number(outcome?.infectionHpLossAfter) &&
+    persistedValuesEqual(
+      injury?.infectionRestReceipt,
+      buildInfectionRestReceipt(restId, outcome),
+    ),
+  );
+}
+
+async function renewCriticalInjuryRestLease(restId, leaseId) {
+  assertCriticalInjuryAuthority();
+  const renewed = await renewCriticalInjuryRestApplication(restId, leaseId, {
+    leaseDurationMs: APPLICATION_LEASE_MS,
+  });
+  assertCriticalInjuryAuthority();
+  if (renewed?.record?.applicationLease?.id !== leaseId) {
+    throw new Error("CriticalInjuryRestLeaseLost");
+  }
+  return renewed.record;
+}
+
+function findActorEffectById(actor, effectId) {
+  const id = String(effectId ?? "");
+  if (!id) return null;
+  const direct = actor?.effects?.get?.(id);
+  if (direct) return direct;
+  return (
+    Array.from(actor?.effects?.contents ?? actor?.effects ?? []).find(
+      (effect) => String(effect?.id ?? effect?._id ?? "") === id,
+    ) ?? null
+  );
+}
+
+function validateLongRestMessage(payload) {
+  const messageId = String(payload?.restMessageId ?? "");
+  const message = globalThis.game?.messages?.get?.(messageId);
+  if (!message || String(message?.id ?? message?._id ?? "") !== messageId) {
+    return {
+      ok: false,
+      retryable: true,
+      message:
+        "The GM is still receiving the D&D5e long-rest receipt. Retrying the same rest is safe.",
+    };
+  }
+  const rest =
+    message?.getFlag?.("dnd5e", "rest") ?? message?.flags?.dnd5e?.rest;
+  const speakerActorId =
+    typeof message?.speaker?.actor === "string"
+      ? message.speaker.actor
+      : String(message?.speaker?.actor?.id ?? "");
+  const authorId =
+    typeof message?.user === "string"
+      ? message.user
+      : String(message?.user?.id ?? message?.author?.id ?? "");
+  const valid = Boolean(
+    rest?.type === "long" &&
+    speakerActorId === String(payload?.actorId ?? "") &&
+    authorId === String(payload?.originUserId ?? "") &&
+    String(payload?.restId ?? "") ===
+      buildCriticalInjuryRestId(payload?.actorId, messageId),
+  );
+  return {
+    ok: valid,
+    retryable: false,
+    message: valid
+      ? ""
+      : "The supplied message is not a valid D&D5e long-rest receipt for this character.",
+  };
+}
+
+function infectionRestNotificationUserId(actor, requestedBy) {
+  const requester = game.users?.get?.(requestedBy);
+  if (requester && !isFullGM(requester)) return String(requester.id);
+  return String(listActorOwners(actor)[0]?.id ?? requestedBy ?? "");
+}
+
+function userHasEffectiveOwnerPermission(actor, userId) {
+  const user = game.users?.get?.(userId);
+  if (!user) return false;
+  if (isFullGM(user)) return true;
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  if (typeof actor?.testUserPermission === "function") {
+    return actor.testUserPermission(user, OWNER, { exact: false });
+  }
+  const ownership = actor?.ownership ?? {};
+  const level = Object.hasOwn(ownership, user.id)
+    ? ownership[user.id]
+    : ownership.default;
+  return Number(level) >= Number(OWNER);
+}
+
+function sendInfectionRestResult(payload, success, details) {
+  if (!isAuthoritativeGM()) return null;
+  return emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.REST_RESULT, {
+    actorId: String(payload?.actorId ?? ""),
+    restId: String(payload?.restId ?? ""),
+    targetUserId: String(payload?.originUserId ?? ""),
+    success: Boolean(success),
+    retryable: Boolean(details?.retryable),
+    message: String(details?.message ?? "Infection rest check resolved."),
+  });
 }
 
 export async function processExpiredCriticalInjuries() {

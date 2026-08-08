@@ -20,6 +20,7 @@ export const CRITICAL_INJURY_EVENTS = Object.freeze({
   TREATMENT_REQUEST: "critical-injury:treatment-request",
   TREATMENT_RESULT: "critical-injury:treatment-result",
   REST_COMPLETED: "critical-injury:rest-completed",
+  REST_RESULT: "critical-injury:rest-result",
 });
 
 const EVENT_TYPES = new Set(Object.values(CRITICAL_INJURY_EVENTS));
@@ -35,6 +36,8 @@ const TARGETED = new Set([
   CRITICAL_INJURY_EVENTS.ROLL_FAILURE,
   CRITICAL_INJURY_EVENTS.TREATMENT_REQUEST,
   CRITICAL_INJURY_EVENTS.TREATMENT_RESULT,
+  CRITICAL_INJURY_EVENTS.REST_COMPLETED,
+  CRITICAL_INJURY_EVENTS.REST_RESULT,
 ]);
 
 let registered = false;
@@ -161,13 +164,65 @@ export function validateCriticalInjuryPayload(payload) {
       return { ok: false, reason: "invalid-treatment-resume-id" };
     }
   }
-  if (
-    payload.type === CRITICAL_INJURY_EVENTS.REST_COMPLETED &&
-    payload.longRest !== true
-  ) {
-    return { ok: false, reason: "invalid-rest-kind" };
+  if (payload.type === CRITICAL_INJURY_EVENTS.REST_COMPLETED) {
+    const allowed = new Set([
+      "type",
+      "actorId",
+      "restId",
+      "restMessageId",
+      "longRest",
+      "targetUserId",
+      "originUserId",
+    ]);
+    if (Object.keys(payload).some((key) => !allowed.has(key))) {
+      return { ok: false, reason: "client-rest-data-not-allowed" };
+    }
+    if (payload.longRest !== true) {
+      return { ok: false, reason: "invalid-rest-kind" };
+    }
+    if (
+      !boundedId(payload.restId) ||
+      !boundedId(payload.restMessageId) ||
+      payload.restId !==
+        buildCriticalInjuryRestId(payload.actorId, payload.restMessageId)
+    ) {
+      return { ok: false, reason: "invalid-rest-id" };
+    }
+  }
+  if (payload.type === CRITICAL_INJURY_EVENTS.REST_RESULT) {
+    const allowed = new Set([
+      "type",
+      "actorId",
+      "restId",
+      "success",
+      "retryable",
+      "message",
+      "targetUserId",
+      "originUserId",
+    ]);
+    if (Object.keys(payload).some((key) => !allowed.has(key))) {
+      return { ok: false, reason: "invalid-rest-result-data" };
+    }
+    const message = String(payload.message ?? "").trim();
+    if (
+      !boundedId(payload.restId) ||
+      typeof payload.success !== "boolean" ||
+      typeof payload.retryable !== "boolean" ||
+      !message ||
+      message.length > 500
+    ) {
+      return { ok: false, reason: "invalid-rest-result" };
+    }
   }
   return { ok: true, reason: null };
+}
+
+export function buildCriticalInjuryRestId(actorId, restMessageId) {
+  const actor = String(actorId ?? "").trim();
+  const message = String(restMessageId ?? "").trim();
+  if (!boundedId(actor) || !boundedId(message)) return "";
+  const id = `rest-${actor}-${message}`;
+  return boundedId(id) ? id : "";
 }
 
 export function emitCriticalInjuryEvent(type, data = {}) {

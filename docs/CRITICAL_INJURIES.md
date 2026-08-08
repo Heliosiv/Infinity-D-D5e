@@ -27,14 +27,14 @@ removed.
    when available. Duplicate or retried requests reuse the same stored rolls
    and completed receipt, including across an active-GM handoff, without
    duplicating the public chat result.
+6. When the due time arrives, temporary effects are removed. Shattered Knee
+   and Nerve Damage become permanent if their required treatment was not
+   completed in time.
 
 Calendar replacements are written back to the injury before the prior note is
 removed. Cleanup requires both the private completed receipt and the exact note
 marker, so an owner-edited Actor flag cannot direct the GM to delete an
 unrelated calendar entry.
-6. When the due time arrives, temporary effects are removed. Shattered Knee
-   and Nerve Damage become permanent if their required treatment was not
-   completed in time.
 
 The pending-button projection and applied injuries live on the Actor, not in
 client-local state. The authorization and replay receipt live in the restricted
@@ -173,11 +173,23 @@ recovery. Those rules remain clearly visible on the Actor effect and in the
 player window for the GM to adjudicate. The GM can remove a permanent Active
 Effect after the required magic or narrative resolution.
 
-Infection's long-rest save is triggered from the dnd5e rest-completed hook.
-That hook currently has only a short in-process duplicate guard; do not process
-the same rest completion from multiple active GM browser sessions. Durable
-rest-event receipts are a separate automation slice from the treatment receipt
-described above.
+Infection's long-rest save is triggered from the dnd5e rest-completed hook. The
+client links that hook to D&D5e's persisted long-rest ChatMessage and sends only
+its Actor and receipt identifiers to the active GM. The GM validates the
+message author, speaker, and rest type, rolls every Constitution save privately,
+and persists the complete set of outcomes before changing any Active Effect.
+
+Each effect update uses the stored absolute maximum-HP loss and an exact private
+rest marker. Replayed socket messages, an update that succeeds but reports an
+error, reload recovery, and a different-GM handoff therefore reuse the same save
+instead of rolling or applying the penalty again. Requests wait behind active
+treatment/rest leases, retry through a targeted acknowledgement, and can be
+recovered by the next active GM from the module-tagged rest ChatMessage if no GM
+was online when the rest finished.
+
+As with treatment, run privileged Critical Injury work from one browser session
+per GM account. Different GM accounts are authority-fenced; simultaneous tabs
+logged in as the same GM remain an unsupported Foundry authority topology.
 
 ## Integrations
 

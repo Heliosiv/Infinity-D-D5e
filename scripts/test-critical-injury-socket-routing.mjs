@@ -48,6 +48,34 @@ try {
   assert.equal(delivered.length, 1);
   assert.equal(delivered[0].originUserId, gm.id);
   assert.equal(delivered[0].targetUserId, player.id);
+
+  const restResults = [];
+  socket.subscribeCriticalInjury(
+    socket.CRITICAL_INJURY_EVENTS.REST_RESULT,
+    (payload) => restResults.push(payload),
+  );
+  const restResult = {
+    type: socket.CRITICAL_INJURY_EVENTS.REST_RESULT,
+    actorId: "actor-1",
+    restId: "rest-actor-1-message-1",
+    targetUserId: player.id,
+    originUserId: gm.id,
+    success: true,
+    retryable: false,
+    message: "The Infection rest check is complete.",
+  };
+  socket.receiveCriticalInjuryPayload(
+    { ...restResult, originUserId: player.id },
+    player.id,
+  );
+  assert.equal(
+    restResults.length,
+    0,
+    "a player cannot forge a completed Infection rest acknowledgement",
+  );
+  socket.receiveCriticalInjuryPayload(restResult, gm.id);
+  assert.equal(restResults.length, 1);
+  assert.equal(restResults[0].restId, restResult.restId);
 } finally {
   if (savedGame === undefined) delete globalThis.game;
   else globalThis.game = savedGame;

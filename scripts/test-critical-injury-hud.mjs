@@ -31,7 +31,14 @@ const gm = {
   active: true,
   character: null,
 };
-const users = [gm, player];
+const gmReplacement = {
+  id: "gm-hud-replacement",
+  isGM: true,
+  role: 4,
+  active: false,
+  character: null,
+};
+const users = [gm, gmReplacement, player];
 users.activeGM = gm;
 users.get = (id) => users.find((user) => user.id === id) ?? null;
 
@@ -43,6 +50,8 @@ const settings = new Map([
 const hookHandlers = new Map();
 const applicationEvents = [];
 const socketFrames = [];
+const messages = [];
+messages.get = (id) => messages.find((message) => message.id === id) ?? null;
 const pendingTimers = new Map();
 let nextTimerId = 0;
 let randomId = 0;
@@ -153,6 +162,7 @@ try {
     user: player,
     users,
     actors,
+    messages,
     modules: new Map(),
     settings: {
       get(_moduleId, key) {
@@ -171,11 +181,13 @@ try {
     time: { worldTime: 10_000 },
   };
 
-  const [hudModule, injuryAppModule, treatmentModule] = await Promise.all([
-    import("./injury/injury-hud.js"),
-    import("./injury/injury-app.js"),
-    import("./injury/treatment-client.js"),
-  ]);
+  const [hudModule, injuryAppModule, treatmentModule, socketModule] =
+    await Promise.all([
+      import("./injury/injury-hud.js"),
+      import("./injury/injury-app.js"),
+      import("./injury/treatment-client.js"),
+      import("./injury/socket.js"),
+    ]);
   const {
     CriticalInjuryHudApp,
     registerCriticalInjuryHud,
@@ -205,18 +217,263 @@ try {
   await fullAppSelection.close({ animate: false });
 
   registerCriticalInjuryApp();
+  const infectionForRest = injuryEffect(defaultOnlyCharacter, {
+    id: "injury-infection-rest-proof",
+    injuryKey: "infection",
+    injuryName: "Infection",
+    effect: "DC 15 Constitution save after each long rest.",
+    remainingDays: 3,
+    recoveryDueTs: 400_000,
+    kitCharges: 2,
+    createdAt: 100,
+  });
+  defaultOnlyCharacter.effects.contents.push(infectionForRest);
+  const longRestConfig = { chat: false };
+  Hooks.call("dnd5e.longRest", defaultOnlyCharacter, longRestConfig);
+  assert.equal(
+    longRestConfig.chat,
+    true,
+    "an infected character's long rest keeps D&D5e's server receipt enabled",
+  );
+  const overlappingInfection = injuryEffect(assignedActor, {
+    id: "injury-infection-overlap",
+    injuryKey: "infection",
+    injuryName: "Overlapping Infection",
+    effect: "DC 15 Constitution save after each long rest.",
+    remainingDays: 3,
+    recoveryDueTs: 400_000,
+    kitCharges: 2,
+    createdAt: 100,
+  });
+  assignedActor.effects.contents.push(overlappingInfection);
   const restFrameCount = socketFrames.length;
-  Hooks.call("dnd5e.restCompleted", defaultOnlyCharacter, { longRest: true });
+  const completedRest = { longRest: true };
+  const overlappingRest = { longRest: true };
+  const completedRestConfig = { chat: true };
+  const overlappingRestConfig = { chat: true };
+  Hooks.call(
+    "dnd5e.preRestCompleted",
+    defaultOnlyCharacter,
+    completedRest,
+    completedRestConfig,
+  );
+  Hooks.call(
+    "dnd5e.preRestCompleted",
+    assignedActor,
+    overlappingRest,
+    overlappingRestConfig,
+  );
+
+  // The same player can have overlapping rests for different Actors. Create
+  // their server messages in reverse order to prove nonce binding chooses the
+  // exact receipt, rather than whichever long-rest message happened last.
+  const overlappingMessage = restMessageFixture({
+    id: "rest-message-assigned-owner",
+    actor: assignedActor,
+    user: player,
+  });
+  const overlappingMessageData = restMessageData(assignedActor, player);
+  Hooks.call(
+    "preCreateChatMessage",
+    overlappingMessage,
+    overlappingMessageData,
+    {},
+    player.id,
+  );
+  messages.push(overlappingMessage);
+  Hooks.call("createChatMessage", overlappingMessage, {}, player.id);
+
+  const restMessage = restMessageFixture({
+    id: "rest-message-default-owner",
+    actor: defaultOnlyCharacter,
+    user: player,
+  });
+  const restMessageSource = restMessageData(defaultOnlyCharacter, player);
+  Hooks.call(
+    "preCreateChatMessage",
+    restMessage,
+    restMessageSource,
+    {},
+    player.id,
+  );
+  messages.push(restMessage);
+  Hooks.call("createChatMessage", restMessage, {}, player.id);
+  assert.notEqual(
+    restMessage.getFlag("infinity-dnd5e", "criticalInjuryRestNonce"),
+    overlappingMessage.getFlag("infinity-dnd5e", "criticalInjuryRestNonce"),
+    "overlapping rests receive distinct opaque message bindings",
+  );
+
+  Hooks.call(
+    "dnd5e.restCompleted",
+    defaultOnlyCharacter,
+    completedRest,
+    completedRestConfig,
+  );
+  Hooks.call(
+    "dnd5e.restCompleted",
+    assignedActor,
+    overlappingRest,
+    overlappingRestConfig,
+  );
   assert.equal(
     socketFrames.length,
-    restFrameCount + 1,
-    "effective default ownership still permits long-rest injury processing",
+    restFrameCount + 2,
+    "both overlapping owned-character rests produce one request",
+  );
+  const defaultRestFrame = socketFrames
+    .slice(restFrameCount)
+    .find((frame) => frame.payload.actorId === defaultOnlyCharacter.id);
+  const overlappingRestFrame = socketFrames
+    .slice(restFrameCount)
+    .find((frame) => frame.payload.actorId === assignedActor.id);
+  assert.equal(defaultRestFrame.payload.type, "critical-injury:rest-completed");
+  assert.equal(defaultRestFrame.payload.actorId, defaultOnlyCharacter.id);
+  assert.match(
+    defaultRestFrame.payload.restId,
+    /^rest-/,
+    "the client assigns the completed rest a durable correlation id",
   );
   assert.equal(
-    socketFrames.at(-1).payload.type,
-    "critical-injury:rest-completed",
+    defaultRestFrame.payload.restMessageId,
+    restMessage.id,
+    "the request carries the server-created dnd5e rest message id",
   );
-  assert.equal(socketFrames.at(-1).payload.actorId, defaultOnlyCharacter.id);
+  assert.equal(
+    defaultRestFrame.payload.restId,
+    `rest-${defaultOnlyCharacter.id}-${restMessage.id}`,
+    "the correlation id is deterministic across clients",
+  );
+  assert.equal(
+    overlappingRestFrame.payload.restMessageId,
+    overlappingMessage.id,
+    "the overlapping Actor selects its nonce-bound message exactly",
+  );
+  assert.equal(
+    defaultRestFrame.payload.targetUserId,
+    gm.id,
+    "the client targets the current authoritative GM",
+  );
+  assert.deepEqual(
+    defaultRestFrame.options?.recipients,
+    [gm.id],
+    "the rest request is not broadcast to unrelated clients",
+  );
+  const firstRestId = defaultRestFrame.payload.restId;
+  const beforeRepeatedRest = socketFrames.length;
+  Hooks.call(
+    "dnd5e.restCompleted",
+    defaultOnlyCharacter,
+    completedRest,
+    completedRestConfig,
+  );
+  assert.ok(
+    socketFrames
+      .slice(beforeRepeatedRest)
+      .every((frame) => frame.payload.restId === firstRestId),
+    "a repeated delivery is suppressed or reuses the same correlation id",
+  );
+  const beforeChatlessRest = socketFrames.length;
+  Hooks.call(
+    "dnd5e.restCompleted",
+    defaultOnlyCharacter,
+    { longRest: true },
+    { chat: false },
+  );
+  assert.equal(
+    socketFrames.length,
+    beforeChatlessRest,
+    "a chatless rest fails closed instead of reusing stale evidence",
+  );
+
+  const queuedResult = { longRest: true };
+  const queuedConfig = { chat: true };
+  Hooks.call(
+    "dnd5e.preRestCompleted",
+    defaultOnlyCharacter,
+    queuedResult,
+    queuedConfig,
+  );
+  const queuedMessage = restMessageFixture({
+    id: "rest-message-queued-no-gm",
+    actor: defaultOnlyCharacter,
+    user: player,
+  });
+  const queuedMessageSource = restMessageData(defaultOnlyCharacter, player);
+  Hooks.call(
+    "preCreateChatMessage",
+    queuedMessage,
+    queuedMessageSource,
+    {},
+    player.id,
+  );
+  messages.push(queuedMessage);
+  Hooks.call("createChatMessage", queuedMessage, {}, player.id);
+  gm.active = false;
+  users.activeGM = null;
+  const beforeQueuedRest = socketFrames.length;
+  Hooks.call(
+    "dnd5e.restCompleted",
+    defaultOnlyCharacter,
+    queuedResult,
+    queuedConfig,
+  );
+  assert.equal(
+    socketFrames.length,
+    beforeQueuedRest,
+    "a verified rest stays queued while no GM is active",
+  );
+
+  gmReplacement.active = true;
+  users.activeGM = gmReplacement;
+  Hooks.call("updateUser", gmReplacement, { active: true });
+  const queuedRestId = `rest-${defaultOnlyCharacter.id}-${queuedMessage.id}`;
+  const queuedFrames = socketFrames.filter(
+    (frame) => frame.payload.restId === queuedRestId,
+  );
+  assert.equal(queuedFrames.length, 1);
+  assert.equal(queuedFrames[0].payload.restMessageId, queuedMessage.id);
+  assert.equal(queuedFrames[0].payload.targetUserId, gmReplacement.id);
+  assert.deepEqual(queuedFrames[0].options?.recipients, [gmReplacement.id]);
+  const beforeRepeatedAuthorityHook = socketFrames.length;
+  Hooks.call("updateUser", gmReplacement, { active: true });
+  assert.equal(
+    socketFrames.length,
+    beforeRepeatedAuthorityHook,
+    "the same active-GM update does not resend an already targeted rest",
+  );
+  const queuedRetryTimerId = nextTimerId;
+  assert.equal(pendingTimers.has(queuedRetryTimerId), true);
+  socketModule.receiveCriticalInjuryPayload(
+    {
+      type: socketModule.CRITICAL_INJURY_EVENTS.REST_RESULT,
+      actorId: defaultOnlyCharacter.id,
+      restId: queuedRestId,
+      targetUserId: player.id,
+      originUserId: gmReplacement.id,
+      success: true,
+      retryable: false,
+      message: "The Infection rest check is complete.",
+    },
+    gmReplacement.id,
+  );
+  assert.equal(
+    pendingTimers.has(queuedRetryTimerId),
+    false,
+    "an authenticated GM acknowledgement clears the rest retry timer",
+  );
+  gm.active = true;
+  gmReplacement.active = false;
+  users.activeGM = gm;
+
+  defaultOnlyCharacter.effects.contents.splice(
+    defaultOnlyCharacter.effects.contents.indexOf(infectionForRest),
+    1,
+  );
+  assignedActor.effects.contents.splice(
+    assignedActor.effects.contents.indexOf(overlappingInfection),
+    1,
+  );
 
   player.character = assignedActor;
   assert.equal(
@@ -579,6 +836,42 @@ function injuryEffect(actor, injury) {
       return this.flags?.[moduleId]?.[key];
     },
   };
+}
+
+function restMessageFixture({ id, actor, user }) {
+  return {
+    id,
+    user: user.id,
+    author: user,
+    speaker: { actor: actor.id, alias: actor.name },
+    flags: { dnd5e: { rest: { type: "long" } } },
+    getFlag(moduleId, key) {
+      return this.flags?.[moduleId]?.[key];
+    },
+    updateSource(changes) {
+      for (const [path, value] of Object.entries(changes ?? {})) {
+        setPath(this, path, value);
+      }
+    },
+  };
+}
+
+function restMessageData(actor, user) {
+  return {
+    user: user.id,
+    speaker: { actor: actor.id, alias: actor.name },
+    "flags.dnd5e.rest": { type: "long" },
+  };
+}
+
+function setPath(target, path, value) {
+  const keys = String(path).split(".");
+  let cursor = target;
+  for (const key of keys.slice(0, -1)) {
+    cursor[key] ??= {};
+    cursor = cursor[key];
+  }
+  cursor[keys.at(-1)] = structuredClone(value);
 }
 
 function elementFixture() {
