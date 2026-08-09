@@ -20,7 +20,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.0 (unreleased)** - Coordinated UI/UX redesign with role-aware Home, one Loot Studio, grouped settings, shared accessibility foundations, responsive application layouts, and plain-language recovery states. Game rules, stored campaign data, permissions, privacy boundaries, and authoritative-GM behavior remain unchanged.
+**v0.3.0 — Released 2026-08-09** - Coordinated UI/UX redesign with role-aware Home, one Loot Studio, grouped settings, shared accessibility foundations, responsive application layouts, and plain-language recovery states. Game rules, stored campaign data, permissions, privacy boundaries, and authoritative-GM behavior remain unchanged.
 
 - One Home and one scene-control launcher for every role, with quick starts, compact recents, shortcuts, integration readiness, and privacy-safe diagnostics.
 - Privileged loot, merchant, reputation, and GM-preview windows still require a full GM and close if that user is demoted; Assistant GMs use player-scoped Home destinations.
