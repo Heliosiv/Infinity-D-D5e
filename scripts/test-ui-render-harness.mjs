@@ -296,6 +296,21 @@ assert.match(suppliesView.html, /Updated Jul 25, 2026, 2:14 PM/);
 assert.match(suppliesView.html, /aria-live="polite"/);
 assert.match(suppliesView.html, /Supply outlook/);
 assert.match(suppliesView.html, /Last upkeep/);
+assert.match(
+  suppliesView.html,
+  /ro-run-status--needs-review">Needs review<\/span>/,
+  "the player badge describes the supply outcome instead of the run mechanics",
+);
+const suppliesReviewRow = suppliesView.html.match(
+  /<li class="is-review">[\s\S]*?Brother Calder[\s\S]*?<\/li>/,
+)?.[0];
+assert.ok(suppliesReviewRow, "player supplies renders the review-only fixture");
+assert.match(suppliesReviewRow, /Needs review/);
+assert.doesNotMatch(
+  suppliesReviewRow,
+  /Supplied/,
+  "a player row never presents supplied beside an inventory warning",
+);
 
 const injuryView = views.find((view) => view.id === "critical-injury");
 assert.ok(injuryView, "harness includes the player Critical Injuries view");
@@ -334,6 +349,18 @@ const routineManagerView = views.find((view) => view.id === "resource-manager");
 assert.ok(
   routineManagerView,
   "harness includes the routine Quartermaster view",
+);
+assert.match(routineManagerView.html, /Last upkeep - Needs review/);
+assert.match(routineManagerView.html, /Environment: Limited/);
+const managerReviewRow = routineManagerView.html.match(
+  /<li class="is-review">[\s\S]*?Brother Calder[\s\S]*?<\/li>/,
+)?.[0];
+assert.ok(managerReviewRow, "Quartermaster renders the review-only fixture");
+assert.match(managerReviewRow, /needs review/);
+assert.doesNotMatch(
+  managerReviewRow,
+  /supplied/,
+  "a GM row never presents supplied beside an inventory warning",
 );
 const routineSetupTag = routineManagerView.html.match(
   /<details\b[^>]*class="rm-setup"[^>]*>/,

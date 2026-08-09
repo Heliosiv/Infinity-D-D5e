@@ -50,6 +50,11 @@ import {
   suggestExhaustion,
 } from "./consumption.js";
 import {
+  classifyResourceOutcome,
+  RESOURCE_OUTCOMES,
+  resourceOutcomeLabel,
+} from "./outcome.js";
+import {
   RESOURCE_EVENTS,
   emitResourceEvent,
   subscribe,
@@ -611,22 +616,24 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     const sink = actorById.get(dep.actorId);
     if (!sink) continue;
     if (foodRes && dep.food > 0) {
-      const applied = await depositResource(sink, foodRes, dep.food, {
+      const deposit = await applyResourceDeposit(sink, foodRes, dep.food, {
         templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
         assertWriteAllowed,
       });
+      const applied = deposit.deposited;
       landedFood += applied;
-      if (applied < dep.food)
-        depositErrors.push(`${sink.name}: food deposit failed`);
+      if (deposit.error)
+        depositErrors.push(`${sink.name}: food ${deposit.error}`);
     }
     if (waterRes && dep.water > 0) {
-      const applied = await depositResource(sink, waterRes, dep.water, {
+      const deposit = await applyResourceDeposit(sink, waterRes, dep.water, {
         templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
         assertWriteAllowed,
       });
+      const applied = deposit.deposited;
       landedWater += applied;
-      if (applied < dep.water)
-        depositErrors.push(`${sink.name}: water deposit failed`);
+      if (deposit.error)
+        depositErrors.push(`${sink.name}: water ${deposit.error}`);
     }
   }
 
@@ -674,7 +681,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   };
 }
 
-async function postForageDriveReport({
+export function buildForageDriveReportContent({
   env,
   perForager,
   stashActor,
@@ -683,7 +690,6 @@ async function postForageDriveReport({
   depositErrors = [],
   forageTarget = FORAGE_TARGETS.BOTH,
 }) {
-  if (typeof globalThis.ChatMessage?.create !== "function") return null;
   const channels = forageTargetChannels(forageTarget);
   const formatYield = (food, water) => {
     if (channels.food && channels.water)
@@ -703,22 +709,30 @@ async function postForageDriveReport({
       if (!f.success) {
         return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
       }
-      return `<li>${name} — <span style="color:#6dd5a2;">${formatYield(f.food, f.water)}</span></li>`;
+      return `<li>${name} — <span style="color:#6dd5a2;">gathered ${formatYield(f.food, f.water)}</span></li>`;
     })
     .join("");
   const dest = stashActor
     ? `Added to <strong>${escapeHtml(stashActor.name)}</strong>'s stash`
     : "Added to each forager's pack";
   const errorLine = depositErrors.length
-    ? `<div style="color:#f2bd61;">Some deposits failed: ${escapeHtml(depositErrors.join("; "))}</div>`
+    ? `<div style="color:#f2bd61;">Some inventory deposits need review in Quartermaster.</div>`
     : "";
-  const content = `
+  return `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
       <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeHtml(env.dc)}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      <div>${dest}: <strong>${formatYield(totalFood, totalWater)}</strong> total.</div>
+      <div>${dest}: <strong>${formatYield(totalFood, totalWater)}</strong> applied.</div>
       ${errorLine}
     </div>`;
+}
+
+async function postForageDriveReport(options) {
+  if (typeof globalThis.ChatMessage?.create !== "function") return null;
+  const content = buildForageDriveReportContent(options);
+  const perForager = Array.isArray(options?.perForager)
+    ? options.perForager
+    : [];
   const speaker = globalThis.ChatMessage.getSpeaker?.({
     alias: "Quartermaster",
   });
@@ -1415,20 +1429,20 @@ async function runDailyUpkeep({
     yld.landedWater = 0;
     yld.depositErrors = [];
     if (foodRes && yld.food > 0) {
-      yld.landedFood = await depositResource(sink, foodRes, yld.food, {
+      const deposit = await applyResourceDeposit(sink, foodRes, yld.food, {
         templateItem: proposedPreflight.templatesByResourceId.get(foodRes.id),
         assertWriteAllowed,
       });
-      if (yld.landedFood < yld.food)
-        yld.depositErrors.push("food deposit failed");
+      yld.landedFood = deposit.deposited;
+      if (deposit.error) yld.depositErrors.push(`food ${deposit.error}`);
     }
     if (waterRes && yld.water > 0 && cfg.waterEnabled) {
-      yld.landedWater = await depositResource(sink, waterRes, yld.water, {
+      const deposit = await applyResourceDeposit(sink, waterRes, yld.water, {
         templateItem: proposedPreflight.templatesByResourceId.get(waterRes.id),
         assertWriteAllowed,
       });
-      if (yld.landedWater < yld.water)
-        yld.depositErrors.push("water deposit failed");
+      yld.landedWater = deposit.deposited;
+      if (deposit.error) yld.depositErrors.push(`water ${deposit.error}`);
     }
   }
 
@@ -1831,13 +1845,43 @@ export async function applyConsumption({
       // Each member draws from its nominated source (own sheet or a shared
       // stash). Sequential awaits mean members sharing a stash deplete it in
       // roster order — whoever's last comes up short if the stash runs dry.
+      const blockedSources = new Map();
+      const knownAvailableBySource = new Map();
+      const knownShortfallsByActor = new Map();
       for (const member of consumers) {
-        const res = await consumeFromActor(
-          sourceFor(member),
-          resource,
-          amount,
-          { assertWriteAllowed },
+        const source = sourceFor(member);
+        if (!knownAvailableBySource.has(source)) {
+          const available = matchResourceItems(
+            actorItemSnapshots(source),
+            resource,
+          ).reduce((total, match) => total + wholeAmount(match.quantity), 0);
+          knownAvailableBySource.set(source, available);
+        }
+        const available = knownAvailableBySource.get(source) ?? 0;
+        const planned = Math.min(amount, available);
+        knownAvailableBySource.set(source, Math.max(0, available - planned));
+        knownShortfallsByActor.set(
+          member.actor.id,
+          Math.max(0, amount - planned),
         );
+      }
+      for (const member of consumers) {
+        const source = sourceFor(member);
+        const blockedError = blockedSources.get(source) ?? "";
+        const knownShortfall =
+          knownShortfallsByActor.get(member.actor.id) ?? amount;
+        const res = blockedError
+          ? { consumed: 0, shortfall: knownShortfall, error: blockedError }
+          : await consumeFromActor(source, resource, amount, {
+              assertWriteAllowed,
+            });
+        if (res.error) res.shortfall = knownShortfall;
+        if (res.error && !blockedError) {
+          blockedSources.set(
+            source,
+            `${source?.name ?? "Shared draw source"}: a prior inventory write needs review; this draw was skipped`,
+          );
+        }
         const row = ensureRow(member);
         recordConsumptionAccounting(row, resource, res);
       }
@@ -1917,7 +1961,9 @@ async function consumeFromActor(
   });
   return {
     consumed: applied.consumed,
-    shortfall: Math.max(0, Math.floor(Number(amount) || 0) - applied.consumed),
+    // A rejected or uncertain write is not proof that supplies were absent.
+    // Only the immutable pre-write plan can establish a real shortage.
+    shortfall: wholeAmount(plan.shortfall),
     error: applied.error,
   };
 }
@@ -1950,6 +1996,15 @@ async function consumePartyResource(
   let remaining = amount;
   let consumed = 0;
   const errors = [];
+  let knownRemaining = wholeAmount(amount);
+  for (const actor of order) {
+    if (knownRemaining <= 0) break;
+    const plan = planConsumption({
+      matches: matchResourceItems(actorItemSnapshots(actor), resourceDef),
+      amount: knownRemaining,
+    });
+    knownRemaining = wholeAmount(plan.shortfall);
+  }
   for (const actor of order) {
     if (remaining <= 0) break;
     const res = await consumeFromActor(actor, resourceDef, remaining, {
@@ -1957,11 +2012,17 @@ async function consumePartyResource(
     });
     consumed += res.consumed;
     remaining -= res.consumed;
-    if (res.error) errors.push(`${actor.name}: ${res.error}`);
+    if (res.error) {
+      errors.push(`${actor.name}: ${res.error}`);
+      // The state is now uncertain. Do not charge a second Actor for the same
+      // party requirement or continue a partially applied write sequence.
+      break;
+    }
   }
   return {
     consumed,
-    shortfall: Math.max(0, remaining),
+    shortfall:
+      errors.length > 0 ? knownRemaining : Math.max(0, wholeAmount(remaining)),
     error: errors.join("; "),
   };
 }
@@ -1978,85 +2039,130 @@ export async function applyConsumptionOps(
       Math.max(0, Number(match.quantity) || 0),
     ]),
   );
+  const matchesById = new Map(
+    matches.map((match) => [String(match.id), match]),
+  );
   const deletes = ops.filter((o) => o.op === "delete").map((o) => o.id);
-  const updates = ops
+  const updatePlans = ops
     .filter((o) => o.op === "decrement")
-    .map((o) => ({ _id: o.id, "system.quantity": o.to }));
+    .map((operation) => {
+      const id = String(operation.id);
+      const before = quantities.get(id) ?? 0;
+      const expected = wholeAmount(operation.to);
+      return {
+        id,
+        before,
+        expected,
+        planned: Math.max(0, before - expected),
+      };
+    });
   let consumed = 0;
   const failures = [];
-  if (updates.length > 0) {
+  if (updatePlans.length > 0) {
     assertWriteAllowed?.();
+    let updatedDocuments = [];
     try {
-      const updatedDocuments = await actor.updateEmbeddedDocuments(
+      // Foundry normalizes embedded update objects in place. Keep the accounting
+      // plan immutable and give the database backend a disposable payload.
+      updatedDocuments = await actor.updateEmbeddedDocuments(
         "Item",
-        updates,
+        updatePlans.map((plan) => ({
+          _id: plan.id,
+          "system.quantity": plan.expected,
+        })),
       );
-      const updatedById = new Map(
-        (Array.isArray(updatedDocuments) ? updatedDocuments : [])
-          .map((document) => [documentId(document), document])
-          .filter(([id]) => id),
-      );
-      for (const update of updates) {
-        const id = String(update._id);
-        const document = updatedById.get(id);
-        const after = documentQuantity(document);
-        if (!document || after == null) {
-          failures.push(new Error(`update for Item ${id} was not confirmed`));
-          continue;
-        }
-        const before = quantities.get(id) ?? 0;
-        const expected = Math.max(0, Number(update["system.quantity"]) || 0);
-        const planned = Math.max(0, before - expected);
-        const observed = Math.max(0, before - after);
-        consumed += Math.min(planned, observed);
-        if (after !== expected) {
-          failures.push(
-            new Error(
-              `update for Item ${id} ended at ${after}, expected ${expected}`,
-            ),
-          );
-        }
-      }
     } catch (error) {
-      failures.push(error);
       console.error(
         `${MODULE_ID} | consumption update failed on ${actor?.name}`,
         error,
       );
     }
-  }
-  if (deletes.length > 0) {
-    assertWriteAllowed?.();
-    try {
-      const deletedDocuments = await actor.deleteEmbeddedDocuments(
-        "Item",
-        deletes,
-      );
-      const deletedIds = new Set(
-        (Array.isArray(deletedDocuments) ? deletedDocuments : [])
-          .map(documentId)
-          .filter(Boolean),
-      );
-      for (const idValue of deletes) {
-        const id = String(idValue);
-        if (!deletedIds.has(id)) {
-          failures.push(new Error(`delete for Item ${id} was not confirmed`));
-          continue;
-        }
-        consumed += quantities.get(id) ?? 0;
+    const updatedById = new Map(
+      (Array.isArray(updatedDocuments) ? updatedDocuments : [])
+        .map((document) => [documentId(document), document])
+        .filter(([id]) => id),
+    );
+    const hasCanonicalItems = hasCanonicalActorItems(actor);
+    for (const plan of updatePlans) {
+      const { id, before, expected, planned } = plan;
+      const canonicalDocument = hasCanonicalItems
+        ? findActorItem(actor, id)
+        : null;
+      const document = hasCanonicalItems
+        ? canonicalDocument
+        : updatedById.get(id);
+      const after = canonicalDocument
+        ? documentQuantity(canonicalDocument)
+        : hasCanonicalItems
+          ? 0
+          : documentQuantity(document);
+      if (after != null) {
+        const observed = Math.max(0, before - after);
+        consumed += Math.min(planned, observed);
       }
+      if (after !== expected) {
+        failures.push({
+          operation: "update",
+          itemId: id,
+          itemName: matchesById.get(id)?.name,
+          before,
+          expected,
+          observed: after,
+          reason: after == null ? "unconfirmed" : "unexpected-quantity",
+        });
+      }
+    }
+  }
+  // The decrement is intentionally verified before destructive stack deletes.
+  // If it diverges, stop: continuing could overburn resources while reporting
+  // only the planned amount.
+  if (deletes.length > 0 && failures.length === 0) {
+    assertWriteAllowed?.();
+    let deletedDocuments = [];
+    try {
+      deletedDocuments = await actor.deleteEmbeddedDocuments("Item", deletes);
     } catch (error) {
-      failures.push(error);
       console.error(
         `${MODULE_ID} | consumption delete failed on ${actor?.name}`,
         error,
       );
     }
+    const deletedIds = new Set(
+      (Array.isArray(deletedDocuments) ? deletedDocuments : [])
+        .map(documentId)
+        .filter(Boolean),
+    );
+    const hasCanonicalItems = hasCanonicalActorItems(actor);
+    for (const idValue of deletes) {
+      const id = String(idValue);
+      const before = quantities.get(id) ?? 0;
+      const canonicalDocument = hasCanonicalItems
+        ? findActorItem(actor, id)
+        : null;
+      const confirmedDeleted = hasCanonicalItems
+        ? !canonicalDocument
+        : deletedIds.has(id);
+      const after = confirmedDeleted ? 0 : documentQuantity(canonicalDocument);
+      if (after != null) {
+        consumed += Math.min(before, Math.max(0, before - after));
+      }
+      if (!confirmedDeleted) {
+        failures.push({
+          operation: "delete",
+          itemId: id,
+          itemName: matchesById.get(id)?.name,
+          before,
+          expected: 0,
+          observed: after,
+          reason: after == null ? "unconfirmed" : "not-deleted",
+        });
+      }
+    }
   }
   return {
     consumed,
-    error:
-      failures.length > 0 ? `${failures.length} inventory write(s) failed` : "",
+    error: summarizeInventoryWriteFailures(failures),
+    failures,
   };
 }
 
@@ -2066,53 +2172,174 @@ export async function depositResource(
   amount,
   { templateItem = null, assertWriteAllowed = null } = {},
 ) {
-  if (!amount || amount <= 0) return 0;
-  const matches = matchResourceItems(actorItemSnapshots(actor), resourceDef);
-  let plan = planDeposit({ matches, amount });
+  const result = await applyResourceDeposit(actor, resourceDef, amount, {
+    templateItem,
+    assertWriteAllowed,
+  });
+  return result.deposited;
+}
+
+async function applyResourceDeposit(
+  actor,
+  resourceDef,
+  amount,
+  { templateItem = null, assertWriteAllowed = null } = {},
+) {
+  const requested = wholeAmount(amount);
+  if (requested <= 0) return { deposited: 0, error: "" };
+  const effectiveResourceDef = withEffectiveResourceTag(resourceDef);
+  const matches = matchResourceItems(
+    actorItemSnapshots(actor),
+    effectiveResourceDef,
+  );
+  let plan = planDeposit({ matches, amount: requested });
   if (plan.op === "none") {
     const template =
       cloneSnapshot(templateItem) ??
-      (await resolveResourceDepositTemplate(resourceDef));
-    plan = planDeposit({ matches, amount, templateItem: template });
+      (await resolveResourceDepositTemplate(effectiveResourceDef));
+    plan = planDeposit({ matches, amount: requested, templateItem: template });
   }
   if (plan.op === "bump" || plan.op === "create") {
     assertWriteAllowed?.();
   }
-  try {
-    if (plan.op === "bump") {
-      const target = actor.items?.get?.(plan.id);
-      if (!target || typeof target.update !== "function") return 0;
-      const before =
-        matches.find((match) => String(match.id) === String(plan.id))
-          ?.quantity ?? 0;
-      const updated = await target.update({ "system.quantity": plan.to });
-      if (!updated) return 0;
-      const after = documentQuantity(updated) ?? documentQuantity(target);
-      return after == null
-        ? wholeAmount(amount)
-        : Math.min(
-            wholeAmount(amount),
-            Math.max(0, after - wholeAmount(before)),
-          );
+  if (plan.op === "bump") {
+    const target = findActorItem(actor, plan.id);
+    if (!target || typeof target.update !== "function") {
+      return unconfirmedDeposit(requested, 0, "the target stack disappeared");
     }
-    if (plan.op === "create") {
-      const snap = buildCreatedResourceSnapshot({
-        template: plan.from,
-        resourceDef,
-        quantity: plan.quantity,
-      });
-      if (!snap) return 0;
-      const created = await actor.createEmbeddedDocuments("Item", [snap]);
-      if (!Array.isArray(created) || created.length === 0) return 0;
-      const quantity = documentQuantity(created[0]);
-      return quantity == null
-        ? wholeAmount(amount)
-        : Math.min(wholeAmount(amount), quantity);
+    const before = wholeAmount(
+      matches.find((match) => String(match.id) === String(plan.id))?.quantity,
+    );
+    let updated = null;
+    try {
+      updated = await target.update({ "system.quantity": plan.to });
+    } catch (error) {
+      console.error(`${MODULE_ID} | deposit failed on ${actor?.name}`, error);
     }
-  } catch (error) {
-    console.error(`${MODULE_ID} | deposit failed on ${actor?.name}`, error);
+    const canonical = hasCanonicalActorItems(actor)
+      ? findActorItem(actor, plan.id)
+      : updated || target;
+    const after = documentQuantity(canonical);
+    const deposited =
+      after == null ? 0 : Math.min(requested, Math.max(0, after - before));
+    const identityConfirmed =
+      documentId(canonical) === String(plan.id) &&
+      resourceItemMatchesDefinition(canonical, effectiveResourceDef);
+    if (
+      identityConfirmed &&
+      after === wholeAmount(plan.to) &&
+      deposited === requested
+    ) {
+      return { deposited, error: "" };
+    }
+    const detail = !identityConfirmed
+      ? "the target stack no longer matched this resource"
+      : after == null
+        ? "the final stack quantity could not be read"
+        : `the stack ended at ${after}, expected ${wholeAmount(plan.to)}`;
+    return unconfirmedDeposit(
+      requested,
+      identityConfirmed ? deposited : 0,
+      detail,
+    );
   }
-  return 0; // op "none": no existing stack and no template to create from
+  if (plan.op === "create") {
+    const snap = buildCreatedResourceSnapshot({
+      template: plan.from,
+      resourceDef: effectiveResourceDef,
+      quantity: plan.quantity,
+    });
+    if (!snap) {
+      return unconfirmedDeposit(
+        requested,
+        0,
+        "no safe item template was available",
+      );
+    }
+    if (!hasCanonicalActorItems(actor)) {
+      return unconfirmedDeposit(
+        requested,
+        0,
+        "the Actor inventory could not be read canonically",
+      );
+    }
+    const itemId = createResourceItemId(actor);
+    if (!itemId) {
+      return unconfirmedDeposit(
+        requested,
+        0,
+        "a collision-safe item id could not be reserved",
+      );
+    }
+    snap._id = itemId;
+    try {
+      await actor.createEmbeddedDocuments("Item", [snap], {
+        keepId: true,
+        keepEmbeddedIds: true,
+      });
+    } catch (error) {
+      console.error(`${MODULE_ID} | deposit failed on ${actor?.name}`, error);
+    }
+    const confirmed = findActorItem(actor, itemId);
+    const quantity = documentQuantity(confirmed);
+    const deposited =
+      quantity == null ? 0 : Math.min(requested, wholeAmount(quantity));
+    const identityConfirmed =
+      documentId(confirmed) === itemId &&
+      resourceItemHasEffectiveTag(confirmed, effectiveResourceDef);
+    if (
+      identityConfirmed &&
+      quantity === wholeAmount(plan.quantity) &&
+      deposited === requested
+    ) {
+      return { deposited, error: "" };
+    }
+    const detail = !identityConfirmed
+      ? "the created stack did not match this resource"
+      : quantity == null
+        ? "the created stack could not be identified in inventory"
+        : `the created stack held ${quantity}, expected ${wholeAmount(plan.quantity)}`;
+    return unconfirmedDeposit(
+      requested,
+      identityConfirmed ? deposited : 0,
+      detail,
+    );
+  }
+  return unconfirmedDeposit(
+    requested,
+    0,
+    "no safe deposit operation was available",
+  );
+}
+
+function unconfirmedDeposit(requested, deposited, detail) {
+  const confirmed = Math.min(wholeAmount(requested), wholeAmount(deposited));
+  return {
+    deposited: confirmed,
+    error: `deposit needs review (${confirmed} of ${wholeAmount(requested)} confirmed; ${detail})`,
+  };
+}
+
+function summarizeInventoryWriteFailures(failures) {
+  if (!Array.isArray(failures) || failures.length === 0) return "";
+  const count = failures.length;
+  const details = failures
+    .slice(0, 3)
+    .map((failure) => {
+      const item =
+        String(failure?.itemName ?? "").trim() ||
+        `Item ${String(failure?.itemId ?? "unknown")}`;
+      if (failure?.reason === "unconfirmed") {
+        return `${item} was not confirmed`;
+      }
+      if (failure?.operation === "delete") {
+        return `${item} remained at ${failure?.observed ?? "an unknown quantity"}`;
+      }
+      return `${item} ended at ${failure?.observed ?? "an unknown quantity"}, expected ${failure?.expected ?? "the planned quantity"}`;
+    })
+    .join("; ");
+  const remainder = count > 3 ? `; ${count - 3} more` : "";
+  return `${count} inventory write${count === 1 ? "" : "s"} need review: ${details}${remainder}`;
 }
 
 async function resolveResourceDepositTemplate(resourceDef) {
@@ -2140,7 +2367,7 @@ function buildCreatedResourceSnapshot({ template, resourceDef, quantity }) {
   snap.flags = snap.flags ?? {};
   snap.flags[MODULE_ID] = {
     ...(snap.flags[MODULE_ID] ?? {}),
-    resourceTag: resourceDef?.matching?.flagTag || resourceDef?.id,
+    resourceTag: effectiveResourceTag(resourceDef),
   };
   return snap;
 }
@@ -2154,7 +2381,97 @@ function documentQuantity(document) {
 }
 
 function documentId(document) {
-  return String(document?.id ?? document?._id ?? "").trim();
+  if (typeof document === "string") return document.trim();
+  return String(
+    document?.id ?? document?._id ?? document?._source?._id ?? "",
+  ).trim();
+}
+
+function effectiveResourceTag(resourceDef) {
+  return (
+    String(resourceDef?.matching?.flagTag ?? resourceDef?.id ?? "").trim() ||
+    String(resourceDef?.id ?? "").trim()
+  );
+}
+
+function withEffectiveResourceTag(resourceDef) {
+  const tag = effectiveResourceTag(resourceDef);
+  if (resourceDef?.matching?.flagTag === tag) return resourceDef;
+  return {
+    ...(resourceDef ?? {}),
+    matching: {
+      ...(resourceDef?.matching ?? {}),
+      flagTag: tag,
+    },
+  };
+}
+
+function resourceItemHasEffectiveTag(document, resourceDef) {
+  const expected = effectiveResourceTag(resourceDef);
+  const observed = String(
+    document?.flags?.[MODULE_ID]?.resourceTag ??
+      document?._source?.flags?.[MODULE_ID]?.resourceTag ??
+      "",
+  ).trim();
+  return Boolean(expected) && observed === expected;
+}
+
+function resourceItemMatchesDefinition(document, resourceDef) {
+  if (!document) return false;
+  const id = documentId(document);
+  return matchResourceItems(
+    actorItemSnapshots({ items: [document] }),
+    resourceDef,
+  ).some((match) => String(match.id) === id);
+}
+
+function createResourceItemId(actor) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const foundryId = String(globalThis.foundry?.utils?.randomID?.() ?? "")
+      .replace(/[^a-z0-9]/gi, "")
+      .slice(0, 16);
+    let candidate = foundryId;
+    if (candidate.length !== 16) {
+      const alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      candidate = "";
+      for (let index = 0; index < 16; index += 1) {
+        candidate += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+    }
+    if (!findActorItem(actor, candidate)) return candidate;
+  }
+  return "";
+}
+
+function actorItemDocuments(actor) {
+  const items = actor?.items;
+  if (Array.isArray(items)) return items;
+  if (Array.isArray(items?.contents)) return items.contents;
+  if (typeof items?.values === "function") return [...items.values()];
+  return [];
+}
+
+function hasCanonicalActorItems(actor) {
+  const items = actor?.items;
+  return Boolean(
+    items &&
+    (Array.isArray(items) ||
+      Array.isArray(items.contents) ||
+      typeof items.get === "function" ||
+      typeof items.values === "function"),
+  );
+}
+
+function findActorItem(actor, idValue) {
+  const id = String(idValue ?? "").trim();
+  if (!id) return null;
+  const direct = actor?.items?.get?.(id);
+  if (direct) return direct;
+  return (
+    actorItemDocuments(actor).find((document) => documentId(document) === id) ??
+    null
+  );
 }
 
 function defaultResourceTemplate(resourceDef) {
@@ -2220,49 +2537,81 @@ export function buildUpkeepReportContent({
     individualResources = [...ids].map((id) => ({ id, label: null }));
   }
 
-  const rows = (result.perActor ?? [])
-    .map((row) => {
-      const shortages = individualResources
-        .map((resource) => {
-          const amount = wholeAmount(row?.shortfalls?.[resource.id]);
-          if (amount <= 0) return null;
-          return `${amount} ${escapeHtml(resourceDisplayLabel(resource))}`;
-        })
-        .filter(Boolean);
-      const shortLabel =
-        shortages.length > 0
+  const actorReports = (result.perActor ?? []).map((row) => {
+    const shortages = individualResources
+      .map((resource) => {
+        const amount = wholeAmount(row?.shortfalls?.[resource.id]);
+        if (amount <= 0) return null;
+        return `${amount} ${escapeHtml(resourceDisplayLabel(resource))}`;
+      })
+      .filter(Boolean);
+    const hasErrors = Array.isArray(row?.errors) && row.errors.length > 0;
+    const hasShortages = shortages.length > 0;
+    const outcome = classifyResourceOutcome({ hasErrors, hasShortages });
+    const statusLabel =
+      outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW
+        ? `<span style="color:#f2bd61;">needs review</span>`
+        : outcome === RESOURCE_OUTCOMES.SHORT
           ? `<span style="color:#ef6f74;">short ${shortages.join(", ")}</span>`
           : `<span style="color:#6dd5a2;">supplied</span>`;
-      const forageLabel = buildForageReportLabel(row?.foraged);
-      const errorLabel = row?.errors?.length
-        ? ` · <span style="color:#f2bd61;">write failed: ${escapeHtml(row.errors.join("; "))}</span>`
+    const knownShortage =
+      outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW && hasShortages
+        ? ` · <span style="color:#ef6f74;">confirmed short ${shortages.join(", ")}</span>`
         : "";
-      return `<li><strong>${escapeHtml(row?.name ?? "Unknown")}</strong> — ${shortLabel}${forageLabel}${errorLabel}</li>`;
-    })
-    .join("");
+    const forageLabel = buildForageReportLabel(row?.foraged);
+    const errorLabel = hasErrors
+      ? ` · <span style="color:#f2bd61;">inventory write needs review</span>`
+      : "";
+    return {
+      hasErrors,
+      hasShortages,
+      html: `<li><strong>${escapeHtml(row?.name ?? "Unknown")}</strong> — ${statusLabel}${knownShortage}${forageLabel}${errorLabel}</li>`,
+    };
+  });
+  const rows = actorReports.map((row) => row.html).join("");
 
-  const partyLines = Object.entries(result.party ?? {})
+  const partyReports = Object.entries(result.party ?? {})
     .filter(([, entry]) => wholeAmount(entry?.shortfall) > 0 || entry?.error)
     .map(([id, entry]) => {
       const definition = byId.get(String(id)) ?? { id, label: null };
       const label = escapeHtml(resourceDisplayLabel(definition));
       const shortfall = wholeAmount(entry?.shortfall);
-      const shortage =
-        shortfall > 0
-          ? `<span style="color:#ef6f74;">${label}: ${shortfall} short.</span>`
+      const hasErrors = Boolean(entry?.error);
+      const hasShortages = shortfall > 0;
+      const outcome = classifyResourceOutcome({ hasErrors, hasShortages });
+      const status =
+        outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW
+          ? `<span style="color:#f2bd61;">needs review</span>`
+          : `<span style="color:#ef6f74;">${shortfall} short</span>`;
+      const knownShortage =
+        outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW && hasShortages
+          ? ` · <span style="color:#ef6f74;">confirmed ${shortfall} short</span>`
           : "";
-      const separator = shortage && entry?.error ? " · " : "";
-      const error = entry?.error
-        ? `<span style="color:#f2bd61;">${label}: ${escapeHtml(entry.error)}.</span>`
+      const error = hasErrors
+        ? ` · <span style="color:#f2bd61;">inventory write needs review</span>`
         : "";
-      return `<div>${shortage}${separator}${error}</div>`;
-    })
-    .join("");
+      return {
+        hasErrors,
+        hasShortages,
+        html: `<div><strong>${label}:</strong> ${status}${knownShortage}${error}</div>`,
+      };
+    });
+  const partyLines = partyReports.map((entry) => entry.html).join("");
+  const hasErrors =
+    result.hasErrors === true ||
+    result.status === "partial" ||
+    actorReports.some((row) => row.hasErrors) ||
+    partyReports.some((entry) => entry.hasErrors);
+  const hasShortages =
+    actorReports.some((row) => row.hasShortages) ||
+    partyReports.some((entry) => entry.hasShortages);
+  const reportOutcome = classifyResourceOutcome({ hasErrors, hasShortages });
   const days = Math.max(1, wholeAmount(result.days));
   const daysLabel = days > 1 ? ` (${days} days)` : "";
   return `
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Daily Supplies — ${escapeHtml(envLabel)}${daysLabel}</h3>
+      <h3 style="margin:0 0 4px;">Daily Supplies — ${resourceOutcomeLabel(reportOutcome)}${daysLabel}</h3>
+      <div style="margin:0 0 4px; opacity:0.8;">Environment: ${escapeHtml(envLabel)}</div>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
       ${partyLines}
     </div>`;

@@ -1134,7 +1134,13 @@ function presentOverviewReport(report, environments = []) {
     rows: report.rows.map((row) => ({
       ...row,
       forageNote: forageNote(row.forage),
-      ok: row.supplied && !row.hasErrors,
+      ok: row.outcome === "supplied",
+      stateClass:
+        row.outcome === "needs-review"
+          ? "is-review"
+          : row.supplied
+            ? "is-ok"
+            : "is-short",
     })),
   };
 }

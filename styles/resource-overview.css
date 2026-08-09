@@ -258,7 +258,8 @@
 }
 
 .infinity-resource-overview .ro-status--low,
-.infinity-resource-overview .ro-run-status--partial {
+.infinity-resource-overview .ro-run-status--partial,
+.infinity-resource-overview .ro-run-status--needs-review {
   color: var(--lf-warn, #f2bd61);
 }
 
@@ -266,9 +267,14 @@
   color: var(--lf-danger, #ef6f74);
 }
 
+.infinity-resource-overview .ro-run-status--short {
+  color: var(--lf-danger, #ef6f74);
+}
+
 .infinity-resource-overview .ro-status--stable,
 .infinity-resource-overview .ro-status--unconfigured,
-.infinity-resource-overview .ro-run-status--complete {
+.infinity-resource-overview .ro-run-status--complete,
+.infinity-resource-overview .ro-run-status--supplied {
   color: var(--lf-muted, #97a3c1);
 }
 
@@ -340,6 +346,10 @@
 
 .infinity-resource-overview .ro-last__list .is-short {
   border-left: 3px solid var(--lf-danger, #ef6f74);
+}
+
+.infinity-resource-overview .ro-last__list .is-review {
+  border-left: 3px solid var(--lf-warn, #f2bd61);
 }
 
 .infinity-resource-overview .ro-last__list small {

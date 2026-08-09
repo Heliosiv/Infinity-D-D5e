@@ -52,10 +52,16 @@ import {
   assert.deepEqual(r.matching, {
     nameKeywords: [],
     excludeNameKeywords: [],
-    flagTag: "",
+    flagTag: "food",
     itemUuids: [],
   });
   assert.equal(r.forageYields, null);
+  assert.equal(
+    normalizeResource({ id: "medicine", matching: { flagTag: "" } }).matching
+      .flagTag,
+    "medicine",
+    "a blank tag falls back to the resource id for created-stack identity",
+  );
 
   const party = normalizeResource({
     id: "light",

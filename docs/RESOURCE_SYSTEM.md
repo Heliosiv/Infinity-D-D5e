@@ -37,7 +37,7 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.72 source has a useful foundation; its installed-world acceptance
+The v0.2.73 source has a useful foundation; its installed-world acceptance
 status remains bounded by the release gates below.
 
 ### Available now
@@ -73,6 +73,10 @@ status remains bounded by the release gates below.
   suggest exhaustion.
 - Inventory planning, calendar math, environment normalization, forage yield,
   roster behavior, and write accounting have focused Node tests.
+- Consumption and forage deposits are verified against the Actor's canonical
+  inventory after Foundry returns or throws. A mismatched write keeps only the
+  amount that can be proven, marks the run **Needs review**, and never labels
+  that actor supplied; GM-only detail is removed from the player projection.
 - Duplicate forage channels and concrete items claimed by more than one
   resource are diagnosed in Quartermaster and block automation before prompts
   or inventory writes. Deposit templates are simulated too, so a newly created

@@ -97,18 +97,20 @@
 
   {{#if report}}
   <section class="rm-section rm-report">
-    <h3>Last upkeep - {{report.environmentLabel}}{{#if report.hasErrors}} - partial write{{/if}}</h3>
+    <h3>Last upkeep - {{#if report.needsReview}}Needs review{{else}}{{#if report.hasShortages}}Shortages{{else}}Complete{{/if}}{{/if}}</h3>
+    <p class="rm-report__meta">Environment: {{report.environmentLabel}}</p>
     <ul class="rm-report__list">
       {{#each report.rows}}
-      <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
+      <li class="{{stateClass}}">
         <strong>{{name}}</strong>
-        {{#if supplied}}supplied{{else}}short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}
+        {{#if needsReview}}needs review{{else}}{{#if supplied}}supplied{{else}}short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}{{/if}}
+        {{#if needsReview}}{{#if hasShortages}} - confirmed short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}{{/if}}
         {{#if forageNote}} - {{forageNote}}{{/if}}
         {{#if hasErrors}} - inventory write needs review{{/if}}
       </li>
       {{/each}}
       {{#each report.partyShortages}}
-      <li class="is-short"><strong>{{label}}</strong>{{#if amount}} - party pool short by {{amount}}{{/if}}{{#if hasError}} - inventory write needs review{{/if}}</li>
+      <li class="{{#if needsReview}}is-review{{else}}is-short{{/if}}"><strong>{{label}}</strong>{{#if needsReview}} - needs review{{/if}}{{#if amount}} - party pool short by {{amount}}{{/if}}{{#if hasError}} - inventory write needs review{{/if}}</li>
       {{/each}}
     </ul>
   </section>

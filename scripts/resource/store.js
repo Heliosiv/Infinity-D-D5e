@@ -211,7 +211,9 @@ export function normalizeResource(raw) {
     matching: {
       nameKeywords: toStrArray(matching.nameKeywords),
       excludeNameKeywords: toStrArray(matching.excludeNameKeywords),
-      flagTag: toStr(matching.flagTag),
+      // Every resource needs a stable module-owned identity for stacks that
+      // Quartermaster creates. The id is the collision-safe fallback.
+      flagTag: toStr(matching.flagTag, id),
       itemUuids: toStrArray(matching.itemUuids),
     },
   };

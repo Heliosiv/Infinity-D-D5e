@@ -357,6 +357,9 @@ function roster({ shared = false } = {}) {
   assert.equal("errors" in player.lastUpkeep.rows[0], false);
   assert.equal("error" in player.lastUpkeep.partyShortages[0], false);
   assert.equal(player.lastUpkeep.rows[0].hasErrors, true);
+  assert.equal(player.lastUpkeep.rows[0].outcome, "needs-review");
+  assert.equal(player.lastUpkeep.rows[0].needsReview, true);
+  assert.equal(player.lastUpkeep.rows[0].supplied, false);
   assert.deepEqual(player.lastUpkeep.rows[0].shortages, [
     { id: "medicine", label: "Field Medicine", amount: 2 },
   ]);
@@ -365,6 +368,8 @@ function roster({ shared = false } = {}) {
       id: "light",
       label: "Light",
       amount: 1,
+      outcome: "needs-review",
+      needsReview: true,
       hasError: true,
     },
   ]);
@@ -406,6 +411,40 @@ function roster({ shared = false } = {}) {
     JSON.stringify(hidden).includes("Aria"),
     false,
     "an actor the viewer cannot observe stays unnamed",
+  );
+
+  const errorOnly = buildResourceOverview({
+    config: { resources: [FOOD], waterEnabled: false },
+    roster: roster(),
+    state: {
+      lastUpkeepResult: {
+        status: "complete",
+        hasErrors: false,
+        perActor: [
+          {
+            actorId: "actor-a",
+            name: "Aria",
+            shortfalls: { food: 0 },
+            errors: ["private exact inventory failure"],
+          },
+        ],
+        party: {},
+      },
+    },
+  });
+  assert.equal(errorOnly.lastUpkeep.status, "partial");
+  assert.equal(errorOnly.lastUpkeep.outcome, "needs-review");
+  assert.equal(errorOnly.lastUpkeep.rows[0].supplied, false);
+  assert.equal(errorOnly.lastUpkeep.rows[0].needsReview, true);
+  const sanitizedErrorOnly = sanitizeResourceOverview(errorOnly);
+  assert.equal(sanitizedErrorOnly.lastUpkeep.rows[0].supplied, false);
+  assert.equal(sanitizedErrorOnly.lastUpkeep.rows[0].needsReview, true);
+  assert.equal(
+    JSON.stringify(sanitizedErrorOnly).includes(
+      "private exact inventory failure",
+    ),
+    false,
+    "the player learns the outcome without receiving private write details",
   );
 }
 

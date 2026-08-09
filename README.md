@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.72 (unreleased)** - Adds private, read-only Quartermaster receipts for the 20 most recent upkeep, forage, and acknowledged interrupted runs.
+**v0.2.73 (unreleased)** - Hardens Quartermaster inventory writes with canonical Actor read-back and honest **Needs review** outcomes, while retaining the private 20-run receipt history introduced in v0.2.72.
 
 - GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.

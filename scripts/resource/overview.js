@@ -8,6 +8,7 @@
  */
 
 import { matchResourceItems } from "./consumption.js";
+import { classifyResourceOutcome, RESOURCE_OUTCOMES } from "./outcome.js";
 
 export const RESOURCE_OVERVIEW_VERSION = 1;
 
@@ -357,13 +358,19 @@ function buildLastUpkeep(result, resources) {
           amount: nonNegativeNumber(row?.shortfalls?.[resource.id]),
         }))
         .filter((entry) => entry.amount > 0);
+      const hasErrors = Array.isArray(row?.errors) && row.errors.length > 0;
+      const hasShortages = shortages.length > 0;
+      const outcome = classifyResourceOutcome({ hasErrors, hasShortages });
       return {
         actorId: text(row?.actorId) || null,
         name: text(row?.name, "Character"),
         shortages,
-        supplied: shortages.length === 0,
+        outcome,
+        supplied: outcome === RESOURCE_OUTCOMES.SUPPLIED,
+        needsReview: outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW,
+        hasShortages,
         forage: sanitizeForage(row?.foraged),
-        hasErrors: Array.isArray(row?.errors) && row.errors.length > 0,
+        hasErrors,
         errors: Array.isArray(row?.errors)
           ? row.errors.map((entry) => text(entry)).filter(Boolean)
           : [],
@@ -373,30 +380,45 @@ function buildLastUpkeep(result, resources) {
   const partyShortages = partyResources
     .map((resource) => {
       const entry = result.party?.[resource.id] ?? {};
+      const amount = nonNegativeNumber(entry.shortfall);
+      const hasError = Boolean(entry.error);
+      const outcome = classifyResourceOutcome({
+        hasErrors: hasError,
+        hasShortages: amount > 0,
+      });
       return {
         id: text(resource.id),
         label: text(resource.label, resource.id),
-        amount: nonNegativeNumber(entry.shortfall),
-        hasError: Boolean(entry.error),
+        amount,
+        outcome,
+        needsReview: outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW,
+        hasError,
         error: text(entry.error),
       };
     })
     .filter((entry) => entry.amount > 0 || entry.hasError);
+  const hasShortages =
+    rows.some((row) => row.hasShortages) ||
+    partyShortages.some((entry) => entry.amount > 0);
+  const hasErrors =
+    result.status === "partial" ||
+    result.hasErrors === true ||
+    rows.some((row) => row.hasErrors) ||
+    partyShortages.some((entry) => entry.hasError);
+  const outcome = classifyResourceOutcome({ hasErrors, hasShortages });
   return {
     runId: text(result.runId) || null,
     day: finiteOrNull(result.day),
     days: Math.max(1, nonNegativeInt(result.days) || 1),
     environmentId: text(result.environmentId) || null,
-    status: result.status === "partial" ? "partial" : "complete",
+    status: hasErrors ? "partial" : "complete",
     ranAt: finiteOrNull(result.ranAt),
     rows,
     partyShortages,
-    hasShortages:
-      rows.some((row) => !row.supplied) || partyShortages.length > 0,
-    hasErrors:
-      result.hasErrors === true ||
-      rows.some((row) => row.hasErrors) ||
-      partyShortages.some((entry) => entry.hasError),
+    outcome,
+    needsReview: outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW,
+    hasShortages,
+    hasErrors,
   };
 }
 
@@ -408,32 +430,56 @@ function sanitizeLastUpkeep(report, { visibleActorIds = null } = {}) {
     environmentId: text(report.environmentId) || null,
     status: report.status === "partial" ? "partial" : "complete",
     ranAt: finiteOrNull(report.ranAt),
-    rows: (Array.isArray(report.rows) ? report.rows : []).map((row) => ({
-      name:
-        visibleActorIds instanceof Set &&
-        (!row.actorId || !visibleActorIds.has(row.actorId))
-          ? "Hidden party member"
-          : text(row.name, "Character"),
-      shortages: (Array.isArray(row.shortages) ? row.shortages : []).map(
+    rows: (Array.isArray(report.rows) ? report.rows : []).map((row) => {
+      const shortages = (Array.isArray(row.shortages) ? row.shortages : []).map(
         (entry) => ({
           id: text(entry.id),
           label: text(entry.label, entry.id),
           amount: nonNegativeNumber(entry.amount),
         }),
-      ),
-      supplied: row.supplied !== false,
-      forage: sanitizeForage(row.forage),
-      hasErrors: row.hasErrors === true,
-    })),
+      );
+      const hasErrors = row.hasErrors === true;
+      const hasShortages = shortages.some((entry) => entry.amount > 0);
+      const outcome = classifyResourceOutcome({ hasErrors, hasShortages });
+      return {
+        name:
+          visibleActorIds instanceof Set &&
+          (!row.actorId || !visibleActorIds.has(row.actorId))
+            ? "Hidden party member"
+            : text(row.name, "Character"),
+        shortages,
+        outcome,
+        supplied: outcome === RESOURCE_OUTCOMES.SUPPLIED,
+        needsReview: outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW,
+        hasShortages,
+        forage: sanitizeForage(row.forage),
+        hasErrors,
+      };
+    }),
     partyShortages: (Array.isArray(report.partyShortages)
       ? report.partyShortages
       : []
-    ).map((entry) => ({
-      id: text(entry.id),
-      label: text(entry.label, entry.id),
-      amount: nonNegativeNumber(entry.amount),
-      hasError: entry.hasError === true,
-    })),
+    ).map((entry) => {
+      const amount = nonNegativeNumber(entry.amount);
+      const hasError = entry.hasError === true;
+      const outcome = classifyResourceOutcome({
+        hasErrors: hasError,
+        hasShortages: amount > 0,
+      });
+      return {
+        id: text(entry.id),
+        label: text(entry.label, entry.id),
+        amount,
+        outcome,
+        needsReview: outcome === RESOURCE_OUTCOMES.NEEDS_REVIEW,
+        hasError,
+      };
+    }),
+    outcome: classifyResourceOutcome({
+      hasErrors: report.hasErrors === true,
+      hasShortages: report.hasShortages === true,
+    }),
+    needsReview: report.hasErrors === true,
     hasShortages: report.hasShortages === true,
     hasErrors: report.hasErrors === true,
   };

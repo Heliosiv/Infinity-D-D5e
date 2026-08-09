@@ -860,10 +860,20 @@
   gap: 2px;
 }
 
+.infinity-dnd5e .rm-report__meta {
+  margin: -4px 0 6px;
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+}
+
 .infinity-dnd5e .rm-report__list .is-short {
   color: var(--lf-danger);
 }
 
 .infinity-dnd5e .rm-report__list .is-ok {
   color: var(--lf-success);
+}
+
+.infinity-dnd5e .rm-report__list .is-review {
+  color: var(--lf-warn);
 }

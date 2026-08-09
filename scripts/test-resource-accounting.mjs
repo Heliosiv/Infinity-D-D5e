@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   actorItemSnapshots,
+  buildForageDriveReportContent,
   buildUpkeepAuditMetadata,
   buildUpkeepReportContent,
   diagnoseProposedResourceDeposits,
@@ -410,10 +411,116 @@ import {
     },
   });
   assert.match(content, /Travel Provisions/);
-  assert.match(content, /Lamp Oil: 1 short/);
+  assert.match(content, /Lamp Oil:<\/strong>[\s\S]*1 short/);
   assert.match(content, /gathered; best haul kept/);
   assert.match(content, /&lt;Aria&gt;/, "actor names are escaped");
   assert.match(content, /\(2 days\)/);
+
+  const writeErrorOnly = buildUpkeepReportContent({
+    env: { id: "abundant", label: "Abundant" },
+    resources: [
+      { id: "food", label: "Food (Rations)", scope: "per-character" },
+    ],
+    result: {
+      status: "complete",
+      hasErrors: false,
+      days: 1,
+      perActor: [
+        {
+          name: "Clarence",
+          shortfalls: { food: 0 },
+          errors: ["Food (Rations): 1 inventory write needs review"],
+        },
+      ],
+      party: {},
+    },
+  });
+  assert.match(writeErrorOnly, /Daily Supplies — Needs review/);
+  assert.match(writeErrorOnly, /Environment: Abundant/);
+  assert.match(writeErrorOnly, />needs review</);
+  assert.doesNotMatch(
+    writeErrorOnly,
+    />supplied</,
+    "a row with an inventory error can never claim it was supplied",
+  );
+  assert.doesNotMatch(writeErrorOnly, /write failed/i);
+  assert.doesNotMatch(writeErrorOnly, /1 inventory write/);
+  assert.doesNotMatch(
+    writeErrorOnly,
+    /Food \(Rations\):/,
+    "player-visible chat never includes private stack diagnostics",
+  );
+
+  const mixedFailure = buildUpkeepReportContent({
+    env: { id: "sparse", label: "Sparse" },
+    resources: [
+      { id: "food", label: "Food (Rations)", scope: "per-character" },
+    ],
+    result: {
+      perActor: [
+        {
+          name: "Aria",
+          shortfalls: { food: 2 },
+          errors: ["Food (Rations): inventory state differed from the plan"],
+        },
+      ],
+      party: {},
+    },
+  });
+  assert.match(mixedFailure, /Daily Supplies — Needs review/);
+  assert.match(mixedFailure, /confirmed short 2 Food \(Rations\)/);
+
+  const partyFailure = buildUpkeepReportContent({
+    resources: [{ id: "light", label: "Light", scope: "party" }],
+    result: {
+      perActor: [],
+      party: { light: { shortfall: 0, error: "inventory write needs review" } },
+    },
+  });
+  assert.match(partyFailure, /Daily Supplies — Needs review/);
+  assert.doesNotMatch(partyFailure, />supplied</);
+
+  const cleanRun = buildUpkeepReportContent({
+    env: { id: "abundant", label: "Abundant" },
+    resources: [{ id: "food", label: "Food", scope: "per-character" }],
+    result: {
+      status: "complete",
+      perActor: [{ name: "Aria", shortfalls: { food: 0 }, errors: [] }],
+      party: {},
+    },
+  });
+  assert.match(cleanRun, /Daily Supplies — Complete/);
+  assert.match(cleanRun, />supplied</);
+
+  const forageWriteFailure = buildForageDriveReportContent({
+    env: { dc: 12 },
+    perForager: [
+      {
+        actorId: "actor-a",
+        name: "Aria",
+        attempted: true,
+        success: true,
+        food: 3,
+        water: 2,
+      },
+    ],
+    stashActor: null,
+    totalFood: 0,
+    totalWater: 0,
+    depositErrors: [
+      "Private Pack: food deposit needs review (0 of 3 confirmed; Secret Rations ended at 8)",
+    ],
+  });
+  assert.match(forageWriteFailure, /gathered \+3 food \/ \+2 water/);
+  assert.match(forageWriteFailure, /\+0 food \/ \+0 water<\/strong> applied/);
+  assert.match(
+    forageWriteFailure,
+    /Some inventory deposits need review in Quartermaster/,
+  );
+  assert.doesNotMatch(
+    forageWriteFailure,
+    /Private Pack|Secret Rations|ended at/,
+  );
 }
 
 /* ------------------------------------------------------------------ *

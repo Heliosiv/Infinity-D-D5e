@@ -124,25 +124,32 @@
       <section class="ro-last" aria-labelledby="ro-last-heading">
         <div class="ro-section-head">
           <h3 id="ro-last-heading">Last upkeep</h3>
-          <span class="ro-run-status ro-run-status--{{lastUpkeep.status}}">{{lastUpkeep.status}}</span>
+          <span class="ro-run-status ro-run-status--{{lastUpkeep.outcome}}">{{lastUpkeep.outcomeLabel}}</span>
         </div>
         <ul class="ro-last__list">
           {{#each lastUpkeep.rows}}
-          <li class="{{#if ok}}is-supplied{{else}}is-short{{/if}}">
+          <li class="{{stateClass}}">
             <strong>{{name}}</strong>
-            {{#if supplied}}
+            {{#if needsReview}}
+            <span>Needs review</span>
+            {{#if hasShortages}}
+            <span>Confirmed short:</span>
+            {{#each shortages}}<span class="ro-shortage">{{label}} {{amount}}</span>{{/each}}
+            {{/if}}
+            {{else}}{{#if supplied}}
             <span>Supplied</span>
             {{else}}
             <span>Short:</span>
             {{#each shortages}}<span class="ro-shortage">{{label}} {{amount}}</span>{{/each}}
-            {{/if}}
+            {{/if}}{{/if}}
             {{#if forageNote}}<small>{{forageNote}}</small>{{/if}}
             {{#if hasErrors}}<small class="ro-warning">The GM is reviewing an inventory write problem.</small>{{/if}}
           </li>
           {{/each}}
           {{#each lastUpkeep.partyShortages}}
-          <li class="is-short">
+          <li class="{{#if needsReview}}is-review{{else}}is-short{{/if}}">
             <strong>{{label}}</strong>
+            {{#if needsReview}}<span>Needs review</span>{{/if}}
             {{#if amount}}<span>Party pool short by {{amount}}</span>{{/if}}
             {{#if hasError}}<small class="ro-warning">The GM is reviewing an inventory write problem.</small>{{/if}}
           </li>
