@@ -1,6 +1,6 @@
 # Downtime, Locations, City Actions, and Theft
 
-## v0.3.0 interface quick start
+## v0.3.1 interface quick start
 
 The GM workspace visualizes **Create → Collect → Lock → Preview → Apply → Complete**, with Recovery shown as an explicit branch rather than another forward step. Only the next valid primary action is emphasized. Players always see their controlled character, remaining hours, queue order, submission state, and the reason an action is unavailable. Keyboard queue controls remain available alongside pointer reordering.
 

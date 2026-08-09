@@ -1,6 +1,6 @@
 # Resource System Product Roadmap
 
-## v0.3.0 interface quick start
+## v0.3.1 interface quick start
 
 Open **Home → Track the Campaign → Quartermaster**. Start in Today, follow the recommended next action, and review visible safety or disabled-control reasons. **Recent Runs** remains read-only. Open **Setup & Rules** for the first-setup checklist, environments, roster, sources, and automation. Players use Home or `Shift+Q` for the permission-safe Party Supplies view. Offline and interrupted states state whether anything changed and whether to retry or wait for recovery.
 

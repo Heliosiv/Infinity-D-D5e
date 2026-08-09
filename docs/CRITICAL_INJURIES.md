@@ -1,6 +1,6 @@
 # Critical Injury Table V2
 
-## v0.3.0 interface quick start
+## v0.3.1 interface quick start
 
 Players open **Home → Track the Campaign → Critical Injuries** or press `Shift+J`. The window and HUD identify the controlled character and share the same treatment status. HUD markers retain hover, focus, pin, touch, and Escape behavior with enlarged targets. Pending, offline, busy, successful, uncertain, and retry states explain whether the authoritative GM changed anything and what the player should do next.
 

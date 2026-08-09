@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.0 targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.1 targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -19,6 +19,8 @@ Full GMs see campaign-management workspaces. Players and Assistant GMs see only 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.1 — Released 2026-08-09** - Downtime setup now starts with player-owned PCs and adds searchable group, owner, folder, and sort controls for gradually including other characters. Reputation, Merchant, Quartermaster, and Settings section navigation now stays inside the current application window, and Loot preset downloads no longer trigger Foundry's external-link handler.
 
 **v0.3.0 — Released 2026-08-09** - Coordinated UI/UX redesign with role-aware Home, one Loot Studio, grouped settings, shared accessibility foundations, responsive application layouts, and plain-language recovery states. Game rules, stored campaign data, permissions, privacy boundaries, and authoritative-GM behavior remain unchanged.
 
@@ -323,9 +325,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.3.0 && git push origin refs/tags/v0.3.0`).
+1. Tag the commit (`git tag v0.3.1 && git push origin refs/tags/v0.3.1`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.3.0` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.3.1` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema
