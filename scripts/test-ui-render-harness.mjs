@@ -316,6 +316,58 @@ const suppliesOfflineView = views.find(
 assert.ok(suppliesOfflineView, "harness includes Party Supplies offline state");
 assert.match(suppliesOfflineView.html, /No GM is online right now/);
 
+const routineManagerView = views.find((view) => view.id === "resource-manager");
+assert.ok(
+  routineManagerView,
+  "harness includes the routine Quartermaster view",
+);
+const routineSetupTag = routineManagerView.html.match(
+  /<details\b[^>]*class="rm-setup"[^>]*>/,
+)?.[0];
+assert.ok(routineSetupTag, "routine Quartermaster renders Setup & rules");
+assert.doesNotMatch(
+  routineSetupTag,
+  /\sopen(?:\s|=|>)/,
+  "routine Quartermaster starts with setup collapsed",
+);
+const routineHeader = routineManagerView.html.match(
+  /<header\b[^>]*class="rm-head"[^>]*>[\s\S]*?<\/header>/,
+)?.[0];
+assert.ok(routineHeader, "routine Quartermaster renders its daily header");
+assert.match(routineHeader, /data-action="advanceDay"/);
+assert.match(routineHeader, /data-action="forageDrive"/);
+assert.match(routineHeader, /data-action="refresh"/);
+assert.doesNotMatch(
+  routineHeader,
+  /data-action="resetConfig"/,
+  "Reset is no longer a daily header action",
+);
+const setupIndex = routineManagerView.html.indexOf("Setup &amp; rules");
+for (const routineLabel of [
+  "Where is the party?",
+  "Supply outlook",
+  "Last upkeep",
+]) {
+  const routineIndex = routineManagerView.html.indexOf(routineLabel);
+  assert.ok(routineIndex >= 0, `${routineLabel} remains in the routine view`);
+  assert.ok(
+    routineIndex < setupIndex,
+    `${routineLabel} renders outside the setup disclosure`,
+  );
+}
+for (const setupLabel of [
+  "Environment setup",
+  "Rules",
+  "Tracked resources",
+  "Party supplies",
+  "Reset to defaults",
+]) {
+  assert.ok(
+    routineManagerView.html.indexOf(setupLabel, setupIndex + 1) > setupIndex,
+    `${setupLabel} renders inside Setup & rules`,
+  );
+}
+
 const lockedManagerView = views.find(
   (view) => view.id === "resource-manager-locked",
 );
@@ -333,6 +385,11 @@ const customEnvironmentView = views.find(
 assert.ok(
   customEnvironmentView,
   "harness includes the Quartermaster custom-region editor",
+);
+assert.match(
+  customEnvironmentView.html,
+  /<details\b[^>]*class="rm-setup"[^>]*\sopen(?:\s|=|>)/,
+  "custom-region fixture keeps setup expanded",
 );
 assert.match(customEnvironmentView.html, /Edit current custom environment/);
 assert.match(customEnvironmentView.html, /data-environment-field="label"/);
@@ -429,6 +486,7 @@ for (const id of ["per-encounter", "per-creature"]) {
   );
   const html = renderFixture(resourceFixture, {
     canRunResourceWrites: false,
+    setupExpanded: true,
     hasResourceConflictWarnings: true,
     hasBlockingResourceConflicts: true,
     resourceConflictWarnings: [
@@ -442,6 +500,16 @@ for (const id of ["per-encounter", "per-creature"]) {
   assert.match(html, /role="alert"/);
   assert.match(html, /Resource rules need attention/);
   assert.match(html, /matches multiple resources: Food, Meals/);
+  const conflictSetupIndex = html.indexOf("Setup &amp; rules");
+  assert.ok(
+    html.indexOf("Resource rules need attention") < conflictSetupIndex,
+    "authoritative conflict warning stays outside Setup & rules",
+  );
+  assert.match(
+    html,
+    /<details\b[^>]*class="rm-setup"[^>]*\sopen(?:\s|=|>)/,
+    "blocking conflicts render setup expanded",
+  );
   for (const action of ["advanceDay", "forageDrive"]) {
     const button = html.match(
       new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*>`),

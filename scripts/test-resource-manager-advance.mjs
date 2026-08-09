@@ -98,6 +98,63 @@ try {
   };
 
   const { ResourceManagerApp } = await import("./resource-manager.js");
+
+  const lifecycleApp = new ResourceManagerApp();
+  assert.equal(
+    lifecycleApp._setupExpanded,
+    false,
+    "a newly opened Quartermaster starts with setup collapsed",
+  );
+  lifecycleApp._setupExpanded = true;
+  ResourceManagerApp.prototype._onClose.call(lifecycleApp);
+  assert.equal(
+    lifecycleApp._setupExpanded,
+    false,
+    "closing Quartermaster resets the session-local setup state",
+  );
+
+  let setupToggleHandler = null;
+  const setupDisclosure = {
+    addEventListener(type, handler) {
+      if (type === "toggle") setupToggleHandler = handler;
+    },
+  };
+  const renderApp = {
+    constructor: ResourceManagerApp,
+    _setupExpanded: false,
+    element: {
+      classList: { toggle() {} },
+      dataset: { idxKeydownBound: "true" },
+      querySelector(selector) {
+        if (selector === "[data-role='setup-disclosure']") {
+          return setupDisclosure;
+        }
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    },
+  };
+  ResourceManagerApp.prototype._onRender.call(renderApp, {}, {});
+  assert.equal(
+    typeof setupToggleHandler,
+    "function",
+    "Quartermaster observes the native setup disclosure",
+  );
+  setupToggleHandler({ currentTarget: { open: true } });
+  assert.equal(
+    renderApp._setupExpanded,
+    true,
+    "expanding setup is retained for the next render",
+  );
+  setupToggleHandler({ currentTarget: { open: false } });
+  assert.equal(
+    renderApp._setupExpanded,
+    false,
+    "collapsing setup is retained for the next render",
+  );
+
   const advanceDay = ResourceManagerApp.DEFAULT_OPTIONS.actions.advanceDay;
   const forageDrive = ResourceManagerApp.DEFAULT_OPTIONS.actions.forageDrive;
   const app = {

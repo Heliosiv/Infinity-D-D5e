@@ -120,6 +120,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   constructor(options = {}) {
     super(options);
+    this._setupExpanded = false;
     this._unsubs = [
       subscribe(RESOURCE_EVENTS.STATE_UPDATE, () => this.render(false)),
       subscribe(RESOURCE_EVENTS.UPKEEP_REPORT, () => this.render(false)),
@@ -141,6 +142,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    this._setupExpanded = false;
     for (const fn of this._unsubs ?? []) {
       try {
         fn();
@@ -225,6 +227,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const hasBlockingResourceConflicts = resourceConflictWarnings.some(
       (conflict) => conflict.isBlocking,
     );
+    if (hasBlockingResourceConflicts) this._setupExpanded = true;
     const isAuthoritative = isAuthoritativeGM();
     const activeUpkeep = state.activeUpkeep;
     const overview = buildResourceOverview({
@@ -399,6 +402,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       resourceConflictWarnings,
       hasResourceConflictWarnings: resourceConflictWarnings.length > 0,
       hasBlockingResourceConflicts,
+      setupExpanded: this._setupExpanded === true,
       partyRows,
       hasParty: partyRows.length > 0,
       rosterIsImplicit,
@@ -426,6 +430,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       "rm-no-anim",
       getSetting(SETTING_KEYS.ANIMATIONS) === false,
     );
+
+    const setupDisclosure = root.querySelector(
+      "[data-role='setup-disclosure']",
+    );
+    setupDisclosure?.addEventListener("toggle", (event) => {
+      this._setupExpanded = event.currentTarget?.open === true;
+    });
 
     // Enter = primary action (Advance Day), matching the loot tools. Bound once;
     // skips form fields and respects the keyboard-shortcuts setting. Advance Day

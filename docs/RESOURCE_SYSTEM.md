@@ -43,6 +43,11 @@ status remains bounded by the release gates below.
 ### Available now
 
 - The GM dashboard exposes **Quartermaster** under Travel & Supplies.
+- Quartermaster opens in a routine-first view with daily actions, location,
+  supply outlook, warnings, and the latest report visible. Configuration lives
+  in a native **Setup & rules** disclosure that stays open during the current
+  window session, resets closed when the window is reopened, and opens
+  automatically for a blocking resource-rule conflict.
 - Players can open a persistent **Supplies** window from the Infinity D&D5e
   scene controls or the `Shift+Q` shortcut. It requests a fresh, sanitized
   party snapshot from the authoritative GM and has loading, unavailable,

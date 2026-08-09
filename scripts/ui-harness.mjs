@@ -1270,6 +1270,7 @@ function resourceManagerContext() {
   return {
     isAuthoritative: true,
     canRunResourceWrites: true,
+    setupExpanded: false,
     hasResourceConflictWarnings: false,
     hasBlockingResourceConflicts: false,
     resourceConflictWarnings: [],
@@ -1437,6 +1438,7 @@ function resourceManagerCustomEnvironmentContext() {
   };
   return {
     ...context,
+    setupExpanded: true,
     environments: [
       ...context.environments.map((environment) => ({
         ...environment,

@@ -178,6 +178,11 @@ environment, and automation in **Quartermaster**. Players can open **Party
 Supplies** from scene controls or `Shift + Q`; the active GM sends a sanitized
 snapshot without item-matching rules or raw actor inventory details.
 
+Quartermaster opens on the daily routine: Advance Day, Forage Drive, current
+location, supply outlook, safety warnings, and the latest report. Expand
+**Setup & rules** for environment authoring, automation, tracked-resource
+definitions, roster and stash routing, or resetting the configuration.
+
 Roster actors can be marked as daily consumers or inventory-only sources, so a
 mule or NPC stash does not consume an extra ration. Quartermaster also warns
 about overlapping resource matchers and blocks unsafe inventory writes when a

@@ -19,9 +19,6 @@
       <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="refresh" title="Refresh" aria-label="Refresh Quartermaster">
         <i class="fa-solid fa-rotate" aria-hidden="true"></i>
       </button>
-      <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="resetConfig" title="Reset to defaults" aria-label="Reset Quartermaster to defaults">
-        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-      </button>
     </div>
   </header>
 
@@ -56,12 +53,7 @@
   <p class="rm-note">Set where the party is, check supplies below, then <strong>Advance Day</strong> — or turn on Auto-run to do it automatically as in-game days pass.</p>
 
   <section class="rm-section rm-environment">
-    <div class="rm-section__head">
-      <h3>Where is the party?</h3>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="copyEnvironment" title="Copy the current region into an editable custom region" {{#unless canCopyEnvironment}}disabled aria-disabled="true"{{/unless}}>
-        <i class="fa-solid fa-copy" aria-hidden="true"></i> Copy as custom
-      </button>
-    </div>
+    <h3>Where is the party?</h3>
     <div class="rm-environment__row">
       <select class="mw-input" data-role="environment" aria-label="Current environment" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
         {{#each environments}}
@@ -76,41 +68,6 @@
         {{/if}}
       </span>
     </div>
-    {{#if currentEnvironment.isCustom}}
-    <div class="rm-environment-editor" aria-label="Edit current custom environment">
-      <div class="rm-environment-editor__head">
-        <div>
-          <strong>Custom region</strong>
-          <span>Changes apply to this saved region immediately.</span>
-        </div>
-        <code>{{currentEnvironment.id}}</code>
-      </div>
-      <div class="rm-environment-editor__grid">
-        <label class="rm-field rm-environment-editor__name">
-          <span>Name</span>
-          <input class="mw-input" type="text" required maxlength="100" value="{{currentEnvironment.label}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="label" />
-        </label>
-        <label class="rm-toggle rm-environment-editor__toggle">
-          <input type="checkbox" {{#if currentEnvironment.forageable}}checked{{/if}} data-environment-id="{{currentEnvironment.id}}" data-environment-field="forageable" /> Foraging open
-        </label>
-        <label class="rm-field rm-field--narrow">
-          <span>Survival DC</span>
-          <input class="mw-input mw-input--num" type="number" min="0" max="100" step="1" value="{{currentEnvironment.dc}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="dc" />
-        </label>
-        <label class="rm-field">
-          <span>Food yield</span>
-          <input class="mw-input" type="text" maxlength="64" inputmode="text" value="{{currentEnvironment.yieldFood}}" placeholder="1d6" data-environment-id="{{currentEnvironment.id}}" data-environment-field="yieldFood" />
-        </label>
-        <label class="rm-field">
-          <span>Water yield</span>
-          <input class="mw-input" type="text" maxlength="64" inputmode="text" value="{{currentEnvironment.yieldWater}}" placeholder="1d6" data-environment-id="{{currentEnvironment.id}}" data-environment-field="yieldWater" />
-        </label>
-      </div>
-      <p class="rm-note">Yield accepts a number or bounded dice math such as <code>1d6</code> or <code>2d4+1</code>. Turn foraging off for settlements, dungeons, or other closed regions.</p>
-    </div>
-    {{else}}
-    <p class="rm-note">Built-in regions stay unchanged. Copy the current region to make an editable campaign variant.</p>
-    {{/if}}
   </section>
 
   {{#if hasOverviewResources}}
@@ -137,6 +94,75 @@
     </div>
   </section>
   {{/if}}
+
+  {{#if report}}
+  <section class="rm-section rm-report">
+    <h3>Last upkeep - {{report.environmentLabel}}{{#if report.hasErrors}} - partial write{{/if}}</h3>
+    <ul class="rm-report__list">
+      {{#each report.rows}}
+      <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
+        <strong>{{name}}</strong>
+        {{#if supplied}}supplied{{else}}short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}
+        {{#if forageNote}} - {{forageNote}}{{/if}}
+        {{#if hasErrors}} - inventory write needs review{{/if}}
+      </li>
+      {{/each}}
+      {{#each report.partyShortages}}
+      <li class="is-short"><strong>{{label}}</strong>{{#if amount}} - party pool short by {{amount}}{{/if}}{{#if hasError}} - inventory write needs review{{/if}}</li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/if}}
+
+  <details class="rm-setup" data-role="setup-disclosure" {{#if setupExpanded}}open{{/if}}>
+    <summary class="rm-setup__summary">
+      <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; rules</span>
+      <small>Environment, automation, resources, and party roster</small>
+    </summary>
+    <div class="rm-setup__content">
+      <section class="rm-section rm-environment-setup" aria-labelledby="rm-environment-setup-heading">
+        <div class="rm-section__head">
+          <h3 id="rm-environment-setup-heading">Environment setup</h3>
+          <button type="button" class="mw-btn mw-btn--ghost" data-action="copyEnvironment" title="Copy the current region into an editable custom region" {{#unless canCopyEnvironment}}disabled aria-disabled="true"{{/unless}}>
+            <i class="fa-solid fa-copy" aria-hidden="true"></i> Copy as custom
+          </button>
+        </div>
+        {{#if currentEnvironment.isCustom}}
+        <div class="rm-environment-editor" aria-label="Edit current custom environment">
+          <div class="rm-environment-editor__head">
+            <div>
+              <strong>Custom region</strong>
+              <span>Changes apply to this saved region immediately.</span>
+            </div>
+            <code>{{currentEnvironment.id}}</code>
+          </div>
+          <div class="rm-environment-editor__grid">
+            <label class="rm-field rm-environment-editor__name">
+              <span>Name</span>
+              <input class="mw-input" type="text" required maxlength="100" value="{{currentEnvironment.label}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="label" />
+            </label>
+            <label class="rm-toggle rm-environment-editor__toggle">
+              <input type="checkbox" {{#if currentEnvironment.forageable}}checked{{/if}} data-environment-id="{{currentEnvironment.id}}" data-environment-field="forageable" /> Foraging open
+            </label>
+            <label class="rm-field rm-field--narrow">
+              <span>Survival DC</span>
+              <input class="mw-input mw-input--num" type="number" min="0" max="100" step="1" value="{{currentEnvironment.dc}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="dc" />
+            </label>
+            <label class="rm-field">
+              <span>Food yield</span>
+              <input class="mw-input" type="text" maxlength="64" inputmode="text" value="{{currentEnvironment.yieldFood}}" placeholder="1d6" data-environment-id="{{currentEnvironment.id}}" data-environment-field="yieldFood" />
+            </label>
+            <label class="rm-field">
+              <span>Water yield</span>
+              <input class="mw-input" type="text" maxlength="64" inputmode="text" value="{{currentEnvironment.yieldWater}}" placeholder="1d6" data-environment-id="{{currentEnvironment.id}}" data-environment-field="yieldWater" />
+            </label>
+          </div>
+          <p class="rm-note">Yield accepts a number or bounded dice math such as <code>1d6</code> or <code>2d4+1</code>. Turn foraging off for settlements, dungeons, or other closed regions.</p>
+        </div>
+        {{else}}
+        <p class="rm-note">Built-in regions stay unchanged. Copy the current region to make an editable campaign variant.</p>
+        {{/if}}
+      </section>
 
   <section class="rm-section rm-options">
     <h3>Rules</h3>
@@ -277,22 +303,15 @@
     {{/if}}
   </section>
 
-  {{#if report}}
-  <section class="rm-section rm-report">
-    <h3>Last upkeep - {{report.environmentLabel}}{{#if report.hasErrors}} - partial write{{/if}}</h3>
-    <ul class="rm-report__list">
-      {{#each report.rows}}
-      <li class="{{#if ok}}is-ok{{else}}is-short{{/if}}">
-        <strong>{{name}}</strong>
-        {{#if supplied}}supplied{{else}}short: {{#each shortages}}<span>{{label}} {{amount}}</span>{{/each}}{{/if}}
-        {{#if forageNote}} - {{forageNote}}{{/if}}
-        {{#if hasErrors}} - inventory write needs review{{/if}}
-      </li>
-      {{/each}}
-      {{#each report.partyShortages}}
-      <li class="is-short"><strong>{{label}}</strong>{{#if amount}} - party pool short by {{amount}}{{/if}}{{#if hasError}} - inventory write needs review{{/if}}</li>
-      {{/each}}
-    </ul>
-  </section>
-  {{/if}}
+      <div class="rm-setup__reset">
+        <div>
+          <strong>Reset Quartermaster</strong>
+          <span>Restore the default resources, rules, roster routing, and environments.</span>
+        </div>
+        <button type="button" class="mw-btn mw-btn--ghost" data-action="resetConfig">
+          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reset to defaults
+        </button>
+      </div>
+    </div>
+  </details>
 </div>

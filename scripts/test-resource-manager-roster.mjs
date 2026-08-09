@@ -113,6 +113,7 @@ try {
   }
 
   const fakeApp = {
+    _setupExpanded: false,
     element: {
       querySelector(selector) {
         return selector === "[data-role='add-roster']" ? { value: "N" } : null;
@@ -121,6 +122,37 @@ try {
     render() {},
     async _renderPreservingFocus() {},
   };
+
+  /* Setup stays session-local across ordinary context rerenders, and a
+     blocking resource-rule conflict opens it so the correction is visible. */
+  {
+    setConfig();
+    fakeApp._setupExpanded = true;
+    let context =
+      await ResourceManagerApp.prototype._prepareContext.call(fakeApp);
+    assert.equal(
+      context.setupExpanded,
+      true,
+      "an expanded setup disclosure survives a context rerender",
+    );
+
+    const config = settingValues.get("resourceConfig");
+    config.resources.push({
+      ...structuredClone(config.resources[0]),
+      id: "duplicate-food",
+      label: "Duplicate Food",
+    });
+    settingValues.set("resourceConfig", config);
+    fakeApp._setupExpanded = false;
+    context = await ResourceManagerApp.prototype._prepareContext.call(fakeApp);
+    assert.equal(context.hasBlockingResourceConflicts, true);
+    assert.equal(
+      context.setupExpanded,
+      true,
+      "a blocking resource-rule conflict automatically opens setup",
+    );
+    assert.equal(fakeApp._setupExpanded, true);
+  }
 
   /* Removing the selected party stash clears its global routing reference.
      Re-adding the same actor must not silently restore the old selection. */

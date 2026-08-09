@@ -223,9 +223,27 @@ async function auditPage() {
     menu.open = false;
   }
 
-  // Everything else, with menus collapsed.
+  // Quartermaster setup is intentionally collapsed in the routine-first
+  // fixture. Open each disclosure before auditing the controls it contains,
+  // then restore the fixture's original state.
+  for (const setup of document.querySelectorAll(
+    "[data-harness-window] details.rm-setup",
+  )) {
+    const wasOpen = setup.open;
+    setup.open = true;
+    await nextFrame();
+    await nextFrame();
+    for (const button of setup.querySelectorAll(
+      "button[data-action]:not([disabled])",
+    )) {
+      await auditButton(button);
+    }
+    setup.open = wasOpen;
+  }
+
+  // Everything else, with transient disclosures restored.
   for (const button of buttons) {
-    if (button.closest("details.lf-menu")) continue;
+    if (button.closest("details.lf-menu, details.rm-setup")) continue;
     await auditButton(button);
   }
 
