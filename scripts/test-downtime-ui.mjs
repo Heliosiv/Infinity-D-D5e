@@ -112,6 +112,113 @@ try {
   assert.equal(campWorkspace.canCreateBlock, true);
   assert.equal(campWorkspace.createBlockReason, "");
 
+  const workspaceAppState = {
+    _adapter: {
+      getWorkspaceProjection: async () => {
+        throw new Error("DowntimeWorkflowStoreUnavailable");
+      },
+    },
+    _view: "current",
+    _selectedSettlementId: null,
+    _creatingSettlement: false,
+    _newBlockMode: false,
+    _busy: false,
+    _statusMessage: "",
+    _errorMessage: "",
+    _projectionErrorMessage: "",
+    _activeBlockId: "",
+  };
+  const prepareWorkspaceContext = async () => {
+    const savedConsoleError = console.error;
+    try {
+      console.error = () => {};
+      return await workspaceModule.DowntimeWorkspaceApp.prototype._prepareContext.call(
+        workspaceAppState,
+      );
+    } finally {
+      console.error = savedConsoleError;
+    }
+  };
+  const loadErrorContext = await prepareWorkspaceContext();
+  assert.equal(loadErrorContext.dataAvailable, false);
+  assert.equal(loadErrorContext.workflowStatusLabel, "Unavailable");
+  assert.equal(loadErrorContext.workflowTone, "danger");
+  assert.equal(loadErrorContext.canCreateBlock, false);
+  assert.equal(loadErrorContext.hasError, true);
+  assert.match(loadErrorContext.errorMessage, /not available yet/i);
+  const loadErrorHtml = Handlebars.compile(
+    readFileSync("templates/downtime-workspace.hbs", "utf8"),
+  )(loadErrorContext);
+  assert.doesNotMatch(
+    loadErrorHtml,
+    /data-form="new-block"/,
+    "a failed read must not render a synthetic empty-state mutation form",
+  );
+  assert.match(
+    loadErrorHtml,
+    /data-view="current"[^>]*disabled/,
+    "workspace navigation stays fail-closed while canonical data is unavailable",
+  );
+  assert.equal(
+    loadErrorHtml.match(/Private downtime data is not available yet/g)?.length,
+    1,
+    "the load failure is announced once through the assertive alert",
+  );
+  for (const action of [
+    "beginNextBlock",
+    "createBlock",
+    "openForPlayers",
+    "lockBlock",
+    "planBlock",
+    "applyBlock",
+    "cancelBlock",
+    "recoverBlock",
+    "newSettlement",
+    "saveSettlement",
+    "deleteSettlement",
+  ]) {
+    assert.doesNotMatch(
+      loadErrorHtml,
+      new RegExp(`data-action="${action}"`),
+      `${action} stays hidden while canonical data is unavailable`,
+    );
+  }
+
+  workspaceAppState._adapter.getWorkspaceProjection = async () => {
+    throw new Error("An active full GM is required.");
+  };
+  const authorityErrorContext = await prepareWorkspaceContext();
+  assert.match(authorityErrorContext.errorMessage, /another active GM/i);
+
+  workspaceAppState._adapter.getWorkspaceProjection = async () => {
+    throw new Error("DowntimeWorkflowCheckpointMalformed");
+  };
+  const malformedErrorContext = await prepareWorkspaceContext();
+  assert.match(malformedErrorContext.errorMessage, /could not be verified/i);
+
+  workspaceAppState._adapter.getWorkspaceProjection = async () => ({
+    settlements: [],
+    actors: [{ id: "ada", name: "Ada" }],
+    canCreateBlock: true,
+  });
+  const recoveredWorkspaceContext = await prepareWorkspaceContext();
+  assert.equal(recoveredWorkspaceContext.dataAvailable, true);
+  assert.equal(recoveredWorkspaceContext.hasError, false);
+  assert.equal(recoveredWorkspaceContext.canCreateBlock, true);
+  assert.equal(
+    workspaceAppState._projectionErrorMessage,
+    "",
+    "a successful refresh clears the stale load error",
+  );
+
+  workspaceAppState._errorMessage = "A downtime command failed.";
+  const commandErrorContext = await prepareWorkspaceContext();
+  assert.equal(
+    commandErrorContext.errorMessage,
+    "A downtime command failed.",
+    "a successful projection does not hide an unrelated command error",
+  );
+
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
       settlements: [{ id: "haven", name: "Haven" }],

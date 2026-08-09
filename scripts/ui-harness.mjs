@@ -218,6 +218,14 @@ export function buildHarnessViews() {
       { width: 1040, height: 760 },
     ),
     view(
+      "downtime-workspace-load-error",
+      "Downtime Workspace (data unavailable)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceLoadErrorContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
       "downtime-workspace-collecting",
       "Downtime Workspace (collecting)",
       "infinity-downtime-workspace",
@@ -1932,6 +1940,26 @@ function downtimeWorkspaceEmptyContext() {
   });
 }
 
+function downtimeWorkspaceLoadErrorContext() {
+  return downtimeWorkspaceBaseContext({
+    dataAvailable: false,
+    workflowStatus: "unavailable",
+    workflowStatusLabel: "Unavailable",
+    workflowTone: "danger",
+    hasCurrentBlock: false,
+    currentBlock: null,
+    settlements: [],
+    hasSettlements: false,
+    actors: [],
+    hasActors: false,
+    canCreateBlock: false,
+    createBlockReason: "Downtime data must load before anything can change.",
+    errorMessage:
+      "Downtime data could not be verified. Refresh before making any downtime changes.",
+    hasError: true,
+  });
+}
+
 function downtimeWorkspaceCollectingContext() {
   return downtimeWorkspaceBaseContext({
     workflowStatus: "collecting",
@@ -2095,6 +2123,7 @@ function downtimeWorkspaceCompletedHistoryContext() {
 
 function downtimeWorkspaceBaseContext(overrides = {}) {
   return {
+    dataAvailable: true,
     view: "current",
     viewCurrent: true,
     viewSettlements: false,

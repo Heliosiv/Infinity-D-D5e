@@ -5,7 +5,7 @@ import {
 import { normalizeSharpeningLifecycle } from "./sharpening-lifecycle.js";
 import { normalizeStolenGoodsLedger } from "./stolen-ledger.js";
 
-export const DOWNTIME_CONFIG_VERSION = 2;
+export const DOWNTIME_CONFIG_VERSION = 3;
 export const NON_SETTLEMENT_DOWNTIME_CONTEXT_ID =
   "downtime-away-from-settlement";
 export const DEFAULT_NON_SETTLEMENT_LOCATION_NAME = "Camp or wilderness";

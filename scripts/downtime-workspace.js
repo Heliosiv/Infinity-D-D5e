@@ -119,6 +119,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._busy = false;
     this._statusMessage = "";
     this._errorMessage = "";
+    this._projectionErrorMessage = "";
     this._pendingFocus = null;
     this._unsubscribe = null;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
@@ -154,18 +155,33 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     let projection = null;
+    let dataAvailable = false;
     try {
-      projection = await this._adapter?.getWorkspaceProjection?.({
+      const readProjection = this._adapter?.getWorkspaceProjection;
+      if (typeof readProjection !== "function") {
+        throw new Error("DowntimeWorkspaceAdapterUnavailable");
+      }
+      projection = await readProjection.call(this._adapter, {
         view: this._view,
         settlementId: this._selectedSettlementId,
       });
+      if (!projection || typeof projection !== "object") {
+        throw new Error("DowntimeWorkspaceProjectionUnavailable");
+      }
+      dataAvailable = true;
+      this._projectionErrorMessage = "";
     } catch (error) {
       console.error(
         `${MODULE_ID} | downtime workspace projection failed`,
         error,
       );
-      this._errorMessage =
-        "Downtime data could not be loaded. Refresh or use recovery if a write was interrupted.";
+      this._projectionErrorMessage = workspaceProjectionErrorMessage(error);
+      projection = {
+        workflowStatus: "unavailable",
+        canCreateBlock: false,
+        createBlockReason:
+          "Downtime data must load before anything can change.",
+      };
     }
 
     const context = normalizeWorkspaceProjection(projection, {
@@ -177,12 +193,14 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
 
+    const errorMessage = this._projectionErrorMessage || this._errorMessage;
     return {
       ...context,
+      dataAvailable,
       busy: this._busy,
       statusMessage: this._statusMessage,
-      errorMessage: this._errorMessage,
-      hasError: Boolean(this._errorMessage),
+      errorMessage,
+      hasError: Boolean(errorMessage),
     };
   }
 
@@ -462,6 +480,20 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
   }
 }
 
+function workspaceProjectionErrorMessage(error) {
+  const message = String(error?.message ?? "");
+  if (message.includes("An active full GM is required")) {
+    return "Downtime is controlled by another active GM session. Open this workspace from the active full GM.";
+  }
+  if (
+    message.includes("DowntimeWorkflowStoreUnavailable") ||
+    message.includes("PrivateStateUnavailable")
+  ) {
+    return "Private downtime data is not available yet. Wait a moment; if the private-data warning remains, resolve it, then refresh.";
+  }
+  return "Downtime data could not be verified. Refresh before making any downtime changes.";
+}
+
 /**
  * Shape data for Handlebars without letting templates infer workflow rules.
  * Exported for the UI harness and small, Foundry-free projection tests.
@@ -505,6 +537,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     workflowStatus === "needs-review" || Boolean(source.recovery?.available);
 
   return {
+    dataAvailable: source.dataAvailable !== false,
     view,
     viewCurrent: view === "current",
     viewSettlements: view === "settlements",
@@ -791,7 +824,7 @@ function workflowLabel(status) {
 
 function workflowTone(status) {
   if (status === "completed") return "success";
-  if (status === "needs-review") return "danger";
+  if (status === "needs-review" || status === "unavailable") return "danger";
   if (status === "applying" || status === "planned") return "accent";
   if (status === "cancelled") return "muted";
   return "neutral";

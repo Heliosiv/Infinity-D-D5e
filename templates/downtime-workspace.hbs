@@ -15,19 +15,19 @@
   </header>
 
   <nav class="dt-tabs" aria-label="Downtime workspace views">
-    <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}}>
+    <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block
     </button>
-    <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}}>
+    <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements
     </button>
-    <button type="button" data-action="setView" data-view="history" {{#if viewHistory}}class="is-active" aria-current="page"{{/if}}>
+    <button type="button" data-action="setView" data-view="history" {{#if viewHistory}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> History
     </button>
   </nav>
 
   <p class="dt-sr-status" role="status" aria-live="polite" aria-atomic="true">
-    {{#if busy}}{{statusMessage}}{{else if hasError}}{{errorMessage}}{{else}}{{statusMessage}}{{/if}}
+    {{#if busy}}{{statusMessage}}{{else}}{{#unless hasError}}{{statusMessage}}{{/unless}}{{/if}}
   </p>
 
   {{#if hasError}}
@@ -50,6 +50,7 @@
   </div>
   {{/if}}
 
+  {{#if dataAvailable}}
   <main class="dt-main">
     {{#if viewCurrent}}
       {{#if hasCurrentBlock}}
@@ -357,4 +358,5 @@
     </section>
     {{/if}}
   </main>
+  {{/if}}
 </div>

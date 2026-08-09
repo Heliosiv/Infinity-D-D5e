@@ -14,6 +14,7 @@ import {
   getSession,
   clearAllSessions,
 } from "./merchant/session-state.js";
+import { normalizeDowntimeConfig } from "./downtime/settlements.js";
 
 /**
  * The socket receive→dispatch path is what makes a GM-pushed session pop on the
@@ -579,11 +580,9 @@ try {
       system: { quantity: 1, price: { value: 10, denomination: "gp" } },
       flags: {},
     });
-    const downtimeConfig = {
-      version: 2,
+    const downtimeConfig = normalizeDowntimeConfig({
       settlements: [],
       heat: {},
-      sharpeningLifecycle: {},
       stolenGoods: {
         "issued-stolen-item": {
           itemId: "issued-stolen-item",
@@ -604,7 +603,7 @@ try {
           consumedAt: 0,
         },
       },
-    };
+    });
     const savedInner = globalThis.game;
     globalThis.game = {
       user: { id: "gm", isGM: true },

@@ -13,7 +13,10 @@ import {
 import { isFullGM } from "../permissions.js";
 import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
 import { persistedValuesEqual } from "../utils/persisted-data.js";
-import { normalizeDowntimeConfig } from "./settlements.js";
+import {
+  DOWNTIME_CONFIG_VERSION,
+  normalizeDowntimeConfig,
+} from "./settlements.js";
 import {
   assertDowntimeWorkflowStateInvariant,
   isDowntimeTerminalState,
@@ -28,6 +31,7 @@ const CHECKPOINT_KEY = "downtimeWorkflowCheckpoint";
 const STORE_VERSION = 1;
 const CHECKPOINT_VERSION = 1;
 const CONFIG_CHECKPOINT_VERSION = 1;
+const LEGACY_DOWNTIME_CONFIG_VERSION = 2;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -166,6 +170,59 @@ function normalizeStoredDowntimeConfig(raw) {
     ? normalized.history.slice(-MAX_HISTORY)
     : [];
   return normalized;
+}
+
+/**
+ * Validate a stored downtime config before upgrading it. Version 2 existed
+ * both before and after saved settlement rows gained `hasSettlement`, so the
+ * exact legacy shape accepts either the pre-change collection (the key omitted
+ * everywhere) or the post-change collection (a Boolean present everywhere).
+ * Unknown fields, mixed-era collections, and non-Boolean markers remain
+ * malformed instead of being normalized away.
+ */
+function parsePersistedDowntimeConfig(raw) {
+  if (!isPlainObject(raw)) return null;
+  const current = normalizeStoredDowntimeConfig(raw);
+  const version = Number(raw.version);
+  let persistedShape;
+  if (version === DOWNTIME_CONFIG_VERSION) {
+    persistedShape = current;
+  } else if (version === LEGACY_DOWNTIME_CONFIG_VERSION) {
+    const rawSettlements = Array.isArray(raw.settlements)
+      ? raw.settlements
+      : [];
+    const markerPresence = current.settlements.map((_, index) =>
+      Object.hasOwn(rawSettlements[index] ?? {}, "hasSettlement"),
+    );
+    const allMarkersPresent = markerPresence.every(Boolean);
+    const allMarkersMissing = markerPresence.every((present) => !present);
+    if (!allMarkersPresent && !allMarkersMissing) return null;
+    persistedShape = {
+      ...current,
+      version: LEGACY_DOWNTIME_CONFIG_VERSION,
+      settlements: current.settlements.map((settlement) => {
+        if (allMarkersPresent) return settlement;
+        const { hasSettlement: _hasSettlement, ...legacySettlement } =
+          settlement;
+        return legacySettlement;
+      }),
+    };
+  } else {
+    return null;
+  }
+  if (!persistedValuesEqual(raw, persistedShape)) return null;
+  return {
+    raw: clone(persistedShape),
+    current: clone(current),
+    needsMigration: !persistedValuesEqual(persistedShape, current),
+  };
+}
+
+function normalizeStandaloneDowntimeConfig(raw) {
+  if (isEmptyObject(raw)) return normalizeStoredDowntimeConfig(raw);
+  const parsed = parsePersistedDowntimeConfig(raw);
+  if (!parsed) throw new Error("DowntimeConfigMalformed");
+  return parsed.current;
 }
 
 function normalizeOperationRecord(raw, operationId, actorId = "") {
@@ -474,10 +531,14 @@ function isPersistedEnvelope(raw) {
   }
   const normalized = normalizeDowntimeWorkflowStore(raw);
   if (Object.hasOwn(raw, "configCheckpoint")) {
-    return Boolean(
-      isPersistedConfigCheckpointRecord(raw.configCheckpoint) &&
-      persistedValuesEqual(raw, normalized),
+    const configCheckpoint = parsePersistedConfigCheckpointRecord(
+      raw.configCheckpoint,
     );
+    if (!configCheckpoint) return false;
+    return persistedValuesEqual(raw, {
+      ...normalized,
+      configCheckpoint: configCheckpoint.raw,
+    });
   }
   const { configCheckpoint: _configCheckpoint, ...legacy } = normalized;
   return persistedValuesEqual(raw, legacy);
@@ -487,7 +548,7 @@ function persistedRevision(raw) {
   return isPersistedEnvelope(raw) ? Number(raw.revision) : -1;
 }
 
-function normalizeConfigCheckpointRecord(raw) {
+function buildCurrentConfigCheckpointRecord(raw) {
   if (!isPlainObject(raw)) return null;
   const record = {
     version: CONFIG_CHECKPOINT_VERSION,
@@ -508,13 +569,39 @@ function normalizeConfigCheckpointRecord(raw) {
   return record;
 }
 
-function isPersistedConfigCheckpointRecord(raw) {
-  const normalized = normalizeConfigCheckpointRecord(raw);
-  return Boolean(normalized && persistedValuesEqual(raw, normalized));
+function parsePersistedConfigCheckpointRecord(raw) {
+  if (!isPlainObject(raw)) return null;
+  const value = parsePersistedDowntimeConfig(raw.value);
+  if (!value) return null;
+  const current = buildCurrentConfigCheckpointRecord(raw);
+  if (!current) return null;
+  const persistedShape = { ...current, value: value.raw };
+  if (!persistedValuesEqual(raw, persistedShape)) return null;
+  return {
+    raw: clone(persistedShape),
+    current: { ...current, value: value.current },
+    needsMigration: value.needsMigration,
+  };
+}
+
+function normalizeConfigCheckpointRecord(raw) {
+  return (
+    parsePersistedConfigCheckpointRecord(raw)?.current ??
+    buildCurrentConfigCheckpointRecord(raw)
+  );
+}
+
+function isSupportedConfigCheckpointRecord(raw) {
+  return Boolean(parsePersistedConfigCheckpointRecord(raw));
+}
+
+function isCurrentConfigCheckpointRecord(raw) {
+  const parsed = parsePersistedConfigCheckpointRecord(raw);
+  return Boolean(parsed && !parsed.needsMigration);
 }
 
 function persistedConfigRevision(raw) {
-  return isPersistedConfigCheckpointRecord(raw) ? Number(raw.revision) : -1;
+  return isSupportedConfigCheckpointRecord(raw) ? Number(raw.revision) : -1;
 }
 
 function createConfigCheckpointRecord(value, fence, previous = null) {
@@ -529,7 +616,7 @@ function createConfigCheckpointRecord(value, fence, previous = null) {
       "node-test";
   const authorityEpoch = fence.live
     ? fence.authorityEpoch
-    : isPersistedConfigCheckpointRecord(previous) &&
+    : isSupportedConfigCheckpointRecord(previous) &&
         previous.authorityId === authorityId
       ? previous.authorityEpoch
       : `${authorityId}:node-test:0`;
@@ -547,7 +634,7 @@ function createConfigCheckpointRecord(value, fence, previous = null) {
 }
 
 function configCheckpointBelongsToFence(record, fence) {
-  if (!isPersistedConfigCheckpointRecord(record)) return false;
+  if (!isSupportedConfigCheckpointRecord(record)) return false;
   if (!fence.live) return true;
   return Boolean(
     record.authorityId === fence.userId &&
@@ -558,7 +645,7 @@ function configCheckpointBelongsToFence(record, fence) {
 function serializeRecoveryCheckpoint(workflow, config) {
   if (
     !isPersistedEnvelope(workflow) ||
-    !isPersistedConfigCheckpointRecord(config) ||
+    !isCurrentConfigCheckpointRecord(config) ||
     !persistedValuesEqual(workflow.configCheckpoint, config)
   ) {
     throw new Error("DowntimeWorkflowCheckpointInvalid");
@@ -581,7 +668,7 @@ function parseRecoveryCheckpoint(raw) {
     !isPlainObject(raw) ||
     Number(raw.version) !== CHECKPOINT_VERSION ||
     !isPersistedEnvelope(raw.workflow) ||
-    !isPersistedConfigCheckpointRecord(raw.config)
+    !isSupportedConfigCheckpointRecord(raw.config)
   ) {
     throw new Error("DowntimeWorkflowCheckpointMalformed");
   }
@@ -811,7 +898,7 @@ function nextWriteIdentity(fence, ...snapshots) {
 
 function serializeEnvelope(store, identity, configCheckpoint) {
   const normalized = normalizeDowntimeWorkflowStore(store);
-  if (!isPersistedConfigCheckpointRecord(configCheckpoint)) {
+  if (!isCurrentConfigCheckpointRecord(configCheckpoint)) {
     throw new Error("DowntimeConfigCheckpointInvalid");
   }
   return {
@@ -867,7 +954,7 @@ async function commitEnvelope(
   ) {
     throw new Error("DowntimeWorkflowStaleWrite");
   }
-  if (!isPersistedConfigCheckpointRecord(configCheckpoint)) {
+  if (!isCurrentConfigCheckpointRecord(configCheckpoint)) {
     throw new Error("DowntimeConfigCheckpointInvalid");
   }
   const expectedCheckpointWorkflow =
@@ -965,16 +1052,22 @@ async function ensureEnvelopeForFence(fence) {
   let primaryConfig = readRawConfig();
   let checkpointParts = parseRecoveryCheckpoint(checkpoint);
   const base = selectRecoveryBase(primary, checkpoint, fence);
-  let configCheckpoint = isPersistedConfigCheckpointRecord(
+  const embeddedConfigCheckpoint = parsePersistedConfigCheckpointRecord(
     base?.configCheckpoint,
+  );
+  const mirroredConfigCheckpoint = persistedValuesEqual(
+    base,
+    checkpointParts.workflow,
   )
-    ? base.configCheckpoint
-    : persistedValuesEqual(base, checkpointParts.workflow)
-      ? checkpointParts.config
-      : null;
+    ? parsePersistedConfigCheckpointRecord(checkpointParts.config)
+    : null;
+  let configCheckpoint =
+    embeddedConfigCheckpoint?.current ??
+    mirroredConfigCheckpoint?.current ??
+    null;
   if (!configCheckpoint) {
     configCheckpoint = createConfigCheckpointRecord(
-      normalizeStoredDowntimeConfig(primaryConfig),
+      normalizeStandaloneDowntimeConfig(primaryConfig),
       fence,
     );
   }
@@ -1086,7 +1179,7 @@ async function mutateWorkflow(mutator) {
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
       !persistedValuesEqual(checkpointParts.workflow, ensured) ||
-      !isPersistedConfigCheckpointRecord(checkpointParts.config) ||
+      !isCurrentConfigCheckpointRecord(checkpointParts.config) ||
       !persistedValuesEqual(expectedConfig, checkpointParts.config.value)
     ) {
       throw new Error("DowntimeWorkflowStaleWrite");
@@ -1789,13 +1882,14 @@ export function loadDowntimeConfig() {
     rawCheckpoint,
     captureAuthorityFence(),
   );
-  const accepted = isPersistedConfigCheckpointRecord(base?.configCheckpoint)
-    ? base.configCheckpoint
-    : persistedValuesEqual(base, checkpoint.workflow)
-      ? checkpoint.config
-      : null;
+  const embedded = parsePersistedConfigCheckpointRecord(base?.configCheckpoint);
+  const mirrored = persistedValuesEqual(base, checkpoint.workflow)
+    ? parsePersistedConfigCheckpointRecord(checkpoint.config)
+    : null;
+  const accepted = embedded ?? mirrored;
   return clone(
-    accepted?.value ?? normalizeStoredDowntimeConfig(readRawConfig()),
+    accepted?.current.value ??
+      normalizeStandaloneDowntimeConfig(readRawConfig()),
   );
 }
 
@@ -1811,7 +1905,7 @@ export async function saveDowntimeConfig(config) {
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
       !persistedValuesEqual(checkpointParts.workflow, ensured) ||
-      !isPersistedConfigCheckpointRecord(checkpointParts.config) ||
+      !isCurrentConfigCheckpointRecord(checkpointParts.config) ||
       !persistedValuesEqual(expectedConfig, checkpointParts.config.value)
     ) {
       throw new Error("DowntimeConfigStaleWrite");
@@ -1872,7 +1966,7 @@ export async function updateDowntimeConfig(mutation) {
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
       !persistedValuesEqual(checkpointParts.workflow, ensured) ||
-      !isPersistedConfigCheckpointRecord(checkpointParts.config) ||
+      !isCurrentConfigCheckpointRecord(checkpointParts.config) ||
       !persistedValuesEqual(expectedConfig, checkpointParts.config.value)
     ) {
       throw new Error("DowntimeConfigStaleWrite");
@@ -1925,7 +2019,7 @@ export function isDowntimeWorkflowReady() {
     return Boolean(
       isPersistedEnvelope(primary) &&
       persistedValuesEqual(primary, checkpoint.workflow) &&
-      isPersistedConfigCheckpointRecord(checkpoint.config) &&
+      isCurrentConfigCheckpointRecord(checkpoint.config) &&
       persistedValuesEqual(primary.configCheckpoint, checkpoint.config) &&
       persistedValuesEqual(readRawConfig(), checkpoint.config.value) &&
       (!fence.live ||

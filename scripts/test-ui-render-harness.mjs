@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  37,
+  38,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -95,6 +95,7 @@ for (const expectedId of [
   "resource-overview",
   "resource-overview-offline",
   "downtime-workspace-empty",
+  "downtime-workspace-load-error",
   "downtime-workspace-collecting",
   "downtime-workspace-locked",
   "downtime-workspace-preview",
@@ -180,6 +181,23 @@ assert.match(downtimeEmptyView.html, /8 productive hours per day/);
 assert.match(downtimeEmptyView.html, /Settlement \(optional\)/);
 assert.match(downtimeEmptyView.html, /No settlement · camp, wilderness/);
 assert.match(downtimeEmptyView.html, /name="locationName"/);
+
+const downtimeLoadErrorView = views.find(
+  (view) => view.id === "downtime-workspace-load-error",
+);
+assert.ok(
+  downtimeLoadErrorView,
+  "harness includes fail-closed downtime load errors",
+);
+assert.match(downtimeLoadErrorView.html, /Downtime data could not be verified/);
+assert.equal(
+  downtimeLoadErrorView.html.match(/Downtime data could not be verified/g)
+    ?.length,
+  1,
+  "the load failure is exposed through one live-region announcement",
+);
+assert.doesNotMatch(downtimeLoadErrorView.html, /data-form="new-block"/);
+assert.match(downtimeLoadErrorView.html, /data-view="current"[^>]*disabled/);
 
 const downtimeCollectingView = views.find(
   (view) => view.id === "downtime-workspace-collecting",

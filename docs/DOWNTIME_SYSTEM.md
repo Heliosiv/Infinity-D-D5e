@@ -172,6 +172,13 @@ Settlement configuration, the selected location snapshot, the active workflow,
 and its recovery checkpoint are stored in the module's restricted private-state
 Journal.
 
+Configuration schema v3 migrates exact v2 configurations and checkpoints
+created before saved settlements carried an explicit `hasSettlement` marker.
+The authoritative GM upgrades the direct configuration and both workflow
+replicas through the same fenced write-and-read-back sequence used for
+recovery. Noncanonical legacy records remain rejected, and the workspace hides
+every mutation control while canonical data is unavailable.
+
 Before external mutation, the module persists the complete operation plan,
 including hidden rolls, outcomes, projected state, and stable operation IDs.
 Apply claims and verifies each operation. Actor and merchant mutations use

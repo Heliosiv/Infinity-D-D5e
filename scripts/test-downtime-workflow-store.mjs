@@ -21,6 +21,7 @@ const users = {
 let randomId = 0;
 let primaryFailuresRemaining = 0;
 let checkpointFailuresRemaining = 0;
+let settingWrites = 0;
 
 try {
   globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
@@ -55,12 +56,14 @@ try {
           throw new Error("simulated primary replica failure");
         }
         settings.set(key, structuredClone(value));
+        settingWrites += 1;
         return value;
       },
     },
   };
 
   const workflow = await import("./downtime/store.js");
+  const { DOWNTIME_CONFIG_VERSION } = await import("./downtime/settlements.js");
   workflow.resetDowntimeWorkflowStoreForTests();
 
   assert.deepEqual(workflow.normalizeDowntimeWorkflowStore(null), {
@@ -73,6 +76,32 @@ try {
     activeBlock: null,
     history: [],
   });
+
+  settings.set("downtimeConfig", {
+    version: 2,
+    settlements: [],
+    heat: {},
+    stolenGoods: {},
+    sharpeningLifecycle: { pending: [], completed: [] },
+    history: [],
+    unexpected: true,
+  });
+  assert.throws(
+    () => workflow.loadDowntimeConfig(),
+    /DowntimeConfigMalformed/,
+    "a standalone malformed config is not normalized during bootstrap",
+  );
+  await assert.rejects(
+    workflow.ensureDowntimeWorkflowAuthority(),
+    /DowntimeConfigMalformed/,
+  );
+  settings.delete("downtimeConfig");
+  workflow.resetDowntimeWorkflowStoreForTests();
+  assert.equal(
+    workflow.loadDowntimeConfig().version,
+    DOWNTIME_CONFIG_VERSION,
+    "a fully empty store still exposes the canonical bootstrap config",
+  );
 
   const config = await workflow.saveDowntimeConfig({
     settlements: [
@@ -169,6 +198,222 @@ try {
   assert.equal(block.state, "collecting");
   assert.equal(block.plan, null);
   assert.equal(workflow.getActiveDowntimeBlock().id, "block-1");
+
+  const activeBeforeConfigMigration = structuredClone(
+    workflow.getActiveDowntimeBlock(),
+  );
+  const historicalV2Config = {
+    version: 2,
+    settlements: [
+      {
+        id: "greyhaven",
+        name: "Greyhaven",
+        wealthTier: "prosperous",
+        securityTier: "high",
+        marketDc: 16,
+        linkedFactionId: "",
+        linkedMerchantIds: [],
+        enabledActivityIds: [
+          "craft-ammunition",
+          "sharpen-weapon",
+          "market-trading",
+          "pickpocket",
+          "shoplift",
+          "fence-stolen-goods",
+          "lay-low",
+        ],
+      },
+    ],
+    heat: { greyhaven: { "actor-1": 3, "actor-2": 2 } },
+    stolenGoods: {
+      [issuedRecord.itemId]: structuredClone(issuedRecord),
+    },
+    sharpeningLifecycle: { pending: [], completed: [] },
+    history: [],
+  };
+  for (const { marker, interruptedReplica } of [
+    { marker: null, interruptedReplica: "checkpoint" },
+    { marker: false, interruptedReplica: null },
+    { marker: true, interruptedReplica: "primary" },
+  ]) {
+    const currentPrimary = structuredClone(settings.get("downtimeWorkflow"));
+    const currentCheckpoint = structuredClone(
+      settings.get("downtimeWorkflowCheckpoint"),
+    );
+    const legacyConfig = structuredClone(historicalV2Config);
+    if (marker !== null) {
+      legacyConfig.settlements[0].hasSettlement = marker;
+    }
+    const legacyConfigCheckpoint = {
+      ...currentCheckpoint.config,
+      value: legacyConfig,
+    };
+    const legacyPrimary = {
+      ...currentPrimary,
+      configCheckpoint: legacyConfigCheckpoint,
+    };
+    const legacyCheckpoint = {
+      ...currentCheckpoint,
+      workflow: {
+        ...currentCheckpoint.workflow,
+        configCheckpoint: legacyConfigCheckpoint,
+      },
+      config: legacyConfigCheckpoint,
+    };
+    settings.set("downtimeConfig", structuredClone(legacyConfig));
+    settings.set("downtimeWorkflow", structuredClone(legacyPrimary));
+    settings.set(
+      "downtimeWorkflowCheckpoint",
+      structuredClone(legacyCheckpoint),
+    );
+    workflow.resetDowntimeWorkflowStoreForTests();
+
+    assert.equal(
+      workflow.isDowntimeWorkflowReady(),
+      false,
+      "a supported legacy config stays read-only until its replicas are migrated",
+    );
+    const compatibleConfig = workflow.loadDowntimeConfig();
+    assert.equal(compatibleConfig.version, DOWNTIME_CONFIG_VERSION);
+    assert.equal(
+      compatibleConfig.settlements[0].hasSettlement,
+      marker ?? true,
+      "migration preserves an explicit marker and defaults the pre-change shape to true",
+    );
+    assert.deepEqual(
+      workflow.getActiveDowntimeBlock(),
+      activeBeforeConfigMigration,
+      "reading a legacy config does not alter the active block",
+    );
+
+    const legacyConfigRevision = legacyConfigCheckpoint.revision;
+    if (interruptedReplica === "checkpoint") {
+      checkpointFailuresRemaining = 1;
+      await assert.rejects(
+        workflow.ensureDowntimeWorkflowAuthority(),
+        /simulated checkpoint failure/,
+        "an interrupted legacy migration never reports success",
+      );
+      assert.equal(
+        settings.get("downtimeConfig").version,
+        DOWNTIME_CONFIG_VERSION,
+        "an interrupted migration may have upgraded only the direct config",
+      );
+    } else if (interruptedReplica === "primary") {
+      primaryFailuresRemaining = 1;
+      await assert.rejects(
+        workflow.ensureDowntimeWorkflowAuthority(),
+        /simulated primary replica failure/,
+        "a checkpointed migration still reports an interrupted primary write",
+      );
+      assert.notDeepEqual(
+        settings.get("downtimeWorkflow"),
+        settings.get("downtimeWorkflowCheckpoint").workflow,
+        "the advanced checkpoint remains available to repair the legacy primary",
+      );
+    }
+    await workflow.ensureDowntimeWorkflowAuthority();
+    const migratedConfig = settings.get("downtimeConfig");
+    const migratedPrimary = settings.get("downtimeWorkflow");
+    const migratedCheckpoint = settings.get("downtimeWorkflowCheckpoint");
+    assert.equal(migratedConfig.version, DOWNTIME_CONFIG_VERSION);
+    assert.equal(migratedConfig.settlements[0].hasSettlement, marker ?? true);
+    assert.equal(
+      migratedCheckpoint.config.revision,
+      legacyConfigRevision + 1,
+      "the schema migration receives a new guarded config revision",
+    );
+    assert.deepEqual(migratedPrimary, migratedCheckpoint.workflow);
+    assert.deepEqual(
+      migratedPrimary.configCheckpoint,
+      migratedCheckpoint.config,
+    );
+    assert.deepEqual(migratedConfig, migratedCheckpoint.config.value);
+    assert.deepEqual(
+      migratedPrimary.activeBlock,
+      activeBeforeConfigMigration,
+      "the schema migration preserves the active workflow exactly",
+    );
+    assert.equal(workflow.isDowntimeWorkflowReady(), true);
+
+    const writesBeforeIdempotentEnsure = settingWrites;
+    await workflow.ensureDowntimeWorkflowAuthority();
+    assert.equal(
+      settingWrites,
+      writesBeforeIdempotentEnsure,
+      "an already-current v3 checkpoint does not write again",
+    );
+  }
+
+  const canonicalPrimary = structuredClone(settings.get("downtimeWorkflow"));
+  const canonicalCheckpoint = structuredClone(
+    settings.get("downtimeWorkflowCheckpoint"),
+  );
+  const seedCompositeConfig = (value) => {
+    const configCheckpoint = {
+      ...canonicalCheckpoint.config,
+      value: structuredClone(value),
+    };
+    settings.set("downtimeConfig", structuredClone(value));
+    settings.set("downtimeWorkflow", {
+      ...canonicalPrimary,
+      configCheckpoint,
+    });
+    settings.set("downtimeWorkflowCheckpoint", {
+      ...canonicalCheckpoint,
+      workflow: {
+        ...canonicalCheckpoint.workflow,
+        configCheckpoint,
+      },
+      config: configCheckpoint,
+    });
+    workflow.resetDowntimeWorkflowStoreForTests();
+  };
+  const malformedConfig = {
+    ...structuredClone(settings.get("downtimeConfig")),
+    unexpected: true,
+  };
+  seedCompositeConfig(malformedConfig);
+  assert.throws(
+    () => workflow.loadDowntimeConfig(),
+    /DowntimeWorkflowCheckpointMalformed/,
+    "unknown legacy fields remain fail-closed instead of being normalized away",
+  );
+
+  const nonBooleanLegacyConfig = structuredClone(historicalV2Config);
+  nonBooleanLegacyConfig.settlements[0].hasSettlement = "true";
+  seedCompositeConfig(nonBooleanLegacyConfig);
+  assert.throws(
+    () => workflow.loadDowntimeConfig(),
+    /DowntimeWorkflowCheckpointMalformed/,
+    "legacy settlement markers must be stored as Booleans",
+  );
+
+  const mixedLegacyConfig = structuredClone(historicalV2Config);
+  mixedLegacyConfig.settlements[0].hasSettlement = true;
+  mixedLegacyConfig.settlements.push({
+    ...structuredClone(historicalV2Config.settlements[0]),
+    id: "saltmarsh",
+    name: "Saltmarsh",
+  });
+  seedCompositeConfig(mixedLegacyConfig);
+  assert.throws(
+    () => workflow.loadDowntimeConfig(),
+    /DowntimeWorkflowCheckpointMalformed/,
+    "a mixed pre-change and post-change v2 settlement collection is noncanonical",
+  );
+
+  settings.set(
+    "downtimeConfig",
+    structuredClone(canonicalCheckpoint.config.value),
+  );
+  settings.set("downtimeWorkflow", structuredClone(canonicalPrimary));
+  settings.set(
+    "downtimeWorkflowCheckpoint",
+    structuredClone(canonicalCheckpoint),
+  );
+  workflow.resetDowntimeWorkflowStoreForTests();
+  await workflow.ensureDowntimeWorkflowAuthority();
 
   const collectingRevision = workflow.getDowntimeWorkflowRevision();
   block = await workflow.updateCollectingDowntimeBlock(
@@ -670,6 +915,30 @@ try {
   const configBeforeCheckpointMigration = structuredClone(
     settings.get("downtimeConfig"),
   );
+  settings.set("downtimeConfig", {
+    ...structuredClone(historicalV2Config),
+    unexpected: true,
+  });
+  settings.set("downtimeWorkflow", legacyWorkflowCheckpoint);
+  settings.set("downtimeWorkflowCheckpoint", legacyWorkflowCheckpoint);
+  workflow.resetDowntimeWorkflowStoreForTests();
+  assert.throws(
+    () => workflow.loadDowntimeConfig(),
+    /DowntimeConfigMalformed/,
+    "a raw legacy workflow checkpoint does not bypass config validation",
+  );
+  const writesBeforeMalformedLegacyEnsure = settingWrites;
+  await assert.rejects(
+    workflow.ensureDowntimeWorkflowAuthority(),
+    /DowntimeConfigMalformed/,
+  );
+  assert.equal(
+    settingWrites,
+    writesBeforeMalformedLegacyEnsure,
+    "malformed standalone config is rejected before any repair write",
+  );
+
+  settings.set("downtimeConfig", structuredClone(historicalV2Config));
   settings.set("downtimeWorkflow", legacyWorkflowCheckpoint);
   settings.set("downtimeWorkflowCheckpoint", legacyWorkflowCheckpoint);
   workflow.resetDowntimeWorkflowStoreForTests();
@@ -682,7 +951,7 @@ try {
   assert.deepEqual(
     settings.get("downtimeWorkflowCheckpoint").config.value,
     configBeforeCheckpointMigration,
-    "checkpoint migration captures the existing normalized config losslessly",
+    "a raw legacy checkpoint migrates the exact historical v2 config losslessly",
   );
   for (let index = 0; index < 101; index += 1) {
     const historyBlock = await workflow.createDowntimeBlock({
