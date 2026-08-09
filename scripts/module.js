@@ -77,7 +77,13 @@ import {
   registerSoundSocket,
 } from "./audio.js";
 import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
+import { registerMonksActiveTilesCompat } from "./compat/monks-active-tiles.js";
 import { registerSoundAutomation } from "./compat/sound-automation.js";
+import {
+  getPlayerSurfaceStatus,
+  openCalendar,
+  registerPlayerSurfaceSocket,
+} from "./player-surface.js";
 import {
   SETTINGS,
   SETTING_KEYS,
@@ -247,6 +253,16 @@ function registerPrivateStateRecoveryHooks() {
 // before our code ran (usually a top-level evaluation error in one of
 // the imported files).
 console.log(`${MODULE_ID} | module.js evaluating…`);
+safeInitializeSubsystem(
+  "Monk's Active Tiles action hook",
+  registerMonksActiveTilesCompat,
+);
+globalThis.Hooks?.once?.("socketlib.ready", () => {
+  safeInitializeSubsystem(
+    "player-surface SocketLib",
+    registerPlayerSurfaceSocket,
+  );
+});
 
 /* ------------------------------------------------------------------ *
  * Eager API assignment
@@ -277,6 +293,8 @@ function buildApi() {
     openDowntimeWorkspace: () => runAsFullGM(() => DowntimeWorkspaceApp.open()),
     openDowntimeActivities: (options = {}) =>
       DowntimeActivitiesApp.open(options),
+    openCalendar: () => openCalendar(),
+    getPlayerSurfaceStatus,
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
     ForagePromptApp,
@@ -685,6 +703,10 @@ Hooks.once("ready", async () => {
     // unable to receive a pushed shop session.
     safeInitializeSubsystem("sound socket", registerSoundSocket);
     safeInitializeSubsystem("sound automation", registerSoundAutomation);
+    safeInitializeSubsystem(
+      "player-surface SocketLib",
+      registerPlayerSurfaceSocket,
+    );
     safeInitializeSubsystem("downtime socket", registerDowntimeSocket);
     safeInitializeSubsystem("downtime player auto-open", () =>
       configureDowntimePlayerAutoOpen(({ actorId }) =>

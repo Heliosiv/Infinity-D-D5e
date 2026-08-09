@@ -97,6 +97,12 @@ assert.match(
 
 assert.match(
   source,
+  /\bgetPlayerSurfaceStatus,\s*\n/,
+  "the module API should expose bounded player-surface readiness metadata",
+);
+
+assert.match(
+  source,
   /openCriticalInjuryHud: \(\) => CriticalInjuryHudApp\.reconcile\(\)/,
   "the module API should expose compact injury HUD reconciliation",
 );

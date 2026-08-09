@@ -65,10 +65,23 @@
         "compatibility": { "minimum": "4.0.0", "verified": "4.0.4" }
       }
     ],
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module",
+        "manifest": "https://github.com/farling42/foundryvtt-socketlib/releases/latest/download/module.json",
+        "compatibility": { "minimum": "1.1.4" }
+      }
+    ],
     "recommends": [
       { "id": "midi-qol", "type": "module" },
       { "id": "dae", "type": "module" },
-      { "id": "foundryvtt-simple-calendar", "type": "module" },
+      {
+        "id": "monks-active-tiles",
+        "type": "module",
+        "compatibility": { "minimum": "13.06" }
+      },
+      { "id": "foundryvtt-simple-calendar-reborn", "type": "module" },
       { "id": "times-up", "type": "module" }
     ]
   },

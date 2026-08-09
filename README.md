@@ -29,6 +29,7 @@ Three ways to open the dashboard:
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Player launchers**: `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
+- **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The action can open Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile; it carries no campaign projection and performs no world write.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
 
@@ -57,6 +58,40 @@ Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts
 Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
+
+### Monk's Active Tiles integration
+
+Infinity registers `infinity-dnd5e.open-player-surface` through Monk's Active
+Tiles' `setupTileActions` extension hook. The action is intended for a
+player-facing landing Scene and accepts only these stored `surface` values:
+`party-supplies`, `shops`, `reputation`, `downtime`, `calendar`, and
+`critical-injuries`.
+
+The player-hub path is intentionally pinned to Monk's Active Tiles 13.06. During
+`setupTileActions`, before MATT registers its ready-phase socket listener,
+Infinity installs an idempotent sender guard for all eleven canonical hub
+controls. The guard replaces MATT's client-claimed trigger identity with
+Foundry's authenticated transport sender and rejects missing, inactive,
+full-Gamemaster, non-click, unresolved, or malformed hub triggers. Non-hub MATT
+messages retain their normal behavior.
+
+The authoritative GM then routes Infinity window requests to that exact active
+player through the required SocketLib 1.1.4+ transport. The recipient rechecks
+SocketLib's authenticated GM sender and exact target, then opens the same
+permission-scoped Infinity window available from its normal toolbar or
+keybinding. The socket message contains only the fixed surface key and user IDs;
+purchases, downtime submissions, resource changes, and other writes remain
+inside their existing guarded workflows. Calendar uses Simple Calendar
+Reborn's public `showCalendar()` API. An active legacy Simple Calendar
+installation is supported as a fallback, while inactive packages are ignored;
+the launcher fails closed when neither active module exposes the API.
+
+Installed-world checks can call
+`game.modules.get("infinity-dnd5e").api.getPlayerSurfaceStatus()`. It returns
+only
+`{ ready, transport: "socketlib", handlerRegistered, mattSenderGuardReady, mattVersion }`.
+`ready` is true only when SocketLib and the exact MATT 13.06 sender guard are
+both registered and active.
 
 ### Downtime and city actions
 
