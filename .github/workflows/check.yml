@@ -21,6 +21,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Install Chromium for browser-backed source checks
+        run: npx --yes playwright install --with-deps chromium
       - run: npm run check
 
   # Prettier formatting. Blocking.
