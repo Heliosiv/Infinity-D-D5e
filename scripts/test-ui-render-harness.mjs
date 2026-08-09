@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  35,
+  37,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -82,10 +82,12 @@ for (const expectedId of [
   "hoard",
   "per-creature",
   "merchant-workspace",
+  "merchant-workspace-closed",
   "merchant-session-buy",
   "merchant-session-sell",
   "shop-picker",
   "shop-picker-empty",
+  "shop-picker-closed",
   "resource-manager",
   "resource-manager-locked",
   "resource-manager-recent-runs",
@@ -129,6 +131,36 @@ assert.match(encounterView.html, /mixed bundles stop at one spell scroll/i);
 const dashboardView = views.find((view) => view.id === "dashboard");
 assert.ok(dashboardView, "harness includes the GM dashboard");
 assert.match(dashboardView.html, /Downtime Workspace/);
+
+const merchantWorkspaceView = views.find(
+  (view) => view.id === "merchant-workspace",
+);
+assert.ok(
+  merchantWorkspaceView,
+  "harness includes the open merchant workspace",
+);
+assert.match(merchantWorkspaceView.html, /Global access open/);
+assert.match(merchantWorkspaceView.html, /data-action="closeAllSessions"/);
+
+const closedMerchantWorkspaceView = views.find(
+  (view) => view.id === "merchant-workspace-closed",
+);
+assert.ok(
+  closedMerchantWorkspaceView,
+  "harness includes the globally closed merchant workspace",
+);
+assert.match(closedMerchantWorkspaceView.html, /All shops closed/);
+assert.match(closedMerchantWorkspaceView.html, /data-action="reopenSessions"/);
+assert.match(closedMerchantWorkspaceView.html, /2 saved sessions/);
+
+const closedShopPickerView = views.find(
+  (view) => view.id === "shop-picker-closed",
+);
+assert.ok(
+  closedShopPickerView,
+  "harness includes the globally closed Shops door",
+);
+assert.match(closedShopPickerView.html, /temporarily closed by the GM/);
 
 const merchantSellView = views.find(
   (view) => view.id === "merchant-session-sell",

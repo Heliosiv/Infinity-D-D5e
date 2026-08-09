@@ -114,6 +114,14 @@ export function buildHarnessViews() {
       { width: 1000, height: 720 },
     ),
     view(
+      "merchant-workspace-closed",
+      "Merchant Workspace (globally closed)",
+      "infinity-merchant-workspace",
+      "templates/merchant-workspace.hbs",
+      merchantWorkspaceClosedContext(),
+      { width: 1000, height: 720 },
+    ),
+    view(
       "merchant-session-buy",
       "Merchant Session — Buy",
       "infinity-merchant-session",
@@ -143,6 +151,14 @@ export function buildHarnessViews() {
       "infinity-shop-picker",
       "templates/shop-picker.hbs",
       shopPickerEmptyContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-closed",
+      "Shops (globally closed)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerClosedContext(),
       { width: 440, height: 560 },
     ),
     view(
@@ -1061,8 +1077,34 @@ function merchantWorkspaceContext() {
       },
     ],
     activeSessions: [{ sessionId: "s-1", userLabel: "Alice" }],
+    merchantAccessClosed: false,
+    merchantAccessOpen: true,
+    merchantAccessStatusClass: "is-open",
+    merchantAccessStatusIcon: "fa-door-open",
+    merchantAccessStatusLabel: "Global access open",
+    globalActiveSessionCount: 1,
+    suspendedSessionCount: 0,
+    suspendedSessionCountIsOne: false,
     canOpenSession: true,
     saveStatus: "Saved",
+  };
+}
+
+function merchantWorkspaceClosedContext() {
+  return {
+    ...merchantWorkspaceContext(),
+    activeSessions: [],
+    merchantAccessClosed: true,
+    merchantAccessOpen: false,
+    merchantAccessStatusClass: "is-closed",
+    merchantAccessStatusIcon: "fa-shop-lock",
+    merchantAccessStatusLabel: "All shops closed",
+    globalActiveSessionCount: 0,
+    suspendedSessionCount: 2,
+    suspendedSessionCountIsOne: false,
+    canOpenSession: false,
+    openSessionReason:
+      "Merchant access is globally closed. Reopen shops first.",
   };
 }
 
@@ -1190,6 +1232,7 @@ function shopPickerContext() {
   return {
     noGm: false,
     loading: false,
+    globallyClosed: false,
     hasShops: true,
     shops: [
       {
@@ -1221,7 +1264,23 @@ function shopPickerContext() {
 }
 
 function shopPickerEmptyContext() {
-  return { noGm: false, loading: false, hasShops: false, shops: [] };
+  return {
+    noGm: false,
+    loading: false,
+    globallyClosed: false,
+    hasShops: false,
+    shops: [],
+  };
+}
+
+function shopPickerClosedContext() {
+  return {
+    noGm: false,
+    loading: false,
+    globallyClosed: true,
+    hasShops: false,
+    shops: [],
+  };
 }
 
 function resourceManagerContext() {

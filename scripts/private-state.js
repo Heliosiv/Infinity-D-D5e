@@ -17,11 +17,12 @@ import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
-const STORE_SCHEMA = 5;
+const STORE_SCHEMA = 6;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
 const PRIVATE_STATE_FIELDS = Object.freeze({
   merchants: Object.freeze({ legacyKey: "merchants", type: "array" }),
+  merchantAccess: Object.freeze({ legacyKey: null, type: "object" }),
   factions: Object.freeze({ legacyKey: "factions", type: "array" }),
   resourceConfig: Object.freeze({
     legacyKey: "resourceConfig",

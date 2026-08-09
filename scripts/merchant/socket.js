@@ -64,6 +64,11 @@ import {
   runWithMerchantMutex,
 } from "./session-state.js";
 import { projectMerchantForSession } from "./projection.js";
+import {
+  isMerchantAccessClosed,
+  loadMerchantAccessState,
+  saveMerchantAccessState,
+} from "./global-access.js";
 import { escapeHtml } from "../ui-util.js";
 import {
   authoritativeGMId,
@@ -464,6 +469,10 @@ async function handleBargainResult(payload) {
   const { sessionId, itemUuid, side, skillId } = payload;
   const session = getSession(sessionId);
   if (!session) return;
+  if (isMerchantAccessClosed()) {
+    emitBargainFailure(payload, session, "no-session");
+    return;
+  }
   if (session.viewerUserId !== payload.originUserId) return;
   const merchant = findMerchant(session.merchantId);
   if (!merchant) return;
@@ -527,7 +536,7 @@ function emitBargainFailure(payload, session, reason) {
 async function handleCommitPurchase(payload) {
   const { sessionId, itemUuid, qty, sealId } = payload;
   let session = getSession(sessionId);
-  if (!session) {
+  if (!session || isMerchantAccessClosed()) {
     // Most common after a GM world reload (the in-memory session map is wiped):
     // tell the buyer so they don't sit on a silently-unrecorded purchase.
     emitCommitResult(payload, false, "no-session");
@@ -559,6 +568,7 @@ async function handleCommitPurchase(payload) {
     }
     const liveSession = getSession(sessionId);
     if (
+      isMerchantAccessClosed() ||
       !liveSession ||
       liveSession.merchantId !== session.merchantId ||
       liveSession.viewerUserId !== payload.originUserId
@@ -735,7 +745,7 @@ async function handleCommitPurchase(payload) {
 async function handleCommitSale(payload) {
   const { sessionId, sealId, itemUuid } = payload;
   let session = getSession(sessionId);
-  if (!session) {
+  if (!session || isMerchantAccessClosed()) {
     emitCommitResult(payload, false, "no-session");
     return;
   }
@@ -764,6 +774,7 @@ async function handleCommitSale(payload) {
     }
     const liveSession = getSession(sessionId);
     if (
+      isMerchantAccessClosed() ||
       !liveSession ||
       liveSession.merchantId !== session.merchantId ||
       liveSession.viewerUserId !== payload.originUserId
@@ -1207,12 +1218,20 @@ function emitCommitResult(commitPayload, ok, reason = "", details = {}) {
 function handleShopListRequest(payload) {
   const userId = payload.originUserId;
   if (!isActiveNonGm(userId)) return;
-  const shops = loadMerchants()
-    .filter((merchant) => canSelfOpen(merchant, userId))
-    .map(sanitizeMerchantForList);
+  emitShopListForUser(userId);
+}
+
+function emitShopListForUser(userId) {
+  const globallyClosed = isMerchantAccessClosed();
+  const shops = globallyClosed
+    ? []
+    : loadMerchants()
+        .filter((merchant) => canSelfOpen(merchant, userId))
+        .map(sanitizeMerchantForList);
   emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REPLY, {
     targetUserId: userId,
     shops,
+    globallyClosed,
   });
 }
 
@@ -1227,6 +1246,10 @@ async function handleShopRequest(payload) {
   const userId = payload.originUserId;
   const merchantId = payload.merchantId;
   if (!isActiveNonGm(userId) || !merchantId) return;
+  if (isMerchantAccessClosed()) {
+    emitShopResult(userId, merchantId, "unavailable");
+    return;
+  }
   const merchant = findMerchant(merchantId);
   if (!merchant || !canSelfOpen(merchant, userId)) {
     console.warn(
@@ -1353,6 +1376,7 @@ function lookupUserName(userId) {
 function handleSessionResumeRequest(payload) {
   const userId = payload.originUserId;
   if (!isActiveNonGm(userId)) return;
+  if (isMerchantAccessClosed()) return;
   let resumed = 0;
   for (const session of listSessions()) {
     if (session.viewerUserId !== userId) continue;
@@ -1390,6 +1414,7 @@ function handleSessionResumeRequest(payload) {
  */
 export function pushOpenSession({ merchant, targetUserIds }) {
   if (!merchant) throw new Error("pushOpenSession needs merchant");
+  if (isMerchantAccessClosed()) return [];
   const ids = Array.isArray(targetUserIds) ? targetUserIds : [];
   if (ids.length === 0) return [];
   const allowed = Array.isArray(merchant.allowedUserIds)
@@ -1466,6 +1491,143 @@ export function pushCloseAllSessionsFor(merchantId) {
     if (pushCloseSession(session.sessionId)) closed++;
   }
   return closed;
+}
+
+function activePlayerUsers() {
+  const users = globalThis.game?.users;
+  const values = Array.isArray(users)
+    ? users
+    : Array.isArray(users?.contents)
+      ? users.contents
+      : typeof users?.values === "function"
+        ? [...users.values()]
+        : [];
+  return values.filter((user) => isActiveNonGm(user?.id));
+}
+
+/** Refresh every connected player's sanitized Shops list after a global gate
+ * change. The boolean is the only global-state detail exposed to players. */
+export function pushMerchantAccessRefresh() {
+  const players = activePlayerUsers();
+  for (const user of players) emitShopListForUser(user.id);
+  return players.length;
+}
+
+/**
+ * Persist the global lock before closing windows, then remember each currently
+ * live merchant/viewer pair for a later restore. Repeating the operation while
+ * already closed never overwrites the original snapshot with an empty list.
+ */
+export async function pushCloseAllMerchantSessions() {
+  const current = loadMerchantAccessState();
+  if (current.closed) {
+    let closedCount = 0;
+    for (const session of [...listSessions()]) {
+      if (pushCloseSession(session.sessionId)) closedCount++;
+    }
+    pushMerchantAccessRefresh();
+    return {
+      alreadyClosed: true,
+      closedCount,
+      suspendedCount: current.suspendedSessions.length,
+    };
+  }
+
+  const sessionPairs = listSessions().map(({ merchantId, viewerUserId }) => ({
+    merchantId,
+    viewerUserId,
+  }));
+  let saved = await saveMerchantAccessState({
+    closed: true,
+    suspendedSessions: sessionPairs,
+  });
+
+  // A session could have opened while the first private-state write awaited.
+  // Once that write lands, the gate blocks new opens; merge any such session
+  // into the saved restore snapshot before closing all live windows.
+  const mergedPairs = [...saved.suspendedSessions];
+  const pairKeys = new Set(
+    mergedPairs.map((row) => `${row.merchantId}::${row.viewerUserId}`),
+  );
+  for (const { merchantId, viewerUserId } of listSessions()) {
+    const key = `${merchantId}::${viewerUserId}`;
+    if (pairKeys.has(key)) continue;
+    pairKeys.add(key);
+    mergedPairs.push({ merchantId, viewerUserId });
+  }
+  if (mergedPairs.length !== saved.suspendedSessions.length) {
+    saved = await saveMerchantAccessState({
+      closed: true,
+      suspendedSessions: mergedPairs,
+    });
+  }
+
+  let closedCount = 0;
+  for (const session of [...listSessions()]) {
+    if (pushCloseSession(session.sessionId)) closedCount++;
+  }
+  pushMerchantAccessRefresh();
+  return {
+    alreadyClosed: false,
+    closedCount,
+    suspendedCount: saved.suspendedSessions.length,
+  };
+}
+
+/** Lift the global gate and recreate only the merchant/viewer pairs captured by
+ * the matching close. Per-shop Open/Knock/Off modes were never changed. */
+export async function pushReopenMerchantSessions() {
+  const current = loadMerchantAccessState();
+  if (!current.closed) {
+    return { alreadyOpen: true, openedCount: 0, skippedCount: 0 };
+  }
+
+  const restoredSessionIds = [];
+  let openedCount = 0;
+  let skippedCount = 0;
+  try {
+    // Keep the snapshot until every restore attempt finishes. If the GM client
+    // fails mid-restore, the private record still explains what was suspended.
+    await saveMerchantAccessState({
+      closed: false,
+      suspendedSessions: current.suspendedSessions,
+    });
+
+    for (const pair of current.suspendedSessions) {
+      const merchant = findMerchant(pair.merchantId);
+      if (!merchant) {
+        skippedCount++;
+        continue;
+      }
+      const opened = pushOpenSession({
+        merchant,
+        targetUserIds: [pair.viewerUserId],
+      });
+      if (opened.length > 0) {
+        openedCount++;
+        restoredSessionIds.push(opened[0].sessionId);
+      } else {
+        skippedCount++;
+      }
+    }
+
+    await saveMerchantAccessState({ closed: false, suspendedSessions: [] });
+  } catch (error) {
+    // Do not leave a partially restored set of windows after a failed durable
+    // state write. Best-effort rollback returns to the same closed snapshot.
+    for (const sessionId of restoredSessionIds) pushCloseSession(sessionId);
+    try {
+      await saveMerchantAccessState({
+        closed: true,
+        suspendedSessions: current.suspendedSessions,
+      });
+    } catch {}
+    pushMerchantAccessRefresh();
+    throw error;
+  }
+
+  pushMerchantAccessRefresh();
+  return { alreadyOpen: false, openedCount, skippedCount };
 }
 
 function findAllSessionsFor(merchantId) {

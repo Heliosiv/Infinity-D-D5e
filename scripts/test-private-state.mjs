@@ -128,8 +128,9 @@ async function waitFor(predicate, message) {
 }
 
 function makeStoreData({
-  schemaVersion = 5,
+  schemaVersion = 6,
   merchants = [],
+  merchantAccess = {},
   factions = [],
   resourceConfig = {},
   resourceRunState = {},
@@ -139,6 +140,7 @@ function makeStoreData({
   downtimeWorkflow = {},
   downtimeWorkflowCheckpoint = {},
   includeCriticalInjuryWorkflow = true,
+  includeMerchantAccess = true,
   includeCriticalInjuryWorkflowCheckpoint = true,
   includeDowntimeConfig = true,
   includeDowntimeWorkflow = true,
@@ -152,6 +154,7 @@ function makeStoreData({
         privateStateStore: true,
         schemaVersion,
         merchants,
+        ...(includeMerchantAccess ? { merchantAccess } : {}),
         factions,
         resourceConfig,
         resourceRunState,
@@ -262,6 +265,7 @@ try {
       "secret-stash",
     );
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 42);
+    assert.deepEqual(getPrivateState("merchantAccess"), {});
     assert.deepEqual(getPrivateState("criticalInjuryWorkflow"), {});
     assert.deepEqual(getPrivateState("criticalInjuryWorkflowCheckpoint"), {});
     assert.deepEqual(getPrivateState("downtimeConfig"), {});
@@ -269,7 +273,7 @@ try {
     assert.deepEqual(getPrivateState("downtimeWorkflowCheckpoint"), {});
     assert.equal(
       activeJournal.entries[0].getFlag(MODULE_ID, "schemaVersion"),
-      5,
+      6,
     );
     assert.deepEqual(state.cleared.sort(), [
       "factions",
@@ -598,6 +602,7 @@ try {
     const store = activeJournal.insert(
       makeStoreData({
         schemaVersion: 1,
+        includeMerchantAccess: false,
         resourceConfig: null,
         resourceRunState: null,
         includeCriticalInjuryWorkflow: false,
@@ -649,6 +654,11 @@ try {
       "must-survive-failed-copy",
     );
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 7);
+    assert.deepEqual(
+      getPrivateState("merchantAccess"),
+      {},
+      "the schema migration installs the global merchant-access field",
+    );
     assert.deepEqual(
       getPrivateState("criticalInjuryWorkflow"),
       {},

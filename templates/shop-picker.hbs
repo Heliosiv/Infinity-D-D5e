@@ -26,7 +26,12 @@
         <span>Looking for open shops…</span>
       </p>
     {{else}}
-      {{#if hasShops}}
+      {{#if globallyClosed}}
+        <p class="sp-empty">
+          <i class="fa-solid fa-shop-lock" aria-hidden="true"></i>
+          <span>All shops are temporarily closed by the GM. This list will return when merchant access reopens.</span>
+        </p>
+      {{else if hasShops}}
         <ul class="sp-list" aria-label="Shops you can visit">
           {{#each shops}}
           <li class="sp-row {{#if pending}}is-pending{{/if}}">

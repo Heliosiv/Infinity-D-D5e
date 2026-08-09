@@ -13,11 +13,33 @@
       </p>
     </div>
     <div class="mw-head__actions">
+      <span class="mw-global-status {{merchantAccessStatusClass}}" role="status">
+        <i class="fa-solid {{merchantAccessStatusIcon}}" aria-hidden="true"></i>
+        {{merchantAccessStatusLabel}}
+      </span>
+      {{#if merchantAccessClosed}}
+      <button type="button" class="mw-btn mw-btn--primary" data-action="reopenSessions" title="Restore global shop access and reopen the saved player sessions">
+        <i class="fa-solid fa-store" aria-hidden="true"></i> Reopen All
+        {{#if suspendedSessionCount}}({{suspendedSessionCount}}){{/if}}
+      </button>
+      {{else}}
+      <button type="button" class="mw-btn mw-btn--danger" data-action="closeAllSessions" title="Close every player merchant window and block all shop access">
+        <i class="fa-solid fa-shop-lock" aria-hidden="true"></i> Close All
+        {{#if globalActiveSessionCount}}({{globalActiveSessionCount}}){{/if}}
+      </button>
+      {{/if}}
       <button type="button" class="mw-btn mw-btn--primary" data-action="newMerchant" title="Create a new merchant">
         <i class="fa-solid fa-plus" aria-hidden="true"></i> New Merchant
       </button>
     </div>
   </header>
+
+  {{#if merchantAccessClosed}}
+  <div class="mw-global-notice" role="status">
+    <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+    <span>Players cannot open any shop or use a merchant session. Per-shop Open, Knock, and Off settings are preserved. Reopen All restores access and the {{suspendedSessionCount}} saved session{{#unless suspendedSessionCountIsOne}}s{{/unless}}.</span>
+  </div>
+  {{/if}}
 
   <div class="mw-body">
     {{!-- Left rail: merchant list --}}

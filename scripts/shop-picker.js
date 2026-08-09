@@ -68,6 +68,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
     super(options);
     this._shops = []; // sanitized projections from the GM
+    this._globallyClosed = false;
     this._loading = true;
     this._loadTimer = null; // watchdog so the loading spinner can't hang forever
     this._pending = new Set(); // merchantIds the player is waiting on (knock/entering)
@@ -173,6 +174,8 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._loadTimer = null;
     }
     this._shops = Array.isArray(payload.shops) ? payload.shops : [];
+    this._globallyClosed = payload.globallyClosed === true;
+    if (this._globallyClosed) this._pending.clear();
     this._loading = false;
     if (this.rendered) this.render(false);
   }
@@ -206,6 +209,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       noGm,
       loading: this._loading && !noGm,
+      globallyClosed: this._globallyClosed && !noGm,
       shops,
       hasShops: shops.length > 0,
     };
@@ -226,6 +230,11 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Already waiting on this shop — don't re-fire (the row shows a waiting
     // state); a second request would just spam the GM.
     if (this._pending.has(merchantId)) return;
+    if (this._globallyClosed) {
+      ui.notifications?.warn("Shops are temporarily closed by the GM.");
+      this.render(false);
+      return;
+    }
     if (!globalThis.game?.users?.activeGM) {
       ui.notifications?.warn("Shops are closed — no GM is online right now.");
       this.render(false);

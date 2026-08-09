@@ -56,12 +56,15 @@ import {
 import {
   commitMerchantWrite,
   MERCHANT_EVENTS,
+  pushCloseAllMerchantSessions,
   pushCloseAllSessionsFor,
   pushCloseSession,
   pushOpenSession,
+  pushReopenMerchantSessions,
   subscribe,
 } from "./merchant/socket.js";
 import { listSessions } from "./merchant/session-state.js";
+import { loadMerchantAccessState } from "./merchant/global-access.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
   bindRowDoubleClickOpen,
@@ -77,6 +80,10 @@ import {
   openSingleton,
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
+import {
+  PRIVATE_STATE_CHANGED_HOOK,
+  onPrivateStateChanged,
+} from "./private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
@@ -131,6 +138,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       previewSession: MerchantWorkspaceApp._onPreviewSession,
       openSession: MerchantWorkspaceApp._onOpenSession,
       closeSession: MerchantWorkspaceApp._onCloseSession,
+      closeAllSessions: MerchantWorkspaceApp._onCloseAllSessions,
+      reopenSessions: MerchantWorkspaceApp._onReopenSessions,
       invRemove: MerchantWorkspaceApp._onInvRemove,
       openInventoryItem: MerchantWorkspaceApp._onOpenInventoryItem,
     },
@@ -163,6 +172,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       subscribe(MERCHANT_EVENTS.SESSION_OPEN, () => this.render(false)),
       subscribe(MERCHANT_EVENTS.SESSION_CLOSE, () => this.render(false)),
     ];
+    this._privateStateHookId = onPrivateStateChanged((payload) => {
+      if (!payload?.keys?.includes?.("merchantAccess")) return;
+      if (this.rendered) this.render(false);
+    });
   }
 
   _onClose(options) {
@@ -175,6 +188,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       } catch {}
     }
     this._unsubs = [];
+    if (this._privateStateHookId != null) {
+      globalThis.Hooks?.off?.(
+        PRIVATE_STATE_CHANGED_HOOK,
+        this._privateStateHookId,
+      );
+      this._privateStateHookId = null;
+    }
     MerchantWorkspaceApp._instance = null;
   }
 
@@ -182,6 +202,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     const merchants = loadMerchants();
+    const merchantAccess = loadMerchantAccessState();
+    const allActiveSessions = listSessions();
     // Resolve the selection, re-anchoring to the first merchant when the stored
     // id no longer exists (e.g. another GM client / external settings edit
     // deleted the selected merchant, then an unrelated broadcast re-rendered
@@ -290,7 +312,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       : [];
 
     const activeSessions = selected
-      ? listSessions()
+      ? allActiveSessions
           .filter((s) => s.merchantId === selected.id)
           .map((s) => ({
             sessionId: s.sessionId,
@@ -330,18 +352,35 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       buysAnything,
       inventoryRows,
       activeSessions,
+      merchantAccessClosed: merchantAccess.closed,
+      merchantAccessOpen: !merchantAccess.closed,
+      merchantAccessStatusClass: merchantAccess.closed
+        ? "is-closed"
+        : "is-open",
+      merchantAccessStatusIcon: merchantAccess.closed
+        ? "fa-shop-lock"
+        : "fa-door-open",
+      merchantAccessStatusLabel: merchantAccess.closed
+        ? "All shops closed"
+        : "Global access open",
+      globalActiveSessionCount: allActiveSessions.length,
+      suspendedSessionCount: merchantAccess.suspendedSessions.length,
+      suspendedSessionCountIsOne: merchantAccess.suspendedSessions.length === 1,
       canOpenSession:
         Boolean(selected) &&
+        !merchantAccess.closed &&
         selected.allowedUserIds.length > 0 &&
         Boolean(globalThis.game?.users?.activeGM),
       // Why the Open Session button is disabled, so the button can say so.
       openSessionReason: !selected
         ? "Select a merchant first."
-        : selected.allowedUserIds.length === 0
-          ? "Add at least one Allowed Player to open a session."
-          : !globalThis.game?.users?.activeGM
-            ? "An active GM must be online to host."
-            : "",
+        : merchantAccess.closed
+          ? "Merchant access is globally closed. Reopen shops first."
+          : selected.allowedUserIds.length === 0
+            ? "Add at least one Allowed Player to open a session."
+            : !globalThis.game?.users?.activeGM
+              ? "An active GM must be online to host."
+              : "",
       saveStatus: this._saveStatus,
     };
   }
@@ -1034,6 +1073,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
+    if (loadMerchantAccessState().closed) {
+      ui.notifications?.warn(
+        "Merchant access is globally closed. Reopen shops before starting a session.",
+      );
+      this.render(false);
+      return;
+    }
     if (!merchant.allowedUserIds.length) {
       ui.notifications?.warn(
         "Tag at least one Allowed Player before opening a session.",
@@ -1092,6 +1138,72 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!sessionId) return;
     pushCloseSession(sessionId);
     playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
+    this.render(false);
+  }
+
+  static async _onCloseAllSessions() {
+    const current = loadMerchantAccessState();
+    if (current.closed) {
+      ui.notifications?.info("All merchant access is already closed.");
+      this.render(false);
+      return;
+    }
+
+    const activeCount = listSessions().length;
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const confirmed = DialogV2
+      ? await DialogV2.confirm({
+          window: {
+            title: "Close every shop?",
+            icon: "fa-solid fa-shop-lock",
+          },
+          content: `<p>This closes every live merchant window and blocks all self-service shops until you reopen them globally.</p><p><strong>${activeCount}</strong> active session${activeCount === 1 ? "" : "s"} will be remembered and restored later. Each merchant's Open, Knock, or Off setting stays unchanged.</p>`,
+          rejectClose: false,
+        })
+      : true;
+    if (!confirmed) return;
+
+    try {
+      const result = await pushCloseAllMerchantSessions();
+      playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
+      ui.notifications?.info(
+        `All shops are closed. ${result.suspendedCount} session${result.suspendedCount === 1 ? " was" : "s were"} saved for reopening.`,
+      );
+    } catch (error) {
+      console.error(
+        `${MODULE_ID} | failed to close all merchant sessions`,
+        error,
+      );
+      ui.notifications?.error(
+        "Merchant access could not be closed safely; no completion was reported.",
+      );
+    }
+    this.render(false);
+  }
+
+  static async _onReopenSessions() {
+    const current = loadMerchantAccessState();
+    if (!current.closed) {
+      ui.notifications?.info("Merchant access is already open.");
+      this.render(false);
+      return;
+    }
+
+    try {
+      const result = await pushReopenMerchantSessions();
+      playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
+      const skipped = result.skippedCount
+        ? ` ${result.skippedCount} saved session${result.skippedCount === 1 ? " was" : "s were"} skipped because its merchant or player access changed.`
+        : "";
+      ui.notifications?.info(
+        `Shops reopened globally. Restored ${result.openedCount} session${result.openedCount === 1 ? "" : "s"}.${skipped}`,
+      );
+    } catch (error) {
+      console.error(`${MODULE_ID} | failed to reopen merchant sessions`, error);
+      ui.notifications?.error(
+        "Merchant sessions could not be fully reopened. Review the global status and try again.",
+      );
+    }
     this.render(false);
   }
 
