@@ -18,8 +18,8 @@
   background: var(--lf-bg);
   color: var(--lf-text);
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  min-width: min(640px, calc(100vw - 56px));
-  min-height: min(520px, calc(100vh - 72px));
+  min-width: 0;
+  min-height: 0;
 }
 
 .infinity-dnd5e.infinity-merchant-session .window-content,
@@ -60,7 +60,9 @@
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  container: merchant-session / inline-size;
 }
 
 /* Header — a carved wooden signboard with a hanging parchment nameplate.
@@ -158,10 +160,57 @@
   min-width: 128px;
 }
 .ms-head__purse-label {
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--ms-parchment-ink) 68%, transparent);
+  color: color-mix(in srgb, var(--ms-parchment-ink) 76%, transparent);
+}
+.ms-head__actor {
+  display: inline-flex;
+  align-items: center;
+  max-width: 150px;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ms-parchment-ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-head__actor img {
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--ms-parchment-ink) 38%, transparent);
+  border-radius: 50%;
+  object-fit: cover;
+}
+.ms-head__actor-picker {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+}
+.ms-head__actor-picker > span,
+.ms-head__purse-help {
+  color: color-mix(in srgb, var(--ms-parchment-ink) 78%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+.ms-head__actor-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--lf-control-size, 44px);
+  border: 1px solid color-mix(in srgb, var(--ms-parchment-ink) 42%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ms-parchment) 88%, white);
+  color: var(--ms-parchment-ink);
+}
+.ms-head__actor-picker select:focus-visible {
+  outline: 2px solid var(--lf-focus, var(--lf-accent));
+  outline-offset: 2px;
+}
+.ms-head__purse-help {
+  max-width: 190px;
+  text-align: center;
 }
 .ms-head__purse-value {
   display: inline-flex;
@@ -191,6 +240,120 @@
   flex: 0 0 auto;
 }
 
+/* Live transaction contract: what happened, whether anything changed, and the
+   safest next action. This remains visible while the item pane scrolls. */
+.ms-transaction {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--lf-border);
+  border-left: 4px solid var(--lf-accent);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg-alt);
+}
+.ms-transaction > i {
+  color: var(--lf-accent);
+}
+.ms-transaction > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.ms-transaction > div > span {
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.ms-transaction--success {
+  border-left-color: var(--lf-success);
+}
+.ms-transaction--pending,
+.ms-transaction--uncertain {
+  border-left-color: var(--lf-warn);
+}
+.ms-transaction--offline,
+.ms-transaction--error {
+  border-left-color: var(--lf-danger);
+}
+.ms-session-totals {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 10px;
+  margin: 0;
+}
+.ms-session-totals > div {
+  display: grid;
+  text-align: right;
+}
+.ms-session-totals dt {
+  color: var(--lf-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+.ms-session-totals dd {
+  margin: 0;
+  color: var(--lf-text-strong);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.ms-context-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--lf-warn) 55%, transparent);
+  border-radius: var(--lf-radius-sm);
+  color: var(--lf-warn);
+  font-size: 0.8rem;
+}
+
+.ms-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--lf-control-size, 44px);
+  padding: 0 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+.ms-search:focus-within {
+  border-color: var(--lf-accent);
+  outline: 2px solid color-mix(in srgb, var(--lf-accent) 32%, transparent);
+}
+.ms-search > i {
+  color: var(--lf-muted);
+}
+.ms-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--lf-text);
+}
+.ms-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Tabs */
 .ms-tabs {
   display: inline-flex;
@@ -212,6 +375,7 @@
   font: inherit;
   font-size: 0.86rem;
   cursor: pointer;
+  min-height: var(--lf-control-size, 44px);
 }
 .ms-tab.is-active {
   background: var(--lf-accent);
@@ -224,7 +388,7 @@
 /* Rows */
 .ms-rows {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 180px;
   overflow: auto;
   display: grid;
   gap: 6px;
@@ -297,7 +461,7 @@
   align-items: center;
   padding: 0 6px;
   border-radius: 999px;
-  font-size: 0.64rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -344,8 +508,10 @@
   font-size: 0.78rem;
   color: var(--lf-muted);
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .ms-row__price {
   display: grid;
@@ -354,7 +520,7 @@
   min-width: 110px;
 }
 .ms-row__base {
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   color: var(--lf-muted);
   text-decoration: line-through;
 }
@@ -380,7 +546,7 @@
   margin-top: 3px;
   padding: 0 7px;
   border-radius: 999px;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
   border: 1px solid currentColor;
   pointer-events: none;
@@ -403,9 +569,11 @@
 }
 
 .ms-row__warn {
+  min-width: 0;
   color: color-mix(in srgb, var(--lf-danger) 85%, white);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 /* Seal pill */
@@ -417,7 +585,7 @@
   border-radius: 999px;
   background: var(--lf-surface-elev);
   color: var(--lf-text-strong);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   border: 1px solid var(--lf-border);
@@ -431,7 +599,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--lf-accent, #6a8) 18%, transparent);
   color: var(--lf-text-strong);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid color-mix(in srgb, var(--lf-accent, #6a8) 45%, transparent);
@@ -538,13 +706,13 @@
 /* Bigger tap targets for the player's financial controls (icon buttons get a
    touch-friendly size on the pushed-to-clients session window). */
 .infinity-dnd5e.infinity-merchant-session .ms-row__actions .mw-btn--icon {
-  min-width: 34px;
-  min-height: 34px;
+  min-width: var(--lf-control-size, 44px);
+  min-height: var(--lf-control-size, 44px);
 }
 
 /* Narrow / phone reflow: drop price + the 4-control action cluster to a full
    width row beneath the item so nothing overflows or clips. */
-@media (max-width: 560px) {
+@container merchant-session (max-width: 560px) {
   .infinity-dnd5e.infinity-merchant-session .ms-row {
     grid-template-columns: 44px 1fr;
   }
@@ -568,10 +736,22 @@
   }
   .infinity-dnd5e.infinity-merchant-session .ms-head__purse {
     grid-column: 1 / -1;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
     min-width: 0;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head__actor-picker {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head__actor {
+    grid-column: 1 / -1;
+    max-width: 100%;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-head__purse-help {
+    grid-column: 1 / -1;
+    max-width: none;
   }
   .infinity-dnd5e.infinity-merchant-session .ms-tabs {
     align-self: stretch;
@@ -580,5 +760,51 @@
   .infinity-dnd5e.infinity-merchant-session .ms-tab {
     flex: 1 1 auto;
     justify-content: center;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-search {
+    flex-basis: auto;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-transaction {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-session-totals {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+  .infinity-dnd5e.infinity-merchant-session .ms-row__actions .mw-btn--primary {
+    flex: 1 1 auto;
+  }
+}
+
+@container merchant-session (max-width: 380px) {
+  .infinity-dnd5e.infinity-merchant-session .ms-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-dnd5e.infinity-merchant-session .ms-head__art {
+    width: 48px;
+    height: 48px;
+  }
+
+  .infinity-dnd5e.infinity-merchant-session .ms-head__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .infinity-dnd5e.infinity-merchant-session .ms-head__purse {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
+
+  .infinity-dnd5e.infinity-merchant-session
+    :is(.ms-head__purse-label, .ms-head__purse-value, .ms-head__purse-help) {
+    justify-self: start;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: left;
   }
 }

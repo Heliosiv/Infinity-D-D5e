@@ -1,0 +1,97 @@
+<form class="infinity-ui infinity-app-shell ix-shell ix-settings" data-infinity-settings-form>
+  <header class="infinity-app-header">
+    <div>
+      <p class="ix-eyebrow">Preferences and defaults</p>
+      <h1>Infinity Settings</h1>
+      <p>Change how this client feels and, for full GMs, how campaign tools behave.</p>
+    </div>
+    <span class="ix-scope-badge">{{#if fullGm}}Full GM{{else}}Personal settings{{/if}}</span>
+  </header>
+
+  <section class="infinity-card ix-settings__density" aria-labelledby="ix-density-heading">
+    <div>
+      <h2 id="ix-density-heading">Interface density</h2>
+      <p>Comfortable is easier to scan and touch. Compact keeps more information visible when using a mouse.</p>
+    </div>
+    <label class="infinity-field">
+      <span class="infinity-field__label">Control size</span>
+      <select name="uiDensity">
+        {{#each densityOptions}}
+          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </label>
+  </section>
+
+  {{#if hasGroups}}
+    <nav class="ix-section-nav" aria-label="Settings sections">
+      {{#each groups}}
+        <a href="#ix-settings-{{id}}">{{label}}</a>
+      {{/each}}
+    </nav>
+
+    <div class="ix-settings__groups">
+      {{#each groups}}
+        <section class="infinity-card ix-settings-group" id="ix-settings-{{id}}" aria-labelledby="ix-settings-{{id}}-heading">
+          <header>
+            <h2 id="ix-settings-{{id}}-heading">{{label}}</h2>
+            <p>{{description}}</p>
+          </header>
+
+          <div class="ix-settings-group__fields">
+            {{#each fields}}
+              <label class="ix-setting-row">
+                <span class="ix-setting-row__copy">
+                  <span class="ix-setting-row__title">{{name}}</span>
+                  <span class="ix-setting-row__hint">{{hint}}</span>
+                  <span class="ix-setting-row__scope">{{scopeLabel}}</span>
+                </span>
+
+                {{#if isBoolean}}
+                  <input type="checkbox" data-setting-key="{{key}}" {{#if checked}}checked{{/if}} />
+                {{/if}}
+                {{#if isChoice}}
+                  <select data-setting-key="{{key}}" aria-label="{{name}}">
+                    {{#each choices}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                {{/if}}
+                {{#if isNumber}}
+                  <input type="number" data-setting-key="{{key}}" value="{{value}}" min="{{min}}" max="{{max}}" step="{{step}}" aria-label="{{name}}" />
+                {{/if}}
+                {{#if isText}}
+                  <input type="text" data-setting-key="{{key}}" value="{{value}}" aria-label="{{name}}" />
+                {{/if}}
+              </label>
+            {{/each}}
+          </div>
+        </section>
+      {{/each}}
+    </div>
+  {{else}}
+    <div class="infinity-state">
+      <h2 class="infinity-state__title">No settings are available</h2>
+      <p>Your current role does not expose any configurable Infinity options.</p>
+    </div>
+  {{/if}}
+
+  <section class="infinity-card ix-settings__quick-starts">
+    <div>
+      <h2>Quick-start cards</h2>
+      <p>Restore every dismissed guide without changing campaign data.</p>
+    </div>
+    <button type="button" class="infinity-button" data-action="resetQuickStarts">
+      <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+      Restore guides
+    </button>
+  </section>
+
+  <footer class="infinity-sticky-actions">
+    <p class="infinity-sticky-actions__status" role="status" aria-live="polite" data-settings-status data-tone="{{statusTone}}">{{status}}</p>
+    <button type="button" class="infinity-button infinity-button--primary" data-action="save" {{#unless dirty}}disabled{{/unless}}>
+      <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+      Save changes
+    </button>
+  </footer>
+</form>

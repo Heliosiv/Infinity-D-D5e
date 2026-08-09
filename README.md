@@ -5,20 +5,24 @@ for D&D 5e on Foundry VTT.
 
 ## What This Module Is
 
-A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. The GM dashboard launches seven dedicated tools, while players receive permission-scoped shops, downtime, reputation, party-supplies, forage, and Critical Injury Table V2 workflows.
+A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Three ways to open the dashboard:
+Open Home in either of these ways:
 
 1. Left scene-controls toolbar: the d20 icon labeled **Infinity D&D5e**.
-2. Token Controls fallback: a second d20 icon for GMs who look there first.
-3. Keyboard shortcut: `Shift + I`, rebindable in Foundry's Configure Controls.
+2. Keyboard shortcut: `Shift + I`, rebindable in Foundry's Configure Controls.
+
+Full GMs see campaign-management workspaces. Players and Assistant GMs see only permission-scoped player destinations. Existing direct player shortcuts remain available.
+
+See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
 
-**v0.2.74 (unreleased)** - Automates one-gp spell-component consumption for leveled casts, drawing from Component Pouch charges and loose Spell Components while retaining the Quartermaster write hardening introduced in v0.2.73.
+**v0.3.0 (unreleased)** - Coordinated UI/UX redesign with role-aware Home, one Loot Studio, grouped settings, shared accessibility foundations, responsive application layouts, and plain-language recovery states. Game rules, stored campaign data, permissions, privacy boundaries, and authoritative-GM behavior remain unchanged.
 
-- GM dashboard with seven dedicated tools and scene-control launchers.
-- Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
+- One Home and one scene-control launcher for every role, with quick starts, compact recents, shortcuts, integration readiness, and privacy-safe diagnostics.
+- Privileged loot, merchant, reputation, and GM-preview windows still require a full GM and close if that user is demoted; Assistant GMs use player-scoped Home destinations.
+- **Loot Studio**: accessible Encounter, Hoard, and Creature mode tabs in one visible ApplicationV2 window. Each mode retains its own form, result, undo stack, preset tool ID, and history. Existing generation engines and outcomes are unchanged.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, scale-shaped rarity defaults, and filter-aware chips while preserving valid coin-only rolls.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
@@ -29,10 +33,27 @@ Three ways to open the dashboard:
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Spell components**: every leveled spell cast spends one 1-gp component per cast level, including the chosen upcast level. Component Pouch charges are used before loose Spell Components; combined shortages block the cast before its native consumption updates are applied. Cantrips and spell-scroll item uses are exempt.
-- **Player launchers**: `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
-- **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The action can open Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile; it carries no campaign projection and performs no world write.
+- **Player launchers**: `Shift + I` opens Home, `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
+- **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The allowlisted action can open Home, Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile; it carries no campaign projection and performs no world write.
+- **Accessibility and responsive UI**: application-container layouts, comfortable/compact density, 44px touch targets, visible focus, reduced motion, forced colours, status announcements, and keyboard tab navigation.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
+
+### Loot Studio migration
+
+The former Per-Encounter, Hoard, and Per-Creature launchers now open the corresponding Loot Studio mode. No preset or history migration is required: the established tool IDs remain the storage keys, and exported preset files keep their existing format. Opening Loot Studio without a mode restores this client's last mode, with Encounter as the fallback.
+
+Macro compatibility is retained:
+
+```js
+const api = game.modules.get("infinity-dnd5e").api;
+api.openHub();
+api.openLootStudio({ mode: "hoard" });
+api.openDashboard(); // Existing full-GM alias.
+api.openPerEncounterLoot(); // Existing Encounter alias.
+api.openHoardLoot(); // Existing Hoard alias.
+api.openPerCreatureLoot(); // Existing Creature alias.
+```
 
 ### Magic Bias
 
@@ -52,11 +73,13 @@ Loot rolls use only spell-specific scrolls such as **Spell Scroll: Fireball**. T
 
 ### Keyboard
 
-Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Toggleable in settings.
+In Loot Studio, Left/Right Arrow moves between mode tabs and Home/End jumps to the first or last mode. Inside Encounter mode, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Tabs, disclosures, item rows, HUD markers, and queue controls retain keyboard alternatives. Press Escape to dismiss dialogs and unpin the Critical Injury HUD card.
 
 ### Settings
 
-Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
+Open **Infinity Settings** from Home or Foundry's Module Settings. Options are grouped under Appearance & Accessibility, Loot Studio, Merchants, Quartermaster, Automation, Audio, Injuries, and Advanced. Players see only client settings; full GMs also see world settings. Raw duplicate entries are hidden after automated parity coverage verifies every existing configurable key remains represented.
+
+The client-scoped `uiPreferences` v1 setting stores only density, last Loot Studio mode, dismissed quick-start versions, and remembered Advanced disclosures. It is sanitized and does not contain character, user, campaign, permission, merchant, or other private world data.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
 
@@ -71,7 +94,7 @@ The automation recognizes the module's **Component Pouch** as a 25-use source an
 Infinity registers `infinity-dnd5e.open-player-surface` through Monk's Active
 Tiles' `setupTileActions` extension hook. The action is intended for a
 player-facing landing Scene and accepts only these stored `surface` values:
-`party-supplies`, `shops`, `reputation`, `downtime`, `calendar`, and
+`home`, `party-supplies`, `shops`, `reputation`, `downtime`, `calendar`, and
 `critical-injuries`.
 
 The player-hub path is intentionally pinned to Monk's Active Tiles 13.06. During
@@ -102,7 +125,7 @@ both registered and active.
 
 ### Downtime and city actions
 
-The full GM opens **Downtime Workspace** from the dashboard, chooses eligible
+The full GM opens **Home → Run the Session → Downtime Workspace**, chooses eligible
 characters, and assigns a shared productive-hour budget. A settlement is
 optional: select one for city-specific markets, crime, fencing, and local Heat,
 or name a camp, wilderness, shipboard, roadside, or other location. Crafting
@@ -242,11 +265,14 @@ npm run art:apply
 npm run art:apply:present
 npm run check
 npm run ui:audit
+npm run ui:audit:a11y
+npm run ui:audit:keyboard
+npm run verify
 ```
 
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
-`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` renders every GM and player window at desktop, tablet, narrow, and phone widths, checks action wiring and row opening, and reports horizontal overflow or unreachable controls.
+`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source` runs formatting, all source checks, all three UI gates, and manifest compatibility. `npm run verify` adds release construction and verifies the local ZIP; `npm run release` invokes that same complete gate and build.
 
 ### Compendium pack
 
@@ -292,9 +318,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.71 && git push origin refs/tags/v0.2.71`).
+1. Tag the commit (`git tag v0.3.0 && git push origin refs/tags/v0.3.0`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.71` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.3.0` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

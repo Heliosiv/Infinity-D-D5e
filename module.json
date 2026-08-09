@@ -2,7 +2,7 @@
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
   "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, schedule downtime and city actions, track party resources and reputation, consume spell components, and automate Critical Injury Table V2 recovery workflows.",
-  "version": "0.2.74",
+  "version": "0.3.0",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "13",
@@ -11,6 +11,9 @@
   "esmodules": ["scripts/module.js"],
   "styles": [
     "styles/tokens.css",
+    "styles/ui-system.css",
+    "styles/chat-card.css",
+    "styles/loot-studio.css",
     "styles/dashboard.css",
     "styles/loot-forge.css",
     "styles/hoard-loot.css",
@@ -25,10 +28,13 @@
     "styles/reputation-view.css",
     "styles/critical-injury.css",
     "styles/critical-injury-hud.css",
-    "styles/downtime.css"
+    "styles/downtime.css",
+    "styles/settings.css",
+    "styles/search-picker.css"
   ],
   "templates": [
     "templates/dashboard.hbs",
+    "templates/loot-studio.hbs",
     "templates/loot-forge.hbs",
     "templates/hoard-loot.hbs",
     "templates/per-creature-loot.hbs",
@@ -43,7 +49,9 @@
     "templates/critical-injury.hbs",
     "templates/critical-injury-hud.hbs",
     "templates/downtime-workspace.hbs",
-    "templates/downtime-activities.hbs"
+    "templates/downtime-activities.hbs",
+    "templates/settings.hbs",
+    "templates/search-picker.hbs"
   ],
   "system": ["dnd5e"],
   "socket": true,

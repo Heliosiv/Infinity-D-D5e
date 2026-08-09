@@ -10,30 +10,40 @@
 
   {{#if noActor}}
     <div class="ci-notice ci-notice--danger" role="alert">
-      This character is no longer available.
+      <span><strong>This character is no longer available.</strong> Nothing changed. Close this window and choose a character you control.</span>
     </div>
   {{else}}
+    {{#if offline}}
+      <div class="ci-notice ci-notice--danger" role="status">
+        <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+        {{#if outcomeUncertain}}
+          <span><strong>Confirmation was interrupted.</strong> A roll or treatment may already have changed this character. Do not repeat the action. Keep this window open while the GM reconnects.</span>
+        {{else}}
+          <span><strong>Injury actions are offline.</strong> No full GM is connected. No new action can start; approved rolls and treatment can resume after reconnection.</span>
+        {{/if}}
+      </div>
+    {{/if}}
     {{#unless integrations.automationReady}}
-      <div class="ci-notice" role="status">
+      <div class="ci-notice">
         Midi-QOL and DAE are recommended for automatic penalties. The injury
         record and recovery rules will still be applied without them.
       </div>
     {{/unless}}
     {{#unless integrations.calendarActive}}
-      <div class="ci-notice" role="status">
+      <div class="ci-notice">
         Simple Calendar is not active, so recovery dates cannot be added to the
         campaign calendar.
       </div>
     {{/unless}}
 
-    <p class="ci-status" aria-live="polite">{{statusMessage}}</p>
+    <p class="ci-status ci-status--{{statusTone}}" role="status" aria-live="polite" aria-atomic="true">{{statusMessage}}</p>
 
     {{#if hasPending}}
-      <section class="ci-roll-card" aria-labelledby="ci-roll-heading" {{#if waitingForRoll}}aria-busy="true"{{/if}}>
-        <span class="ci-roll-icon"><i class="fa-solid fa-dice-d20"></i></span>
+      <section class="ci-roll-card" aria-labelledby="ci-roll-heading-{{domId}}" {{#if waitingForRoll}}aria-busy="true"{{/if}}>
+        <span class="ci-roll-icon"><i class="fa-solid fa-dice-d20" aria-hidden="true"></i></span>
         <div>
           <p class="ci-eyebrow">GM approved</p>
-          <h3 id="ci-roll-heading">Roll your critical injury</h3>
+          <h3 id="ci-roll-heading-{{domId}}">Roll your critical injury</h3>
           <p>
             Your character recovered from 0 hit points or the dead state. The
             active GM securely rolls and applies the d100 result when you
@@ -46,29 +56,29 @@
         <button
           type="button"
           class="ci-primary"
-          data-action="rollInjury" {{#if waitingForRoll}}disabled{{/if}}
+          data-action="rollInjury" {{#if waitingForRoll}}disabled{{else if offline}}disabled title="A full GM must be online"{{/if}}
         >
           {{#if waitingForRoll}}
-            <i class="fa-solid fa-spinner fa-spin"></i> Waiting for GM…
+            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting for GM…
           {{else}}
-            <i class="fa-solid fa-dice"></i> Roll d100
+            <i class="fa-solid fa-dice" aria-hidden="true"></i> Roll d100
           {{/if}}
         </button>
       </section>
     {{/if}}
 
     {{#if hasLatestResult}}
-      <section class="ci-result" aria-labelledby="ci-result-heading">
+      <section class="ci-result" aria-labelledby="ci-result-heading-{{domId}}">
         <div class="ci-result-roll">{{latestResult.injuryRoll}}</div>
         <div>
           <p class="ci-eyebrow">GM-authoritative result</p>
-          <h3 id="ci-result-heading">{{latestResult.injuryName}}</h3>
+          <h3 id="ci-result-heading-{{domId}}">{{latestResult.injuryName}}</h3>
           {{#if latestResult.detailLabel}}
             <p><strong>{{latestResult.detailLabel}}</strong></p>
           {{/if}}
           <p>{{latestResult.effect}}</p>
           <p class="ci-recovery">
-            <i class="fa-regular fa-calendar"></i>
+            <i class="fa-regular fa-calendar" aria-hidden="true"></i>
             {{latestResult.recoveryLabel}}
             {{#if latestResult.dueLabel}} · {{latestResult.dueLabel}}{{/if}}
           </p>
@@ -76,22 +86,22 @@
       </section>
     {{/if}}
 
-    <section class="ci-list" aria-labelledby="ci-active-heading">
+    <section class="ci-list" aria-labelledby="ci-active-heading-{{domId}}">
       <div class="ci-section-heading">
         <div>
           <p class="ci-eyebrow">Character effects</p>
-          <h3 id="ci-active-heading">Active injuries</h3>
+          <h3 id="ci-active-heading-{{domId}}">Active injuries</h3>
         </div>
         <span>{{activeInjuries.length}}</span>
       </div>
 
       {{#if hasActiveInjuries}}
         {{#each activeInjuries}}
-          <article class="ci-injury{{#if permanent}} ci-injury--permanent{{/if}}">
+          <article class="ci-injury{{#if permanent}} ci-injury--permanent{{/if}}" aria-labelledby="ci-injury-{{../domId}}-{{domId}}">
             <div class="ci-injury-heading">
               <div>
                 <span class="ci-roll-badge">d100 {{roll}}</span>
-                <h4>{{name}}</h4>
+                <h4 id="ci-injury-{{../domId}}-{{domId}}">{{name}}</h4>
               </div>
               {{#if permanent}}
                 <span class="ci-tag ci-tag--danger">Permanent</span>
@@ -131,23 +141,25 @@
                 <button
                   type="button"
                   data-action="requestTreatment"
-                  aria-disabled="{{#if treating}}true{{else}}false{{/if}}"
-                  data-injury-id="{{id}}" {{#if treating}}disabled{{/if}}
+                  aria-label="{{#if treating}}Waiting for treatment of {{name}}{{else}}Request treatment for {{name}}{{/if}}"
+                  aria-disabled="{{#if treating}}true{{else if ../offline}}true{{else}}false{{/if}}"
+                  data-injury-id="{{id}}" {{#if treating}}disabled{{else if ../offline}}disabled title="A full GM must be online"{{/if}}
                 >
                   {{#if treating}}
-                    <i class="fa-solid fa-spinner fa-spin"></i> Waiting…
+                    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting…
                   {{else}}
-                    <i class="fa-solid fa-kit-medical"></i> Request treatment
+                    <i class="fa-solid fa-kit-medical" aria-hidden="true"></i> Request treatment
                   {{/if}}
                 </button>
               </div>
+              {{#if treatmentMessage}}<p class="ci-treatment-message">{{treatmentMessage}}</p>{{/if}}
             {{/if}}
           </article>
         {{/each}}
       {{else}}
         <div class="ci-empty">
-          <i class="fa-solid fa-shield-heart"></i>
-          <p>No active critical injuries.</p>
+          <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
+          <p>No active critical injuries. No action is needed.</p>
         </div>
       {{/if}}
     </section>
@@ -155,7 +167,7 @@
 
   <footer class="ci-footer">
     <button type="button" data-action="dismiss">
-      <i class="fa-solid fa-xmark"></i> Close
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i> Close
     </button>
   </footer>
 </div>

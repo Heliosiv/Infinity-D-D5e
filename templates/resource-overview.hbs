@@ -13,8 +13,9 @@
       type="button"
       class="ro-icon-btn"
       data-action="refresh"
-      title="Refresh party supplies"
-      aria-label="Refresh party supplies"
+      title="{{#if loading}}Refreshing party supplies{{else}}Refresh party supplies{{/if}}"
+      aria-label="{{#if loading}}Refreshing party supplies{{else}}Refresh party supplies{{/if}}"
+      {{#if loading}}disabled{{/if}}
     >
       <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
     </button>
@@ -31,7 +32,7 @@
     {{#if disabled}}Party Supplies sharing is disabled.
     {{else if noGm}}No full GM is online to provide Party Supplies.
     {{else if loading}}Loading Party Supplies.
-    {{else if requestFailed}}Party Supplies could not be refreshed.
+    {{else if requestFailed}}
     {{else if hasOverview}}Party Supplies updated{{#if updatedLabel}} {{updatedLabel}}{{/if}}.
     {{else}}No Party Supplies snapshot is available.{{/if}}
   </p>
@@ -43,20 +44,22 @@
       Your GM has not shared the Party Supplies view.
     </p>
     {{else if noGm}}
-    <p class="ro-empty">
+    <div class="ro-empty ro-empty--action">
       <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
-      No GM is online right now. Supplies will refresh when the game reconnects.
-    </p>
+      <div><strong>Party Supplies is offline</strong><span>No full GM is online. Nothing changed; supplies refresh automatically after reconnection.</span></div>
+      <button type="button" class="ro-retry" data-action="refresh">Try again</button>
+    </div>
     {{else if loading}}
     <p class="ro-empty">
       <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
       Loading the party's supplies...
     </p>
     {{else if requestFailed}}
-    <p class="ro-empty ro-empty--warn">
+    <div class="ro-empty ro-empty--warn ro-empty--action" role="alert">
       <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-      The Quartermaster did not answer. Use Refresh to try again.
-    </p>
+      <div><strong>The supply snapshot did not arrive</strong><span>Nothing changed. Check your connection, then retry the same refresh.</span></div>
+      <button type="button" class="ro-retry" data-action="refresh">Try again</button>
+    </div>
     {{else if hasOverview}}
       {{#if hasParty}}
       <section class="ro-context" aria-label="Current supply context">
@@ -117,7 +120,7 @@
         </div>
       </section>
       {{else}}
-      <p class="ro-empty">No resources are configured yet.</p>
+      <p class="ro-empty">No resources are configured yet. The GM can add the first supply in Quartermaster.</p>
       {{/if}}
 
       {{#if lastUpkeep}}
@@ -164,7 +167,7 @@
       </p>
       {{/if}}
     {{else}}
-    <p class="ro-empty">No supply snapshot is available yet.</p>
+    <p class="ro-empty">No supply snapshot is available yet. Nothing changed; ask the GM to open Quartermaster and refresh this view.</p>
     {{/if}}
   </div>
 </div>

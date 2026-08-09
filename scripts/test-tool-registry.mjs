@@ -5,6 +5,7 @@ import {
   getTool,
   getTools,
   registerTool,
+  TOOL_INTENTS,
 } from "./tool-registry.js";
 
 /* clean slate between blocks */
@@ -44,6 +45,11 @@ clearTools();
   const alpha = getTool("alpha");
   assert.equal(alpha.title, "Alpha Tool");
   assert.equal(alpha.status, "available");
+  assert.equal(
+    alpha.intent,
+    TOOL_INTENTS.RUN_SESSION,
+    "loot tools default into Run the Session",
+  );
   assert.equal(alpha.open(), "alpha-opened", "open callback is invokable");
 
   assert.equal(getTool("unknown"), null, "missing id returns null");
@@ -86,6 +92,7 @@ clearTools();
   assert.equal(tool.description, "");
   assert.equal(tool.icon, "fa-solid fa-toolbox");
   assert.equal(tool.category, "misc");
+  assert.equal(tool.intent, TOOL_INTENTS.PREPARE);
 
   // Frozen — registration must not be mutable from the outside.
   assert.throws(
@@ -118,10 +125,46 @@ clearTools();
     "invalid status rejected",
   );
   assert.throws(
+    () =>
+      registerTool({
+        id: "x",
+        status: "available",
+        intent: "secret-gm-place",
+      }),
+    /intent must be one of/,
+    "invalid Home intent rejected",
+  );
+  assert.throws(
     () => registerTool(null),
     /must be an object/,
     "null payload rejected",
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Explicit and compatibility-inferred Home intent groups
+ * ------------------------------------------------------------------ */
+{
+  clearTools();
+  const downtime = registerTool({
+    id: "downtime-workspace",
+    category: "party",
+    status: "available",
+  });
+  const resourceManager = registerTool({
+    id: "resource-manager",
+    category: "party",
+    status: "available",
+  });
+  const explicit = registerTool({
+    id: "session-merchant",
+    category: "merchants",
+    intent: TOOL_INTENTS.RUN_SESSION,
+    status: "available",
+  });
+  assert.equal(downtime.intent, TOOL_INTENTS.RUN_SESSION);
+  assert.equal(resourceManager.intent, TOOL_INTENTS.TRACK_CAMPAIGN);
+  assert.equal(explicit.intent, TOOL_INTENTS.RUN_SESSION);
 }
 
 /* ------------------------------------------------------------------ *

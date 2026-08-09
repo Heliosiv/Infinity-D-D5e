@@ -43,6 +43,11 @@ import {
   openSingleton,
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+  promptInfinityDialog,
+} from "./dialog-contract.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/reputation-workspace.hbs`;
@@ -74,9 +79,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     actions: {
       newFaction: ReputationWorkspaceApp._onNewFaction,
       selectFaction: ReputationWorkspaceApp._onSelectFaction,
-      raiseStanding: ReputationWorkspaceApp._onRaiseStanding,
-      lowerStanding: ReputationWorkspaceApp._onLowerStanding,
-      setStanding: ReputationWorkspaceApp._onSetStanding,
+      changeStanding: ReputationWorkspaceApp._onChangeStanding,
       logNote: ReputationWorkspaceApp._onLogNote,
       pickImage: ReputationWorkspaceApp._onPickImage,
       addCharacterNote: ReputationWorkspaceApp._onAddCharacterNote,
@@ -233,7 +236,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       } catch (error) {
         console.warn(`${MODULE_ID} | faction auto-save failed`, error);
         ui.notifications?.error(
-          `${MODULE_ID}: faction changes could not be saved.`,
+          "Faction changes were not saved. Review the fields and try again.",
         );
       }
     });
@@ -264,7 +267,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
         console.warn(`${MODULE_ID} | per-character update failed`, error);
         this._setSaveStatus("Save failed — retry");
         ui.notifications?.error(
-          `${MODULE_ID}: character reputation could not be saved.`,
+          "Character reputation was not saved. Review the value and reason, then try again.",
         );
       }
     });
@@ -391,6 +394,65 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     this.render(false);
   }
 
+  /**
+   * Accessible inline standing-change flow. The existing authoritative
+   * setStanding store path remains the only write; this layer merely requires
+   * an explicit new value and a non-empty reason before calling it.
+   */
+  static async _onChangeStanding(_event, target) {
+    if (!this._selectedId) return;
+    const faction = findFaction(this._selectedId);
+    if (!faction) return;
+    const host =
+      target?.closest?.("[data-standing-change]") ??
+      this.element?.querySelector?.("[data-standing-change]");
+    const valueControl = host?.querySelector?.(
+      '[data-role="standing-change-value"]',
+    );
+    const reasonControl = host?.querySelector?.(
+      '[data-role="standing-change-reason"]',
+    );
+    const rawValue = String(valueControl?.value ?? "").trim();
+    const value = Number(rawValue);
+    const reason = String(reasonControl?.value ?? "").trim();
+
+    if (
+      !rawValue ||
+      !Number.isInteger(value) ||
+      value < STANDING_MIN ||
+      value > STANDING_MAX
+    ) {
+      valueControl?.setAttribute?.("aria-invalid", "true");
+      valueControl?.focus?.();
+      ui.notifications?.warn("Choose a valid standing value.");
+      return;
+    }
+    valueControl?.removeAttribute?.("aria-invalid");
+
+    if (value === faction.standing) {
+      valueControl?.setAttribute?.("aria-invalid", "true");
+      valueControl?.focus?.();
+      ui.notifications?.warn("Choose a different standing value.");
+      return;
+    }
+
+    if (!reason) {
+      reasonControl?.setAttribute?.("aria-invalid", "true");
+      reasonControl?.focus?.();
+      ui.notifications?.warn("Enter a reason for the standing change.");
+      return;
+    }
+    reasonControl?.removeAttribute?.("aria-invalid");
+
+    await setStanding(this._selectedId, value, {
+      reason,
+      by: gmName(),
+    });
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    broadcastReputationState();
+    this.render(false);
+  }
+
   /** Log a note against the faction without changing its standing (delta 0). */
   static async _onLogNote() {
     if (!this._selectedId) return;
@@ -412,7 +474,9 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       foundry?.applications?.apps?.FilePicker?.implementation ??
       globalThis.FilePicker;
     if (!FP) {
-      ui.notifications?.warn(`${MODULE_ID}: file picker unavailable.`);
+      ui.notifications?.warn(
+        "The image picker could not open. Nothing changed; enter an image path manually or reload Foundry and try again.",
+      );
       return;
     }
     const picker = new FP({
@@ -457,10 +521,12 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       await this._saveFromForm();
       broadcastReputationState();
       playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
-      ui.notifications?.info(`${MODULE_ID}: faction saved.`);
+      ui.notifications?.info("Faction saved.");
     } catch (error) {
       console.error(`${MODULE_ID} | save failed`, error);
-      ui.notifications?.error(`${MODULE_ID}: save failed. See console.`);
+      ui.notifications?.error(
+        "The faction was not saved. Review the fields and try again; if it keeps failing, open Help & Diagnostics and share the version details.",
+      );
     }
   }
 
@@ -468,9 +534,8 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const faction = findFaction(this._selectedId);
     if (!faction) return;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    const confirmed = DialogV2
-      ? await DialogV2.confirm({
+    const confirmed = isInfinityDialogAvailable()
+      ? await confirmInfinityDialog({
           window: {
             title: `Delete "${faction.name}"?`,
             icon: "fa-solid fa-trash",
@@ -548,38 +613,32 @@ function readFormFields(form) {
  * on confirm, or null when cancelled / no dialog available proceeds with "".
  */
 async function promptReason(title, hint) {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) return "";
-  try {
-    const value = await DialogV2.prompt({
-      window: { title, icon: "fa-solid fa-feather" },
-      content: `
+  if (!isInfinityDialogAvailable()) return "";
+  const value = await promptInfinityDialog({
+    window: { title, icon: "fa-solid fa-feather" },
+    content: `
         <div class="rw-prompt">
           <p class="rw-prompt__hint">${escapeHtml(hint)}</p>
           <textarea name="reason" rows="3" style="width:100%;" placeholder="e.g. Recovered the stolen relic"></textarea>
         </div>
       `,
-      ok: {
-        label: "Log",
-        icon: "fa-solid fa-check",
-        callback: (_event, button) =>
-          String(button?.form?.elements?.reason?.value ?? "").trim(),
-      },
-      rejectClose: false,
-    });
-    return value ?? null;
-  } catch {
-    return null;
-  }
+    ok: {
+      label: "Log",
+      icon: "fa-solid fa-check",
+      callback: (_event, button) =>
+        String(button?.form?.elements?.reason?.value ?? "").trim(),
+    },
+    rejectClose: false,
+  });
+  return value ?? null;
 }
 
 /**
- * Prompt for an absolute standing value + optional reason. Returns
+ * Prompt for an absolute standing value + required reason. Returns
  * `{ value, reason }` on confirm, or null when cancelled.
  */
 async function promptSetStanding(faction) {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) return null;
+  if (!isInfinityDialogAvailable()) return null;
   const current = faction.standing;
   const options = [];
   for (let n = STANDING_MAX; n >= STANDING_MIN; n -= 1) {
@@ -587,36 +646,41 @@ async function promptSetStanding(faction) {
       `<option value="${n}" ${n === current ? "selected" : ""}>${prettyStanding(n)}</option>`,
     );
   }
-  try {
-    const result = await DialogV2.prompt({
-      window: {
-        title: `Set standing — ${faction.name}`,
-        icon: "fa-solid fa-sliders",
-      },
-      content: `
+  const result = await promptInfinityDialog({
+    window: {
+      title: `Set standing — ${faction.name}`,
+      icon: "fa-solid fa-sliders",
+    },
+    content: `
         <div class="rw-prompt" style="display:grid;gap:8px;">
           <label style="display:grid;gap:4px;">
             <span>Standing</span>
             <select name="value">${options.join("")}</select>
           </label>
           <label style="display:grid;gap:4px;">
-            <span>Reason (optional)</span>
-            <textarea name="reason" rows="2" style="width:100%;" placeholder="Why the change?"></textarea>
+            <span>Reason</span>
+            <textarea name="reason" rows="2" style="width:100%;" required aria-required="true" placeholder="Why is the standing changing?"></textarea>
           </label>
         </div>
       `,
-      ok: {
-        label: "Set",
-        icon: "fa-solid fa-check",
-        callback: (_event, button) => ({
+    ok: {
+      label: "Set",
+      icon: "fa-solid fa-check",
+      callback: (_event, button) => {
+        const reason = String(
+          button?.form?.elements?.reason?.value ?? "",
+        ).trim();
+        if (!reason) {
+          ui.notifications?.warn("Enter a reason for the standing change.");
+          return null;
+        }
+        return {
           value: Number(button?.form?.elements?.value?.value ?? current),
-          reason: String(button?.form?.elements?.reason?.value ?? "").trim(),
-        }),
+          reason,
+        };
       },
-      rejectClose: false,
-    });
-    return result ?? null;
-  } catch {
-    return null;
-  }
+    },
+    rejectClose: false,
+  });
+  return result ?? null;
 }

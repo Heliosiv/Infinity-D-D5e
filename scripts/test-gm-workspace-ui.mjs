@@ -1,0 +1,219 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import Handlebars from "handlebars";
+
+const read = (file) => readFileSync(file, "utf8");
+const merchantTemplate = read("templates/merchant-workspace.hbs");
+const merchantStyle = read("styles/merchant-workspace.css");
+const resourceTemplate = read("templates/resource-manager.hbs");
+const resourceStyle = read("styles/resource-manager.css");
+const reputationTemplate = read("templates/reputation-workspace.hbs");
+const reputationStyle = read("styles/reputation-workspace.css");
+const reputationScript = read("scripts/reputation-workspace.js");
+
+for (const [name, template] of [
+  ["merchant", merchantTemplate],
+  ["quartermaster", resourceTemplate],
+  ["reputation", reputationTemplate],
+]) {
+  assert.doesNotThrow(
+    () => Handlebars.precompile(template),
+    `${name} workspace template must compile`,
+  );
+}
+
+function actionSet(template) {
+  return new Set(
+    [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]),
+  );
+}
+
+function assertActions(template, expected, label) {
+  const actions = actionSet(template);
+  for (const action of expected) {
+    assert.ok(actions.has(action), `${label} preserves data-action=${action}`);
+  }
+}
+
+function assertOrdered(source, needles, label) {
+  let previous = -1;
+  for (const needle of needles) {
+    const index = source.indexOf(needle);
+    assert.ok(index >= 0, `${label} includes ${needle}`);
+    assert.ok(index > previous, `${label} keeps ${needle} in intended order`);
+    previous = index;
+  }
+}
+
+/* Merchant: same bindings, clearer master/detail sections. */
+assertOrdered(
+  merchantTemplate,
+  [
+    'id="mw-section-basics"',
+    'id="mw-section-pricing"',
+    'id="mw-section-stock"',
+    'id="mw-section-access"',
+    'id="mw-section-sessions"',
+  ],
+  "merchant sections",
+);
+assertActions(
+  merchantTemplate,
+  [
+    "newMerchant",
+    "selectMerchant",
+    "save",
+    "deleteMerchant",
+    "duplicateMerchant",
+    "addFromPack",
+    "marketTier",
+    "generateStock",
+    "regenerateStock",
+    "copyStockToBuyFilter",
+    "clearInventory",
+    "restock",
+    "pickArt",
+    "previewSession",
+    "openSession",
+    "closeSession",
+    "closeAllSessions",
+    "reopenSessions",
+    "invRemove",
+    "openInventoryItem",
+  ],
+  "merchant workspace",
+);
+for (const field of [
+  "name",
+  "art",
+  "description",
+  "defaultMarkup",
+  "sellRatio",
+  "bargainDC",
+  "allowedUserIds",
+  "selfServiceMode",
+  "poolLootTypes",
+  "poolRarities",
+  "buyFilterLootTypes",
+  "buyFilterRarities",
+]) {
+  assert.match(
+    merchantTemplate,
+    new RegExp(`name="${field}"`),
+    `merchant preserves ${field} form binding`,
+  );
+}
+assert.match(merchantTemplate, /data-save-status/);
+assert.match(merchantTemplate, /Live shoppers use the canonical saved stock/);
+assert.match(merchantTemplate, /Open Session is unavailable:/);
+assert.match(
+  merchantTemplate,
+  /<input(?=[^>]*name="poolBudgetGp")(?=[^>]*aria-label="Stock value budget in gold pieces")[^>]*>/,
+  "blank stock budgets retain an explicit accessible name",
+);
+assert.doesNotMatch(
+  merchantTemplate,
+  /<span(?=[^>]*mw-inv__search-count)(?=[^>]*aria-label=)[^>]*>/,
+  "inventory search status does not use aria-label on a generic span",
+);
+assert.match(merchantStyle, /container-name:\s*merchant-workspace/);
+assert.match(merchantStyle, /@container merchant-workspace/);
+assert.doesNotMatch(merchantStyle, /@media\s*\(max-width/);
+
+/* Quartermaster: routine, receipts, and setup remain distinct. */
+assertOrdered(
+  resourceTemplate,
+  ['id="rm-today"', 'id="rm-runs-heading"', 'id="rm-setup"'],
+  "Quartermaster sections",
+);
+assertActions(
+  resourceTemplate,
+  [
+    "advanceDay",
+    "forageDrive",
+    "clearInterruptedRun",
+    "addResource",
+    "removeResource",
+    "addTag",
+    "addTagByUuid",
+    "removeTag",
+    "addRosterMember",
+    "removeRosterMember",
+    "copyEnvironment",
+    "resetConfig",
+    "refresh",
+  ],
+  "Quartermaster",
+);
+assert.match(resourceTemplate, /Recommended next action/);
+assert.match(resourceTemplate, /First setup/);
+assert.match(resourceTemplate, /Campaign readiness/);
+assert.match(resourceTemplate, /rm-resource-write-reason/);
+assert.match(resourceTemplate, /Quartermaster will not replay the run/);
+assert.doesNotMatch(resourceTemplate, /data-action="(?:retry|replay|rollback)/);
+assert.match(resourceStyle, /container-name:\s*quartermaster/);
+assert.match(resourceStyle, /@container quartermaster/);
+assert.doesNotMatch(resourceStyle, /@media\s*\(max-width/);
+
+/* Reputation: one visible value+reason flow, same authoritative write. */
+assertOrdered(
+  reputationTemplate,
+  [
+    'id="rw-section-overview"',
+    'id="rw-section-visibility"',
+    'id="rw-section-history"',
+  ],
+  "reputation sections",
+);
+assertActions(
+  reputationTemplate,
+  [
+    "newFaction",
+    "selectFaction",
+    "changeStanding",
+    "logNote",
+    "pickImage",
+    "addCharacterNote",
+    "removeCharacterNote",
+    "save",
+    "deleteFaction",
+  ],
+  "reputation workspace",
+);
+assert.doesNotMatch(
+  reputationTemplate,
+  /data-action="(?:raiseStanding|lowerStanding|setStanding)"/,
+  "legacy scattered standing controls are removed from the UI",
+);
+assert.match(
+  reputationTemplate,
+  /<input(?=[^>]*data-role="standing-change-value")(?=[^>]*required)(?=[^>]*aria-required="true")[^>]*>/,
+);
+assert.match(
+  reputationTemplate,
+  /<textarea(?=[^>]*data-role="standing-change-reason")(?=[^>]*required)(?=[^>]*aria-required="true")(?=[^>]*aria-label="Reason for standing change")[^>]*>/,
+);
+assert.match(reputationTemplate, /Reason <small>\(required\)<\/small>/);
+assert.equal(
+  (reputationTemplate.match(/data-action="changeStanding"/g) ?? []).length,
+  1,
+  "one visible standing-change submission",
+);
+assert.doesNotMatch(reputationTemplate, /Legacy (?:lower|raise|set)/);
+
+const changeStart = reputationScript.indexOf("static async _onChangeStanding");
+const changeEnd = reputationScript.indexOf("/** Log a note", changeStart);
+assert.ok(changeStart >= 0 && changeEnd > changeStart);
+const changeMethod = reputationScript.slice(changeStart, changeEnd);
+assert.ok(
+  changeMethod.indexOf("if (!reason)") <
+    changeMethod.indexOf("await setStanding"),
+  "reason is required before the authoritative standing write",
+);
+assert.match(changeMethod, /await setStanding\(this\._selectedId, value/);
+assert.doesNotMatch(changeMethod, /adjustStanding\(/);
+assert.match(reputationStyle, /container-name:\s*reputation-workspace/);
+assert.match(reputationStyle, /@container reputation-workspace/);
+assert.doesNotMatch(reputationStyle, /@media\s*\(max-width/);
+
+console.log("GM workspace UI redesign validation passed");

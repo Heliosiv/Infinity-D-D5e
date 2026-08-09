@@ -1,6 +1,6 @@
 {
   "name": "infinity-dnd5e",
-  "version": "0.2.74",
+  "version": "0.3.0",
   "private": true,
   "description": "Dev tooling for the Infinity D&D5e Foundry module.",
   "type": "module",
@@ -38,14 +38,19 @@
     "art:check": "node scripts/art-pipeline.mjs check",
     "sound:generate": "node scripts/sound-pipeline.mjs generate",
     "sound:validate": "node scripts/sound-pipeline.mjs validate",
-    "release": "node scripts/run-checks.mjs && node scripts/build-release.mjs",
+    "verify": "npm run verify:source && node scripts/build-release.mjs",
+    "verify:source": "npm run format:check && npm run check && npm run ui:audit && npm run ui:audit:a11y && npm run ui:audit:keyboard && node scripts/test-manifest-compat.mjs",
+    "release": "npm run verify",
     "release:nocheck": "node scripts/build-release.mjs",
     "ui:harness": "node scripts/render-ui-harness.mjs",
     "ui:audit": "node scripts/audit-ui-layout.mjs",
+    "ui:audit:a11y": "node scripts/audit-ui-accessibility.mjs",
+    "ui:audit:keyboard": "node scripts/audit-ui-keyboard.mjs",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\"",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\""
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "adm-zip": "^0.6.0",
     "classic-level": "^3.0.0",
     "handlebars": "^4.7.9",

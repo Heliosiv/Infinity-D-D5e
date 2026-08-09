@@ -18,6 +18,7 @@ import {
   subscribeCriticalInjuryTreatmentState,
 } from "./treatment-client.js";
 import { treatmentSkillLabel } from "./table.js";
+import { authoritativeGMId } from "../socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/critical-injury-hud.hbs`;
@@ -95,8 +96,9 @@ export class CriticalInjuryHudApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     const actor = this._resolveActor();
+    const offline = !Boolean(authoritativeGMId());
     const injuries = getActorCriticalInjuryEffects(actor)
-      .map((effect) => buildHudInjuryView(actor, effect))
+      .map((effect) => buildHudInjuryView(actor, effect, { offline }))
       .filter(Boolean)
       .sort((left, right) => right.createdAt - left.createdAt);
     const indexed = indexCriticalInjuriesByBodyRegion(injuries);
@@ -119,11 +121,19 @@ export class CriticalInjuryHudApp extends HandlebarsApplicationMixin(
       this._pinnedRegion = "";
     }
 
+    const outcomeUncertain =
+      offline && injuries.some((injury) => injury.treatmentUncertain);
     return {
       actorName: actor?.name ?? "Character",
       injuryCount: injuries.length,
       markers,
-      statusMessage: this._statusMessage,
+      offline,
+      outcomeUncertain,
+      statusMessage: offline
+        ? outcomeUncertain
+          ? "Treatment confirmation was interrupted. The character may already have changed; do not repeat treatment while the GM reconnects."
+          : "Injury treatment is offline. No new request can start until a full GM reconnects."
+        : this._statusMessage,
       animationsEnabled: getSetting(SETTING_KEYS.ANIMATIONS) !== false,
     };
   }
@@ -216,6 +226,12 @@ export class CriticalInjuryHudApp extends HandlebarsApplicationMixin(
   static _onRequestTreatment(_event, target) {
     const injuryId = String(target?.dataset?.injuryId ?? "");
     if (!injuryId) return;
+    if (!authoritativeGMId()) {
+      this._statusMessage =
+        "No full GM is connected. No treatment request was sent; try after reconnection.";
+      this.render(false);
+      return;
+    }
     const outcome = requestCriticalInjuryTreatment({
       actorId: this._actorId,
       injuryId,
@@ -330,7 +346,7 @@ export function resolveCurrentUserHudActor() {
   );
 }
 
-function buildHudInjuryView(actor, effect) {
+function buildHudInjuryView(actor, effect, { offline = false } = {}) {
   const injury = getCriticalInjuryData(effect);
   if (!injury) return null;
   const location = resolveCriticalInjuryBodyLocation(injury);
@@ -360,6 +376,10 @@ function buildHudInjuryView(actor, effect) {
       : "No check",
     canTreat: !permanent && !stabilized && kitCharges > 0,
     treating: Boolean(treatment?.busy),
+    treatmentUncertain: Boolean(
+      treatment?.busy || (treatment?.retryable && treatment?.treatmentId),
+    ),
+    offline,
     treatmentMessage: String(treatment?.message ?? ""),
     createdAt: Number(injury.createdAt ?? 0),
   };

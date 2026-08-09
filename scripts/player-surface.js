@@ -12,6 +12,7 @@ import {
   isAuthoritativeGMSender,
 } from "./socket-authority.js";
 import { isFullGM } from "./permissions.js";
+import { getSettingDefault, SETTING_KEYS } from "./settings.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const CALENDAR_MODULE_IDS = Object.freeze([
@@ -28,12 +29,24 @@ const MATT_SENDER_GUARD_MARKER = Symbol.for(
 export const PLAYER_SURFACE_EVENT = "player-surface:open";
 export const SUPPORTED_MATT_VERSION = "13.06";
 export const PLAYER_SURFACES = Object.freeze({
+  HOME: "home",
   PARTY_SUPPLIES: "party-supplies",
   SHOPS: "shops",
   REPUTATION: "reputation",
   DOWNTIME: "downtime",
   CALENDAR: "calendar",
   CRITICAL_INJURIES: "critical-injuries",
+});
+
+/** Plain-language labels shared by Home and optional launcher integrations. */
+export const PLAYER_SURFACE_LABELS = Object.freeze({
+  [PLAYER_SURFACES.HOME]: "Infinity Home",
+  [PLAYER_SURFACES.PARTY_SUPPLIES]: "Party Supplies",
+  [PLAYER_SURFACES.SHOPS]: "Shops",
+  [PLAYER_SURFACES.REPUTATION]: "Factions",
+  [PLAYER_SURFACES.DOWNTIME]: "Downtime",
+  [PLAYER_SURFACES.CALENDAR]: "Calendar",
+  [PLAYER_SURFACES.CRITICAL_INJURIES]: "Critical Injuries",
 });
 
 const SURFACE_SET = new Set(Object.values(PLAYER_SURFACES));
@@ -44,11 +57,25 @@ const PAYLOAD_KEYS = new Set([
   "surface",
 ]);
 const API_OPENERS = Object.freeze({
+  [PLAYER_SURFACES.HOME]: "openHub",
   [PLAYER_SURFACES.PARTY_SUPPLIES]: "openPartySupplies",
   [PLAYER_SURFACES.SHOPS]: "openShops",
   [PLAYER_SURFACES.REPUTATION]: "openReputationView",
   [PLAYER_SURFACES.DOWNTIME]: "openDowntimeActivities",
   [PLAYER_SURFACES.CRITICAL_INJURIES]: "openCriticalInjuries",
+});
+
+const PLAYER_SURFACE_SETTING_GATES = Object.freeze({
+  [PLAYER_SURFACES.PARTY_SUPPLIES]: Object.freeze({
+    key: SETTING_KEYS.RESOURCE_PLAYER_VIEW,
+    playerOnly: true,
+    reason: "Party Supplies is not available in this world.",
+  }),
+  [PLAYER_SURFACES.CRITICAL_INJURIES]: Object.freeze({
+    key: SETTING_KEYS.CRITICAL_INJURIES_ENABLED,
+    playerOnly: false,
+    reason: "Critical Injuries are not enabled in this world.",
+  }),
 });
 
 let registered = false;
@@ -269,6 +296,67 @@ export async function openPlayerSurface(
   }
 }
 
+/**
+ * Report whether a fixed local surface has the opener it needs. This reads
+ * module/integration metadata only; it never requests or returns campaign data.
+ */
+export function getPlayerSurfaceAvailability(
+  surface,
+  { moduleApi, calendarApi, gameRef = globalThis.game } = {},
+) {
+  if (!SURFACE_SET.has(surface)) {
+    return { available: false, reason: "This destination is not supported." };
+  }
+
+  const settingGate = PLAYER_SURFACE_SETTING_GATES[surface];
+  const gateApplies =
+    settingGate && (!settingGate.playerOnly || !isFullGM(gameRef?.user));
+  if (gateApplies && readWorldSetting(gameRef, settingGate.key) === false) {
+    return { available: false, reason: settingGate.reason };
+  }
+
+  if (surface === PLAYER_SURFACES.CALENDAR) {
+    const activeCalendar = resolveActiveCalendarModule(gameRef);
+    const resolvedApi = calendarApi ?? resolveCalendarApi(gameRef);
+    if (!activeCalendar) {
+      return {
+        available: false,
+        reason:
+          "Calendar is unavailable because Simple Calendar is not active.",
+      };
+    }
+    if (typeof resolvedApi?.showCalendar !== "function") {
+      return {
+        available: false,
+        reason:
+          "Calendar is active but is not ready yet. Try again in a moment.",
+      };
+    }
+    return { available: true, reason: "" };
+  }
+
+  const method = API_OPENERS[surface];
+  const resolvedModuleApi =
+    moduleApi ?? gameRef?.modules?.get?.(MODULE_ID)?.api;
+  if (typeof resolvedModuleApi?.[method] !== "function") {
+    return {
+      available: false,
+      reason: "This window is still starting. Try again in a moment.",
+    };
+  }
+  return { available: true, reason: "" };
+}
+
+function readWorldSetting(gameRef, key) {
+  const fallback = getSettingDefault(key);
+  try {
+    const value = gameRef?.settings?.get?.(MODULE_ID, key);
+    return value === undefined ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Guard the optional Simple Calendar integration behind its public API. */
 export async function openCalendar({
   calendarApi = resolveCalendarApi(),
@@ -295,15 +383,15 @@ export async function openCalendar({
   }
 }
 
-function resolveCalendarApi() {
-  const calendarModule = resolveActiveCalendarModule();
+function resolveCalendarApi(gameRef = globalThis.game) {
+  const calendarModule = resolveActiveCalendarModule(gameRef);
   if (!calendarModule) return null;
   return globalThis.SimpleCalendar?.api ?? calendarModule.api ?? null;
 }
 
-function resolveActiveCalendarModule() {
+function resolveActiveCalendarModule(gameRef = globalThis.game) {
   for (const moduleId of CALENDAR_MODULE_IDS) {
-    const calendarModule = globalThis.game?.modules?.get?.(moduleId);
+    const calendarModule = gameRef?.modules?.get?.(moduleId);
     if (calendarModule?.active === true) return calendarModule;
   }
   return null;

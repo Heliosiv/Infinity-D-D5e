@@ -19,6 +19,7 @@
 
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { isFullGM } from "./permissions.js";
+import { applyUiDensity, getUiPreferences } from "./ui-preferences.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -38,6 +39,7 @@ const MODULE_ID = "infinity-dnd5e";
 export function openSingleton(Cls, factory) {
   if (!Cls._instance) {
     Cls._instance = factory();
+    bindFocusRestoration(Cls._instance);
   }
   const app = Cls._instance;
   if (app.rendered) {
@@ -113,6 +115,8 @@ export function bindFullGmWindowGuard(application) {
  */
 export function applyVisualPrefs(root, prefix) {
   if (!root?.classList) return;
+  root.style?.setProperty?.("container-type", "inline-size");
+  applyUiDensity(root, getUiPreferences());
   root.classList.toggle(
     `${prefix}no-anim`,
     getSetting(SETTING_KEYS.ANIMATIONS) === false,
@@ -121,4 +125,128 @@ export function applyVisualPrefs(root, prefix) {
     `${prefix}no-glow`,
     getSetting(SETTING_KEYS.RARITY_GLOW) === false,
   );
+}
+
+const lastFocusByApplication = new Map();
+let uiFoundationRegistered = false;
+
+/**
+ * Apply density/container behavior to every Infinity ApplicationV2 root and
+ * restore the last meaningful control after a rerender. The focus record is a
+ * selector only; no document or campaign data is retained.
+ */
+export function registerUiFoundationHooks() {
+  if (uiFoundationRegistered) return;
+  uiFoundationRegistered = true;
+
+  globalThis.document?.addEventListener?.("focusin", (event) => {
+    const root = event.target?.closest?.(".application.infinity-dnd5e");
+    if (!root) return;
+    const key = applicationFocusKey(root);
+    const descriptor = describeFocusTarget(root, event.target);
+    if (key && descriptor) lastFocusByApplication.set(key, descriptor);
+  });
+
+  const enhance = (application) => {
+    const root = application?.element;
+    if (!root?.classList?.contains?.("infinity-dnd5e")) return;
+    root.style?.setProperty?.("container-type", "inline-size");
+    applyUiDensity(root, getUiPreferences());
+    restoreRememberedFocus(root);
+  };
+  globalThis.Hooks?.on?.("renderApplicationV2", enhance);
+  globalThis.Hooks?.on?.("renderDialogV2", enhance);
+}
+
+/** Capture a safe focus origin and restore it once a window has closed. */
+export function bindFocusRestoration(application, origin = null) {
+  if (!application || application._infinityFocusBound) return application;
+  const focusOrigin =
+    origin ??
+    (isFocusable(globalThis.document?.activeElement)
+      ? globalThis.document.activeElement
+      : null);
+  const close = application.close;
+  if (typeof close !== "function") return application;
+  application._infinityFocusBound = true;
+  application.close = async function infinityCloseWithFocus(...args) {
+    const result = await close.apply(this, args);
+    scheduleFocus(focusOrigin);
+    return result;
+  };
+  return application;
+}
+
+/** Apply the shared root contract directly from an application's _onRender. */
+export function applyUiFoundation(root) {
+  if (!root?.classList) return;
+  root.style?.setProperty?.("container-type", "inline-size");
+  applyUiDensity(root, getUiPreferences());
+  restoreRememberedFocus(root);
+}
+
+function restoreRememberedFocus(root) {
+  const descriptor = lastFocusByApplication.get(applicationFocusKey(root));
+  if (!descriptor) return;
+  const active = globalThis.document?.activeElement;
+  if (active && active !== globalThis.document?.body && root.contains(active)) {
+    return;
+  }
+  const candidates = root.querySelectorAll?.(descriptor.selector) ?? [];
+  scheduleFocus(candidates[descriptor.index] ?? candidates[0]);
+}
+
+function describeFocusTarget(root, target) {
+  if (!isFocusable(target) || !root.contains(target)) return null;
+  let selector = "";
+  if (target.dataset?.focusKey) {
+    selector = `[data-focus-key="${escapeCssAttribute(target.dataset.focusKey)}"]`;
+  } else if (target.id) {
+    selector = `#${cssEscape(target.id)}`;
+  } else if (target.getAttribute?.("name")) {
+    selector = `[name="${escapeCssAttribute(target.getAttribute("name"))}"]`;
+  } else if (target.dataset?.action) {
+    selector = `[data-action="${escapeCssAttribute(target.dataset.action)}"]`;
+  } else {
+    return null;
+  }
+  const matches = [...(root.querySelectorAll?.(selector) ?? [])];
+  return { selector, index: Math.max(0, matches.indexOf(target)) };
+}
+
+function applicationFocusKey(root) {
+  return String(
+    root?.id ?? root?.dataset?.appId ?? root?.className ?? "",
+  ).trim();
+}
+
+function scheduleFocus(target) {
+  if (!isFocusable(target) || target?.isConnected === false) return;
+  const run = () => {
+    if (target?.isConnected === false || target?.disabled === true) return;
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      target.focus?.();
+    }
+  };
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    globalThis.requestAnimationFrame(run);
+  } else {
+    globalThis.setTimeout?.(run, 0);
+  }
+}
+
+function isFocusable(target) {
+  return Boolean(
+    target && typeof target.focus === "function" && target.disabled !== true,
+  );
+}
+
+function escapeCssAttribute(value) {
+  return String(value ?? "").replace(/["\\]/g, "\\$&");
+}
+
+function cssEscape(value) {
+  return globalThis.CSS?.escape?.(String(value)) ?? escapeCssAttribute(value);
 }

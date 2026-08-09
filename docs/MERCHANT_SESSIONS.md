@@ -1,5 +1,9 @@
 # Merchant Sessions and Global Access
 
+## v0.3.0 interface quick start
+
+Open **Home → Prepare → Merchant Workspace**. Select a merchant in the master list, then work through Basics, Pricing & Bargaining, Stock, Access, and Sessions. The save state and any live-session consequence remain visible. **Add from compendium** searches the full allowlisted library and revalidates the selected item before the existing merchant write runs. Players see their active character, wallet, transaction total, and progress in Shops and Merchant Session.
+
 The **Merchant Workspace** gives a full GM one world-wide merchant access
 control in its header.
 

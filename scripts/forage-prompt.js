@@ -25,6 +25,8 @@ import { prettyEnvironment } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { forageTargetChannels, FORAGE_TARGETS } from "./resource/forage.js";
+import { bindFocusRestoration } from "./infinity-app.js";
+import { authoritativeGMId } from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
@@ -58,6 +60,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       rollSurvival: ForagePromptApp._onRoll,
       skip: ForagePromptApp._onSkip,
       dismiss: ForagePromptApp._onDismiss,
+      retryConnection: ForagePromptApp._onRetryConnection,
     },
   };
 
@@ -87,6 +90,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
         actorId,
         forageTarget,
       });
+      bindFocusRestoration(app);
       instances.set(key, app);
     } else {
       app._environment = environment ?? app._environment;
@@ -116,6 +120,11 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._forageTarget = options.forageTarget ?? FORAGE_TARGETS.BOTH;
     this._state = "prompt"; // prompt | waiting | done
     this._result = null;
+    this._userConnectionHook =
+      globalThis.Hooks?.on?.("userConnected", (user) => {
+        if (!user?.isGM || !this.rendered) return;
+        this.render(false);
+      }) ?? null;
   }
 
   /** The actor this prompt forages as. A targeted prompt is bound to exactly
@@ -133,9 +142,20 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return label ? `Daily Foraging — ${label}` : "Daily Foraging";
   }
 
+  /** Whether a full GM is online to resolve this player's forage response. */
+  get _hasAuthoritativeGM() {
+    return Boolean(authoritativeGMId());
+  }
+
   _onClose(options) {
     super._onClose?.(options);
     this._clearWaitTimer();
+    if (this._userConnectionHook != null) {
+      try {
+        globalThis.Hooks?.off?.("userConnected", this._userConnectionHook);
+      } catch {}
+      this._userConnectionHook = null;
+    }
     instances.delete(this._instanceKey);
   }
 
@@ -152,9 +172,11 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const passive = getSurvivalPassive(actor);
     const wisMod = actor ? getWisMod(actor) : 0;
     const channels = forageTargetChannels(this._forageTarget);
+    const offline = !this._hasAuthoritativeGM;
     return {
       actorName: actor?.name ?? this._actorName ?? null,
       noActor: !actor,
+      offline,
       environmentLabel: environmentDisplayLabel(env) || "the wild",
       dc: env.dc ?? null,
       passiveLabel:
@@ -216,6 +238,14 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       );
       return;
     }
+    if (!this._hasAuthoritativeGM) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "No full GM is online. Nothing changed; retry after the GM reconnects.",
+      );
+      this.render(false);
+      return;
+    }
     playModuleSound(SOUND_EVENTS.ROLL_START);
     const rolled = await rollSurvivalTotal(actor, { chatMessage: true });
     if (!rolled) {
@@ -245,6 +275,14 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {ForagePromptApp} */
   static _onSkip(_event, _target) {
+    if (!this._hasAuthoritativeGM) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      ui.notifications?.warn(
+        "No full GM is online. Nothing changed; retry after the GM reconnects.",
+      );
+      this.render(false);
+      return;
+    }
     const actor = this._resolveActor();
     emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
       runId: this._runId,
@@ -260,6 +298,11 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** @this {ForagePromptApp} */
   static _onDismiss(_event, _target) {
     this.close();
+  }
+
+  /** @this {ForagePromptApp} */
+  static _onRetryConnection() {
+    this.render(false);
   }
 }
 

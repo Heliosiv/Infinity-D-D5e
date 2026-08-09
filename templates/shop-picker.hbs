@@ -3,55 +3,88 @@
   Player-facing "Shops" launcher. Lists the sanitized merchants the player may
   open on their own; clicking one asks the GM to host a live session.
 --}}
-<div class="sp-shell">
+<div class="sp-shell" aria-busy="{{#if loading}}true{{else}}false{{/if}}">
   <header class="sp-head">
     <div class="sp-head__title">
       <h2><i class="fa-solid fa-store" aria-hidden="true"></i> Shops</h2>
       <p class="sp-head__hint">Pick a shop to step inside. Reopen anytime with Shift+O.</p>
     </div>
-    <button type="button" class="sp-btn sp-btn--icon" data-action="refresh" title="Refresh the list">
+    <button type="button" class="sp-btn sp-btn--icon" data-action="refresh" title="Refresh the list" aria-label="Refresh open shops" {{#if loading}}disabled{{/if}}>
       <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
     </button>
   </header>
 
+  <section class="sp-context {{#unless hasActor}}sp-context--warning{{/unless}}" aria-label="Shopping character">
+    <i class="fa-solid {{#if hasActor}}fa-user-shield{{else}}fa-user-clock{{/if}}" aria-hidden="true"></i>
+    <div>
+      <span>Shopping as</span>
+      {{#if canSwitchActor}}
+      <select data-role="shopper-actor" aria-label="Shopping character">
+        {{#if needsActorChoice}}<option value="" selected>Choose a character</option>{{/if}}
+        {{#each actorOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+      </select>
+      {{else}}
+      <strong>{{actorName}}</strong>
+      {{/if}}
+      <small>{{#if hasActor}}Your wallet and inventory will follow this character after you enter.{{else if needsActorChoice}}Choose a controlled character here or after entering a shop.{{else}}Ask your GM to assign a character you own or grant Owner permission before buying or selling. Nothing has changed.{{/if}}</small>
+    </div>
+  </section>
+
+  <p class="sp-sr-status" role="status" aria-live="polite" aria-atomic="true">
+    {{#if noGm}}Shops are offline. Nothing changed. Retry after a GM reconnects.{{else if loading}}Loading open shops.{{else if requestFailed}}{{else if globallyClosed}}All shops are temporarily closed.{{else if hasPending}}A shop request is waiting for the GM.{{else}}{{shops.length}} shops are available.{{/if}}
+  </p>
+
   {{#if noGm}}
-    <p class="sp-empty">
+    <div class="sp-empty sp-empty--state">
       <i class="fa-solid fa-moon" aria-hidden="true"></i>
-      <span>Shops are closed — no GM is online.</span>
-    </p>
+      <div><strong>Shops are offline</strong><span>No GM is online. Nothing changed; this list reconnects automatically.</span></div>
+      <button type="button" class="sp-btn" data-action="refresh">Try again</button>
+    </div>
   {{else}}
     {{#if loading}}
-      <p class="sp-empty">
+      <div class="sp-empty sp-empty--state">
         <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
-        <span>Looking for open shops…</span>
-      </p>
+        <div><strong>Looking for open shops</strong><span>Waiting for the GM's player-safe shop list.</span></div>
+      </div>
     {{else}}
-      {{#if globallyClosed}}
-        <p class="sp-empty">
+      {{#if requestFailed}}
+        <div class="sp-empty sp-empty--state sp-empty--warning" role="alert">
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+          <div><strong>The shop list did not arrive</strong><span>Nothing changed. Check your connection, then retry the same request.</span></div>
+          <button type="button" class="sp-btn" data-action="refresh">Try again</button>
+        </div>
+      {{else if globallyClosed}}
+        <div class="sp-empty sp-empty--state">
           <i class="fa-solid fa-shop-lock" aria-hidden="true"></i>
-          <span>All shops are temporarily closed by the GM. This list will return when merchant access reopens.</span>
-        </p>
+          <div><strong>All shops are temporarily closed</strong><span>The GM has paused merchant access. Nothing changed; refresh after access reopens.</span></div>
+        </div>
       {{else if hasShops}}
+        <label class="sp-search">
+          <span class="sp-search__label">Find a shop</span>
+          <span class="sp-search__field"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-role="shop-search" value="{{query}}" placeholder="Search name or description" aria-label="Search shops by name or description" autocomplete="off" /></span>
+        </label>
+        <p class="sp-sr-status" data-role="shop-search-status" role="status" aria-live="polite"></p>
         <ul class="sp-list" aria-label="Shops you can visit">
           {{#each shops}}
           <li class="sp-row {{#if pending}}is-pending{{/if}}">
-            <button type="button" class="sp-row__btn" data-action="openShop" data-merchant-id="{{id}}" {{#if pending}}disabled aria-disabled="true"{{/if}}>
+            <button type="button" class="sp-row__btn" data-action="openShop" data-merchant-id="{{id}}" {{#if pending}}disabled aria-disabled="true"{{else if actorRequired}}disabled aria-disabled="true" title="Choose a controlled character first"{{/if}}>
               <span class="sp-row__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
               <span class="sp-row__copy">
                 <strong class="sp-row__name">{{name}}</strong>
                 {{#if description}}<span class="sp-row__desc">{{description}}</span>{{/if}}
-                {{#if pending}}<span class="sp-row__tag"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Waiting for the GM…</span>{{else if knock}}<span class="sp-row__tag"><i class="fa-solid fa-hand" aria-hidden="true"></i> Knock — ask to enter</span>{{/if}}
+                {{#if pending}}<span class="sp-row__tag"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Waiting for the GM…</span>{{else if actorRequired}}<span class="sp-row__tag"><i class="fa-solid fa-user-lock" aria-hidden="true"></i> Choose a character first</span>{{else if knock}}<span class="sp-row__tag"><i class="fa-solid fa-hand" aria-hidden="true"></i> Knock — ask to enter</span>{{/if}}
               </span>
               {{#if pending}}<i class="sp-row__go fa-solid fa-hourglass-half" aria-hidden="true"></i>{{else}}<i class="sp-row__go fa-solid fa-chevron-right" aria-hidden="true"></i>{{/if}}
             </button>
           </li>
           {{/each}}
         </ul>
+        <p class="sp-empty" data-role="shop-search-empty" hidden><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>No shops match that search. Clear it to see every available shop.</span></p>
       {{else}}
-        <p class="sp-empty">
+        <div class="sp-empty sp-empty--state">
           <i class="fa-solid fa-store-slash" aria-hidden="true"></i>
-          <span>No shops are open to you yet. Your GM decides which shops you can visit on your own — ask them to open one. This list updates on its own when they do.</span>
-        </p>
+          <div><strong>No shops are open to you</strong><span>Nothing changed. Ask the GM to open a shop or allow self-service; this list then updates automatically.</span></div>
+        </div>
       {{/if}}
     {{/if}}
   {{/if}}

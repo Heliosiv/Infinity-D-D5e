@@ -1,17 +1,15 @@
 /**
  * Infinity D&D5e — Foundry entry point.
  *
- * Registers the GM-only Dashboard window plus its scene-control
- * launcher button, and seeds the tool registry with every available
- * (and "coming soon") tool. The Dashboard reads the registry at
+ * Registers role-aware Home plus its unified scene-control launcher, and
+ * seeds the full-GM tool registry with every available destination. Home reads the registry at
  * render time so adding a new tool only requires a registerTool()
  * call — no UI plumbing.
  */
 
-import { InfinityDashboardApp } from "./dashboard.js";
-import { PerEncounterLootApp } from "./app.js";
-import { HoardLootApp } from "./hoard-loot.js";
-import { PerCreatureLootApp } from "./per-creature-loot.js";
+import { openHub } from "./dashboard.js";
+import { LootStudioApp } from "./loot-studio.js";
+import { InfinitySettingsApp } from "./settings-app.js";
 import { MerchantWorkspaceApp } from "./merchant-workspace.js";
 import {
   MerchantSessionApp,
@@ -111,6 +109,13 @@ import {
 } from "./private-state.js";
 import { isFullGM, runAsFullGM } from "./permissions.js";
 import { isAuthoritativeGM as isSharedAuthoritativeGM } from "./socket-authority.js";
+import {
+  applyUiDensity,
+  getUiPreferences,
+  registerUiPreferencesSetting,
+  updateUiPreferences,
+} from "./ui-preferences.js";
+import { registerUiFoundationHooks } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -279,10 +284,16 @@ globalThis.Hooks?.once?.("socketlib.ready", () => {
 
 function buildApi() {
   return {
-    openDashboard: () => runAsFullGM(() => InfinityDashboardApp.open()),
-    openPerEncounterLoot: () => runAsFullGM(() => PerEncounterLootApp.open()),
-    openHoardLoot: () => runAsFullGM(() => HoardLootApp.open()),
-    openPerCreatureLoot: () => runAsFullGM(() => PerCreatureLootApp.open()),
+    openHub: () => openHub(),
+    openDashboard: () => runAsFullGM(() => openHub()),
+    openLootStudio: (options = {}) =>
+      runAsFullGM(() => LootStudioApp.open(options)),
+    openPerEncounterLoot: () =>
+      runAsFullGM(() => LootStudioApp.open({ mode: "encounter" })),
+    openHoardLoot: () =>
+      runAsFullGM(() => LootStudioApp.open({ mode: "hoard" })),
+    openPerCreatureLoot: () =>
+      runAsFullGM(() => LootStudioApp.open({ mode: "creature" })),
     openMerchantWorkspace: () => runAsFullGM(() => MerchantWorkspaceApp.open()),
     openShops: () => ShopPickerApp.open(),
     openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
@@ -295,6 +306,9 @@ function buildApi() {
     openDowntimeActivities: (options = {}) =>
       DowntimeActivitiesApp.open(options),
     openCalendar: () => openCalendar(),
+    openSettings: () => InfinitySettingsApp.open(),
+    getUiPreferences: () => getUiPreferences(),
+    updateUiPreferences: (patch) => updateUiPreferences(patch),
     getPlayerSurfaceStatus,
     advanceDay: () => runAsFullGM(() => advanceDayNow()),
     MerchantSessionApp,
@@ -385,7 +399,10 @@ function registerSettings() {
       name: entry.name,
       hint: entry.hint,
       scope: entry.scope,
-      config: entry.config,
+      // The role-aware Infinity Settings menu has source-tested parity with
+      // every catalog entry; keep the duplicate raw controls out of Foundry's
+      // flat module list while preserving every existing key and value.
+      config: false,
       type: entry.type,
       default: entry.default,
     };
@@ -397,6 +414,36 @@ function registerSettings() {
     } catch (error) {
       console.warn(
         `${MODULE_ID} | failed to register setting "${entry.key}"`,
+        error,
+      );
+    }
+  }
+  registerUiPreferencesSetting(game, {
+    onChange: (preferences) => {
+      for (const root of globalThis.document?.querySelectorAll?.(
+        ".application.infinity-dnd5e",
+      ) ?? []) {
+        applyUiDensity(root, preferences);
+      }
+      globalThis.Hooks?.callAll?.(
+        "infinityDnd5eUiPreferencesChanged",
+        preferences,
+      );
+    },
+  });
+  if (typeof game.settings.registerMenu === "function") {
+    try {
+      game.settings.registerMenu(MODULE_ID, "infinitySettings", {
+        name: "Infinity Settings",
+        label: "Open Infinity Settings",
+        hint: "Role-aware settings, accessibility preferences, quick starts, and campaign defaults.",
+        icon: "fa-solid fa-sliders",
+        type: InfinitySettingsApp,
+        restricted: false,
+      });
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | failed to register settings workspace`,
         error,
       );
     }
@@ -434,36 +481,14 @@ function registerReagentItemType() {
 
 function registerBuiltinTools() {
   registerTool({
-    id: "per-encounter-loot",
-    title: "Per-Encounter Loot",
+    id: "loot-studio",
+    title: "Loot Studio",
     description:
-      "Roll a single treasure bundle for one encounter, sized by tier, scale, and party.",
+      "Generate encounter rewards, treasure hoards, or creature drops in one workspace.",
     icon: "fa-solid fa-coins",
     category: "loot",
     status: "available",
-    open: () => PerEncounterLootApp.open(),
-  });
-
-  registerTool({
-    id: "hoard-loot",
-    title: "Hoard Loot",
-    description:
-      "A treasure cache — tier × scale sets the budget; the Coin vs. Items slider trades raw coin for items.",
-    icon: "fa-solid fa-sack-dollar",
-    category: "loot",
-    status: "available",
-    open: () => HoardLootApp.open(),
-  });
-
-  registerTool({
-    id: "per-creature-loot",
-    title: "Per-Creature Loot",
-    description:
-      "Build a roster of defeated creatures; each rolls its own small bundle, totals stack at the bottom.",
-    icon: "fa-solid fa-skull",
-    category: "loot",
-    status: "available",
-    open: () => PerCreatureLootApp.open(),
+    open: () => LootStudioApp.open(),
   });
 
   registerTool({
@@ -539,6 +564,11 @@ Hooks.once("init", () => {
     console.error(`${MODULE_ID} | registerSettings failed`, error);
   }
   try {
+    registerUiFoundationHooks();
+  } catch (error) {
+    console.error(`${MODULE_ID} | UI foundation registration failed`, error);
+  }
+  try {
     registerKeybindings();
   } catch (error) {
     console.error(`${MODULE_ID} | registerKeybindings failed`, error);
@@ -565,21 +595,21 @@ Hooks.once("init", () => {
  * Keybindings
  *
  * Registers Shift+I (default — user-rebindable from Configure Controls)
- * to open the dashboard from anywhere in the game. GM-only.
+ * to open role-aware Home from anywhere in the game.
  * ------------------------------------------------------------------ */
 
 function registerKeybindings() {
   if (!game?.keybindings?.register) return;
   try {
     game.keybindings.register(MODULE_ID, "openDashboard", {
-      name: "Open Infinity D&D5e Dashboard",
-      hint: "Toggle the GM tool hub from anywhere in the game.",
+      name: "Open Infinity D&D5e Home",
+      hint: "Open the role-aware Infinity Home from anywhere in the game.",
       editable: [{ key: "KeyI", modifiers: ["Shift"] }],
       onDown: () => {
-        InfinityDashboardApp.open();
+        openHub();
         return true; // consume the event
       },
-      restricted: true, // GM-only
+      restricted: false,
       precedence: globalThis.CONST?.KEYBINDING_PRECEDENCE?.NORMAL,
     });
     // Player-facing Shops launcher — NOT restricted, so players can bind it.
@@ -667,10 +697,10 @@ Hooks.once("ready", async () => {
       "color: inherit",
     );
     console.log(
-      `${MODULE_ID} | dashboard access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openDashboard()`,
+      `${MODULE_ID} | Home access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${MODULE_ID}").api.openHub()`,
     );
     console.log(
-      `${MODULE_ID} | downtime access: GM dashboard tile; player scene control, Shift+D, or game.modules.get("${MODULE_ID}").api.openDowntimeActivities()`,
+      `${MODULE_ID} | downtime access: Home for GMs; player Home, Shift+D, or game.modules.get("${MODULE_ID}").api.openDowntimeActivities()`,
     );
     // Final api set — always safe, idempotent.
     const mod = game.modules?.get?.(MODULE_ID);
@@ -748,16 +778,12 @@ Hooks.once("ready", async () => {
       registerCriticalInjuryHud,
     );
     safeInitializeSubsystem(
-      "player supplies control refresh",
-      registerPlayerSuppliesControlRefresh,
-    );
-    safeInitializeSubsystem(
       "forage prompt auto-open",
       registerForagePromptAutoOpen,
     );
     if (!privateStateAvailable && isFullGM()) {
       globalThis.ui?.notifications?.error?.(
-        `${MODULE_ID}: private data could not be loaded yet. Merchant, downtime, resource automation, reputation, and critical injury services will retry automatically.`,
+        "Campaign tools are still loading. Merchant, downtime, Quartermaster, reputation, and critical-injury services will retry automatically; nothing needs to be repeated.",
       );
       schedulePrivateStateRecovery();
     } else if (
@@ -766,7 +792,7 @@ Hooks.once("ready", async () => {
       !isResourceAutomationReady()
     ) {
       globalThis.ui?.notifications?.error?.(
-        `${MODULE_ID}: resource migration is not ready yet. Automatic upkeep will stay locked while this client retries safely.`,
+        "Quartermaster setup is still loading. Automatic upkeep remains safely locked while this client retries; no supplies were changed.",
       );
       schedulePrivateStateRecovery();
     }
@@ -788,47 +814,39 @@ Hooks.once("ready", async () => {
 });
 
 /**
- * Add GM-only entry points to the scene-controls toolbar.
+ * Add one role-aware entry point to the scene-controls toolbar.
  *
- * Strategy: we register the dashboard *twice* so the user can't miss it.
- *  1. A new top-level category at the bottom of the left scene-controls
- *     column ("Infinity D&D5e", d20 icon). Clicking it opens the
- *     dashboard. This is the primary, most-discoverable launcher.
- *  2. A secondary tool button inside Token Controls — the conventional
- *     spot for module utilities and a familiar pattern for GMs who've
- *     used party-operations.
+ * The single d20 category opens Home for every role. Home filters its own
+ * destinations, so this launcher needs no role-specific campaign data.
  *
  * Foundry V13 hands us a Record<name, { tools: Record }>. The legacy Array
  * branch remains defensive, but tool activation uses V13's onChange API.
  */
 Hooks.on("getSceneControlButtons", (controls) => {
   try {
-    if (isFullGM()) registerGmSceneControls(controls);
-    else registerPlayerSceneControls(controls);
+    registerInfinitySceneControls(controls);
   } catch (error) {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
   }
 });
 
 /**
- * GM launcher: the Dashboard category (primary) + a Token-Controls fallback
- * button. Registered twice for discoverability.
+ * Unified Home launcher for full GMs, Assistant GMs, and players.
  */
-function registerGmSceneControls(controls) {
+function registerInfinitySceneControls(controls) {
   const launcherToolName = "infinity-dnd5e-launcher";
-  const dashboardToolName = "infinity-dnd5e-dashboard";
 
   const baseTool = {
-    title: "Open Infinity D&D5e Dashboard",
+    title: "Open Infinity D&D5e Home",
     icon: "fa-solid fa-dice-d20",
     button: true,
     visible: true,
     toggle: false,
-    onChange: () => InfinityDashboardApp.open(),
+    onChange: () => openHub(),
   };
 
   const onCategoryChange = (_event, active) => {
-    if (active) InfinityDashboardApp.open();
+    if (active) openHub();
   };
 
   const buildTool = (name, title, order) => ({
@@ -864,24 +882,7 @@ function registerGmSceneControls(controls) {
           tools: [buildTool(launcherToolName, baseTool.title, 0)],
         });
       }
-      const tokenControl =
-        controls.find((c) => c?.name === "token") ?? controls[0];
-      if (
-        tokenControl &&
-        Array.isArray(tokenControl.tools) &&
-        !tokenControl.tools.some((t) => t?.name === dashboardToolName)
-      ) {
-        tokenControl.tools.push(
-          buildTool(
-            dashboardToolName,
-            "Infinity D&D5e",
-            tokenControl.tools.length,
-          ),
-        );
-      }
-      console.log(
-        `${MODULE_ID} | registered V12 controls (category + tools fallback)`,
-      );
+      console.log(`${MODULE_ID} | registered V12 role-aware Home control`);
     } else if (controls && typeof controls === "object") {
       /* ---------- V13+ shape: controls is a Record ---------- */
       controls["infinity-dnd5e"] = {
@@ -896,18 +897,7 @@ function registerGmSceneControls(controls) {
           [launcherToolName]: buildTool(launcherToolName, baseTool.title, 0),
         },
       };
-      const tokenControl =
-        controls.tokens ?? controls.token ?? Object.values(controls)[0];
-      if (tokenControl && typeof tokenControl.tools === "object") {
-        tokenControl.tools[dashboardToolName] = buildTool(
-          dashboardToolName,
-          "Infinity D&D5e",
-          nextToolOrder(tokenControl.tools),
-        );
-      }
-      console.log(
-        `${MODULE_ID} | registered V13 controls (category + tools fallback)`,
-      );
+      console.log(`${MODULE_ID} | registered V13 role-aware Home control`);
     } else {
       console.warn(
         `${MODULE_ID} | scene-controls payload was neither Array nor Object (got ${typeof controls}); skipping launcher registration`,
@@ -916,242 +906,4 @@ function registerGmSceneControls(controls) {
   } catch (error) {
     console.error(`${MODULE_ID} | scene-controls registration failed`, error);
   }
-}
-
-/**
- * Player launchers: Downtime, Shops, Reputation, Critical Injuries, and (when
- * the GM shares it) Party Supplies. These are separate from the GM dashboard.
- */
-function registerPlayerSceneControls(controls) {
-  const shopsToolName = "infinity-dnd5e-shops-tool";
-  const category = "infinity-dnd5e-shops";
-  const baseTool = {
-    name: shopsToolName,
-    title: "Shops",
-    icon: "fa-solid fa-store",
-    button: true,
-    visible: true,
-    toggle: false,
-    order: 0,
-    onChange: () => ShopPickerApp.open(),
-  };
-  const onCategoryChange = (_event, active) => {
-    if (active) ShopPickerApp.open();
-  };
-  const categoryEntry = (tools) => ({
-    name: category,
-    title: "Shops",
-    icon: "fa-solid fa-store",
-    visible: true,
-    activeTool: shopsToolName,
-    order: 99,
-    onChange: onCategoryChange,
-    tools,
-  });
-
-  // Reputation launcher — a separate category opening the read-only view.
-  const repToolName = "infinity-dnd5e-reputation-tool";
-  const repCategory = "infinity-dnd5e-reputation";
-  const repBaseTool = {
-    name: repToolName,
-    title: "Reputation",
-    icon: "fa-solid fa-handshake",
-    button: true,
-    visible: true,
-    toggle: false,
-    order: 0,
-    onChange: () => ReputationViewApp.open(),
-  };
-  const repCategoryEntry = (tools) => ({
-    name: repCategory,
-    title: "Reputation",
-    icon: "fa-solid fa-handshake",
-    visible: true,
-    activeTool: repToolName,
-    order: 98,
-    onChange: (_event, active) => {
-      if (active) ReputationViewApp.open();
-    },
-    tools,
-  });
-
-  // Party Supplies is omitted entirely when the GM disables player sharing.
-  const suppliesEnabled =
-    getSetting(SETTING_KEYS.RESOURCE_PLAYER_VIEW) !== false;
-  const suppliesToolName = "infinity-dnd5e-supplies-tool";
-  const suppliesCategory = "infinity-dnd5e-supplies";
-  const suppliesBaseTool = {
-    name: suppliesToolName,
-    title: "Party Supplies",
-    icon: "fa-solid fa-boxes-stacked",
-    button: true,
-    visible: true,
-    toggle: false,
-    order: 0,
-    onChange: () => ResourceOverviewApp.open(),
-  };
-  const suppliesCategoryEntry = (tools) => ({
-    name: suppliesCategory,
-    title: "Party Supplies",
-    icon: "fa-solid fa-boxes-stacked",
-    visible: true,
-    activeTool: suppliesToolName,
-    order: 97,
-    onChange: (_event, active) => {
-      if (active) ResourceOverviewApp.open();
-    },
-    tools,
-  });
-
-  const injuriesEnabled =
-    getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) !== false;
-  const injuriesToolName = "infinity-dnd5e-injuries-tool";
-  const injuriesCategory = "infinity-dnd5e-injuries";
-  const injuriesBaseTool = {
-    name: injuriesToolName,
-    title: "Critical Injuries",
-    icon: "fa-solid fa-heart-crack",
-    button: true,
-    visible: true,
-    toggle: false,
-    order: 0,
-    onChange: () => CriticalInjuryApp.openForCurrentUser(),
-  };
-  const injuriesCategoryEntry = (tools) => ({
-    name: injuriesCategory,
-    title: "Critical Injuries",
-    icon: "fa-solid fa-heart-crack",
-    visible: true,
-    activeTool: injuriesToolName,
-    order: 96,
-    onChange: (_event, active) => {
-      if (active) CriticalInjuryApp.openForCurrentUser();
-    },
-    tools,
-  });
-
-  const downtimeToolName = "infinity-dnd5e-downtime-tool";
-  const downtimeCategory = "infinity-dnd5e-downtime";
-  const downtimeBaseTool = {
-    name: downtimeToolName,
-    title: "Downtime Activities",
-    icon: "fa-solid fa-hourglass-half",
-    button: true,
-    visible: true,
-    toggle: false,
-    order: 0,
-    onChange: () => DowntimeActivitiesApp.open(),
-  };
-  const downtimeCategoryEntry = (tools) => ({
-    name: downtimeCategory,
-    title: "Downtime Activities",
-    icon: "fa-solid fa-hourglass-half",
-    visible: true,
-    activeTool: downtimeToolName,
-    order: 95,
-    onChange: (_event, active) => {
-      if (active) DowntimeActivitiesApp.open();
-    },
-    tools,
-  });
-
-  if (Array.isArray(controls)) {
-    // Idempotent guard for a re-fired hook (Array push isn't self-deduping).
-    if (!controls.some((c) => c?.name === category)) {
-      controls.push(categoryEntry([{ ...baseTool }]));
-    }
-    if (!controls.some((c) => c?.name === repCategory)) {
-      controls.push(repCategoryEntry([{ ...repBaseTool }]));
-    }
-    if (
-      suppliesEnabled &&
-      !controls.some((c) => c?.name === suppliesCategory)
-    ) {
-      controls.push(suppliesCategoryEntry([{ ...suppliesBaseTool }]));
-    } else if (!suppliesEnabled) {
-      const existingIndex = controls.findIndex(
-        (control) => control?.name === suppliesCategory,
-      );
-      if (existingIndex >= 0) controls.splice(existingIndex, 1);
-    }
-    if (
-      injuriesEnabled &&
-      !controls.some((c) => c?.name === injuriesCategory)
-    ) {
-      controls.push(injuriesCategoryEntry([{ ...injuriesBaseTool }]));
-    } else if (!injuriesEnabled) {
-      const existingIndex = controls.findIndex(
-        (control) => control?.name === injuriesCategory,
-      );
-      if (existingIndex >= 0) controls.splice(existingIndex, 1);
-    }
-    if (!controls.some((c) => c?.name === downtimeCategory)) {
-      controls.push(downtimeCategoryEntry([{ ...downtimeBaseTool }]));
-    }
-  } else if (controls && typeof controls === "object") {
-    controls[category] = categoryEntry({ [shopsToolName]: { ...baseTool } });
-    controls[repCategory] = repCategoryEntry({
-      [repToolName]: { ...repBaseTool },
-    });
-    if (suppliesEnabled) {
-      controls[suppliesCategory] = suppliesCategoryEntry({
-        [suppliesToolName]: { ...suppliesBaseTool },
-      });
-    } else {
-      delete controls[suppliesCategory];
-    }
-    if (injuriesEnabled) {
-      controls[injuriesCategory] = injuriesCategoryEntry({
-        [injuriesToolName]: { ...injuriesBaseTool },
-      });
-    } else {
-      delete controls[injuriesCategory];
-    }
-    controls[downtimeCategory] = downtimeCategoryEntry({
-      [downtimeToolName]: { ...downtimeBaseTool },
-    });
-  } else {
-    console.warn(
-      `${MODULE_ID} | player scene-controls payload was neither Array nor Object (got ${typeof controls})`,
-    );
-    return;
-  }
-  console.log(
-    `${MODULE_ID} | registered player Downtime + Shops + Reputation${suppliesEnabled ? " + Party Supplies" : ""}${injuriesEnabled ? " + Critical Injuries" : ""} scene controls`,
-  );
-}
-
-function registerPlayerSuppliesControlRefresh() {
-  if (typeof globalThis.Hooks?.on !== "function") return;
-  Hooks.on("updateSetting", (setting) => {
-    const rawKey = String(setting?.key ?? "");
-    const isPlayerViewSetting =
-      rawKey === `${MODULE_ID}.${SETTING_KEYS.RESOURCE_PLAYER_VIEW}` ||
-      (String(setting?.namespace ?? "") === MODULE_ID &&
-        rawKey === SETTING_KEYS.RESOURCE_PLAYER_VIEW);
-    const isCriticalInjurySetting =
-      rawKey === `${MODULE_ID}.${SETTING_KEYS.CRITICAL_INJURIES_ENABLED}` ||
-      (String(setting?.namespace ?? "") === MODULE_ID &&
-        rawKey === SETTING_KEYS.CRITICAL_INJURIES_ENABLED);
-    if (!isPlayerViewSetting && !isCriticalInjurySetting) return;
-    try {
-      globalThis.ui?.controls?.render?.({ force: true });
-    } catch (error) {
-      console.warn(
-        `${MODULE_ID} | could not refresh Party Supplies scene control`,
-        error,
-      );
-    }
-  });
-}
-
-function nextToolOrder(tools) {
-  if (!tools || typeof tools !== "object") return 0;
-  const values = Array.isArray(tools) ? tools : Object.values(tools);
-  return (
-    values.reduce((max, tool) => {
-      const order = Number(tool?.order);
-      return Number.isFinite(order) ? Math.max(max, order) : max;
-    }, -1) + 1
-  );
 }

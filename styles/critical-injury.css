@@ -1,5 +1,6 @@
 .infinity-critical-injury {
-  min-width: 360px;
+  min-width: 0;
+  container: critical-injury / inline-size;
 }
 
 .infinity-critical-injury .window-content {
@@ -18,7 +19,7 @@
 }
 
 .ci-shell button {
-  min-height: 34px;
+  min-height: var(--lf-control-size, 44px);
   padding: 6px 10px;
 }
 
@@ -56,13 +57,16 @@
 
 .ci-eyebrow {
   color: #e7a2a2;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .ci-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 12px;
   border: 1px solid rgba(221, 173, 82, 0.35);
   border-radius: 8px;
@@ -84,6 +88,19 @@
   padding: 8px 10px;
   border-left: 3px solid #d46565;
   color: var(--lf-muted, #d8d2c6);
+}
+
+.ci-status--pending {
+  border-left-color: var(--lf-warn, #d9ad52);
+}
+
+.ci-status--success {
+  border-left-color: var(--lf-success, #6dd5a2);
+}
+
+.ci-status--warning,
+.ci-status--offline {
+  border-left-color: var(--lf-danger, #d46565);
 }
 
 .ci-roll-card,
@@ -131,7 +148,7 @@
 }
 
 .ci-primary {
-  min-height: 38px;
+  min-height: var(--lf-control-size, 44px);
   padding-inline: 14px;
   border-color: #d56868;
   background: linear-gradient(#b84545, #8f3535);
@@ -194,8 +211,21 @@
 
 .ci-injury-heading > div {
   display: flex;
-  gap: 8px;
   align-items: center;
+  flex: 1 1 180px;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ci-injury-heading {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ci-injury-heading h4 {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ci-roll-badge,
@@ -204,7 +234,7 @@
   padding: 3px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.09);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
@@ -258,6 +288,12 @@
   font-size: 0.8rem;
 }
 
+.ci-treatment-message {
+  margin-top: 8px !important;
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.8rem;
+}
+
 .ci-empty {
   display: grid;
   place-items: center;
@@ -282,7 +318,7 @@
   transition: none !important;
 }
 
-@media (max-width: 520px) {
+@container critical-injury (max-width: 520px) {
   .ci-roll-card {
     grid-template-columns: auto 1fr;
   }
@@ -294,5 +330,15 @@
   .ci-treatment {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .ci-injury-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ci-injury-heading > div {
+    flex: 0 1 auto;
+    width: 100%;
   }
 }

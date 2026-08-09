@@ -3,6 +3,7 @@
 import { isFullGM } from "../permissions.js";
 import {
   emitPlayerSurfaceOpen,
+  PLAYER_SURFACE_LABELS,
   PLAYER_SURFACES,
   setMattSenderGuardStatus,
   SUPPORTED_MATT_VERSION,
@@ -33,23 +34,19 @@ const HUB_CONTROL_KEYS = Object.freeze([
   "calendar",
   "injuries",
 ]);
-const HUB_CONTROL_KEY_SET = new Set(HUB_CONTROL_KEYS);
+const HOME_ENABLED_HUB_CONTROL_KEYS = Object.freeze([
+  ...HUB_CONTROL_KEYS,
+  "home",
+]);
+const HUB_CONTROL_KEY_SET = new Set(HOME_ENABLED_HUB_CONTROL_KEYS);
 const HUB_INFINITY_SURFACES = Object.freeze({
+  home: PLAYER_SURFACES.HOME,
   "party-supplies": PLAYER_SURFACES.PARTY_SUPPLIES,
   shops: PLAYER_SURFACES.SHOPS,
   factions: PLAYER_SURFACES.REPUTATION,
   downtime: PLAYER_SURFACES.DOWNTIME,
   calendar: PLAYER_SURFACES.CALENDAR,
   injuries: PLAYER_SURFACES.CRITICAL_INJURIES,
-});
-
-const SURFACE_LABELS = Object.freeze({
-  [PLAYER_SURFACES.PARTY_SUPPLIES]: "Party Supplies",
-  [PLAYER_SURFACES.SHOPS]: "Shops",
-  [PLAYER_SURFACES.REPUTATION]: "Factions",
-  [PLAYER_SURFACES.DOWNTIME]: "Downtime",
-  [PLAYER_SURFACES.CALENDAR]: "Calendar",
-  [PLAYER_SURFACES.CRITICAL_INJURIES]: "Critical Injuries",
 });
 
 let hookRegistered = false;
@@ -272,9 +269,16 @@ function isPlayerHubScene(scene) {
     hub.kind === PLAYER_HUB_KIND &&
     hub.width === 3840 &&
     hub.height === 2160 &&
-    Array.isArray(hub.controlKeys) &&
-    hub.controlKeys.length === HUB_CONTROL_KEYS.length &&
-    hub.controlKeys.every((key, index) => key === HUB_CONTROL_KEYS[index]),
+    isCanonicalHubControlKeys(hub.controlKeys),
+  );
+}
+
+function isCanonicalHubControlKeys(controlKeys) {
+  if (!Array.isArray(controlKeys)) return false;
+  return [HUB_CONTROL_KEYS, HOME_ENABLED_HUB_CONTROL_KEYS].some(
+    (expected) =>
+      controlKeys.length === expected.length &&
+      controlKeys.every((key, index) => key === expected[index]),
   );
 }
 
@@ -424,7 +428,7 @@ export function buildPlayerSurfaceAction() {
         required: true,
       },
     ],
-    values: { surfaces: SURFACE_LABELS },
+    values: { surfaces: PLAYER_SURFACE_LABELS },
     fn: async ({ action, userId } = {}) => {
       const payload = await emitPlayerSurfaceOpen({
         targetUserId: userId,
@@ -433,7 +437,8 @@ export function buildPlayerSurfaceAction() {
       return { continue: Boolean(payload) };
     },
     content: async (_trigger, action) => {
-      const label = SURFACE_LABELS[action?.data?.surface] ?? "Invalid window";
+      const label =
+        PLAYER_SURFACE_LABELS[action?.data?.surface] ?? "Invalid window";
       return `<span class="action-style">Open Infinity player window</span> <span class="details-style">${label}</span> for the triggering player`;
     },
   };

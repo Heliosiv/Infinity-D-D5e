@@ -1,7 +1,6 @@
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { applySpellComponentConsumption } from "./service.js";
 
-const MODULE_ID = "infinity-dnd5e";
 const HOOK_MARKER = "__infinityDnd5eSpellComponentHooksV1";
 
 let pendingConsumption = new WeakMap();
@@ -63,12 +62,12 @@ function insufficientMessage(result) {
   const actorName = result.actor?.name ?? "This character";
   const spellName = result.item?.name ?? "that spell";
   const unit = result.cost === 1 ? "component" : "components";
-  return `${MODULE_ID}: ${actorName} cannot cast ${spellName}. A level ${result.cost} cast needs ${result.cost} spell ${unit}, but only ${result.available} remain.`;
+  return `${actorName} cannot cast ${spellName}. A level ${result.cost} cast needs ${result.cost} spell ${unit}, but only ${result.available} remain. Nothing was consumed.`;
 }
 
 function successMessage(result) {
   const actorName = result.actor?.name ?? "Character";
   const spellName = result.item?.name ?? "Spell";
   const unit = result.cost === 1 ? "component" : "components";
-  return `${MODULE_ID}: ${actorName} cast ${spellName} at level ${result.castLevel}, spending ${result.cost} spell ${unit} (${result.remaining} remaining).`;
+  return `${actorName} cast ${spellName} at level ${result.castLevel}, spending ${result.cost} spell ${unit} (${result.remaining} remaining).`;
 }

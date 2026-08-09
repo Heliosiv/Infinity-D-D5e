@@ -49,7 +49,7 @@ import {
   resolveRarityWeights,
 } from "./loot/rarity-balance.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
-import { BaseLootApp } from "./loot/loot-app-base.js";
+import { BaseLootApp, registerLootStudioMode } from "./loot/loot-app-base.js";
 import {
   HOARD_SCALE_ORDER as SCALE_ORDER,
   normalizeHoardLootForm,
@@ -72,9 +72,15 @@ import {
   prettyLootType,
   prettyRarity,
 } from "./ui-util.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "./chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/hoard-loot.hbs`;
+const STUDIO_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-studio.hbs`;
 
 const MAX_ITEMS_RANGE = Object.freeze({ min: 0, max: 30 });
 
@@ -87,6 +93,7 @@ export class HoardLootApp extends BaseLootApp {
   static _instance = null;
   static _persistedState = null;
 
+  static LOOT_STUDIO_MODE = "hoard";
   static FORM_NAME = "hoard-loot";
   static TOOL_ID = "hoard-loot";
   static CHAT_ALIAS = "Hoard Loot";
@@ -97,15 +104,15 @@ export class HoardLootApp extends BaseLootApp {
   ]);
 
   static DEFAULT_OPTIONS = {
-    id: "infinity-dnd5e-hoard-loot",
+    id: "infinity-dnd5e-loot-studio",
     tag: "section",
-    classes: ["infinity-dnd5e", "hoard-loot"],
+    classes: ["infinity-dnd5e", "loot-studio", "hoard-loot"],
     window: {
-      title: "Infinity D&D5e — Hoard Loot",
+      title: "Infinity D&D5e — Loot Studio",
       icon: "fa-solid fa-sack-dollar",
       resizable: true,
     },
-    position: { width: 760, height: 720 },
+    position: { width: 900, height: 800 },
     actions: {
       ...BaseLootApp.sharedActionsExcept("toggleLock"),
       generate: HoardLootApp._onGenerate,
@@ -117,6 +124,7 @@ export class HoardLootApp extends BaseLootApp {
   };
 
   static PARTS = {
+    studio: { template: STUDIO_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
@@ -147,11 +155,16 @@ export class HoardLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
-    const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
+    const persistEnabled =
+      getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
+      HoardLootApp._lootStudioRestoreState === true;
     const persisted = persistEnabled ? HoardLootApp._persistedState : null;
     const defaults = HoardLootApp.buildDefaultForm();
     this._form = HoardLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
+    this._undoStack = Array.isArray(persisted?.undoStack)
+      ? persisted.undoStack.slice(-10)
+      : [];
   }
 
   /* ------------------- base hooks ------------------- */
@@ -649,6 +662,8 @@ export class HoardLootApp extends BaseLootApp {
   }
 }
 
+registerLootStudioMode(HoardLootApp.LOOT_STUDIO_MODE, HoardLootApp);
+
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -690,15 +705,21 @@ function buildHoardChatHtml(result) {
     })
     .join("");
   const coinLine = result.coinPileGp
-    ? `<p style="margin: 0 0 6px;"><strong>Coin pile:</strong> ${formatGp(result.coinPileGp)}${result.coinBreakdownLabel ? ` <span style="opacity:0.7">(${escapeHtml(result.coinBreakdownLabel)})</span>` : ""}</p>`
+    ? `<p><strong>Coin pile:</strong> ${formatGp(result.coinPileGp)}${result.coinBreakdownLabel ? ` <span style="opacity:0.7">(${escapeHtml(result.coinBreakdownLabel)})</span>` : ""}</p>`
     : "";
-  return `
-<div class="infinity-loot-chat">
-  <h3 style="margin: 0 0 4px;">Hoard Loot</h3>
-  <p style="margin: 0 0 6px; opacity: 0.85;">
-    Total: ${formatGp(result.totalGp)}
-  </p>
-  ${coinLine}
-  ${result.items.length ? `<ul style="margin: 0; padding-left: 18px;">${lines}</ul>` : ""}
-</div>`;
+  const itemList = result.items.length
+    ? `<ul>${lines}</ul>`
+    : "<p>No item drops.</p>";
+  return buildInfinityChatCard({
+    title: "Hoard Loot",
+    outcome: `Total: ${formatGp(result.totalGp)}`,
+    audience: describeChatAudience(
+      getSetting(SETTING_KEYS.CHAT_MODE) ?? "public",
+    ),
+    details: markTrustedChatHtml(`${coinLine}${itemList}`),
+    nextAction:
+      "Open an item from this card, or ask the GM to distribute the hoard.",
+    tone: result.totalGp > 0 ? "success" : "neutral",
+    classes: ["infinity-loot-chat", "infinity-loot-chat--hoard"],
+  });
 }

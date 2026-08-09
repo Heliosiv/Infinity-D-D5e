@@ -45,7 +45,7 @@ export async function buildJournalEntry({ title, html } = {}) {
   } catch (error) {
     console.error(`${MODULE_ID} | failed to create journal entry`, error);
     ui.notifications?.error(
-      `${MODULE_ID}: could not create the journal entry. See console.`,
+      "The journal entry was not created. Loot results are unchanged; try again, then use Help & Diagnostics if it continues.",
     );
     return null;
   }

@@ -22,6 +22,12 @@ import { wireBackgroundImageFallback } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { openSingleton } from "./infinity-app.js";
 import { isFullGM } from "./permissions.js";
+import { authoritativeGMId } from "./socket-authority.js";
+import {
+  getControlledMerchantActors,
+  getPreferredMerchantActorId,
+  setPreferredMerchantActorId,
+} from "./merchant-session.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/shop-picker.hbs`;
@@ -70,6 +76,8 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._shops = []; // sanitized projections from the GM
     this._globallyClosed = false;
     this._loading = true;
+    this._requestFailed = false;
+    this._query = "";
     this._loadTimer = null; // watchdog so the loading spinner can't hang forever
     this._pending = new Set(); // merchantIds the player is waiting on (knock/entering)
     this._unsubs = [
@@ -94,7 +102,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // this player's live knock state (see _requestList) and flash the spinner.
     this._userConnHook =
       globalThis.Hooks?.on?.("userConnected", (user, _connected) => {
-        if (!user?.isGM) return;
+        if (!isFullGM(user)) return;
         if (this.rendered) {
           this._requestList({ clearPending: true });
           this.render(false);
@@ -126,7 +134,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Whether a GM is connected to actually host a session. */
   get _hasActiveGM() {
-    return Boolean(globalThis.game?.users?.activeGM);
+    return Boolean(authoritativeGMId());
   }
 
   /** Ask the GM for the player's allowed self-service shops. `clearPending` wipes
@@ -145,9 +153,11 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (clearPending) this._pending.clear();
     if (!this._hasActiveGM) {
       this._loading = false;
+      this._requestFailed = false;
       return;
     }
     this._loading = true;
+    this._requestFailed = false;
     emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
     // Don't spin forever if no reply lands (GM disconnects mid-request, the GM
     // handler throws, or the GM's socket isn't ready yet): fall back to the
@@ -156,6 +166,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._loadTimer = null;
       if (this._loading) {
         this._loading = false;
+        this._requestFailed = true;
         if (this.rendered) this.render(false);
       }
     }, 5000);
@@ -177,6 +188,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._globallyClosed = payload.globallyClosed === true;
     if (this._globallyClosed) this._pending.clear();
     this._loading = false;
+    this._requestFailed = false;
     if (this.rendered) this.render(false);
   }
 
@@ -198,6 +210,8 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _prepareContext() {
     const noGm = !this._hasActiveGM;
+    const controlledActors = getControlledMerchantActors();
+    const actor = resolveShopperActor(controlledActors);
     const shops = this._shops.map((s) => ({
       id: s.id,
       name: s.name,
@@ -205,13 +219,26 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       description: s.description || "",
       knock: s.selfServiceMode === "knock",
       pending: this._pending.has(s.id),
+      actorRequired: !actor,
     }));
     return {
       noGm,
       loading: this._loading && !noGm,
+      requestFailed: this._requestFailed && !noGm,
       globallyClosed: this._globallyClosed && !noGm,
       shops,
       hasShops: shops.length > 0,
+      hasPending: shops.some((shop) => shop.pending),
+      actorName: actor?.name ?? "No character selected",
+      hasActor: Boolean(actor),
+      needsActorChoice: !actor && controlledActors.length > 1,
+      canSwitchActor: controlledActors.length > 1,
+      actorOptions: controlledActors.map((candidate) => ({
+        id: String(candidate.id ?? ""),
+        name: String(candidate.name ?? "Character"),
+        selected: String(candidate.id ?? "") === String(actor?.id ?? ""),
+      })),
+      query: this._query,
     };
   }
 
@@ -221,12 +248,60 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       // Recover broken shop thumbnails — fall back to the shop glyph (the same
       // one empty art uses), not the loot default item-bag.
       wireBackgroundImageFallback(this.element, ".sp-row__art", FALLBACK_ART);
+      this._wireSearch(this.element);
+      this._wireActorSelect(this.element);
     }
+  }
+
+  _wireActorSelect(root) {
+    const select = root.querySelector?.('[data-role="shopper-actor"]');
+    if (!select) return;
+    select.addEventListener("change", () => {
+      setPreferredMerchantActorId(select.value);
+      this.render(false);
+    });
+  }
+
+  /** Filter only the already-sanitized rows on this client. No search text is
+   * sent to the GM and no hidden merchant fields enter the DOM. */
+  _wireSearch(root) {
+    const input = root.querySelector?.('[data-role="shop-search"]');
+    if (!input) return;
+    input.value = this._query;
+    const apply = () => {
+      const rawQuery = String(input.value ?? "");
+      const query = rawQuery.trim().toLocaleLowerCase();
+      this._query = rawQuery;
+      let visible = 0;
+      for (const row of root.querySelectorAll?.(".sp-row") ?? []) {
+        const matches =
+          !query || row.textContent.toLocaleLowerCase().includes(query);
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      }
+      const empty = root.querySelector?.('[data-role="shop-search-empty"]');
+      if (empty) empty.hidden = visible > 0 || !query;
+      const status = root.querySelector?.('[data-role="shop-search-status"]');
+      if (status) {
+        status.textContent = query
+          ? `${visible} shop${visible === 1 ? "" : "s"} match your search.`
+          : `${this._shops.length} shop${this._shops.length === 1 ? "" : "s"} available.`;
+      }
+    };
+    input.addEventListener("input", apply);
+    apply();
   }
 
   static _onOpenShop(_event, target) {
     const merchantId = target?.dataset?.merchantId;
     if (!merchantId) return;
+    if (!resolveShopperActor()) {
+      ui.notifications?.warn(
+        "Choose a controlled character before entering a shop.",
+      );
+      this.render(false);
+      return;
+    }
     // Already waiting on this shop — don't re-fire (the row shows a waiting
     // state); a second request would just spam the GM.
     if (this._pending.has(merchantId)) return;
@@ -235,7 +310,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.render(false);
       return;
     }
-    if (!globalThis.game?.users?.activeGM) {
+    if (!this._hasActiveGM) {
       ui.notifications?.warn("Shops are closed — no GM is online right now.");
       this.render(false);
       return;
@@ -259,4 +334,25 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._requestList({ clearPending: true });
     this.render(false);
   }
+}
+
+/** Resolve only a character this user may legitimately act through. Foundry's
+ * Assistant-GM document visibility must never become implicit character choice. */
+function resolveShopperActor(controlledActors = getControlledMerchantActors()) {
+  const preferredId = getPreferredMerchantActorId();
+  if (preferredId) {
+    return (
+      controlledActors.find(
+        (candidate) => String(candidate?.id ?? "") === preferredId,
+      ) ?? null
+    );
+  }
+  const assignedId = String(globalThis.game?.user?.character?.id ?? "").trim();
+  if (assignedId) {
+    const assigned = controlledActors.find(
+      (candidate) => String(candidate?.id ?? "") === assignedId,
+    );
+    if (assigned) return assigned;
+  }
+  return controlledActors.length === 1 ? controlledActors[0] : null;
 }

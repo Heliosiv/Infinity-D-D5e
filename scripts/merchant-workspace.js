@@ -74,12 +74,18 @@ import {
 } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { pickSearchOption } from "./search-picker.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+} from "./dialog-contract.js";
 import {
   applyVisualPrefs,
   bindFullGmWindowGuard,
   openSingleton,
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
+import { isAuthoritativeGM } from "./socket-authority.js";
 import {
   PRIVATE_STATE_CHANGED_HOOK,
   onPrivateStateChanged,
@@ -370,7 +376,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         Boolean(selected) &&
         !merchantAccess.closed &&
         selected.allowedUserIds.length > 0 &&
-        Boolean(globalThis.game?.users?.activeGM),
+        Boolean(globalThis.game?.users?.activeGM) &&
+        isAuthoritativeGM(),
       // Why the Open Session button is disabled, so the button can say so.
       openSessionReason: !selected
         ? "Select a merchant first."
@@ -380,7 +387,9 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
             ? "Add at least one Allowed Player to open a session."
             : !globalThis.game?.users?.activeGM
               ? "An active GM must be online to host."
-              : "",
+              : !isAuthoritativeGM()
+                ? "Only the active full GM can host a live session."
+                : "",
       saveStatus: this._saveStatus,
     };
   }
@@ -739,7 +748,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._selectedId = copy.id;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     ui.notifications?.info(
-      `${MODULE_ID}: duplicated ${merchant.name} (inventory left empty).`,
+      `Duplicated ${merchant.name}. The new merchant's inventory is empty.`,
     );
     this.render(false);
   }
@@ -759,7 +768,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       notify("info", `merchant saved.`);
     } catch (error) {
       console.error(`${MODULE_ID} | save failed`, error);
-      notify("error", `save failed. See console.`);
+      notify(
+        "error",
+        "Nothing was saved. Review the merchant fields and try again; if it keeps failing, open Help & Diagnostics and share the version details.",
+      );
     }
   }
 
@@ -767,9 +779,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (!DialogV2) return;
-    const confirmed = await DialogV2.confirm({
+    if (!isInfinityDialogAvailable()) return;
+    const confirmed = await confirmInfinityDialog({
       window: {
         title: `Delete "${merchant.name}"?`,
         icon: "fa-solid fa-trash",
@@ -794,9 +805,6 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       notify("warn", `no items in compendium.`);
       return;
     }
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (!DialogV2) return;
-
     // Build options sorted by name; filter out duplicates already on the merchant.
     const existing = new Set(merchant.items.map((r) => r.uuid));
     const candidates = items
@@ -808,39 +816,43 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       return;
     }
 
-    const options = candidates
-      .slice(0, 300)
-      .map(
-        (item) =>
-          `<option value="${escapeHtml(item.uuid)}">${escapeHtml(item.name)}</option>`,
-      )
-      .join("");
-
     let pickedUuid = null;
     try {
-      pickedUuid = await DialogV2.prompt({
-        window: { title: "Add Item to Merchant", icon: "fa-solid fa-box-open" },
-        content: `
-          <div class="mw-pick">
-            <label style="display:grid;gap:4px;">
-              <span>Item</span>
-              <select name="uuid" size="14" style="height:240px;width:100%;">${options}</select>
-            </label>
-            <p style="opacity:0.7;font-size:0.85rem;">Showing up to 300 items not yet on this merchant.</p>
-          </div>
-        `,
-        ok: {
-          label: "Add",
-          icon: "fa-solid fa-plus",
-          callback: (_event, button) =>
-            button?.form?.elements?.uuid?.value ?? null,
-        },
-        rejectClose: false,
+      pickedUuid = await pickSearchOption({
+        title: "Add Item to Merchant",
+        hint: "Search every available compendium item. Nothing changes until you choose Add item.",
+        confirmLabel: "Add item",
+        options: candidates.map((item) => {
+          const rarity = prettyRarity(getItemRarity(item));
+          const type = prettyLootType(item?.type);
+          return {
+            id: item.uuid,
+            label: item.name,
+            description: [rarity, type].filter(Boolean).join(" · "),
+            keywords: `${item?.type ?? ""} ${getItemRarity(item) ?? ""}`,
+            img: item.img,
+          };
+        }),
       });
     } catch {
       pickedUuid = null;
     }
     if (!pickedUuid) return;
+
+    // The picker is intentionally presentation-only. Revalidate the canonical
+    // candidate and the current merchant inventory immediately before writing.
+    const stillAvailable = candidates.some((item) => item.uuid === pickedUuid);
+    const currentMerchant = findMerchant(this._selectedId);
+    const alreadyStocked = currentMerchant?.items?.some(
+      (row) => row.uuid === pickedUuid,
+    );
+    if (!stillAvailable || !currentMerchant || alreadyStocked) {
+      notify(
+        "warn",
+        "That item is no longer available to add. Nothing changed; search again.",
+      );
+      return;
+    }
     await this._addUuidToInventory(pickedUuid);
   }
 
@@ -888,7 +900,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       (pool.rarities?.length ?? 0) === 0
     ) {
       ui.notifications?.warn(
-        `${MODULE_ID}: pick at least one item type or rarity for the pool.`,
+        "Choose at least one item type or rarity before generating stock. Nothing changed.",
       );
       return;
     }
@@ -900,9 +912,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Re-Generate clears the whole shelf first — confirm if there's curated
     // stock to lose (Generate, which appends, never needs this).
     if (replace && merchant.items.length > 0) {
-      const DialogV2 = foundry?.applications?.api?.DialogV2;
-      const confirmed = DialogV2
-        ? await DialogV2.confirm({
+      const confirmed = isInfinityDialogAvailable()
+        ? await confirmInfinityDialog({
             window: {
               title: "Replace all stock?",
               icon: "fa-solid fa-arrows-rotate",
@@ -929,7 +940,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     });
     if (rows.length === 0) {
       ui.notifications?.warn(
-        `${MODULE_ID}: ${warnings[0] ?? "nothing generated."}`,
+        warnings[0] ?? "No stock was generated. Adjust the pool and try again.",
       );
       return;
     }
@@ -944,7 +955,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     );
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(
-      `${MODULE_ID}: ${replace ? "re-stocked" : "generated"} ${rows.length} item(s) for ${merchant.name}.`,
+      `${replace ? "Re-stocked" : "Generated"} ${rows.length} item(s) for ${merchant.name}.`,
     );
     this.render(false);
   }
@@ -973,7 +984,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     );
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     ui.notifications?.info(
-      `${MODULE_ID}: copied stock types & rarities into the buy filter.`,
+      "Copied the stock item types and rarities into the buy filter.",
     );
     this.render(false);
   }
@@ -982,9 +993,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant || merchant.items.length === 0) return;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    const confirmed = DialogV2
-      ? await DialogV2.confirm({
+    const confirmed = isInfinityDialogAvailable()
+      ? await confirmInfinityDialog({
           window: { title: "Clear inventory?", icon: "fa-solid fa-trash" },
           content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeHtml(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
           rejectClose: false,
@@ -1030,9 +1040,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Confirm before overwriting hand-tuned quantities (mirrors Clear All).
     const finiteRows = merchant.items.filter((r) => !r.unlimited);
     if (finiteRows.length > 0) {
-      const DialogV2 = foundry?.applications?.api?.DialogV2;
-      const confirmed = DialogV2
-        ? await DialogV2.confirm({
+      const confirmed = isInfinityDialogAvailable()
+        ? await confirmInfinityDialog({
             window: {
               title: "Restock all items?",
               icon: "fa-solid fa-boxes-stacked",
@@ -1065,7 +1074,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     });
     playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
     ui.notifications?.info(
-      `${MODULE_ID}: opened a preview of ${merchant.name} — nothing real changes.`,
+      `Opened a preview of ${merchant.name}. Preview purchases and sales do not change campaign data.`,
     );
   }
 
@@ -1090,6 +1099,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       ui.notifications?.warn("An active GM must be online to host a session.");
       return;
     }
+    if (!isAuthoritativeGM()) {
+      ui.notifications?.warn(
+        "Only the active full GM can open live merchant sessions.",
+      );
+      this.render(false);
+      return;
+    }
     // Single allowed player: skip the redundant re-pick (mirrors the skill
     // picker's single-option short-circuit).
     const picked =
@@ -1097,24 +1113,35 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         ? [merchant.allowedUserIds[0]]
         : await promptPlayerPicker(merchant);
     if (!picked || picked.length === 0) return;
+    // A picker can remain open while another GM edits this merchant. Reload the
+    // canonical record before opening anything so a revoked player never gets a
+    // session (or a stale merchant projection) from the pre-picker snapshot.
+    const currentMerchant = findMerchant(merchant.id);
+    const currentAllowed = new Set(currentMerchant?.allowedUserIds ?? []);
+    const currentPicked = picked.filter(
+      (id) => currentAllowed.has(id) && globalThis.game?.users?.get?.(id),
+    );
     // Report what ACTUALLY happened, not just that we tried. pushOpenSession
     // silently skips users it can't open for (not on the allow-list, or a
     // GM/assistant — who use Preview, not a live session), so a blanket
     // "opened for N" toast would claim success when the player sees nothing.
-    const opened = pushOpenSession({ merchant, targetUserIds: picked });
+    const opened = currentMerchant
+      ? pushOpenSession({
+          merchant: currentMerchant,
+          targetUserIds: currentPicked,
+        })
+      : [];
     playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
     if (opened.length === 0) {
       ui.notifications?.warn(
-        `${MODULE_ID}: couldn't open ${merchant.name} for anyone — the picked player(s) aren't on the allow-list, or are a GM/assistant (use Preview for those).`,
+        `${merchant.name} did not open. Choose an authorized player; GMs and Assistant GMs should use Preview instead.`,
       );
       this.render(false);
       return;
     }
     const users = globalThis.game?.users;
     const names = opened.map((d) => lookupUserName(d.viewerUserId));
-    ui.notifications?.info(
-      `${MODULE_ID}: opened ${merchant.name} for ${names.join(", ")}.`,
-    );
+    ui.notifications?.info(`Opened ${merchant.name} for ${names.join(", ")}.`);
     // A session pushed to an offline player won't pop until they reconnect —
     // call that out so it doesn't read as "pushed but broken".
     const offline = opened
@@ -1122,12 +1149,12 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       .map((d) => lookupUserName(d.viewerUserId));
     if (offline.length > 0) {
       ui.notifications?.warn(
-        `${MODULE_ID}: ${offline.join(", ")} ${offline.length === 1 ? "is" : "are"} offline — the shop opens for them when they reconnect.`,
+        `${offline.join(", ")} ${offline.length === 1 ? "is" : "are"} offline. The shop will open when they reconnect; do not send another session.`,
       );
     }
     if (opened.length < picked.length) {
       ui.notifications?.warn(
-        `${MODULE_ID}: skipped ${picked.length - opened.length} picked player(s) — not on the allow-list or a GM/assistant.`,
+        `Skipped ${picked.length - opened.length} player(s) who were not authorized for this merchant or should use Preview.`,
       );
     }
     this.render(false);
@@ -1150,9 +1177,8 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
 
     const activeCount = listSessions().length;
-    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    const confirmed = DialogV2
-      ? await DialogV2.confirm({
+    const confirmed = isInfinityDialogAvailable()
+      ? await confirmInfinityDialog({
           window: {
             title: "Close every shop?",
             icon: "fa-solid fa-shop-lock",
@@ -1340,97 +1366,81 @@ function extractDroppedItemUuid(event) {
   }
 }
 
-/**
- * Pick which character the GM "shops as" in a preview. Returns
- * `{ actor }` (actor may be null = browse-only) on confirm, or `null` when
- * the GM dismisses the dialog. Falls back to the GM's assigned character when
- * no picker is available.
- */
+/** Choose the character used by the non-writing GM preview. */
 async function promptPreviewActor() {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
   const characters = (
-    globalThis.game?.actors?.filter?.((a) => a?.type === "character") ?? []
+    globalThis.game?.actors?.filter?.((actor) => actor?.type === "character") ??
+    []
   ).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  if (!DialogV2 || characters.length === 0) {
+  if (characters.length === 0) {
     return { actor: globalThis.game?.user?.character ?? null };
   }
-  // Default to the GM's assigned character, else the first one, so the Sell
-  // tab is populated by default — "None" stays available but isn't the default.
-  const assignedId = globalThis.game?.user?.character?.id ?? "";
-  const defaultId = assignedId || characters[0]?.id || "";
-  const options = [
-    `<option value="">None — just browse the window</option>`,
-    ...characters.map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}" ${a.id === defaultId ? "selected" : ""}>${escapeHtml(a.name)}</option>`,
-    ),
-  ].join("");
-  let picked;
-  try {
-    picked = await DialogV2.prompt({
-      window: { title: "Preview Shop — shop as…", icon: "fa-solid fa-eye" },
-      content: `
-        <div class="mw-pick">
-          <p>Open a sandbox shop window. Buying, selling, and bargaining are simulated and logged — no real items or coin change hands. Pick a character to try selling + bargaining, or just browse.</p>
-          <label style="display:grid;gap:4px;">
-            <span>Shop as</span>
-            <select name="actorId">${options}</select>
-          </label>
-        </div>
-      `,
-      ok: {
-        label: "Open Preview",
-        icon: "fa-solid fa-eye",
-        callback: (_event, button) =>
-          button?.form?.elements?.actorId?.value ?? "",
+
+  const browseOnlyId = "browse-only";
+  const assignedId = globalThis.game?.user?.character?.id;
+  const picked = await pickSearchOption({
+    title: "Preview Shop — choose a character",
+    hint: "Previewing never changes items or coin. Choose a character to test wallet, selling, and bargaining, or browse without one.",
+    confirmLabel: "Open preview",
+    selectedIds: [assignedId || characters[0]?.id || browseOnlyId],
+    options: [
+      {
+        id: browseOnlyId,
+        label: "Browse without a character",
+        description:
+          "View stock only; selling and wallet context stay unavailable.",
+        keywords: "none browse only",
       },
-      rejectClose: false,
-    });
-  } catch {
-    return null;
-  }
-  if (picked === null || picked === undefined) return null; // dismissed
-  if (picked === "") return { actor: null }; // browse-only
-  return { actor: globalThis.game?.actors?.get?.(picked) ?? null };
+      ...characters.map((actor) => ({
+        id: actor.id,
+        label: actor.name,
+        description:
+          actor.id === assignedId ? "Your assigned character" : "Character",
+        img: actor.img,
+      })),
+    ],
+  });
+  if (!picked) return null;
+  if (picked === browseOnlyId) return { actor: null };
+
+  // Revalidate against the canonical Actor collection after the picker closes.
+  const actor = globalThis.game?.actors?.get?.(picked);
+  return actor?.type === "character" ? { actor } : null;
 }
 
+/** Choose only users already allowlisted on this merchant. */
 async function promptPlayerPicker(merchant) {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) return null;
-  const options = merchant.allowedUserIds
-    .map((id) => {
-      const name = lookupUserName(id);
-      return `<label class="mw-pick__opt"><input type="checkbox" name="userIds" value="${escapeHtml(id)}" checked /> ${escapeHtml(name)}</label>`;
-    })
-    .join("");
-  let picked = [];
-  try {
-    picked = await DialogV2.prompt({
-      window: {
-        title: `Open Session — ${merchant.name}`,
-        icon: "fa-solid fa-store",
-      },
-      content: `
-        <div class="mw-pick" style="display:grid;gap:8px;">
-          <p>Pick which players see the session window:</p>
-          ${options}
-        </div>
-      `,
-      ok: {
-        label: "Open",
-        icon: "fa-solid fa-store",
-        callback: (_event, button) => {
-          const form = button?.form;
-          if (!form) return [];
-          return Array.from(
-            form.querySelectorAll('input[name="userIds"]:checked'),
-          ).map((el) => el.value);
-        },
-      },
-      rejectClose: false,
-    });
-  } catch {
-    picked = [];
-  }
-  return picked;
+  const allowed = new Set(
+    (Array.isArray(merchant?.allowedUserIds) ? merchant.allowedUserIds : [])
+      .map((id) => String(id))
+      .filter(Boolean),
+  );
+  if (allowed.size === 0) return [];
+
+  const picked = await pickSearchOption({
+    title: `Open Session — ${merchant.name}`,
+    hint: "Choose the allowed players who should receive this live session. No access permissions change here.",
+    confirmLabel: "Open session",
+    multiple: true,
+    selectedIds: [...allowed],
+    options: [...allowed].map((id) => {
+      const user = globalThis.game?.users?.get?.(id);
+      return {
+        id,
+        label: lookupUserName(id),
+        description: user?.active
+          ? "Online"
+          : "Offline — the session can resume after reconnect",
+        keywords: user?.active ? "online active" : "offline reconnect",
+        img: user?.avatar,
+      };
+    }),
+  });
+  if (!Array.isArray(picked)) return [];
+
+  // Revalidate the caller allowlist and current user collection immediately
+  // before the existing socket/session workflow receives the selection.
+  return picked.filter(
+    (id) => allowed.has(id) && globalThis.game?.users?.get?.(id),
+  );
 }

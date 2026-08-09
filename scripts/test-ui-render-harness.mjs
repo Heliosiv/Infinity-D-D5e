@@ -12,12 +12,17 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  38,
+  62,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
 for (const view of views) {
-  assert.ok(view.html.includes("data-action="), `${view.id}: renders actions`);
+  if (view.requiresActions !== false) {
+    assert.ok(
+      view.html.includes("data-action="),
+      `${view.id}: renders actions`,
+    );
+  }
   assert.ok(
     !view.html.includes("{{"),
     `${view.id}: rendered output should not contain unresolved Handlebars`,
@@ -78,6 +83,12 @@ for (const friendlyLabel of [
 }
 for (const expectedId of [
   "dashboard",
+  "home-player",
+  "settings-gm",
+  "settings-player",
+  "search-picker",
+  "shared-dialog",
+  "chat-card",
   "per-encounter",
   "hoard",
   "per-creature",
@@ -85,9 +96,17 @@ for (const expectedId of [
   "merchant-workspace-closed",
   "merchant-session-buy",
   "merchant-session-sell",
+  "merchant-session-pending",
+  "merchant-session-uncertain",
+  "merchant-session-offline",
+  "merchant-session-no-actor",
   "shop-picker",
   "shop-picker-empty",
   "shop-picker-closed",
+  "shop-picker-loading",
+  "shop-picker-offline",
+  "shop-picker-error",
+  "shop-picker-choose-actor",
   "resource-manager",
   "resource-manager-locked",
   "resource-manager-recent-runs",
@@ -110,7 +129,15 @@ for (const expectedId of [
   "downtime-activities-resolved",
   "downtime-activities-no-gm",
   "forage-prompt",
+  "forage-waiting",
+  "forage-timeout",
+  "forage-success",
+  "forage-offline",
   "critical-injury",
+  "critical-injury-offline",
+  "critical-injury-treating",
+  "critical-injury-treatment-outcome",
+  "critical-injury-uncertain",
   "critical-injury-hud",
   "reputation-workspace",
   "reputation-view",
@@ -120,6 +147,14 @@ for (const expectedId of [
     documentHtml.includes(`data-harness-window="${expectedId}"`),
     `full harness includes ${expectedId}`,
   );
+}
+
+const dialogView = views.find((view) => view.id === "shared-dialog");
+assert.match(dialogView.html, /autofocus>Cancel/);
+assert.match(dialogView.html, /data-action="confirm"/);
+const chatCardView = views.find((view) => view.id === "chat-card");
+for (const section of ["Outcome", "Audience", "Details", "Next action"]) {
+  assert.match(chatCardView.html, new RegExp(`>${section}<`));
 }
 
 const encounterView = views.find((view) => view.id === "per-encounter");
@@ -161,7 +196,7 @@ assert.ok(
   closedShopPickerView,
   "harness includes the globally closed Shops door",
 );
-assert.match(closedShopPickerView.html, /temporarily closed by the GM/);
+assert.match(closedShopPickerView.html, /GM has paused merchant access/);
 
 const merchantSellView = views.find(
   (view) => view.id === "merchant-session-sell",
@@ -393,7 +428,7 @@ const suppliesOfflineView = views.find(
   (view) => view.id === "resource-overview-offline",
 );
 assert.ok(suppliesOfflineView, "harness includes Party Supplies offline state");
-assert.match(suppliesOfflineView.html, /No GM is online right now/);
+assert.match(suppliesOfflineView.html, /No full GM is online/);
 
 const routineManagerView = views.find((view) => view.id === "resource-manager");
 assert.ok(
@@ -413,7 +448,7 @@ assert.doesNotMatch(
   "a GM row never presents supplied beside an inventory warning",
 );
 const routineSetupTag = routineManagerView.html.match(
-  /<details\b[^>]*class="rm-setup"[^>]*>/,
+  /<details\b[^>]*class="[^"]*\brm-setup\b[^"]*"[^>]*>/,
 )?.[0];
 assert.ok(routineSetupTag, "routine Quartermaster renders Setup & rules");
 assert.doesNotMatch(
@@ -425,14 +460,18 @@ const routineHeader = routineManagerView.html.match(
   /<header\b[^>]*class="rm-head"[^>]*>[\s\S]*?<\/header>/,
 )?.[0];
 assert.ok(routineHeader, "routine Quartermaster renders its daily header");
-assert.match(routineHeader, /data-action="advanceDay"/);
-assert.match(routineHeader, /data-action="forageDrive"/);
 assert.match(routineHeader, /data-action="refresh"/);
 assert.doesNotMatch(
   routineHeader,
   /data-action="resetConfig"/,
   "Reset is no longer a daily header action",
 );
+const routineToday = routineManagerView.html.match(
+  /<section\b[^>]*id="rm-today"[^>]*>[\s\S]*?<\/section>/,
+)?.[0];
+assert.ok(routineToday, "routine Quartermaster renders its Today workspace");
+assert.match(routineToday, /data-action="advanceDay"/);
+assert.match(routineToday, /data-action="forageDrive"/);
 const setupIndex = routineManagerView.html.indexOf("Setup &amp; rules");
 for (const routineLabel of [
   "Where is the party?",
@@ -539,7 +578,7 @@ assert.match(
   "party write errors are visibly warned even without a shortage",
 );
 const historyMarkup = recentRunsView.html.match(
-  /<section class="rm-section rm-runs"[\s\S]*?<details class="rm-setup"/,
+  /<section class="[^"]*\brm-runs\b[^"]*"[\s\S]*?<details[^>]*class="[^"]*\brm-setup\b/,
 )?.[0];
 assert.ok(historyMarkup, "history renders immediately before Setup & rules");
 assert.doesNotMatch(
@@ -557,7 +596,7 @@ assert.ok(
 );
 assert.match(
   customEnvironmentView.html,
-  /<details\b[^>]*class="rm-setup"[^>]*\sopen(?:\s|=|>)/,
+  /<details\b[^>]*class="[^"]*\brm-setup\b[^"]*"[^>]*\sopen(?:\s|=|>)/,
   "custom-region fixture keeps setup expanded",
 );
 assert.match(customEnvironmentView.html, /Edit current custom environment/);
@@ -676,7 +715,7 @@ for (const id of ["per-encounter", "per-creature"]) {
   );
   assert.match(
     html,
-    /<details\b[^>]*class="rm-setup"[^>]*\sopen(?:\s|=|>)/,
+    /<details\b[^>]*class="[^"]*\brm-setup\b[^"]*"[^>]*\sopen(?:\s|=|>)/,
     "blocking conflicts render setup expanded",
   );
   for (const action of ["advanceDay", "forageDrive"]) {
@@ -686,7 +725,7 @@ for (const id of ["per-encounter", "per-creature"]) {
     assert.ok(button, `resource manager: renders ${action}`);
     assert.match(button, /\bdisabled\b/);
     assert.match(button, /aria-disabled="true"/);
-    assert.match(button, /blocking resource conflicts are fixed/);
+    assert.match(button, /Fix blocking resource conflicts/);
   }
 }
 

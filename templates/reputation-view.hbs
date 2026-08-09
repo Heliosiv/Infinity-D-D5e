@@ -3,7 +3,7 @@
   Shows the factions the GM has revealed, the party's standing, and a
   short note. The GM previews this exact view when they open it.
 --}}
-<div class="rv-shell">
+<div class="rv-shell" aria-busy="{{#if loading}}true{{else}}false{{/if}}">
   <header class="rv-head">
     <div class="rv-head__title">
       <h2><i class="fa-solid fa-handshake" aria-hidden="true"></i> Reputation</h2>
@@ -11,17 +11,21 @@
         Where the party stands with the factions you've met.{{#if isGmPreview}} <em>(GM preview — what players see.)</em>{{/if}}
       </p>
     </div>
-    <button type="button" class="rv-btn--icon" data-action="refresh" title="Refresh" aria-label="Refresh">
+    <button type="button" class="rv-btn--icon" data-action="refresh" title="{{#if loading}}Refreshing reputation{{else}}Refresh reputation{{/if}}" aria-label="{{#if loading}}Refreshing reputation{{else}}Refresh reputation{{/if}}" {{#if loading}}disabled{{/if}}>
       <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
     </button>
   </header>
 
+  <p class="rv-sr-status" role="status" aria-live="polite" aria-atomic="true">
+    {{#if noGm}}Reputation is offline. Nothing changed.{{else if loading}}Loading revealed reputations.{{else if requestFailed}}{{else if hasFactions}}{{factions.length}} revealed faction standings loaded.{{else}}No faction standings are revealed.{{/if}}
+  </p>
+
   {{#if noGm}}
-    <p class="rv-empty"><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i> No GM is online right now — check back when your game is running.</p>
+    <div class="rv-empty rv-empty--action"><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i><div><strong>Reputation is offline</strong><span>No full GM is online. Nothing changed; standings reload automatically after reconnection.</span></div><button type="button" data-action="refresh">Try again</button></div>
   {{else if loading}}
     <p class="rv-empty"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Loading reputations…</p>
   {{else if requestFailed}}
-    <p class="rv-empty"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Couldn't reach the GM. Click refresh to try again.</p>
+    <div class="rv-empty rv-empty--action rv-empty--warning" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><div><strong>The standings did not arrive</strong><span>Nothing changed. Check your connection, then retry the same refresh.</span></div><button type="button" data-action="refresh">Try again</button></div>
   {{else if hasFactions}}
     <ul class="rv-list">
       {{#each factions}}
@@ -40,6 +44,6 @@
       {{/each}}
     </ul>
   {{else}}
-    <p class="rv-empty"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> No factions revealed yet. Your GM will share standings here as you meet them.</p>
+    <p class="rv-empty"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> No factions are revealed yet. Nothing changed; the GM can share standings here after the party meets a faction.</p>
   {{/if}}
 </div>

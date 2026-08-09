@@ -10,17 +10,64 @@
       <p class="rm-head__sub">Party supplies — food, water &amp; light.</p>
     </div>
     <div class="rm-head__actions">
-      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Consume one day of configured resources without foraging{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
-        <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
-      </button>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Run Survival checks for chosen characters to gather food, water, or both (no day passes){{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
-        <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
-      </button>
       <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="refresh" title="Refresh" aria-label="Refresh Quartermaster">
         <i class="fa-solid fa-rotate" aria-hidden="true"></i>
       </button>
     </div>
   </header>
+
+  <nav class="rm-section-nav" aria-label="Quartermaster sections">
+    <a href="#rm-today"><i class="fa-solid fa-sun" aria-hidden="true"></i> Today</a>
+    <a href="#rm-runs-heading"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent Runs</a>
+    <a href="#rm-setup"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; Rules</a>
+  </nav>
+
+  <section id="rm-today" class="rm-workspace-section rm-today" aria-labelledby="rm-today-heading">
+    <div class="rm-workspace-section__head">
+      <div>
+        <p class="rm-workspace-section__eyebrow">Daily routine</p>
+        <h3 id="rm-today-heading">Today</h3>
+      </div>
+      <div class="rm-today__actions">
+        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+          <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
+        </button>
+        <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunResourceWrites}}Run Survival checks for chosen characters to gather food, water, or both (no day passes){{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+          <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
+        </button>
+      </div>
+    </div>
+
+    <article class="rm-next-action {{#if hasActiveUpkeep}}rm-next-action--warning{{/if}}{{#if hasBlockingResourceConflicts}} rm-next-action--warning{{/if}}" aria-labelledby="rm-next-action-heading">
+      <span class="rm-next-action__icon" aria-hidden="true"><i class="fa-solid {{#unless isAuthoritative}}fa-user-shield{{else}}{{#if hasActiveUpkeep}}fa-shield-halved{{else}}{{#if hasBlockingResourceConflicts}}fa-triangle-exclamation{{else}}{{#unless hasParty}}fa-users{{else}}fa-forward-step{{/unless}}{{/if}}{{/if}}{{/unless}}"></i></span>
+      <div>
+        <p>Recommended next action</p>
+        {{#unless isAuthoritative}}
+        <h4 id="rm-next-action-heading">Use the active GM client</h4>
+        <span>Another full GM is authoritative. Run upkeep from their client.</span>
+        {{else}}{{#if hasActiveUpkeep}}
+        <h4 id="rm-next-action-heading">Review the interrupted run</h4>
+        <span>Compare the party's current supplies, then use Clear after review. Quartermaster will not replay the run.</span>
+        {{else}}{{#if hasBlockingResourceConflicts}}
+        <h4 id="rm-next-action-heading">Fix resource rule conflicts</h4>
+        <span>Open Setup &amp; Rules and resolve every blocking overlap before running upkeep.</span>
+        {{else}}{{#unless hasParty}}
+        <h4 id="rm-next-action-heading">Add the party roster</h4>
+        <span>Open Setup &amp; Rules and add the actors whose supplies should be tracked.</span>
+        {{else}}
+        <h4 id="rm-next-action-heading">Review supplies, then Advance Day</h4>
+        <span>Use Forage Drive first when supplies are low and foraging is open; otherwise consume one configured day.</span>
+        {{/unless}}{{/if}}{{/if}}{{/unless}}
+      </div>
+    </article>
+
+    {{#unless canRunResourceWrites}}
+    <p id="rm-resource-write-reason" class="rm-disabled-reason" role="status">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <strong>Advance Day and Forage Drive are unavailable:</strong>
+      {{#unless isAuthoritative}}Another full GM is currently authoritative. Run upkeep from their client.{{else}}{{#if hasActiveUpkeep}}Review and acknowledge the interrupted run before changing more inventory.{{else}}Fix every blocking resource conflict in Setup &amp; Rules.{{/if}}{{/unless}}
+    </p>
+    {{/unless}}
 
   {{#unless isAuthoritative}}
   <p class="rm-note rm-note--warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Another GM is the active one — daily upkeep runs on their client.</p>
@@ -115,8 +162,9 @@
     </ul>
   </section>
   {{/if}}
+  </section>
 
-  <section class="rm-section rm-runs" aria-labelledby="rm-runs-heading">
+  <section class="rm-workspace-section rm-section rm-runs" aria-labelledby="rm-runs-heading">
     <h3 id="rm-runs-heading">Recent runs</h3>
     {{#if hasRecentRuns}}
     <details class="rm-runs__disclosure" {{#if recentRunsExpanded}}open{{/if}}>
@@ -238,12 +286,36 @@
     {{/if}}
   </section>
 
-  <details class="rm-setup" data-role="setup-disclosure" {{#if setupExpanded}}open{{/if}}>
+  <details id="rm-setup" class="rm-setup rm-workspace-section" data-role="setup-disclosure" {{#if setupExpanded}}open{{/if}}>
     <summary class="rm-setup__summary">
       <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; rules</span>
-      <small>Environment, automation, resources, and party roster</small>
+      <small>Environment, resources, safety, and party roster</small>
     </summary>
     <div class="rm-setup__content">
+      <section class="rm-setup-checklist" aria-labelledby="rm-setup-checklist-heading">
+        <div>
+          <p class="rm-workspace-section__eyebrow">First setup</p>
+          <h3 id="rm-setup-checklist-heading">Campaign readiness</h3>
+        </div>
+        <ul>
+          <li class="is-complete">
+            <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+            <span><strong>Current environment selected</strong><small>{{currentEnvLabel}}</small></span>
+          </li>
+          <li class="{{#if hasParty}}is-complete{{else}}is-incomplete{{/if}}">
+            <i class="fa-solid {{#if hasParty}}fa-circle-check{{else}}fa-circle{{/if}}" aria-hidden="true"></i>
+            <span><strong>Party roster available</strong><small>{{#if hasParty}}Tracked actors are ready.{{else}}Add at least one actor.{{/if}}</small></span>
+          </li>
+          <li class="{{#if hasOverviewResources}}is-complete{{else}}is-incomplete{{/if}}">
+            <i class="fa-solid {{#if hasOverviewResources}}fa-circle-check{{else}}fa-circle{{/if}}" aria-hidden="true"></i>
+            <span><strong>Resources defined</strong><small>{{#if hasOverviewResources}}Resource rules are available.{{else}}Add a tracked resource.{{/if}}</small></span>
+          </li>
+          <li class="{{#if hasBlockingResourceConflicts}}is-incomplete{{else}}is-complete{{/if}}">
+            <i class="fa-solid {{#if hasBlockingResourceConflicts}}fa-circle{{else}}fa-circle-check{{/if}}" aria-hidden="true"></i>
+            <span><strong>Inventory matches are safe</strong><small>{{#if hasBlockingResourceConflicts}}Blocking overlaps need attention.{{else}}No blocking item-match conflicts found.{{/if}}</small></span>
+          </li>
+        </ul>
+      </section>
       <section class="rm-section rm-environment-setup" aria-labelledby="rm-environment-setup-heading">
         <div class="rm-section__head">
           <h3 id="rm-environment-setup-heading">Environment setup</h3>
@@ -342,7 +414,8 @@
       </div>
       <div class="rm-resource__tags" data-drop-resource="{{id}}">
         <span class="rm-resource__droplabel"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> Drag an item here (from a sheet or compendium) to match it exactly — more reliable than keywords.</span>
-        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Add an item by UUID (keyboard)" aria-label="Add an exact item match to {{label}}"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTag" data-resource-id="{{id}}" title="Search for an item" aria-label="Search for an exact item match for {{label}}"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button>
+        <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="addTagByUuid" data-resource-id="{{id}}" title="Paste an Item UUID" aria-label="Paste an Item UUID to match exactly for {{label}}"><i class="fa-solid fa-link" aria-hidden="true"></i></button>
         {{#each tags}}
         <span class="rm-tag {{#if missing}}rm-tag--missing{{/if}}" title="{{uuid}}">{{name}}{{#if missing}} (missing){{/if}}
           <button type="button" class="rm-tag__x" data-action="removeTag" data-resource-id="{{../id}}" data-uuid="{{uuid}}" title="Remove {{name}}" aria-label="Remove {{name}} from resource items">×</button>
@@ -419,10 +492,7 @@
     {{/if}}
     {{#if hasAvailableToAdd}}
     <div class="rm-roster-add">
-      <select data-role="add-roster" aria-label="Actor to add to the roster">
-        {{#each availableToAdd}}<option value="{{id}}">{{name}}{{kindLabel}}</option>{{/each}}
-      </select>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="addRosterMember"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add to roster</button>
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="addRosterMember"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Find Actor</button>
     </div>
     {{/if}}
   </section>

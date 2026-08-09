@@ -42,6 +42,11 @@ import {
 } from "../loot/hoard-budget.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { escapeHtml, prettyBargainTier } from "../ui-util.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "../chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -189,7 +194,7 @@ export async function executeBuy({
   if (!planned) {
     if (notify) {
       ui.notifications?.warn(
-        `${MODULE_ID}: insufficient funds (${totalGp.toFixed(2)} gp).`,
+        `Insufficient funds: this purchase costs ${totalGp.toFixed(2)} gp. Nothing changed.`,
       );
     }
     return { ok: false, reason: "insufficient-funds", totalGp };
@@ -233,8 +238,8 @@ export async function executeBuy({
     if (notify) {
       ui.notifications?.error(
         reason === "compensation-failed"
-          ? `${MODULE_ID}: item delivery could not be confirmed or restored — ask the GM to reconcile the transaction.`
-          : `${MODULE_ID}: item delivery could not be confirmed — you were not charged.`,
+          ? "Item delivery could not be confirmed or restored. Do not buy again; ask the GM to reconcile the transaction."
+          : "Item delivery could not be confirmed. You were not charged; check the inventory before trying again.",
       );
     }
     return {
@@ -259,8 +264,8 @@ export async function executeBuy({
     if (notify) {
       ui.notifications?.error(
         rolledBack
-          ? `${MODULE_ID}: payment failed — purchase rolled back.`
-          : `${MODULE_ID}: payment and item rollback failed — ask the GM to reconcile the transaction.`,
+          ? "Payment failed and the purchase was rolled back. Check the wallet and inventory before trying again."
+          : "Payment and item rollback could not be confirmed. Do not retry; ask the GM to reconcile the transaction.",
       );
     }
     return {
@@ -425,8 +430,8 @@ export async function executeSell({
     if (notify) {
       ui.notifications?.error(
         restored
-          ? `${MODULE_ID}: item removal could not be confirmed — no payout was recorded.`
-          : `${MODULE_ID}: item removal and restoration could not be confirmed — ask the GM to reconcile the transaction.`,
+          ? "Item removal could not be confirmed, so no payout was recorded. Check the inventory before trying again."
+          : "Item removal and restoration could not be confirmed. Do not retry; ask the GM to reconcile the transaction.",
       );
     }
     return {
@@ -498,8 +503,8 @@ export async function executeSell({
     if (notify) {
       ui.notifications?.error(
         rolledBack
-          ? `${MODULE_ID}: payout failed — item restored, sale cancelled.`
-          : `${MODULE_ID}: payout and item rollback failed — ask the GM to reconcile the transaction.`,
+          ? "Payout failed. The item was restored and the sale was cancelled."
+          : "Payout and item rollback could not be confirmed. Do not retry; ask the GM to reconcile the transaction.",
       );
     }
     return {
@@ -743,17 +748,24 @@ export async function postTransactionReceipt({
 
   const verb = side === "sell" ? "Sold" : "Bought";
   const bargainLine = bargainTier
-    ? `<div class="mw-receipt__bargain">${escapeHtml(prettyBargainTier(bargainTier.id))} (${rollTotal} vs DC ${dc})</div>`
+    ? `<div class="mw-receipt__bargain">${escapeHtml(prettyBargainTier(bargainTier.id))} (${escapeHtml(rollTotal)} vs DC ${escapeHtml(dc)})</div>`
     : "";
   const subtotal = `${qty}× @ ${unitGp.toFixed(2)} gp = ${totalGp.toFixed(2)} gp`;
-  const content = `
-    <div class="mw-receipt">
-      <div class="mw-receipt__head"><strong>${escapeHtml(merchant?.name ?? "Merchant")}</strong> · ${verb}</div>
-      <div class="mw-receipt__body">${escapeHtml(itemName)}</div>
-      <div class="mw-receipt__total">${subtotal}</div>
-      ${bargainLine}
-    </div>
-  `;
+  const details = `
+    <div class="mw-receipt__head"><strong>${escapeHtml(merchant?.name ?? "Merchant")}</strong> · ${verb}</div>
+    <div class="mw-receipt__body">${escapeHtml(itemName)}</div>
+    <div class="mw-receipt__total">${escapeHtml(subtotal)}</div>
+    ${bargainLine}`;
+  const content = buildInfinityChatCard({
+    title: `${merchant?.name ?? "Merchant"} — Transaction receipt`,
+    outcome: `${verb} ${qty}× ${itemName}`,
+    audience: describeChatAudience(mode),
+    details: markTrustedChatHtml(details),
+    nextAction:
+      "No further action is needed. The character's wallet and inventory were updated.",
+    tone: "success",
+    classes: ["mw-receipt", "infinity-merchant-receipt"],
+  });
 
   const speaker = globalThis.ChatMessage?.getSpeaker?.({
     alias: merchant?.name ?? "Merchant",

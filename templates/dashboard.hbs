@@ -1,88 +1,210 @@
-{{!--
-  Infinity D&D5e — Dashboard window template.
-  Renders one section per tool category; each tile defers to the
-  tool's own open() callback via the [data-action="launch"] hook.
---}}
-<div class="id-shell">
+{{!-- Infinity D&D5e — role-aware Home (InfinityDashboardApp compatibility). --}}
+<div class="id-shell infinity-app-shell">
   <header class="id-head">
     <div class="id-head__title">
-      <h2>Infinity D&amp;D5e</h2>
-      <p class="id-head__hint">Roll treasure, run shops, schedule downtime, and track travel supplies — pick a tool below. Reopen this hub anytime with Shift+I.</p>
+      <p class="id-head__eyebrow">{{roleLabel}}</p>
+      <h2>Infinity D&amp;D5e Home</h2>
+      <p class="id-head__hint">{{headingHint}} Reopen Home anytime with Shift+I.</p>
     </div>
     <div class="id-head__aside">
       <button
         type="button"
-        class="id-head__help"
+        class="id-button id-button--secondary"
         data-action="help"
-        title="How to use Infinity D&amp;D5e"
-        aria-label="Help — how to use Infinity D&amp;D5e"
+        aria-controls="infinity-home-help"
       >
         <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
         <span>Help</span>
       </button>
-      <span class="id-head__version">v{{moduleVersion}}</span>
+      <span class="id-head__version" aria-label="Infinity D&amp;D5e version {{moduleVersion}}">v{{moduleVersion}}</span>
     </div>
   </header>
 
-  {{#if hasTools}}
-  {{#if hasRecentTools}}
-  <section class="id-section id-section--recent">
-    <h3 class="id-section__title"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recently Used</h3>
-    <ul class="id-grid">
-      {{#each recentTools}}
-      <li class="id-tile">
-        <button
-          type="button"
-          class="id-tile__btn"
-          data-action="launch"
-          data-tool-id="{{id}}"
-          aria-label="{{title}}"
-        >
-          <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
-          <span class="id-tile__copy">
-            <strong class="id-tile__title">{{title}}</strong>
-            <span class="id-tile__desc">{{description}}</span>
-          </span>
-        </button>
-      </li>
-      {{/each}}
-    </ul>
-  </section>
-  {{/if}}
-  {{#each categories}}
-  <section class="id-section">
-    <h3 class="id-section__title">{{label}}</h3>
-    <ul class="id-grid">
-      {{#each tools}}
-      <li class="id-tile {{#if isComingSoon}}is-disabled{{/if}}">
-        <button
-          type="button"
-          class="id-tile__btn"
-          data-action="launch"
-          data-tool-id="{{id}}"
-          aria-label="{{title}}{{#if statusLabel}} — {{statusLabel}}{{/if}}"
-          {{#if isComingSoon}}aria-disabled="true" tabindex="-1"{{/if}}
-        >
-          <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
-          <span class="id-tile__copy">
-            <strong class="id-tile__title">{{title}}</strong>
-            <span class="id-tile__desc">{{description}}</span>
-            {{#if statusLabel}}<span class="id-tile__badge">{{statusLabel}}</span>{{/if}}
-          </span>
-        </button>
-      </li>
-      {{/each}}
-    </ul>
-  </section>
-  {{/each}}
-  {{else}}
-  <p class="id-empty">No tools registered yet.</p>
+  {{#if quickStart}}
+  <aside class="id-quick-start" aria-labelledby="infinity-home-quick-start-title">
+    <div class="id-quick-start__icon" aria-hidden="true">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+    </div>
+    <div class="id-quick-start__copy">
+      <h3 id="infinity-home-quick-start-title">{{quickStart.title}}</h3>
+      <p>{{quickStart.body}}</p>
+      <ol>
+        {{#each quickStart.steps}}
+        <li>{{this}}</li>
+        {{/each}}
+      </ol>
+    </div>
+    <button
+      type="button"
+      class="id-icon-button"
+      data-action="dismissQuickStart"
+      data-quick-start-id="{{quickStart.id}}"
+      data-quick-start-version="{{quickStart.version}}"
+      aria-label="Dismiss {{quickStart.title}}"
+      title="Dismiss this guide. You can restore it from Help &amp; Diagnostics."
+    >
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+    </button>
+  </aside>
   {{/if}}
 
+  {{#if hasRecentTools}}
+  <nav class="id-recent" aria-labelledby="infinity-home-recent-title">
+    <h3 id="infinity-home-recent-title">
+      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+      Continue
+    </h3>
+    <ul class="id-recent__list">
+      {{#each recentTools}}
+      <li>
+        <button
+          type="button"
+          class="id-recent__button"
+          data-action="launch"
+          data-launch-kind="{{launchKind}}"
+          data-launch-id="{{launchId}}"
+        >
+          <i class="{{icon}}" aria-hidden="true"></i>
+          <span>{{title}}</span>
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+  </nav>
+  {{/if}}
+
+  <main class="id-home-content">
+    {{#if groups}}
+      {{#each groups}}
+      <section class="id-section" aria-labelledby="infinity-home-group-{{id}}">
+        <header class="id-section__head">
+          <span class="id-section__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+          <div>
+            <h3 id="infinity-home-group-{{id}}">{{label}}</h3>
+            <p>{{description}}</p>
+          </div>
+        </header>
+        <ul class="id-grid">
+          {{#each actions}}
+          <li class="id-tile" data-available="{{isAvailable}}">
+            <button
+              type="button"
+              class="id-tile__button"
+              data-action="launch"
+              data-launch-kind="{{launchKind}}"
+              data-launch-id="{{launchId}}"
+              aria-disabled="{{ariaDisabled}}"
+              aria-describedby="{{statusDescriptionId}}"
+            >
+              <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+              <span class="id-tile__copy">
+                <strong class="id-tile__title">{{title}}</strong>
+                <span class="id-tile__description">{{description}}</span>
+                {{#if statusLabel}}<span class="id-tile__badge">{{statusLabel}}</span>{{/if}}
+                <span class="id-tile__status" id="{{statusDescriptionId}}">{{statusReason}}</span>
+              </span>
+              {{#if isAvailable}}<i class="fa-solid fa-arrow-right id-tile__arrow" aria-hidden="true"></i>{{/if}}
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+      </section>
+      {{/each}}
+    {{else}}
+      {{!-- Backward-compatible fixture/extension context. --}}
+      {{#each categories}}
+      <section class="id-section">
+        <header class="id-section__head"><div><h3>{{label}}</h3></div></header>
+        <ul class="id-grid">
+          {{#each tools}}
+          <li class="id-tile" data-available="{{isAvailable}}">
+            <button
+              type="button"
+              class="id-tile__button"
+              data-action="launch"
+              data-launch-kind="tool"
+              data-launch-id="{{id}}"
+              aria-disabled="{{isComingSoon}}"
+            >
+              <span class="id-tile__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
+              <span class="id-tile__copy">
+                <strong class="id-tile__title">{{title}}</strong>
+                <span class="id-tile__description">{{description}}</span>
+              </span>
+            </button>
+          </li>
+          {{/each}}
+        </ul>
+      </section>
+      {{else}}
+      <section class="id-empty" role="status">
+        <i class="fa-solid fa-compass" aria-hidden="true"></i>
+        <h3>No destinations are ready</h3>
+        <p>Nothing changed. Close and reopen Home after the module finishes starting.</p>
+      </section>
+      {{/each}}
+    {{/if}}
+  </main>
+
+  <details class="id-help" id="infinity-home-help" data-home-help>
+    <summary>
+      <span><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Help &amp; Diagnostics</span>
+      <span class="id-help__summary-hint">Quick starts, shortcuts, and readiness</span>
+    </summary>
+    <div class="id-help__body">
+      <section aria-labelledby="infinity-home-help-start">
+        <h3 id="infinity-home-help-start">How to use Home</h3>
+        <ol>
+          {{#each helpSteps}}
+          <li>{{this}}</li>
+          {{/each}}
+        </ol>
+        {{#if hasDismissedQuickStarts}}
+        <button type="button" class="id-button id-button--secondary" data-action="restoreQuickStarts">
+          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+          <span>Show Quick Start Again</span>
+        </button>
+        {{/if}}
+      </section>
+
+      <section aria-labelledby="infinity-home-help-shortcuts">
+        <h3 id="infinity-home-help-shortcuts">Keyboard shortcuts</h3>
+        <dl class="id-shortcuts">
+          {{#each shortcuts}}
+          <div><dt><kbd>{{keys}}</kbd></dt><dd>{{label}}</dd></div>
+          {{/each}}
+        </dl>
+      </section>
+
+      <section aria-labelledby="infinity-home-help-diagnostics">
+        <h3 id="infinity-home-help-diagnostics">Diagnostics</h3>
+        <dl class="id-versions">
+          {{#each diagnostics.versions}}
+          <div><dt>{{label}}</dt><dd>{{value}}</dd></div>
+          {{/each}}
+        </dl>
+        <button type="button" class="id-button id-button--secondary id-help__copy" data-action="copyDiagnostics">
+          <i class="fa-solid fa-copy" aria-hidden="true"></i>
+          <span>Copy Diagnostics</span>
+        </button>
+        <ul class="id-integrations">
+          {{#each diagnostics.integrations}}
+          <li class="{{className}}">
+            <span class="id-integrations__state" aria-hidden="true"><i class="fa-solid {{icon}}"></i></span>
+            <span><strong>{{label}} — {{status}}</strong><small>{{detail}}</small></span>
+          </li>
+          {{/each}}
+        </ul>
+        <p class="id-help__privacy"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Diagnostics show product versions and availability only. No character, campaign, user, or hidden GM data is included.</p>
+      </section>
+    </div>
+  </details>
+
   <footer class="id-foot">
-    <button type="button" class="id-foot__btn" data-action="openSettings" title="Open this module's settings (loot, merchants, sounds, travel & more)">
+    <p aria-live="polite">Choose a destination above. Disabled cards explain what is needed.</p>
+    <button type="button" class="id-button id-button--secondary" data-action="openSettings">
       <i class="fa-solid fa-sliders" aria-hidden="true"></i>
-      <span>Module Settings</span>
+      <span>Infinity Settings</span>
     </button>
   </footer>
 </div>

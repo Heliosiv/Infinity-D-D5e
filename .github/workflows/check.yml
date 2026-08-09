@@ -35,7 +35,7 @@ jobs:
       - run: npm ci
       - run: npm run format:check
 
-  # Headless-Chromium layout, reachability, and action-wiring audit. Blocking.
+  # Headless-Chromium layout, reachability, action-wiring, and accessibility audits. Blocking.
   ui-audit:
     runs-on: ubuntu-latest
     steps:
@@ -48,3 +48,5 @@ jobs:
       - name: Install Chromium for the UI harness
         run: npx --yes playwright install --with-deps chromium
       - run: npm run ui:audit
+      - run: npm run ui:audit:a11y
+      - run: npm run ui:audit:keyboard

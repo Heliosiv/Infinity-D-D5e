@@ -16,6 +16,7 @@
   padding: 12px;
   box-sizing: border-box;
   overflow: auto;
+  container: resource-overview / inline-size;
 }
 
 .infinity-resource-overview .ro-head {
@@ -51,13 +52,23 @@
   display: block;
   margin-top: 4px;
   color: var(--lf-muted, #97a3c1);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .infinity-resource-overview .ro-icon-btn {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: var(--lf-control-size, 44px);
+  height: var(--lf-control-size, 44px);
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: var(--lf-surface-elev, #364159);
+  color: var(--lf-text, #e7ecf6);
+  cursor: pointer;
+}
+
+.infinity-resource-overview .ro-retry {
+  min-height: var(--lf-control-size, 44px);
+  padding: 6px 12px;
   border: 1px solid var(--lf-border, #475070);
   border-radius: var(--lf-radius-sm, 6px);
   background: var(--lf-surface-elev, #364159);
@@ -114,6 +125,22 @@
   font-size: 0.82rem;
 }
 
+.infinity-resource-overview .ro-empty--action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-content: stretch;
+  text-align: left;
+}
+
+.infinity-resource-overview .ro-empty--action > div {
+  display: grid;
+  gap: 3px;
+}
+
+.infinity-resource-overview .ro-empty--action strong {
+  color: var(--lf-text-strong, #f6f7fb);
+}
+
 .infinity-resource-overview .ro-notice--warn,
 .infinity-resource-overview .ro-empty--warn {
   color: var(--lf-warn, #f2bd61);
@@ -139,7 +166,7 @@
 
 .infinity-resource-overview .ro-context__label {
   color: var(--lf-muted, #97a3c1);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -237,7 +264,7 @@
   display: block;
   overflow: hidden;
   color: var(--lf-muted, #97a3c1);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -247,7 +274,7 @@
   padding: 2px 7px;
   border: 1px solid currentColor;
   border-radius: var(--lf-radius-pill, 999px);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   white-space: nowrap;
@@ -295,7 +322,7 @@
 .infinity-resource-overview .ro-metrics dt {
   overflow: hidden;
   color: var(--lf-muted, #97a3c1);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -365,7 +392,7 @@
   color: var(--lf-warn, #f2bd61) !important;
 }
 
-@media (max-width: 520px) {
+@container resource-overview (max-width: 520px) {
   .infinity-resource-overview .ro-context {
     grid-template-columns: 1fr;
   }
@@ -377,5 +404,13 @@
   .infinity-resource-overview .ro-status {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+
+  .infinity-resource-overview .ro-empty--action {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .infinity-resource-overview .ro-empty--action .ro-retry {
+    grid-column: 1 / -1;
   }
 }

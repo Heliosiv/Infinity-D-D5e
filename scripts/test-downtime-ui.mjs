@@ -219,6 +219,31 @@ try {
     "a successful projection does not hide an unrelated command error",
   );
 
+  const workspaceTemplateSource = readFileSync(
+    "templates/downtime-workspace.hbs",
+    "utf8",
+  );
+  assert.match(
+    workspaceTemplateSource,
+    /<input(?=[^>]*name="locationName")(?=[^>]*aria-label="Other downtime location")[^>]*>/,
+    "the optional non-settlement location retains an explicit accessible name",
+  );
+  assert.match(
+    workspaceTemplateSource,
+    /<input(?=[^>]*name="hours")(?=[^>]*aria-labelledby="dt-new-block-hours-label")[^>]*>/,
+    "the productive-hours input references its visible label",
+  );
+
+  const activitiesTemplateSource = readFileSync(
+    "templates/downtime-activities.hbs",
+    "utf8",
+  );
+  assert.match(
+    activitiesTemplateSource,
+    /<div(?=[^>]*class="dt-heat__pips")(?=[^>]*role="img")(?=[^>]*aria-label="Heat \{\{heat\}\} out of 5")[^>]*>/,
+    "the visual Heat meter exposes a valid image label",
+  );
+
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
       settlements: [{ id: "haven", name: "Haven" }],

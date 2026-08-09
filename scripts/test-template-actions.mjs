@@ -34,18 +34,18 @@ const CHECKS = [
   },
   {
     name: "per-encounter loot",
-    template: "templates/loot-forge.hbs",
+    templates: ["templates/loot-studio.hbs", "templates/loot-forge.hbs"],
     script: "./app.js",
     dynamicActions: ["useParty"],
   },
   {
     name: "hoard loot",
-    template: "templates/hoard-loot.hbs",
+    templates: ["templates/loot-studio.hbs", "templates/hoard-loot.hbs"],
     script: "./hoard-loot.js",
   },
   {
     name: "per-creature loot",
-    template: "templates/per-creature-loot.hbs",
+    templates: ["templates/loot-studio.hbs", "templates/per-creature-loot.hbs"],
     script: "./per-creature-loot.js",
   },
   {
@@ -96,7 +96,9 @@ const CHECKS = [
 ];
 
 for (const check of CHECKS) {
-  const templateSource = readFileSync(check.template, "utf8");
+  const templateSource = (check.templates ?? [check.template])
+    .map((template) => readFileSync(template, "utf8"))
+    .join("\n");
   const templateActions = extractTemplateActions(templateSource);
   const dynamicTemplateActions = extractDynamicTemplateActions(templateSource);
   const registeredActions = await loadRegisteredActions(check);

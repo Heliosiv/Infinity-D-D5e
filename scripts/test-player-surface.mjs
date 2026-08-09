@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 
 import {
   emitPlayerSurfaceOpen,
+  getPlayerSurfaceAvailability,
   getPlayerSurfaceStatus,
   openCalendar,
   openPlayerSurface,
   PLAYER_SURFACE_EVENT,
+  PLAYER_SURFACE_LABELS,
   PLAYER_SURFACES,
   receivePlayerSurfacePayload,
   registerPlayerSurfaceSocket,
@@ -51,11 +53,13 @@ function makeUsers(entries, activeGM = gm) {
 function installGame({
   currentUser = gm,
   calendarApi = null,
+  criticalInjuriesEnabled = true,
   infinityApi = null,
   legacyCalendarActive = false,
   mattActive = true,
   mattVersion = SUPPORTED_MATT_VERSION,
   rebornCalendarActive = true,
+  resourcePlayerView = true,
   scenes = new Map(),
   socket = null,
   socketlibActive = true,
@@ -89,6 +93,16 @@ function installGame({
         return undefined;
       },
     },
+    settings: {
+      get(moduleId, key) {
+        if (moduleId !== "infinity-dnd5e") return undefined;
+        if (key === "criticalInjuriesEnabled") {
+          return criticalInjuriesEnabled;
+        }
+        if (key === "resourcePlayerView") return resourcePlayerView;
+        return undefined;
+      },
+    },
     socket,
   };
   return {
@@ -115,6 +129,7 @@ const HUB_CONTROL_KEYS = Object.freeze([
   "injuries",
 ]);
 const HUB_LABELS = Object.freeze({
+  home: "Infinity Home",
   "continue-adventure": "Continue Adventure",
   character: "Character",
   party: "Party",
@@ -130,6 +145,7 @@ const HUB_LABELS = Object.freeze({
 
 function makeHubAction(key) {
   const infinitySurfaces = {
+    home: PLAYER_SURFACES.HOME,
     "party-supplies": PLAYER_SURFACES.PARTY_SUPPLIES,
     shops: PLAYER_SURFACES.SHOPS,
     factions: PLAYER_SURFACES.REPUTATION,
@@ -286,6 +302,7 @@ try {
   /* Every allowlisted surface opens only its existing local application. */
   const opened = [];
   const infinityApi = {
+    openHub: () => opened.push(PLAYER_SURFACES.HOME),
     openPartySupplies: () => opened.push(PLAYER_SURFACES.PARTY_SUPPLIES),
     openShops: () => opened.push(PLAYER_SURFACES.SHOPS),
     openReputationView: () => opened.push(PLAYER_SURFACES.REPUTATION),
@@ -305,6 +322,55 @@ try {
   }
   assert.deepEqual(opened, Object.values(PLAYER_SURFACES));
   assert.equal(await openPlayerSurface("unknown", { infinityApi }), false);
+  assert.deepEqual(
+    getPlayerSurfaceAvailability(PLAYER_SURFACES.HOME, {
+      moduleApi: infinityApi,
+    }),
+    { available: true, reason: "" },
+    "Home uses the local role-aware API opener",
+  );
+  assert.equal(
+    getPlayerSurfaceAvailability(PLAYER_SURFACES.HOME, { moduleApi: {} })
+      .available,
+    false,
+  );
+  assert.equal(PLAYER_SURFACE_LABELS[PLAYER_SURFACES.HOME], "Infinity Home");
+
+  installGame({
+    currentUser: player,
+    criticalInjuriesEnabled: false,
+    infinityApi,
+    resourcePlayerView: false,
+  });
+  const suppliesAvailability = getPlayerSurfaceAvailability(
+    PLAYER_SURFACES.PARTY_SUPPLIES,
+    { gameRef: globalThis.game },
+  );
+  const injuriesAvailability = getPlayerSurfaceAvailability(
+    PLAYER_SURFACES.CRITICAL_INJURIES,
+    { gameRef: globalThis.game },
+  );
+  assert.deepEqual(suppliesAvailability, {
+    available: false,
+    reason: "Party Supplies is not available in this world.",
+  });
+  assert.deepEqual(injuriesAvailability, {
+    available: false,
+    reason: "Critical Injuries are not enabled in this world.",
+  });
+  assert.doesNotMatch(
+    JSON.stringify({ suppliesAvailability, injuriesAvailability }),
+    /gm-1|player-1|resourcePlayerView|criticalInjuriesEnabled/,
+    "setting gates return only generic availability copy",
+  );
+  globalThis.game.user = gm;
+  assert.equal(
+    getPlayerSurfaceAvailability(PLAYER_SURFACES.PARTY_SUPPLIES, {
+      gameRef: globalThis.game,
+    }).available,
+    true,
+    "the player-view setting does not hide the full-GM preview",
+  );
 
   installGame({
     currentUser: player,
@@ -733,6 +799,42 @@ try {
     );
   }
 
+  /* A Home-enabled hub remains canonical without invalidating v1 hub keys. */
+  hubScene.flags["drakemore-foundry"].playerHub.controlKeys = [
+    ...HUB_CONTROL_KEYS,
+    "home",
+  ];
+  const homeTile = {
+    id: "tile-home",
+    uuid: `Scene.${hubScene.id}.Tile.tile-home`,
+    parent: hubScene,
+    flags: {
+      "drakemore-foundry": {
+        playerHubControl: {
+          version: 1,
+          key: "home",
+          label: HUB_LABELS.home,
+          interaction: { type: "bounded-hub-interaction" },
+        },
+      },
+      "monks-active-tiles": {
+        active: true,
+        controlled: "all",
+        allowpaused: true,
+        trigger: ["click"],
+        actions: [makeHubAction("home")],
+      },
+    },
+  };
+  hubScene.tiles.set(homeTile.id, homeTile);
+  documentByUuid.set(homeTile.uuid, homeTile);
+  assert.equal(
+    guardedMattHandler(triggerPacket(homeTile), player.id),
+    "forwarded",
+    "the allowlisted Home surface can be used by a canonical hub control",
+  );
+  assert.equal(mattMessages.at(-1).args[0].senderId, player.id);
+
   const protectedPacket = triggerPacket(hubScene.tiles.get("tile-shops"));
   const protectedCallCount = mattMessages.length;
   assert.equal(
@@ -880,6 +982,11 @@ try {
     userId: player.id,
   });
   assert.deepEqual(successfulAction, { continue: true });
+  const successfulHomeAction = await directAction.fn({
+    action: { data: { surface: PLAYER_SURFACES.HOME } },
+    userId: player.id,
+  });
+  assert.deepEqual(successfulHomeAction, { continue: true });
   transportFailure = true;
   const failedTransportAction = await directAction.fn({
     action: { data: { surface: PLAYER_SURFACES.SHOPS } },

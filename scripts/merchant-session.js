@@ -54,12 +54,23 @@ import {
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
-import { applyVisualPrefs, bindFullGmWindowGuard } from "./infinity-app.js";
+import {
+  applyVisualPrefs,
+  bindFocusRestoration,
+  bindFullGmWindowGuard,
+} from "./infinity-app.js";
 import {
   captureScroll,
   restoreScroll,
   bindScrollTracking,
 } from "./merchant/scroll.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+  promptInfinityDialog,
+} from "./dialog-contract.js";
+import { isFullGM } from "./permissions.js";
+import { authoritativeGMId } from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-session.hbs`;
@@ -74,6 +85,7 @@ const BARGAIN_SEAL_TIMEOUT_MS = 15000;
 const COMMIT_ACK_TIMEOUT_MS = 12000;
 
 let commitCounterSeed = 0;
+let preferredMerchantActorId = "";
 /** A short, unique id correlating a commit emit with its GM acknowledgement. */
 function newCommitId() {
   commitCounterSeed += 1;
@@ -149,6 +161,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         previewMode,
         previewActor,
       });
+      bindFocusRestoration(app);
       instances.set(sessionId, app);
     } else {
       app._merchant = normalizeMerchant(merchant);
@@ -190,7 +203,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ? bindFullGmWindowGuard(this)
       : null;
     this._previewActor = options.previewActor ?? null;
+    this._selectedActorId = this._previewMode
+      ? ""
+      : getPreferredMerchantActorId();
     this._activeTab = "buy";
+    this._search = { buy: "", sell: "" };
     this._seals = new Map(); // `${itemRefId}::${side}` → seal
     this._buyQty = new Map(); // uuid → qty input value
     this._sellQty = new Map(); // itemId → qty input value
@@ -201,6 +218,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._bargainTimers = new Map(); // sealKey → timeout id (seal-wait watchdog)
     this._pendingCommits = new Map(); // commitId → tracked request + watchdog
     this._closingFromExternal = false;
+    this._userConnectionHook =
+      globalThis.Hooks?.on?.("userConnected", (user) => {
+        if (!user?.isGM || !this.rendered) return;
+        this.render(false);
+      }) ?? null;
 
     this._title = `${this._previewMode ? "[Preview] " : ""}${this._merchant?.name ?? "Merchant"} — Shop`;
 
@@ -243,6 +265,21 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     return this._title ?? "Merchant";
   }
 
+  /** Whether a full GM is online to authorize live shop actions. */
+  get _hasAuthoritativeGM() {
+    return Boolean(authoritativeGMId());
+  }
+
+  _blockOfflineAction() {
+    if (this._previewMode || this._hasAuthoritativeGM) return false;
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+    ui.notifications?.warn(
+      "No full GM is online. Nothing changed; retry after the GM reconnects.",
+    );
+    if (this.rendered) this.render(false);
+    return true;
+  }
+
   _onClose(options) {
     super._onClose?.(options);
     this._unbindFullGmWindowGuard?.();
@@ -267,6 +304,12 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       } catch {}
     }
     this._pendingCommits.clear();
+    if (this._userConnectionHook != null) {
+      try {
+        globalThis.Hooks?.off?.("userConnected", this._userConnectionHook);
+      } catch {}
+      this._userConnectionHook = null;
+    }
     instances.delete(this._sessionId);
     // Voluntary player close (not a sandbox preview, not a GM-pushed close):
     // tell the GM to drop the session record so its Active Sessions list stays
@@ -401,7 +444,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       "fail",
       `The shop declined your ${verb} of ${ctx.itemName}: ${reason}`,
     );
-    ui.notifications?.warn(`${MODULE_ID}: ${reason}`);
+    ui.notifications?.warn(
+      `The trade was not completed: ${reason} Review the message, then try again when ready.`,
+    );
     if (this.rendered) this.render(false);
   }
 
@@ -435,7 +480,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         `No response from the GM on your ${verb} of ${current.itemName} — the result is unconfirmed.`,
       );
       ui.notifications?.warn(
-        `${MODULE_ID}: no response from the GM on that ${verb}. Your character may have changed; click the same item once to retry confirmation with the same transaction ID.`,
+        `No response arrived from the GM on that ${verb}. Your character may have changed; click the same item once to retry the original confirmation safely.`,
       );
       if (this.rendered) this.render(false);
     }, COMMIT_ACK_TIMEOUT_MS);
@@ -449,14 +494,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       if (ctx.side !== side || ctx.refId !== refId) continue;
       if (!ctx.timedOut) {
         ui.notifications?.info(
-          `${MODULE_ID}: that transaction is already waiting for the GM.`,
+          "That trade is already waiting for the GM. Do not repeat it.",
         );
         return true;
       }
       this._armCommitWatchdog(commitId);
       this._appendLog(
         "pending",
-        `Retrying confirmation for ${ctx.itemName} with the original transaction ID`,
+        `Retrying the original confirmation for ${ctx.itemName}`,
       );
       emitMerchantEvent(ctx.eventType, ctx.payload);
       if (this.rendered) this.render(false);
@@ -468,10 +513,31 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   /* -------------------- context -------------------- */
 
   async _prepareContext() {
-    const actor = this._previewMode ? this._previewActor : resolvePlayerActor();
+    const controlledActors = this._previewMode
+      ? []
+      : getControlledMerchantActors();
+    let actor = this._previewMode
+      ? this._previewActor
+      : resolvePlayerActor(this._selectedActorId, controlledActors);
+    if (
+      !this._previewMode &&
+      this._selectedActorId &&
+      !controlledActors.some(
+        (candidate) => String(candidate?.id ?? "") === this._selectedActorId,
+      )
+    ) {
+      this._selectedActorId = "";
+      setPreferredMerchantActorId("");
+      actor = resolvePlayerActor("", controlledActors);
+    }
+    if (!this._previewMode && actor) {
+      this._selectedActorId = String(actor.id ?? "");
+    }
+    const offline = !this._previewMode && !this._hasAuthoritativeGM;
     const wallet = sanitizeWallet(actor?.system?.currency);
-    const walletLabel =
-      formatCoinBreakdown(wallet) || `${totalWalletGp(wallet).toFixed(2)} gp`;
+    const walletLabel = actor
+      ? formatCoinBreakdown(wallet) || `${totalWalletGp(wallet).toFixed(2)} gp`
+      : "Choose a character";
 
     // Always-on passive haggle nudge from the shopper's best allowed social
     // skill. The action handlers recompute this from the actor so a buy/sell
@@ -491,6 +557,20 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ),
     );
 
+    for (const row of buyRows) {
+      if (!offline) continue;
+      row.cannotBuy = true;
+      row.cannotBuyReason = "GM offline — nothing will be sent";
+      row.bargainLocked = true;
+    }
+    if (!this._previewMode && !actor) {
+      for (const row of buyRows) {
+        row.cannotBuy = true;
+        row.cannotBuyReason = "Choose a character first";
+        row.bargainLocked = true;
+      }
+    }
+
     const sellRows = actor
       ? actor.items
           .filter((doc) => isSellable(doc) || isStolenForFencing(doc))
@@ -506,17 +586,106 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
           .filter(Boolean)
       : [];
 
+    if (offline) {
+      for (const row of sellRows) {
+        row.cannotSell = true;
+        row.cannotSellReason = "GM offline — nothing will be sent";
+        row.bargainLocked = true;
+      }
+    }
+
+    const pending = [...this._pendingCommits.values()];
+    const uncertain = pending.filter((entry) => entry.timedOut);
+    const waiting = pending.filter((entry) => !entry.timedOut);
+    for (const entry of pending) {
+      const rows = entry.side === "sell" ? sellRows : buyRows;
+      const row = rows.find((candidate) =>
+        entry.side === "sell"
+          ? candidate.itemId === entry.refId
+          : candidate.uuid === entry.refId,
+      );
+      if (!row) continue;
+      row.transactionWaiting = !entry.timedOut;
+      row.transactionUncertain = entry.timedOut;
+      row.bargainLocked = true;
+      if (entry.side === "sell") {
+        row.cannotSell = !entry.timedOut || offline;
+        row.cannotSellReason = entry.timedOut
+          ? offline
+            ? "GM offline — confirmation is still uncertain"
+            : "Unconfirmed — retry this same sale safely"
+          : "Waiting for GM confirmation";
+      } else {
+        row.cannotBuy = !entry.timedOut || offline;
+        row.cannotBuyReason = entry.timedOut
+          ? offline
+            ? "GM offline — confirmation is still uncertain"
+            : "Unconfirmed — retry this same purchase safely"
+          : "Waiting for GM confirmation";
+      }
+    }
+    const latestLog = this._log.at(-1) ?? null;
+    let transactionTone = "ready";
+    let transactionTitle = "Ready to trade";
+    let transactionMessage =
+      "Choose a quantity, then buy or sell. The GM confirms every completed trade.";
+    if (uncertain.length > 0) {
+      transactionTone = "uncertain";
+      transactionTitle = "A trade is not yet confirmed";
+      transactionMessage = offline
+        ? "The GM disconnected before confirming this trade. Your character may already have changed. Do not repeat it while offline; after reconnection, click the same item action once to retry the original confirmation safely."
+        : "Your character may already have changed. Click the same item action once to retry the original confirmation safely.";
+    } else if (waiting.length > 0) {
+      transactionTone = offline ? "uncertain" : "pending";
+      transactionTitle = offline
+        ? "Trade confirmation was interrupted"
+        : "Waiting for the GM";
+      transactionMessage = offline
+        ? `${waiting.length} trade${waiting.length === 1 ? " may" : "s may"} already have completed. Do not repeat the action. Keep this window open; it will show a safe retry if confirmation times out.`
+        : `${waiting.length} trade${waiting.length === 1 ? " is" : "s are"} being confirmed. Do not repeat the action.`;
+    } else if (offline) {
+      transactionTone = "offline";
+      transactionTitle = "Trading is offline";
+      transactionMessage =
+        "No GM is connected. No new trade was sent; keep this window open and try after the GM reconnects.";
+    } else if (latestLog?.kind === "buy" || latestLog?.kind === "sell") {
+      transactionTone = "success";
+      transactionTitle = "Last trade confirmed";
+      transactionMessage = latestLog.text;
+    } else if (latestLog?.kind === "fail") {
+      transactionTone = "error";
+      transactionTitle = "Last action was not completed";
+      transactionMessage = `${latestLog.text} Review the message, then try again when ready.`;
+    }
+
     return {
       merchant: {
         ...this._merchant,
         art: this._merchant.art || FALLBACK_ART,
       },
       walletLabel,
+      actorName: actor?.name ?? "No character selected",
+      actorImg: actor?.img ?? "icons/svg/mystery-man.svg",
       merchantGoldLabel: formatMerchantGold(this._merchant.goldOnHand),
       passiveHaggleLabel: formatPassiveHaggle(passivePct),
       previewMode: this._previewMode,
       previewNoActor: this._previewMode && !actor,
       noActor: !actor,
+      needsActorChoice:
+        !this._previewMode && !actor && controlledActors.length > 1,
+      canSwitchActor: !this._previewMode && controlledActors.length > 1,
+      actorSwitchLocked: pending.length > 0 || this._bargainPending.size > 0,
+      actorOptions: controlledActors.map((candidate) => ({
+        id: String(candidate.id ?? ""),
+        name: String(candidate.name ?? "Character"),
+        selected: String(candidate.id ?? "") === String(actor?.id ?? ""),
+      })),
+      offline,
+      transactionBusy: waiting.length > 0,
+      transactionTone,
+      transactionTitle,
+      transactionMessage,
+      searchQuery: this._search[this._activeTab] ?? "",
       domId: String(this._sessionId).replace(/[^a-zA-Z0-9_-]/g, "-"),
       buyActive: this._activeTab === "buy",
       sellActive: this._activeTab === "sell",
@@ -527,6 +696,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         this._spentGp > 0 ? `${this._spentGp.toFixed(2)} gp` : "",
       sessionEarnedLabel:
         this._earnedGp > 0 ? `${this._earnedGp.toFixed(2)} gp` : "",
+      sessionSpentValue: `${this._spentGp.toFixed(2)} gp`,
+      sessionEarnedValue: `${this._earnedGp.toFixed(2)} gp`,
     };
   }
 
@@ -740,6 +911,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
           }),
       });
       this._wireTabKeyboard(root);
+      this._wireItemSearch(root);
+      this._wireActorSelect(root);
     }
 
     // Preserve scroll position across action re-renders (buy, bargain, tab…).
@@ -749,6 +922,65 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       });
       restoreScroll(root, SCROLL_TARGETS, this._scroll);
     }
+  }
+
+  /** Switches only among locally allowlisted controlled Actors. Every trade
+   * resolves that Actor again before emitting, so a later ownership change
+   * fails closed instead of submitting through a stale selection. */
+  _wireActorSelect(root) {
+    const select = root.querySelector?.('[data-role="merchant-actor"]');
+    if (!select) return;
+    select.addEventListener("change", () => {
+      if (this._pendingCommits.size > 0 || this._bargainPending.size > 0) {
+        this.render(false);
+        return;
+      }
+      const actor = setPreferredMerchantActorId(select.value);
+      this._selectedActorId = String(actor?.id ?? "");
+      this._seals.clear();
+      this._buyQty.clear();
+      this._sellQty.clear();
+      this._justBargained = null;
+      this._log = [];
+      this._spentGp = 0;
+      this._earnedGp = 0;
+      this.render(false);
+    });
+  }
+
+  _resolveTradingActor() {
+    const actor = resolvePlayerActor(this._selectedActorId);
+    if (actor) this._selectedActorId = String(actor.id ?? "");
+    return actor;
+  }
+
+  /** Search is local to the active tab and never changes merchant or actor data. */
+  _wireItemSearch(root) {
+    const input = root.querySelector?.('[data-role="item-search"]');
+    if (!input) return;
+    input.value = this._search[this._activeTab] ?? "";
+    const apply = () => {
+      const rawQuery = String(input.value ?? "");
+      const query = rawQuery.trim().toLocaleLowerCase();
+      this._search[this._activeTab] = rawQuery;
+      let visible = 0;
+      for (const row of root.querySelectorAll?.(".ms-rows .ms-row") ?? []) {
+        const matches =
+          !query || row.textContent.toLocaleLowerCase().includes(query);
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      }
+      const empty = root.querySelector?.('[data-role="item-search-empty"]');
+      if (empty) empty.hidden = visible > 0 || !query;
+      const status = root.querySelector?.('[data-role="item-search-status"]');
+      if (status) {
+        status.textContent = query
+          ? `${visible} item${visible === 1 ? "" : "s"} match your search.`
+          : "Showing all items.";
+      }
+    };
+    input.addEventListener("input", apply);
+    apply();
   }
 
   _wireTabKeyboard(root) {
@@ -851,6 +1083,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   async _performBuy(uuid, qty) {
     if (!uuid) return;
     if (this._previewMode) return this._previewBuy(uuid, qty);
+    if (this._blockOfflineAction()) return;
     if (this._retryOrBlockPending("buy", uuid)) return;
     const row = this._merchant.items.find((r) => r.uuid === uuid);
     if (!row) return;
@@ -860,11 +1093,11 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ui.notifications?.warn("That item isn't available anymore.");
       return;
     }
-    const actor = resolvePlayerActor();
+    const actor = this._resolveTradingActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(
-        "Pick a character first — ask your GM to assign you one.",
+        "Choose a character you own first. Ask the GM to assign one or grant Owner permission.",
       );
       return;
     }
@@ -958,12 +1191,13 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   async _performSell(itemId, qty) {
     if (this._previewMode) return this._previewSell(itemId, qty);
     if (!itemId) return;
+    if (this._blockOfflineAction()) return;
     if (this._retryOrBlockPending("sell", itemId)) return;
-    const actor = resolvePlayerActor();
+    const actor = this._resolveTradingActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(
-        "Pick a character first — ask your GM to assign you one.",
+        "Choose a character you own first. Ask the GM to assign one or grant Owner permission.",
       );
       return;
     }
@@ -1062,13 +1296,14 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
   async _performBargain(refId, side) {
     if (!refId) return;
     if (this._previewMode) return this._previewBargain(refId, side);
+    if (this._blockOfflineAction()) return;
     const sealKey = `${refId}::${side}`;
     if (this._seals.has(sealKey) || this._bargainPending.has(sealKey)) return;
-    const actor = resolvePlayerActor();
+    const actor = this._resolveTradingActor();
     if (!actor) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(
-        "Pick a character first — ask your GM to assign you one.",
+        "Choose a character you own first. Ask the GM to assign one or grant Owner permission.",
       );
       return;
     }
@@ -1132,7 +1367,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const totalGp = roundGp(unitGp * count);
     if (totalGp <= 0) {
       ui.notifications?.info(
-        `${MODULE_ID}: this item has no price to preview.`,
+        "This item has no preview price. Nothing changed; choose another item.",
       );
       return;
     }
@@ -1156,7 +1391,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     const actor = this._previewActor;
     if (!actor) {
       ui.notifications?.info(
-        `${MODULE_ID}: pick a character when opening the preview to try selling.`,
+        "Pick a character when opening the preview to try selling. Nothing changed.",
       );
       return;
     }
@@ -1309,19 +1544,72 @@ export function registerMerchantSessionAutoOpen() {
  * Helpers
  * ------------------------------------------------------------------ */
 
-function resolvePlayerActor() {
-  const assigned = globalThis.game?.user?.character;
-  if (assigned) return assigned;
-  // Fall back: first character actor the user owns.
+export function getControlledMerchantActors() {
+  const user = globalThis.game?.user;
+  if (!user) return [];
+  const userId = String(user.id ?? "").trim();
+  if (!userId) return [];
+  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
   const actors = globalThis.game?.actors;
-  if (!actors) return null;
-  return (
-    actors.find?.(
-      (a) =>
-        a?.type === "character" &&
-        a?.testUserPermission?.(globalThis.game?.user, "OWNER"),
-    ) ?? null
+  const documents = Array.isArray(actors?.contents)
+    ? actors.contents
+    : Array.isArray(actors)
+      ? actors
+      : actors?.values
+        ? [...actors.values()]
+        : [];
+  const controlled = documents.filter((actor) => {
+    if (actor?.type !== "character") return false;
+    if (isFullGM(user)) return true;
+    const ownership = actor.ownership ?? {};
+    if (Object.hasOwn(ownership, userId)) {
+      return Number(ownership[userId]) >= Number(OWNER);
+    }
+    if (user.isGM === true) return false;
+    return Number(ownership.default) >= Number(OWNER);
+  });
+  return controlled.sort((left, right) =>
+    String(left?.name ?? "").localeCompare(String(right?.name ?? "")),
   );
+}
+
+export function getPreferredMerchantActorId() {
+  return preferredMerchantActorId;
+}
+
+export function setPreferredMerchantActorId(actorId) {
+  const requested = String(actorId ?? "").trim();
+  if (!requested) {
+    preferredMerchantActorId = "";
+    return null;
+  }
+  const actor = getControlledMerchantActors().find(
+    (candidate) => String(candidate?.id ?? "") === requested,
+  );
+  preferredMerchantActorId = actor ? requested : "";
+  return actor ?? null;
+}
+
+export function resolvePlayerActor(
+  requestedActorId = preferredMerchantActorId,
+  controlledActors = getControlledMerchantActors(),
+) {
+  const requested = String(requestedActorId ?? "").trim();
+  if (requested) {
+    return (
+      controlledActors.find(
+        (candidate) => String(candidate?.id ?? "") === requested,
+      ) ?? null
+    );
+  }
+  const assignedId = String(globalThis.game?.user?.character?.id ?? "").trim();
+  if (assignedId) {
+    const assigned = controlledActors.find(
+      (candidate) => String(candidate?.id ?? "") === assignedId,
+    );
+    if (assigned) return assigned;
+  }
+  return controlledActors.length === 1 ? controlledActors[0] : null;
 }
 
 /** Clamp a qty input to [1, its max attribute], floored to an integer. */
@@ -1386,13 +1674,12 @@ function cssEscape(value) {
  * headless flow), false when declined or dismissed.
  */
 async function confirmTransaction({ side, name, qty, totalGp }) {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (typeof DialogV2?.confirm !== "function") return true;
+  if (!isInfinityDialogAvailable("confirm")) return true;
   const verb = side === "sell" ? "Sell" : "Buy";
   const qtyLabel = Number(qty) > 1 ? `${qty}× ` : "";
   const price = Number(totalGp) || 0;
-  try {
-    return await DialogV2.confirm({
+  return confirmInfinityDialog(
+    {
       window: {
         title: `${verb} ${name}?`,
         icon:
@@ -1400,14 +1687,12 @@ async function confirmTransaction({ side, name, qty, totalGp }) {
       },
       content: `<p>${verb} <strong>${escapeHtml(qtyLabel)}${escapeHtml(name)}</strong> for <strong>${price.toFixed(2)} gp</strong>?</p>`,
       rejectClose: false,
-    });
-  } catch {
-    return false;
-  }
+    },
+    { cancelValue: false },
+  );
 }
 
 async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
   const labels = {
     per: "Persuasion",
     dec: "Deception",
@@ -1417,7 +1702,7 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
     Array.isArray(allowedSkills) && allowedSkills.length > 0
       ? allowedSkills
       : ["per", "dec"];
-  if (!DialogV2) return allowed[0];
+  if (!isInfinityDialogAvailable()) return allowed[0];
   const options = allowed
     .map((id) => `<option value="${id}">${labels[id] ?? id}</option>`)
     .join("");
@@ -1427,23 +1712,25 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
   const failNum = Number(failPct);
   const riskLine =
     Number.isFinite(dcNum) && Number.isFinite(failNum)
-      ? `<p style="opacity:0.85;">Beat <strong>DC ${dcNum}</strong> to lower the price. Fail and it rises about <strong>${failNum}%</strong> — one attempt per item.</p>`
-      : `<p style="opacity:0.85;">Haggling is a gamble: succeed to lower the price, fail and it rises — one attempt per item.</p>`;
-  if (allowed.length === 1 && typeof DialogV2.confirm === "function") {
+      ? `<p>Beat <strong>DC ${dcNum}</strong> to lower the price. Fail and it rises about <strong>${failNum}%</strong> — one attempt per item.</p>`
+      : `<p>Haggling is a gamble: succeed to lower the price, fail and it rises — one attempt per item.</p>`;
+  if (allowed.length === 1 && isInfinityDialogAvailable("confirm")) {
     const skillLabel = labels[allowed[0]] ?? allowed[0];
-    const confirmed = await DialogV2.confirm({
-      window: {
-        title: `Bargain with ${skillLabel}?`,
-        icon: "fa-solid fa-comments-dollar",
+    const confirmed = await confirmInfinityDialog(
+      {
+        window: {
+          title: `Bargain with ${skillLabel}?`,
+          icon: "fa-solid fa-comments-dollar",
+        },
+        content: `<p>Use <strong>${escapeHtml(skillLabel)}</strong> to haggle?</p>${riskLine}`,
+        rejectClose: false,
       },
-      content: `<p>Use <strong>${escapeHtml(skillLabel)}</strong> to haggle?</p>${riskLine}`,
-      rejectClose: false,
-    }).catch(() => false);
+      { cancelValue: false },
+    );
     return confirmed ? allowed[0] : null;
   }
-  let picked = null;
-  try {
-    picked = await DialogV2.prompt({
+  return promptInfinityDialog(
+    {
       window: {
         title: "Bargain — pick skill",
         icon: "fa-solid fa-comments-dollar",
@@ -1462,9 +1749,7 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
           button?.form?.elements?.skillId?.value ?? null,
       },
       rejectClose: false,
-    });
-  } catch {
-    picked = null;
-  }
-  return picked;
+    },
+    { cancelValue: null },
+  );
 }

@@ -1,5 +1,9 @@
 # Resource System Product Roadmap
 
+## v0.3.0 interface quick start
+
+Open **Home → Track the Campaign → Quartermaster**. Start in Today, follow the recommended next action, and review visible safety or disabled-control reasons. **Recent Runs** remains read-only. Open **Setup & Rules** for the first-setup checklist, environments, roster, sources, and automation. Players use Home or `Shift+Q` for the permission-safe Party Supplies view. Offline and interrupted states state whether anything changed and whether to retry or wait for recovery.
+
 ## Product outcome
 
 The resource system should make travel supplies part of normal play without
@@ -42,7 +46,7 @@ status remains bounded by the release gates below.
 
 ### Available now
 
-- The GM dashboard exposes **Quartermaster** under Travel & Supplies.
+- **Home → Track the Campaign** exposes **Quartermaster** to the full GM.
 - Quartermaster opens in a routine-first view with daily actions, location,
   supply outlook, warnings, and the latest report visible. Configuration lives
   in a native **Setup & rules** disclosure that stays open during the current
@@ -56,7 +60,9 @@ status remains bounded by the release gates below.
   per-member draw sources, and one party stash. A mule, vehicle, or NPC can be
   an inventory-only source without being charged its own daily ration.
 - Resource items can be matched by explicit item UUID, module flag, or name
-  keyword. UUID and flag matches take priority over keywords.
+  keyword. Search the Infinity item library and current Actor inventories, or
+  use **Paste an Item UUID** for an item from any other world or compendium
+  source. UUID and flag matches take priority over keywords.
 - Default environments cover abundant, limited, sparse, settlement, and
   underground travel.
 - The active environment can be copied into a collision-safe custom region and

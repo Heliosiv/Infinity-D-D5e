@@ -11,10 +11,13 @@ import {
   bindFullGmWindowGuard,
   openSingleton,
 } from "./infinity-app.js";
+import { confirmInfinityDialog } from "./dialog-contract.js";
 import { runAsFullGM } from "./permissions.js";
+import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/downtime-workspace.hbs`;
+export const DOWNTIME_WORKSPACE_QUICK_START_ID = "downtime-workspace:v0.3.0";
 const DEFAULT_VIEW = "current";
 const WORKSPACE_VIEWS = new Set(["current", "settlements", "history"]);
 const DEFAULT_ACTIVITY_IDS = [
@@ -26,6 +29,69 @@ const DEFAULT_ACTIVITY_IDS = [
   "fence-stolen-goods",
   "lay-low",
 ];
+const WORKFLOW_STEPS = Object.freeze([
+  {
+    id: "create",
+    label: "Create",
+    description: "Set the location, productive hours, and eligible characters.",
+  },
+  {
+    id: "collect",
+    label: "Collect",
+    description: "Players build and submit their activity queues.",
+  },
+  {
+    id: "lock",
+    label: "Lock",
+    description: "Close submissions so queued activities cannot change.",
+  },
+  {
+    id: "preview",
+    label: "Preview",
+    description: "Generate and review the immutable write plan.",
+  },
+  {
+    id: "apply",
+    label: "Apply",
+    description: "Execute the exact saved plan without rerolling.",
+  },
+  {
+    id: "complete",
+    label: "Complete",
+    description: "Review the receipt, then start the next block.",
+  },
+]);
+const PRIMARY_ACTION_COPY = Object.freeze({
+  createBlock: {
+    label: "Open block",
+    description: "Create the block so players can prepare their queues.",
+  },
+  openForPlayers: {
+    label: "Open for players",
+    description: "Invite assigned players to review and submit their queues.",
+  },
+  lockBlock: {
+    label: "Lock submissions",
+    description: "Close queue editing and move this block toward preview.",
+  },
+  planBlock: {
+    label: "Generate preview",
+    description: "Build the immutable plan for GM review.",
+  },
+  applyBlock: {
+    label: "Apply exact plan",
+    description: "Apply the reviewed saved plan without rerolling.",
+  },
+  recoverBlock: {
+    label: "Verify and recover",
+    description:
+      "Verify saved operations before retrying only proven-unapplied work.",
+  },
+  beginNextBlock: {
+    label: "Start next block",
+    description: "Keep this receipt and prepare a new downtime block.",
+  },
+});
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -58,6 +124,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     actions: {
       setView: DowntimeWorkspaceApp._onSetView,
       refresh: DowntimeWorkspaceApp._onRefresh,
+      dismissQuickStart: DowntimeWorkspaceApp._onDismissQuickStart,
       setHourPreset: DowntimeWorkspaceApp._onSetHourPreset,
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
@@ -194,6 +261,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._activeBlockId = cleanId(context.currentBlock?.id);
 
     const errorMessage = this._projectionErrorMessage || this._errorMessage;
+    const uiPreferences = getUiPreferences();
     return {
       ...context,
       dataAvailable,
@@ -201,6 +269,9 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       statusMessage: this._statusMessage,
       errorMessage,
       hasError: Boolean(errorMessage),
+      showQuickStart: !uiPreferences.dismissedQuickStarts.includes(
+        DOWNTIME_WORKSPACE_QUICK_START_ID,
+      ),
     };
   }
 
@@ -272,6 +343,23 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._errorMessage = "";
     this._statusMessage = "Downtime refreshed.";
     this.render(false);
+  }
+
+  static async _onDismissQuickStart() {
+    try {
+      await dismissQuickStart(DOWNTIME_WORKSPACE_QUICK_START_ID);
+      this._statusMessage =
+        "Downtime quick start dismissed. Restore it from Help & Diagnostics.";
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | could not dismiss downtime quick start`,
+        error,
+      );
+      this._statusMessage =
+        "The quick start could not be dismissed. Nothing else changed; try again.";
+    }
+    this._pendingFocus = '[data-action="refresh"]';
+    if (this.rendered) this.render(false);
   }
 
   static _onBeginNextBlock() {
@@ -535,6 +623,22 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   const history = array(source.history).map(normalizeHistoryEntry);
   const needsRecovery =
     workflowStatus === "needs-review" || Boolean(source.recovery?.available);
+  const recoveryMessage =
+    String(source.recovery?.message ?? "").trim() ||
+    "A prior application needs review. Recovery verifies each saved operation before retrying it.";
+  const canCreateBlock =
+    source.canCreateBlock !== false &&
+    !currentBlock &&
+    (!normalizedCurrentBlock ||
+      ["completed", "cancelled"].includes(normalizedCurrentBlock.status));
+  const lifecycle = buildDowntimeLifecycle({
+    status: currentBlock?.status ?? workflowStatus,
+    hasCurrentBlock: Boolean(currentBlock),
+    currentBlock,
+    canCreateBlock,
+    needsRecovery,
+    recoveryMessage,
+  });
 
   return {
     dataAvailable: source.dataAvailable !== false,
@@ -548,9 +652,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     workflowStatusLabel: workflowLabel(workflowStatus),
     workflowTone: workflowTone(workflowStatus),
     needsRecovery,
-    recoveryMessage:
-      String(source.recovery?.message ?? "").trim() ||
-      "A prior application needs review. Recovery verifies each saved operation before retrying it.",
+    recoveryMessage,
+    lifecycleSteps: lifecycle.steps,
+    lifecycleRecovery: lifecycle.recovery,
+    primaryAction: lifecycle.primaryAction,
     settlements,
     hasSettlements: settlements.length > 0,
     selectedSettlement,
@@ -564,11 +669,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       reason: String(actor?.reason ?? actor?.unavailableReason ?? ""),
     })),
     hasActors: array(source.actors ?? source.actorOptions).length > 0,
-    canCreateBlock:
-      source.canCreateBlock !== false &&
-      !currentBlock &&
-      (!normalizedCurrentBlock ||
-        ["completed", "cancelled"].includes(normalizedCurrentBlock.status)),
+    canCreateBlock,
     createBlockReason:
       String(source.createBlockReason ?? "").trim() ||
       (currentBlock ? "Finish or cancel the current block first." : ""),
@@ -576,6 +677,179 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     hasHistory: history.length > 0,
     recovery: source.recovery ?? null,
   };
+}
+
+/**
+ * Build the GM-only workflow presentation from normalized authoritative gates.
+ * This helper never advances state or enables an action the projection denied.
+ */
+export function buildDowntimeLifecycle({
+  status = "idle",
+  hasCurrentBlock = false,
+  currentBlock = null,
+  canCreateBlock = false,
+  needsRecovery = false,
+  recoveryMessage = "",
+} = {}) {
+  const normalizedStatus = cleanId(status) || "idle";
+  let completedThrough = -1;
+  let currentIndex = -1;
+  let interruptedIndex = -1;
+  let stoppedIndex = -1;
+
+  if (needsRecovery || normalizedStatus === "needs-review") {
+    completedThrough = 3;
+    interruptedIndex = 4;
+  } else if (!hasCurrentBlock || normalizedStatus === "idle") {
+    currentIndex = 0;
+  } else {
+    switch (normalizedStatus) {
+      case "collecting":
+        completedThrough = 0;
+        currentIndex = 1;
+        break;
+      case "locked":
+        completedThrough = 1;
+        currentIndex = 2;
+        break;
+      case "planned":
+        completedThrough = 2;
+        currentIndex = 3;
+        break;
+      case "applying":
+        completedThrough = 3;
+        currentIndex = 4;
+        break;
+      case "completed":
+        completedThrough = WORKFLOW_STEPS.length - 1;
+        break;
+      case "cancelled":
+        completedThrough = 0;
+        stoppedIndex = 1;
+        break;
+      default:
+        completedThrough = 0;
+        currentIndex = 1;
+        break;
+    }
+  }
+
+  const steps = WORKFLOW_STEPS.map((step, index) => {
+    let state = "pending";
+    if (index <= completedThrough) state = "completed";
+    if (index === currentIndex) state = "current";
+    if (index === interruptedIndex) state = "interrupted";
+    if (index === stoppedIndex) state = "stopped";
+    return {
+      ...step,
+      state,
+      stateLabel: lifecycleStateLabel(state),
+      icon: lifecycleStateIcon(state),
+      current: state === "current",
+      completed: state === "completed",
+      pending: state === "pending",
+    };
+  });
+  const recoveryCurrent =
+    Boolean(needsRecovery) || normalizedStatus === "needs-review";
+  const primaryActionId = resolvePrimaryActionId({
+    status: normalizedStatus,
+    hasCurrentBlock,
+    currentBlock,
+    canCreateBlock,
+    needsRecovery: recoveryCurrent,
+  });
+
+  return {
+    steps,
+    recovery: {
+      id: "recovery",
+      label: "Recovery",
+      state: recoveryCurrent ? "current" : "pending",
+      stateLabel: recoveryCurrent ? "Current" : "Standby",
+      icon: recoveryCurrent ? "fa-life-ring" : "fa-shield-halved",
+      current: recoveryCurrent,
+      pending: !recoveryCurrent,
+      description: recoveryCurrent
+        ? String(recoveryMessage).trim() ||
+          "Verify the interrupted application before continuing."
+        : "Branches from Apply only when an interrupted write needs verification.",
+    },
+    primaryAction: buildPrimaryAction(primaryActionId, normalizedStatus),
+  };
+}
+
+function resolvePrimaryActionId({
+  status,
+  hasCurrentBlock,
+  currentBlock,
+  canCreateBlock,
+  needsRecovery,
+}) {
+  if (needsRecovery) return "recoverBlock";
+  if (!hasCurrentBlock) return canCreateBlock ? "createBlock" : "";
+  if (status === "collecting") {
+    const allSubmitted =
+      currentBlock?.hasParticipants &&
+      currentBlock.submittedCount >= currentBlock.participants.length;
+    if (allSubmitted && currentBlock.canLock) return "lockBlock";
+    if (currentBlock?.canOpenForPlayers && currentBlock.hasParticipants) {
+      return "openForPlayers";
+    }
+    return currentBlock?.canLock ? "lockBlock" : "";
+  }
+  if (status === "locked" && currentBlock?.canPlan) return "planBlock";
+  if (status === "planned" && currentBlock?.canApply) return "applyBlock";
+  if (
+    ["completed", "cancelled"].includes(status) &&
+    currentBlock?.canStartNext
+  ) {
+    return "beginNextBlock";
+  }
+  return "";
+}
+
+function buildPrimaryAction(id, status) {
+  const copy = PRIMARY_ACTION_COPY[id] ?? null;
+  const waitingDescription =
+    status === "applying"
+      ? "Application is in progress. Wait for the authoritative result; use Recovery only if the workspace requests it."
+      : "No primary action is available until the authoritative workflow state changes.";
+  return {
+    id,
+    hasAction: Boolean(copy),
+    label: copy?.label ?? "Waiting for workflow state",
+    description: copy?.description ?? waitingDescription,
+    createBlock: id === "createBlock",
+    openForPlayers: id === "openForPlayers",
+    lockBlock: id === "lockBlock",
+    planBlock: id === "planBlock",
+    applyBlock: id === "applyBlock",
+    recoverBlock: id === "recoverBlock",
+    beginNextBlock: id === "beginNextBlock",
+  };
+}
+
+function lifecycleStateLabel(state) {
+  const labels = {
+    completed: "Completed",
+    current: "Current",
+    pending: "Pending",
+    interrupted: "Interrupted",
+    stopped: "Cancelled",
+  };
+  return labels[state] ?? titleCase(state);
+}
+
+function lifecycleStateIcon(state) {
+  const icons = {
+    completed: "fa-check",
+    current: "fa-circle-dot",
+    pending: "fa-circle",
+    interrupted: "fa-triangle-exclamation",
+    stopped: "fa-ban",
+  };
+  return icons[state] ?? "fa-circle";
 }
 
 function normalizeCurrentBlock(workflow, root) {
@@ -891,23 +1165,17 @@ function formatDate(value) {
 }
 
 async function confirmSettlementDelete() {
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) return false;
-  try {
-    return Boolean(
-      await DialogV2.confirm({
-        window: {
-          title: "Delete settlement?",
-          icon: "fa-solid fa-trash",
-        },
-        content:
-          "<p>This removes the saved settlement profile. Historical downtime receipts remain.</p>",
-        rejectClose: false,
-      }),
-    );
-  } catch {
-    return false;
-  }
+  return Boolean(
+    await confirmInfinityDialog({
+      window: {
+        title: "Delete settlement?",
+        icon: "fa-solid fa-trash",
+      },
+      content:
+        "<p>This removes the saved settlement profile. Historical downtime receipts remain.</p>",
+      rejectClose: false,
+    }),
+  );
 }
 
 function positiveInteger(value, fallback = 0) {

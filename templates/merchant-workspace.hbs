@@ -67,6 +67,30 @@
     <section class="mw-edit" aria-label="Merchant editor">
       {{#if selected}}
       <form class="mw-form" data-form="merchant-edit" autocomplete="off">
+        <nav class="mw-section-nav" aria-label="Merchant editor sections">
+          <a href="#mw-section-basics">Basics</a>
+          <a href="#mw-section-pricing">Pricing &amp; Bargaining</a>
+          <a href="#mw-section-stock">Stock</a>
+          <a href="#mw-section-access">Access</a>
+          <a href="#mw-section-sessions">Sessions</a>
+        </nav>
+
+        <div class="mw-editor-status">
+          <span class="mw-save-status" role="status" aria-live="polite" data-save-status>
+            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+            {{saveStatus}}
+          </span>
+          <p>Edits save automatically. Live shoppers use the canonical saved stock, prices, and access rules; closing a session does not undo completed trades.</p>
+        </div>
+
+        <section id="mw-section-basics" class="mw-workspace-section" aria-labelledby="mw-section-basics-heading">
+          <div class="mw-workspace-section__head">
+            <div>
+              <p class="mw-workspace-section__eyebrow">Merchant profile</p>
+              <h3 id="mw-section-basics-heading">Basics</h3>
+            </div>
+            <p>Name the shop and describe what players see.</p>
+          </div>
         <div class="mw-form__head">
           <span class="mw-form__art" style="background-image:url('{{selected.art}}');" aria-hidden="true"></span>
           <div class="mw-form__head-fields">
@@ -90,7 +114,16 @@
           <span class="mw-field__label">Description / Flavor</span>
           <textarea class="mw-textarea" name="description" rows="2" placeholder="Optional flavor text shown to players.">{{selected.description}}</textarea>
         </label>
+        </section>
 
+        <section id="mw-section-pricing" class="mw-workspace-section" aria-labelledby="mw-section-pricing-heading">
+          <div class="mw-workspace-section__head">
+            <div>
+              <p class="mw-workspace-section__eyebrow">Trade rules</p>
+              <h3 id="mw-section-pricing-heading">Pricing &amp; Bargaining</h3>
+            </div>
+            <p>Set the purse, markups, sell-back rate, and negotiation rules.</p>
+          </div>
         <div class="mw-form__grid">
           <label class="mw-field">
             <span class="mw-field__label">Buy price ×</span>
@@ -148,35 +181,16 @@
             {{/each}}
           </div>
         </fieldset>
+        </section>
 
-        <fieldset class="mw-fieldset">
-          <legend>Allowed Players</legend>
-          {{#if hasPlayers}}
-          <div class="mw-chiprow">
-            {{#each playerOptions}}
-            <label class="mw-chip">
-              <input type="checkbox" name="allowedUserIds" value="{{id}}" {{#if checked}}checked{{/if}} />
-              <span>{{name}}</span>
-            </label>
-            {{/each}}
+        <section id="mw-section-stock" class="mw-workspace-section" aria-labelledby="mw-section-stock-heading">
+          <div class="mw-workspace-section__head">
+            <div>
+              <p class="mw-workspace-section__eyebrow">Inventory</p>
+              <h3 id="mw-section-stock-heading">Stock</h3>
+            </div>
+            <p>Generate, filter, price, restock, and curate the items for sale.</p>
           </div>
-          {{else}}
-          <p class="mw-empty">No active player users.</p>
-          {{/if}}
-          <label class="mw-field mw-field--inline mw-field--selfservice">
-            <span class="mw-field__label">Self-Service <small>(can allowed players open this shop themselves?)</small></span>
-            <select class="mw-input" name="selfServiceMode">
-              {{#each selfServiceOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          {{#if selfServiceOffWithPlayers}}
-          <p class="mw-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> This shop has allowed players but Self-Service is <strong>Off</strong>, so it will <strong>not</strong> appear in their Shops door. Set it to <strong>Open</strong> or <strong>Knock</strong> for players to open it themselves (you can still push a session either way).</p>
-          {{/if}}
-          <p class="mw-hint">With <strong>Knock</strong>, when a player asks to enter you'll get an Approve / Deny prompt on your screen.</p>
-        </fieldset>
-
         <fieldset class="mw-fieldset">
           <legend>Random Stock <small>auto-generated inventory</small></legend>
           <p class="mw-hint">Pick item types and/or rarities, choose how many to draw, then <strong>Generate Stock</strong> to roll random items from the item library into this merchant. Ammunition always stocks in full stacks of 20.</p>
@@ -252,7 +266,7 @@
             </label>
             <label class="mw-field mw-field--inline">
               <span class="mw-field__label">Stock value (gp) <small>(0 = none)</small></span>
-              <input class="mw-input mw-input--num" type="number" name="poolBudgetGp" min="0" step="50" value="{{poolBudgetGp}}" placeholder="0" />
+              <input class="mw-input mw-input--num" type="number" name="poolBudgetGp" min="0" step="50" value="{{poolBudgetGp}}" placeholder="0" aria-label="Stock value budget in gold pieces" />
             </label>
             <button type="button" class="mw-btn mw-btn--primary" data-action="generateStock">
               <i class="fa-solid fa-dice" aria-hidden="true"></i> Generate Stock
@@ -303,7 +317,7 @@
           <div class="mw-inv__search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input type="search" class="mw-input" data-inv-search placeholder="Filter inventory…" aria-label="Filter inventory by item name" />
-            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite" aria-label="Inventory search results count"></span>
+            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite"></span>
           </div>
           {{/if}}
           <div class="mw-inv__head">
@@ -356,7 +370,53 @@
             </button>
           </div>
         </fieldset>
+        </section>
 
+        <section id="mw-section-access" class="mw-workspace-section" aria-labelledby="mw-section-access-heading">
+          <div class="mw-workspace-section__head">
+            <div>
+              <p class="mw-workspace-section__eyebrow">Player availability</p>
+              <h3 id="mw-section-access-heading">Access</h3>
+            </div>
+            <p>Choose who can shop and whether they may enter without a pushed session.</p>
+          </div>
+          <fieldset class="mw-fieldset">
+            <legend>Allowed Players</legend>
+            {{#if hasPlayers}}
+            <div class="mw-chiprow">
+              {{#each playerOptions}}
+              <label class="mw-chip">
+                <input type="checkbox" name="allowedUserIds" value="{{id}}" {{#if checked}}checked{{/if}} />
+                <span>{{name}}</span>
+              </label>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="mw-empty">No active player users.</p>
+            {{/if}}
+            <label class="mw-field mw-field--inline mw-field--selfservice">
+              <span class="mw-field__label">Self-Service <small>(can allowed players open this shop themselves?)</small></span>
+              <select class="mw-input" name="selfServiceMode">
+                {{#each selfServiceOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            {{#if selfServiceOffWithPlayers}}
+            <p class="mw-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> This shop has allowed players but Self-Service is <strong>Off</strong>, so it will <strong>not</strong> appear in their Shops door. Set it to <strong>Open</strong> or <strong>Knock</strong> for players to open it themselves (you can still push a session either way).</p>
+            {{/if}}
+            <p class="mw-hint">With <strong>Knock</strong>, when a player asks to enter you'll get an Approve / Deny prompt on your screen.</p>
+          </fieldset>
+        </section>
+
+        <section id="mw-section-sessions" class="mw-workspace-section mw-workspace-section--sessions" aria-labelledby="mw-section-sessions-heading">
+          <div class="mw-workspace-section__head">
+            <div>
+              <p class="mw-workspace-section__eyebrow">Live shop</p>
+              <h3 id="mw-section-sessions-heading">Sessions</h3>
+            </div>
+            <p>Preview safely, open the shop for allowed players, or close a live window.</p>
+          </div>
         <div class="mw-form__foot">
           <div class="mw-form__foot-left">
             <button type="button" class="mw-btn mw-btn--danger" data-action="deleteMerchant">
@@ -364,7 +424,6 @@
             </button>
           </div>
           <div class="mw-form__foot-right">
-            <span class="mw-save-status" role="status" aria-live="polite" data-save-status>{{saveStatus}}</span>
             <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
             </button>
@@ -380,6 +439,13 @@
           </div>
         </div>
 
+        {{#unless canOpenSession}}
+        <p class="mw-session-reason" role="status">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <strong>Open Session is unavailable:</strong> {{openSessionReason}}
+        </p>
+        {{/unless}}
+
         {{#if activeSessions.length}}
         <div class="mw-sessions">
           <h4>Active Sessions</h4>
@@ -394,7 +460,10 @@
             {{/each}}
           </ul>
         </div>
+        {{else}}
+        <p class="mw-empty mw-empty--session">No live sessions for this merchant. Preview does not change campaign data.</p>
         {{/if}}
+        </section>
       </form>
       {{else}}
       <div class="mw-edit__empty">

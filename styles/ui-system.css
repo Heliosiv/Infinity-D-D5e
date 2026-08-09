@@ -1,0 +1,799 @@
+/* =========================================================
+   Infinity D&D5e - Shared UI primitives
+   ---------------------------------------------------------
+   Opt-in classes for ApplicationV2 templates. Every selector remains
+   under .infinity-dnd5e and consumes the public tokens in tokens.css.
+   ========================================================= */
+
+.infinity-dnd5e:is(.infinity-app-shell, .infinity-ui),
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui) {
+  container-name: infinity-app;
+  container-type: inline-size;
+  min-inline-size: 0;
+  color: var(--lf-text);
+  background: var(--lf-bg);
+  font-family: var(--lf-font-body);
+  font-size: var(--lf-text-md);
+  line-height: var(--lf-leading-normal);
+}
+
+.infinity-dnd5e:is(.infinity-app-shell, .infinity-ui),
+.infinity-dnd5e:is(.infinity-app-shell, .infinity-ui) *,
+.infinity-dnd5e:is(.infinity-app-shell, .infinity-ui) *::before,
+.infinity-dnd5e:is(.infinity-app-shell, .infinity-ui) *::after,
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui),
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui) *,
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui) *::before,
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui) *::after {
+  box-sizing: border-box;
+}
+
+.infinity-dnd5e .infinity-app-body {
+  display: grid;
+  gap: var(--lf-density-gap);
+  min-block-size: 0;
+  min-inline-size: 0;
+  padding: var(--lf-density-pad);
+}
+
+.infinity-dnd5e .infinity-app-scroll {
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.infinity-dnd5e .infinity-app-header {
+  position: relative;
+  z-index: var(--lf-layer-sticky);
+  display: flex;
+  gap: var(--lf-space-3);
+  align-items: center;
+  justify-content: space-between;
+  min-inline-size: 0;
+  padding: var(--lf-density-pad);
+  color: var(--lf-text);
+  background: var(--lf-bg-alt);
+  border-block-end: 1px solid var(--lf-border);
+}
+
+.infinity-dnd5e .infinity-app-header__identity {
+  display: grid;
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .infinity-app-header__title {
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--lf-text-strong);
+  font-family: var(--lf-font-heading);
+  font-size: var(--lf-text-xl);
+  font-weight: var(--lf-weight-bold);
+  line-height: var(--lf-leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.infinity-dnd5e .infinity-eyebrow {
+  margin: 0;
+  color: var(--lf-accent);
+  font-size: var(--lf-text-xs);
+  font-weight: var(--lf-weight-bold);
+  letter-spacing: 0.08em;
+  line-height: var(--lf-leading-normal);
+  text-transform: uppercase;
+}
+
+.infinity-dnd5e :is(.infinity-supporting, .infinity-help-text) {
+  margin: 0;
+  color: var(--lf-muted);
+  font-size: var(--lf-text-xs);
+  line-height: var(--lf-leading-normal);
+}
+
+.infinity-dnd5e .infinity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+/* Buttons and links ------------------------------------------------ */
+
+.infinity-dnd5e :is(.infinity-button, [data-ui-button]) {
+  display: inline-flex;
+  gap: var(--lf-space-2);
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: var(--lf-control-size);
+  max-inline-size: 100%;
+  margin: 0;
+  padding: var(--lf-space-2) var(--lf-space-4);
+  color: var(--lf-text);
+  font: inherit;
+  font-size: var(--lf-text-sm);
+  font-weight: var(--lf-weight-bold);
+  line-height: var(--lf-leading-tight);
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  background: var(--lf-surface-elev);
+  border: 1px solid var(--lf-border-strong);
+  border-radius: var(--lf-radius-sm);
+  box-shadow: var(--lf-shadow-sm);
+  transition:
+    color var(--lf-motion-fast) var(--lf-ease-standard),
+    background-color var(--lf-motion-fast) var(--lf-ease-standard),
+    border-color var(--lf-motion-fast) var(--lf-ease-standard),
+    transform var(--lf-motion-fast) var(--lf-ease-standard);
+}
+
+.infinity-dnd5e
+  :is(.infinity-button, [data-ui-button]):not(
+    :disabled,
+    [aria-disabled="true"]
+  ):hover {
+  color: var(--lf-text-strong);
+  background: color-mix(in srgb, var(--lf-surface-elev) 78%, white);
+  border-color: var(--lf-accent);
+}
+
+.infinity-dnd5e
+  :is(.infinity-button, [data-ui-button]):not(
+    :disabled,
+    [aria-disabled="true"]
+  ):active {
+  transform: translateY(1px);
+}
+
+.infinity-dnd5e
+  :is(.infinity-button, [data-ui-button]):is(
+    :disabled,
+    [aria-disabled="true"]
+  ) {
+  color: var(--lf-disabled);
+  cursor: not-allowed;
+  background: var(--lf-surface);
+  border-color: var(--lf-border);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.infinity-dnd5e :is(.infinity-button--primary, [data-ui-button="primary"]) {
+  color: var(--lf-accent-contrast);
+  background: var(--lf-accent);
+  border-color: var(--lf-accent);
+}
+
+.infinity-dnd5e
+  :is(.infinity-button--primary, [data-ui-button="primary"]):not(
+    :disabled,
+    [aria-disabled="true"]
+  ):hover {
+  color: var(--lf-accent-contrast);
+  background: var(--lf-accent-hover);
+  border-color: var(--lf-accent-hover);
+}
+
+.infinity-dnd5e :is(.infinity-button--danger, [data-ui-button="danger"]) {
+  color: var(--lf-danger);
+  background: var(--lf-danger-bg);
+  border-color: var(--lf-danger-border);
+}
+
+.infinity-dnd5e .infinity-button--quiet {
+  color: var(--lf-muted);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.infinity-dnd5e :is(.infinity-icon-button, [data-ui-icon-button]) {
+  inline-size: var(--lf-control-size);
+  min-inline-size: var(--lf-control-size);
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.infinity-dnd5e :is(.infinity-button, [data-ui-button]) > :is(i, svg) {
+  flex: 0 0 auto;
+  inline-size: var(--lf-icon-size);
+  block-size: var(--lf-icon-size);
+  pointer-events: none;
+}
+
+/* Forms and validation -------------------------------------------- */
+
+.infinity-dnd5e .infinity-field {
+  display: grid;
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.infinity-dnd5e .infinity-field__label {
+  color: var(--lf-text);
+  font-size: var(--lf-text-sm);
+  font-weight: var(--lf-weight-bold);
+  line-height: var(--lf-leading-normal);
+}
+
+.infinity-dnd5e
+  .infinity-field
+  :is(input:not([type="checkbox"], [type="radio"]), select, textarea) {
+  inline-size: 100%;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-text);
+  font: inherit;
+  font-size: max(var(--lf-text-sm), 1em);
+  line-height: var(--lf-leading-normal);
+  background: var(--lf-surface-sunken);
+  border: 1px solid var(--lf-border-strong);
+  border-radius: var(--lf-radius-sm);
+  box-shadow: none;
+}
+
+.infinity-dnd5e .infinity-field textarea {
+  min-block-size: calc(var(--lf-control-size) * 2.5);
+  resize: vertical;
+}
+
+.infinity-dnd5e .infinity-field :is(input, select, textarea)::placeholder {
+  color: var(--lf-muted);
+  opacity: 1;
+}
+
+.infinity-dnd5e .infinity-field[aria-invalid="true"],
+.infinity-dnd5e .infinity-field.is-invalid {
+  --lf-border-strong: var(--lf-danger-border);
+}
+
+.infinity-dnd5e .infinity-field__error {
+  margin: 0;
+  color: var(--lf-danger);
+  font-size: var(--lf-text-xs);
+  font-weight: var(--lf-weight-medium);
+}
+
+.infinity-dnd5e .infinity-check {
+  display: flex;
+  gap: var(--lf-space-2);
+  align-items: center;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: 0;
+  margin: 0;
+  padding-block: var(--lf-space-1);
+  color: var(--lf-text);
+  font-size: var(--lf-text-sm);
+  cursor: pointer;
+}
+
+.infinity-dnd5e
+  .infinity-check
+  :is(input[type="checkbox"], input[type="radio"]) {
+  flex: 0 0 auto;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin: 0;
+  accent-color: var(--lf-accent);
+}
+
+.infinity-dnd5e .infinity-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--lf-density-gap);
+  min-inline-size: 0;
+}
+
+/* Accessible tabs and disclosures -------------------------------- */
+
+.infinity-dnd5e .infinity-tabs {
+  display: flex;
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--lf-border);
+  scrollbar-width: thin;
+}
+
+.infinity-dnd5e .infinity-tab {
+  position: relative;
+  flex: 0 0 auto;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: var(--lf-control-size);
+  margin: 0;
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: var(--lf-text-sm);
+  font-weight: var(--lf-weight-bold);
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-block-end: 3px solid transparent;
+  border-radius: var(--lf-radius-sm) var(--lf-radius-sm) 0 0;
+}
+
+.infinity-dnd5e .infinity-tab:is([aria-selected="true"], .is-active) {
+  color: var(--lf-text-strong);
+  border-block-end-color: var(--lf-accent);
+}
+
+.infinity-dnd5e .infinity-tabpanel {
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .infinity-disclosure {
+  color: var(--lf-text);
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e .infinity-disclosure > summary {
+  display: flex;
+  gap: var(--lf-space-2);
+  align-items: center;
+  min-block-size: var(--lf-control-size);
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-text);
+  font-size: var(--lf-text-sm);
+  font-weight: var(--lf-weight-bold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.infinity-dnd5e .infinity-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.infinity-dnd5e .infinity-disclosure__content {
+  display: grid;
+  gap: var(--lf-density-gap);
+  padding: 0 var(--lf-space-3) var(--lf-space-3);
+  border-block-start: 1px solid var(--lf-border);
+}
+
+/* Cards, banners, and state messaging ----------------------------- */
+
+.infinity-dnd5e .infinity-card {
+  display: grid;
+  gap: var(--lf-space-3);
+  min-inline-size: 0;
+  padding: var(--lf-density-pad);
+  color: var(--lf-text);
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  box-shadow: var(--lf-shadow-sm);
+}
+
+.infinity-dnd5e .infinity-card--raised {
+  background: var(--lf-surface-elev);
+  box-shadow: var(--lf-shadow-md);
+}
+
+.infinity-dnd5e .infinity-card__title {
+  margin: 0;
+  color: var(--lf-text-strong);
+  font-size: var(--lf-text-md);
+  font-weight: var(--lf-weight-bold);
+  line-height: var(--lf-leading-tight);
+}
+
+.infinity-dnd5e .infinity-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--lf-space-3);
+  align-items: start;
+  min-inline-size: 0;
+  padding: var(--lf-space-3);
+  color: var(--lf-info);
+  background: var(--lf-info-bg);
+  border: 1px solid var(--lf-info-border);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e .infinity-banner--success {
+  color: var(--lf-success);
+  background: var(--lf-success-bg);
+  border-color: var(--lf-success-border);
+}
+
+.infinity-dnd5e .infinity-banner--warning {
+  color: var(--lf-warn);
+  background: var(--lf-warn-bg);
+  border-color: var(--lf-warn-border);
+}
+
+.infinity-dnd5e .infinity-banner--danger {
+  color: var(--lf-danger);
+  background: var(--lf-danger-bg);
+  border-color: var(--lf-danger-border);
+}
+
+.infinity-dnd5e .infinity-banner__content {
+  min-inline-size: 0;
+  color: inherit;
+}
+
+.infinity-dnd5e .infinity-banner__content > :first-child {
+  margin-block-start: 0;
+}
+
+.infinity-dnd5e .infinity-banner__content > :last-child {
+  margin-block-end: 0;
+}
+
+.infinity-dnd5e .infinity-state {
+  display: grid;
+  gap: var(--lf-space-3);
+  place-items: center;
+  min-block-size: 10rem;
+  min-inline-size: 0;
+  padding: var(--lf-space-6);
+  color: var(--lf-muted);
+  text-align: center;
+  background: var(--lf-surface-sunken);
+  border: 1px dashed var(--lf-border-strong);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e .infinity-state__title {
+  margin: 0;
+  color: var(--lf-text-strong);
+  font-size: var(--lf-text-lg);
+  font-weight: var(--lf-weight-bold);
+}
+
+.infinity-dnd5e .infinity-spinner {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border: 3px solid var(--lf-border);
+  border-block-start-color: var(--lf-accent);
+  border-radius: 50%;
+  animation: infinity-spin 800ms linear infinite;
+}
+
+.infinity-dnd5e .infinity-skeleton {
+  min-block-size: 1rem;
+  overflow: hidden;
+  background: linear-gradient(
+    100deg,
+    var(--lf-surface) 20%,
+    var(--lf-surface-elev) 40%,
+    var(--lf-surface) 60%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--lf-radius-sm);
+  animation: infinity-skeleton 1.4s var(--lf-ease-standard) infinite;
+}
+
+@keyframes infinity-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes infinity-skeleton {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+/* Sticky actions and master-detail workspaces --------------------- */
+
+.infinity-dnd5e .infinity-sticky-actions {
+  position: sticky;
+  z-index: var(--lf-layer-sticky);
+  inset-block-end: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: 0;
+  padding: var(--lf-space-3) var(--lf-density-pad);
+  background: color-mix(in srgb, var(--lf-bg-alt) 94%, transparent);
+  border-block-start: 1px solid var(--lf-border);
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(8px);
+}
+
+.infinity-dnd5e .infinity-sticky-actions__status {
+  min-inline-size: 0;
+  margin-inline-end: auto;
+  color: var(--lf-muted);
+  font-size: var(--lf-text-xs);
+}
+
+.infinity-dnd5e .infinity-master-detail {
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.34fr) minmax(0, 1fr);
+  gap: var(--lf-density-gap);
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e :is(.infinity-master, .infinity-detail) {
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .infinity-master {
+  overflow: auto;
+  background: var(--lf-bg-alt);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e .infinity-master__item {
+  display: flex;
+  gap: var(--lf-space-2);
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-text);
+  font: inherit;
+  font-size: var(--lf-text-sm);
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-block-end: 1px solid var(--lf-border);
+}
+
+.infinity-dnd5e .infinity-master__item:is(.is-active, [aria-current="page"]) {
+  color: var(--lf-text-strong);
+  background: var(--lf-surface-elev);
+  box-shadow: inset 3px 0 0 var(--lf-accent);
+}
+
+/* Searchable allowlisted picker ---------------------------------- */
+
+.infinity-dnd5e .infinity-picker {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--lf-space-2);
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .infinity-picker__list {
+  min-block-size: 6rem;
+  max-block-size: min(24rem, 55cqb);
+  margin: 0;
+  padding: var(--lf-space-1);
+  overflow: auto;
+  color: var(--lf-text);
+  background: var(--lf-surface-sunken);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+}
+
+.infinity-dnd5e .infinity-picker__option {
+  display: flex;
+  gap: var(--lf-space-2);
+  align-items: center;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: 0;
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-text);
+  cursor: pointer;
+  border-radius: var(--lf-radius-sm);
+}
+
+.infinity-dnd5e
+  .infinity-picker__option:is([aria-selected="true"], .is-selected) {
+  color: var(--lf-accent-contrast);
+  background: var(--lf-accent);
+}
+
+/* Dialog and status utilities ------------------------------------ */
+
+.application.infinity-dialog .window-content {
+  min-inline-size: 0;
+  padding: 0;
+  color: var(--lf-text);
+  background: var(--lf-bg);
+}
+
+.application.infinity-dialog :is(.dialog-content, form.standard-form) {
+  display: grid;
+  gap: var(--lf-density-gap);
+  min-inline-size: 0;
+  padding: var(--lf-density-pad);
+}
+
+.application.infinity-dialog
+  :is(.form-footer, .dialog-buttons, footer.dialog-buttons) {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  padding: var(--lf-space-3) var(--lf-density-pad);
+  background: var(--lf-bg-alt);
+  border-block-start: 1px solid var(--lf-border);
+}
+
+.application.infinity-dialog
+  :is(.form-footer, .dialog-buttons, footer.dialog-buttons)
+  > button {
+  flex: 1 1 10rem;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: var(--lf-control-size);
+}
+
+.infinity-dnd5e .infinity-dialog-body {
+  display: grid;
+  gap: var(--lf-density-gap);
+  min-inline-size: 0;
+  padding: var(--lf-density-pad);
+  color: var(--lf-text);
+  background: var(--lf-bg);
+}
+
+.infinity-dnd5e .infinity-dialog-actions {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  gap: var(--lf-space-2);
+  padding: var(--lf-space-3) var(--lf-density-pad);
+  background: var(--lf-bg-alt);
+  border-block-start: 1px solid var(--lf-border);
+}
+
+.infinity-dnd5e .infinity-status {
+  display: inline-flex;
+  gap: var(--lf-space-1);
+  align-items: center;
+  min-block-size: 1.5rem;
+  max-inline-size: 100%;
+  padding: var(--lf-space-1) var(--lf-space-2);
+  color: var(--lf-muted);
+  font-size: var(--lf-text-xs);
+  font-weight: var(--lf-weight-medium);
+  line-height: var(--lf-leading-tight);
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+  overflow-wrap: anywhere;
+}
+
+.infinity-dnd5e .infinity-key {
+  display: inline-grid;
+  place-items: center;
+  min-block-size: 1.5rem;
+  min-inline-size: 1.5rem;
+  padding-inline: var(--lf-space-1);
+  color: var(--lf-text);
+  font-family: var(--lf-font-mono);
+  font-size: var(--lf-text-xs);
+  background: var(--lf-surface-sunken);
+  border: 1px solid var(--lf-border-strong);
+  border-radius: var(--lf-radius-xs);
+  box-shadow: 0 1px 0 var(--lf-border-strong);
+}
+
+.infinity-dnd5e :is(.infinity-sr-only, [data-ui-sr-only]) {
+  position: absolute !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  clip-path: inset(50%) !important;
+}
+
+/* Container-responsive composition. Apps own the container, not viewport. */
+@container infinity-app (max-width: 1040px) {
+  .infinity-dnd5e .infinity-master-detail {
+    grid-template-columns: minmax(12rem, 0.3fr) minmax(0, 1fr);
+  }
+}
+
+@container infinity-app (max-width: 720px) {
+  .infinity-dnd5e .infinity-master-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-dnd5e .infinity-master {
+    max-block-size: 12rem;
+  }
+}
+
+@container infinity-app (max-width: 520px) {
+  .infinity-dnd5e .infinity-app-header {
+    align-items: flex-start;
+  }
+
+  .infinity-dnd5e .infinity-app-header,
+  .infinity-dnd5e .infinity-sticky-actions,
+  .infinity-dnd5e .infinity-dialog-actions {
+    flex-direction: column;
+  }
+
+  .infinity-dnd5e
+    :is(
+      .infinity-app-header > *,
+      .infinity-sticky-actions > *,
+      .infinity-dialog-actions > *
+    ) {
+    inline-size: 100%;
+  }
+
+  .infinity-dnd5e .infinity-actions {
+    justify-content: stretch;
+  }
+
+  .infinity-dnd5e .infinity-actions > * {
+    flex: 1 1 auto;
+  }
+
+  .infinity-dnd5e .infinity-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-dnd5e .infinity-sticky-actions__status {
+    margin-inline-end: 0;
+  }
+}
+
+@container infinity-app (max-width: 380px) {
+  .infinity-dnd5e :is(.infinity-app-body, .infinity-dialog-body) {
+    padding: var(--lf-space-2);
+  }
+
+  .infinity-dnd5e .infinity-card {
+    padding: var(--lf-space-3);
+  }
+
+  .infinity-dnd5e .infinity-banner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-dnd5e
+    :is(
+      .infinity-button,
+      [data-ui-button],
+      .infinity-tab,
+      .infinity-master__item,
+      .infinity-picker__option
+    ):is(
+      [aria-selected="true"],
+      [aria-current="page"],
+      .is-active,
+      .is-selected
+    ) {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .infinity-dnd5e .infinity-spinner {
+    border-color: CanvasText;
+    border-block-start-color: Highlight;
+  }
+
+  .infinity-dnd5e .infinity-skeleton {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+}

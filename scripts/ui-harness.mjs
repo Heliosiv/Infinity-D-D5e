@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import Handlebars from "handlebars";
 
+import { buildInfinityChatCard } from "./chat-card.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
@@ -18,6 +19,9 @@ function marketContext(minItemGp = 0, maxItemGp = 0) {
 
 const CSS_FILES = [
   "styles/tokens.css",
+  "styles/ui-system.css",
+  "styles/chat-card.css",
+  "styles/loot-studio.css",
   "styles/dashboard.css",
   "styles/loot-forge.css",
   "styles/hoard-loot.css",
@@ -33,6 +37,8 @@ const CSS_FILES = [
   "styles/reputation-workspace.css",
   "styles/reputation-view.css",
   "styles/downtime.css",
+  "styles/settings.css",
+  "styles/search-picker.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -69,7 +75,7 @@ export function buildHarnessViews() {
   return [
     view(
       "dashboard",
-      "Dashboard",
+      "Home (full GM)",
       "infinity-dashboard",
       "templates/dashboard.hbs",
       dashboardContext(),
@@ -79,9 +85,63 @@ export function buildHarnessViews() {
       },
     ),
     view(
+      "home-player",
+      "Home (player)",
+      "infinity-dashboard",
+      "templates/dashboard.hbs",
+      playerHomeContext(),
+      { width: 720, height: 640 },
+    ),
+    view(
+      "settings-gm",
+      "Infinity Settings (full GM)",
+      "infinity-settings",
+      "templates/settings.hbs",
+      settingsContext({ fullGm: true }),
+      { width: 760, height: 720 },
+    ),
+    view(
+      "settings-player",
+      "Infinity Settings (player)",
+      "infinity-settings",
+      "templates/settings.hbs",
+      settingsContext({ fullGm: false }),
+      { width: 680, height: 660 },
+    ),
+    view(
+      "search-picker",
+      "Searchable item picker",
+      "infinity-search-picker",
+      "templates/search-picker.hbs",
+      searchPickerContext(),
+      { width: 560, height: 620 },
+    ),
+    rawView(
+      "shared-dialog",
+      "Shared confirmation dialog",
+      "infinity-dialog",
+      dialogFixtureHtml(),
+      { width: 520, height: 420 },
+    ),
+    rawView(
+      "chat-card",
+      "Shared chat outcome card",
+      "infinity-chat-fixture",
+      buildInfinityChatCard({
+        title: "Quartermaster upkeep",
+        outcome: "Supplies were updated and the receipt was saved.",
+        audience: "Visible to GMs and affected character owners.",
+        details:
+          "Food decreased by 4, water decreased by 4, and no inventory needs review.",
+        nextAction: "No further action is needed before the next in-game day.",
+        tone: "success",
+      }),
+      { width: 460, height: 520, requiresActions: false },
+    ),
+    view(
       "per-encounter",
       "Per-Encounter Loot",
-      "loot-forge",
+      "loot-studio loot-forge",
       "templates/loot-forge.hbs",
       perEncounterContext(),
       { width: 860, height: 760 },
@@ -89,7 +149,7 @@ export function buildHarnessViews() {
     view(
       "hoard",
       "Hoard Loot",
-      "hoard-loot",
+      "loot-studio hoard-loot",
       "templates/hoard-loot.hbs",
       hoardContext(),
       {
@@ -100,7 +160,7 @@ export function buildHarnessViews() {
     view(
       "per-creature",
       "Per-Creature Loot",
-      "per-creature-loot",
+      "loot-studio per-creature-loot",
       "templates/per-creature-loot.hbs",
       perCreatureContext(),
       { width: 820, height: 760 },
@@ -138,6 +198,38 @@ export function buildHarnessViews() {
       { width: 720, height: 600 },
     ),
     view(
+      "merchant-session-pending",
+      "Merchant Session - transaction pending",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionPendingContext(),
+      { width: 720, height: 600 },
+    ),
+    view(
+      "merchant-session-uncertain",
+      "Merchant Session - outcome uncertain",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionUncertainContext(),
+      { width: 720, height: 600 },
+    ),
+    view(
+      "merchant-session-offline",
+      "Merchant Session - offline",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionOfflineContext(),
+      { width: 720, height: 600 },
+    ),
+    view(
+      "merchant-session-no-actor",
+      "Merchant Session - no active character",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionNoActorContext(),
+      { width: 720, height: 600 },
+    ),
+    view(
       "shop-picker",
       "Shops (player)",
       "infinity-shop-picker",
@@ -159,6 +251,38 @@ export function buildHarnessViews() {
       "infinity-shop-picker",
       "templates/shop-picker.hbs",
       shopPickerClosedContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-loading",
+      "Shops (loading)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerLoadingContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-offline",
+      "Shops (GM offline)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerOfflineContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-error",
+      "Shops (retryable error)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerErrorContext(),
+      { width: 440, height: 560 },
+    ),
+    view(
+      "shop-picker-choose-actor",
+      "Shops (choose a character)",
+      "infinity-shop-picker",
+      "templates/shop-picker.hbs",
+      shopPickerChooseActorContext(),
       { width: 440, height: 560 },
     ),
     view(
@@ -338,6 +462,38 @@ export function buildHarnessViews() {
       { width: 460, height: 400 },
     ),
     view(
+      "forage-waiting",
+      "Forage Prompt (waiting)",
+      "infinity-forage-prompt",
+      "templates/forage-prompt.hbs",
+      forageWaitingContext(),
+      { width: 460, height: 400, requiresActions: false },
+    ),
+    view(
+      "forage-timeout",
+      "Forage Prompt (outcome uncertain)",
+      "infinity-forage-prompt",
+      "templates/forage-prompt.hbs",
+      forageTimeoutContext(),
+      { width: 460, height: 440 },
+    ),
+    view(
+      "forage-success",
+      "Forage Prompt (completed)",
+      "infinity-forage-prompt",
+      "templates/forage-prompt.hbs",
+      forageSuccessContext(),
+      { width: 460, height: 440 },
+    ),
+    view(
+      "forage-offline",
+      "Forage Prompt (GM offline)",
+      "infinity-forage-prompt",
+      "templates/forage-prompt.hbs",
+      forageOfflineContext(),
+      { width: 460, height: 460 },
+    ),
+    view(
       "critical-injury",
       "Critical Injuries (player)",
       "infinity-critical-injury",
@@ -346,11 +502,59 @@ export function buildHarnessViews() {
       { width: 520, height: 700 },
     ),
     view(
+      "critical-injury-offline",
+      "Critical Injuries (GM offline)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryOfflineContext(),
+      { width: 520, height: 700 },
+    ),
+    view(
+      "critical-injury-treating",
+      "Critical Injuries (treatment pending)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryTreatingContext(),
+      { width: 520, height: 700 },
+    ),
+    view(
+      "critical-injury-treatment-outcome",
+      "Critical Injuries (treatment confirmed)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryTreatmentOutcomeContext(),
+      { width: 520, height: 700 },
+    ),
+    view(
+      "critical-injury-uncertain",
+      "Critical Injuries (outcome uncertain)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryUncertainContext(),
+      { width: 520, height: 700 },
+    ),
+    view(
       "critical-injury-hud",
       "Critical Injury Body HUD (player overlay)",
       "infinity-critical-injury-hud",
       "templates/critical-injury-hud.hbs",
       criticalInjuryHudContext(),
+      { width: 700, height: 620, overlay: true },
+    ),
+    view(
+      "critical-injury-hud-offline",
+      "Critical Injury Body HUD (GM offline)",
+      "infinity-critical-injury-hud",
+      "templates/critical-injury-hud.hbs",
+      criticalInjuryHudOfflineContext(),
+      { width: 700, height: 620, overlay: true },
+    ),
+    view(
+      "critical-injury-hud-uncertain",
+      "Critical Injury Body HUD (treatment uncertain)",
+      "infinity-critical-injury-hud",
+      "templates/critical-injury-hud.hbs",
+      criticalInjuryHudUncertainContext(),
       { width: 700, height: 620, overlay: true },
     ),
     view(
@@ -383,7 +587,7 @@ export function buildHarnessViews() {
 export function renderHarnessViews() {
   return buildHarnessViews().map((entry) => ({
     ...entry,
-    html: renderTemplate(entry.template, entry.context),
+    html: entry.html ?? renderTemplate(entry.template, entry.context),
   }));
 }
 
@@ -482,6 +686,7 @@ export function buildUiHarnessDocument() {
     .window-content {
       min-height: 0;
       box-sizing: border-box;
+      overflow: auto;
     }
 
     .ui-harness__overlay-stage {
@@ -560,6 +765,26 @@ function view(id, label, rootClass, template, context, size) {
   return { id, label, rootClass, template, context, ...size };
 }
 
+function rawView(id, label, rootClass, html, size) {
+  return { id, label, rootClass, html, ...size };
+}
+
+function dialogFixtureHtml() {
+  return `<form class="standard-form" aria-labelledby="infinity-dialog-fixture-title">
+    <h2 id="infinity-dialog-fixture-title">Apply this standing change?</h2>
+    <p>The new value and reason will be added to faction history. No other campaign data changes.</p>
+    <label for="infinity-dialog-fixture-reason">
+      <span>Reason</span>
+      <textarea id="infinity-dialog-fixture-reason" rows="3" required aria-required="true">The party kept its promise.</textarea>
+    </label>
+    <p class="infinity-banner infinity-banner--info" role="status">Cancel is the safe default. You can reopen this dialog if you need to review the change.</p>
+    <footer class="form-footer infinity-dialog-actions">
+      <button type="button" class="infinity-button" data-action="cancel" autofocus>Cancel</button>
+      <button type="button" class="infinity-button infinity-button--primary" data-action="confirm">Confirm change</button>
+    </footer>
+  </form>`;
+}
+
 function renderHarnessWindow(entry) {
   if (entry.overlay) {
     return `<section data-harness-section="${escapeHtml(entry.id)}">
@@ -603,7 +828,19 @@ function renderTemplate(templatePath, context) {
     strict: true,
     preventIndent: true,
   });
-  return template(context);
+  const body = template(context);
+  const lootBodies = new Set([
+    "templates/loot-forge.hbs",
+    "templates/hoard-loot.hbs",
+    "templates/per-creature-loot.hbs",
+  ]);
+  if (!lootBodies.has(templatePath)) return body;
+  const studioSource = readFileSync("templates/loot-studio.hbs", "utf8");
+  const studio = Handlebars.compile(studioSource, {
+    strict: true,
+    preventIndent: true,
+  });
+  return `${studio(context)}${body}`;
 }
 
 function dashboardContext() {
@@ -669,12 +906,42 @@ function dashboardContext() {
   ];
   const decorated = tools.map((tool) => ({
     ...tool,
+    launchKind: "tool",
+    launchId: tool.id,
     isAvailable: true,
     isComingSoon: false,
+    ariaDisabled: "false",
+    statusDescriptionId: `harness-home-tool-${tool.id}`,
     statusLabel: "",
+    statusReason: "",
   }));
   return {
     moduleVersion: MODULE_VERSION,
+    roleLabel: "Game Master Home",
+    headingHint:
+      "Prepare the session, run active workflows, and track what changes.",
+    quickStart: {
+      id: "home-gm",
+      version: 1,
+      title: "Quick start for a Game Master",
+      body: "Start with the next session outcome you need to prepare.",
+      steps: [
+        "Prepare merchants and campaign defaults.",
+        "Run loot or downtime while play is active.",
+        "Track supplies and faction changes afterward.",
+      ],
+    },
+    groups: [],
+    hasDismissedQuickStarts: false,
+    helpSteps: [
+      "Start in Prepare before the session.",
+      "Keep one Run the Session tool open during play.",
+    ],
+    shortcuts: [
+      { keys: "Shift+I", label: "Open Infinity Home" },
+      { keys: "Shift+D", label: "Open Downtime Activities" },
+    ],
+    diagnostics: diagnosticsContext(),
     hasTools: true,
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
@@ -698,7 +965,266 @@ function dashboardContext() {
   };
 }
 
-function menuContext() {
+function diagnosticsContext() {
+  return {
+    versions: [
+      { label: "Infinity D&D5e", value: MODULE_VERSION },
+      { label: "Foundry", value: "13.351" },
+      { label: "D&D5e system", value: "4.0.4" },
+    ],
+    integrations: [
+      {
+        label: "Simple Calendar",
+        status: "Ready",
+        ready: true,
+        className: "is-ready",
+        icon: "fa-circle-check",
+        detail: "Active · v2.4.0",
+      },
+      {
+        label: "Player-window transport",
+        status: "Ready",
+        ready: true,
+        className: "is-ready",
+        icon: "fa-circle-check",
+        detail: "SocketLib is active.",
+      },
+    ],
+  };
+}
+
+function playerHomeContext() {
+  const actions = [
+    {
+      id: "surface:shops",
+      launchId: "shops",
+      launchKind: "surface",
+      title: "Shops",
+      description: "Browse shops currently available to your account.",
+      icon: "fa-solid fa-store",
+      isAvailable: true,
+      ariaDisabled: "false",
+      statusDescriptionId: "harness-home-shops-status",
+      statusLabel: "",
+      statusReason: "",
+    },
+    {
+      id: "surface:downtime",
+      launchId: "downtime",
+      launchKind: "surface",
+      title: "Downtime",
+      description: "Review your active block and queue activities.",
+      icon: "fa-solid fa-hourglass-half",
+      isAvailable: false,
+      ariaDisabled: "true",
+      statusDescriptionId: "harness-home-downtime-status",
+      statusLabel: "Unavailable",
+      statusReason: "No active downtime block. Nothing needs your attention.",
+    },
+    {
+      id: "surface:party-supplies",
+      launchId: "party-supplies",
+      launchKind: "surface",
+      title: "Party Supplies",
+      description: "Check the permission-safe travel outlook.",
+      icon: "fa-solid fa-campground",
+      isAvailable: true,
+      ariaDisabled: "false",
+      statusDescriptionId: "harness-home-supplies-status",
+      statusLabel: "",
+      statusReason: "",
+    },
+  ];
+  return {
+    moduleVersion: MODULE_VERSION,
+    roleLabel: "Player Home",
+    headingHint: "Open the campaign tools currently available to you.",
+    quickStart: {
+      id: "home-player",
+      version: 1,
+      title: "Quick start",
+      body: "Every destination here is already limited to your role.",
+      steps: ["Open a destination.", "Follow its next-action message."],
+    },
+    groups: [
+      {
+        id: "prepare",
+        label: "Prepare",
+        description: "Get ready for play.",
+        icon: "fa-solid fa-list-check",
+        actions: actions.slice(0, 1),
+      },
+      {
+        id: "run-session",
+        label: "Run the Session",
+        description: "Actions available during play.",
+        icon: "fa-solid fa-dice-d20",
+        actions: actions.slice(1, 2),
+      },
+      {
+        id: "track-campaign",
+        label: "Track the Campaign",
+        description: "Review lasting party state.",
+        icon: "fa-solid fa-map-location-dot",
+        actions: actions.slice(2),
+      },
+    ],
+    hasRecentTools: true,
+    recentTools: [actions[0]],
+    hasDismissedQuickStarts: false,
+    helpSteps: [
+      "Only authorized destinations appear.",
+      "Unavailable destinations explain what is needed.",
+    ],
+    shortcuts: [
+      { keys: "Shift+I", label: "Open Infinity Home" },
+      { keys: "Shift+O", label: "Open Shops" },
+    ],
+    diagnostics: diagnosticsContext(),
+    hasTools: false,
+    tools: [],
+    categories: [],
+  };
+}
+
+function settingsContext({ fullGm }) {
+  const booleanField = (key, name, hint, scope, checked) => ({
+    key,
+    name,
+    hint,
+    scope,
+    scopeLabel: scope === "world" ? "World" : "This client",
+    isWorld: scope === "world",
+    value: checked,
+    checked,
+    isBoolean: true,
+    isNumber: false,
+    isText: false,
+    isChoice: false,
+    choices: [],
+    min: "",
+    max: "",
+    step: "",
+  });
+  const clientFields = [
+    booleanField(
+      "animations",
+      "Result animations",
+      "Use short reveal motion when new results appear.",
+      "client",
+      true,
+    ),
+    booleanField(
+      "soundsEnabled",
+      "Interface sounds",
+      "Play local confirmation and warning sounds.",
+      "client",
+      true,
+    ),
+  ];
+  const worldFields = fullGm
+    ? [
+        {
+          ...booleanField(
+            "criticalInjuriesEnabled",
+            "Critical injuries",
+            "Enable the existing injury workflow for this world.",
+            "world",
+            true,
+          ),
+        },
+      ]
+    : [];
+  return {
+    fullGm,
+    hasGroups: true,
+    densityOptions: [
+      {
+        value: "comfortable",
+        label: "Comfortable — larger controls and spacing",
+        selected: true,
+      },
+      {
+        value: "compact",
+        label: "Compact — more information on fine-pointer screens",
+        selected: false,
+      },
+    ],
+    groups: [
+      {
+        id: "appearance",
+        label: "Appearance & Accessibility",
+        description: "Personal presentation and input preferences.",
+        fields: clientFields,
+      },
+      ...(fullGm
+        ? [
+            {
+              id: "automation",
+              label: "Automation & Injuries",
+              description: "World behavior visible only to a full GM.",
+              fields: worldFields,
+            },
+          ]
+        : []),
+    ],
+    status: "No unsaved changes.",
+    statusTone: "neutral",
+    dirty: false,
+  };
+}
+
+function searchPickerContext() {
+  return {
+    title: "Add Item to Merchant",
+    hint: "Search every available compendium item, then choose Add item.",
+    query: "",
+    multiple: false,
+    confirmLabel: "Add item",
+    optionCount: 3,
+    hasOptions: true,
+    selectedCount: 1,
+    options: [
+      {
+        id: "item-1",
+        label: "Potion of Healing",
+        description: "Common · Consumable",
+        img: iconDataUri("#8a3f43", "PH"),
+        disabled: false,
+        disabledReason: "",
+        selected: true,
+        searchText: "potion of healing common consumable",
+      },
+      {
+        id: "item-2",
+        label: "Silvered Longsword",
+        description: "Uncommon · Weapon",
+        img: iconDataUri("#667a92", "SL"),
+        disabled: false,
+        disabledReason: "",
+        selected: false,
+        searchText: "silvered longsword uncommon weapon",
+      },
+      {
+        id: "item-3",
+        label: "Reserved Relic",
+        description: "Rare · Wondrous item",
+        img: iconDataUri("#7a5d92", "RR"),
+        disabled: true,
+        disabledReason: "Already stocked",
+        selected: false,
+        searchText: "reserved relic rare wondrous item",
+      },
+    ],
+  };
+}
+
+function menuContext(mode) {
+  const modes = [
+    ["encounter", "Encounter", "fa-solid fa-shield-halved"],
+    ["hoard", "Hoard", "fa-solid fa-sack-dollar"],
+    ["creature", "Creature", "fa-solid fa-skull"],
+  ];
   return {
     presets: [
       { id: "preset-1", name: "Boss Vault" },
@@ -711,12 +1237,27 @@ function menuContext() {
     ],
     hasHistory: true,
     canUndo: true,
+    lootStudio: {
+      mode,
+      activeLabel: modes.find(([id]) => id === mode)?.[1] ?? "Encounter",
+      panelId: `loot-studio-panel-${mode}`,
+      tabId: `loot-studio-tab-${mode}`,
+      advancedOpen: false,
+      tabs: modes.map(([id, label, icon]) => ({
+        id,
+        label,
+        icon,
+        active: id === mode,
+        tabId: `loot-studio-tab-${id}`,
+        panelId: `loot-studio-panel-${id}`,
+      })),
+    },
   };
 }
 
 function perEncounterContext() {
   return {
-    ...menuContext(),
+    ...menuContext("encounter"),
     ...marketContext(0, 5000),
     moduleId: "infinity-dnd5e",
     form: {
@@ -802,7 +1343,7 @@ function perEncounterContext() {
 
 function hoardContext() {
   return {
-    ...menuContext(),
+    ...menuContext("hoard"),
     ...marketContext(0, 1000),
     form: { artVariants: true },
     totalBudgetLabel: "2,400 gp",
@@ -881,7 +1422,7 @@ function perCreatureContext() {
     { id: "boss-1", name: "Ogre Boss", tier: "t3", budgetLabel: "210 gp" },
   ];
   return {
-    ...menuContext(),
+    ...menuContext("creature"),
     ...marketContext(),
     rosterRows: rows.map((row) => ({
       ...row,
@@ -1119,6 +1660,8 @@ function merchantWorkspaceClosedContext() {
 function merchantSessionContext(activeTab = "buy") {
   return {
     domId: `harness-${activeTab}`,
+    actorName: "Aric the Ranger",
+    actorImg: iconDataUri("#8a3f43", "AR"),
     merchant: {
       id: "m-curios",
       name: "Yannick's Curios",
@@ -1131,6 +1674,22 @@ function merchantSessionContext(activeTab = "buy") {
     previewMode: true,
     previewNoActor: false,
     noActor: false,
+    canSwitchActor: true,
+    needsActorChoice: false,
+    actorSwitchLocked: false,
+    actorOptions: [
+      { id: "a-aric", name: "Aric the Ranger", selected: true },
+      { id: "a-mira", name: "Mira Quickstep", selected: false },
+    ],
+    offline: false,
+    transactionBusy: false,
+    transactionTone: "ready",
+    transactionTitle: "Ready to trade",
+    transactionMessage:
+      "Choose an item and quantity. Your wallet and the shop update only after the GM confirms the transaction.",
+    searchQuery: "",
+    sessionSpentValue: "48.00 gp",
+    sessionEarnedValue: "9.00 gp",
     buyActive: activeTab === "buy",
     sellActive: activeTab === "sell",
     buyRows: [
@@ -1236,12 +1795,92 @@ function merchantSessionContext(activeTab = "buy") {
   };
 }
 
+function merchantSessionPendingContext() {
+  const context = merchantSessionContext("buy");
+  context.transactionBusy = true;
+  context.actorSwitchLocked = true;
+  context.transactionTone = "pending";
+  context.transactionTitle = "Waiting for the GM to confirm";
+  context.transactionMessage =
+    "The request was sent. Do not repeat it while the authoritative result is pending.";
+  context.buyRows = context.buyRows.map((row) => ({
+    ...row,
+    cannotBuy: true,
+    cannotBuyReason: "Another transaction is pending.",
+    bargainLocked: true,
+    bargainPending: true,
+  }));
+  return context;
+}
+
+function merchantSessionUncertainContext() {
+  const context = merchantSessionContext("buy");
+  context.transactionTone = "uncertain";
+  context.actorSwitchLocked = true;
+  context.transactionTitle = "A trade is not yet confirmed";
+  context.transactionMessage =
+    "The connection changed before confirmation arrived. Do not buy again; check the wallet, inventory, or chat receipt and ask the GM if it remains unclear.";
+  context.buyRows = context.buyRows.map((row) => ({
+    ...row,
+    cannotBuy: true,
+    cannotBuyReason: "Review the uncertain transaction before trying again.",
+    bargainLocked: true,
+  }));
+  return context;
+}
+
+function merchantSessionOfflineContext() {
+  const context = merchantSessionContext("buy");
+  context.offline = true;
+  context.transactionTone = "offline";
+  context.transactionTitle = "Trading is offline";
+  context.transactionMessage =
+    "No full GM is connected. Nothing changed; trading resumes after reconnection.";
+  context.buyRows = context.buyRows.map((row) => ({
+    ...row,
+    cannotBuy: true,
+    cannotBuyReason: "A full GM must be online.",
+    bargainLocked: true,
+  }));
+  return context;
+}
+
+function merchantSessionNoActorContext() {
+  const context = merchantSessionContext("sell");
+  context.actorName = "No active character";
+  context.actorImg = "icons/svg/mystery-man.svg";
+  context.noActor = true;
+  context.previewNoActor = true;
+  context.needsActorChoice = true;
+  context.actorOptions = context.actorOptions.map((actor) => ({
+    ...actor,
+    selected: false,
+  }));
+  context.sellRows = [];
+  context.transactionTone = "error";
+  context.transactionTitle = "Choose a character before trading";
+  context.transactionMessage =
+    "Nothing can be bought or sold from this session. Ask the GM to assign a character, then reopen the shop.";
+  return context;
+}
+
 function shopPickerContext() {
   return {
     noGm: false,
     loading: false,
+    requestFailed: false,
     globallyClosed: false,
     hasShops: true,
+    hasPending: true,
+    actorName: "Aric the Ranger",
+    hasActor: true,
+    canSwitchActor: true,
+    needsActorChoice: false,
+    actorOptions: [
+      { id: "a-aric", name: "Aric the Ranger", selected: true },
+      { id: "a-mira", name: "Mira Quickstep", selected: false },
+    ],
+    query: "",
     shops: [
       {
         id: "m-brundle",
@@ -1250,6 +1889,7 @@ function shopPickerContext() {
         description: "Dusty oddments and salvaged gear.",
         knock: false,
         pending: false,
+        actorRequired: false,
       },
       {
         id: "m-iron",
@@ -1258,6 +1898,7 @@ function shopPickerContext() {
         description: "Arms & armor, fairly priced.",
         knock: true,
         pending: true,
+        actorRequired: false,
       },
       {
         id: "m-arc",
@@ -1266,6 +1907,7 @@ function shopPickerContext() {
         description: "",
         knock: false,
         pending: false,
+        actorRequired: false,
       },
     ],
   };
@@ -1275,8 +1917,19 @@ function shopPickerEmptyContext() {
   return {
     noGm: false,
     loading: false,
+    requestFailed: false,
     globallyClosed: false,
     hasShops: false,
+    hasPending: false,
+    actorName: "Aric the Ranger",
+    hasActor: true,
+    canSwitchActor: true,
+    needsActorChoice: false,
+    actorOptions: [
+      { id: "a-aric", name: "Aric the Ranger", selected: true },
+      { id: "a-mira", name: "Mira Quickstep", selected: false },
+    ],
+    query: "",
     shops: [],
   };
 }
@@ -1285,10 +1938,60 @@ function shopPickerClosedContext() {
   return {
     noGm: false,
     loading: false,
+    requestFailed: false,
     globallyClosed: true,
     hasShops: false,
+    hasPending: false,
+    actorName: "Aric the Ranger",
+    hasActor: true,
+    canSwitchActor: true,
+    needsActorChoice: false,
+    actorOptions: [
+      { id: "a-aric", name: "Aric the Ranger", selected: true },
+      { id: "a-mira", name: "Mira Quickstep", selected: false },
+    ],
+    query: "",
     shops: [],
   };
+}
+
+function shopPickerLoadingContext() {
+  return {
+    ...shopPickerEmptyContext(),
+    loading: true,
+  };
+}
+
+function shopPickerOfflineContext() {
+  return {
+    ...shopPickerEmptyContext(),
+    noGm: true,
+  };
+}
+
+function shopPickerErrorContext() {
+  return {
+    ...shopPickerEmptyContext(),
+    requestFailed: true,
+  };
+}
+
+function shopPickerChooseActorContext() {
+  const context = shopPickerContext();
+  context.actorName = "Choose a character";
+  context.hasActor = false;
+  context.needsActorChoice = true;
+  context.actorOptions = context.actorOptions.map((actor) => ({
+    ...actor,
+    selected: false,
+  }));
+  context.shops = context.shops.map((shop) => ({
+    ...shop,
+    pending: false,
+    actorRequired: true,
+  }));
+  context.hasPending = false;
+  return context;
 }
 
 function resourceManagerContext() {
@@ -1931,6 +2634,7 @@ function resourceOverviewOfflineContext() {
 
 function downtimeWorkspaceEmptyContext() {
   return downtimeWorkspaceBaseContext({
+    showQuickStart: true,
     workflowStatus: "idle",
     workflowStatusLabel: "No active block",
     workflowTone: "neutral",
@@ -2089,6 +2793,7 @@ function downtimeWorkspaceApplyingContext() {
   context.currentBlock.applyReason = "Application is already in progress.";
   context.currentBlock.cancelReason =
     "This block can no longer be cancelled after application begins.";
+  Object.assign(context, downtimeLifecycleFixture(context));
   return context;
 }
 
@@ -2122,7 +2827,8 @@ function downtimeWorkspaceCompletedHistoryContext() {
 }
 
 function downtimeWorkspaceBaseContext(overrides = {}) {
-  return {
+  const context = {
+    showQuickStart: false,
     dataAvailable: true,
     view: "current",
     viewCurrent: true,
@@ -2185,6 +2891,148 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
     errorMessage: "",
     hasError: false,
     ...overrides,
+  };
+  return {
+    ...context,
+    ...downtimeLifecycleFixture(context),
+  };
+}
+
+function downtimeLifecycleFixture(context) {
+  const steps = [
+    [
+      "create",
+      "Create",
+      "Set the location, productive hours, and eligible characters.",
+    ],
+    ["collect", "Collect", "Players build and submit their activity queues."],
+    ["lock", "Lock", "Close submissions so queued activities cannot change."],
+    ["preview", "Preview", "Generate and review the immutable write plan."],
+    ["apply", "Apply", "Execute the exact saved plan without rerolling."],
+    ["complete", "Complete", "Review the receipt, then start the next block."],
+  ];
+  const status = String(context.workflowStatus ?? "idle");
+  const hasCurrentBlock = Boolean(context.hasCurrentBlock);
+  const needsRecovery =
+    Boolean(context.needsRecovery) || status === "needs-review";
+  let completedThrough = -1;
+  let currentIndex = -1;
+  let interruptedIndex = -1;
+
+  if (needsRecovery) {
+    completedThrough = 3;
+    interruptedIndex = 4;
+  } else if (
+    !hasCurrentBlock ||
+    status === "idle" ||
+    status === "unavailable"
+  ) {
+    currentIndex = 0;
+  } else {
+    const positions = {
+      collecting: [0, 1],
+      locked: [1, 2],
+      planned: [2, 3],
+      applying: [3, 4],
+      completed: [5, -1],
+    };
+    [completedThrough, currentIndex] = positions[status] ?? [0, 1];
+  }
+  const stateCopy = {
+    completed: ["Completed", "fa-check"],
+    current: ["Current", "fa-circle-dot"],
+    pending: ["Pending", "fa-circle"],
+    interrupted: ["Interrupted", "fa-triangle-exclamation"],
+  };
+  const lifecycleSteps = steps.map(([id, label, description], index) => {
+    let state = index <= completedThrough ? "completed" : "pending";
+    if (index === currentIndex) state = "current";
+    if (index === interruptedIndex) state = "interrupted";
+    const [stateLabel, icon] = stateCopy[state];
+    return {
+      id,
+      label,
+      description,
+      state,
+      stateLabel,
+      icon,
+      current: state === "current",
+      completed: state === "completed",
+      pending: state === "pending",
+    };
+  });
+
+  let actionId = "";
+  const block = context.currentBlock;
+  if (needsRecovery) actionId = "recoverBlock";
+  else if (!hasCurrentBlock && context.canCreateBlock) actionId = "createBlock";
+  else if (status === "collecting") {
+    const allSubmitted =
+      block?.hasParticipants &&
+      block.submittedCount >= (block.participants?.length ?? 0);
+    if (allSubmitted && block.canLock) actionId = "lockBlock";
+    else if (block?.canOpenForPlayers && block.hasParticipants) {
+      actionId = "openForPlayers";
+    } else if (block?.canLock) actionId = "lockBlock";
+  } else if (status === "locked" && block?.canPlan) actionId = "planBlock";
+  else if (status === "planned" && block?.canApply) actionId = "applyBlock";
+  const actionCopy = {
+    createBlock: [
+      "Open block",
+      "Create the block so players can prepare their queues.",
+    ],
+    openForPlayers: [
+      "Open for players",
+      "Invite assigned players to review and submit their queues.",
+    ],
+    lockBlock: [
+      "Lock submissions",
+      "Close queue editing and move this block toward preview.",
+    ],
+    planBlock: ["Generate preview", "Build the immutable plan for GM review."],
+    applyBlock: [
+      "Apply exact plan",
+      "Apply the reviewed saved plan without rerolling.",
+    ],
+    recoverBlock: [
+      "Verify and recover",
+      "Verify saved operations before retrying only proven-unapplied work.",
+    ],
+  };
+  const [actionLabel, actionDescription] = actionCopy[actionId] ?? [
+    "Waiting for workflow state",
+    status === "applying"
+      ? "Application is in progress. Wait for the authoritative result; use Recovery only if the workspace requests it."
+      : "No primary action is available until the authoritative workflow state changes.",
+  ];
+  return {
+    lifecycleSteps,
+    lifecycleRecovery: {
+      id: "recovery",
+      label: "Recovery",
+      state: needsRecovery ? "current" : "pending",
+      stateLabel: needsRecovery ? "Current" : "Standby",
+      icon: needsRecovery ? "fa-life-ring" : "fa-shield-halved",
+      current: needsRecovery,
+      pending: !needsRecovery,
+      description: needsRecovery
+        ? context.recoveryMessage ||
+          "Verify the interrupted application before continuing."
+        : "Branches from Apply only when an interrupted write needs verification.",
+    },
+    primaryAction: {
+      id: actionId,
+      hasAction: Boolean(actionId),
+      label: actionLabel,
+      description: actionDescription,
+      createBlock: actionId === "createBlock",
+      openForPlayers: actionId === "openForPlayers",
+      lockBlock: actionId === "lockBlock",
+      planBlock: actionId === "planBlock",
+      applyBlock: actionId === "applyBlock",
+      recoverBlock: actionId === "recoverBlock",
+      beginNextBlock: actionId === "beginNextBlock",
+    },
   };
 }
 
@@ -2322,13 +3170,23 @@ function downtimeActivitiesAvailableContext() {
         hours: 4,
         detail: "20 arrows",
         canMoveUp: false,
+        canMoveDown: true,
+      },
+      {
+        id: "queue-aric-trade",
+        position: 2,
+        label: "Market Trading",
+        icon: "fa-solid fa-scale-balanced",
+        hours: 4,
+        detail: "Persuasion · 50 gp stake",
+        canMoveUp: true,
         canMoveDown: false,
       },
     ],
     hasQueue: true,
-    usedHours: 4,
-    remainingHours: 4,
-    progressPercent: 50,
+    usedHours: 8,
+    remainingHours: 0,
+    progressPercent: 100,
   });
 }
 
@@ -2833,6 +3691,7 @@ function foragePromptContext() {
     environmentLabel: "Limited (hills, farmland, woods)",
     dc: 15,
     noActor: false,
+    offline: false,
     isPrompt: true,
     isWaiting: false,
     isDone: false,
@@ -2846,11 +3705,62 @@ function foragePromptContext() {
   };
 }
 
+function forageWaitingContext() {
+  return {
+    ...foragePromptContext(),
+    isPrompt: false,
+    isWaiting: true,
+  };
+}
+
+function forageTimeoutContext() {
+  return {
+    ...foragePromptContext(),
+    isPrompt: false,
+    isDone: true,
+    result: {
+      success: false,
+      food: 0,
+      water: 0,
+      timedOut: true,
+      noResponse: false,
+      suppressed: false,
+    },
+  };
+}
+
+function forageSuccessContext() {
+  return {
+    ...foragePromptContext(),
+    isPrompt: false,
+    isDone: true,
+    result: {
+      success: true,
+      food: 3,
+      water: 4,
+      timedOut: false,
+      noResponse: false,
+      suppressed: false,
+    },
+  };
+}
+
+function forageOfflineContext() {
+  return {
+    ...foragePromptContext(),
+    offline: true,
+  };
+}
+
 function criticalInjuryContext() {
   return {
+    domId: "actor-aric",
     actorName: "Aric the Ranger",
     actorImg: iconDataUri("#8a3f43", "AR"),
     noActor: false,
+    offline: false,
+    statusTone: "success",
+    outcomeUncertain: false,
     pending: {
       id: "pending-aric",
       actorId: "a-aric",
@@ -2871,6 +3781,7 @@ function criticalInjuryContext() {
     activeInjuries: [
       {
         id: "injury-knee",
+        domId: "injury-knee",
         name: "Shattered Knee",
         roll: 47,
         detailLabel: "Left knee",
@@ -2885,10 +3796,12 @@ function criticalInjuryContext() {
         treatmentCheck: "No check",
         canTreat: true,
         treating: false,
+        treatmentMessage: "",
         automatedChanges: 1,
       },
       {
         id: "injury-scar",
+        domId: "injury-scar",
         name: "Deep Scar",
         roll: 74,
         detailLabel: "Visible facial scar",
@@ -2902,6 +3815,7 @@ function criticalInjuryContext() {
         treatmentCheck: "No check",
         canTreat: false,
         treating: false,
+        treatmentMessage: "",
         automatedChanges: 2,
       },
     ],
@@ -2916,11 +3830,68 @@ function criticalInjuryContext() {
   };
 }
 
+function criticalInjuryOfflineContext() {
+  return {
+    ...criticalInjuryContext(),
+    offline: true,
+    statusTone: "warning",
+    statusMessage:
+      "No full GM is connected. Existing injuries are unchanged; actions resume after reconnection.",
+  };
+}
+
+function criticalInjuryTreatingContext() {
+  const context = criticalInjuryContext();
+  context.statusTone = "info";
+  context.statusMessage =
+    "The treatment request was sent. Do not submit it again while confirmation is pending.";
+  context.activeInjuries = context.activeInjuries.map((injury, index) =>
+    index === 0
+      ? {
+          ...injury,
+          treating: true,
+          treatmentMessage: "Waiting for the active GM to confirm treatment.",
+        }
+      : injury,
+  );
+  return context;
+}
+
+function criticalInjuryTreatmentOutcomeContext() {
+  const context = criticalInjuryContext();
+  context.statusTone = "success";
+  context.statusMessage =
+    "Treatment was confirmed and the injury record now shows the updated recovery state.";
+  context.activeInjuries = context.activeInjuries.map((injury, index) =>
+    index === 0
+      ? {
+          ...injury,
+          stabilized: true,
+          treatmentMessage:
+            "Treatment succeeded. The saved injury state was read back from the active GM.",
+        }
+      : injury,
+  );
+  return context;
+}
+
+function criticalInjuryUncertainContext() {
+  return {
+    ...criticalInjuryContext(),
+    outcomeUncertain: true,
+    statusTone: "warning",
+    statusMessage:
+      "Confirmation did not arrive. Do not repeat the injury action; check the Actor and chat receipt, then ask the GM if the result remains unclear.",
+  };
+}
+
 function criticalInjuryHudContext() {
   return {
     actorName: "Aric the Ranger",
     injuryCount: 3,
     statusMessage: "The active GM is ready to review treatment.",
+    offline: false,
+    outcomeUncertain: false,
     animationsEnabled: true,
     markers: [
       {
@@ -2942,6 +3913,8 @@ function criticalInjuryHudContext() {
             kitCharges: 1,
             treatmentCheck: "DC 12 Medicine",
             treatmentMessage: "",
+            treatmentUncertain: false,
+            offline: false,
             permanent: false,
             stabilized: false,
           },
@@ -2967,6 +3940,8 @@ function criticalInjuryHudContext() {
             kitCharges: 3,
             treatmentCheck: "No check",
             treatmentMessage: "The active GM is ready to review treatment.",
+            treatmentUncertain: false,
+            offline: false,
             permanent: false,
             stabilized: false,
           },
@@ -2982,6 +3957,8 @@ function criticalInjuryHudContext() {
             kitCharges: 0,
             treatmentCheck: "No check",
             treatmentMessage: "",
+            treatmentUncertain: false,
+            offline: false,
             permanent: true,
             stabilized: false,
           },
@@ -2989,6 +3966,40 @@ function criticalInjuryHudContext() {
       },
     ],
   };
+}
+
+function criticalInjuryHudOfflineContext() {
+  const context = criticalInjuryHudContext();
+  context.offline = true;
+  context.statusMessage =
+    "Treatment is offline. Existing injuries are unchanged while the GM reconnects.";
+  context.markers = context.markers.map((marker) => ({
+    ...marker,
+    injuries: marker.injuries.map((injury) => ({ ...injury, offline: true })),
+  }));
+  return context;
+}
+
+function criticalInjuryHudUncertainContext() {
+  const context = criticalInjuryHudOfflineContext();
+  context.outcomeUncertain = true;
+  context.statusMessage =
+    "Treatment confirmation was interrupted. Do not repeat the request; check the full injury window after the GM reconnects.";
+  context.markers = context.markers.map((marker, markerIndex) => ({
+    ...marker,
+    injuries: marker.injuries.map((injury, injuryIndex) =>
+      markerIndex === 1 && injuryIndex === 0
+        ? {
+            ...injury,
+            treating: true,
+            treatmentUncertain: true,
+            treatmentMessage:
+              "Confirmation was interrupted. Check the full injury window after reconnection; do not submit treatment again.",
+          }
+        : injury,
+    ),
+  }));
+  return context;
 }
 
 function reputationWorkspaceContext() {

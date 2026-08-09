@@ -59,6 +59,13 @@ import {
 } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
+import { pickSearchOption } from "./search-picker.js";
+import { loadCompendiumItems } from "./loot/pack.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+  promptInfinityDialog,
+} from "./dialog-contract.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
@@ -89,6 +96,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       addResource: ResourceManagerApp._onAddResource,
       removeResource: ResourceManagerApp._onRemoveResource,
       addTag: ResourceManagerApp._onAddTag,
+      addTagByUuid: ResourceManagerApp._onAddTagByUuid,
       removeTag: ResourceManagerApp._onRemoveTag,
       addRosterMember: ResourceManagerApp._onAddRosterMember,
       removeRosterMember: ResourceManagerApp._onRemoveRosterMember,
@@ -665,13 +673,12 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       // clicks can queue multiple confirmations that resume one at a time after
       // the service-level upkeep guard has already been released.
       const party = discoverPartyActors();
-      const DialogV2 = foundry?.applications?.api?.DialogV2;
-      if (party.length > 0 && typeof DialogV2?.confirm === "function") {
-        const ok = await DialogV2.confirm({
+      if (party.length > 0 && isInfinityDialogAvailable("confirm")) {
+        const ok = await confirmInfinityDialog({
           window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
           content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
           rejectClose: false,
-        }).catch(() => false);
+        });
         if (!ok) return;
       }
       playModuleSound(SOUND_EVENTS.ROLL_START);
@@ -708,12 +715,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       } = describeForageDrive();
       if (candidates.length === 0) {
         ui.notifications?.info(
-          `${MODULE_ID}: add party members before running a forage drive.`,
+          "Add party members in Setup & Rules before starting a forage drive. Nothing changed.",
         );
         return;
       }
-      const DialogV2 = foundry?.applications?.api?.DialogV2;
-      if (typeof DialogV2?.prompt !== "function") return;
+      if (!isInfinityDialogAvailable("prompt")) return;
       if (!canForageFood && !canForageWater) {
         notify("warn", `enable and configure food or water before foraging.`);
         return;
@@ -768,32 +774,27 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       <p style="opacity:0.8; margin:8px 0 0;">${destLine}</p>
       ${anyOnline ? "" : '<p style="opacity:0.8; margin:6px 0 0;">No selected player is online, so the GM will roll every selected check.</p>'}`;
 
-      let result = null;
-      try {
-        result = await DialogV2.prompt({
-          window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
-          content,
-          ok: {
-            label: "Send check",
-            icon: "fa-solid fa-paper-plane",
-            callback: (_e, button) => {
-              const form = button?.form;
-              if (!form) return null;
-              const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
-              const ids = Array.from(
-                form.querySelectorAll('input[name="forager"]:checked'),
-              ).map((el) => el.value);
-              const forageTarget = String(
-                form.elements?.forageTarget?.value ?? "",
-              );
-              return { dc, ids, forageTarget };
-            },
+      const result = await promptInfinityDialog({
+        window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
+        content,
+        ok: {
+          label: "Send check",
+          icon: "fa-solid fa-paper-plane",
+          callback: (_e, button) => {
+            const form = button?.form;
+            if (!form) return null;
+            const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
+            const ids = Array.from(
+              form.querySelectorAll('input[name="forager"]:checked'),
+            ).map((el) => el.value);
+            const forageTarget = String(
+              form.elements?.forageTarget?.value ?? "",
+            );
+            return { dc, ids, forageTarget };
           },
-          rejectClose: false,
-        });
-      } catch {
-        result = null;
-      }
+        },
+        rejectClose: false,
+      });
       if (!result) return;
       if (!Array.isArray(result.ids) || result.ids.length === 0) {
         notify("info", `select at least one forager.`);
@@ -876,37 +877,109 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
-  /** Keyboard-friendly alternative to drag-to-tag: paste an item UUID. */
+  /** Keyboard-friendly alternative to drag-to-tag using the shared item picker. */
   static async _onAddTag(_event, target) {
     const id = target?.dataset?.resourceId;
     if (!id) return;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (typeof DialogV2?.prompt !== "function") return;
-    let uuid = null;
+    const initialConfig = loadResourceConfig();
+    const initialResource = initialConfig.resources.find(
+      (resource) => resource.id === id,
+    );
+    if (!initialResource) return;
+
+    let compendiumItems = [];
     try {
-      uuid = await DialogV2.prompt({
-        window: { title: "Add item by UUID", icon: "fa-solid fa-link" },
-        content:
-          "<p>Paste an item's UUID to match it exactly (right-click an item, then Copy Document UUID).</p>" +
-          '<label style="display:grid;gap:4px;"><span>Item UUID</span><input type="text" name="uuid" placeholder="Compendium.…Item.…" /></label>',
-        ok: {
-          label: "Add",
-          callback: (_e, button) =>
-            button?.form?.elements?.uuid?.value?.trim() ?? null,
-        },
-        rejectClose: false,
-      });
+      compendiumItems = await loadCompendiumItems();
     } catch {
-      uuid = null;
+      compendiumItems = [];
     }
-    if (!uuid) return;
-    const config = loadResourceConfig();
-    const res = config.resources.find((r) => r.id === id);
-    if (!res) return;
-    const uuids = new Set(res.matching.itemUuids ?? []);
-    uuids.add(uuid);
-    res.matching.itemUuids = [...uuids];
-    await saveResourceConfig(config);
+    const itemCandidates = [];
+    for (const item of compendiumItems) {
+      if (!item?.uuid || !item?.name) continue;
+      itemCandidates.push({
+        uuid: item.uuid,
+        name: item.name,
+        type: item.type,
+        img: item.img,
+        source: "Infinity item library",
+      });
+    }
+    for (const actor of discoverAllActors()) {
+      for (const item of actorItemSnapshots(actor)) {
+        if (!item?.uuid || !item?.name) continue;
+        itemCandidates.push({
+          uuid: item.uuid,
+          name: item.name,
+          type: item.type,
+          img: item.img,
+          source: actor.name ?? "Actor inventory",
+        });
+      }
+    }
+    const candidatesByUuid = new Map();
+    for (const item of itemCandidates) {
+      if (!candidatesByUuid.has(item.uuid))
+        candidatesByUuid.set(item.uuid, item);
+    }
+    const existingUuids = new Set(initialResource.matching.itemUuids ?? []);
+    const uuid = await pickSearchOption({
+      title: `Match an item to ${initialResource.label ?? "resource"}`,
+      hint: "Search the item library and Actor inventories. The item and resource are checked again before anything changes.",
+      options: [...candidatesByUuid.values()]
+        .filter((item) => !existingUuids.has(item.uuid))
+        .map((item) => ({
+          id: item.uuid,
+          label: item.name,
+          description: `${item.source}${item.type ? ` · ${item.type}` : ""}`,
+          img: item.img,
+          keywords: `${item.type ?? ""} ${item.source}`,
+        })),
+      confirmLabel: "Match item",
+    });
+    if (!uuid || !candidatesByUuid.has(uuid)) return;
+    if (!(await saveExactItemMatch(id, uuid))) return;
+    playModuleSound(SOUND_EVENTS.DEPOSIT);
+    this.render(false);
+  }
+
+  /** @this {ResourceManagerApp} */
+  /** Preserve exact matching for items outside the searchable local catalog. */
+  static async _onAddTagByUuid(_event, target) {
+    const id = target?.dataset?.resourceId;
+    if (!id) return;
+    const resource = loadResourceConfig().resources.find(
+      (entry) => entry.id === id,
+    );
+    if (!resource) return;
+    if (!isInfinityDialogAvailable("prompt")) {
+      notify(
+        "warn",
+        "The UUID entry dialog could not open. Nothing changed; reload Foundry and try again.",
+      );
+      return;
+    }
+
+    const uuid = await promptInfinityDialog({
+      window: {
+        title: `Match an item to ${resource.label ?? "resource"}`,
+        icon: "fa-solid fa-link",
+      },
+      content: `
+        <div class="infinity-dnd5e">
+          <p>Paste an Item UUID from any world or compendium source. Right-click the item and choose <strong>Copy Document UUID</strong>.</p>
+          <label style="display:grid;gap:4px;">
+            <span>Item UUID</span>
+            <input type="text" name="uuid" autocomplete="off" spellcheck="false" maxlength="1000" required />
+          </label>
+        </div>`,
+      ok: {
+        label: "Match item",
+        icon: "fa-solid fa-link",
+        callback: (_event, button) =>
+          button?.form?.elements?.uuid?.value?.trim() ?? null,
+      },
+    });
+    if (!uuid || !(await saveExactItemMatch(id, uuid))) return;
     playModuleSound(SOUND_EVENTS.DEPOSIT);
     this.render(false);
   }
@@ -928,13 +1001,36 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAddRosterMember(_event, _target) {
-    const select = this.element?.querySelector("[data-role='add-roster']");
-    const actorId = String(select?.value ?? "").trim();
+    const initialConfig = loadResourceConfig();
+    seedRosterIfEmpty(initialConfig);
+    const existingActorIds = new Set(
+      initialConfig.roster.map((entry) => String(entry.actorId ?? "").trim()),
+    );
+    const actorOptions = discoverAllActors()
+      .filter((actor) => actor?.id && !existingActorIds.has(actor.id))
+      .map((actor) => ({
+        id: actor.id,
+        label: actor.name ?? "Unnamed Actor",
+        description: actor.type
+          ? `Actor type: ${actor.type}`
+          : "Available Actor",
+        img: actor.img,
+        keywords: `${actor.type ?? ""} ${actor.folder?.name ?? ""}`,
+      }));
+    const actorId = await pickSearchOption({
+      title: "Add Actor to Quartermaster",
+      hint: "Search the available Actors. The selection is checked again before the roster changes.",
+      options: actorOptions,
+      confirmLabel: "Add to roster",
+    });
     if (!actorId) return;
     // Any real actor is eligible — the GM may add NPCs / unowned actors as
     // supply sources, not just player characters.
     const actor = discoverAllActors().find((entry) => entry.id === actorId);
     if (!actor) return;
+    // The picker can remain open while another GM changes Quartermaster setup.
+    // Merge into the latest canonical config instead of writing the snapshot
+    // used only to build the picker options.
     const config = loadResourceConfig();
     seedRosterIfEmpty(config);
     if (!config.roster.some((r) => r.actorId === actorId)) {
@@ -1015,10 +1111,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onResetConfig(_event, _target) {
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
     let ok = true;
-    if (typeof DialogV2?.confirm === "function") {
-      ok = await DialogV2.confirm({
+    if (isInfinityDialogAvailable("confirm")) {
+      ok = await confirmInfinityDialog({
         window: {
           title: "Reset Quartermaster?",
           icon: "fa-solid fa-rotate-left",
@@ -1026,7 +1121,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         content:
           "<p>Reset all resource definitions and environments to the defaults? Your day-tracking is kept.</p>",
         rejectClose: false,
-      }).catch(() => false);
+      });
     }
     if (!ok) return;
     const defaults = createDefaultResourceConfig();
@@ -1058,6 +1153,64 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+/** Resolve and persist one exact Item UUID against the latest resource config. */
+async function saveExactItemMatch(resourceId, rawUuid) {
+  const uuid = String(rawUuid ?? "").trim();
+  if (!uuid || uuid.length > 1000) {
+    notify(
+      "warn",
+      "Enter a valid Item UUID. Nothing changed; copy the UUID from the item's context menu and try again.",
+    );
+    return false;
+  }
+
+  if (typeof globalThis.fromUuid !== "function") {
+    notify(
+      "warn",
+      "The Item UUID could not be checked on this client. Nothing changed; reload Foundry and try again.",
+    );
+    return false;
+  }
+
+  let item = null;
+  try {
+    item = await globalThis.fromUuid(uuid);
+  } catch {
+    item = null;
+  }
+  const documentName = String(
+    item?.documentName ?? item?.constructor?.documentName ?? "",
+  );
+  if (!item || documentName !== "Item") {
+    notify(
+      "warn",
+      "That UUID does not resolve to an Item. Nothing changed; copy an Item UUID and try again.",
+    );
+    return false;
+  }
+
+  // The picker or dialog may remain open while another GM edits setup. Merge
+  // into the latest canonical configuration immediately before the write.
+  const config = loadResourceConfig();
+  const resource = config.resources.find((entry) => entry.id === resourceId);
+  if (!resource) {
+    notify(
+      "warn",
+      "That resource no longer exists. Nothing changed; refresh Quartermaster and try again.",
+    );
+    return false;
+  }
+  const uuids = new Set(resource.matching.itemUuids ?? []);
+  if (uuids.has(uuid)) {
+    notify("info", "That item is already matched. Nothing changed.");
+    return false;
+  }
+  uuids.add(uuid);
+  resource.matching.itemUuids = [...uuids];
+  await saveResourceConfig(config);
+  return true;
+}
 
 /**
  * Materialize the implicit "auto-track every player character" roster into an

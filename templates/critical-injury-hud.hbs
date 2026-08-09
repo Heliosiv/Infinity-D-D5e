@@ -13,6 +13,8 @@
     <span>{{injuryCount}}</span>
   </button>
 
+  <span class="ci-hud-actor" title="Active character: {{actorName}}">{{actorName}}</span>
+
   <svg
     class="ci-hud-figure"
     viewBox="0 0 120 220"
@@ -84,6 +86,13 @@
           </button>
         </header>
 
+        {{#if ../offline}}
+          <div class="ci-hud-offline{{#if ../outcomeUncertain}} ci-hud-offline--uncertain{{/if}}">
+            <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+            <span>{{#if ../outcomeUncertain}}<strong>Confirmation was interrupted.</strong> Treatment may already have changed this character. Do not repeat it while the GM reconnects.{{else}}<strong>Treatment is offline.</strong> No full GM is connected, so no new treatment request can start.{{/if}}</span>
+          </div>
+        {{/if}}
+
         <div class="ci-hud-card__injuries">
           {{#each injuries}}
             <article
@@ -134,12 +143,15 @@
                     type="button"
                     data-action="requestTreatment"
                     data-injury-id="{{id}}"
-                    aria-disabled="{{#if treating}}true{{else}}false{{/if}}"
-                    {{#if treating}}disabled{{/if}}
+                    aria-disabled="{{#if treating}}true{{else if offline}}true{{else}}false{{/if}}"
+                    {{#if treating}}disabled{{else if offline}}disabled title="A full GM must be online"{{/if}}
                   >
                     {{#if treating}}
                       <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
                       Waiting for GM&hellip;
+                    {{else if offline}}
+                      <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+                      Treatment offline
                     {{else}}
                       <i class="fa-solid fa-kit-medical" aria-hidden="true"></i>
                       Treat with Healer's Kit

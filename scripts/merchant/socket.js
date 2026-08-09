@@ -71,6 +71,10 @@ import {
 } from "./global-access.js";
 import { escapeHtml } from "../ui-util.js";
 import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+} from "../dialog-contract.js";
+import {
   authoritativeGMId,
   authenticateSocketPayload,
   isActiveSocketUser,
@@ -1281,7 +1285,7 @@ function openSelfServiceSession(merchant, userId) {
 /** Non-blocking GM toast when a player self-opens a shop. */
 function notifyGmShopOpened(merchant, userId) {
   globalThis.ui?.notifications?.info?.(
-    `${MODULE_ID}: opened ${merchant.name} for ${lookupUserName(userId)}.`,
+    `Opened ${merchant.name} for ${lookupUserName(userId)}.`,
   );
 }
 
@@ -1315,10 +1319,9 @@ const knockPending = new Set();
  */
 async function requestKnockApproval(merchant, userId) {
   const who = lookupUserName(userId);
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-  if (typeof DialogV2?.confirm !== "function") {
+  if (!isInfinityDialogAvailable("confirm")) {
     globalThis.ui?.notifications?.info?.(
-      `${MODULE_ID}: ${who} is knocking at ${merchant.name} (no approval dialog available).`,
+      `${who} is knocking at ${merchant.name}. The approval dialog could not open; use Merchant Workspace to approve or decline the request.`,
     );
     emitShopResult(userId, merchant.id, "unavailable");
     return;
@@ -1328,22 +1331,19 @@ async function requestKnockApproval(merchant, userId) {
   knockPending.add(pendingKey);
   let approved = false;
   try {
-    approved = await DialogV2.confirm({
+    approved = await confirmInfinityDialog({
       window: {
         title: `${merchant.name} — Entry Request`,
         icon: "fa-solid fa-hand",
       },
       content: `<p><strong>${escapeHtml(who)}</strong> is knocking at <strong>${escapeHtml(merchant.name)}</strong>. Open a shopping session for them?</p>`,
-      rejectClose: false,
     });
-  } catch {
-    approved = false;
   } finally {
     knockPending.delete(pendingKey);
   }
   if (!approved) {
     globalThis.ui?.notifications?.info?.(
-      `${MODULE_ID}: turned ${who} away from ${merchant.name}.`,
+      `Turned ${who} away from ${merchant.name}. No shop session opened.`,
     );
     emitShopResult(userId, merchant.id, "denied");
     return;
@@ -1352,7 +1352,7 @@ async function requestKnockApproval(merchant, userId) {
   const fresh = findMerchant(merchant.id);
   if (!fresh || !canSelfOpen(fresh, userId)) {
     globalThis.ui?.notifications?.warn(
-      `${MODULE_ID}: ${who} can no longer enter ${merchant.name}.`,
+      `${who} can no longer enter ${merchant.name}. Their shop session was closed.`,
     );
     emitShopResult(userId, merchant.id, "unavailable");
     return;

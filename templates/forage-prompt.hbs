@@ -12,6 +12,28 @@
     </div>
   </header>
 
+  <section class="fp-context" aria-label="Foraging context">
+    <div><span>Character</span><strong>{{#if actorName}}{{actorName}}{{else}}No character selected{{/if}}</strong></div>
+    <div><span>Location</span><strong>{{environmentLabel}}</strong></div>
+    <div><span>Gathering</span><strong>{{#if forageTargetBoth}}Food and water{{else if forageTargetFood}}Food{{else}}Water{{/if}}</strong></div>
+  </section>
+
+  {{#if offline}}
+  <div class="fp-offline" role="status">
+    <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
+    {{#if isWaiting}}
+    <div><strong>Confirmation was interrupted</strong><span>The roll may already have counted. Do not roll again. Keep this window open while the GM reconnects.</span></div>
+    {{else if result.timedOut}}
+    <div><strong>The outcome is still uncertain</strong><span>Confirmation did not arrive, and the roll may already have counted. Do not roll again; ask the GM to verify the day after reconnecting.</span></div>
+    {{else if isPrompt}}
+    <div><strong>Foraging is offline</strong><span>No full GM is connected. No roll was sent; try after the GM reconnects.</span></div>
+    <button type="button" class="mw-btn" data-action="retryConnection">Check connection</button>
+    {{else}}
+    <div><strong>The GM is offline</strong><span>The result shown here was already confirmed. You can safely close this window.</span></div>
+    {{/if}}
+  </div>
+  {{/if}}
+
   {{#if noActor}}
   <p class="fp-empty" role="alert">No character is assigned to you — ask your GM to assign one so you can forage.</p>
   {{else if isPrompt}}
@@ -19,30 +41,30 @@
     <p class="fp-prompt">Will <strong>{{actorName}}</strong> spend time foraging for {{#if forageTargetBoth}}food and water{{else if forageTargetFood}}food{{else}}water{{/if}} today?</p>
     {{#if passiveLabel}}<p class="fp-hint">{{passiveLabel}}{{#if wisLabel}} · {{wisLabel}}{{/if}}</p>{{/if}}
     <div class="fp-actions">
-      <button type="button" class="mw-btn mw-btn--primary" data-action="rollSurvival">
+      <button type="button" class="mw-btn mw-btn--primary" data-action="rollSurvival" {{#if offline}}disabled title="A full GM must be online"{{/if}}>
         <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> Roll Survival
       </button>
-      <button type="button" class="mw-btn mw-btn--ghost" data-action="skip">
+      <button type="button" class="mw-btn mw-btn--ghost" data-action="skip" {{#if offline}}disabled title="A full GM must be online"{{/if}}>
         Skip foraging
       </button>
     </div>
   </section>
   {{else if isWaiting}}
-  <section class="fp-body fp-body--waiting" role="status" aria-live="polite" aria-atomic="true">
+  <section class="fp-body fp-body--waiting" {{#unless offline}}role="status" aria-live="polite" aria-atomic="true"{{/unless}}>
     <i class="fa-solid fa-hourglass-half fp-spin" aria-hidden="true"></i>
     <p>Your roll is in — waiting for the quartermaster to tally the haul…</p>
   </section>
   {{else if isDone}}
-  <section class="fp-body fp-body--done" role="status" aria-live="polite" aria-atomic="true">
+  <section class="fp-body fp-body--done" {{#unless offline}}role="status" aria-live="polite" aria-atomic="true"{{/unless}}>
     {{#if result.timedOut}}
     <p class="fp-result fp-result--fail">
       <i class="fa-solid fa-clock" aria-hidden="true"></i>
-      Foraging wrapped up — check the chat log for the day's results.
+      Confirmation did not arrive. Your roll may already have counted; do not roll again. Check Party Supplies or the chat log, and ask the GM if the result is still unclear.
     </p>
     {{else if result.noResponse}}
     <p class="fp-result fp-result--fail">
       <i class="fa-solid fa-clock" aria-hidden="true"></i>
-      Foraging wrapped up before you decided — check the chat log for the day's results.
+      Foraging wrapped up before you decided. Nothing was submitted from this window; check the chat log for the day's result.
     </p>
     {{else if result.suppressed}}
     <p class="fp-result">

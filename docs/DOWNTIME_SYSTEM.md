@@ -1,12 +1,16 @@
 # Downtime, Locations, City Actions, and Theft
 
+## v0.3.0 interface quick start
+
+The GM workspace visualizes **Create → Collect → Lock → Preview → Apply → Complete**, with Recovery shown as an explicit branch rather than another forward step. Only the next valid primary action is emphasized. Players always see their controlled character, remaining hours, queue order, submission state, and the reason an action is unavailable. Keyboard queue controls remain available alongside pointer reordering.
+
 Infinity D&D5e downtime is a GM-authoritative planning block for activities
 that take hours rather than combat turns. It is intentionally separate from
 Foundry world time and Quartermaster upkeep.
 
 ## Running a downtime block
 
-1. A full GM opens **Downtime Workspace** from the Infinity D&D5e dashboard.
+1. A full GM opens **Home → Run the Session → Downtime Workspace**.
 2. In **Current Block**, optionally select a saved settlement. If the party is
    at camp, in the wilderness, aboard a ship, on the road, or somewhere else,
    leave the settlement unset and enter an **Other location** name instead.

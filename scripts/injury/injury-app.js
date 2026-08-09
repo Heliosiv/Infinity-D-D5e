@@ -17,6 +17,7 @@ import {
 import { getActorPendingCriticalInjuries } from "./service.js";
 import { formatInjuryTimestamp } from "./calendar.js";
 import { treatmentSkillLabel } from "./table.js";
+import { bindFocusRestoration } from "../infinity-app.js";
 import {
   getCriticalInjuryTreatmentState,
   handleCriticalInjuryTreatmentResult,
@@ -69,6 +70,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
         actorId: id,
         pendingId,
       });
+      bindFocusRestoration(app);
       instances.set(id, app);
     }
     if (pendingId) app._pendingId = pendingId;
@@ -163,6 +165,11 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
         if (this.rendered) this.render(false);
       },
     );
+    this._userConnectionHook =
+      globalThis.Hooks?.on?.("userConnected", (user) => {
+        if (!user?.isGM || !this.rendered) return;
+        this.render(false);
+      }) ?? null;
   }
 
   get title() {
@@ -179,6 +186,12 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     this._clearWaitTimer();
     this._treatmentStateUnsubscribe?.();
     this._treatmentStateUnsubscribe = null;
+    if (this._userConnectionHook != null) {
+      try {
+        globalThis.Hooks?.off?.("userConnected", this._userConnectionHook);
+      } catch {}
+      this._userConnectionHook = null;
+    }
     instances.delete(this._actorId);
   }
 
@@ -238,7 +251,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
           this._actorId,
           injuryId,
         );
-        return buildInjuryView(effect, treatmentState?.busy === true);
+        return buildInjuryView(effect, treatmentState);
       })
       .filter(Boolean)
       .sort((a, b) => b.createdAt - a.createdAt);
@@ -248,11 +261,42 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     const calendarActive =
       globalThis.game?.modules?.get?.("foundryvtt-simple-calendar")?.active ===
       true;
+    const offline = !Boolean(authoritativeGMId());
+    const treatmentBusy = treatmentStates.some((state) => state.busy === true);
+    const treatmentUncertain = treatmentStates.some(
+      (state) =>
+        state.busy === true ||
+        (state.retryable === true && Boolean(state.treatmentId)),
+    );
+    const outcomeUncertain =
+      offline && (this._waitingForRoll || treatmentUncertain);
+    const statusMessage =
+      this._statusMessage || String(treatmentStates[0]?.message ?? "");
+    const normalizedStatus = statusMessage.toLocaleLowerCase();
+    const statusTone = outcomeUncertain
+      ? "warning"
+      : offline
+        ? "offline"
+        : this._waitingForRoll || treatmentBusy
+          ? "pending"
+          : /could not|failed|unavailable|no result|no active gm|still pending|not sent|no longer/.test(
+                normalizedStatus,
+              )
+            ? "warning"
+            : statusMessage
+              ? "success"
+              : "ready";
 
     return {
+      domId: String(this._actorId || "character").replace(
+        /[^a-zA-Z0-9_-]/g,
+        "-",
+      ),
       actorName: actor?.name ?? "Character",
       actorImg: actor?.img ?? "icons/svg/mystery-man.svg",
       noActor: !actor,
+      offline,
+      outcomeUncertain,
       pending,
       hasPending: Boolean(pending),
       pendingCount: pendingList.length,
@@ -263,8 +307,8 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       hasLatestResult: Boolean(this._latestResult),
       activeInjuries,
       hasActiveInjuries: activeInjuries.length > 0,
-      statusMessage:
-        this._statusMessage || String(treatmentStates[0]?.message ?? ""),
+      statusMessage,
+      statusTone,
       integrations: {
         midiActive,
         daeActive,
@@ -740,7 +784,7 @@ function documentId(value) {
   return String(value?.id ?? value?._id ?? "").trim();
 }
 
-function buildInjuryView(effect, treating) {
+function buildInjuryView(effect, treatmentState) {
   const injury = getCriticalInjuryData(effect);
   if (!injury) return null;
   const treatmentCheck = injury.treatmentDc
@@ -748,6 +792,7 @@ function buildInjuryView(effect, treating) {
     : "No check";
   return {
     id: injury.id,
+    domId: String(injury.id ?? "injury").replace(/[^a-zA-Z0-9_-]/g, "-"),
     name: injury.injuryName,
     effect: injury.effect,
     recoveryRule: injury.recoveryRule,
@@ -767,7 +812,8 @@ function buildInjuryView(effect, treating) {
     treatmentCheck,
     canTreat:
       !injury.permanent && !injury.stabilized && Number(injury.kitCharges) > 0,
-    treating: Boolean(treating),
+    treating: Boolean(treatmentState?.busy),
+    treatmentMessage: String(treatmentState?.message ?? ""),
     automatedChanges: Array.isArray(effect?.changes)
       ? effect.changes.length
       : 0,

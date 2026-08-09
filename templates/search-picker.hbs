@@ -1,0 +1,60 @@
+<div class="infinity-ui infinity-app-shell ix-shell ix-search-picker">
+  <header class="infinity-app-header">
+    <div>
+      <p class="ix-eyebrow">Searchable selection</p>
+      <h1>{{title}}</h1>
+      {{#if hint}}<p>{{hint}}</p>{{/if}}
+    </div>
+    <span class="ix-count-badge">{{optionCount}}</span>
+  </header>
+
+  <label class="infinity-field ix-search-picker__query">
+    <span class="infinity-field__label">Search</span>
+    <span class="ix-input-with-icon">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+      <input type="search" autocomplete="off" placeholder="Type a name or keyword" aria-label="Search choices" value="{{query}}" data-search-picker-query />
+    </span>
+  </label>
+
+  <p class="infinity-sr-only" role="status" aria-live="polite" data-search-picker-status>{{optionCount}} options shown</p>
+
+  {{#if hasOptions}}
+    <div class="ix-choice-list" role="listbox" aria-label="{{title}} options" aria-multiselectable="{{#if multiple}}true{{else}}false{{/if}}" data-search-picker-list>
+      {{#each options}}
+        <button
+          type="button"
+          class="ix-choice {{#if selected}}is-selected{{/if}} {{#if disabled}}is-disabled{{/if}}"
+          role="option"
+          aria-selected="{{#if selected}}true{{else}}false{{/if}}"
+          aria-disabled="{{#if disabled}}true{{else}}false{{/if}}"
+          data-action="toggleOption"
+          data-option-id="{{id}}"
+          data-search-option
+          data-search-text="{{searchText}}"
+          {{#if disabled}}disabled{{/if}}
+          aria-label="{{#if selected}}Deselect{{else}}Select{{/if}} {{label}}"
+        >
+          {{#if img}}<span class="ix-choice__image" style="background-image:url('{{img}}')" aria-hidden="true"></span>{{/if}}
+          <span class="ix-choice__copy">
+            <strong>{{label}}</strong>
+            {{#if description}}<span>{{description}}</span>{{/if}}
+            {{#if disabledReason}}<span class="ix-choice__reason">{{disabledReason}}</span>{{/if}}
+          </span>
+          <i class="fa-solid {{#if selected}}fa-circle-check{{else}}fa-circle{{/if}}" aria-hidden="true"></i>
+        </button>
+      {{/each}}
+    </div>
+  {{else}}
+    <div class="infinity-state">
+      <h2 class="infinity-state__title">No choices are available</h2>
+      <p>Close this picker and refresh the source list before trying again.</p>
+    </div>
+  {{/if}}
+
+  <footer class="infinity-sticky-actions">
+    <button type="button" class="infinity-button" data-action="cancel">Cancel</button>
+    <button type="button" class="infinity-button infinity-button--primary" data-action="confirm" {{#unless selectedCount}}disabled{{/unless}}>
+      {{confirmLabel}}
+    </button>
+  </footer>
+</div>

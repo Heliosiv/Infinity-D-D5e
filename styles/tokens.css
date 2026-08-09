@@ -1,57 +1,271 @@
 /* =========================================================
    Infinity D&D5e - Shared design tokens
    ---------------------------------------------------------
-   Single source of truth for the palette, radii, rarities,
-   and feedback colors used by every Infinity window.
-   Scoped to .infinity-dnd5e so nothing bleeds into core
-   Foundry chrome.
+   The public token contract for every Infinity window. Values are
+   scoped to module roots so Foundry and other modules are unaffected.
    ========================================================= */
 
 .infinity-dnd5e {
-  --lf-bg: #1d2330;
-  --lf-bg-alt: #242b3b;
-  --lf-surface: #2c3548;
-  --lf-surface-elev: #364159;
-  --lf-border: #475070;
-  --lf-border-strong: #6473a0;
+  color-scheme: dark;
 
-  --lf-text: #e7ecf6;
+  /* Typography. Supporting copy is deliberately never below 12px. */
+  --lf-font-body: var(
+    --font-primary,
+    "Signika",
+    "Segoe UI",
+    system-ui,
+    sans-serif
+  );
+  --lf-font-heading: var(
+    --font-h1,
+    "Modesto Condensed",
+    "Palatino Linotype",
+    serif
+  );
+  --lf-font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", monospace;
+  --lf-text-xs: max(0.75rem, 12px);
+  --lf-text-sm: 0.875rem;
+  --lf-text-md: 1rem;
+  --lf-text-lg: 1.125rem;
+  --lf-text-xl: clamp(1.25rem, 1rem + 1cqi, 1.625rem);
+  --lf-leading-tight: 1.2;
+  --lf-leading-normal: 1.5;
+  --lf-leading-relaxed: 1.65;
+  --lf-weight-normal: 400;
+  --lf-weight-medium: 600;
+  --lf-weight-bold: 700;
+
+  /* Spacing. */
+  --lf-space-0: 0;
+  --lf-space-1: 0.25rem;
+  --lf-space-2: 0.5rem;
+  --lf-space-3: 0.75rem;
+  --lf-space-4: 1rem;
+  --lf-space-5: 1.25rem;
+  --lf-space-6: 1.5rem;
+  --lf-space-8: 2rem;
+  --lf-space-10: 2.5rem;
+  --lf-density-gap: var(--lf-space-4);
+  --lf-density-pad: var(--lf-space-4);
+
+  /* Midnight surfaces and AA text pairs. */
+  --lf-bg: #161b25;
+  --lf-bg-alt: #1c2330;
+  --lf-surface: #252e3e;
+  --lf-surface-elev: #303b50;
+  --lf-surface-sunken: #10151e;
+  --lf-border: #596780;
+  --lf-border-strong: #8291ad;
+  --lf-text: #f1f4fa;
   --lf-text-strong: #ffffff;
-  --lf-muted: #97a3c1;
+  --lf-muted: #b6c0d4;
+  --lf-disabled: #8993a7;
 
-  --lf-accent: #ffb15d;
-  --lf-accent-contrast: #1a1208;
-  --lf-warn: #f0a154;
-  --lf-success: #6dd5a2;
-  --lf-danger: #ef6f74;
+  /* Amber identity and semantic foreground/background pairs. */
+  --lf-accent: #ffc06a;
+  --lf-accent-hover: #ffd28f;
+  --lf-accent-contrast: #211404;
+  --lf-info: #9acbff;
+  --lf-info-bg: #172e4a;
+  --lf-info-border: #4c80b9;
+  --lf-success: #8be0b4;
+  --lf-success-bg: #17372b;
+  --lf-success-border: #438c69;
+  --lf-warn: #ffd08a;
+  --lf-warn-bg: #3e2a12;
+  --lf-warn-border: #a66e2e;
+  --lf-danger: #ff9da3;
+  --lf-danger-bg: #421f26;
+  --lf-danger-border: #b1535f;
 
-  --lf-radius: 10px;
+  /* Geometry and interaction targets. */
+  --lf-radius-xs: 4px;
   --lf-radius-sm: 6px;
+  --lf-radius: 10px;
+  --lf-radius-lg: 14px;
   --lf-radius-pill: 999px;
+  --lf-control-size: 44px;
+  --lf-control-size-sm: 44px;
+  --lf-icon-size: 1rem;
+  --lf-focus-width: 3px;
+  --lf-focus-offset: 2px;
 
-  --lf-rarity-common: #b3bfd8;
-  --lf-rarity-uncommon: #6dd5a2;
-  --lf-rarity-rare: #6aa7ff;
-  --lf-rarity-very-rare: #c98cff;
-  --lf-rarity-legendary: #ffb15d;
-  --lf-rarity-artifact: #f47272;
+  /* Elevation, motion, and local application layers. */
+  --lf-shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
+  --lf-shadow-md: 0 8px 24px rgb(0 0 0 / 32%);
+  --lf-shadow-lg: 0 18px 48px rgb(0 0 0 / 42%);
+  --lf-motion-fast: 120ms;
+  --lf-motion-normal: 180ms;
+  --lf-motion-slow: 260ms;
+  --lf-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --lf-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
+  --lf-layer-base: 0;
+  --lf-layer-sticky: 5;
+  --lf-layer-popover: 20;
+  --lf-layer-dialog: 100;
+
+  /* Rarity accents retained for existing loot surfaces. */
+  --lf-rarity-common: #c8d1e2;
+  --lf-rarity-uncommon: #8be0b4;
+  --lf-rarity-rare: #83b9ff;
+  --lf-rarity-very-rare: #d5a4ff;
+  --lf-rarity-legendary: #ffc06a;
+  --lf-rarity-artifact: #ff9da3;
 }
 
-/* The result/inventory search boxes hide non-matching rows by toggling the
-   `hidden` attribute. Those rows carry author `display: flex/grid` rules,
-   which (per the cascade) override the user-agent `[hidden] { display: none }`
-   rule and leave the rows visible. Make `hidden` authoritative again, scoped
-   to module windows so it never touches core Foundry chrome. */
+/* Every Foundry ApplicationV2 root responds to its own window width. Feature
+   styles can therefore use container queries even on a wide desktop canvas. */
+.application.infinity-dnd5e {
+  container-type: inline-size;
+  min-inline-size: 0;
+}
+
+/* Existing feature controls inherit the same density contract while they are
+   progressively migrated to the explicit shared button/field classes. */
+.infinity-dnd5e
+  :is(
+    button,
+    [role="button"],
+    summary,
+    input:not([type="checkbox"], [type="radio"]),
+    select,
+    textarea
+  ) {
+  min-block-size: var(--lf-control-size);
+}
+
+.infinity-dnd5e :is(button, [role="button"]) {
+  min-inline-size: var(--lf-control-size);
+}
+
+.infinity-dnd5e :is(small, .hint, [class$="__hint"], [class*="-hint"]) {
+  font-size: max(0.75rem, 12px);
+}
+
+/* Density may be expressed as either the data attribute or its matching
+   class. Application roots should carry both via applyUiDensity(). */
+.infinity-dnd5e:is(
+  [data-infinity-density="comfortable"],
+  .infinity-density--comfortable
+) {
+  --lf-control-size: 44px;
+  --lf-control-size-sm: 44px;
+  --lf-density-gap: var(--lf-space-4);
+  --lf-density-pad: var(--lf-space-4);
+}
+
+.infinity-dnd5e:is(
+  [data-infinity-density="compact"],
+  .infinity-density--compact
+) {
+  --lf-control-size: 32px;
+  --lf-control-size-sm: 32px;
+  --lf-density-gap: var(--lf-space-2);
+  --lf-density-pad: var(--lf-space-3);
+}
+
+/* Compact never shrinks a coarse-pointer target. */
+@media (pointer: coarse), (any-pointer: coarse) {
+  .infinity-dnd5e,
+  .infinity-dnd5e:is(
+    [data-infinity-density],
+    .infinity-density--comfortable,
+    .infinity-density--compact
+  ) {
+    --lf-control-size: 44px;
+    --lf-control-size-sm: 44px;
+    --lf-density-gap: var(--lf-space-3);
+  }
+}
+
+/* Optional feature accents keep the common system intact. */
+.infinity-dnd5e[data-infinity-theme="merchant"] {
+  --lf-accent: #8be0b4;
+  --lf-accent-hover: #b6edcf;
+  --lf-accent-contrast: #0d2419;
+}
+
+.infinity-dnd5e[data-infinity-theme="injury"] {
+  --lf-accent: #ff9da3;
+  --lf-accent-hover: #ffc2c6;
+  --lf-accent-contrast: #2a0d12;
+}
+
+/* Author display rules can otherwise defeat the user-agent hidden rule. */
 .infinity-dnd5e [hidden] {
   display: none !important;
 }
 
-/* Keyboard focus visibility. Foundry's chrome doesn't reliably ring our
-   custom-styled controls, so keyboard users couldn't see focus on any button,
-   launcher tile, or Buy/Sell tab. One scoped rule covers them all. */
+/* Foundry chrome does not reliably ring custom controls. */
 .infinity-dnd5e
-  :is(button, [role="tab"], a, summary, input, select, textarea):focus-visible {
-  outline: 2px solid var(--lf-accent);
-  outline-offset: 2px;
+  :is(
+    button,
+    [role="button"],
+    [role="tab"],
+    a[href],
+    summary,
+    input,
+    select,
+    textarea
+  ):focus-visible {
+  outline: var(--lf-focus-width) solid var(--lf-accent);
+  outline-offset: var(--lf-focus-offset);
   border-radius: var(--lf-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infinity-dnd5e {
+    --lf-motion-fast: 0.01ms;
+    --lf-motion-normal: 0.01ms;
+    --lf-motion-slow: 0.01ms;
+  }
+
+  .infinity-dnd5e,
+  .infinity-dnd5e *,
+  .infinity-dnd5e *::before,
+  .infinity-dnd5e *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-dnd5e {
+    color-scheme: light dark;
+    --lf-bg: Canvas;
+    --lf-bg-alt: Canvas;
+    --lf-surface: Canvas;
+    --lf-surface-elev: Canvas;
+    --lf-surface-sunken: Canvas;
+    --lf-border: CanvasText;
+    --lf-border-strong: CanvasText;
+    --lf-text: CanvasText;
+    --lf-text-strong: CanvasText;
+    --lf-muted: CanvasText;
+    --lf-disabled: GrayText;
+    --lf-accent: Highlight;
+    --lf-accent-hover: Highlight;
+    --lf-accent-contrast: HighlightText;
+    --lf-info: CanvasText;
+    --lf-info-bg: Canvas;
+    --lf-info-border: CanvasText;
+    --lf-success: CanvasText;
+    --lf-success-bg: Canvas;
+    --lf-success-border: CanvasText;
+    --lf-warn: CanvasText;
+    --lf-warn-bg: Canvas;
+    --lf-warn-border: CanvasText;
+    --lf-danger: CanvasText;
+    --lf-danger-bg: Canvas;
+    --lf-danger-border: CanvasText;
+    --lf-shadow-sm: none;
+    --lf-shadow-md: none;
+    --lf-shadow-lg: none;
+  }
+
+  .infinity-dnd5e :focus-visible {
+    outline-color: Highlight;
+  }
 }

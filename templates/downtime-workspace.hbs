@@ -44,7 +44,7 @@
       <strong>Recovery checkpoint available</strong>
       <p>{{recoveryMessage}}</p>
     </div>
-    <button type="button" class="dt-button dt-button--warning" data-action="recoverBlock" {{#if busy}}disabled{{/if}}>
+    <button type="button" class="dt-button {{#if primaryAction.recoverBlock}}dt-button--warning dt-button--next{{/if}}" data-action="recoverBlock" {{#if busy}}disabled{{/if}}>
       <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Verify and recover
     </button>
   </div>
@@ -53,6 +53,41 @@
   {{#if dataAvailable}}
   <main class="dt-main">
     {{#if viewCurrent}}
+      <section class="dt-lifecycle" aria-labelledby="dt-lifecycle-heading">
+        <div class="dt-lifecycle__head">
+          <div>
+            <p class="dt-eyebrow">Authoritative workflow</p>
+            <h3 id="dt-lifecycle-heading">Downtime lifecycle</h3>
+          </div>
+          <span>Recovery branches only from an interrupted Apply.</span>
+        </div>
+        <div class="dt-lifecycle__layout">
+          <ol class="dt-lifecycle__steps" aria-label="Create, Collect, Lock, Preview, Apply, Complete">
+            {{#each lifecycleSteps}}
+            <li class="dt-lifecycle__step is-{{state}}" data-step="{{id}}" data-step-state="{{state}}" aria-label="{{label}}: {{stateLabel}}" {{#if current}}aria-current="step"{{/if}}>
+              <span class="dt-lifecycle__marker" aria-hidden="true"><i class="fa-solid {{icon}}"></i></span>
+              <strong>{{label}}</strong>
+              <span class="dt-lifecycle__state">{{stateLabel}}</span>
+              <small>{{description}}</small>
+              {{#unless @last}}<i class="fa-solid fa-arrow-right dt-lifecycle__arrow" aria-hidden="true"></i>{{/unless}}
+            </li>
+            {{/each}}
+          </ol>
+          <aside class="dt-lifecycle__recovery is-{{lifecycleRecovery.state}}" data-step="recovery" data-step-state="{{lifecycleRecovery.state}}" aria-label="Recovery: {{lifecycleRecovery.stateLabel}}" {{#if lifecycleRecovery.current}}aria-current="step"{{/if}}>
+            <span class="dt-lifecycle__marker" aria-hidden="true"><i class="fa-solid {{lifecycleRecovery.icon}}"></i></span>
+            <div>
+              <strong>{{lifecycleRecovery.label}}</strong>
+              <span class="dt-lifecycle__state">{{lifecycleRecovery.stateLabel}}</span>
+              <small>{{lifecycleRecovery.description}}</small>
+            </div>
+          </aside>
+        </div>
+        <p id="dt-next-action" class="dt-next-action {{#unless primaryAction.hasAction}}is-waiting{{/unless}}" role="status">
+          <i class="fa-solid {{#if primaryAction.hasAction}}fa-arrow-right{{else}}fa-clock{{/if}}" aria-hidden="true"></i>
+          <span><strong>{{#if primaryAction.hasAction}}Next valid action: {{primaryAction.label}}{{else}}{{primaryAction.label}}{{/if}}</strong> {{primaryAction.description}}</span>
+        </p>
+      </section>
+
       {{#if hasCurrentBlock}}
       <section class="dt-current" data-block-id="{{currentBlock.id}}" aria-labelledby="dt-current-heading">
         <div class="dt-block-head">
@@ -66,23 +101,23 @@
         </div>
 
         <div class="dt-command-bar" aria-label="Downtime workflow actions">
-          <button type="button" class="dt-button" data-action="openForPlayers" {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.openForPlayers}}dt-button--primary dt-button--next{{/if}}" data-action="openForPlayers" {{#if primaryAction.openForPlayers}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open for players
           </button>
-          <button type="button" class="dt-button" data-action="lockBlock" title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.lockBlock}}dt-button--primary dt-button--next{{/if}}" data-action="lockBlock" {{#if primaryAction.lockBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-lock" aria-hidden="true"></i> Lock submissions
           </button>
-          <button type="button" class="dt-button dt-button--primary" data-action="planBlock" title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.planBlock}}dt-button--primary dt-button--next{{/if}}" data-action="planBlock" {{#if primaryAction.planBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> Generate preview
           </button>
-          <button type="button" class="dt-button dt-button--success" data-action="applyBlock" title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-check-double" aria-hidden="true"></i> Apply exact plan
           </button>
           <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
           </button>
           {{#if currentBlock.canStartNext}}
-          <button type="button" class="dt-button dt-button--primary" data-action="beginNextBlock" {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.beginNextBlock}}dt-button--primary dt-button--next{{/if}}" data-action="beginNextBlock" {{#if primaryAction.beginNextBlock}}aria-describedby="dt-next-action"{{/if}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Start next block
           </button>
           {{/if}}
@@ -170,6 +205,25 @@
             <p>This assigns the same productive-hour budget to every selected character. Campaign time and Quartermaster upkeep are unchanged.</p>
           </div>
         </div>
+        {{#if showQuickStart}}
+        <aside class="dt-quick-start" aria-labelledby="dt-quick-start-heading">
+          <div class="dt-quick-start__head">
+            <div>
+              <p class="dt-eyebrow">Quick start</p>
+              <h4 id="dt-quick-start-heading">Run the first downtime block</h4>
+            </div>
+            <button type="button" class="dt-icon-button" data-action="dismissQuickStart" aria-label="Dismiss downtime quick start" title="Dismiss quick start">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+          <ol>
+            <li><strong>Create:</strong> choose a location, productive-hour budget, and eligible characters.</li>
+            <li><strong>Collect and Lock:</strong> open player queues, then close submissions when ready.</li>
+            <li><strong>Preview and Apply:</strong> review the immutable plan before applying that exact plan.</li>
+          </ol>
+          <p><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Use Recovery only when this workspace reports an interrupted Apply. Restore this guide from Help & Diagnostics.</p>
+        </aside>
+        {{/if}}
         <form class="dt-form" data-form="new-block">
           <label class="dt-field">
             <span>Settlement (optional)</span>
@@ -181,13 +235,13 @@
           </label>
           <label class="dt-field">
             <span>Other location</span>
-            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." />
+            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Other downtime location" />
             <small>Used only when no settlement is selected; defaults to Camp or wilderness.</small>
           </label>
           <div class="dt-field">
-            <span>Productive hours per character</span>
+            <span id="dt-new-block-hours-label">Productive hours per character</span>
             <div class="dt-hours-row">
-              <input type="number" name="hours" min="1" max="240" step="1" value="8" required />
+              <input type="number" name="hours" min="1" max="240" step="1" value="8" required aria-labelledby="dt-new-block-hours-label" />
               <button type="button" data-action="setHourPreset" data-hours="8">1 day</button>
               <button type="button" data-action="setHourPreset" data-hours="16">2 days</button>
               <button type="button" data-action="setHourPreset" data-hours="40">5 days</button>
@@ -215,7 +269,7 @@
             <button type="button" class="dt-button" data-action="setView" data-view="settlements">
               <i class="fa-solid fa-city" aria-hidden="true"></i> Manage settlements
             </button>
-            <button type="button" class="dt-button dt-button--primary" data-action="createBlock" title="{{createBlockReason}}" {{#unless canCreateBlock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <button type="button" class="dt-button {{#if primaryAction.createBlock}}dt-button--primary dt-button--next{{/if}}" data-action="createBlock" {{#if primaryAction.createBlock}}aria-describedby="dt-next-action"{{/if}} title="{{createBlockReason}}" {{#unless canCreateBlock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
               <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Open block
             </button>
           </footer>

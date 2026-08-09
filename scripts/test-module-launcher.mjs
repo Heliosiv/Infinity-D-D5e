@@ -11,8 +11,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /const onCategoryChange = \(_event, active\) => \{\s*if \(active\) InfinityDashboardApp\.open\(\);/s,
-  "scene-control category should open the dashboard when activated",
+  /const onCategoryChange = \(_event, active\) => \{\s*if \(active\) openHub\(\);/s,
+  "the single scene-control category should open role-aware Home",
 );
 
 assert.match(
@@ -33,36 +33,62 @@ assert.doesNotMatch(
   "sidebar launcher injection should stay removed",
 );
 
-/* ---- Player-initiated Shops launcher (non-GM) ---- */
+/* ---- One role-aware launcher + compatibility APIs ---- */
 
 assert.match(
   source,
-  /if \(isFullGM\(\)\) registerGmSceneControls\(controls\);\s*else registerPlayerSceneControls\(controls\);/s,
-  "scene-controls hook should reserve the GM dashboard for full GMs",
+  /Hooks\.on\("getSceneControlButtons", \(controls\) => \{[\s\S]*?registerInfinitySceneControls\(controls\);/,
+  "every role should receive the same Infinity Home scene-control category",
 );
 
 assert.match(
   source,
-  /function registerPlayerSceneControls\(controls\) \{/,
-  "a dedicated non-GM scene-control registration should exist",
+  /function registerInfinitySceneControls\(controls\) \{/,
+  "a unified scene-control builder should exist",
+);
+
+assert.doesNotMatch(
+  source,
+  /registerPlayerSceneControls|registerGmSceneControls|infinity-dnd5e-dashboard|infinity-dnd5e-shops-tool/,
+  "duplicate GM fallback and fragmented player scene controls should stay removed",
 );
 
 assert.match(
   source,
-  /function registerPlayerSceneControls[\s\S]*?if \(active\) ShopPickerApp\.open\(\)/,
-  "the player category should open the ShopPickerApp (never the GM dashboard)",
+  /openHub: \(\) => openHub\(\)/,
+  "the module API should expose role-aware Home",
 );
 
 assert.match(
   source,
-  /function registerPlayerSceneControls[\s\S]*?controls\.push\(categoryEntry\(/,
-  "V12 player launcher should push a Shops category",
+  /openDashboard: \(\) => runAsFullGM\(\(\) => openHub\(\)\)/,
+  "the existing openDashboard alias should remain full-GM gated",
 );
 
 assert.match(
   source,
-  /function registerPlayerSceneControls[\s\S]*?controls\[category\] = categoryEntry\(/,
-  "V13 player launcher should add a Shops category record",
+  /openLootStudio: \(options = \{\}\) =>\s*runAsFullGM\(\(\) => LootStudioApp\.open\(options\)\)/,
+  "the API should expose the unified Loot Studio",
+);
+
+for (const [apiName, mode] of [
+  ["openPerEncounterLoot", "encounter"],
+  ["openHoardLoot", "hoard"],
+  ["openPerCreatureLoot", "creature"],
+]) {
+  assert.match(
+    source,
+    new RegExp(
+      `${apiName}: \\(\\) =>\\s*runAsFullGM\\(\\(\\) => LootStudioApp\\.open\\(\\{ mode: "${mode}" \\}\\)\\)`,
+    ),
+    `${apiName} should route to ${mode} mode`,
+  );
+}
+
+assert.match(
+  source,
+  /game\.keybindings\.register\(MODULE_ID, "openDashboard"[\s\S]*?openHub\(\);[\s\S]*?restricted: false/,
+  "Shift+I should open Home for every role",
 );
 
 assert.match(
@@ -81,12 +107,6 @@ assert.match(
   source,
   /game\.keybindings\.register\(MODULE_ID, "openPartySupplies"/,
   "a player and Assistant-GM Party Supplies keybinding should be registered",
-);
-
-assert.match(
-  source,
-  /function registerPlayerSceneControls[\s\S]*?ResourceOverviewApp\.open\(\)/,
-  "the non-full-GM scene controls should expose Party Supplies",
 );
 
 assert.match(
@@ -111,12 +131,6 @@ assert.match(
   source,
   /game\.keybindings\.register\(MODULE_ID, "openCriticalInjuries"/,
   "a player Critical Injuries keybinding should be registered",
-);
-
-assert.match(
-  source,
-  /function registerPlayerSceneControls[\s\S]*?CriticalInjuryApp\.openForCurrentUser\(\)/,
-  "the non-full-GM scene controls should expose Critical Injuries",
 );
 
 /* ---- Downtime GM workspace + player activities launchers ---- */
@@ -158,18 +172,6 @@ assert.match(
   source,
   /game\.keybindings\.register\(MODULE_ID, "openDowntimeActivities"[\s\S]*?KeyD[\s\S]*?DowntimeActivitiesApp\.open\(\)/,
   "Shift+D should be registered as a rebindable downtime launcher",
-);
-
-assert.match(
-  source,
-  /function registerPlayerSceneControls[\s\S]*?controls\.push\(downtimeCategoryEntry\(/,
-  "V12 player controls should expose a Downtime Activities category",
-);
-
-assert.match(
-  source,
-  /function registerPlayerSceneControls[\s\S]*?controls\[downtimeCategory\] = downtimeCategoryEntry\(/,
-  "V13 player controls should expose a Downtime Activities category",
 );
 
 assert.match(
@@ -242,7 +244,7 @@ assert.match(
 
 assert.match(
   source,
-  /private data could not be loaded yet[\s\S]*?schedulePrivateStateRecovery\(\)/,
+  /!privateStateAvailable && isFullGM\(\)[\s\S]*?retry automatically[\s\S]*?schedulePrivateStateRecovery\(\)/,
   "a failed ready-time private load should schedule an automatic retry",
 );
 

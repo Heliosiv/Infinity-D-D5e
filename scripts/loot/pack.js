@@ -75,7 +75,9 @@ export async function loadCompendiumItems(opts = {}) {
 
   const pack = game.packs?.get(packId);
   if (!pack) {
-    ui.notifications?.warn(`infinity-dnd5e: compendium ${packId} not found.`);
+    ui.notifications?.warn(
+      "The curated item library is unavailable. No loot was generated; ask the GM to enable or reinstall Infinity D&D5e, then try again.",
+    );
     return [];
   }
 
@@ -85,7 +87,7 @@ export async function loadCompendiumItems(opts = {}) {
   } catch (err) {
     console.error(`infinity-dnd5e | failed to load compendium ${packId}`, err);
     ui.notifications?.error(
-      `infinity-dnd5e: could not load compendium ${packId}. See the console (F12) for details.`,
+      "The curated item library could not be loaded. No loot was generated; reload Foundry and try again, then use Help & Diagnostics if it continues.",
     );
     return [];
   }

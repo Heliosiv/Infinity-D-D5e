@@ -4,7 +4,14 @@
   raw coin for items. Item count is a soft cap, demoted from the
   main controls. Rarity + loot-type chips default to all-selected.
 --}}
-<div class="hl-shell">
+<div
+  class="hl-shell"
+  {{#if lootStudio}}
+  id="{{lootStudio.panelId}}"
+  role="tabpanel"
+  aria-labelledby="{{lootStudio.tabId}}"
+  {{/if}}
+>
   <form class="hl-form" data-form="hoard-loot" autocomplete="off">
     <header class="hl-form__head">
       <div>
@@ -68,19 +75,28 @@
       </div>
     </fieldset>
 
-    {{!-- Two-slider row: Coin vs. Items is the main dial; Magic vs. Mundane is secondary --}}
-    <div class="lf-form__sliders">
+    {{!-- Coin vs. Items remains visible as the mode's primary shaping control. --}}
+    <div class="lf-form__sliders lf-form__sliders--primary">
       {{> hoardSlider pileBias}}
+    </div>
+
+    <details class="loot-studio-advanced" data-loot-advanced {{#if lootStudio.advancedOpen}}open{{/if}}>
+      <summary>
+        <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Advanced options</span>
+        <small>Magic mix, filters, rarity weighting, limits, and art</small>
+      </summary>
+      <div class="loot-studio-advanced__body">
+    <div class="lf-form__sliders">
       {{> hoardSlider magicBias}}
     </div>
 
     {{!-- Rarity chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Rarity <small>(empty = all)</small>
+        Rarity <small>(no selection = Any)</small>
         <span class="lf-chiprow__bulk">
-          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
-          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">Select all</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">Clear selection</button>
         </span>
       </legend>
       <div class="lf-chiprow">
@@ -119,10 +135,10 @@
     {{!-- Loot type chips (default all selected) --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Item Types
+        Item Types <small>(no selection = Any)</small>
         <span class="lf-chiprow__bulk">
-          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
-          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">Select all</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">Clear selection</button>
         </span>
       </legend>
       <div class="lf-chiprow">
@@ -163,6 +179,8 @@
     </div>
 
     {{> marketFilter}}
+      </div>
+    </details>
 
     <div class="lf-form__actions">
       <button type="button" class="lf-btn lf-btn--primary" data-action="generate" data-ready-title="Roll the Hoard (Enter or R)" title="{{#if generateDisabledReason}}{{generateDisabledReason}}{{else}}Roll the Hoard (Enter or R){{/if}}" {{#if generateDisabled}}disabled aria-disabled="true"{{/if}} {{#if loadingItems}}aria-busy="true"{{/if}}>

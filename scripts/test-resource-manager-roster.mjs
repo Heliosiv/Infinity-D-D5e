@@ -40,6 +40,8 @@ const actors = [hero, stash];
 actors.get = (id) => actors.find((actor) => actor.id === id) ?? null;
 
 const settingValues = new Map();
+let pendingPicker = null;
+let nextPromptValue = null;
 
 try {
   globalThis.CONST = {
@@ -50,11 +52,28 @@ try {
   globalThis.foundry = {
     applications: {
       api: {
-        ApplicationV2: class {},
+        ApplicationV2: class {
+          render() {
+            if (pendingPicker) {
+              pendingPicker.app = this;
+              pendingPicker.opened();
+              return this;
+            }
+            this._settle?.(this._options?.[0]?.id ?? null);
+            return this;
+          }
+
+          async close() {}
+        },
         HandlebarsApplicationMixin: (Base) => class extends Base {},
         DialogV2: {
           async confirm() {
             return true;
+          },
+          async prompt() {
+            const value = nextPromptValue;
+            nextPromptValue = null;
+            return value;
           },
         },
       },
@@ -187,6 +206,93 @@ try {
       "A",
       "the consumer still draws from its configured source",
     );
+  }
+
+  /* The searchable picker is asynchronous. A concurrent Quartermaster edit
+     made while it is open must survive when the selected Actor is added. */
+  {
+    setConfig({ partyStashId: "" });
+    const initial = settingValues.get("resourceConfig");
+    initial.roster = initial.roster.filter((entry) => entry.actorId === "A");
+    settingValues.set("resourceConfig", structuredClone(initial));
+
+    let markPickerOpened;
+    const pickerOpened = new Promise((resolve) => {
+      markPickerOpened = resolve;
+    });
+    pendingPicker = { app: null, opened: markPickerOpened };
+    const addPromise =
+      ResourceManagerApp.DEFAULT_OPTIONS.actions.addRosterMember.call(
+        fakeApp,
+        null,
+        null,
+      );
+    await pickerOpened;
+
+    const concurrent = settingValues.get("resourceConfig");
+    concurrent.resources[0].label = "Concurrent Rations";
+    settingValues.set("resourceConfig", structuredClone(concurrent));
+
+    const picker = pendingPicker.app;
+    pendingPicker = null;
+    picker._settle("N");
+    await addPromise;
+
+    const saved = settingValues.get("resourceConfig");
+    assert.equal(
+      saved.resources[0].label,
+      "Concurrent Rations",
+      "adding an Actor merges into the config written while the picker was open",
+    );
+    assert.equal(
+      saved.roster.filter((entry) => entry.actorId === "N").length,
+      1,
+      "the picked Actor is added exactly once to the current roster",
+    );
+  }
+
+  /* The searchable item picker remains the default, while the manual UUID
+     fallback preserves exact matches from any other compendium source. */
+  {
+    setConfig();
+    const resourceId = settingValues.get("resourceConfig").resources[0].id;
+    const externalUuid = "Compendium.custom-supplies.items.Item.External";
+    globalThis.fromUuid = async (uuid) => ({
+      uuid,
+      documentName: "Item",
+      name: "External Trail Ration",
+    });
+    nextPromptValue = externalUuid;
+
+    await ResourceManagerApp.DEFAULT_OPTIONS.actions.addTagByUuid.call(
+      fakeApp,
+      null,
+      { dataset: { resourceId } },
+    );
+
+    let saved = settingValues.get("resourceConfig");
+    assert.ok(
+      saved.resources[0].matching.itemUuids.includes(externalUuid),
+      "manual UUID entry preserves exact matches outside the searchable catalog",
+    );
+
+    const nonItemUuid = "JournalEntry.NotAnItem";
+    globalThis.fromUuid = async (uuid) => ({
+      uuid,
+      documentName: "JournalEntry",
+    });
+    nextPromptValue = nonItemUuid;
+    await ResourceManagerApp.DEFAULT_OPTIONS.actions.addTagByUuid.call(
+      fakeApp,
+      null,
+      { dataset: { resourceId } },
+    );
+    saved = settingValues.get("resourceConfig");
+    assert.ok(
+      !saved.resources[0].matching.itemUuids.includes(nonItemUuid),
+      "manual UUID entry rejects documents that are not Items",
+    );
+    globalThis.fromUuid = async () => null;
   }
 
   const template = Handlebars.compile(

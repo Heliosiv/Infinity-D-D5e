@@ -21,6 +21,24 @@
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
+.infinity-downtime-workspace {
+  container: downtime-workspace / inline-size;
+}
+
+.infinity-downtime-workspace > :is(.window-header, .window-content) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.infinity-downtime-workspace > .window-header .window-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 :is(.infinity-downtime-workspace, .infinity-downtime-activities),
 :is(.infinity-downtime-workspace, .infinity-downtime-activities)
   .window-content {
@@ -121,7 +139,7 @@
 :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-eyebrow {
   margin: 0;
   color: var(--dt-accent);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.11em;
   line-height: 1.2;
@@ -173,7 +191,7 @@
   border: 1px solid currentColor;
   border-radius: 999px;
   color: var(--dt-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -222,7 +240,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 32px;
+  min-height: var(--lf-control-size, 44px);
   padding: 6px 12px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -308,7 +326,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 32px;
+  min-height: var(--lf-control-size, 44px);
   padding: 6px 12px;
   border: 1px solid var(--dt-border);
   border-radius: var(--dt-radius-sm);
@@ -348,7 +366,241 @@
   background: color-mix(in srgb, var(--dt-danger) 8%, var(--dt-surface));
 }
 
+.infinity-downtime-workspace
+  :is(.dt-button, .dt-tabs button, .dt-hours-row button) {
+  min-height: var(--lf-control-size, 44px);
+}
+
+.infinity-downtime-workspace .dt-icon-button {
+  width: var(--lf-control-size, 44px);
+  min-width: var(--lf-control-size, 44px);
+  height: var(--lf-control-size, 44px);
+  min-height: var(--lf-control-size, 44px);
+}
+
 /* Current block and GM workflow. */
+.infinity-downtime-workspace .dt-lifecycle {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--dt-accent) 35%, var(--dt-border));
+  border-radius: var(--dt-radius);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__head h3 {
+  margin: 2px 0 0;
+  color: var(--dt-strong);
+  font-size: 1rem;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__head > span {
+  max-width: 36ch;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.24fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(112px, 1fr));
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 2px 7px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step {
+  position: relative;
+  z-index: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: start;
+  align-items: center;
+  gap: 3px 7px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-muted);
+  background: var(--dt-surface);
+  scroll-snap-align: start;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step strong {
+  overflow: hidden;
+  color: var(--dt-strong);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--dt-muted);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__state {
+  grid-column: 1 / -1;
+  color: currentColor;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step small {
+  grid-column: 1 / -1;
+  padding-right: 14px;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__arrow {
+  position: absolute;
+  right: 6px;
+  bottom: 7px;
+  color: currentColor;
+  font-size: 0.75rem;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step.is-completed {
+  border-color: color-mix(in srgb, var(--dt-success) 55%, var(--dt-border));
+  color: var(--dt-success);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step.is-current {
+  border-color: var(--dt-accent);
+  color: var(--dt-accent);
+  background: color-mix(in srgb, var(--dt-accent) 9%, var(--dt-surface));
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--dt-accent) 30%, transparent);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step.is-interrupted,
+.infinity-downtime-workspace .dt-lifecycle__step.is-stopped {
+  border-color: color-mix(in srgb, var(--dt-danger) 60%, var(--dt-border));
+  color: var(--dt-danger);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__step.is-pending {
+  opacity: 0.72;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px dashed var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  color: var(--dt-muted);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery::before {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 13px;
+  border-top: 1px dashed currentColor;
+  content: "";
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery strong {
+  color: var(--dt-strong);
+  font-size: 0.82rem;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery .dt-lifecycle__state {
+  grid-column: auto;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery small {
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.infinity-downtime-workspace .dt-lifecycle__recovery.is-current {
+  border-color: var(--dt-warning);
+  color: var(--dt-warning);
+  background: color-mix(in srgb, var(--dt-warning) 9%, var(--dt-surface));
+}
+
+.infinity-downtime-workspace .dt-next-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--dt-accent);
+  border-radius: 4px;
+  color: var(--dt-text);
+  background: color-mix(in srgb, var(--dt-accent) 8%, var(--dt-surface));
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.infinity-downtime-workspace .dt-next-action > i {
+  color: var(--dt-accent);
+}
+
+.infinity-downtime-workspace .dt-next-action.is-waiting {
+  border-left-color: var(--dt-muted);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-next-action.is-waiting > i {
+  color: var(--dt-muted);
+}
+
+.infinity-downtime-workspace .dt-button--next {
+  box-shadow:
+    0 0 0 2px var(--dt-bg-alt),
+    0 0 0 4px color-mix(in srgb, var(--dt-accent) 60%, transparent);
+}
+
 .infinity-downtime-workspace .dt-current,
 .infinity-downtime-workspace .dt-history {
   display: flex;
@@ -471,7 +723,7 @@
 .infinity-downtime-workspace .dt-participant header span,
 .infinity-downtime-workspace .dt-participant header > strong {
   color: var(--dt-muted);
-  font-size: 0.7rem;
+  font-size: var(--lf-text-xs);
 }
 
 .infinity-downtime-workspace .dt-compact-list {
@@ -489,7 +741,7 @@
   padding: 4px 5px;
   border-radius: 4px;
   background: var(--dt-bg-alt);
-  font-size: 0.74rem;
+  font-size: var(--lf-text-xs);
 }
 
 .infinity-downtime-workspace .dt-compact-list li > span:first-child {
@@ -533,7 +785,7 @@
   padding-top: 7px;
   border-top: 1px solid var(--dt-border);
   color: var(--dt-muted);
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
 }
 
 .infinity-downtime-workspace .dt-preview {
@@ -563,7 +815,7 @@
 
 .infinity-downtime-workspace .dt-plan-list > article > header span {
   color: var(--dt-muted);
-  font-size: 0.7rem;
+  font-size: var(--lf-text-xs);
   text-transform: capitalize;
 }
 
@@ -591,6 +843,63 @@
 .infinity-downtime-workspace .dt-empty-panel__intro > i {
   color: var(--dt-accent);
   font-size: 2.2rem;
+}
+
+.infinity-downtime-workspace .dt-quick-start {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--dt-accent) 45%, var(--dt-border));
+  border-radius: var(--dt-radius-sm);
+  background: color-mix(in srgb, var(--dt-accent) 6%, var(--dt-bg-alt));
+}
+
+.infinity-downtime-workspace .dt-quick-start__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.infinity-downtime-workspace .dt-quick-start h4 {
+  margin: 2px 0 0;
+  color: var(--dt-strong);
+  font-size: 0.92rem;
+}
+
+.infinity-downtime-workspace .dt-quick-start ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.infinity-downtime-workspace .dt-quick-start li {
+  padding: 8px;
+  border: 1px solid var(--dt-border);
+  border-radius: 4px;
+  color: var(--dt-muted);
+  background: var(--dt-surface);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.infinity-downtime-workspace .dt-quick-start li strong {
+  color: var(--dt-strong);
+}
+
+.infinity-downtime-workspace .dt-quick-start > p {
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.infinity-downtime-workspace .dt-quick-start > p i {
+  margin-right: 4px;
+  color: var(--dt-warning);
 }
 
 :is(.infinity-downtime-workspace, .infinity-downtime-activities)
@@ -664,14 +973,14 @@
 }
 
 .infinity-downtime-workspace .dt-hours-row button {
-  min-height: 32px;
+  min-height: var(--lf-control-size, 44px);
   padding: 5px 9px;
   border: 1px solid var(--dt-border);
   border-radius: var(--dt-radius-sm);
   color: var(--dt-text);
   background: var(--dt-surface);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
   cursor: pointer;
 }
 
@@ -704,7 +1013,7 @@
   > p {
   margin: 0 0 8px;
   color: var(--dt-muted);
-  font-size: 0.73rem;
+  font-size: var(--lf-text-xs);
 }
 
 .infinity-downtime-workspace .dt-check-grid {
@@ -743,7 +1052,7 @@
 .infinity-downtime-workspace .dt-check small {
   overflow: hidden;
   color: var(--dt-muted);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -778,7 +1087,7 @@
   border-radius: 999px;
   color: var(--dt-muted);
   background: var(--dt-surface);
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
 }
 
 .infinity-downtime-workspace .dt-chip input:checked + span {
@@ -895,7 +1204,7 @@
 
 .infinity-downtime-workspace .dt-rail__list span {
   color: var(--dt-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-workspace .dt-editor {
@@ -939,10 +1248,30 @@
 .infinity-downtime-workspace .dt-history__list small {
   margin: 2px 0 0;
   color: var(--dt-muted);
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
 }
 
 /* Player character, time, and heat summary. */
+.infinity-dnd5e.infinity-downtime-activities {
+  container-name: infinity-window downtime-player;
+  container-type: inline-size;
+}
+
+.infinity-downtime-activities .dt-icon-button {
+  width: var(--lf-control-size, 44px);
+  min-width: var(--lf-control-size, 44px);
+  height: var(--lf-control-size, 44px);
+  min-height: var(--lf-control-size, 44px);
+}
+
+.infinity-downtime-activities .dt-actor-tabs button {
+  min-height: var(--lf-control-size, 44px);
+}
+
+.infinity-downtime-activities :is(.dt-eyebrow, .dt-phase) {
+  font-size: 0.75rem;
+}
+
 .infinity-downtime-activities .dt-actor-tabs img {
   width: 24px;
   height: 24px;
@@ -950,10 +1279,7 @@
 
 .infinity-downtime-activities .dt-player-summary {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.5fr) minmax(
-      120px,
-      0.7fr
-    );
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
   gap: 8px;
 }
 
@@ -969,6 +1295,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.infinity-downtime-activities .dt-player-summary__actor > div {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .infinity-downtime-activities .dt-player-summary__actor div,
@@ -991,7 +1322,7 @@
 .infinity-downtime-activities .dt-player-summary :is(span, small) {
   overflow: hidden;
   color: var(--dt-muted);
-  font-size: 0.67rem;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1046,9 +1377,9 @@
 }
 
 .infinity-downtime-activities .dt-categories button {
-  min-height: 28px;
+  min-height: var(--lf-control-size-sm, 44px);
   padding: 4px 10px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-player-layout {
@@ -1120,7 +1451,7 @@
 .infinity-downtime-activities .dt-activity-card header span,
 .infinity-downtime-activities .dt-activity-card header > strong {
   color: var(--dt-muted);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-activity-card h4 {
@@ -1135,14 +1466,14 @@
 .infinity-downtime-activities .dt-activity-card > p {
   margin: 0;
   color: var(--dt-muted);
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 
 .infinity-downtime-activities
   :is(.dt-activity-card__cost, .dt-activity-card__limit) {
   color: var(--dt-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-activity-card__cost i {
@@ -1163,7 +1494,7 @@
   border-radius: var(--dt-radius-sm);
   color: var(--dt-muted);
   background: var(--dt-bg-alt);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-state-inline {
@@ -1179,6 +1510,52 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
+}
+
+.infinity-downtime-activities .dt-queue__drawer {
+  display: block;
+  min-height: 0;
+}
+
+.infinity-downtime-activities .dt-queue__drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--lf-control-size, 44px);
+  color: var(--dt-strong);
+  cursor: pointer;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.infinity-downtime-activities .dt-queue__drawer[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.infinity-downtime-activities .dt-queue__drawer > summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.infinity-downtime-activities .dt-queue__drawer > summary span span {
+  display: grid;
+  gap: 1px;
+}
+
+.infinity-downtime-activities .dt-queue__drawer > summary small {
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.infinity-downtime-activities .dt-queue__drawer[open] > summary {
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--dt-border);
 }
 
 .infinity-downtime-activities .dt-queue__list {
@@ -1202,7 +1579,7 @@
 
 .infinity-downtime-activities .dt-queue__position {
   color: var(--dt-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   text-align: center;
 }
 
@@ -1225,12 +1602,12 @@
 
 .infinity-downtime-activities .dt-queue__list strong {
   color: var(--dt-strong);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
 }
 
 .infinity-downtime-activities .dt-queue__list div > span {
   color: var(--dt-muted);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-queue__actions {
@@ -1239,9 +1616,9 @@
 }
 
 .infinity-downtime-activities .dt-queue__actions button {
-  width: 25px;
-  height: 25px;
-  font-size: 0.68rem;
+  width: var(--lf-control-size-sm, 44px);
+  height: var(--lf-control-size-sm, 44px);
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-queue__actions button.is-danger {
@@ -1254,12 +1631,16 @@
   margin-top: auto;
   padding-top: 9px;
   border-top: 1px solid var(--dt-border);
+  position: sticky;
+  bottom: 0;
+  padding-bottom: 2px;
+  background: var(--dt-bg-alt);
 }
 
 .infinity-downtime-activities .dt-queue__footer > p {
   margin: 0;
   color: var(--dt-warning);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-submitted {
@@ -1312,7 +1693,7 @@
   padding: 6px 8px;
   border-radius: 4px;
   background: var(--dt-surface);
-  font-size: 0.73rem;
+  font-size: 0.75rem;
 }
 
 .infinity-downtime-activities .dt-result-row span {
@@ -1327,58 +1708,74 @@
   animation: none !important;
 }
 
-@media (max-width: 820px) {
-  .infinity-downtime-workspace .dt-settlement-layout,
-  .infinity-downtime-activities .dt-player-layout {
+@container downtime-workspace (max-width: 820px) {
+  .infinity-downtime-workspace .dt-lifecycle__layout {
     grid-template-columns: 1fr;
   }
 
-  .infinity-downtime-activities .dt-player-layout {
-    flex: 0 0 auto;
-    grid-auto-rows: max-content;
-    min-height: auto;
+  .infinity-downtime-workspace .dt-lifecycle__recovery::before {
+    top: auto;
+    right: auto;
+    bottom: 100%;
+    left: 22px;
+    width: 0;
+    height: 13px;
+    border-top: 0;
+    border-left: 1px dashed currentColor;
+  }
+
+  .infinity-downtime-workspace .dt-settlement-layout {
+    grid-template-columns: 1fr;
   }
 
   .infinity-downtime-workspace .dt-rail {
     max-height: 210px;
   }
-
-  .infinity-downtime-activities .dt-activity-pane,
-  .infinity-downtime-activities .dt-queue {
-    min-height: auto;
-    overflow: visible;
-  }
-
-  .infinity-downtime-activities .dt-player-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .infinity-downtime-activities .dt-time-meter {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
 }
 
-@media (max-width: 620px) {
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-shell {
+@container downtime-workspace (max-width: 620px) {
+  .infinity-downtime-workspace .dt-lifecycle {
+    padding: 10px;
+  }
+
+  .infinity-downtime-workspace .dt-lifecycle__head {
+    display: grid;
+  }
+
+  .infinity-downtime-workspace .dt-lifecycle__head > span {
+    max-width: none;
+    text-align: left;
+  }
+
+  .infinity-downtime-workspace .dt-lifecycle__steps {
+    grid-template-columns: repeat(6, minmax(124px, 1fr));
+    scroll-snap-type: x proximity;
+  }
+
+  .infinity-downtime-workspace .dt-next-action {
+    align-items: flex-start;
+  }
+
+  .infinity-downtime-workspace .dt-quick-start ol {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-workspace .dt-shell {
     padding: 9px;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-head {
+  .infinity-downtime-workspace .dt-head {
     flex-direction: column;
     gap: 9px;
     padding: 11px 12px;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-head__actions {
+  .infinity-downtime-workspace .dt-head__actions {
     justify-content: space-between;
     width: 100%;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-tabs
-    button {
+  .infinity-downtime-workspace .dt-tabs button {
     flex: 0 0 auto;
   }
 
@@ -1403,15 +1800,124 @@
     grid-column: 1 / -1;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-form-grid,
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-activity-fields {
+  .infinity-downtime-workspace .dt-form-grid,
+  .infinity-downtime-workspace .dt-activity-fields {
     grid-template-columns: 1fr;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-field--wide {
+  .infinity-downtime-workspace .dt-field--wide {
+    grid-column: auto;
+  }
+
+  .infinity-downtime-workspace .dt-notice {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .infinity-downtime-workspace .dt-notice .dt-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infinity-downtime-workspace .dt-button--next {
+    transition: none;
+  }
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .infinity-downtime-workspace button[data-action] {
+    min-height: 44px;
+  }
+
+  .infinity-downtime-workspace .dt-icon-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-downtime-workspace
+    :is(
+      .dt-lifecycle__step.is-current,
+      .dt-lifecycle__recovery.is-current,
+      .dt-button--next
+    ) {
+    border: 2px solid Highlight;
+    box-shadow: none;
+  }
+
+  .infinity-downtime-workspace .dt-lifecycle__step.is-completed {
+    border-color: CanvasText;
+  }
+}
+
+@container downtime-player (max-width: 820px) {
+  .infinity-downtime-activities .dt-player-layout {
+    flex: 0 0 auto;
+    grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
+    min-height: auto;
+  }
+
+  .infinity-downtime-activities .dt-activity-pane {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .infinity-downtime-activities .dt-player-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .infinity-downtime-activities .dt-time-meter {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .infinity-downtime-activities .dt-queue {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    min-height: auto;
+    max-height: 420px;
+    overflow: auto;
+    box-shadow: 0 -8px 24px color-mix(in srgb, var(--dt-bg) 70%, transparent);
+  }
+}
+
+@container downtime-player (max-width: 620px) {
+  .infinity-downtime-activities .dt-shell {
+    padding: 9px;
+  }
+
+  .infinity-downtime-activities .dt-head {
+    flex-direction: column;
+    gap: 9px;
+    padding: 11px 12px;
+  }
+
+  .infinity-downtime-activities .dt-head__actions {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .infinity-downtime-activities .dt-head__actions .dt-phase {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .infinity-downtime-activities .dt-tabs button {
+    flex: 0 0 auto;
+  }
+
+  .infinity-downtime-activities .dt-activity-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-activities .dt-field--wide {
     grid-column: auto;
   }
 
@@ -1438,14 +1944,12 @@
     gap: 2px;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities) .dt-notice {
+  .infinity-downtime-activities .dt-notice {
     align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  :is(.infinity-downtime-workspace, .infinity-downtime-activities)
-    .dt-notice
-    .dt-button {
+  .infinity-downtime-activities .dt-notice .dt-button {
     width: 100%;
   }
 }

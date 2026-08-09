@@ -83,6 +83,16 @@ import {
   retargetCriticalInjuryWorkflow,
 } from "./workflow-store.js";
 import { persistedValuesEqual } from "../utils/persisted-data.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+  promptInfinityDialog,
+} from "../dialog-contract.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "../chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PENDING_FLAG = "criticalInjuryPending";
@@ -716,7 +726,7 @@ async function handleCriticalInjuryRollRequest(payload) {
     }
     console.error(`${MODULE_ID} | could not apply critical injury`, error);
     ui.notifications?.error?.(
-      `${MODULE_ID}: The critical injury could not be applied. The roll remains pending.`,
+      "The critical injury could not be applied. Nothing was consumed; the saved roll remains pending for a safe retry.",
     );
     sendCriticalInjuryRollFailure(payload, {
       retryable: true,
@@ -2391,20 +2401,19 @@ async function processCombatStartInjuries(combat) {
 }
 
 async function requestGmInjuryApproval(actor, recovery) {
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   const stateLabel = recovery?.wasDead ? "the dead state" : "0 hit points";
   const content = `
     <div class="infinity-dnd5e">
       <p><strong>${escapeHtml(actor.name)}</strong> recovered from ${escapeHtml(stateLabel)} (${Number(recovery?.previousHp ?? 0)} → ${Number(recovery?.nextHp ?? 1)} HP).</p>
       <p>Ask the owning player to roll on Critical Injury Table V2?</p>
     </div>`;
-  if (typeof DialogV2?.confirm !== "function") {
+  if (!isInfinityDialogAvailable("confirm")) {
     ui.notifications?.warn?.(
-      `${MODULE_ID}: ${actor.name} recovered; DialogV2 is unavailable, so no injury roll was queued.`,
+      `${actor.name} recovered, but the approval dialog could not open. No injury roll was queued; the GM should reopen Critical Injuries and try again.`,
     );
     return false;
   }
-  return await DialogV2.confirm({
+  return await confirmInfinityDialog({
     window: {
       title: "Critical Injury?",
       icon: "fa-solid fa-heart-crack",
@@ -2412,13 +2421,11 @@ async function requestGmInjuryApproval(actor, recovery) {
     content,
     yes: { label: "Yes — ask for roll", icon: "fa-solid fa-dice-d20" },
     no: { label: "No injury", icon: "fa-solid fa-xmark" },
-    rejectClose: false,
-  }).catch(() => false);
+  });
 }
 
 async function promptGmForTreatmentHealer({ actor, injury, actors, plan }) {
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-  if (typeof DialogV2?.prompt !== "function") return null;
+  if (!isInfinityDialogAvailable("prompt")) return null;
   const options = actors
     .map(
       (candidate) =>
@@ -2434,31 +2441,26 @@ async function promptGmForTreatmentHealer({ actor, injury, actors, plan }) {
   const check = injury.treatmentDc
     ? `DC ${injury.treatmentDc} ${treatmentSkillLabel(injury.treatmentSkill)}`
     : "No treatment check";
-  try {
-    const healerId = await DialogV2.prompt({
-      window: {
-        title: `Treat ${actor.name}'s ${injury.injuryName}`,
-        icon: "fa-solid fa-kit-medical",
-      },
-      content: `
+  const healerId = await promptInfinityDialog({
+    window: {
+      title: `Treat ${actor.name}'s ${injury.injuryName}`,
+      icon: "fa-solid fa-kit-medical",
+    },
+    content: `
         <div class="infinity-dnd5e">
           <p>This treatment consumes <strong>${injury.kitCharges}</strong> Healer's Kit charge(s), even if the check fails.</p>
           <p>${sources}</p>
           <p><strong>${escapeHtml(check)}</strong></p>
           <label style="display:grid;gap:4px;"><span>Healer</span><select name="healerId">${options}</select></label>
         </div>`,
-      ok: {
-        label: "Treat injury",
-        icon: "fa-solid fa-kit-medical",
-        callback: (_event, button) =>
-          button?.form?.elements?.healerId?.value ?? null,
-      },
-      rejectClose: false,
-    });
-    return actors.find((candidate) => candidate.id === healerId) ?? null;
-  } catch {
-    return null;
-  }
+    ok: {
+      label: "Treat injury",
+      icon: "fa-solid fa-kit-medical",
+      callback: (_event, button) =>
+        button?.form?.elements?.healerId?.value ?? null,
+    },
+  });
+  return actors.find((candidate) => candidate.id === healerId) ?? null;
 }
 
 async function rollTreatmentCheck({
@@ -2585,16 +2587,22 @@ async function postCriticalInjuryChat(actor, injury, ownerUserId) {
     : "";
   const recovery = injury.permanent
     ? "Permanent"
-    : `${injury.remainingDays} day(s), due ${escapeHtml(formatInjuryTimestamp(injury.recoveryDueTs))}`;
+    : `${injury.remainingDays} day(s), due ${formatInjuryTimestamp(injury.recoveryDueTs)}`;
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker?.({ actor, alias: "Critical Injuries" }),
     whisper: whisperRecipients(ownerUserId),
-    content: `
-      <div class="infinity-dnd5e critical-injury-chat">
-        <h3>${escapeHtml(actor.name)} — ${escapeHtml(injury.injuryName)}</h3>
-        <p><strong>d100 ${injury.injuryRoll}</strong></p>
-        <ul>${detail}<li>${escapeHtml(injury.effect)}</li><li><strong>Recovery:</strong> ${recovery}</li><li><strong>Treatment:</strong> ${escapeHtml(injury.recoveryRule)}</li></ul>
-      </div>`,
+    content: buildInfinityChatCard({
+      title: `${actor.name} — Critical Injury`,
+      outcome: `${injury.injuryName} (d100 ${injury.injuryRoll})`,
+      audience: describeChatAudience("owner-gm"),
+      details: markTrustedChatHtml(
+        `<ul>${detail}<li>${escapeHtml(injury.effect)}</li><li><strong>Recovery:</strong> ${escapeHtml(recovery)}</li><li><strong>Treatment:</strong> ${escapeHtml(injury.recoveryRule)}</li></ul>`,
+      ),
+      nextAction:
+        "Open Critical Injuries to review treatment status and recovery timing.",
+      tone: "danger",
+      classes: ["critical-injury-chat"],
+    }),
   });
 }
 
@@ -2603,7 +2611,18 @@ async function postTreatmentChat(actor, injury, message, ownerUserId) {
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker?.({ actor, alias: "Critical Injuries" }),
     whisper: whisperRecipients(ownerUserId),
-    content: `<div class="infinity-dnd5e critical-injury-chat"><h3>${escapeHtml(actor.name)} — ${escapeHtml(injury.injuryName)}</h3><p>${escapeHtml(message)}</p></div>`,
+    content: buildInfinityChatCard({
+      title: `${actor.name} — ${injury.injuryName}`,
+      outcome: message,
+      audience: describeChatAudience("owner-gm"),
+      details: markTrustedChatHtml(
+        `<p><strong>Injury:</strong> ${escapeHtml(injury.injuryName)}</p>`,
+      ),
+      nextAction:
+        "Open Critical Injuries to confirm the current treatment and recovery status.",
+      tone: "info",
+      classes: ["critical-injury-chat", "critical-injury-treatment-chat"],
+    }),
   });
 }
 

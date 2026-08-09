@@ -30,6 +30,10 @@ import {
 import { DEFAULT_ITEM_PACK_ID, loadCompendiumItems } from "./pack.js";
 import { isBareSpellLootItem } from "./tag-vocabulary.js";
 import { escapeHtml, notify } from "../ui-util.js";
+import {
+  isInfinityDialogAvailable,
+  promptInfinityDialog,
+} from "../dialog-contract.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -160,17 +164,15 @@ export async function promptDistributeItems(items, opts = {}) {
     </div>
   `;
 
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) {
+  if (!isInfinityDialogAvailable("prompt")) {
     ui.notifications?.error(
-      `${MODULE_ID}: DialogV2 unavailable (Foundry V12+ required).`,
+      "The character picker could not open. Nothing changed; reload Foundry and try again.",
     );
     return null;
   }
 
-  let chosenActorId = null;
-  try {
-    chosenActorId = await DialogV2.prompt({
+  const chosenActorId = await promptInfinityDialog(
+    {
       window: { title, icon: "fa-solid fa-share-from-square" },
       content,
       ok: {
@@ -179,13 +181,12 @@ export async function promptDistributeItems(items, opts = {}) {
         callback: (_event, button) =>
           button?.form?.elements?.actorId?.value ?? null,
       },
-      rejectClose: false,
-    });
-  } catch (error) {
-    // DialogV2.prompt throws on close-without-submit in some versions.
-    console.debug(`${MODULE_ID} | distribute dialog dismissed`, error);
-    return null;
-  }
+    },
+    {
+      onError: (error) =>
+        console.debug(`${MODULE_ID} | distribute dialog dismissed`, error),
+    },
+  );
 
   if (!chosenActorId) return null;
   const res = await depositToActor(chosenActorId, {
@@ -322,7 +323,7 @@ export async function depositToActors(
   if (shouldNotify) {
     if (recipients.length > 0) {
       ui.notifications?.info(
-        `${MODULE_ID}: split ${created} item(s) across ${recipients.length} character(s) — ${recipients.join(", ")}.`,
+        `Split ${created} item(s) across ${recipients.length} character(s): ${recipients.join(", ")}.`,
       );
     } else {
       notify("warn", `nothing was distributed.`);
@@ -361,10 +362,9 @@ export async function promptDistributeSplit(items, opts = {}) {
     notify("warn", `no character-type actors available.`);
     return null;
   }
-  const DialogV2 = foundry?.applications?.api?.DialogV2;
-  if (!DialogV2) {
+  if (!isInfinityDialogAvailable("prompt")) {
     ui.notifications?.error(
-      `${MODULE_ID}: DialogV2 unavailable (Foundry V12+ required).`,
+      "The character picker could not open. Nothing changed; reload Foundry and try again.",
     );
     return null;
   }
@@ -391,9 +391,8 @@ export async function promptDistributeSplit(items, opts = {}) {
       </fieldset>
     </div>`;
 
-  let payload = null;
-  try {
-    payload = await DialogV2.prompt({
+  const payload = await promptInfinityDialog(
+    {
       window: {
         title: opts.title ?? "Split Across Party",
         icon: "fa-solid fa-users",
@@ -411,12 +410,12 @@ export async function promptDistributeSplit(items, opts = {}) {
           return { ids, mode: form.elements.mode?.value ?? "even" };
         },
       },
-      rejectClose: false,
-    });
-  } catch (error) {
-    console.debug(`${MODULE_ID} | split dialog dismissed`, error);
-    return null;
-  }
+    },
+    {
+      onError: (error) =>
+        console.debug(`${MODULE_ID} | split dialog dismissed`, error),
+    },
+  );
   if (!payload?.ids?.length) return null;
 
   let assignments;
@@ -452,7 +451,7 @@ export async function distributeItemsToActor(actorId, items) {
   const { created, failures } = await depositItemsCore(actor, items);
   if (created === 0) {
     ui.notifications?.warn(
-      `${MODULE_ID}: none of the item(s) could be added to ${actor.name}.`,
+      `No items were added to ${actor.name}. Check that you can edit the character and try again.`,
     );
     return 0;
   }
@@ -506,7 +505,7 @@ export async function depositToActor(
     } catch (error) {
       console.error(`${MODULE_ID} | currency update failed`, error);
       ui.notifications?.error(
-        `${MODULE_ID}: could not add coins to ${actor.name}. See console.`,
+        `Coins were not added to ${actor.name}. Check the character's wallet and permissions before trying again.`,
       );
     }
   }
@@ -573,7 +572,7 @@ async function depositItemsCore(actor, items) {
   } catch (error) {
     console.error(`${MODULE_ID} | createEmbeddedDocuments failed`, error);
     ui.notifications?.error(
-      `${MODULE_ID}: could not add items to ${actor.name}. See console.`,
+      `The item transfer to ${actor.name} could not be confirmed. Check the inventory before retrying; if the items are absent, try again.`,
     );
     return { created: 0, failures };
   }
@@ -821,13 +820,11 @@ function notifyDeposit(actor, created, failures, currencyAdded) {
       : "";
   if (parts.length === 0) {
     ui.notifications?.warn(
-      `${MODULE_ID}: nothing was deposited to ${who}${failNote}.`,
+      `Nothing was deposited to ${who}${failNote}. Review the reported failures before trying again.`,
     );
     return;
   }
-  ui.notifications?.info(
-    `${MODULE_ID}: sent ${parts.join(" + ")} to ${who}${failNote}.`,
-  );
+  ui.notifications?.info(`Sent ${parts.join(" + ")} to ${who}${failNote}.`);
 }
 
 /** Default dialog hint based on what the haul contains. */

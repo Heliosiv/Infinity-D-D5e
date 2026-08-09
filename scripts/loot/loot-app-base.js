@@ -51,7 +51,16 @@ import {
 import { getItemMaxQty, isAmmunitionItem } from "./tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { runAsFullGM } from "../permissions.js";
-import { bindFullGmWindowGuard } from "../infinity-app.js";
+import {
+  bindFocusRestoration,
+  bindFullGmWindowGuard,
+} from "../infinity-app.js";
+import {
+  applyUiDensity,
+  getUiPreferences,
+  setAdvancedDisclosure as persistAdvancedDisclosure,
+  updateUiPreferences,
+} from "../ui-preferences.js";
 import { confirmDestructive, isInteractiveKeyboardTarget } from "../ui-util.js";
 import { formatGp, plainTextLootSummary, titleCase } from "../ui-util.js";
 import { nearestPreset } from "./budget.js";
@@ -94,6 +103,222 @@ const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
 const NO_MATCHING_ITEMS_REASON =
   "No items match the current tier, rarity, item type, and value filters. Adjust a filter and try again.";
 const ITEMS_LOADING_REASON = "Loot items are still loading.";
+
+export const LOOT_STUDIO_MODES = Object.freeze([
+  Object.freeze({
+    id: "encounter",
+    label: "Encounter",
+    icon: "fa-solid fa-shield-halved",
+  }),
+  Object.freeze({
+    id: "hoard",
+    label: "Hoard",
+    icon: "fa-solid fa-sack-dollar",
+  }),
+  Object.freeze({
+    id: "creature",
+    label: "Creature",
+    icon: "fa-solid fa-skull",
+  }),
+]);
+
+const LOOT_STUDIO_DEFAULT_MODE = "encounter";
+const lootStudioClasses = new Map();
+let activeLootStudioInstance = null;
+let lastLootStudioModeInMemory = null;
+let pendingLootStudioTarget = null;
+let lootStudioSwitchPromise = null;
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+/** Bound the public mode value before it reaches a class or a setting. */
+export function normalizeLootStudioMode(
+  mode,
+  fallback = LOOT_STUDIO_DEFAULT_MODE,
+) {
+  const value = String(mode ?? "")
+    .trim()
+    .toLowerCase();
+  if (LOOT_STUDIO_MODES.some((entry) => entry.id === value)) return value;
+  return LOOT_STUDIO_MODES.some((entry) => entry.id === fallback)
+    ? fallback
+    : LOOT_STUDIO_DEFAULT_MODE;
+}
+
+/** Read the optional client preference without requiring the v1 setting. */
+export function readLootStudioUiPreferences() {
+  return getUiPreferences();
+}
+
+/** Merge a small Loot Studio patch into the optional client preference. */
+export async function writeLootStudioUiPreferences(patch) {
+  if (!isPlainObject(patch)) return false;
+  try {
+    await updateUiPreferences(patch);
+    return true;
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | could not save Loot Studio preferences`,
+      error,
+    );
+    return false;
+  }
+}
+
+export function getLastLootStudioMode() {
+  return normalizeLootStudioMode(
+    lastLootStudioModeInMemory ??
+      readLootStudioUiPreferences().lastLootStudioMode,
+  );
+}
+
+function advancedDisclosureKey(mode) {
+  return `loot-studio:${normalizeLootStudioMode(mode)}`;
+}
+
+function getAdvancedDisclosure(mode) {
+  const disclosures = readLootStudioUiPreferences().advancedDisclosures;
+  if (!isPlainObject(disclosures)) return false;
+  return disclosures[advancedDisclosureKey(mode)] === true;
+}
+
+async function setAdvancedDisclosure(mode, open) {
+  try {
+    await persistAdvancedDisclosure(advancedDisclosureKey(mode), open === true);
+    return true;
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | could not save the Loot Studio disclosure state`,
+      error,
+    );
+    return false;
+  }
+}
+
+export function registerLootStudioMode(mode, AppClass) {
+  const normalized = normalizeLootStudioMode(mode);
+  if (typeof AppClass === "function")
+    lootStudioClasses.set(normalized, AppClass);
+  return AppClass;
+}
+
+async function loadLootStudioModeClass(mode) {
+  const normalized = normalizeLootStudioMode(mode);
+  if (lootStudioClasses.has(normalized))
+    return lootStudioClasses.get(normalized);
+  if (normalized === "hoard") await import("../hoard-loot.js");
+  else if (normalized === "creature") await import("../per-creature-loot.js");
+  else await import("../app.js");
+  return lootStudioClasses.get(normalized) ?? null;
+}
+
+function activateLootStudioMode(mode, AppClass) {
+  const normalized = normalizeLootStudioMode(mode);
+  registerLootStudioMode(normalized, AppClass);
+  playModuleSound(SOUND_EVENTS.UI_OPEN);
+  if (!AppClass._instance) {
+    AppClass._lootStudioRestoreState = true;
+    try {
+      AppClass._instance = new AppClass();
+      bindFocusRestoration(AppClass._instance);
+    } finally {
+      AppClass._lootStudioRestoreState = false;
+    }
+  }
+  activeLootStudioInstance = AppClass._instance;
+  lastLootStudioModeInMemory = normalized;
+  void writeLootStudioUiPreferences({ lastLootStudioMode: normalized });
+  if (activeLootStudioInstance.rendered) {
+    activeLootStudioInstance.bringToFront();
+  } else {
+    const rendered = activeLootStudioInstance.render(true);
+    activeLootStudioInstance._lootStudioRenderPromise =
+      rendered && typeof rendered.then === "function" ? rendered : null;
+  }
+  return activeLootStudioInstance;
+}
+
+async function drainLootStudioSwitches() {
+  let opened = activeLootStudioInstance;
+  while (pendingLootStudioTarget) {
+    let requested = pendingLootStudioTarget;
+    pendingLootStudioTarget = null;
+    const active = activeLootStudioInstance;
+
+    if (active && active.constructor !== requested.AppClass) {
+      active._lootStudioSwitching = true;
+      try {
+        await active.close?.();
+      } catch (error) {
+        active._lootStudioSwitching = false;
+        throw error;
+      }
+
+      // A newer request made while the prior mode was closing supersedes the
+      // original target. Skipping the intermediate render keeps one window.
+      requested = pendingLootStudioTarget ?? requested;
+      pendingLootStudioTarget = null;
+    }
+
+    opened = activateLootStudioMode(requested.mode, requested.AppClass);
+  }
+  return opened;
+}
+
+function openRegisteredLootStudioMode(mode, AppClass) {
+  const normalized = normalizeLootStudioMode(mode);
+  if (lootStudioSwitchPromise) {
+    pendingLootStudioTarget = { mode: normalized, AppClass };
+    return lootStudioSwitchPromise;
+  }
+
+  const active = activeLootStudioInstance;
+  if (!active || active.constructor === AppClass) {
+    return activateLootStudioMode(normalized, AppClass);
+  }
+
+  pendingLootStudioTarget = { mode: normalized, AppClass };
+  const transition = drainLootStudioSwitches();
+  const trackedTransition = transition.finally(() => {
+    if (lootStudioSwitchPromise !== trackedTransition) return;
+    pendingLootStudioTarget = null;
+    lootStudioSwitchPromise = null;
+  });
+  lootStudioSwitchPromise = trackedTransition;
+  return trackedTransition;
+}
+
+/**
+ * Open a mode through the one visible Loot Studio singleton. Supplying the
+ * class keeps the legacy class-level `open()` path synchronous on first open;
+ * tab navigation can lazy-load another mode when a caller imported only one.
+ */
+export function openLootStudioMode(mode, AppClass = null) {
+  const normalized = normalizeLootStudioMode(mode);
+  return runAsFullGM(() => {
+    if (typeof AppClass === "function") {
+      registerLootStudioMode(normalized, AppClass);
+      return openRegisteredLootStudioMode(normalized, AppClass);
+    }
+    const registered = lootStudioClasses.get(normalized);
+    if (registered) return openRegisteredLootStudioMode(normalized, registered);
+    return loadLootStudioModeClass(normalized).then((LoadedClass) =>
+      LoadedClass
+        ? openRegisteredLootStudioMode(normalized, LoadedClass)
+        : null,
+    );
+  });
+}
+
+export function getActiveLootStudioInstance() {
+  return activeLootStudioInstance;
+}
+
+function releaseLootStudioInstance(instance) {
+  if (activeLootStudioInstance === instance) activeLootStudioInstance = null;
+}
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -153,6 +378,8 @@ function summarizeResult(result) {
 export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* --------------- subclass-provided static config --------------- */
 
+  /** Public Loot Studio mode represented by this compatibility class. */
+  static LOOT_STUDIO_MODE = LOOT_STUDIO_DEFAULT_MODE;
   /** `data-form` attribute the window's <form> carries. */
   static FORM_NAME = "";
   /** Compendium id every tool rolls from. */
@@ -170,6 +397,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** Shared action handlers, spread into each subclass's `actions`. */
   static get SHARED_ACTIONS() {
     return {
+      switchLootMode: this._onSwitchLootMode,
       reset: this._onReset,
       clear: this._onClear,
       openItem: this._onOpenItem,
@@ -210,15 +438,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /* ------------------- singleton ------------------- */
 
-  /** Open (or focus) the per-subclass singleton instance. */
+  /** Open this legacy class through the shared Loot Studio singleton. */
   static open() {
-    return runAsFullGM(() => {
-      playModuleSound(SOUND_EVENTS.UI_OPEN);
-      if (!this._instance) this._instance = new this();
-      if (this._instance.rendered) this._instance.bringToFront();
-      else this._instance.render(true);
-      return this._instance;
-    });
+    return openLootStudioMode(this.LOOT_STUDIO_MODE, this);
   }
 
   constructor(options = {}) {
@@ -230,6 +452,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._packStats = null;
     this._pendingScrollState = null;
     this._lastScrollState = null;
+    this._lootStudioAdvancedOpen = getAdvancedDisclosure(
+      this.constructor.LOOT_STUDIO_MODE,
+    );
   }
 
   /* ------------------- lifecycle ------------------- */
@@ -252,6 +477,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "lf-no-skel",
       getSetting(SETTING_KEYS.LOADING_SKELETON) === false,
     );
+    applyUiDensity(root, readLootStudioUiPreferences());
 
     // Wire the form so input/change events update `_form` without a
     // full re-render — readouts are patched in place.
@@ -287,6 +513,23 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         { capture: true, passive: true },
       );
+    }
+
+    for (const tab of root.querySelectorAll("[data-loot-studio-tab]")) {
+      tab.addEventListener("keydown", (event) =>
+        this._onLootStudioTabKeyDown(event),
+      );
+    }
+
+    const advanced = root.querySelector("[data-loot-advanced]");
+    if (advanced) {
+      advanced.addEventListener("toggle", () => {
+        this._lootStudioAdvancedOpen = advanced.open === true;
+        void setAdvancedDisclosure(
+          this.constructor.LOOT_STUDIO_MODE,
+          this._lootStudioAdvancedOpen,
+        );
+      });
     }
 
     // Drag result tiles onto sheets, preserving generated art data.
@@ -340,12 +583,22 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._debounceTimers.clear();
     }
     const Cls = this.constructor;
-    if (getSetting(SETTING_KEYS.PERSIST_STATE) !== false) {
+    const switchingModes = this._lootStudioSwitching === true;
+    const persistAcrossCloses =
+      getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
+    if (switchingModes || persistAcrossCloses) {
       Cls._persistedState = this._snapshotState();
     } else {
-      Cls._persistedState = null;
+      // A genuine Studio close ends the whole in-memory tab session. Clear
+      // every visited mode so reopening and switching cannot revive stale
+      // forms/results when cross-close persistence is disabled.
+      for (const ModeClass of new Set(lootStudioClasses.values())) {
+        ModeClass._persistedState = null;
+      }
     }
+    this._lootStudioSwitching = false;
     Cls._instance = null;
+    releaseLootStudioInstance(this);
   }
 
   /**
@@ -371,6 +624,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       form: this._normalizeStoredForm(this._form),
       lastResult: this._lastResult,
+      undoStack: Array.isArray(this._undoStack)
+        ? this._undoStack.slice(-10).map((entry) => cloneData(entry))
+        : [],
     };
   }
 
@@ -471,6 +727,28 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       event.preventDefault();
       this._startPrimaryGeneration();
     }
+  }
+
+  _onLootStudioTabKeyDown(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    const tabList = event.currentTarget?.closest?.("[role='tablist']");
+    const tabs = [...(tabList?.querySelectorAll?.("[role='tab']") ?? [])];
+    if (tabs.length === 0) return;
+    const currentIndex = Math.max(0, tabs.indexOf(event.currentTarget));
+    let nextIndex = currentIndex;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    else if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else {
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    }
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    nextTab?.focus?.();
+    nextTab?.click?.();
   }
 
   _startPrimaryGeneration() {
@@ -834,6 +1112,28 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* ------------------- generic actions ------------------- */
 
   /** @this {BaseLootApp} */
+  static async _onSwitchLootMode(event, target) {
+    return this._switchLootStudioMode(event, target);
+  }
+
+  async _switchLootStudioMode(event, target) {
+    event?.preventDefault?.();
+    const requested = normalizeLootStudioMode(target?.dataset?.lootMode);
+    if (requested === this.constructor.LOOT_STUDIO_MODE) return;
+    const opened = await openLootStudioMode(requested);
+    await opened?._lootStudioRenderPromise;
+    const focusActiveTab = () =>
+      opened?.element
+        ?.querySelector?.(`[data-loot-mode='${requested}']`)
+        ?.focus?.();
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(focusActiveTab);
+    } else {
+      focusActiveTab();
+    }
+  }
+
+  /** @this {BaseLootApp} */
   static _onReset(_event, _target) {
     this._form = this.constructor.buildDefaultForm();
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
@@ -945,7 +1245,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } catch (error) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.error(`${MODULE_ID} | failed to send loot to chat`, error);
-      ui.notifications?.error("Failed to send loot to chat. See console.");
+      ui.notifications?.error(
+        "Loot was not sent to chat. Nothing else changed; try again, then use Help & Diagnostics if it continues.",
+      );
     }
   }
 
@@ -1284,6 +1586,10 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** Context the preset/history menu needs — spread into _prepareContext. */
   _basePresetContext() {
     const toolId = this.constructor.TOOL_ID;
+    const mode = normalizeLootStudioMode(
+      this.constructor.LOOT_STUDIO_MODE,
+      LOOT_STUDIO_DEFAULT_MODE,
+    );
     const presets = listPresets(toolId).map((preset) => ({
       id: preset.id,
       name: preset.name,
@@ -1298,6 +1604,21 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       history,
       hasHistory: history.length > 0,
       canUndo: (this._undoStack?.length ?? 0) > 0,
+      lootStudio: {
+        mode,
+        activeLabel:
+          LOOT_STUDIO_MODES.find((entry) => entry.id === mode)?.label ??
+          "Encounter",
+        panelId: `loot-studio-panel-${mode}`,
+        tabId: `loot-studio-tab-${mode}`,
+        advancedOpen: this._lootStudioAdvancedOpen === true,
+        tabs: LOOT_STUDIO_MODES.map((entry) => ({
+          ...entry,
+          active: entry.id === mode,
+          tabId: `loot-studio-tab-${entry.id}`,
+          panelId: `loot-studio-panel-${entry.id}`,
+        })),
+      },
     };
   }
 

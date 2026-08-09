@@ -4,7 +4,14 @@
   counts are pulled live from the loaded item library, so the UI never
   asks for something the library can't fulfil.
 --}}
-<div class="lf-shell">
+<div
+  class="lf-shell"
+  {{#if lootStudio}}
+  id="{{lootStudio.panelId}}"
+  role="tabpanel"
+  aria-labelledby="{{lootStudio.tabId}}"
+  {{/if}}
+>
   <form class="lf-form" data-form="loot-forge" autocomplete="off">
     <header class="lf-form__head">
       <div>
@@ -62,11 +69,20 @@
       </div>
     </fieldset>
 
+    <div class="lf-form__sliders lf-form__sliders--primary">
+      {{> slider partySize}}
+    </div>
+
+    <details class="loot-studio-advanced" data-loot-advanced {{#if lootStudio.advancedOpen}}open{{/if}}>
+      <summary>
+        <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Advanced options</span>
+        <small>Budget shape, filters, chances, and art</small>
+      </summary>
+      <div class="loot-studio-advanced__body">
     {{!-- Sliders --}}
     <div class="lf-form__sliders">
       {{> slider scale}}
       {{> slider generosity}}
-      {{> slider partySize}}
       <label class="lf-field lf-field--toggle lf-field--cap">
         <span class="lf-field__label">Max items</span>
         <span class="lf-toggle">
@@ -96,10 +112,10 @@
     {{!-- Rarity chips --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Rarity <small>(empty = all)</small>
+        Rarity <small>(no selection = Any)</small>
         <span class="lf-chiprow__bulk">
-          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">All</button>
-          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">None</button>
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="rarity">Select all</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="rarity">Clear selection</button>
         </span>
       </legend>
       <div class="lf-chiprow">
@@ -115,10 +131,10 @@
     {{!-- Loot type chips --}}
     <fieldset class="lf-fieldset">
       <legend class="lf-fieldset__legend">
-        Item Types <small>(empty = all)</small>
+        Item Types <small>(no selection = Any)</small>
         <span class="lf-chiprow__bulk">
-          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">All</button>
-          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">None</button>
+          <button type="button" class="lf-bulk" data-action="chipAll" data-group="lootType">Select all</button>
+          <button type="button" class="lf-bulk" data-action="chipNone" data-group="lootType">Clear selection</button>
         </span>
       </legend>
       <div class="lf-chiprow">
@@ -178,6 +194,8 @@
     {{/if}}
 
     {{> marketFilter}}
+      </div>
+    </details>
 
     <div class="lf-form__actions">
       <button type="button" class="lf-btn lf-btn--primary" data-action="generate" data-ready-title="Generate (Enter or R)" title="{{#if generateDisabledReason}}{{generateDisabledReason}}{{else}}Generate (Enter or R){{/if}}" {{#if generateDisabled}}disabled aria-disabled="true"{{/if}} {{#if loadingItems}}aria-busy="true"{{/if}}>

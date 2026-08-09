@@ -11,6 +11,15 @@
   --rw-neutral: var(--lf-muted, #97a3c1);
   --rw-warm: #8fd0a8;
   --rw-allied: var(--lf-success, #6dd5a2);
+  min-width: 0;
+  min-height: 0;
+  container-name: reputation-workspace;
+  container-type: inline-size;
+}
+
+.infinity-dnd5e.infinity-reputation-workspace .window-content {
+  min-height: 0;
+  padding: 0;
 }
 
 .infinity-reputation-workspace .rw-shell {
@@ -23,6 +32,7 @@
   box-sizing: border-box;
   color: var(--lf-text, #e7ecf6);
   background: var(--lf-bg, #1d2330);
+  scroll-behavior: smooth;
 }
 
 .infinity-reputation-workspace .rw-head {
@@ -50,8 +60,8 @@
 }
 
 .infinity-reputation-workspace .rw-body {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   flex: 1 1 auto;
@@ -59,7 +69,6 @@
 
 /* Left rail */
 .infinity-reputation-workspace .rw-list {
-  flex: 1 1 240px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -71,7 +80,7 @@
 
 .infinity-reputation-workspace .rw-list__summary {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   opacity: 0.6;
@@ -98,6 +107,7 @@
   background: var(--lf-bg-alt, #242b3b);
   color: inherit;
   cursor: pointer;
+  min-height: var(--lf-control-size, 44px);
   transition: border-color 0.12s ease;
 }
 .infinity-reputation-workspace .rw-list__btn:hover {
@@ -147,7 +157,7 @@
 /* Standing pill (shared color bands) */
 .infinity-reputation-workspace .rw-pill {
   align-self: flex-start;
-  font-size: 0.72rem;
+  font-size: var(--lf-text-xs);
   font-weight: 700;
   padding: 1px 8px;
   border-radius: var(--lf-radius-pill, 999px);
@@ -172,7 +182,6 @@
 
 /* Right pane */
 .infinity-reputation-workspace .rw-edit {
-  flex: 2 1 360px;
   min-width: 0;
   overflow: auto;
   min-height: 0;
@@ -183,6 +192,90 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.infinity-reputation-workspace .rw-section-nav {
+  position: sticky;
+  z-index: var(--lf-layer-sticky, 5);
+  top: 0;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--lf-bg-alt) 96%, transparent);
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  backdrop-filter: blur(8px);
+  scrollbar-width: thin;
+}
+
+.infinity-reputation-workspace .rw-section-nav a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--lf-control-size, 44px);
+  padding: 6px 10px;
+  color: var(--lf-muted, #97a3c1);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--lf-radius-sm, 6px);
+}
+
+.infinity-reputation-workspace .rw-section-nav a:hover,
+.infinity-reputation-workspace .rw-section-nav a:focus-visible {
+  color: var(--lf-text-strong, #fff);
+  background: var(--lf-surface-elev, #364159);
+  border-color: var(--lf-border-strong, #6473a0);
+}
+
+.infinity-reputation-workspace .rw-workspace-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--lf-bg-alt, #242b3b);
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius, 10px);
+  scroll-margin-top: 64px;
+}
+
+.infinity-reputation-workspace .rw-workspace-section__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--lf-border, #475070);
+}
+
+.infinity-reputation-workspace .rw-workspace-section__head :is(p, h3, span) {
+  margin: 0;
+}
+
+.infinity-reputation-workspace .rw-workspace-section__head p {
+  color: var(--lf-accent, #ffb15d);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.infinity-reputation-workspace .rw-workspace-section__head h3 {
+  color: var(--lf-text-strong, #fff);
+  font-size: 1.08rem;
+}
+
+.infinity-reputation-workspace .rw-workspace-section__head > span {
+  max-width: 46ch;
+  color: var(--lf-muted, #97a3c1);
+  font-size: var(--lf-text-xs);
+  line-height: 1.4;
+  text-align: right;
 }
 
 .infinity-reputation-workspace .rw-form__head {
@@ -251,6 +344,15 @@
   color: inherit;
   padding: 6px 8px;
   font: inherit;
+}
+.infinity-reputation-workspace .rw-input {
+  min-height: var(--lf-control-size, 44px);
+}
+
+.infinity-reputation-workspace
+  :is(.rw-input, .rw-textarea)[aria-invalid="true"] {
+  border-color: var(--lf-danger, #ef6f74);
+  box-shadow: 0 0 0 1px var(--lf-danger, #ef6f74);
 }
 .infinity-reputation-workspace .rw-input--num {
   width: 4.5rem;
@@ -328,6 +430,27 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.infinity-reputation-workspace .rw-standing-change {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+  padding-top: 8px;
+  border-top: 1px solid var(--lf-border, #475070);
+}
+
+.infinity-reputation-workspace .rw-standing-change > .rw-btn {
+  grid-column: 1 / -1;
+}
+
+.infinity-reputation-workspace .rw-standing-change > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--lf-muted, #97a3c1);
+  font-size: var(--lf-text-xs);
+  line-height: 1.4;
 }
 
 /* Fieldsets */
@@ -411,7 +534,7 @@
 .infinity-reputation-workspace .rw-log__delta--flat {
   color: var(--rw-neutral);
   background: color-mix(in srgb, var(--rw-neutral) 16%, transparent);
-  font-size: 0.7rem;
+  font-size: var(--lf-text-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -422,7 +545,7 @@
   min-width: 0;
 }
 .infinity-reputation-workspace .rw-log__swing {
-  font-size: 0.74rem;
+  font-size: var(--lf-text-xs);
   font-weight: 700;
   opacity: 0.85;
 }
@@ -430,7 +553,7 @@
   font-size: 0.86rem;
 }
 .infinity-reputation-workspace .rw-log__meta {
-  font-size: 0.7rem;
+  font-size: var(--lf-text-xs);
   opacity: 0.6;
 }
 
@@ -441,7 +564,8 @@
   justify-content: center;
   gap: 6px;
   padding: 6px 12px;
-  min-height: 30px;
+  min-height: var(--lf-control-size, 44px);
+  min-width: var(--lf-control-size, 44px);
   border: 1px solid var(--lf-border, #475070);
   border-radius: var(--lf-radius-sm, 6px);
   background: var(--lf-surface-elev, #364159);
@@ -461,7 +585,8 @@
 }
 .infinity-reputation-workspace .rw-btn--icon {
   padding: 6px 8px;
-  min-width: 30px;
+  width: var(--lf-control-size, 44px);
+  min-width: var(--lf-control-size, 44px);
 }
 .infinity-reputation-workspace .rw-btn--ghost {
   background: transparent;
@@ -496,10 +621,19 @@
 }
 
 .infinity-reputation-workspace .rw-form__foot {
+  position: sticky;
+  z-index: var(--lf-layer-sticky, 5);
+  bottom: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 9px;
+  background: color-mix(in srgb, var(--lf-bg-alt) 96%, transparent);
+  border: 1px solid var(--lf-border, #475070);
+  border-radius: var(--lf-radius-sm, 6px);
+  backdrop-filter: blur(8px);
 }
 
 .infinity-reputation-workspace .rw-save-status {
@@ -545,4 +679,62 @@
 /* Honor the animations client setting (parity with the other windows). */
 .infinity-reputation-workspace.rw-no-anim * {
   transition: none !important;
+}
+
+@container reputation-workspace (max-width: 720px) {
+  .infinity-reputation-workspace .rw-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The stacked editor has less vertical room. Keeping both rails sticky can
+     leave no uncovered hit area between them in a short window. */
+  .infinity-reputation-workspace .rw-section-nav,
+  .infinity-reputation-workspace .rw-form__foot {
+    position: static;
+  }
+
+  .infinity-reputation-workspace .rw-list {
+    max-height: 13rem;
+  }
+
+  .infinity-reputation-workspace .rw-standing-change {
+    grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  }
+
+  .infinity-reputation-workspace .rw-standing-change > .rw-btn {
+    grid-column: 1 / -1;
+  }
+}
+
+@container reputation-workspace (max-width: 520px) {
+  .infinity-reputation-workspace .rw-workspace-section__head,
+  .infinity-reputation-workspace .rw-form__head,
+  .infinity-reputation-workspace .rw-form__foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .infinity-reputation-workspace .rw-workspace-section__head > span {
+    text-align: left;
+  }
+
+  .infinity-reputation-workspace .rw-form__art {
+    width: 100%;
+    height: 8rem;
+  }
+
+  .infinity-reputation-workspace .rw-standing-change {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-reputation-workspace .rw-standing-change > .rw-btn,
+  .infinity-reputation-workspace .rw-form__foot > * {
+    grid-column: auto;
+    width: 100%;
+  }
+
+  .infinity-reputation-workspace .rw-save-status {
+    margin-left: 0;
+    text-align: left;
+  }
 }

@@ -9,6 +9,7 @@
  */
 
 import { standingTier } from "./reputation/standing.js";
+import { confirmInfinityDialog } from "./dialog-contract.js";
 
 /** Human-facing product name shown in user toasts (not the dev slug). */
 export const NOTIFY_PREFIX = "Infinity D&D5e";
@@ -225,17 +226,10 @@ export async function confirmDestructive({
   content,
   icon = "fa-solid fa-triangle-exclamation",
 }) {
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-  if (typeof DialogV2?.confirm !== "function") return false;
-  try {
-    return await DialogV2.confirm({
-      window: { title, icon },
-      content,
-      rejectClose: false,
-    });
-  } catch {
-    return false;
-  }
+  return await confirmInfinityDialog({
+    window: { title, icon },
+    content,
+  });
 }
 
 /** "very-rare" -> "Very Rare" for rarity badges. Empty in -> empty out. */

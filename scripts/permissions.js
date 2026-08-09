@@ -1,5 +1,3 @@
-const MODULE_ID = "infinity-dnd5e";
-
 /** Full-GM gate for privileged module applications and mutations. */
 export function isFullGM(user = globalThis.game?.user) {
   if (!user?.isGM) return false;
@@ -19,7 +17,7 @@ export function runAsFullGM(
   message = "Only a Game Master can use that tool.",
 ) {
   if (!isFullGM()) {
-    globalThis.ui?.notifications?.warn?.(`${MODULE_ID}: ${message}`);
+    globalThis.ui?.notifications?.warn?.(message);
     return null;
   }
   return action();

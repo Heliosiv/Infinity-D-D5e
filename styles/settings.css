@@ -1,0 +1,143 @@
+.infinity-dnd5e.infinity-settings {
+  container: infinity-settings / inline-size;
+  min-width: 0;
+  background: var(--lf-bg);
+  color: var(--lf-text);
+}
+
+.infinity-settings .window-content {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ix-settings {
+  display: grid;
+  align-content: start;
+  gap: var(--lf-space-4);
+  height: 100%;
+  min-height: 0;
+  padding: var(--lf-density-pad);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.ix-settings__density,
+.ix-settings__quick-starts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lf-space-4);
+}
+
+.ix-settings__density > div,
+.ix-settings__quick-starts > div {
+  min-width: 0;
+}
+
+.ix-settings :is(h1, h2, p) {
+  margin-block-start: 0;
+}
+
+.ix-settings :is(h1, h2) {
+  color: var(--lf-text-strong);
+}
+
+.ix-settings h2 {
+  margin-block-end: 4px;
+  font-size: var(--lf-text-md);
+}
+
+.ix-settings p {
+  margin-block-end: 0;
+  color: var(--lf-muted);
+  line-height: 1.45;
+}
+
+.ix-settings__groups {
+  display: grid;
+  gap: var(--lf-space-4);
+}
+
+.ix-settings-group {
+  scroll-margin-top: var(--lf-space-4);
+}
+
+.ix-settings-group__fields {
+  display: grid;
+  gap: 1px;
+  margin-top: var(--lf-space-3);
+  overflow: hidden;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-border);
+}
+
+.ix-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px);
+  align-items: center;
+  gap: var(--lf-space-4);
+  padding: var(--lf-space-3);
+  background: var(--lf-surface);
+}
+
+.ix-setting-row__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ix-setting-row__title {
+  color: var(--lf-text-strong);
+  font-weight: 700;
+}
+
+.ix-setting-row__hint,
+.ix-setting-row__scope {
+  color: var(--lf-muted);
+  font-size: var(--lf-text-sm);
+  line-height: 1.4;
+}
+
+.ix-setting-row__scope {
+  width: fit-content;
+  padding: 2px 7px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-pill);
+}
+
+.ix-setting-row > input[type="checkbox"] {
+  justify-self: end;
+  inline-size: 22px;
+  block-size: 22px;
+}
+
+.ix-settings .infinity-sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--lf-layer-sticky);
+}
+
+@container infinity-settings (max-width: 560px) {
+  .ix-settings__density,
+  .ix-settings__quick-starts {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ix-setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ix-setting-row > :is(input, select) {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .ix-setting-row > input[type="checkbox"] {
+    width: 24px;
+    justify-self: start;
+  }
+}

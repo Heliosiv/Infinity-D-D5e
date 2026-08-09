@@ -1,0 +1,284 @@
+/* Unified shell shared by Encounter, Hoard, and Creature loot modes. */
+
+.infinity-dnd5e.infinity-dnd5e.loot-studio {
+  container-name: loot-studio;
+  container-type: inline-size;
+  min-width: 0;
+  min-height: 0;
+}
+
+.infinity-dnd5e.infinity-dnd5e.loot-studio .window-content {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.infinity-dnd5e.loot-studio :is(.lf-shell, .hl-shell, .pc-shell) {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.loot-studio-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--lf-border);
+  background: color-mix(in srgb, var(--lf-bg-alt) 94%, transparent);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  z-index: 5;
+}
+
+.loot-studio-nav__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--lf-text-strong);
+}
+
+.loot-studio-nav__identity > i {
+  color: var(--lf-accent);
+  font-size: 1.1rem;
+}
+
+.loot-studio-nav__identity > span {
+  display: grid;
+  line-height: 1.15;
+}
+
+.loot-studio-nav__identity small {
+  margin-top: 2px;
+  color: var(--lf-muted);
+  font-size: max(0.75rem, 12px);
+}
+
+.loot-studio-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: min(420px, 62%);
+  padding: 4px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+}
+
+.loot-studio-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--lf-radius-sm) - 2px);
+  background: transparent;
+  color: var(--lf-muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.loot-studio-tab:hover {
+  color: var(--lf-text-strong);
+  background: var(--lf-surface);
+}
+
+.loot-studio-tab.is-active {
+  border-color: color-mix(in srgb, var(--lf-accent) 65%, var(--lf-border));
+  background: color-mix(in srgb, var(--lf-accent) 15%, var(--lf-surface));
+  color: var(--lf-accent);
+}
+
+.infinity-dnd5e.loot-studio :focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--lf-accent) 80%, white);
+  outline-offset: 2px;
+}
+
+.loot-studio-advanced {
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: color-mix(in srgb, var(--lf-bg) 72%, transparent);
+}
+
+.loot-studio-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  color: var(--lf-text-strong);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.loot-studio-advanced > summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loot-studio-advanced > summary i {
+  color: var(--lf-accent);
+}
+
+.loot-studio-advanced > summary small {
+  color: var(--lf-muted);
+  font-size: max(0.75rem, 12px);
+  font-weight: 500;
+  text-align: right;
+}
+
+.loot-studio-advanced[open] > summary {
+  border-bottom: 1px solid var(--lf-border);
+}
+
+.loot-studio-advanced__body {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+}
+
+.loot-studio-advanced:not([open]) > .loot-studio-advanced__body {
+  display: none;
+}
+
+.infinity-dnd5e.loot-studio .lf-form__actions {
+  position: sticky;
+  bottom: -14px;
+  margin: 0 -14px -14px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--lf-border);
+  background: color-mix(in srgb, var(--lf-bg-alt) 94%, transparent);
+  box-shadow: 0 -10px 24px rgb(0 0 0 / 18%);
+  z-index: 4;
+}
+
+.infinity-dnd5e.loot-studio[data-infinity-density="comfortable"]
+  .window-content
+  :is(
+    button,
+    summary,
+    select,
+    input:not([type="checkbox"], [type="radio"], [type="range"])
+  ) {
+  min-height: 44px;
+}
+
+.infinity-dnd5e.loot-studio
+  :is(
+    .lf-form__hint,
+    .hl-form__hint,
+    .pc-form__hint,
+    .lf-fieldset__legend small,
+    .lf-chiprow__bulk,
+    .lf-result__meta,
+    .hl-advanced small
+  ) {
+  font-size: max(0.75rem, 12px);
+}
+
+@media (pointer: fine) {
+  .infinity-dnd5e.loot-studio[data-infinity-density="compact"]
+    .window-content
+    :is(
+      button,
+      summary,
+      select,
+      input:not([type="checkbox"], [type="radio"], [type="range"])
+    ) {
+    min-height: 32px;
+  }
+}
+
+@media (pointer: coarse) {
+  .infinity-dnd5e.loot-studio
+    .window-content
+    :is(
+      button,
+      summary,
+      select,
+      input:not([type="checkbox"], [type="radio"], [type="range"])
+    ) {
+    min-height: 44px;
+  }
+}
+
+@container loot-studio (max-width: 720px) {
+  .loot-studio-nav {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .loot-studio-tabs {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .loot-studio-nav__identity {
+    justify-content: center;
+  }
+
+  .loot-studio-advanced > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .loot-studio-advanced > summary small {
+    text-align: left;
+  }
+}
+
+@container loot-studio (max-width: 520px) {
+  .loot-studio-nav {
+    padding: 8px;
+  }
+
+  .loot-studio-tab {
+    flex-direction: column;
+    gap: 3px;
+    padding-inline: 5px;
+  }
+
+  .infinity-dnd5e.loot-studio :is(.lf-shell, .hl-shell, .pc-shell) {
+    padding: 8px;
+  }
+
+  .infinity-dnd5e.loot-studio .lf-form__actions > .lf-btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infinity-dnd5e.loot-studio *,
+  .infinity-dnd5e.loot-studio *::before,
+  .infinity-dnd5e.loot-studio *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .loot-studio-tab,
+  .loot-studio-advanced,
+  .infinity-dnd5e.loot-studio .lf-form__actions {
+    border: 1px solid CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .loot-studio-tab.is-active {
+    outline: 2px solid Highlight;
+    color: HighlightText;
+    background: Highlight;
+  }
+}

@@ -43,7 +43,7 @@ import {
   tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting, parseRaritiesSetting } from "./settings.js";
-import { BaseLootApp } from "./loot/loot-app-base.js";
+import { BaseLootApp, registerLootStudioMode } from "./loot/loot-app-base.js";
 import {
   ENCOUNTER_COUNT_RANGE as COUNT_RANGE,
   ENCOUNTER_PARTY_RANGE as PARTY_RANGE,
@@ -67,9 +67,15 @@ import {
   prettyRarity,
   titleCase,
 } from "./ui-util.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "./chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-forge.hbs`;
+const STUDIO_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-studio.hbs`;
 
 /** Display labels for each slider — central so the template stays mute. */
 const SLIDER_LABELS = Object.freeze({
@@ -114,6 +120,7 @@ export class PerEncounterLootApp extends BaseLootApp {
   static _instance = null;
   static _persistedState = null;
 
+  static LOOT_STUDIO_MODE = "encounter";
   static FORM_NAME = "loot-forge";
   static TOOL_ID = "per-encounter-loot";
   static CHAT_ALIAS = "Loot Forge";
@@ -124,15 +131,15 @@ export class PerEncounterLootApp extends BaseLootApp {
   ]);
 
   static DEFAULT_OPTIONS = {
-    id: "infinity-dnd5e-per-encounter-loot",
+    id: "infinity-dnd5e-loot-studio",
     tag: "section",
-    classes: ["infinity-dnd5e", "loot-forge"],
+    classes: ["infinity-dnd5e", "loot-studio", "loot-forge"],
     window: {
-      title: "Infinity D&D5e — Per-Encounter Loot",
+      title: "Infinity D&D5e — Loot Studio",
       icon: "fa-solid fa-coins",
       resizable: true,
     },
-    position: { width: 860, height: 760 },
+    position: { width: 900, height: 800 },
     actions: {
       ...BaseLootApp.SHARED_ACTIONS,
       generate: PerEncounterLootApp._onGenerate,
@@ -146,6 +153,7 @@ export class PerEncounterLootApp extends BaseLootApp {
   };
 
   static PARTS = {
+    studio: { template: STUDIO_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
@@ -187,13 +195,18 @@ export class PerEncounterLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
-    const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
+    const persistEnabled =
+      getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
+      PerEncounterLootApp._lootStudioRestoreState === true;
     const persisted = persistEnabled
       ? PerEncounterLootApp._persistedState
       : null;
     const defaults = PerEncounterLootApp.buildDefaultForm();
     this._form = PerEncounterLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
+    this._undoStack = Array.isArray(persisted?.undoStack)
+      ? persisted.undoStack.slice(-10)
+      : [];
   }
 
   /* ------------------- base hooks ------------------- */
@@ -822,6 +835,11 @@ export class PerEncounterLootApp extends BaseLootApp {
   }
 }
 
+registerLootStudioMode(
+  PerEncounterLootApp.LOOT_STUDIO_MODE,
+  PerEncounterLootApp,
+);
+
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -931,12 +949,20 @@ function buildLootChatHtml(result) {
   const budgetLine = result.budgetGp
     ? ` / ${formatGp(result.budgetGp)} budget`
     : "";
-  return `
-<div class="infinity-loot-chat">
-  <h3 style="margin: 0 0 4px;">Per-Encounter Loot</h3>
-  <p style="margin: 0 0 6px; opacity: 0.85;">
-    ${result.items.length} item(s) — ${formatGp(result.totalGp)}${budgetLine}
-  </p>
-  <ul style="margin: 0; padding-left: 18px;">${lines}</ul>
-</div>`;
+  const details = result.items.length
+    ? `<ul>${lines}</ul>`
+    : "<p>No items were generated.</p>";
+  return buildInfinityChatCard({
+    title: "Per-Encounter Loot",
+    outcome: `${result.items.length} item(s) — ${formatGp(result.totalGp)}${budgetLine}`,
+    audience: describeChatAudience(
+      getSetting(SETTING_KEYS.CHAT_MODE) ?? "public",
+    ),
+    details: markTrustedChatHtml(details),
+    nextAction: result.items.length
+      ? "Open an item from this card, or ask the GM to distribute the haul."
+      : "Adjust the Loot Studio options and generate again.",
+    tone: result.items.length ? "success" : "neutral",
+    classes: ["infinity-loot-chat", "infinity-loot-chat--encounter"],
+  });
 }

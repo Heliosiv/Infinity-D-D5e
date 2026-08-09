@@ -64,6 +64,15 @@ import {
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { escapeHtml, prettyEnvironment, prettyResource } from "../ui-util.js";
 import { isFullGM } from "../permissions.js";
+import {
+  confirmInfinityDialog,
+  isInfinityDialogAvailable,
+} from "../dialog-contract.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "../chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const UPKEEP_CLAIM_STABILIZATION_MS = 500;
@@ -208,7 +217,7 @@ async function onTimeMaybeChanged(reason) {
 export async function advanceDayNow() {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
-      `${MODULE_ID}: only the active GM can run daily upkeep.`,
+      "Only the active full GM can run daily upkeep. No supplies were changed.",
     );
     return null;
   }
@@ -296,7 +305,7 @@ export async function runForageDrive({
 } = {}) {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
-      `${MODULE_ID}: only the active GM can run a forage drive.`,
+      "Only the active full GM can run a forage drive. Nothing changed.",
     );
     return null;
   }
@@ -337,7 +346,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   );
   if (selected.length === 0) {
     globalThis.ui?.notifications?.info(
-      `${MODULE_ID}: no foragers selected for the drive.`,
+      "No foragers were selected. Choose at least one character and try again.",
     );
     return null;
   }
@@ -352,7 +361,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     (channels.water && !configuredWater)
   ) {
     globalThis.ui?.notifications?.warn(
-      `${MODULE_ID}: the selected forage supplies are not enabled and configured.`,
+      "The selected forage supplies are not enabled and configured. Review Setup & Rules; nothing changed.",
     );
     return null;
   }
@@ -709,7 +718,7 @@ export function buildForageDriveReportContent({
       if (!f.success) {
         return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
       }
-      return `<li>${name} — <span style="color:#6dd5a2;">gathered ${formatYield(f.food, f.water)}</span></li>`;
+      return `<li>${name} — <span style="color:#6dd5a2;">gathered ${escapeHtml(formatYield(f.food, f.water))}</span></li>`;
     })
     .join("");
   const dest = stashActor
@@ -718,13 +727,25 @@ export function buildForageDriveReportContent({
   const errorLine = depositErrors.length
     ? `<div style="color:#f2bd61;">Some inventory deposits need review in Quartermaster.</div>`
     : "";
-  return `
-    <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeHtml(env.dc)}</h3>
-      <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      <div>${dest}: <strong>${formatYield(totalFood, totalWater)}</strong> applied.</div>
-      ${errorLine}
-    </div>`;
+  const details = `
+    <ul>${rows}</ul>
+    <div>${dest}: <strong>${escapeHtml(formatYield(totalFood, totalWater))}</strong> applied.</div>
+    ${errorLine}`;
+  return buildInfinityChatCard({
+    title: `Forage Drive — DC ${env.dc}`,
+    outcome: depositErrors.length
+      ? "Foraging finished; some inventory deposits need review."
+      : "Foraging finished and the confirmed yield was applied.",
+    audience: describeChatAudience(
+      getSetting(SETTING_KEYS.RESOURCE_REPORT_MODE) ?? "whisper-gm",
+    ),
+    details: markTrustedChatHtml(details),
+    nextAction: depositErrors.length
+      ? "Open Quartermaster and review the flagged inventory deposits."
+      : "No further action is needed.",
+    tone: depositErrors.length ? "warning" : "success",
+    classes: ["infinity-quartermaster-receipt", "infinity-forage-receipt"],
+  });
 }
 
 async function postForageDriveReport(options) {
@@ -857,7 +878,7 @@ export function resourceOperationFingerprint({
 function blockChangedResourceContext(operation) {
   const label = String(operation ?? "resource automation").trim();
   globalThis.ui?.notifications?.warn?.(
-    `${MODULE_ID}: ${label} paused because the resource rules or roster changed while players were responding. Review Quartermaster and retry.`,
+    `${label} paused because the resource rules or roster changed while players were responding. No new supplies were changed; review Quartermaster and retry.`,
   );
   return {
     blocked: true,
@@ -871,7 +892,7 @@ function blockActiveResourceRun(operation, activeUpkeep) {
   const label = String(operation ?? "resource automation").trim();
   const runId = String(activeUpkeep?.runId ?? "").trim();
   globalThis.ui?.notifications?.error?.(
-    `${MODULE_ID}: ${label} paused because an earlier resource run did not finish cleanly. Review Quartermaster and clear the interrupted-run lock before trying again.`,
+    `${label} paused because an earlier resource run did not finish cleanly. Do not repeat it; review Quartermaster and clear the interrupted-run lock before trying again.`,
   );
   return {
     blocked: true,
@@ -885,7 +906,7 @@ function blockActiveResourceRun(operation, activeUpkeep) {
 function blockReservedCalendarDay(operation, day, lastSeenDay) {
   const label = String(operation ?? "resource automation").trim();
   globalThis.ui?.notifications?.info?.(
-    `${MODULE_ID}: ${label} skipped because day ${day} was already reserved by another GM client. No supplies were changed.`,
+    `${label} skipped because day ${day} was already reserved by another GM client. No supplies were changed.`,
   );
   return {
     blocked: true,
@@ -975,7 +996,7 @@ function blockConflictedResourceWrite({ config, actors, operation }) {
     remaining > 0 ? ` ${remaining} more conflict(s) need review.` : "";
   const label = String(operation ?? "resource automation").trim();
   globalThis.ui?.notifications?.error?.(
-    `${MODULE_ID}: ${label} paused. ${first.message}${more} Open Quartermaster to fix the resource rules.`,
+    `${label} paused. ${first.message}${more} Open Quartermaster to fix the resource rules before retrying.`,
   );
   console.warn(
     `${MODULE_ID} | ${label} blocked by resource conflicts`,
@@ -1158,7 +1179,7 @@ async function blockConflictedProposedResourceWrite({
     remaining > 0 ? ` ${remaining} more conflict(s) need review.` : "";
   const label = String(operation ?? "resource automation").trim();
   globalThis.ui?.notifications?.error?.(
-    `${MODULE_ID}: ${label} paused before depositing supplies. ${first.message}${more} Open Quartermaster to fix the resource rules.`,
+    `${label} paused before depositing supplies. ${first.message}${more} Open Quartermaster to fix the resource rules before retrying.`,
   );
   console.warn(
     `${MODULE_ID} | ${label} blocked by proposed resource conflicts`,
@@ -1223,7 +1244,7 @@ async function runDailyUpkeep({
 
   if (party.length === 0) {
     globalThis.ui?.notifications?.info(
-      `${MODULE_ID}: no player characters found for daily upkeep.`,
+      "No player characters were found for daily upkeep. Add party members in Setup & Rules; no supplies were changed.",
     );
     return null;
   }
@@ -1520,7 +1541,7 @@ async function runDailyUpkeep({
   await postUpkeepReport({ env, result, resources: cfg.resources });
   if (hasErrors) {
     globalThis.ui?.notifications?.error(
-      `${MODULE_ID}: upkeep completed with inventory write failures. Review the Quartermaster report before continuing.`,
+      "Upkeep completed with inventory write failures. Do not run it again; review the Quartermaster report before continuing.",
     );
   }
   if (suggestions.length > 0) await promptApplyExhaustion(suggestions);
@@ -2608,13 +2629,32 @@ export function buildUpkeepReportContent({
   const reportOutcome = classifyResourceOutcome({ hasErrors, hasShortages });
   const days = Math.max(1, wholeAmount(result.days));
   const daysLabel = days > 1 ? ` (${days} days)` : "";
-  return `
-    <div class="infinity-dnd5e infinity-quartermaster-receipt">
-      <h3 style="margin:0 0 4px;">Daily Supplies — ${resourceOutcomeLabel(reportOutcome)}${daysLabel}</h3>
-      <div style="margin:0 0 4px; opacity:0.8;">Environment: ${escapeHtml(envLabel)}</div>
-      <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      ${partyLines}
-    </div>`;
+  const title = `Daily Supplies — ${resourceOutcomeLabel(reportOutcome)}${daysLabel}`;
+  const tone =
+    reportOutcome === RESOURCE_OUTCOMES.NEEDS_REVIEW
+      ? "warning"
+      : reportOutcome === RESOURCE_OUTCOMES.SHORT
+        ? "danger"
+        : "success";
+  const nextAction = hasErrors
+    ? "Open Quartermaster and review the flagged inventory writes."
+    : hasShortages
+      ? "Review the shortages and follow the exhaustion prompt if one appears."
+      : "No further action is needed.";
+  return buildInfinityChatCard({
+    title,
+    outcome: `${resourceOutcomeLabel(reportOutcome)}${daysLabel}.`,
+    audience: describeChatAudience(
+      getSetting(SETTING_KEYS.RESOURCE_REPORT_MODE) ?? "whisper-gm",
+    ),
+    details: markTrustedChatHtml(`
+      <div>Environment: ${escapeHtml(envLabel)}</div>
+      <ul>${rows}</ul>
+      ${partyLines}`),
+    nextAction,
+    tone,
+    classes: ["infinity-quartermaster-receipt", "infinity-upkeep-receipt"],
+  });
 }
 
 function resourceDisplayLabel(resource) {
@@ -2674,26 +2714,19 @@ function resolveWhisperForActors(actorIds) {
 }
 
 async function promptApplyExhaustion(suggestions) {
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   const names = suggestions
     .map((s) => `${escapeHtml(s.name)} (+${s.suggestDelta})`)
     .join(", ");
-  if (typeof DialogV2?.confirm !== "function") {
+  if (!isInfinityDialogAvailable("confirm")) {
     globalThis.ui?.notifications?.warn(
-      `${MODULE_ID}: ${names} should gain exhaustion (apply manually).`,
+      `${names} should gain exhaustion. Apply it manually, then record that the recovery step is complete.`,
     );
     return;
   }
-  let ok = false;
-  try {
-    ok = await DialogV2.confirm({
-      window: { title: "Apply Exhaustion?", icon: "fa-solid fa-face-tired" },
-      content: `<p>The following characters went without food or water and should gain exhaustion:</p><p><strong>${names}</strong></p><p>Apply it now?</p>`,
-      rejectClose: false,
-    });
-  } catch {
-    ok = false;
-  }
+  const ok = await confirmInfinityDialog({
+    window: { title: "Apply Exhaustion?", icon: "fa-solid fa-face-tired" },
+    content: `<p>The following characters went without food or water and should gain exhaustion:</p><p><strong>${names}</strong></p><p>Apply it now?</p>`,
+  });
   if (!ok) return;
   for (const s of suggestions) {
     const actor = globalThis.game?.actors?.get?.(s.actorId);

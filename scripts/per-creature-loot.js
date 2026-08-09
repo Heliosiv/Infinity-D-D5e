@@ -31,7 +31,7 @@ import {
   tierWindow,
 } from "./loot/tag-vocabulary.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
-import { BaseLootApp } from "./loot/loot-app-base.js";
+import { BaseLootApp, registerLootStudioMode } from "./loot/loot-app-base.js";
 import {
   PER_CREATURE_ITEM_RANGE as ITEMS_PER_CREATURE_RANGE,
   PER_CREATURE_ROSTER_LIMIT as ROSTER_LIMIT,
@@ -53,9 +53,15 @@ import {
   prettyLootType,
   prettyRarity,
 } from "./ui-util.js";
+import {
+  buildInfinityChatCard,
+  describeChatAudience,
+  markTrustedChatHtml,
+} from "./chat-card.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/per-creature-loot.hbs`;
+const STUDIO_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/loot-studio.hbs`;
 
 const SLIDER_LABELS = Object.freeze({
   itemsPerCreature: "Items per Creature",
@@ -66,6 +72,7 @@ export class PerCreatureLootApp extends BaseLootApp {
   static _instance = null;
   static _persistedState = null;
 
+  static LOOT_STUDIO_MODE = "creature";
   static FORM_NAME = "per-creature-loot";
   static TOOL_ID = "per-creature-loot";
   static CHAT_ALIAS = "Per-Creature Loot";
@@ -76,15 +83,15 @@ export class PerCreatureLootApp extends BaseLootApp {
   ]);
 
   static DEFAULT_OPTIONS = {
-    id: "infinity-dnd5e-per-creature-loot",
+    id: "infinity-dnd5e-loot-studio",
     tag: "section",
-    classes: ["infinity-dnd5e", "per-creature-loot"],
+    classes: ["infinity-dnd5e", "loot-studio", "per-creature-loot"],
     window: {
-      title: "Infinity D&D5e — Per-Creature Loot",
+      title: "Infinity D&D5e — Loot Studio",
       icon: "fa-solid fa-skull",
       resizable: true,
     },
-    position: { width: 820, height: 800 },
+    position: { width: 900, height: 800 },
     actions: {
       ...BaseLootApp.sharedActionsExcept("toggleLock"),
       generate: PerCreatureLootApp._onGenerate,
@@ -100,6 +107,7 @@ export class PerCreatureLootApp extends BaseLootApp {
   };
 
   static PARTS = {
+    studio: { template: STUDIO_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
@@ -128,13 +136,18 @@ export class PerCreatureLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
-    const persistEnabled = getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
+    const persistEnabled =
+      getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
+      PerCreatureLootApp._lootStudioRestoreState === true;
     const persisted = persistEnabled
       ? PerCreatureLootApp._persistedState
       : null;
     const defaults = PerCreatureLootApp.buildDefaultForm();
     this._form = PerCreatureLootApp.normalizeForm(persisted?.form, defaults);
     this._lastResult = persisted?.lastResult ?? null;
+    this._undoStack = Array.isArray(persisted?.undoStack)
+      ? persisted.undoStack.slice(-10)
+      : [];
   }
 
   /* ------------------- base hooks ------------------- */
@@ -768,6 +781,8 @@ export class PerCreatureLootApp extends BaseLootApp {
   }
 }
 
+registerLootStudioMode(PerCreatureLootApp.LOOT_STUDIO_MODE, PerCreatureLootApp);
+
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -819,12 +834,18 @@ function buildPerCreatureChatHtml(result) {
       return head + body;
     })
     .join("");
-  return `
-<div class="infinity-loot-chat">
-  <h3 style="margin: 0 0 4px;">Per-Creature Loot</h3>
-  <p style="margin: 0 0 6px; opacity: 0.85;">
-    Total across ${result.creatures.length} creature(s): ${formatGp(result.grandTotal)}
-  </p>
-  ${sections}
-</div>`;
+  return buildInfinityChatCard({
+    title: "Per-Creature Loot",
+    outcome: `Total across ${result.creatures.length} creature(s): ${formatGp(result.grandTotal)}`,
+    audience: describeChatAudience(
+      getSetting(SETTING_KEYS.CHAT_MODE) ?? "public",
+    ),
+    details: markTrustedChatHtml(
+      sections || "<p>No creature drops were generated.</p>",
+    ),
+    nextAction:
+      "Open an item from this card, reroll a creature in Loot Studio, or distribute the haul.",
+    tone: result.grandTotal > 0 ? "success" : "neutral",
+    classes: ["infinity-loot-chat", "infinity-loot-chat--creature"],
+  });
 }
