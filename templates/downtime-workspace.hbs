@@ -227,7 +227,7 @@
         <form class="dt-form" data-form="new-block">
           <label class="dt-field">
             <span>Settlement (optional)</span>
-            <select name="settlementId">
+            <select name="settlementId" {{#if busy}}disabled{{/if}}>
               <option value="">No settlement · camp, wilderness, or elsewhere</option>
               {{#each settlements}}<option value="{{id}}">{{name}} · {{wealthLabel}} / {{securityLabel}}</option>{{/each}}
             </select>
@@ -235,41 +235,134 @@
           </label>
           <label class="dt-field">
             <span>Other location</span>
-            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Other downtime location" />
+            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Other downtime location" {{#if busy}}disabled{{/if}} />
             <small>Used only when no settlement is selected; defaults to Camp or wilderness.</small>
           </label>
           <div class="dt-field">
             <span id="dt-new-block-hours-label">Productive hours per character</span>
             <div class="dt-hours-row">
-              <input type="number" name="hours" min="1" max="240" step="1" value="8" required aria-labelledby="dt-new-block-hours-label" />
-              <button type="button" data-action="setHourPreset" data-hours="8">1 day</button>
-              <button type="button" data-action="setHourPreset" data-hours="16">2 days</button>
-              <button type="button" data-action="setHourPreset" data-hours="40">5 days</button>
+              <input type="number" name="hours" min="1" max="240" step="1" value="8" required aria-labelledby="dt-new-block-hours-label" {{#if busy}}disabled{{/if}} />
+              <button type="button" data-action="setHourPreset" data-hours="8" {{#if busy}}disabled{{/if}}>1 day</button>
+              <button type="button" data-action="setHourPreset" data-hours="16" {{#if busy}}disabled{{/if}}>2 days</button>
+              <button type="button" data-action="setHourPreset" data-hours="40" {{#if busy}}disabled{{/if}}>5 days</button>
             </div>
             <small>Day presets use 8 productive hours per day.</small>
           </div>
-          <fieldset class="dt-fieldset">
-            <legend>Eligible characters</legend>
+          <fieldset class="dt-fieldset dt-actor-selector" data-actor-selector aria-describedby="dt-actor-selector-help">
+            <legend>Characters for this block</legend>
             {{#if hasActors}}
-            <div class="dt-check-grid">
-              {{#each actors}}
-              <label class="dt-check {{#unless eligible}}is-disabled{{/unless}}" title="{{reason}}">
-                <input type="checkbox" name="actorIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#unless eligible}}disabled{{/unless}} />
-                <img src="{{img}}" alt="" />
-                <span>{{name}}{{#if reason}}<small>{{reason}}</small>{{/if}}</span>
+            <div class="dt-actor-selector__head">
+              <p id="dt-actor-selector-help">Player-owned characters are selected by default. Search and filters change only what is shown; hidden selections stay selected until you clear them or restore defaults.</p>
+              <div class="dt-actor-counts" role="status" aria-live="polite" aria-atomic="true">
+                <strong data-actor-selected-count>{{actorSelector.selectedCount}} selected</strong>
+                <span data-actor-visible-count>{{actorSelector.visibleCount}} shown of {{actorSelector.totalCount}} characters</span>
+              </div>
+            </div>
+
+            <div class="dt-actor-scope" role="group" aria-label="Character groups">
+              <button type="button" class="dt-button" data-action="setActorScope" data-actor-scope="player-owned" aria-pressed="{{#if actorSelector.scopePlayerOwned}}true{{else}}false{{/if}}" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-user-group" aria-hidden="true"></i> Player-owned <span>({{actorSelector.playerOwnedCount}})</span>
+              </button>
+              <button type="button" class="dt-button" data-action="setActorScope" data-actor-scope="other" aria-pressed="{{#if actorSelector.scopeOther}}true{{else}}false{{/if}}" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Other <span>({{actorSelector.otherCount}})</span>
+              </button>
+              <button type="button" class="dt-button" data-action="setActorScope" data-actor-scope="selected" aria-pressed="{{#if actorSelector.scopeSelected}}true{{else}}false{{/if}}" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-circle-check" aria-hidden="true"></i> Selected
+              </button>
+              <button type="button" class="dt-button" data-action="setActorScope" data-actor-scope="all" aria-pressed="{{#if actorSelector.scopeAll}}true{{else}}false{{/if}}" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-users" aria-hidden="true"></i> All characters <span>({{actorSelector.totalCount}})</span>
+              </button>
+            </div>
+
+            <div class="dt-actor-controls">
+              <label class="dt-actor-filter dt-actor-filter--search">
+                <span>Search</span>
+                <span class="dt-actor-search">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <input type="search" value="{{actorSelector.query}}" placeholder="Character, owner, or folder" autocomplete="off" aria-label="Search downtime characters" aria-controls="dt-actor-grid" data-actor-query {{#if busy}}disabled{{/if}} />
+                </span>
               </label>
-              {{/each}}
+              <label class="dt-actor-filter">
+                <span>Owner</span>
+                <select aria-controls="dt-actor-grid" data-actor-owner-filter {{#if busy}}disabled{{/if}}>
+                  <option value="all" {{#if actorSelector.ownerAll}}selected{{/if}}>All owners</option>
+                  {{#if actorSelector.hasUnowned}}<option value="unowned" {{#if actorSelector.ownerUnowned}}selected{{/if}}>No player owner</option>{{/if}}
+                  {{#each actorSelector.ownerOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+                </select>
+              </label>
+              <label class="dt-actor-filter">
+                <span>Folder</span>
+                <select aria-controls="dt-actor-grid" data-actor-folder-filter {{#if busy}}disabled{{/if}}>
+                  <option value="all" {{#if actorSelector.folderAll}}selected{{/if}}>All folders</option>
+                  {{#if actorSelector.hasUnfiled}}<option value="unfiled" {{#if actorSelector.folderUnfiled}}selected{{/if}}>No folder</option>{{/if}}
+                  {{#each actorSelector.folderOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+                </select>
+              </label>
+              <label class="dt-actor-filter">
+                <span>Sort</span>
+                <select aria-controls="dt-actor-grid" data-actor-sort {{#if busy}}disabled{{/if}}>
+                  <option value="name-asc" {{#if actorSelector.sortNameAsc}}selected{{/if}}>Name A–Z</option>
+                  <option value="name-desc" {{#if actorSelector.sortNameDesc}}selected{{/if}}>Name Z–A</option>
+                  <option value="owner" {{#if actorSelector.sortOwner}}selected{{/if}}>Owner, then name</option>
+                  <option value="folder" {{#if actorSelector.sortFolder}}selected{{/if}}>Folder, then name</option>
+                  <option value="selected-first" {{#if actorSelector.sortSelectedFirst}}selected{{/if}}>Selected first</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="dt-actor-actions" role="group" aria-label="Character selection actions">
+              <button type="button" class="dt-button" data-action="restoreActorDefaults" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Restore player defaults
+              </button>
+              <button type="button" class="dt-button" data-action="selectShownActors" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-check-double" aria-hidden="true"></i> Select shown
+              </button>
+              <button type="button" class="dt-button" data-action="clearShownActors" {{#if busy}}disabled{{/if}}>
+                <i class="fa-solid fa-eraser" aria-hidden="true"></i> Clear shown
+              </button>
+            </div>
+
+            <div class="dt-actor-list" role="region" tabindex="0" aria-label="Available downtime characters">
+              <div class="dt-check-grid" id="dt-actor-grid" data-actor-grid>
+                {{#each actors}}
+                <label
+                  class="dt-check {{#unless eligible}}is-disabled{{/unless}}"
+                  title="{{reason}}"
+                  data-actor-option
+                  data-actor-name="{{name}}"
+                  data-actor-owner-ids="{{ownerIdsValue}}"
+                  data-actor-owner-label="{{ownerLabel}}"
+                  data-actor-folder-id="{{folderId}}"
+                  data-actor-folder-name="{{folderName}}"
+                  data-actor-search="{{searchText}}"
+                  data-actor-player-owned="{{#if playerOwned}}true{{else}}false{{/if}}"
+                  {{#unless visible}}hidden{{/unless}}
+                >
+                  <input type="checkbox" name="actorIds" value="{{id}}" data-actor-order="{{order}}" {{#if checked}}checked{{/if}} {{#unless eligible}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}} />
+                  <img src="{{img}}" alt="" />
+                  <span class="dt-check__copy">
+                    <strong class="dt-check__name">{{name}}</strong>
+                    <span class="dt-check__meta">
+                      <span><i class="fa-solid fa-user" aria-hidden="true"></i> {{ownerLabel}}</span>
+                      <span><i class="fa-solid fa-folder" aria-hidden="true"></i> {{#if folderName}}{{folderName}}{{else}}No folder{{/if}}</span>
+                    </span>
+                    {{#if reason}}<small>{{reason}}</small>{{/if}}
+                  </span>
+                </label>
+                {{/each}}
+              </div>
+              <p class="dt-inline-empty dt-actor-filter-empty" data-actor-filter-empty {{#if actorSelector.visibleCount}}hidden{{/if}}>No characters match these filters. Change a filter or restore player defaults; your hidden selections are unchanged.</p>
             </div>
             {{else}}
-            <p class="dt-inline-empty">No character Actors are available.</p>
+            <p class="dt-inline-empty" id="dt-actor-selector-help">No character Actors are available. Add a character Actor in Foundry, then refresh this workspace.</p>
             {{/if}}
           </fieldset>
           {{#if createBlockReason}}<p class="dt-form-reason">{{createBlockReason}}</p>{{/if}}
           <footer class="dt-form__actions">
-            <button type="button" class="dt-button" data-action="setView" data-view="settlements">
+            <button type="button" class="dt-button" data-action="setView" data-view="settlements" {{#if busy}}disabled{{/if}}>
               <i class="fa-solid fa-city" aria-hidden="true"></i> Manage settlements
             </button>
-            <button type="button" class="dt-button {{#if primaryAction.createBlock}}dt-button--primary dt-button--next{{/if}}" data-action="createBlock" {{#if primaryAction.createBlock}}aria-describedby="dt-next-action"{{/if}} title="{{createBlockReason}}" {{#unless canCreateBlock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <button type="button" class="dt-button {{#if primaryAction.createBlock}}dt-button--primary dt-button--next{{/if}}" data-action="createBlock" data-requires-actor-selection data-create-enabled="{{#if canCreateBlock}}true{{else}}false{{/if}}" data-create-busy="{{#if busy}}true{{else}}false{{/if}}" data-base-title="{{createBlockReason}}" aria-describedby="dt-actor-selector-help {{#if primaryAction.createBlock}}dt-next-action{{/if}}" title="{{createBlockReason}}" {{#unless canCreateBlock}}disabled{{/unless}} {{#unless actorSelector.hasSelection}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
               <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Open block
             </button>
           </footer>

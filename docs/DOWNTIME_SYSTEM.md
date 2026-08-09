@@ -14,8 +14,12 @@ Foundry world time and Quartermaster upkeep.
 2. In **Current Block**, optionally select a saved settlement. If the party is
    at camp, in the wilderness, aboard a ship, on the road, or somewhere else,
    leave the settlement unset and enter an **Other location** name instead.
-3. Select the eligible characters and set the productive hours. One day equals
-   eight productive hours.
+3. Confirm the character selection and set the productive hours. Player-owned
+   character Actors are selected by default. Use the group scopes, search,
+   owner and folder filters, or sorting to find and add other characters.
+   Filters change only what is shown; hidden characters remain selected. Use
+   **Restore player defaults** to return to the player-owned group. One day
+   equals eight productive hours.
 4. Start the block and optionally open **Downtime Activities** for the owning
    players.
 5. Each character queues any allowed combination that fits their personal

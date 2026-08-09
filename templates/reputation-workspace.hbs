@@ -47,12 +47,12 @@
       {{#if selected}}
       <form class="rw-form" data-form="faction-edit" autocomplete="off">
         <nav class="rw-section-nav" aria-label="Faction editor sections">
-          <a href="#rw-section-overview">Overview</a>
-          <a href="#rw-section-visibility">Player Visibility</a>
-          <a href="#rw-section-history">History</a>
+          <button type="button" data-action="selectSection" data-section-target="rw-section-overview" aria-controls="rw-section-overview">Overview</button>
+          <button type="button" data-action="selectSection" data-section-target="rw-section-visibility" aria-controls="rw-section-visibility">Player Visibility</button>
+          <button type="button" data-action="selectSection" data-section-target="rw-section-history" aria-controls="rw-section-history">History</button>
         </nav>
 
-        <section id="rw-section-overview" class="rw-workspace-section" aria-labelledby="rw-section-overview-heading">
+        <section id="rw-section-overview" class="rw-workspace-section" aria-labelledby="rw-section-overview-heading" tabindex="-1">
           <div class="rw-workspace-section__head">
             <div>
               <p>Faction record</p>
@@ -151,7 +151,7 @@
           </fieldset>
         </section>
 
-        <section id="rw-section-visibility" class="rw-workspace-section" aria-labelledby="rw-section-visibility-heading">
+        <section id="rw-section-visibility" class="rw-workspace-section" aria-labelledby="rw-section-visibility-heading" tabindex="-1">
           <div class="rw-workspace-section__head">
             <div>
               <p>Permission-safe projection</p>
@@ -172,7 +172,7 @@
           </fieldset>
         </section>
 
-        <section id="rw-section-history" class="rw-workspace-section" aria-labelledby="rw-section-history-heading">
+        <section id="rw-section-history" class="rw-workspace-section" aria-labelledby="rw-section-history-heading" tabindex="-1">
           <div class="rw-workspace-section__head">
             <div>
               <p>Audit trail</p>

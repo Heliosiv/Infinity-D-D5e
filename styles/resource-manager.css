@@ -41,24 +41,30 @@
   scrollbar-width: thin;
 }
 
-.infinity-dnd5e .rm-section-nav a {
+.infinity-dnd5e .rm-section-nav button {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 6px;
   align-items: center;
   justify-content: center;
+  width: auto;
   min-height: var(--lf-control-size, 44px);
+  margin: 0;
   padding: 6px 10px;
   color: var(--lf-muted);
+  font: inherit;
   font-size: 0.8rem;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--lf-radius-sm);
+  box-shadow: none;
 }
 
-.infinity-dnd5e .rm-section-nav a:hover,
-.infinity-dnd5e .rm-section-nav a:focus-visible {
+.infinity-dnd5e .rm-section-nav button:hover,
+.infinity-dnd5e .rm-section-nav button:focus-visible {
   color: var(--lf-text-strong);
   background: var(--lf-surface-elev);
   border-color: var(--lf-border-strong);

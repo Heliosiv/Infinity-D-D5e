@@ -40,6 +40,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import {
   applyVisualPrefs,
   bindFullGmWindowGuard,
+  navigateToAppSection,
   openSingleton,
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
@@ -83,6 +84,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       pickImage: ReputationWorkspaceApp._onPickImage,
       addCharacterNote: ReputationWorkspaceApp._onAddCharacterNote,
       removeCharacterNote: ReputationWorkspaceApp._onRemoveCharacterNote,
+      selectSection: navigateToAppSection,
       save: ReputationWorkspaceApp._onSave,
       deleteFaction: ReputationWorkspaceApp._onDeleteFaction,
     },

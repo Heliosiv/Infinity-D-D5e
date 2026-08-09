@@ -26,13 +26,13 @@
   {{#if hasGroups}}
     <nav class="ix-section-nav" aria-label="Settings sections">
       {{#each groups}}
-        <a href="#ix-settings-{{id}}">{{label}}</a>
+        <button type="button" class="infinity-button infinity-button--quiet" data-action="selectSection" data-section-target="ix-settings-{{id}}" aria-controls="ix-settings-{{id}}">{{label}}</button>
       {{/each}}
     </nav>
 
     <div class="ix-settings__groups">
       {{#each groups}}
-        <section class="infinity-card ix-settings-group" id="ix-settings-{{id}}" aria-labelledby="ix-settings-{{id}}-heading">
+        <section class="infinity-card ix-settings-group" id="ix-settings-{{id}}" aria-labelledby="ix-settings-{{id}}-heading" tabindex="-1">
           <header>
             <h2 id="ix-settings-{{id}}-heading">{{label}}</h2>
             <p>{{description}}</p>

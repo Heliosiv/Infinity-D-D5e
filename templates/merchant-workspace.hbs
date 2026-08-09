@@ -68,11 +68,11 @@
       {{#if selected}}
       <form class="mw-form" data-form="merchant-edit" autocomplete="off">
         <nav class="mw-section-nav" aria-label="Merchant editor sections">
-          <a href="#mw-section-basics">Basics</a>
-          <a href="#mw-section-pricing">Pricing &amp; Bargaining</a>
-          <a href="#mw-section-stock">Stock</a>
-          <a href="#mw-section-access">Access</a>
-          <a href="#mw-section-sessions">Sessions</a>
+          <button type="button" data-action="selectSection" data-section-target="mw-section-basics" aria-controls="mw-section-basics">Basics</button>
+          <button type="button" data-action="selectSection" data-section-target="mw-section-pricing" aria-controls="mw-section-pricing">Pricing &amp; Bargaining</button>
+          <button type="button" data-action="selectSection" data-section-target="mw-section-stock" aria-controls="mw-section-stock">Stock</button>
+          <button type="button" data-action="selectSection" data-section-target="mw-section-access" aria-controls="mw-section-access">Access</button>
+          <button type="button" data-action="selectSection" data-section-target="mw-section-sessions" aria-controls="mw-section-sessions">Sessions</button>
         </nav>
 
         <div class="mw-editor-status">
@@ -83,7 +83,7 @@
           <p>Edits save automatically. Live shoppers use the canonical saved stock, prices, and access rules; closing a session does not undo completed trades.</p>
         </div>
 
-        <section id="mw-section-basics" class="mw-workspace-section" aria-labelledby="mw-section-basics-heading">
+        <section id="mw-section-basics" class="mw-workspace-section" aria-labelledby="mw-section-basics-heading" tabindex="-1">
           <div class="mw-workspace-section__head">
             <div>
               <p class="mw-workspace-section__eyebrow">Merchant profile</p>
@@ -116,7 +116,7 @@
         </label>
         </section>
 
-        <section id="mw-section-pricing" class="mw-workspace-section" aria-labelledby="mw-section-pricing-heading">
+        <section id="mw-section-pricing" class="mw-workspace-section" aria-labelledby="mw-section-pricing-heading" tabindex="-1">
           <div class="mw-workspace-section__head">
             <div>
               <p class="mw-workspace-section__eyebrow">Trade rules</p>
@@ -183,7 +183,7 @@
         </fieldset>
         </section>
 
-        <section id="mw-section-stock" class="mw-workspace-section" aria-labelledby="mw-section-stock-heading">
+        <section id="mw-section-stock" class="mw-workspace-section" aria-labelledby="mw-section-stock-heading" tabindex="-1">
           <div class="mw-workspace-section__head">
             <div>
               <p class="mw-workspace-section__eyebrow">Inventory</p>
@@ -372,7 +372,7 @@
         </fieldset>
         </section>
 
-        <section id="mw-section-access" class="mw-workspace-section" aria-labelledby="mw-section-access-heading">
+        <section id="mw-section-access" class="mw-workspace-section" aria-labelledby="mw-section-access-heading" tabindex="-1">
           <div class="mw-workspace-section__head">
             <div>
               <p class="mw-workspace-section__eyebrow">Player availability</p>
@@ -409,7 +409,7 @@
           </fieldset>
         </section>
 
-        <section id="mw-section-sessions" class="mw-workspace-section mw-workspace-section--sessions" aria-labelledby="mw-section-sessions-heading">
+        <section id="mw-section-sessions" class="mw-workspace-section mw-workspace-section--sessions" aria-labelledby="mw-section-sessions-heading" tabindex="-1">
           <div class="mw-workspace-section__head">
             <div>
               <p class="mw-workspace-section__eyebrow">Live shop</p>

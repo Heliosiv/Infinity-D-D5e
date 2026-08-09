@@ -20,6 +20,19 @@ const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/downtime-workspace.hbs`;
 export const DOWNTIME_WORKSPACE_QUICK_START_ID = "downtime-workspace:v0.3.0";
 const DEFAULT_VIEW = "current";
 const WORKSPACE_VIEWS = new Set(["current", "settlements", "history"]);
+const ACTOR_SELECTOR_SCOPES = new Set([
+  "player-owned",
+  "other",
+  "selected",
+  "all",
+]);
+const ACTOR_SELECTOR_SORTS = new Set([
+  "name-asc",
+  "name-desc",
+  "owner",
+  "folder",
+  "selected-first",
+]);
 const DEFAULT_ACTIVITY_IDS = [
   "craft-ammunition",
   "sharpen-weapon",
@@ -126,6 +139,10 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       refresh: DowntimeWorkspaceApp._onRefresh,
       dismissQuickStart: DowntimeWorkspaceApp._onDismissQuickStart,
       setHourPreset: DowntimeWorkspaceApp._onSetHourPreset,
+      setActorScope: DowntimeWorkspaceApp._onSetActorScope,
+      selectShownActors: DowntimeWorkspaceApp._onSelectShownActors,
+      clearShownActors: DowntimeWorkspaceApp._onClearShownActors,
+      restoreActorDefaults: DowntimeWorkspaceApp._onRestoreActorDefaults,
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
@@ -188,6 +205,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._errorMessage = "";
     this._projectionErrorMessage = "";
     this._pendingFocus = null;
+    this._actorSelectorState = createActorSelectorState();
     this._unsubscribe = null;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._bindAdapter();
@@ -251,12 +269,18 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       };
     }
 
+    this._actorSelectorState ??= createActorSelectorState();
     const context = normalizeWorkspaceProjection(projection, {
       view: this._view,
       selectedSettlementId: this._selectedSettlementId,
       creatingSettlement: this._creatingSettlement,
       newBlockMode: this._newBlockMode,
+      actorSelector: this._actorSelectorState,
     });
+    if (dataAvailable) {
+      this._adoptActorSelectorProjection?.(context.actorSelector);
+      this._reconcileActorSelector?.(context.actors);
+    }
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
 
@@ -278,7 +302,189 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
   _onRender(context, options) {
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
+    this._bindActorSelector(context);
     this._restoreFocus();
+  }
+
+  _reconcileActorSelector(actors) {
+    const available = new Set(array(actors).map((actor) => actor.id));
+    if (available.size === 0) {
+      this._actorSelectorState.selectedActorIds = null;
+      return;
+    }
+    if (!(this._actorSelectorState?.selectedActorIds instanceof Set)) {
+      this._actorSelectorState.selectedActorIds = new Set(
+        array(actors)
+          .filter((actor) => actor.checked)
+          .map((actor) => actor.id),
+      );
+      return;
+    }
+    this._actorSelectorState.selectedActorIds = new Set(
+      [...this._actorSelectorState.selectedActorIds].filter((id) =>
+        available.has(id),
+      ),
+    );
+  }
+
+  _adoptActorSelectorProjection(selector) {
+    const source = selector && typeof selector === "object" ? selector : {};
+    const normalized = normalizeActorSelectorState({
+      ...this._actorSelectorState,
+      scope: source.scope ?? this._actorSelectorState?.scope,
+      query: source.query ?? this._actorSelectorState?.query,
+      ownerId: source.ownerId ?? this._actorSelectorState?.ownerId,
+      folderId: source.folderId ?? this._actorSelectorState?.folderId,
+      sort: source.sort ?? this._actorSelectorState?.sort,
+    });
+    Object.assign(this._actorSelectorState, normalized);
+  }
+
+  _bindActorSelector(context) {
+    if (context?.dataAvailable === false || context?.hasActors === false)
+      return;
+    const root = this.element?.querySelector?.("[data-actor-selector]");
+    if (!root) return;
+    this._adoptActorSelectorProjection(context?.actorSelector);
+    this._actorSelectorState.selectedActorIds = new Set(
+      array(context?.actors)
+        .filter((actor) => actor.checked)
+        .map((actor) => actor.id),
+    );
+
+    root
+      .querySelector?.("[data-actor-query]")
+      ?.addEventListener?.("input", (event) => {
+        if (this._busy) return;
+        this._actorSelectorState.query = String(
+          event.target?.value ?? "",
+        ).slice(0, 200);
+        this._applyActorSelector();
+      });
+    root
+      .querySelector?.("[data-actor-owner-filter]")
+      ?.addEventListener?.("change", (event) => {
+        if (this._busy) return;
+        this._actorSelectorState.ownerId =
+          cleanId(event.target?.value) || "all";
+        this._applyActorSelector();
+      });
+    root
+      .querySelector?.("[data-actor-folder-filter]")
+      ?.addEventListener?.("change", (event) => {
+        if (this._busy) return;
+        this._actorSelectorState.folderId =
+          cleanId(event.target?.value) || "all";
+        this._applyActorSelector();
+      });
+    root
+      .querySelector?.("[data-actor-sort]")
+      ?.addEventListener?.("change", (event) => {
+        if (this._busy) return;
+        const sort = cleanId(event.target?.value);
+        this._actorSelectorState.sort = ACTOR_SELECTOR_SORTS.has(sort)
+          ? sort
+          : "name-asc";
+        this._applyActorSelector();
+      });
+    root.addEventListener?.("change", (event) => {
+      if (this._busy) return;
+      if (!event.target?.matches?.('input[name="actorIds"]')) return;
+      this._syncSelectedActorsFromDom();
+      this._applyActorSelector();
+    });
+    this._applyActorSelector();
+  }
+
+  _actorCards() {
+    return [...(this.element?.querySelectorAll?.("[data-actor-option]") ?? [])];
+  }
+
+  _actorRowFromCard(card) {
+    const checkbox = card?.querySelector?.('input[name="actorIds"]');
+    return {
+      id: cleanId(checkbox?.value),
+      name: String(card?.dataset?.actorName ?? ""),
+      ownerIds: String(card?.dataset?.actorOwnerIds ?? "")
+        .split("|")
+        .map(cleanId)
+        .filter(Boolean),
+      ownerLabel: String(card?.dataset?.actorOwnerLabel ?? ""),
+      folderId: cleanId(card?.dataset?.actorFolderId),
+      folderName: String(card?.dataset?.actorFolderName ?? ""),
+      searchText: String(card?.dataset?.actorSearch ?? ""),
+      playerOwned: card?.dataset?.actorPlayerOwned === "true",
+      checked: checkbox?.checked === true,
+      order: positiveInteger(checkbox?.dataset?.actorOrder, 0),
+      card,
+      checkbox,
+    };
+  }
+
+  _syncSelectedActorsFromDom() {
+    this._actorSelectorState.selectedActorIds = new Set(
+      this._actorCards()
+        .map((card) => this._actorRowFromCard(card))
+        .filter((row) => row.checked)
+        .map((row) => row.id),
+    );
+  }
+
+  _applyActorSelector() {
+    const root = this.element?.querySelector?.("[data-actor-selector]");
+    const grid = root?.querySelector?.("[data-actor-grid]");
+    if (!root || !grid) return;
+    const state = normalizeActorSelectorState(this._actorSelectorState);
+    Object.assign(this._actorSelectorState, state);
+
+    const query = root.querySelector?.("[data-actor-query]");
+    if (query && query.value !== state.query) query.value = state.query;
+    const owner = root.querySelector?.("[data-actor-owner-filter]");
+    if (owner && owner.value !== state.ownerId) owner.value = state.ownerId;
+    const folder = root.querySelector?.("[data-actor-folder-filter]");
+    if (folder && folder.value !== state.folderId)
+      folder.value = state.folderId;
+    const sort = root.querySelector?.("[data-actor-sort]");
+    if (sort && sort.value !== state.sort) sort.value = state.sort;
+    for (const button of root.querySelectorAll?.("[data-actor-scope]") ?? []) {
+      button.setAttribute(
+        "aria-pressed",
+        button.dataset.actorScope === state.scope ? "true" : "false",
+      );
+    }
+
+    const rows = this._actorCards().map((card) => this._actorRowFromCard(card));
+    rows.sort((left, right) => compareDowntimeActors(left, right, state.sort));
+    let visibleCount = 0;
+    for (const row of rows) {
+      const visible = downtimeActorMatchesSelector(row, state);
+      row.card.hidden = !visible;
+      if (visible) visibleCount += 1;
+      grid.append(row.card);
+    }
+    this._syncSelectedActorsFromDom();
+    const selectedCount = this._actorSelectorState.selectedActorIds.size;
+    const selected = root.querySelector?.("[data-actor-selected-count]");
+    if (selected) selected.textContent = `${selectedCount} selected`;
+    const shown = root.querySelector?.("[data-actor-visible-count]");
+    if (shown) {
+      shown.textContent = `${visibleCount} shown of ${rows.length} characters`;
+    }
+    const empty = root.querySelector?.("[data-actor-filter-empty]");
+    if (empty) empty.hidden = visibleCount > 0;
+
+    const create = this.element?.querySelector?.(
+      '[data-action="createBlock"][data-requires-actor-selection]',
+    );
+    if (create) {
+      const baseEnabled = create.dataset.createEnabled === "true";
+      const busy = create.dataset.createBusy === "true";
+      create.disabled = busy || !baseEnabled || selectedCount === 0;
+      create.title =
+        !busy && baseEnabled && selectedCount === 0
+          ? "Select at least one character."
+          : String(create.dataset.baseTitle ?? "");
+    }
   }
 
   _restoreFocus() {
@@ -364,12 +570,14 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
 
   static _onBeginNextBlock() {
     this._newBlockMode = true;
+    this._actorSelectorState = createActorSelectorState();
     this._statusMessage = "Choose the location, time budget, and characters.";
     this._pendingFocus = '[data-form="new-block"] select[name="settlementId"]';
     this.render(false);
   }
 
   static _onSetHourPreset(_event, target) {
+    if (this._busy) return;
     const hours = positiveInteger(target?.dataset?.hours, 0);
     const input = this.element?.querySelector?.(
       '[data-form="new-block"] input[name="hours"]',
@@ -380,6 +588,52 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     input.focus();
   }
 
+  static _onSetActorScope(_event, target) {
+    if (this._busy) return;
+    const scope = cleanId(target?.dataset?.actorScope);
+    if (!ACTOR_SELECTOR_SCOPES.has(scope)) return;
+    this._actorSelectorState.scope = scope;
+    this._applyActorSelector();
+  }
+
+  static _onSelectShownActors() {
+    if (this._busy) return;
+    for (const row of this._actorCards().map((card) =>
+      this._actorRowFromCard(card),
+    )) {
+      if (!row.card.hidden && !row.checkbox?.disabled) {
+        row.checkbox.checked = true;
+      }
+    }
+    this._syncSelectedActorsFromDom();
+    this._applyActorSelector();
+  }
+
+  static _onClearShownActors() {
+    if (this._busy) return;
+    for (const row of this._actorCards().map((card) =>
+      this._actorRowFromCard(card),
+    )) {
+      if (!row.card.hidden && !row.checkbox?.disabled) {
+        row.checkbox.checked = false;
+      }
+    }
+    this._syncSelectedActorsFromDom();
+    this._applyActorSelector();
+  }
+
+  static _onRestoreActorDefaults() {
+    if (this._busy) return;
+    this._actorSelectorState = createActorSelectorState();
+    for (const row of this._actorCards().map((card) =>
+      this._actorRowFromCard(card),
+    )) {
+      if (!row.checkbox?.disabled) row.checkbox.checked = row.playerOwned;
+    }
+    this._syncSelectedActorsFromDom();
+    this._applyActorSelector();
+  }
+
   static async _onCreateBlock() {
     const form = this.element?.querySelector?.('[data-form="new-block"]');
     if (!form) return;
@@ -388,7 +642,16 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       settlementId: cleanId(data.get("settlementId")),
       locationName: String(data.get("locationName") ?? "").trim(),
       hours: positiveInteger(data.get("hours"), 0),
-      actorIds: data.getAll("actorIds").map(cleanId).filter(Boolean),
+      actorIds: [
+        ...(form.querySelectorAll?.('input[name="actorIds"]:checked') ?? []),
+      ]
+        .sort(
+          (left, right) =>
+            positiveInteger(left.dataset?.actorOrder, 0) -
+            positiveInteger(right.dataset?.actorOrder, 0),
+        )
+        .map((input) => cleanId(input.value))
+        .filter(Boolean),
     };
     const result = await this._runCommand("createBlock", payload, {
       pending: "Creating downtime block...",
@@ -397,6 +660,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     });
     if (result !== null) {
       this._newBlockMode = false;
+      this._actorSelectorState = createActorSelectorState();
       if (this.rendered) this.render(false);
     }
   }
@@ -639,6 +903,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     needsRecovery,
     recoveryMessage,
   });
+  const actorProjection = normalizeDowntimeActors(
+    source.actors ?? source.actorOptions,
+    uiState.actorSelector,
+  );
 
   return {
     dataAvailable: source.dataAvailable !== false,
@@ -660,15 +928,9 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     hasSettlements: settlements.length > 0,
     selectedSettlement,
     hasSelectedSettlement: Boolean(selectedSettlement),
-    actors: array(source.actors ?? source.actorOptions).map((actor) => ({
-      id: cleanId(actor?.id ?? actor?.actorId),
-      name: String(actor?.name ?? "Unknown character"),
-      img: String(actor?.img ?? "icons/svg/mystery-man.svg"),
-      checked: actor?.checked !== false && actor?.eligible !== false,
-      eligible: actor?.eligible !== false,
-      reason: String(actor?.reason ?? actor?.unavailableReason ?? ""),
-    })),
-    hasActors: array(source.actors ?? source.actorOptions).length > 0,
+    actors: actorProjection.actors,
+    actorSelector: actorProjection.selector,
+    hasActors: actorProjection.actors.length > 0,
     canCreateBlock,
     createBlockReason:
       String(source.createBlockReason ?? "").trim() ||
@@ -677,6 +939,234 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     hasHistory: history.length > 0,
     recovery: source.recovery ?? null,
   };
+}
+
+export function normalizeDowntimeActors(rawActors, rawSelectorState = {}) {
+  const state = normalizeActorSelectorState(rawSelectorState);
+  const hasSelectionOverride = state.selectedActorIds instanceof Set;
+  const actors = array(rawActors)
+    .map((rawActor, order) => {
+      const actor = rawActor && typeof rawActor === "object" ? rawActor : {};
+      const id = cleanId(actor.id ?? actor.actorId);
+      if (!id) return null;
+      const eligible = actor.eligible !== false;
+      const owners = array(actor.owners)
+        .map((owner) => {
+          const ownerId = cleanId(owner?.id ?? owner?.userId);
+          if (!ownerId) return null;
+          return {
+            id: ownerId,
+            name: String(owner?.name ?? owner?.label ?? "Player"),
+            active: owner?.active !== false,
+            assigned: owner?.assigned === true,
+          };
+        })
+        .filter(Boolean);
+      const hasOwnershipMetadata =
+        Object.hasOwn(actor, "playerOwned") ||
+        Object.hasOwn(actor, "control") ||
+        Object.hasOwn(actor, "owners");
+      const playerOwned =
+        actor.playerOwned === true ||
+        actor.control === "player-owned" ||
+        (!hasOwnershipMetadata && actor.checked !== false);
+      const checked =
+        eligible &&
+        (hasSelectionOverride
+          ? state.selectedActorIds.has(id)
+          : actor.checked === undefined
+            ? playerOwned
+            : actor.checked !== false);
+      const folderId = cleanId(actor.folderId ?? actor.folder?.id);
+      const folderName = String(
+        actor.folderName ?? actor.folder?.name ?? "No folder",
+      );
+      const ownerLabel = String(
+        actor.ownerLabel ??
+          (owners.length > 0
+            ? owners.map((owner) => owner.name).join(", ")
+            : "No player owner"),
+      );
+      const name = String(actor.name ?? "Unknown character");
+      return {
+        id,
+        name,
+        img: String(actor.img ?? "icons/svg/mystery-man.svg"),
+        checked,
+        eligible,
+        reason: String(actor.reason ?? actor.unavailableReason ?? ""),
+        playerOwned,
+        assigned:
+          actor.assigned === true || owners.some((owner) => owner.assigned),
+        owners,
+        ownerIds: owners.map((owner) => owner.id),
+        ownerIdsValue: owners.map((owner) => owner.id).join("|"),
+        ownerLabel,
+        folderId,
+        folderName,
+        searchText: normalizeActorSearchText(
+          `${name} ${ownerLabel} ${folderName}`,
+        ),
+        order,
+      };
+    })
+    .filter(Boolean);
+
+  const ownerMap = new Map();
+  const folderMap = new Map();
+  for (const actor of actors) {
+    for (const owner of actor.owners) ownerMap.set(owner.id, owner.name);
+    if (actor.folderId) folderMap.set(actor.folderId, actor.folderName);
+  }
+  if (
+    !["all", "unowned"].includes(state.ownerId) &&
+    !ownerMap.has(state.ownerId)
+  ) {
+    state.ownerId = "all";
+  }
+  if (
+    !["all", "unfiled"].includes(state.folderId) &&
+    !folderMap.has(state.folderId)
+  ) {
+    state.folderId = "all";
+  }
+
+  actors.sort((left, right) => compareDowntimeActors(left, right, state.sort));
+  for (const actor of actors) {
+    actor.visible = downtimeActorMatchesSelector(actor, state);
+  }
+  const selectedCount = actors.filter((actor) => actor.checked).length;
+  const visibleCount = actors.filter((actor) => actor.visible).length;
+  const playerOwnedCount = actors.filter((actor) => actor.playerOwned).length;
+  const otherCount = actors.length - playerOwnedCount;
+  const selectedPlayerOwnedCount = actors.filter(
+    (actor) => actor.checked && actor.playerOwned,
+  ).length;
+
+  return {
+    actors,
+    selector: {
+      scope: state.scope,
+      scopePlayerOwned: state.scope === "player-owned",
+      scopeOther: state.scope === "other",
+      scopeSelected: state.scope === "selected",
+      scopeAll: state.scope === "all",
+      query: state.query,
+      ownerId: state.ownerId,
+      ownerAll: state.ownerId === "all",
+      ownerUnowned: state.ownerId === "unowned",
+      ownerOptions: [...ownerMap.entries()]
+        .map(([id, name]) => ({
+          id,
+          name,
+          selected: state.ownerId === id,
+        }))
+        .sort((left, right) => compareActorText(left.name, right.name)),
+      hasUnowned: actors.some((actor) => actor.ownerIds.length === 0),
+      folderId: state.folderId,
+      folderAll: state.folderId === "all",
+      folderUnfiled: state.folderId === "unfiled",
+      folderOptions: [...folderMap.entries()]
+        .map(([id, name]) => ({
+          id,
+          name,
+          selected: state.folderId === id,
+        }))
+        .sort((left, right) => compareActorText(left.name, right.name)),
+      hasUnfiled: actors.some((actor) => !actor.folderId),
+      sort: state.sort,
+      sortNameAsc: state.sort === "name-asc",
+      sortNameDesc: state.sort === "name-desc",
+      sortOwner: state.sort === "owner",
+      sortFolder: state.sort === "folder",
+      sortSelectedFirst: state.sort === "selected-first",
+      totalCount: actors.length,
+      selectedCount,
+      visibleCount,
+      playerOwnedCount,
+      otherCount,
+      selectedPlayerOwnedCount,
+      selectedOtherCount: selectedCount - selectedPlayerOwnedCount,
+      hasSelection: selectedCount > 0,
+    },
+  };
+}
+
+export function normalizeActorSelectorState(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const scope = cleanId(source.scope);
+  const sort = cleanId(source.sort);
+  const rawSelection = source.selectedActorIds;
+  const selectedActorIds =
+    rawSelection instanceof Set || Array.isArray(rawSelection)
+      ? new Set([...rawSelection].map(cleanId).filter(Boolean))
+      : null;
+  return {
+    scope: ACTOR_SELECTOR_SCOPES.has(scope) ? scope : "player-owned",
+    query: String(source.query ?? "").slice(0, 200),
+    ownerId: cleanId(source.ownerId) || "all",
+    folderId: cleanId(source.folderId) || "all",
+    sort: ACTOR_SELECTOR_SORTS.has(sort) ? sort : "name-asc",
+    selectedActorIds,
+  };
+}
+
+export function downtimeActorMatchesSelector(actor, rawState = {}) {
+  const state = normalizeActorSelectorState(rawState);
+  if (state.scope === "player-owned" && actor?.playerOwned !== true) {
+    return false;
+  }
+  if (state.scope === "other" && actor?.playerOwned === true) return false;
+  if (state.scope === "selected" && actor?.checked !== true) return false;
+  const ownerIds = array(actor?.ownerIds).map(cleanId).filter(Boolean);
+  if (state.ownerId === "unowned" && ownerIds.length > 0) return false;
+  if (
+    !["all", "unowned"].includes(state.ownerId) &&
+    !ownerIds.includes(state.ownerId)
+  ) {
+    return false;
+  }
+  const folderId = cleanId(actor?.folderId);
+  if (state.folderId === "unfiled" && folderId) return false;
+  if (
+    !["all", "unfiled"].includes(state.folderId) &&
+    folderId !== state.folderId
+  ) {
+    return false;
+  }
+  const needle = normalizeActorSearchText(state.query);
+  return (
+    !needle ||
+    normalizeActorSearchText(
+      actor?.searchText ??
+        `${actor?.name ?? ""} ${actor?.ownerLabel ?? ""} ${actor?.folderName ?? ""}`,
+    ).includes(needle)
+  );
+}
+
+export function compareDowntimeActors(left, right, sort = "name-asc") {
+  let compared = 0;
+  if (sort === "name-desc") {
+    compared = compareActorText(right?.name, left?.name);
+  } else if (sort === "owner") {
+    compared = compareActorText(
+      left?.ownerLabel || "\uffff",
+      right?.ownerLabel || "\uffff",
+    );
+  } else if (sort === "folder") {
+    compared = compareActorText(
+      left?.folderName || "\uffff",
+      right?.folderName || "\uffff",
+    );
+  } else if (sort === "selected-first") {
+    compared = Number(right?.checked === true) - Number(left?.checked === true);
+  } else {
+    compared = compareActorText(left?.name, right?.name);
+  }
+  if (compared !== 0) return compared;
+  const byName = compareActorText(left?.name, right?.name);
+  if (byName !== 0) return byName;
+  return positiveInteger(left?.order, 0) - positiveInteger(right?.order, 0);
 }
 
 /**
@@ -1181,6 +1671,33 @@ async function confirmSettlementDelete() {
 function positiveInteger(value, fallback = 0) {
   const numeric = Math.floor(Number(value));
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
+function createActorSelectorState() {
+  return {
+    scope: "player-owned",
+    query: "",
+    ownerId: "all",
+    folderId: "all",
+    sort: "name-asc",
+    selectedActorIds: null,
+  };
+}
+
+function normalizeActorSearchText(value) {
+  return String(value ?? "")
+    .toLocaleLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compareActorText(left, right) {
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
 }
 
 function cleanId(value) {

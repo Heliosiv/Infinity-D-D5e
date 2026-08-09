@@ -61,7 +61,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
 import { pickSearchOption } from "./search-picker.js";
 import { loadCompendiumItems } from "./loot/pack.js";
-import { bindFocusRestoration } from "./infinity-app.js";
+import { bindFocusRestoration, navigateToAppSection } from "./infinity-app.js";
 import { initializePrivateState } from "./private-state.js";
 import { normalizeInfinityItemUuid } from "./item-uuid-compat.js";
 import {
@@ -106,6 +106,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       copyEnvironment: ResourceManagerApp._onCopyEnvironment,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
+      selectSection: navigateToAppSection,
     },
   };
 

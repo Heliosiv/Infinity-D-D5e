@@ -55,6 +55,17 @@
   line-height: 1.45;
 }
 
+.ix-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lf-space-1);
+  min-width: 0;
+}
+
+.ix-section-nav .infinity-button {
+  flex: 0 0 auto;
+}
+
 .ix-settings__groups {
   display: grid;
   gap: var(--lf-space-4);

@@ -79,6 +79,7 @@ import { confirmInfinityDialog } from "./dialog-contract.js";
 import {
   applyVisualPrefs,
   bindFullGmWindowGuard,
+  navigateToAppSection,
   openSingleton,
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
@@ -145,6 +146,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       reopenSessions: MerchantWorkspaceApp._onReopenSessions,
       invRemove: MerchantWorkspaceApp._onInvRemove,
       openInventoryItem: MerchantWorkspaceApp._onOpenInventoryItem,
+      selectSection: navigateToAppSection,
     },
   };
 

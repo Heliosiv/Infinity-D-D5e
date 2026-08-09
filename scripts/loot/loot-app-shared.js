@@ -216,6 +216,12 @@ export function downloadJson(filename, data) {
     const anchor = doc.createElement("a");
     anchor.href = url;
     anchor.download = filename;
+    // Foundry v13 intercepts every bubbled click from an `a[href]` and opens
+    // it in a new tab. Keep the native download default, but stop this
+    // synthetic click before it reaches Foundry's document listener.
+    anchor.addEventListener?.("click", (event) => event.stopPropagation(), {
+      once: true,
+    });
     doc.body?.appendChild(anchor);
     anchor.click();
     anchor.remove();

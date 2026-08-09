@@ -185,6 +185,46 @@ export function applyUiFoundation(root) {
   restoreRememberedFocus(root);
 }
 
+/**
+ * Move an ApplicationV2 window to one of its already-rendered sections.
+ *
+ * Foundry v13 opens every `a[href]` in a new browser tab, including local hash
+ * links. Section navigation therefore uses ordinary `type="button"` actions
+ * and resolves the target strictly inside the current application root. The
+ * section stays rendered; this only scrolls it into view and moves focus so
+ * keyboard and assistive-technology users receive the same context change.
+ *
+ * @this {{ element?: HTMLElement }}
+ * @param {PointerEvent | KeyboardEvent | null | undefined} event
+ * @param {HTMLElement | null | undefined} target
+ * @returns {boolean} Whether a section was found and focused.
+ */
+export function navigateToAppSection(event, target) {
+  event?.preventDefault?.();
+  const sectionId = String(target?.dataset?.sectionTarget ?? "").trim();
+  if (!sectionId) return false;
+
+  const root = this?.element;
+  const section = root?.querySelector?.(`#${cssEscape(sectionId)}`);
+  if (!section) return false;
+
+  // Setting the IDL property uses the element's normal toggle behavior, so
+  // application listeners can remember the disclosure state.
+  if (
+    String(section.tagName ?? "").toUpperCase() === "DETAILS" &&
+    !section.open
+  ) {
+    section.open = true;
+  }
+  section.scrollIntoView?.({ block: "start", inline: "nearest" });
+  try {
+    section.focus?.({ preventScroll: true });
+  } catch {
+    section.focus?.();
+  }
+  return true;
+}
+
 function restoreRememberedFocus(root) {
   const descriptor = lastFocusByApplication.get(applicationFocusKey(root));
   if (!descriptor) return;

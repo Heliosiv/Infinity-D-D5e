@@ -17,12 +17,12 @@
   </header>
 
   <nav class="rm-section-nav" aria-label="Quartermaster sections">
-    <a href="#rm-today"><i class="fa-solid fa-sun" aria-hidden="true"></i> Today</a>
-    <a href="#rm-runs-heading"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent Runs</a>
-    <a href="#rm-setup"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; Rules</a>
+    <button type="button" data-action="selectSection" data-section-target="rm-today" aria-controls="rm-today"><i class="fa-solid fa-sun" aria-hidden="true"></i> Today</button>
+    <button type="button" data-action="selectSection" data-section-target="rm-runs" aria-controls="rm-runs"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent Runs</button>
+    <button type="button" data-action="selectSection" data-section-target="rm-setup" aria-controls="rm-setup"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; Rules</button>
   </nav>
 
-  <section id="rm-today" class="rm-workspace-section rm-today" aria-labelledby="rm-today-heading">
+  <section id="rm-today" class="rm-workspace-section rm-today" aria-labelledby="rm-today-heading" tabindex="-1">
     <div class="rm-workspace-section__head">
       <div>
         <p class="rm-workspace-section__eyebrow">Daily routine</p>
@@ -164,7 +164,7 @@
   {{/if}}
   </section>
 
-  <section class="rm-workspace-section rm-section rm-runs" aria-labelledby="rm-runs-heading">
+  <section class="rm-workspace-section rm-section rm-runs" id="rm-runs" aria-labelledby="rm-runs-heading" tabindex="-1">
     <h3 id="rm-runs-heading">Recent runs</h3>
     {{#if hasRecentRuns}}
     <details class="rm-runs__disclosure" {{#if recentRunsExpanded}}open{{/if}}>
@@ -288,7 +288,7 @@
     {{/if}}
   </section>
 
-  <details id="rm-setup" class="rm-setup rm-workspace-section" data-role="setup-disclosure" {{#if setupExpanded}}open{{/if}}>
+  <details id="rm-setup" class="rm-setup rm-workspace-section" data-role="setup-disclosure" tabindex="-1" {{#if setupExpanded}}open{{/if}}>
     <summary class="rm-setup__summary">
       <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; rules</span>
       <small>Environment, resources, safety, and party roster</small>

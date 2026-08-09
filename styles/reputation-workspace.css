@@ -210,23 +210,29 @@
   scrollbar-width: thin;
 }
 
-.infinity-reputation-workspace .rw-section-nav a {
+.infinity-reputation-workspace .rw-section-nav button {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  width: auto;
   min-height: var(--lf-control-size, 44px);
+  margin: 0;
   padding: 6px 10px;
   color: var(--lf-muted, #97a3c1);
+  font: inherit;
   font-size: 0.78rem;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--lf-radius-sm, 6px);
+  box-shadow: none;
 }
 
-.infinity-reputation-workspace .rw-section-nav a:hover,
-.infinity-reputation-workspace .rw-section-nav a:focus-visible {
+.infinity-reputation-workspace .rw-section-nav button:hover,
+.infinity-reputation-workspace .rw-section-nav button:focus-visible {
   color: var(--lf-text-strong, #fff);
   background: var(--lf-surface-elev, #364159);
   border-color: var(--lf-border-strong, #6473a0);

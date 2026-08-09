@@ -258,9 +258,7 @@ export function userOwnsDowntimeActor(user, actor) {
   if (Object.hasOwn(ownership, user.id)) {
     return Number(ownership[user.id]) >= Number(owner);
   }
-  const assignedId =
-    typeof user.character === "string" ? user.character : user.character?.id;
-  if (assignedId && String(assignedId) === String(actor.id)) return true;
+  if (userAssignedToDowntimeActor(user, actor)) return true;
   // Foundry grants Assistant GMs effective access to every Actor. That role
   // bypass must not make every downtime queue theirs; assistants may act only
   // through an explicitly assigned or explicitly owned character.
@@ -268,10 +266,65 @@ export function userOwnsDowntimeActor(user, actor) {
   return Number(ownership.default) >= Number(owner);
 }
 
+function userAssignedToDowntimeActor(user, actor) {
+  const assignedId =
+    typeof user?.character === "string" ? user.character : user?.character?.id;
+  return Boolean(
+    assignedId && actor?.id && String(assignedId) === String(actor.id),
+  );
+}
+
+function ownerUsers(actor) {
+  return usersArray().filter(
+    (user) => !isFullGM(user) && userOwnsDowntimeActor(user, actor),
+  );
+}
+
 function ownerUserIds(actor) {
-  return usersArray()
-    .filter((user) => !isFullGM(user) && userOwnsDowntimeActor(user, actor))
-    .map((user) => String(user.id));
+  return ownerUsers(actor).map((user) => String(user.id));
+}
+
+function projectWorkspaceActor(actor) {
+  const owners = ownerUsers(actor).map((user) => ({
+    id: String(user.id),
+    name: String(user.name ?? user.id ?? "Player"),
+    active: user.active === true,
+    assigned: userAssignedToDowntimeActor(user, actor),
+  }));
+  const playerOwned = owners.length > 0;
+  const folder = workspaceActorFolder(actor);
+  return {
+    id: actor.id,
+    name: actor.name,
+    img: actor.img,
+    eligible: true,
+    checked: playerOwned,
+    playerOwned,
+    control: playerOwned ? "player-owned" : "other-character",
+    assigned: owners.some((owner) => owner.assigned),
+    owners,
+    folderId: folder.id,
+    folderName: folder.name,
+  };
+}
+
+function workspaceActorFolder(actor) {
+  const source = actor?.folder;
+  const id = String(
+    (typeof source === "string" ? source : (source?.id ?? source?._id)) ??
+      actor?._source?.folder ??
+      "",
+  ).trim();
+  const resolved =
+    source && typeof source === "object"
+      ? source
+      : id
+        ? globalThis.game?.folders?.get?.(id)
+        : null;
+  return {
+    id,
+    name: String(resolved?.name ?? "").trim(),
+  };
 }
 
 function participantFor(block, actorId) {
@@ -2813,13 +2866,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     selectedSettlementId: selected?.id ?? "",
     actors: actorsArray()
       .filter((actor) => actor?.type === "character")
-      .map((actor) => ({
-        id: actor.id,
-        name: actor.name,
-        img: actor.img,
-        eligible: true,
-        checked: true,
-      })),
+      .map(projectWorkspaceActor),
     factions: factions.map((faction) => ({
       id: faction.id,
       name: faction.name,

@@ -7,7 +7,7 @@
  */
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
-import { openSingleton } from "./infinity-app.js";
+import { navigateToAppSection, openSingleton } from "./infinity-app.js";
 import { isFullGM } from "./permissions.js";
 import { SETTINGS, SETTING_KEYS, getSetting, setSetting } from "./settings.js";
 import { getUiPreferences, updateUiPreferences } from "./ui-preferences.js";
@@ -130,6 +130,7 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
     actions: {
       save: InfinitySettingsApp._onSave,
       resetQuickStarts: InfinitySettingsApp._onResetQuickStarts,
+      selectSection: navigateToAppSection,
     },
   };
 

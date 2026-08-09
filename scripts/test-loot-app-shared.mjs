@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 
 import {
+  downloadJson,
   humanizeKey,
   livePartySize,
   readMultiCheckGroup,
@@ -165,6 +166,71 @@ const fakeRoot = {
 assert.deepEqual(readMultiCheckGroup(fakeRoot, "rarity"), ["common", "epic"]);
 assert.deepEqual(readMultiCheckGroup(null, "rarity"), []);
 setText(null, "x", "y"); // no throw on null root
+
+// downloadJson keeps the native download default but prevents Foundry's
+// document-wide hyperlink handler from turning the blob into a new tab.
+{
+  const savedDocument = globalThis.document;
+  const savedUrl = globalThis.URL;
+  const savedBlob = globalThis.Blob;
+  let clickHandler = null;
+  let clickOptions = null;
+  let appended = null;
+  let revoked = "";
+  const anchor = {
+    addEventListener(type, handler, options) {
+      assert.equal(type, "click");
+      clickHandler = handler;
+      clickOptions = options;
+    },
+    click() {
+      let stopped = false;
+      clickHandler?.({
+        preventDefault() {
+          assert.fail("the native download default must remain available");
+        },
+        stopPropagation() {
+          stopped = true;
+        },
+      });
+      assert.equal(stopped, true, "the synthetic anchor click must not bubble");
+    },
+    remove() {},
+  };
+  globalThis.document = {
+    createElement(tag) {
+      assert.equal(tag, "a");
+      return anchor;
+    },
+    body: {
+      appendChild(node) {
+        appended = node;
+      },
+    },
+  };
+  globalThis.URL = {
+    createObjectURL() {
+      return "blob:presets";
+    },
+    revokeObjectURL(url) {
+      revoked = url;
+    },
+  };
+  globalThis.Blob = class FakeBlob {};
+  try {
+    assert.equal(downloadJson("presets.json", { presets: [] }), true);
+    assert.equal(anchor.href, "blob:presets");
+    assert.equal(anchor.download, "presets.json");
+    assert.deepEqual(clickOptions, { once: true });
+    assert.equal(appended, anchor);
+    assert.equal(revoked, "blob:presets");
+  } finally {
+    if (savedDocument === undefined) delete globalThis.document;
+    else globalThis.document = savedDocument;
+    globalThis.URL = savedUrl;
+    globalThis.Blob = savedBlob;
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Stubbed smoke-import of the three windows

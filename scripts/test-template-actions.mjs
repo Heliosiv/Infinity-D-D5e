@@ -83,6 +83,16 @@ const CHECKS = [
     script: "./resource-manager.js",
   },
   {
+    name: "reputation workspace",
+    template: "templates/reputation-workspace.hbs",
+    script: "./reputation-workspace.js",
+  },
+  {
+    name: "Infinity settings",
+    template: "templates/settings.hbs",
+    script: "./settings-app.js",
+  },
+  {
     name: "forage prompt",
     template: "templates/forage-prompt.hbs",
     script: "./forage-prompt.js",

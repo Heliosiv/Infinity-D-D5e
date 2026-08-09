@@ -80,6 +80,7 @@ assertActions(
     "reopenSessions",
     "invRemove",
     "openInventoryItem",
+    "selectSection",
   ],
   "merchant workspace",
 );
@@ -142,6 +143,7 @@ assertActions(
     "copyEnvironment",
     "resetConfig",
     "refresh",
+    "selectSection",
   ],
   "Quartermaster",
 );
@@ -186,6 +188,7 @@ assertActions(
     "pickImage",
     "addCharacterNote",
     "removeCharacterNote",
+    "selectSection",
     "save",
     "deleteFaction",
   ],

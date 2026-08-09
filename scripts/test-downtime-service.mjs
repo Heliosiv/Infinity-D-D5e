@@ -85,9 +85,16 @@ function makeActor({ id = "actor-1", ownerId = "player-1", currency } = {}) {
 }
 
 try {
-  const gm = { id: "gm-1", isGM: true, role: 4, active: true };
+  const gm = {
+    id: "gm-1",
+    name: "Game Master",
+    isGM: true,
+    role: 4,
+    active: true,
+  };
   const player = {
     id: "player-1",
+    name: "Player One",
     isGM: false,
     role: 1,
     active: true,
@@ -95,6 +102,7 @@ try {
   };
   const assistant = {
     id: "assistant-1",
+    name: "Assistant One",
     isGM: true,
     role: 3,
     active: true,
@@ -271,6 +279,174 @@ try {
   );
   delete actor.ownership[assistant.id];
   assistant.character = null;
+
+  actor.folder = { id: "folder-party", name: "Player Characters" };
+  const assignedPlayer = {
+    id: "player-assigned",
+    name: "Assigned Player",
+    isGM: false,
+    role: 1,
+    active: true,
+    character: "projection-assigned",
+  };
+  const inactivePlayer = {
+    id: "player-inactive",
+    name: "Offline Player",
+    isGM: false,
+    role: 1,
+    active: false,
+    character: null,
+  };
+  const deniedPlayer = {
+    id: "player-denied",
+    name: "Denied Player",
+    isGM: false,
+    role: 1,
+    active: true,
+    character: "projection-denied",
+  };
+  users.set(assignedPlayer.id, assignedPlayer);
+  users.set(inactivePlayer.id, inactivePlayer);
+  users.set(deniedPlayer.id, deniedPlayer);
+
+  const projectionActors = [
+    makeActor({ id: "projection-assigned", ownerId: "nobody" }),
+    makeActor({ id: "projection-inactive", ownerId: inactivePlayer.id }),
+    makeActor({ id: "projection-unowned", ownerId: "nobody" }),
+    makeActor({ id: "projection-gm-only", ownerId: gm.id }),
+    makeActor({ id: "projection-denied", ownerId: deniedPlayer.id }),
+    makeActor({ id: "projection-assistant-explicit", ownerId: assistant.id }),
+    makeActor({ id: "projection-assistant-assigned", ownerId: "nobody" }),
+    makeActor({ id: "projection-npc", ownerId: player.id }),
+  ];
+  for (const projectionActor of projectionActors) {
+    projectionActor.name = projectionActor.id;
+    projectionActor.ownership.default = 0;
+    actors.set(projectionActor.id, projectionActor);
+  }
+  projectionActors[0].ownership = { default: 0 };
+  projectionActors[2].ownership = { default: 0 };
+  projectionActors[4].ownership[deniedPlayer.id] = 0;
+  projectionActors[6].ownership = { default: 0 };
+  projectionActors[7].type = "npc";
+  assistant.character = projectionActors[6].id;
+
+  const workspaceActorRows = new Map(
+    (await service.getWorkspaceProjection()).actors.map((entry) => [
+      entry.id,
+      entry,
+    ]),
+  );
+  assert.deepEqual(
+    workspaceActorRows.get(actor.id),
+    {
+      id: actor.id,
+      name: actor.name,
+      img: actor.img,
+      eligible: true,
+      checked: true,
+      playerOwned: true,
+      control: "player-owned",
+      assigned: false,
+      owners: [
+        {
+          id: player.id,
+          name: player.name,
+          active: true,
+          assigned: false,
+        },
+      ],
+      folderId: "folder-party",
+      folderName: "Player Characters",
+    },
+    "the GM projection defaults a directly player-owned PC on and includes bounded owner/folder metadata",
+  );
+  assert.deepEqual(
+    workspaceActorRows.get(projectionActors[0].id).owners,
+    [
+      {
+        id: assignedPlayer.id,
+        name: assignedPlayer.name,
+        active: true,
+        assigned: true,
+      },
+    ],
+    "an assigned character uses the same downtime control semantics as player submission",
+  );
+  assert.equal(workspaceActorRows.get(projectionActors[0].id).assigned, true);
+  assert.deepEqual(
+    workspaceActorRows.get(projectionActors[1].id).owners,
+    [
+      {
+        id: inactivePlayer.id,
+        name: inactivePlayer.name,
+        active: false,
+        assigned: false,
+      },
+    ],
+    "offline ownership remains visible and selected for advance downtime setup",
+  );
+  for (const projectionActor of [
+    projectionActors[0],
+    projectionActors[1],
+    projectionActors[5],
+    projectionActors[6],
+  ]) {
+    const row = workspaceActorRows.get(projectionActor.id);
+    assert.equal(row.playerOwned, true);
+    assert.equal(row.control, "player-owned");
+    assert.equal(row.checked, true);
+  }
+  for (const projectionActor of [
+    projectionActors[2],
+    projectionActors[3],
+    projectionActors[4],
+  ]) {
+    const row = workspaceActorRows.get(projectionActor.id);
+    assert.equal(row.playerOwned, false);
+    assert.equal(row.control, "other-character");
+    assert.equal(row.checked, false);
+    assert.equal(row.assigned, false);
+    assert.deepEqual(row.owners, []);
+  }
+  assert.deepEqual(
+    workspaceActorRows.get(projectionActors[5].id).owners,
+    [
+      {
+        id: assistant.id,
+        name: assistant.name,
+        active: true,
+        assigned: false,
+      },
+    ],
+    "an explicitly owning Assistant retains player-surface control",
+  );
+  assert.deepEqual(
+    workspaceActorRows.get(projectionActors[6].id).owners,
+    [
+      {
+        id: assistant.id,
+        name: assistant.name,
+        active: true,
+        assigned: true,
+      },
+    ],
+    "an assigned Assistant retains player-surface control",
+  );
+  assert.equal(
+    workspaceActorRows.has(projectionActors[7].id),
+    false,
+    "NPC Actors remain outside the downtime character pool",
+  );
+
+  assistant.character = null;
+  for (const user of [assignedPlayer, inactivePlayer, deniedPlayer]) {
+    users.delete(user.id);
+  }
+  for (const projectionActor of projectionActors) {
+    actors.delete(projectionActor.id);
+  }
+  delete actor.folder;
 
   const missingSharpenTool = service.validateDowntimeServicePrerequisites(
     [

@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  87,
+  89,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -47,6 +47,41 @@ for (const view of views) {
   assert.ok(
     actionNames.every((action) => action && !action.includes("{{")),
     `${view.id}: all action names render to literal values`,
+  );
+}
+
+const busyDowntimePicker = views.find(
+  (view) => view.id === "downtime-workspace-character-picker-busy",
+);
+assert.ok(busyDowntimePicker, "harness covers the busy character picker state");
+for (const action of [
+  "setHourPreset",
+  "setActorScope",
+  "restoreActorDefaults",
+  "selectShownActors",
+  "clearShownActors",
+  "createBlock",
+]) {
+  assert.match(
+    busyDowntimePicker.html,
+    new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*disabled`),
+    `${action} stays disabled while the downtime block is opening`,
+  );
+}
+for (const control of [
+  'name="settlementId"',
+  'name="locationName"',
+  'name="hours"',
+  "data-actor-query",
+  "data-actor-owner-filter",
+  "data-actor-folder-filter",
+  "data-actor-sort",
+  'name="actorIds"',
+]) {
+  assert.match(
+    busyDowntimePicker.html,
+    new RegExp(`${control}[^>]*disabled`),
+    `${control} stays disabled while the downtime block is opening`,
   );
 }
 

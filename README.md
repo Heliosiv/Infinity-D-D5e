@@ -128,7 +128,10 @@ both registered and active.
 ### Downtime and city actions
 
 The full GM opens **Home → Run the Session → Downtime Workspace**, chooses eligible
-characters, and assigns a shared productive-hour budget. A settlement is
+characters, and assigns a shared productive-hour budget. Player-owned character
+Actors are selected by default; group scopes, search, owner and folder filters,
+and sorting make it easy to add other characters deliberately. Filters change
+only what is shown, so hidden selections remain selected. A settlement is
 optional: select one for city-specific markets, crime, fencing, and local Heat,
 or name a camp, wilderness, shipboard, roadside, or other location. Crafting
 ammunition and sharpening remain available anywhere when their normal

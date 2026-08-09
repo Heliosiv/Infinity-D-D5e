@@ -550,6 +550,22 @@ export function buildHarnessViews() {
       { width: 1040, height: 760 },
     ),
     view(
+      "downtime-workspace-character-picker",
+      "Downtime Workspace (character picker)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceCharacterPickerContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-character-picker-busy",
+      "Downtime Workspace (character picker busy)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceCharacterPickerBusyContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
       "downtime-workspace-load-error",
       "Downtime Workspace (data unavailable)",
       "infinity-downtime-workspace",
@@ -3196,7 +3212,93 @@ function downtimeWorkspaceCompletedHistoryContext() {
   });
 }
 
+function downtimeWorkspaceCharacterPickerContext() {
+  const owners = [
+    ["player-one", "Player One"],
+    ["player-two", "Player Two"],
+    ["assistant", "Assistant GM"],
+  ];
+  const folders = [
+    ["folder-party", "Player Characters"],
+    ["folder-allies", "Allies"],
+    ["folder-archive", "Archive"],
+  ];
+  const names = [
+    "Aldus",
+    "Azila Meliamne",
+    "Clarence Blacktooth",
+    "Clarence Ironhammer",
+    "Deserin D'aerthe",
+    "Drago Vuk",
+    "Eiren",
+    "Kael",
+    "Maja Balzic",
+    "Osarius Oskar Octavius",
+    "Rix",
+    "Sinter Dew",
+    "Tegan",
+    "Thayne",
+    "Torden Aska",
+    "Zephyrden",
+  ];
+  const actors = names.map((name, index) => {
+    const playerOwned = index < 5;
+    const owner = playerOwned ? owners[index % owners.length] : null;
+    const folder = folders[index % folders.length];
+    return downtimeWorkspaceActorFixture({
+      id: `actor-picker-${index + 1}`,
+      name,
+      initials: name
+        .split(/\s+/)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2),
+      color: playerOwned ? "#496f4e" : "#62566f",
+      playerOwned,
+      owner,
+      folder,
+      order: index,
+    });
+  });
+  return downtimeWorkspaceBaseContext({
+    actors,
+    actorSelector: downtimeWorkspaceActorSelectorFixture(actors, {
+      scope: "all",
+    }),
+  });
+}
+
+function downtimeWorkspaceCharacterPickerBusyContext() {
+  return {
+    ...downtimeWorkspaceCharacterPickerContext(),
+    busy: true,
+    statusMessage: "Opening the downtime block...",
+  };
+}
+
 function downtimeWorkspaceBaseContext(overrides = {}) {
+  const actors = [
+    downtimeWorkspaceActorFixture({
+      id: "actor-aric",
+      name: "Aric the Ranger",
+      initials: "AR",
+      color: "#496f4e",
+      playerOwned: true,
+      owner: ["player-one", "Player One"],
+      folder: ["folder-party", "Player Characters"],
+      order: 0,
+    }),
+    downtimeWorkspaceActorFixture({
+      id: "actor-mira",
+      name: "Mira Quickstep",
+      initials: "MQ",
+      color: "#6f496c",
+      playerOwned: true,
+      owner: ["player-two", "Player Two"],
+      folder: ["folder-party", "Player Characters"],
+      order: 1,
+    }),
+  ];
   const context = {
     showQuickStart: false,
     dataAvailable: true,
@@ -3232,24 +3334,8 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
     hasSettlements: true,
     selectedSettlement: null,
     hasSelectedSettlement: false,
-    actors: [
-      {
-        id: "actor-aric",
-        name: "Aric the Ranger",
-        img: iconDataUri("#496f4e", "AR"),
-        checked: true,
-        eligible: true,
-        reason: "",
-      },
-      {
-        id: "actor-mira",
-        name: "Mira Quickstep",
-        img: iconDataUri("#6f496c", "MQ"),
-        checked: true,
-        eligible: true,
-        reason: "",
-      },
-    ],
+    actors,
+    actorSelector: downtimeWorkspaceActorSelectorFixture(actors),
     hasActors: true,
     canCreateBlock: true,
     createBlockReason: "",
@@ -3265,6 +3351,114 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
   return {
     ...context,
     ...downtimeLifecycleFixture(context),
+  };
+}
+
+function downtimeWorkspaceActorFixture({
+  id,
+  name,
+  initials,
+  color,
+  playerOwned,
+  owner = null,
+  folder = null,
+  order,
+}) {
+  const owners = owner
+    ? [
+        {
+          id: owner[0],
+          name: owner[1],
+          active: true,
+          assigned: order === 0,
+        },
+      ]
+    : [];
+  const ownerLabel = owners.length ? owners[0].name : "No player owner";
+  const folderId = folder?.[0] ?? "";
+  const folderName = folder?.[1] ?? "No folder";
+  return {
+    id,
+    name,
+    img: iconDataUri(color, initials),
+    checked: playerOwned,
+    eligible: true,
+    reason: "",
+    playerOwned,
+    assigned: owners.some((entry) => entry.assigned),
+    owners,
+    ownerIds: owners.map((entry) => entry.id),
+    ownerIdsValue: owners.map((entry) => entry.id).join("|"),
+    ownerLabel,
+    folderId,
+    folderName,
+    searchText: `${name} ${ownerLabel} ${folderName}`.toLocaleLowerCase(),
+    order,
+    visible: true,
+  };
+}
+
+function downtimeWorkspaceActorSelectorFixture(
+  actors,
+  {
+    scope = "player-owned",
+    query = "",
+    ownerId = "all",
+    folderId = "all",
+    sort = "name-asc",
+  } = {},
+) {
+  const owners = new Map();
+  const folders = new Map();
+  for (const actor of actors) {
+    for (const owner of actor.owners) owners.set(owner.id, owner.name);
+    if (actor.folderId) folders.set(actor.folderId, actor.folderName);
+  }
+  const selectedCount = actors.filter((actor) => actor.checked).length;
+  const playerOwnedCount = actors.filter((actor) => actor.playerOwned).length;
+  return {
+    scope,
+    scopePlayerOwned: scope === "player-owned",
+    scopeOther: scope === "other",
+    scopeSelected: scope === "selected",
+    scopeAll: scope === "all",
+    query,
+    ownerId,
+    ownerAll: ownerId === "all",
+    ownerUnowned: ownerId === "unowned",
+    ownerOptions: [...owners].map(([id, name]) => ({
+      id,
+      name,
+      selected: ownerId === id,
+    })),
+    hasUnowned: actors.some((actor) => actor.ownerIds.length === 0),
+    folderId,
+    folderAll: folderId === "all",
+    folderUnfiled: folderId === "unfiled",
+    folderOptions: [...folders].map(([id, name]) => ({
+      id,
+      name,
+      selected: folderId === id,
+    })),
+    hasUnfiled: actors.some((actor) => !actor.folderId),
+    sort,
+    sortNameAsc: sort === "name-asc",
+    sortNameDesc: sort === "name-desc",
+    sortOwner: sort === "owner",
+    sortFolder: sort === "folder",
+    sortSelectedFirst: sort === "selected-first",
+    totalCount: actors.length,
+    selectedCount,
+    visibleCount: actors.length,
+    playerOwnedCount,
+    otherCount: actors.length - playerOwnedCount,
+    selectedPlayerOwnedCount: actors.filter(
+      (actor) => actor.checked && actor.playerOwned,
+    ).length,
+    selectedOtherCount: actors.filter(
+      (actor) => actor.checked && !actor.playerOwned,
+    ).length,
+    hasSelection: selectedCount > 0,
   };
 }
 
