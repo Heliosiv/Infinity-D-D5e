@@ -2,7 +2,7 @@
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
   "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, schedule downtime and city actions, track party resources and reputation, consume spell components, and automate Critical Injury Table V2 recovery workflows.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "authors": [{ "name": "Heliosiv" }],
   "compatibility": {
     "minimum": "13",
@@ -44,6 +44,7 @@
     "templates/merchant-session.hbs",
     "templates/shop-picker.hbs",
     "templates/resource-manager.hbs",
+    "templates/forage-drive-dialog.hbs",
     "templates/resource-overview.hbs",
     "templates/forage-prompt.hbs",
     "templates/reputation-workspace.hbs",

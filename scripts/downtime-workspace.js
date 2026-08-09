@@ -555,7 +555,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     try {
       await dismissQuickStart(DOWNTIME_WORKSPACE_QUICK_START_ID);
       this._statusMessage =
-        "Downtime quick start dismissed. Restore it from Help & Diagnostics.";
+        "Downtime quick start dismissed. Restore it from Infinity Settings.";
     } catch (error) {
       console.warn(
         `${MODULE_ID} | could not dismiss downtime quick start`,

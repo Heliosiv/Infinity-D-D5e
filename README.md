@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.1 targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.2 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -19,6 +19,8 @@ Full GMs see campaign-management workspaces. Players and Assistant GMs see only 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.2 — Unreleased** - Quartermaster now offers food, water, or both per selected forager; shows separate food and water DCs; ships forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and riverlands presets; and labels manual consumption **Use Daily Supplies**. Existing worlds receive the missing built-in presets without overwriting custom regions. Home keeps one top Help button and removes the duplicate help panels.
 
 **v0.3.1 — Released 2026-08-09** - Downtime setup now starts with player-owned PCs and adds searchable group, owner, folder, and sort controls for gradually including other characters. Reputation, Merchant, Quartermaster, and Settings section navigation now stays inside the current application window, and Loot preset downloads no longer trigger Foundry's external-link handler.
 
@@ -218,7 +220,7 @@ environment, and automation in **Quartermaster**. Players can open **Party
 Supplies** from scene controls or `Shift + Q`; the active GM sends a sanitized
 snapshot without item-matching rules or raw actor inventory details.
 
-Quartermaster opens on the daily routine: Advance Day, Forage Drive, current
+Quartermaster opens on the daily routine: Use Daily Supplies, Forage Drive, current
 location, supply outlook, safety warnings, and the latest report. Expand
 **Setup & rules** for environment authoring, automation, tracked-resource
 definitions, roster and stash routing, or resetting the configuration.
@@ -229,25 +231,29 @@ about overlapping resource matchers and blocks unsafe inventory writes when a
 live item is claimed by more than one resource. The built-in food and water
 rules are distinct, including whole-word ration names for food and disposable
 day-unit names such as `water ration` for water. Reusable Waterskins are not
-spent or multiplied as day-unit inventory. Advance Day consumes one day of
-configured resources without foraging; Forage Drive handles GM-initiated
-gathering separately. Quartermaster accepts only one authority-fenced resource
+spent or multiplied as day-unit inventory. **Use Daily Supplies** consumes one
+day of configured resources without foraging or moving the world clock. **Forage
+Drive** lets the GM assign food, water, or both separately to every selected
+forager, then checks the one Survival roll against the relevant food and water
+DCs. Quartermaster accepts only one authority-fenced resource
 run at a time. A persisted safety lease reserves an automatic calendar day
 before Actor inventory changes.
 After a short cross-client stabilization check, an interrupted run is locked for
 GM review instead of replaying consumption.
 
 **Recent runs** keeps detailed, read-only receipts for the latest 20 automatic
-upkeep, Advance Day, Forage Drive, and acknowledged interrupted runs. The
+upkeep, Use Daily Supplies, Forage Drive, and acknowledged interrupted runs. The
 history is GM-private and fixed-size; it offers inspection only, with no retry,
 replay, rollback, or player-socket projection. An acknowledged interruption is
 recorded as an unknown inventory outcome rather than assuming nothing changed.
 
 Campaign-specific regions can be created directly in Quartermaster: select the
 closest built-in environment, choose **Copy as custom**, then edit its name,
-forage availability, Survival DC, and food/water yield formulas. Built-in
-presets remain unchanged, custom IDs are collision-safe, and new yield formulas
-are validated and bounded before they are saved.
+forage availability, separate food and water Survival DCs, and food/water yield
+formulas. Built-in scarcity tiers remain available alongside forest,
+rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and
+riverlands presets. Built-ins remain unchanged, custom IDs are collision-safe,
+and new yield formulas are validated and bounded before they are saved.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in
@@ -325,9 +331,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.3.1 && git push origin refs/tags/v0.3.1`).
+1. Read the source version and tag the commit (`$version = (Get-Content package.json | ConvertFrom-Json).version; git tag "v$version"; git push origin "refs/tags/v$version"`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.3.1` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named for that tag and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

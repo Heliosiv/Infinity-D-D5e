@@ -2,58 +2,161 @@
  * Infinity D&D5e — Environment / region catalog (pure)
  *
  * The party's current surroundings drive whether foraging is possible and at
- * what Wisdom (Survival) DC. Defaults follow the DMG's foraging guidance
- * (abundant DC 10, limited DC 15, sparse DC 20; settlements & dungeons aren't
- * forageable). Everything is data + pure shaping so it's node-testable and the
- * GM can edit the catalog in the Resource Manager.
+ * what Wisdom (Survival) DC. The legacy scarcity tiers follow the DMG's
+ * foraging guidance (abundant DC 10, limited DC 15, sparse DC 20; settlements
+ * & dungeons aren't forageable). The biome presets are module-authored starting
+ * points, not claimed RAW. Everything is data + pure shaping so it's
+ * node-testable and the GM can edit the catalog in the Resource Manager.
  */
 
+function builtInEnvironment({
+  id,
+  label,
+  foodDc,
+  waterDc,
+  forageable = true,
+  yieldFood = "1d6",
+  yieldWater = "1d6",
+}) {
+  return Object.freeze({
+    id,
+    label,
+    dc: Math.max(foodDc, waterDc),
+    foodDc,
+    waterDc,
+    forageable,
+    yieldFood,
+    yieldWater,
+    builtIn: true,
+  });
+}
+
 /** Internal keys are stable; display labels are duplicated here for the UI but
- *  the canonical plain-language map lives in ui-util.js (mirrors loot types). */
+ *  the canonical plain-language map lives in ui-util.js (mirrors loot types).
+ *  The first five ids are the legacy catalog and must remain stable. */
 const DEFAULT_ENVIRONMENTS = Object.freeze([
-  Object.freeze({
+  builtInEnvironment({
     id: "abundant",
     label: "Abundant (forest, coast, grassland)",
-    dc: 10,
-    forageable: true,
-    yieldFood: "1d6",
-    yieldWater: "1d6",
+    foodDc: 10,
+    waterDc: 10,
   }),
-  Object.freeze({
+  builtInEnvironment({
     id: "limited",
     label: "Limited (hills, farmland, woods)",
-    dc: 15,
-    forageable: true,
-    yieldFood: "1d6",
-    yieldWater: "1d6",
+    foodDc: 15,
+    waterDc: 15,
   }),
-  Object.freeze({
+  builtInEnvironment({
     id: "sparse",
     label: "Sparse (desert, tundra, badlands)",
-    dc: 20,
-    forageable: true,
-    yieldFood: "1d6",
-    yieldWater: "1d6",
+    foodDc: 20,
+    waterDc: 20,
   }),
-  Object.freeze({
+  builtInEnvironment({
     id: "settlement",
     label: "Settlement (buy supplies — no foraging)",
-    dc: 0,
+    foodDc: 0,
+    waterDc: 0,
     forageable: false,
     yieldFood: "0",
     yieldWater: "0",
   }),
-  Object.freeze({
+  builtInEnvironment({
     id: "underground",
     label: "Underground (dungeon — no foraging)",
-    dc: 0,
+    foodDc: 0,
+    waterDc: 0,
     forageable: false,
     yieldFood: "0",
     yieldWater: "0",
+  }),
+  builtInEnvironment({
+    id: "biome-forest",
+    label: "Forest",
+    foodDc: 10,
+    waterDc: 10,
+  }),
+  builtInEnvironment({
+    id: "biome-rainforest",
+    label: "Rainforest",
+    foodDc: 10,
+    waterDc: 15,
+    yieldFood: "1d8",
+    yieldWater: "1d8",
+  }),
+  builtInEnvironment({
+    id: "biome-grassland",
+    label: "Grassland",
+    foodDc: 10,
+    waterDc: 15,
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-coast",
+    label: "Coast",
+    foodDc: 10,
+    waterDc: 15,
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-hills",
+    label: "Hills",
+    foodDc: 15,
+    waterDc: 15,
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-mountains",
+    label: "Mountains",
+    foodDc: 20,
+    waterDc: 15,
+    yieldFood: "1d4",
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-swamp",
+    label: "Swamp",
+    foodDc: 15,
+    waterDc: 20,
+    yieldFood: "1d4",
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-desert",
+    label: "Desert",
+    foodDc: 20,
+    waterDc: 25,
+    yieldFood: "1d4",
+    yieldWater: "1d2",
+  }),
+  builtInEnvironment({
+    id: "biome-tundra",
+    label: "Tundra",
+    foodDc: 20,
+    waterDc: 15,
+    yieldFood: "1d4",
+    yieldWater: "1d4",
+  }),
+  builtInEnvironment({
+    id: "biome-riverlands",
+    label: "Riverlands",
+    foodDc: 10,
+    waterDc: 10,
+    yieldFood: "1d6",
+    yieldWater: "1d8",
   }),
 ]);
 
-export { DEFAULT_ENVIRONMENTS };
+const LEGACY_BUILT_IN_ENVIRONMENT_IDS = Object.freeze([
+  "abundant",
+  "limited",
+  "sparse",
+  "settlement",
+  "underground",
+]);
+
+export { DEFAULT_ENVIRONMENTS, LEGACY_BUILT_IN_ENVIRONMENT_IDS };
 
 /**
  * Bounds for formulas accepted from environment-editor drafts. Stored legacy
@@ -78,6 +181,8 @@ export const ENVIRONMENT_DC_MAX = 100;
 const EDITABLE_ENVIRONMENT_FIELDS = Object.freeze([
   "label",
   "dc",
+  "foodDc",
+  "waterDc",
   "forageable",
   "yieldFood",
   "yieldWater",
@@ -96,6 +201,18 @@ function toStr(value, fallback = "") {
 function toInt(value, fallback) {
   const n = Math.floor(Number(value));
   return Number.isFinite(n) ? n : fallback;
+}
+
+function optionalDc(value, fallback) {
+  if (value === undefined || String(value ?? "").trim() === "") return fallback;
+  return Math.max(0, toInt(value, fallback));
+}
+
+function normalizedEnvironmentDcs(raw, forageable) {
+  const sharedDc = Math.max(0, toInt(raw?.dc, forageable ? 15 : 0));
+  const foodDc = optionalDc(raw?.foodDc, sharedDc);
+  const waterDc = optionalDc(raw?.waterDc, sharedDc);
+  return { dc: Math.max(foodDc, waterDc), foodDc, waterDc };
 }
 
 /** Coerce a die/amount string to a safe formula string ("1d6", "0", "2"). */
@@ -230,13 +347,15 @@ export function normalizeEnvironment(raw) {
   const id = toStr(raw.id);
   if (!id) return null;
   const forageable = raw.forageable !== false;
+  const dcs = normalizedEnvironmentDcs(raw, forageable);
   return {
     id,
     label: toStr(raw.label, id),
-    dc: Math.max(0, toInt(raw.dc, forageable ? 15 : 0)),
+    ...dcs,
     forageable,
     yieldFood: toDieString(raw.yieldFood, forageable ? "1d6" : "0"),
     yieldWater: toDieString(raw.yieldWater, forageable ? "1d6" : "0"),
+    builtIn: raw.builtIn === true,
   };
 }
 
@@ -258,14 +377,58 @@ export function normalizeEnvironmentCatalog(raw) {
   return cleaned.length > 0 ? cleaned : getDefaultEnvironments();
 }
 
-/** Whether an environment id is outside the built-in preset catalog. */
-export function isCustomEnvironment(environmentOrId) {
-  const id = toStr(
-    environmentOrId && typeof environmentOrId === "object"
-      ? environmentOrId.id
-      : environmentOrId,
+/**
+ * Merge shipped presets into a saved catalog without taking ownership of an
+ * existing custom collision. Old catalogs predate explicit provenance, so the
+ * caller must name which legacy ids are known built-ins. New biome ids are
+ * never inferred from their name: an existing custom `biome-forest` stays
+ * custom and wins the collision.
+ */
+export function mergeBuiltInEnvironments(
+  rawCatalog,
+  { legacyBuiltInIds = [] } = {},
+) {
+  const catalog = normalizeEnvironmentCatalog(rawCatalog);
+  const allowedLegacyIds = new Set(
+    LEGACY_BUILT_IN_ENVIRONMENT_IDS.map((id) => id.toLowerCase()),
   );
+  const requestedLegacyIds = new Set(
+    (Array.isArray(legacyBuiltInIds)
+      ? legacyBuiltInIds
+      : legacyBuiltInIds instanceof Set
+        ? [...legacyBuiltInIds]
+        : []
+    )
+      .map((id) => toStr(id).toLowerCase())
+      .filter((id) => allowedLegacyIds.has(id)),
+  );
+  const merged = catalog.map((environment) => {
+    const markLegacyBuiltIn = requestedLegacyIds.has(
+      environment.id.toLowerCase(),
+    );
+    return markLegacyBuiltIn && environment.builtIn !== true
+      ? { ...environment, builtIn: true }
+      : { ...environment };
+  });
+  const seen = new Set(
+    merged.map((environment) => environment.id.toLowerCase()),
+  );
+
+  for (const preset of DEFAULT_ENVIRONMENTS) {
+    const key = preset.id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...preset });
+  }
+  return merged;
+}
+
+/** Whether an environment is custom. Objects use explicit provenance. */
+export function isCustomEnvironment(environmentOrId) {
+  const isObject = environmentOrId && typeof environmentOrId === "object";
+  const id = toStr(isObject ? environmentOrId.id : environmentOrId);
   if (!id) return false;
+  if (isObject) return environmentOrId.builtIn !== true;
   return !DEFAULT_ENVIRONMENTS.some((environment) => environment.id === id);
 }
 
@@ -302,6 +465,26 @@ export function createUniqueEnvironmentId(
     if (!used.has(candidate.toLowerCase())) return candidate;
     counter += 1;
   }
+}
+
+function hasExplicitDc(raw, field) {
+  return (
+    Object.prototype.hasOwnProperty.call(raw, field) &&
+    String(raw[field] ?? "").trim() !== ""
+  );
+}
+
+function validateEnvironmentDc(value) {
+  const text = String(value ?? "").trim();
+  const dc = Number(value);
+  return {
+    ok:
+      Boolean(text) &&
+      Number.isSafeInteger(dc) &&
+      dc >= 0 &&
+      dc <= ENVIRONMENT_DC_MAX,
+    value: dc,
+  };
 }
 
 /**
@@ -355,16 +538,17 @@ export function validateEnvironmentDraft(
     errors.forageable = "Choose whether this environment allows foraging.";
   }
 
-  const dcText = String(raw.dc ?? "").trim();
-  const dc = Number(raw.dc);
-  if (
-    !dcText ||
-    !Number.isSafeInteger(dc) ||
-    dc < 0 ||
-    dc > ENVIRONMENT_DC_MAX
-  ) {
-    errors.dc = `Use a whole-number DC from 0 to ${ENVIRONMENT_DC_MAX}.`;
-  }
+  const hasFoodDc = hasExplicitDc(raw, "foodDc");
+  const hasWaterDc = hasExplicitDc(raw, "waterDc");
+  const sharedDc = validateEnvironmentDc(raw.dc);
+  const foodDcResult = hasFoodDc ? validateEnvironmentDc(raw.foodDc) : sharedDc;
+  const waterDcResult = hasWaterDc
+    ? validateEnvironmentDc(raw.waterDc)
+    : sharedDc;
+  const dcError = `Use a whole-number DC from 0 to ${ENVIRONMENT_DC_MAX}.`;
+  if ((!hasFoodDc || !hasWaterDc) && !sharedDc.ok) errors.dc = dcError;
+  if (hasFoodDc && !foodDcResult.ok) errors.foodDc = dcError;
+  if (hasWaterDc && !waterDcResult.ok) errors.waterDc = dcError;
 
   const foodFormula = validateYieldFormula(raw.yieldFood);
   if (!foodFormula.ok) errors.yieldFood = foodFormula.error;
@@ -374,15 +558,20 @@ export function validateEnvironmentDraft(
   if (Object.keys(errors).length > 0) {
     return { ok: false, value: null, errors };
   }
+  const foodDc = foodDcResult.value;
+  const waterDc = waterDcResult.value;
   return {
     ok: true,
     value: {
       id,
       label,
-      dc,
+      dc: Math.max(foodDc, waterDc),
+      foodDc,
+      waterDc,
       forageable,
       yieldFood: foodFormula.value,
       yieldWater: waterFormula.value,
+      builtIn: false,
     },
     errors: {},
   };
@@ -424,6 +613,7 @@ export function duplicateEnvironment(catalog, sourceId) {
     ...sourceValue,
     id: createUniqueEnvironmentId(catalog, `${sourceKey}-copy`),
     label: `${labelStem}${copySuffix}`,
+    builtIn: false,
   };
   const validation = validateEnvironmentDraft(draft, { catalog });
   if (!validation.ok) {
@@ -484,7 +674,21 @@ export function updateEnvironmentFields(catalog, environmentId, patch) {
   }
 
   const current = catalog[index];
-  const draft = { ...current, ...patch, id: environmentKey };
+  const resolvedPatch = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(patch, "dc")) {
+    if (!Object.prototype.hasOwnProperty.call(patch, "foodDc")) {
+      resolvedPatch.foodDc = patch.dc;
+    }
+    if (!Object.prototype.hasOwnProperty.call(patch, "waterDc")) {
+      resolvedPatch.waterDc = patch.dc;
+    }
+  }
+  const draft = {
+    ...current,
+    ...resolvedPatch,
+    id: environmentKey,
+    builtIn: false,
+  };
   const validation = validateEnvironmentDraft(draft, {
     catalog,
     originalId: environmentKey,

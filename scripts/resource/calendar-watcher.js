@@ -33,11 +33,13 @@ import {
   buildUpkeepRunReceipt,
 } from "./history.js";
 import {
+  aggregateForageAssignments,
   buildForageAcknowledgement,
   computeForageYield,
   combineYields,
   forageTargetChannels,
   FORAGE_TARGETS,
+  normalizeForagerAssignments,
   planForageDriveDeposits,
 } from "./forage.js";
 import { getWisMod, rollSurvivalTotal } from "./roll.js";
@@ -180,7 +182,7 @@ async function onTimeMaybeChanged(reason) {
     if (elapsed <= 0) return;
 
     if (getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false) {
-      // Auto-upkeep off: keep the baseline current so the GM's manual Advance
+      // Auto-upkeep off: keep the baseline current so the GM's manual supplies
       // Day stays the only path, without a backlog building up silently.
       await setLastSeenDay(current);
       return;
@@ -211,7 +213,7 @@ async function onTimeMaybeChanged(reason) {
 }
 
 /**
- * Manual "Advance Day" — runs one day of upkeep immediately, independent of the
+ * Manual "Use Daily Supplies" — runs one day of upkeep immediately, independent of the
  * world clock and the auto-trigger setting. GM-only.
  */
 export async function advanceDayNow() {
@@ -238,7 +240,7 @@ export async function advanceDayNow() {
   }
 }
 
-/** Manual Advance Day is consumption-only; calendar upkeep may still forage. */
+/** Manual Use Daily Supplies is consumption-only; calendar upkeep may still forage. */
 export function shouldRunUpkeepForaging({ manual = false, environment } = {}) {
   return manual !== true && isForageable(environment);
 }
@@ -257,9 +259,18 @@ export function describeForageDrive(config = null) {
   const state = loadRunState();
   const env = resolveCurrentEnvironment(cfg, state);
   const dc = Number(env?.dc);
+  const foodDc = Number(env?.foodDc ?? env?.dc);
+  const waterDc = Number(env?.waterDc ?? env?.dc);
   const roster = getPartyRoster(cfg);
   return {
     defaultDc: Number.isFinite(dc) && dc > 0 ? dc : 15,
+    defaultFoodDc: Number.isFinite(foodDc) && foodDc >= 0 ? foodDc : 15,
+    defaultWaterDc: Number.isFinite(waterDc) && waterDc >= 0 ? waterDc : 15,
+    environmentLabel:
+      String(
+        env?.label ?? prettyEnvironment(env?.id) ?? "Current environment",
+      ).trim() || "Current environment",
+    forageable: isForageable(env),
     stashName: resolveDriveStashActor(cfg, roster)?.name ?? null,
     canForageFood: cfg.resources.some((r) => r.forageYields === "food"),
     canForageWater:
@@ -290,15 +301,21 @@ function resolveDriveStashActor(cfg, roster) {
 /**
  * Run a GM-initiated forage drive: push a Survival check at a GM-set DC to the
  * selected party members, then deposit what they gather — filling the party's
- * water sources and adding rations to the designated stash. Unlike Advance Day
+ * water sources and adding rations to the designated stash. Unlike Use Daily Supplies
  * this is gather-only: it consumes nothing and doesn't tick the day. GM-only.
  *
  * @param {object} args
- * @param {number} args.dc - the Survival DC the GM set for this drive.
- * @param {string[]} args.targetActorIds - roster actor ids to send the check to.
- * @param {"food-water"|"food"|"water"} args.forageTarget - supplies to gather.
+ * @param {Array<{actorId:string,forageTarget:string}>} args.foragers - canonical per-actor assignments.
+ * @param {number} args.foodDc - food Survival DC for this drive.
+ * @param {number} args.waterDc - water Survival DC for this drive.
+ * @param {number} [args.dc] - legacy shared Survival DC.
+ * @param {string[]} [args.targetActorIds] - legacy selected actor ids.
+ * @param {"food-water"|"food"|"water"} [args.forageTarget] - legacy shared target.
  */
 export async function runForageDrive({
+  foragers,
+  foodDc,
+  waterDc,
   dc,
   targetActorIds,
   forageTarget,
@@ -316,13 +333,27 @@ export async function runForageDrive({
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
-    return await runForageDriveInner({ dc, targetActorIds, forageTarget });
+    return await runForageDriveInner({
+      foragers,
+      foodDc,
+      waterDc,
+      dc,
+      targetActorIds,
+      forageTarget,
+    });
   } finally {
     upkeepInFlight = false;
   }
 }
 
-async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
+async function runForageDriveInner({
+  foragers,
+  foodDc,
+  waterDc,
+  dc,
+  targetActorIds,
+  forageTarget,
+}) {
   let cfg = loadResourceConfig();
   const state = loadRunState();
   const runId = generateRunId();
@@ -336,11 +367,18 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   });
 
   // The drive only forages tracked members; resolve the GM's selection to them.
-  const wanted = new Set(
-    (Array.isArray(targetActorIds) ? targetActorIds : []).map((id) =>
-      String(id),
-    ),
+  const requestedAssignments = normalizeForagerAssignments({
+    foragers,
+    targetActorIds,
+    forageTarget,
+  });
+  const requestedTargetByActor = new Map(
+    requestedAssignments.map((assignment) => [
+      assignment.actorId,
+      assignment.forageTarget,
+    ]),
   );
+  const wanted = new Set(requestedTargetByActor.keys());
   let selected = roster.filter(
     (member) => member.consumes && wanted.has(member.actor.id),
   );
@@ -350,15 +388,19 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     );
     return null;
   }
+  const forageAssignments = selected.map(({ actor }) => ({
+    actorId: actor.id,
+    forageTarget: requestedTargetByActor.get(actor.id),
+  }));
+  const assignmentSummary = aggregateForageAssignments(forageAssignments);
   const party = selected.map((r) => r.actor);
-  const channels = forageTargetChannels(forageTarget);
   const configuredFood = cfg.resources.some((r) => r.forageYields === "food");
   const configuredWater =
     cfg.waterEnabled !== false &&
     cfg.resources.some((r) => r.forageYields === "water");
   if (
-    (channels.food && !configuredFood) ||
-    (channels.water && !configuredWater)
+    (assignmentSummary.food && !configuredFood) ||
+    (assignmentSummary.water && !configuredWater)
   ) {
     globalThis.ui?.notifications?.warn(
       "The selected forage supplies are not enabled and configured. Review Setup & Rules; nothing changed.",
@@ -366,27 +408,39 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     return null;
   }
 
-  // Build the drive environment: the GM-set DC overrides the region DC, but keep
-  // the current region's yield dice (defaulting to 1d6 when the party is somewhere
-  // that normally can't be foraged — the GM is explicitly overriding that here).
+  // Keep the selected region's yield rules. A non-forageable environment fails
+  // closed instead of allowing a manual drive to invent wilderness supplies.
   const baseEnv = resolveCurrentEnvironment(cfg, state);
-  const baseForageable = isForageable(baseEnv);
-  const gmDc = Math.floor(Number(dc));
+  if (!isForageable(baseEnv)) {
+    globalThis.ui?.notifications?.warn(
+      "The current environment does not allow foraging. Choose a forageable area in Quartermaster; nothing changed.",
+    );
+    return null;
+  }
+  const resolveDriveDc = (channelValue, environmentValue) => {
+    for (const candidate of [channelValue, dc, environmentValue, baseEnv?.dc]) {
+      if (candidate == null || String(candidate).trim() === "") continue;
+      const normalized = Math.floor(Number(candidate));
+      if (Number.isFinite(normalized) && normalized >= 0) return normalized;
+    }
+    return 15;
+  };
+  const resolvedFoodDc = resolveDriveDc(foodDc, baseEnv?.foodDc);
+  const resolvedWaterDc = resolveDriveDc(waterDc, baseEnv?.waterDc);
+  const requestedDcs = [
+    ...(assignmentSummary.food ? [resolvedFoodDc] : []),
+    ...(assignmentSummary.water ? [resolvedWaterDc] : []),
+  ];
   const driveEnv = {
     id: baseEnv?.id ?? "forage-drive",
     label: baseEnv?.label ?? "Foraging drive",
-    dc: Number.isFinite(gmDc) && gmDc >= 0 ? gmDc : (baseEnv?.dc ?? 15),
+    builtIn: baseEnv?.builtIn === true,
+    dc: requestedDcs.length > 0 ? Math.max(...requestedDcs) : baseEnv.dc,
+    foodDc: resolvedFoodDc,
+    waterDc: resolvedWaterDc,
     forageable: true,
-    yieldFood: channels.food
-      ? baseForageable
-        ? baseEnv.yieldFood
-        : "1d6"
-      : "0",
-    yieldWater: channels.water
-      ? baseForageable
-        ? baseEnv.yieldWater
-        : "1d6"
-      : "0",
+    yieldFood: assignmentSummary.food ? baseEnv.yieldFood : "0",
+    yieldWater: assignmentSummary.water ? baseEnv.yieldWater : "0",
   };
 
   let actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
@@ -403,13 +457,14 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   });
   if (conflict) return conflict;
 
-  const foragedByActor = await runForagingWindow({
+  const forageWindow = await runForagingWindow({
     env: driveEnv,
     party,
     cfg,
-    forageTarget: channels.target,
+    forageAssignments,
     allowGmRolls: true,
   });
+  const foragedByActor = forageWindow.foragedByActor;
 
   // Player rolls can leave this client waiting long enough for inventory,
   // rules, the environment, or roster routing to change. Reload the canonical
@@ -449,10 +504,10 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   });
   if (lateConflict) return lateConflict;
 
-  const foodRes = channels.food
+  const foodRes = assignmentSummary.food
     ? cfg.resources.find((r) => r.forageYields === "food")
     : null;
-  const waterRes = channels.water
+  const waterRes = assignmentSummary.water
     ? cfg.resources.find((r) => r.forageYields === "water")
     : null;
 
@@ -472,15 +527,15 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     selectedIds: selected.map((r) => r.actor.id),
     foraged: [...foragedByActor.entries()].map(([actorId, y]) => ({
       actorId,
-      food: y.food,
-      water: y.water,
-      success: y.success,
-      suppressed: y.suppressed,
+      ...y,
     })),
+    forageTargets: assignmentSummary.individualTargets,
     partyStashId: cfg.partyStashId,
-    foodEnabled: channels.food && Boolean(foodRes),
+    foodEnabled: assignmentSummary.food && Boolean(foodRes),
     waterEnabled:
-      channels.water && cfg.waterEnabled !== false && Boolean(waterRes),
+      assignmentSummary.water &&
+      cfg.waterEnabled !== false &&
+      Boolean(waterRes),
   });
 
   const proposedDeposits = [];
@@ -599,13 +654,15 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
       participants: selected.map(({ actor }) => ({
         actorId: actor.id,
         name: actor.name,
+        forageTarget: assignmentSummary.individualTargets[actor.id],
       })),
       writeTargets: depositTargets.map((actor) => ({
         actorId: actor.id,
         name: actor.name,
       })),
     }),
-    forageTarget: channels.target,
+    forageTarget: assignmentSummary.target,
+    forageAssignments,
     forageDestination: driveStash
       ? {
           mode: "party-stash",
@@ -654,7 +711,8 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     day: currentAbsoluteDay(),
     environment: driveEnv,
     perForager: plan.perForager,
-    forageTarget: channels.target,
+    forageTarget: assignmentSummary.target,
+    forageAssignments,
     forageMode: cfg.forageMode,
     destination: stashActor
       ? {
@@ -668,6 +726,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     depositErrors,
   });
   await completeUpkeepRun({ runId, receipt, persistResult: false });
+  emitForageAcknowledgements(forageWindow.afterCommitAcknowledgements);
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   await postForageDriveReport({
     env: driveEnv,
@@ -676,49 +735,145 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     totalFood: landedFood,
     totalWater: landedWater,
     depositErrors,
-    forageTarget: channels.target,
+    forageTarget: assignmentSummary.target,
+    forageAssignments,
   });
   return {
     runId,
     dc: driveEnv.dc,
+    foodDc: driveEnv.foodDc,
+    waterDc: driveEnv.waterDc,
     perForager: plan.perForager,
     totalFood: landedFood,
     totalWater: landedWater,
     depositErrors,
     stashActor,
-    forageTarget: channels.target,
+    forageTarget: assignmentSummary.target,
+    forageAssignments,
   };
 }
 
 export function buildForageDriveReportContent({
   env,
-  perForager,
+  perForager = [],
   stashActor,
   totalFood,
   totalWater,
   depositErrors = [],
   forageTarget = FORAGE_TARGETS.BOTH,
+  forageAssignments = [],
 }) {
-  const channels = forageTargetChannels(forageTarget);
-  const formatYield = (food, water) => {
+  const assignmentTargetByActor = new Map(
+    normalizeForagerAssignments({ foragers: forageAssignments }).map(
+      (assignment) => [assignment.actorId, assignment.forageTarget],
+    ),
+  );
+  const targetForRow = (row) => {
+    if (Object.values(FORAGE_TARGETS).includes(row?.forageTarget)) {
+      return row.forageTarget;
+    }
+    return forageTargetChannels(
+      assignmentTargetByActor.get(String(row?.actorId ?? "")) ?? forageTarget,
+    ).target;
+  };
+  const reportAssignments = [
+    ...(Array.isArray(forageAssignments) ? forageAssignments : []),
+    ...perForager.map((row) => ({
+      actorId: row?.actorId,
+      forageTarget: targetForRow(row),
+    })),
+  ];
+  const summary = aggregateForageAssignments(reportAssignments);
+  const reportTarget =
+    summary.target ?? forageTargetChannels(forageTarget).target;
+  const formatYield = (food, water, target = reportTarget) => {
+    const channels = forageTargetChannels(target);
     if (channels.food && channels.water)
       return `+${food} food / +${water} water`;
     if (channels.food) return `+${food} food`;
     return `+${water} water`;
   };
+  const finiteDc = (value) => {
+    if (value == null || String(value).trim() === "") return null;
+    const normalized = Number(value);
+    return Number.isFinite(normalized) ? normalized : null;
+  };
+  const sharedDc = finiteDc(env?.dc);
+  const foodDc = finiteDc(env?.foodDc) ?? sharedDc;
+  const waterDc = finiteDc(env?.waterDc) ?? sharedDc;
+  const formatDc = (target) => {
+    const channels = forageTargetChannels(target);
+    if (channels.food && !channels.water) return String(foodDc ?? "—");
+    if (channels.water && !channels.food) return String(waterDc ?? "—");
+    if (foodDc !== null && waterDc !== null) {
+      return foodDc === waterDc
+        ? String(foodDc)
+        : `Food ${foodDc} / Water ${waterDc}`;
+    }
+    return String(sharedDc ?? foodDc ?? waterDc ?? "—");
+  };
+  const targetLabel = (target) => {
+    const channels = forageTargetChannels(target);
+    if (channels.food && channels.water) return "food and water";
+    return channels.food ? "food only" : "water only";
+  };
   const rows = perForager
     .map((f) => {
+      const rowTarget = targetForRow(f);
+      const channels = forageTargetChannels(rowTarget);
       const name = `<strong>${escapeHtml(f.name)}</strong>`;
+      const assignment = `<span style="opacity:0.7;">(${escapeHtml(targetLabel(rowTarget))}, DC ${escapeHtml(formatDc(rowTarget))})</span>`;
       if (!f.attempted) {
-        return `<li>${name} — <span style="opacity:0.7;">no online owner to roll</span></li>`;
+        return `<li>${name} ${assignment} — <span style="opacity:0.7;">no online owner to roll</span></li>`;
       }
       if (f.suppressed) {
-        return `<li>${name} — <span style="opacity:0.7;">gathered, but the best haul was kept</span></li>`;
+        return `<li>${name} ${assignment} — <span style="opacity:0.7;">gathered, but the best haul was kept</span></li>`;
       }
-      if (!f.success) {
-        return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
+      const foodSuccess =
+        channels.food &&
+        (typeof f.foodSuccess === "boolean"
+          ? f.foodSuccess
+          : f.success === true);
+      const waterSuccess =
+        channels.water &&
+        (typeof f.waterSuccess === "boolean"
+          ? f.waterSuccess
+          : f.success === true);
+      if (!foodSuccess && !waterSuccess) {
+        return `<li>${name} ${assignment} — <span style="color:#ef6f74;">found nothing</span></li>`;
       }
-      return `<li>${name} — <span style="color:#6dd5a2;">gathered ${escapeHtml(formatYield(f.food, f.water))}</span></li>`;
+      const foodSuppressed = foodSuccess && f.foodSuppressed === true;
+      const waterSuppressed = waterSuccess && f.waterSuppressed === true;
+      if (
+        channels.food &&
+        channels.water &&
+        foodSuccess &&
+        waterSuccess &&
+        !foodSuppressed &&
+        !waterSuppressed
+      ) {
+        return `<li>${name} ${assignment} — <span style="color:#6dd5a2;">gathered ${escapeHtml(formatYield(f.food, f.water, rowTarget))}</span></li>`;
+      }
+      const outcomes = [];
+      if (channels.food) {
+        outcomes.push(
+          foodSuppressed
+            ? "food haul replaced by the best result"
+            : foodSuccess
+              ? `gathered +${f.food} food`
+              : "found no food",
+        );
+      }
+      if (channels.water) {
+        outcomes.push(
+          waterSuppressed
+            ? "water haul replaced by the best result"
+            : waterSuccess
+              ? `gathered +${f.water} water`
+              : "found no water",
+        );
+      }
+      return `<li>${name} ${assignment} — <span style="color:#6dd5a2;">${escapeHtml(outcomes.join("; "))}</span></li>`;
     })
     .join("");
   const dest = stashActor
@@ -729,10 +884,10 @@ export function buildForageDriveReportContent({
     : "";
   const details = `
     <ul>${rows}</ul>
-    <div>${dest}: <strong>${escapeHtml(formatYield(totalFood, totalWater))}</strong> applied.</div>
+    <div>${dest}: <strong>${escapeHtml(formatYield(totalFood, totalWater, reportTarget))}</strong> applied.</div>
     ${errorLine}`;
   return buildInfinityChatCard({
-    title: `Forage Drive — DC ${env.dc}`,
+    title: `Forage Drive — DC ${formatDc(reportTarget)}`,
     outcome: depositErrors.length
       ? "Foraging finished; some inventory deposits need review."
       : "Foraging finished and the confirmed yield was applied.",
@@ -935,6 +1090,7 @@ async function claimResourceRun({
   environment = null,
   actors = [],
   forageTarget = null,
+  forageAssignments = [],
   forageDestination = null,
 }) {
   const user = globalThis.game?.user;
@@ -950,6 +1106,7 @@ async function claimResourceRun({
       initiator: user?.id ? { userId: user.id, name: user.name } : null,
       actors,
       forageTarget,
+      forageAssignments,
       forageDestination,
     });
   } catch (error) {
@@ -1266,11 +1423,15 @@ async function runDailyUpkeep({
   if (conflict) return conflict;
 
   // 1) Automatic calendar upkeep may forage when the environment allows it.
-  //    Manual Advance Day is deliberately consumption-only; the separate
+  //    Manual Use Daily Supplies is deliberately consumption-only; the separate
   //    Forage Drive owns all GM-initiated gathering.
   let foragedByActor = new Map();
+  let afterCommitForageAcknowledgements = [];
   if (shouldRunUpkeepForaging({ manual, environment: env })) {
-    foragedByActor = await runForagingWindow({ env, party, cfg });
+    const forageWindow = await runForagingWindow({ env, party, cfg });
+    foragedByActor = forageWindow.foragedByActor;
+    afterCommitForageAcknowledgements =
+      forageWindow.afterCommitAcknowledgements;
   }
 
   // The foraging window may wait on remote players. Reload the canonical rules
@@ -1533,6 +1694,7 @@ async function runDailyUpkeep({
   };
   const receipt = buildUpkeepRunReceipt({ result, environment: env });
   await completeUpkeepRun({ runId, result, receipt });
+  emitForageAcknowledgements(afterCommitForageAcknowledgements);
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   emitResourceEvent(RESOURCE_EVENTS.UPKEEP_REPORT, {
     day: result.day,
@@ -1589,13 +1751,43 @@ function resolveCurrentEnvironment(cfg, state) {
 
 export function resolveForageRollTargets(
   party,
-  { allowGmRolls = false, resolveOnlineUserId = owningOnlineUserId } = {},
+  {
+    allowGmRolls = false,
+    resolveOnlineUserId = owningOnlineUserId,
+    forageAssignments = [],
+    forageTarget = FORAGE_TARGETS.BOTH,
+    waterEnabled = true,
+  } = {},
 ) {
-  return (Array.isArray(party) ? party : [])
+  const actors = Array.isArray(party) ? party : [];
+  const normalizedAssignments = normalizeForagerAssignments({
+    foragers: forageAssignments,
+    targetActorIds: actors.map((actor) => actor?.id).filter(Boolean),
+    forageTarget,
+  });
+  const requestedTargetByActor = new Map(
+    normalizedAssignments.map((assignment) => [
+      assignment.actorId,
+      assignment.forageTarget,
+    ]),
+  );
+  return actors
     .filter((actor) => actor?.id)
     .map((actor) => {
       const userId = resolveOnlineUserId(actor);
-      return { actor, userId, gmRoll: !userId };
+      const requested = forageTargetChannels(
+        requestedTargetByActor.get(actor.id) ?? forageTarget,
+      );
+      const effectiveTarget =
+        requested.food && requested.water && waterEnabled === false
+          ? FORAGE_TARGETS.FOOD
+          : requested.target;
+      return {
+        actor,
+        userId,
+        gmRoll: !userId,
+        forageTarget: effectiveTarget,
+      };
     })
     .filter((target) => target.userId || allowGmRolls);
 }
@@ -1605,17 +1797,33 @@ async function runForagingWindow({
   party,
   cfg,
   forageTarget = FORAGE_TARGETS.BOTH,
+  forageAssignments = [],
   allowGmRolls = false,
 }) {
-  const requested = forageTargetChannels(forageTarget);
-  const effectiveTarget =
-    requested.food && requested.water && cfg.waterEnabled === false
-      ? FORAGE_TARGETS.FOOD
-      : requested.target;
-  const channels = forageTargetChannels(effectiveTarget);
+  const foodDc = Number.isFinite(Number(env?.foodDc))
+    ? Number(env.foodDc)
+    : Number(env?.dc) || 0;
+  const waterDc = Number.isFinite(Number(env?.waterDc))
+    ? Number(env.waterDc)
+    : Number(env?.dc) || 0;
+  const promptDcForTarget = (target) => {
+    const channels = forageTargetChannels(target);
+    if (channels.food && !channels.water) return foodDc;
+    if (channels.water && !channels.food) return waterDc;
+    return Number.isFinite(Number(env?.dc))
+      ? Number(env.dc)
+      : Math.max(foodDc, waterDc);
+  };
   const out = new Map();
-  const targets = resolveForageRollTargets(party, { allowGmRolls });
-  if (targets.length === 0) return out; // no eligible online or GM-rolled target
+  const targets = resolveForageRollTargets(party, {
+    allowGmRolls,
+    forageAssignments,
+    forageTarget,
+    waterEnabled: cfg.waterEnabled !== false,
+  });
+  if (targets.length === 0) {
+    return { foragedByActor: out, afterCommitAcknowledgements: [] };
+  }
   const playerTargets = targets.filter((target) => !target.gmRoll);
   const gmTargets = targets.filter((target) => target.gmRoll);
 
@@ -1655,10 +1863,13 @@ async function runForagingWindow({
       environment: {
         id: env.id,
         label: env.label,
-        dc: env.dc,
+        builtIn: env?.builtIn === true,
+        dc: promptDcForTarget(t.forageTarget),
+        foodDc,
+        waterDc,
         forageable: true,
       },
-      forageTarget: channels.target,
+      forageTarget: t.forageTarget,
     });
   }
 
@@ -1684,14 +1895,22 @@ async function runForagingWindow({
   // Resolve each forager's yield (GM rolls the yield dice).
   const perForager = [];
   for (const t of targets) {
+    const channels = forageTargetChannels(t.forageTarget);
     const r = results.get(t.actor.id);
     if (!r || r.skipped) {
       perForager.push({
         actorId: t.actor.id,
         name: t.actor.name,
+        forageTarget: channels.target,
         food: 0,
         water: 0,
         success: false,
+        foodSuccess: false,
+        waterSuccess: false,
+        foodDc,
+        waterDc,
+        foodMargin: null,
+        waterMargin: null,
         noResponse: !r,
       });
       continue;
@@ -1704,6 +1923,8 @@ async function runForagingWindow({
     const yld = computeForageYield({
       rollTotal: r.rollTotal,
       dc: env.dc,
+      foodDc,
+      waterDc,
       wisMod: r.wisMod,
       foodDie,
       waterDie,
@@ -1711,9 +1932,15 @@ async function runForagingWindow({
       foodEnabled: channels.food,
       waterEnabled: channels.water && cfg.waterEnabled !== false,
     });
-    perForager.push({ actorId: t.actor.id, name: t.actor.name, ...yld });
+    perForager.push({
+      actorId: t.actor.id,
+      name: t.actor.name,
+      forageTarget: channels.target,
+      ...yld,
+    });
   }
 
+  const acknowledgements = [];
   for (const entry of combineYields(perForager, cfg.forageMode)) {
     const userId = targets.find((t) => t.actor.id === entry.actorId)?.userId;
     const acknowledgement = buildForageAcknowledgement({
@@ -1725,6 +1952,7 @@ async function runForagingWindow({
     });
     if (!entry.noResponse) {
       out.set(entry.actorId, {
+        ...entry,
         food: acknowledgement.food,
         water: acknowledgement.water,
         success: acknowledgement.success,
@@ -1735,11 +1963,42 @@ async function runForagingWindow({
       });
     }
     if (userId) {
-      // `noResponse` distinguishes a GM timeout from an active skip.
-      emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, acknowledgement);
+      acknowledgements.push(acknowledgement);
     }
   }
-  return out;
+  const { immediate, afterCommit } =
+    partitionForageAcknowledgements(acknowledgements);
+  // Preserve timeout behavior: a player who never answered can close their
+  // prompt immediately. Submitted roll outcomes wait until the enclosing drive
+  // or upkeep receipt is durably committed.
+  emitForageAcknowledgements(immediate);
+  return {
+    foragedByActor: out,
+    afterCommitAcknowledgements: afterCommit,
+  };
+}
+
+/** Separate neutral timeout acknowledgements from outcomes that imply success. */
+export function partitionForageAcknowledgements(acknowledgements = []) {
+  const immediate = [];
+  const afterCommit = [];
+  for (const acknowledgement of Array.isArray(acknowledgements)
+    ? acknowledgements
+    : []) {
+    if (!acknowledgement || typeof acknowledgement !== "object") continue;
+    if (acknowledgement.noResponse === true) immediate.push(acknowledgement);
+    else afterCommit.push(acknowledgement);
+  }
+  return { immediate, afterCommit };
+}
+
+function emitForageAcknowledgements(acknowledgements = []) {
+  for (const acknowledgement of Array.isArray(acknowledgements)
+    ? acknowledgements
+    : []) {
+    if (!String(acknowledgement?.targetUserId ?? "").trim()) continue;
+    emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, acknowledgement);
+  }
 }
 
 /**

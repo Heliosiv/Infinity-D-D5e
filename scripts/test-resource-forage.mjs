@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 
 import {
+  aggregateForageAssignments,
   buildForageAcknowledgement,
   computeForageYield,
   combineYields,
   forageTargetChannels,
   FORAGE_TARGETS,
+  normalizeForagerAssignments,
   normalizeForageTarget,
   planForageDriveDeposits,
 } from "./resource/forage.js";
 import {
   owningOnlineUserId,
+  partitionForageAcknowledgements,
   resolveForageRollTargets,
   resolveForageTimeoutMs,
   resolveExpectedForageActorId,
@@ -59,6 +62,41 @@ const ABUNDANT = {
     ],
     "Forage Drive routes offline characters to the active GM",
   );
+  assert.deepEqual(
+    resolveForageRollTargets(party, {
+      allowGmRolls: true,
+      resolveOnlineUserId,
+      forageAssignments: [
+        { actorId: "online", forageTarget: FORAGE_TARGETS.FOOD },
+        { actorId: "offline", forageTarget: FORAGE_TARGETS.WATER },
+      ],
+    }).map((target) => ({
+      actorId: target.actor.id,
+      forageTarget: target.forageTarget,
+    })),
+    [
+      { actorId: "online", forageTarget: FORAGE_TARGETS.FOOD },
+      { actorId: "offline", forageTarget: FORAGE_TARGETS.WATER },
+    ],
+    "Forage Drive keeps each character's requested resource channels",
+  );
+  assert.deepEqual(
+    resolveForageRollTargets(party, {
+      allowGmRolls: true,
+      resolveOnlineUserId,
+    }).map((target) => target.forageTarget),
+    [FORAGE_TARGETS.BOTH, FORAGE_TARGETS.BOTH],
+    "automatic calendar foraging remains all-both by default",
+  );
+  assert.deepEqual(
+    resolveForageRollTargets(party, {
+      allowGmRolls: true,
+      resolveOnlineUserId,
+      waterEnabled: false,
+    }).map((target) => target.forageTarget),
+    [FORAGE_TARGETS.FOOD, FORAGE_TARGETS.FOOD],
+    "automatic calendar foraging retains its food-only fallback when water is disabled",
+  );
 }
 const TOWN = {
   id: "town",
@@ -92,6 +130,52 @@ const TOWN = {
     FORAGE_TARGETS.BOTH,
     "unknown API input keeps the backward-compatible combined target",
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Per-forager assignment normalization and drive-level aggregation.
+ * ------------------------------------------------------------------ */
+{
+  const canonical = normalizeForagerAssignments({
+    foragers: [
+      { actorId: " A ", forageTarget: "food" },
+      { actorId: "B", forageTarget: "water" },
+      { actorId: "A", forageTarget: "food-water" },
+      { actorId: "C", forageTarget: "invalid" },
+      { actorId: " ", forageTarget: "food" },
+    ],
+    targetActorIds: ["legacy"],
+    forageTarget: "food-water",
+  });
+  assert.deepEqual(canonical, [
+    { actorId: "A", forageTarget: "food" },
+    { actorId: "B", forageTarget: "water" },
+  ]);
+  assert.deepEqual(aggregateForageAssignments(canonical), {
+    target: "food-water",
+    food: true,
+    water: true,
+    individualTargets: { A: "food", B: "water" },
+  });
+
+  assert.deepEqual(
+    normalizeForagerAssignments({
+      foragers: [{ actorId: "bad", forageTarget: "invalid" }],
+      targetActorIds: [" legacy-a ", "legacy-a", "legacy-b"],
+      forageTarget: "water",
+    }),
+    [
+      { actorId: "legacy-a", forageTarget: "water" },
+      { actorId: "legacy-b", forageTarget: "water" },
+    ],
+    "legacy ids expand only when no canonical assignment is valid",
+  );
+  assert.deepEqual(aggregateForageAssignments([]), {
+    target: null,
+    food: false,
+    water: false,
+    individualTargets: {},
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -146,6 +230,52 @@ const TOWN = {
   assert.equal(fail.success, false);
   assert.equal(fail.food, 0);
   assert.equal(fail.water, 0);
+}
+
+/* One Survival roll can now resolve food and water against different DCs. */
+{
+  const partial = computeForageYield({
+    rollTotal: 12,
+    foodDc: 10,
+    waterDc: 15,
+    wisMod: 2,
+    foodDie: 4,
+    waterDie: 6,
+    env: { ...ABUNDANT, dc: undefined },
+  });
+  assert.deepEqual(partial, {
+    success: true,
+    foodSuccess: true,
+    waterSuccess: false,
+    food: 6,
+    water: 0,
+    margin: 2,
+    foodDc: 10,
+    waterDc: 15,
+    foodMargin: 2,
+    waterMargin: -3,
+  });
+
+  const waterOnly = computeForageYield({
+    rollTotal: 14,
+    wisMod: 1,
+    foodDie: 6,
+    waterDie: 3,
+    env: {
+      ...ABUNDANT,
+      dc: undefined,
+      foodDc: 18,
+      waterDc: 12,
+    },
+    foodEnabled: false,
+    waterEnabled: true,
+  });
+  assert.equal(waterOnly.success, true);
+  assert.equal(waterOnly.foodSuccess, false);
+  assert.equal(waterOnly.waterSuccess, true);
+  assert.equal(waterOnly.food, 0);
+  assert.equal(waterOnly.water, 4);
+  assert.equal(waterOnly.margin, 2);
 }
 
 /* ------------------------------------------------------------------ *
@@ -251,8 +381,115 @@ const TOWN = {
 }
 
 /* ------------------------------------------------------------------ *
- * buildForageAcknowledgement — player result preserves "best" suppression
+ * Mixed/per-target "best" mode and legacy combined-haul compatibility.
  * ------------------------------------------------------------------ */
+{
+  const mixed = combineYields(
+    [
+      {
+        actorId: "food-first",
+        forageTarget: "food",
+        success: true,
+        foodSuccess: true,
+        waterSuccess: false,
+        food: 6,
+        water: 0,
+      },
+      {
+        actorId: "water-loser",
+        forageTarget: "water",
+        success: true,
+        foodSuccess: false,
+        waterSuccess: true,
+        food: 0,
+        water: 5,
+      },
+      {
+        actorId: "both",
+        forageTarget: "food-water",
+        success: true,
+        foodSuccess: true,
+        waterSuccess: true,
+        food: 6,
+        water: 7,
+      },
+    ],
+    "best",
+  );
+  const byId = Object.fromEntries(mixed.map((entry) => [entry.actorId, entry]));
+  assert.equal(byId["food-first"].food, 6, "first equal food haul wins");
+  assert.equal(byId["food-first"].foodSuppressed, false);
+  assert.equal(byId.both.food, 0);
+  assert.equal(byId.both.foodSuppressed, true);
+  assert.equal(byId.both.water, 7);
+  assert.equal(byId.both.waterSuppressed, false);
+  assert.equal(
+    byId.both.suppressed,
+    false,
+    "keeping either gathered channel prevents overall suppression",
+  );
+  assert.equal(byId["water-loser"].water, 0);
+  assert.equal(byId["water-loser"].waterSuppressed, true);
+  assert.equal(byId["water-loser"].suppressed, true);
+
+  const splitBoth = combineYields(
+    [
+      {
+        actorId: "food-only-success",
+        forageTarget: "food-water",
+        success: true,
+        foodSuccess: true,
+        waterSuccess: false,
+        food: 5,
+        water: 0,
+      },
+      {
+        actorId: "water-only-success",
+        forageTarget: "food-water",
+        success: true,
+        foodSuccess: false,
+        waterSuccess: true,
+        food: 0,
+        water: 5,
+      },
+    ],
+    "best",
+  );
+  const splitById = Object.fromEntries(
+    splitBoth.map((entry) => [entry.actorId, entry]),
+  );
+  assert.equal(
+    splitById["food-only-success"].food,
+    5,
+    "split-DC best mode keeps the best successful food channel",
+  );
+  assert.equal(
+    splitById["water-only-success"].water,
+    5,
+    "split-DC best mode keeps the best successful water channel",
+  );
+  assert.equal(splitById["food-only-success"].suppressed, false);
+  assert.equal(splitById["water-only-success"].suppressed, false);
+
+  const legacyBoth = combineYields(
+    [
+      { actorId: "food-heavy", success: true, food: 7, water: 0 },
+      { actorId: "combined", success: true, food: 4, water: 4 },
+    ],
+    "best",
+  );
+  assert.equal(
+    legacyBoth.find((entry) => entry.actorId === "combined").food,
+    4,
+    "homogeneous legacy both-target inputs still choose one combined haul",
+  );
+  assert.equal(
+    legacyBoth.find((entry) => entry.actorId === "food-heavy").suppressed,
+    true,
+  );
+}
+
+/* Acknowledgements preserve the resolved suppression state. */
 {
   const acknowledgement = buildForageAcknowledgement({
     runId: "qm-test",
@@ -263,6 +500,10 @@ const TOWN = {
       food: 0,
       water: 0,
       success: true,
+      foodSuccess: true,
+      waterSuccess: true,
+      foodSuppressed: true,
+      waterSuppressed: false,
       suppressed: true,
     },
   });
@@ -272,10 +513,25 @@ const TOWN = {
     food: 0,
     water: 0,
     success: true,
+    foodSuccess: true,
+    waterSuccess: true,
+    foodSuppressed: true,
+    waterSuppressed: false,
     suppressed: true,
     noResponse: true,
     targetUserId: "player-1",
   });
+
+  const committed = { ...acknowledgement, noResponse: false };
+  const timedOut = { ...acknowledgement, actorId: "B", noResponse: true };
+  assert.deepEqual(
+    partitionForageAcknowledgements([committed, null, timedOut]),
+    {
+      immediate: [timedOut],
+      afterCommit: [committed],
+    },
+    "only no-response acknowledgements bypass the receipt commit gate",
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -456,6 +712,49 @@ const TOWN = {
     assert.equal(plan.totalFood, 0, "food suppressed");
     assert.equal(plan.totalWater, 4, "water unaffected");
     assert.deepEqual(plan.deposits, [{ actorId: "S", food: 0, water: 4 }]);
+  }
+
+  /* Per-forager target and channel metadata survive planning, including a
+     selected actor who never returns a response. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged: [
+        {
+          actorId: "A",
+          forageTarget: "food-water",
+          success: true,
+          foodSuccess: true,
+          waterSuccess: false,
+          foodDc: 10,
+          waterDc: 15,
+          foodMargin: 2,
+          waterMargin: -3,
+          foodSuppressed: false,
+          waterSuppressed: false,
+          food: 4,
+          water: 0,
+        },
+      ],
+      forageTargets: { A: "food-water", B: "water" },
+      partyStashId: "S",
+    });
+    const byId = Object.fromEntries(
+      plan.perForager.map((entry) => [entry.actorId, entry]),
+    );
+    assert.equal(byId.A.forageTarget, "food-water");
+    assert.equal(byId.A.foodSuccess, true);
+    assert.equal(byId.A.waterSuccess, false);
+    assert.equal(byId.A.foodDc, 10);
+    assert.equal(byId.A.waterDc, 15);
+    assert.equal(byId.A.foodMargin, 2);
+    assert.equal(byId.A.waterMargin, -3);
+    assert.equal(byId.B.forageTarget, "water");
+    assert.equal(byId.B.attempted, false);
+    assert.equal(byId.B.waterSuccess, false);
+    assert.equal(byId.B.waterDc, null);
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 4, water: 0 }]);
   }
 
   /* A selection not in the roster is ignored (no phantom deposit). */

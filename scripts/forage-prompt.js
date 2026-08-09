@@ -172,6 +172,8 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const passive = getSurvivalPassive(actor);
     const wisMod = actor ? getWisMod(actor) : 0;
     const channels = forageTargetChannels(this._forageTarget);
+    const foodDc = finiteDc(env.foodDc ?? env.dc);
+    const waterDc = finiteDc(env.waterDc ?? env.dc);
     const offline = !this._hasAuthoritativeGM;
     return {
       actorName: actor?.name ?? this._actorName ?? null,
@@ -179,6 +181,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       offline,
       environmentLabel: environmentDisplayLabel(env) || "the wild",
       dc: env.dc ?? null,
+      dcLabel: forageDcLabel({ channels, foodDc, waterDc }),
       passiveLabel:
         passive == null ? "" : `Your passive Survival is ${passive}`,
       wisLabel: actor ? `Wisdom ${wisMod >= 0 ? "+" : ""}${wisMod}` : "",
@@ -211,11 +214,23 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // The GM resolved the run without our input (timeout) while we were still
     // deciding — show a neutral "wrapped up" note, not "came up empty-handed".
     const noResponse = payload?.noResponse === true && this._state === "prompt";
+    const channels = forageTargetChannels(this._forageTarget);
+    const success = payload?.success === true;
     this._state = "done";
     this._result = {
-      success: payload?.success === true,
+      success,
       food: Number(payload?.food) || 0,
       water: Number(payload?.water) || 0,
+      foodSuccess:
+        typeof payload?.foodSuccess === "boolean"
+          ? payload.foodSuccess
+          : success && channels.food,
+      waterSuccess:
+        typeof payload?.waterSuccess === "boolean"
+          ? payload.waterSuccess
+          : success && channels.water,
+      foodSuppressed: payload?.foodSuppressed === true,
+      waterSuppressed: payload?.waterSuppressed === true,
       noResponse,
       // "best" mode: this forager gathered but a bigger haul was kept for the party.
       suppressed: payload?.suppressed === true,
@@ -314,6 +329,21 @@ function environmentDisplayLabel(environment) {
   return (
     prettyEnvironment(environment.id) || environment.label || environment.id
   );
+}
+
+function finiteDc(value) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function forageDcLabel({ channels, foodDc, waterDc }) {
+  if (channels.food && channels.water) {
+    if (foodDc === null && waterDc === null) return "";
+    if (foodDc === waterDc) return `DC ${foodDc}`;
+    return `Food DC ${foodDc ?? "?"} · Water DC ${waterDc ?? "?"}`;
+  }
+  if (channels.food) return foodDc === null ? "" : `Food DC ${foodDc}`;
+  return waterDc === null ? "" : `Water DC ${waterDc}`;
 }
 
 /* ------------------------------------------------------------------ *

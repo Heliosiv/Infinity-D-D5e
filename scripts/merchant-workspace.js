@@ -769,7 +769,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       console.error(`${MODULE_ID} | save failed`, error);
       notify(
         "error",
-        "Nothing was saved. Review the merchant fields and try again; if it keeps failing, open Help & Diagnostics and share the version details.",
+        "Nothing was saved. Review the merchant fields and try again; if it keeps failing, share this exact status message with the GM.",
       );
     }
   }

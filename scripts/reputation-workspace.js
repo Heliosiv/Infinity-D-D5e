@@ -526,7 +526,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     } catch (error) {
       console.error(`${MODULE_ID} | save failed`, error);
       ui.notifications?.error(
-        "The faction was not saved. Review the fields and try again; if it keeps failing, open Help & Diagnostics and share the version details.",
+        "The faction was not saved. Review the faction fields and try again; if it keeps failing, share this exact status message with the GM.",
       );
     }
   }

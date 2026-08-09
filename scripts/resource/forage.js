@@ -35,11 +35,112 @@ export function forageTargetChannels(value) {
 }
 
 /**
+ * Normalize a forage-drive selection to one target per actor.
+ *
+ * New callers submit `foragers`, while legacy callers may continue to submit
+ * `targetActorIds` plus one shared `forageTarget`. Canonical rows win when at
+ * least one is valid; otherwise the legacy selection is expanded. Duplicate
+ * actor ids are deterministic (first valid row wins).
+ *
+ * @param {object} input
+ * @param {Array<{actorId:string,forageTarget:string}>} [input.foragers]
+ * @param {string[]} [input.targetActorIds]
+ * @param {string} [input.forageTarget]
+ * @returns {Array<{actorId:string,forageTarget:"food-water"|"food"|"water"}>}
+ */
+export function normalizeForagerAssignments({
+  foragers = [],
+  targetActorIds = [],
+  forageTarget = FORAGE_TARGETS.BOTH,
+} = {}) {
+  const allowedTargets = new Set(Object.values(FORAGE_TARGETS));
+  const normalizeRows = (rows, resolveTarget) => {
+    const seen = new Set();
+    const out = [];
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const actorId = String(
+        row && typeof row === "object" ? (row.actorId ?? "") : (row ?? ""),
+      ).trim();
+      const target = resolveTarget(row);
+      if (!actorId || seen.has(actorId) || !allowedTargets.has(target))
+        continue;
+      seen.add(actorId);
+      out.push({ actorId, forageTarget: target });
+    }
+    return out;
+  };
+
+  const canonical = normalizeRows(foragers, (row) => row?.forageTarget);
+  if (canonical.length > 0) return canonical;
+
+  const legacyTarget = normalizeForageTarget(forageTarget);
+  return normalizeRows(targetActorIds, () => legacyTarget);
+}
+
+/**
+ * Summarize normalized per-forager targets for drive-level validation.
+ * `target` represents the union of requested channels; `individualTargets`
+ * retains the exact actor choices so mixed drives remain distinguishable.
+ *
+ * @returns {{target:"food-water"|"food"|"water"|null,food:boolean,
+ *            water:boolean,individualTargets:Record<string,string>}}
+ */
+export function aggregateForageAssignments(assignments = []) {
+  const normalized = normalizeForagerAssignments({ foragers: assignments });
+  let food = false;
+  let water = false;
+  for (const assignment of normalized) {
+    const channels = forageTargetChannels(assignment.forageTarget);
+    food ||= channels.food;
+    water ||= channels.water;
+  }
+  const target =
+    food && water
+      ? FORAGE_TARGETS.BOTH
+      : food
+        ? FORAGE_TARGETS.FOOD
+        : water
+          ? FORAGE_TARGETS.WATER
+          : null;
+  return {
+    target,
+    food,
+    water,
+    individualTargets: Object.fromEntries(
+      normalized.map(({ actorId, forageTarget }) => [actorId, forageTarget]),
+    ),
+  };
+}
+
+function finiteNumberOrNull(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function resolveChannelDc({ explicit, common, env, channel }) {
+  const capitalized = `${channel[0].toUpperCase()}${channel.slice(1)}`;
+  for (const candidate of [
+    explicit,
+    common,
+    env?.[`${channel}Dc`],
+    env?.[`dc${capitalized}`],
+    env?.dc,
+  ]) {
+    const normalized = finiteNumberOrNull(candidate);
+    if (normalized !== null) return normalized;
+  }
+  return 0;
+}
+
+/**
  * Resolve a single forager's yield.
  *
  * @param {object} args
  * @param {number} args.rollTotal       - the Survival check total
  * @param {number} args.dc              - the environment DC
+ * @param {number} [args.foodDc]         - food-specific DC (falls back to dc/environment)
+ * @param {number} [args.waterDc]        - water-specific DC (falls back to dc/environment)
  * @param {number} [args.wisMod=0]      - the forager's Wisdom modifier
  * @param {number} [args.foodDie=0]     - the pre-rolled food die (e.g. a 1d6 result)
  * @param {number} [args.waterDie=0]    - the pre-rolled water die
@@ -51,6 +152,8 @@ export function forageTargetChannels(value) {
 export function computeForageYield({
   rollTotal,
   dc,
+  foodDc,
+  waterDc,
   wisMod = 0,
   foodDie = 0,
   waterDie = 0,
@@ -59,25 +162,79 @@ export function computeForageYield({
   waterEnabled = true,
 } = {}) {
   const total = Number(rollTotal);
-  const target = Number(dc) || 0;
   const mod = Number(wisMod) || 0;
-  const margin = (Number.isFinite(total) ? total : 0) - target;
+  const resolvedFoodDc = resolveChannelDc({
+    explicit: foodDc,
+    common: dc,
+    env,
+    channel: "food",
+  });
+  const resolvedWaterDc = resolveChannelDc({
+    explicit: waterDc,
+    common: dc,
+    env,
+    channel: "water",
+  });
+  const requestedDcs = [
+    ...(foodEnabled ? [resolvedFoodDc] : []),
+    ...(waterEnabled ? [resolvedWaterDc] : []),
+  ];
+  const legacyDc =
+    finiteNumberOrNull(dc) ??
+    finiteNumberOrNull(env?.dc) ??
+    (requestedDcs.length > 0 ? Math.min(...requestedDcs) : 0);
+  const resolvedTotal = Number.isFinite(total) ? total : 0;
+  const margin = resolvedTotal - legacyDc;
+  const foodMargin = resolvedTotal - resolvedFoodDc;
+  const waterMargin = resolvedTotal - resolvedWaterDc;
   const forageable = !env || env.forageable !== false;
-  const success = forageable && Number.isFinite(total) && total >= target;
+  const foodSuccess =
+    foodEnabled &&
+    forageable &&
+    Number.isFinite(total) &&
+    total >= resolvedFoodDc;
+  const waterSuccess =
+    waterEnabled &&
+    forageable &&
+    Number.isFinite(total) &&
+    total >= resolvedWaterDc;
+  const success = foodSuccess || waterSuccess;
   if (!success) {
-    return { success: false, food: 0, water: 0, margin };
+    return {
+      success: false,
+      foodSuccess,
+      waterSuccess,
+      food: 0,
+      water: 0,
+      margin,
+      foodDc: resolvedFoodDc,
+      waterDc: resolvedWaterDc,
+      foodMargin,
+      waterMargin,
+    };
   }
   const wantsFood =
-    foodEnabled && (!env || String(env.yieldFood ?? "1d6") !== "0");
+    foodSuccess && (!env || String(env.yieldFood ?? "1d6") !== "0");
   const wantsWater =
-    waterEnabled && (!env || String(env.yieldWater ?? "1d6") !== "0");
+    waterSuccess && (!env || String(env.yieldWater ?? "1d6") !== "0");
   const food = wantsFood
     ? Math.max(0, Math.floor(Number(foodDie) || 0) + mod)
     : 0;
   const water = wantsWater
     ? Math.max(0, Math.floor(Number(waterDie) || 0) + mod)
     : 0;
-  return { success: true, food, water, margin };
+  return {
+    success: true,
+    foodSuccess,
+    waterSuccess,
+    food,
+    water,
+    margin,
+    foodDc: resolvedFoodDc,
+    waterDc: resolvedWaterDc,
+    foodMargin,
+    waterMargin,
+  };
 }
 
 /**
@@ -95,23 +252,92 @@ export function combineYields(perForager, mode = "each") {
   const list = (Array.isArray(perForager) ? perForager : []).filter(Boolean);
   if (mode !== "best") return list.map((entry) => ({ ...entry }));
 
-  const successes = list.filter((entry) => entry.success);
-  if (successes.length === 0) return list.map((entry) => ({ ...entry }));
-  let best = successes[0];
-  let bestScore = (best.food ?? 0) + (best.water ?? 0);
-  for (const entry of successes.slice(1)) {
-    const score = (entry.food ?? 0) + (entry.water ?? 0);
-    if (score > bestScore) {
-      best = entry;
-      bestScore = score;
-    }
-  }
-  // Only the winner deposits; everyone else contributes nothing in "best" mode.
-  return list.map((entry) =>
-    entry === best
-      ? { ...entry }
-      : { ...entry, food: 0, water: 0, suppressed: entry.success },
+  const targetFor = (entry) => normalizeForageTarget(entry?.forageTarget);
+  const channelSuccess = (entry, channel) => {
+    const channels = forageTargetChannels(targetFor(entry));
+    if (!channels[channel]) return false;
+    const explicit = entry?.[`${channel}Success`];
+    return typeof explicit === "boolean" ? explicit : entry?.success === true;
+  };
+  const homogeneousBoth = list.every(
+    (entry) => targetFor(entry) === FORAGE_TARGETS.BOTH,
   );
+  const hasSplitChannelOutcomes = list.some(
+    (entry) => channelSuccess(entry, "food") !== channelSuccess(entry, "water"),
+  );
+
+  // Preserve the legacy "one combined haul wins" rule when every forager was
+  // gathering both channels and every check resolved both channels together.
+  // Split-DC partial successes need one deterministic winner per resource or a
+  // valid food/water success can disappear behind the other channel's winner.
+  if (homogeneousBoth && !hasSplitChannelOutcomes) {
+    const successes = list.filter((entry) => entry.success);
+    if (successes.length === 0) return list.map((entry) => ({ ...entry }));
+    let best = successes[0];
+    let bestScore = (best.food ?? 0) + (best.water ?? 0);
+    for (const entry of successes.slice(1)) {
+      const score = (entry.food ?? 0) + (entry.water ?? 0);
+      if (score > bestScore) {
+        best = entry;
+        bestScore = score;
+      }
+    }
+    return list.map((entry) => {
+      if (entry === best) {
+        return {
+          ...entry,
+          foodSuppressed: false,
+          waterSuppressed: false,
+          suppressed: false,
+        };
+      }
+      const foodSuppressed = channelSuccess(entry, "food");
+      const waterSuppressed = channelSuccess(entry, "water");
+      return {
+        ...entry,
+        food: 0,
+        water: 0,
+        foodSuppressed,
+        waterSuppressed,
+        suppressed: foodSuppressed || waterSuppressed,
+      };
+    });
+  }
+
+  const firstBestFor = (channel) => {
+    let winner = null;
+    let winnerAmount = -Infinity;
+    for (const entry of list) {
+      if (!channelSuccess(entry, channel)) continue;
+      const candidate = Math.max(0, Number(entry?.[channel]) || 0);
+      if (candidate > winnerAmount) {
+        winner = entry;
+        winnerAmount = candidate;
+      }
+    }
+    return winner;
+  };
+  const foodWinner = firstBestFor("food");
+  const waterWinner = firstBestFor("water");
+
+  return list.map((entry) => {
+    const foodGathered = channelSuccess(entry, "food");
+    const waterGathered = channelSuccess(entry, "water");
+    const foodSuppressed = foodGathered && entry !== foodWinner;
+    const waterSuppressed = waterGathered && entry !== waterWinner;
+    const gatheredChannels = Number(foodGathered) + Number(waterGathered);
+    const suppressedChannels = Number(foodSuppressed) + Number(waterSuppressed);
+    return {
+      ...entry,
+      food: foodGathered && !foodSuppressed ? Math.max(0, entry.food ?? 0) : 0,
+      water:
+        waterGathered && !waterSuppressed ? Math.max(0, entry.water ?? 0) : 0,
+      foodSuppressed,
+      waterSuppressed,
+      suppressed:
+        gatheredChannels > 0 && suppressedChannels === gatheredChannels,
+    };
+  });
 }
 
 /**
@@ -127,7 +353,9 @@ export function combineYields(perForager, mode = "each") {
  * @param {string} args.targetUserId
  * @param {boolean} [args.noResponse=false]
  * @returns {{runId:string,actorId:string,food:number,water:number,success:boolean,
- *            suppressed:boolean,noResponse:boolean,targetUserId:string}}
+ *            foodSuccess:boolean,waterSuccess:boolean,foodSuppressed:boolean,
+ *            waterSuppressed:boolean,suppressed:boolean,noResponse:boolean,
+ *            targetUserId:string}}
  */
 export function buildForageAcknowledgement({
   runId,
@@ -142,6 +370,10 @@ export function buildForageAcknowledgement({
     food: Math.max(0, Math.floor(Number(entry?.food) || 0)),
     water: Math.max(0, Math.floor(Number(entry?.water) || 0)),
     success: entry?.success === true,
+    foodSuccess: entry?.foodSuccess === true,
+    waterSuccess: entry?.waterSuccess === true,
+    foodSuppressed: entry?.foodSuppressed === true,
+    waterSuppressed: entry?.waterSuppressed === true,
     suppressed: entry?.suppressed === true,
     noResponse: noResponse === true,
     targetUserId: String(targetUserId ?? ""),
@@ -162,7 +394,8 @@ export function buildForageAcknowledgement({
  * @param {object} args
  * @param {Array<{actorId,name,isStash,drawFromId}>} args.roster
  * @param {string[]} args.selectedIds  - actor ids the GM sent the check to
- * @param {Array<{actorId,food,water,success}>} args.foraged - online foragers' results
+ * @param {Array<{actorId,food,water,success,forageTarget}>} args.foraged - online foragers' results
+ * @param {Record<string,string>|Map<string,string>} [args.forageTargets] - targets for selected actors, including missing responses
  * @param {string} [args.partyStashId] - the configured single stash id ("" = none)
  * @param {boolean} [args.foodEnabled=true]
  * @param {boolean} [args.waterEnabled=true]
@@ -175,18 +408,39 @@ export function planForageDriveDeposits({
   roster = [],
   selectedIds = [],
   foraged = [],
+  forageTargets = {},
   partyStashId = "",
   foodEnabled = true,
   waterEnabled = true,
 } = {}) {
   const rosterById = new Map(
-    (Array.isArray(roster) ? roster : []).map((r) => [String(r.actorId), r]),
+    (Array.isArray(roster) ? roster : []).map((r) => [
+      String(r.actorId).trim(),
+      r,
+    ]),
   );
   const yieldById = new Map(
-    (Array.isArray(foraged) ? foraged : []).map((y) => [String(y.actorId), y]),
+    (Array.isArray(foraged) ? foraged : []).map((y) => [
+      String(y.actorId).trim(),
+      y,
+    ]),
   );
   const wantFood = foodEnabled !== false;
   const wantWater = waterEnabled !== false;
+  const mappedTarget = (actorId) => {
+    const value =
+      forageTargets instanceof Map
+        ? forageTargets.get(actorId)
+        : forageTargets && typeof forageTargets === "object"
+          ? forageTargets[actorId]
+          : null;
+    return Object.values(FORAGE_TARGETS).includes(value) ? value : null;
+  };
+  const finiteMetadataNumber = (value) => {
+    if (value == null || String(value).trim() === "") return null;
+    const normalized = Number(value);
+    return Number.isFinite(normalized) ? normalized : null;
+  };
 
   // A flagged stash is only an available per-member source. It becomes the one
   // communal forage destination only when selected as partyStashId.
@@ -206,40 +460,72 @@ export function planForageDriveDeposits({
   };
 
   for (const rawId of Array.isArray(selectedIds) ? selectedIds : []) {
-    const actorId = String(rawId);
+    const actorId = String(rawId).trim();
     const entry = rosterById.get(actorId);
     if (!entry) continue; // a selection that isn't tracked — ignore
     const y = yieldById.get(actorId);
+    const forageTarget =
+      mappedTarget(actorId) ?? normalizeForageTarget(y?.forageTarget);
+    const channels = forageTargetChannels(forageTarget);
     if (!y) {
       perForager.push({
         actorId,
         name: entry.name,
+        forageTarget,
         attempted: false,
         success: false,
+        foodSuccess: false,
+        waterSuccess: false,
+        foodDc: null,
+        waterDc: null,
+        foodMargin: null,
+        waterMargin: null,
+        foodSuppressed: false,
+        waterSuppressed: false,
+        suppressed: false,
         food: 0,
         water: 0,
       });
       continue;
     }
     const success = y.success === true;
+    const foodSuccess =
+      channels.food &&
+      (typeof y.foodSuccess === "boolean" ? y.foodSuccess : success);
+    const waterSuccess =
+      channels.water &&
+      (typeof y.waterSuccess === "boolean" ? y.waterSuccess : success);
     const food =
-      success && wantFood ? Math.max(0, Math.floor(Number(y.food) || 0)) : 0;
+      foodSuccess && wantFood
+        ? Math.max(0, Math.floor(Number(y.food) || 0))
+        : 0;
     const water =
-      success && wantWater ? Math.max(0, Math.floor(Number(y.water) || 0)) : 0;
+      waterSuccess && wantWater
+        ? Math.max(0, Math.floor(Number(y.water) || 0))
+        : 0;
     totalFood += food;
     totalWater += water;
     perForager.push({
       actorId,
       name: entry.name,
+      forageTarget,
       attempted: true,
       success,
+      foodSuccess,
+      waterSuccess,
+      foodDc: finiteMetadataNumber(y.foodDc),
+      waterDc: finiteMetadataNumber(y.waterDc),
+      foodMargin: finiteMetadataNumber(y.foodMargin),
+      waterMargin: finiteMetadataNumber(y.waterMargin),
       // "best" mode: a successful forager whose haul lost to a bigger one — they
       // gathered but contribute nothing, so the report shouldn't trumpet "+0".
       suppressed: success && y.suppressed === true,
+      foodSuppressed: foodSuccess && y.foodSuppressed === true,
+      waterSuppressed: waterSuccess && y.waterSuppressed === true,
       food,
       water,
     });
-    if (success && (food > 0 || water > 0)) {
+    if ((foodSuccess || waterSuccess) && (food > 0 || water > 0)) {
       const sourceId = stashActorId ?? String(entry.drawFromId ?? actorId);
       addToSource(sourceId, food, water);
     }

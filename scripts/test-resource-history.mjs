@@ -101,6 +101,8 @@ const upkeepResult = {
     id: "limited",
     label: "Limited",
     dc: 15,
+    foodDc: 15,
+    waterDc: 15,
   });
   assert.deepEqual(receipt.actors[0].resources, [
     { id: "food", label: "Food", consumed: 1, shortfall: 0 },
@@ -157,6 +159,61 @@ const upkeepResult = {
   }
 }
 
+/* Mixed forage assignments retain each character's target and split DCs. */
+{
+  const receipt = buildForageRunReceipt({
+    runId: "forage-mixed",
+    day: 44,
+    environment: {
+      id: "biome-rainforest",
+      label: "Rainforest",
+      dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+    },
+    forageAssignments: [
+      { actorId: "actor-a", forageTarget: "food" },
+      { actorId: "actor-b", forageTarget: "water" },
+    ],
+    perForager: [
+      {
+        actorId: "actor-a",
+        name: "Aria",
+        forageTarget: "food",
+        attempted: true,
+        success: true,
+        foodSuccess: true,
+        waterSuccess: false,
+        foodDc: 10,
+        waterDc: 15,
+        food: 4,
+        water: 0,
+      },
+      {
+        actorId: "actor-b",
+        name: "Brom",
+        forageTarget: "water",
+        attempted: true,
+        success: false,
+        foodSuccess: false,
+        waterSuccess: false,
+        foodDc: 10,
+        waterDc: 15,
+        food: 0,
+        water: 0,
+      },
+    ],
+    forageTarget: "food-water",
+    totalFood: 4,
+    totalWater: 0,
+  });
+  const [view] = presentRecentRuns([receipt]);
+  assert.equal(view.forageDrive.targetLabel, "Per-forager choices");
+  assert.equal(view.forageDrive.dcLabel, "Food 10 / Water 15");
+  assert.match(view.actors[0].forageNote, /Food only: \+4 food/);
+  assert.match(view.actors[1].forageNote, /Water missed DC 15/);
+}
+
 /* Interrupted acknowledgement never pretends to know the write outcome. */
 {
   const receipt = buildInterruptedRunReceipt(
@@ -174,7 +231,7 @@ const upkeepResult = {
     1_700_000_004_000,
   );
   assert.deepEqual(receipt, {
-    version: 1,
+    version: RESOURCE_RUN_RECEIPT_VERSION,
     runId: "interrupted-1",
     kind: "interrupted",
     trigger: "calendar",
@@ -185,7 +242,13 @@ const upkeepResult = {
     startedAt: 1_700_000_002_000,
     claimedAt: 1_700_000_003_000,
     recordedAt: 1_700_000_004_000,
-    environment: { id: "woods", label: "Deep Woods", dc: 17 },
+    environment: {
+      id: "woods",
+      label: "Deep Woods",
+      dc: 17,
+      foodDc: 17,
+      waterDc: 17,
+    },
     initiator: { userId: "gm-a", name: "Morgan" },
     actors: [
       {
@@ -222,12 +285,153 @@ const upkeepResult = {
   );
   assert.deepEqual(forageInterruption.forageContext, {
     target: "water",
+    assignments: [],
     destination: {
       mode: "party-stash",
       actorId: "stash-a",
       name: "Party Mule",
     },
   });
+
+  const mixedInterruption = buildInterruptedRunReceipt(
+    {
+      runId: "interrupted-forage-mixed",
+      trigger: "forage",
+      day: 44,
+      days: 1,
+      claimedAt: 1_700_000_008_000,
+      forageTarget: "food-water",
+      forageAssignments: [
+        { actorId: "actor-a", forageTarget: "food" },
+        { actorId: "actor-b", forageTarget: "water" },
+      ],
+      actors: [
+        {
+          actorId: "actor-a",
+          name: "Aria",
+          forageTarget: "food",
+        },
+        {
+          actorId: "actor-b",
+          name: "Brom",
+          forageTarget: "water",
+        },
+      ],
+    },
+    1_700_000_009_000,
+  );
+  const [mixedInterruptionView] = presentRecentRuns([mixedInterruption]);
+  assert.equal(
+    mixedInterruptionView.forageContext.targetLabel,
+    "Per-forager choices",
+  );
+  assert.equal(mixedInterruptionView.actors[0].forageTargetLabel, "Food only");
+  assert.equal(mixedInterruptionView.actors[0].hasForageTarget, true);
+  assert.equal(mixedInterruptionView.actors[1].forageTargetLabel, "Water only");
+}
+
+/* Missing DC metadata remains unknown instead of becoming a false DC 0. */
+{
+  const receipt = buildUpkeepRunReceipt({
+    result: upkeepResult,
+    environment: { id: "unknown", label: "Unknown", dc: null },
+    recordedAt: 1_700_000_010_000,
+  });
+  assert.deepEqual(receipt.environment, {
+    id: "unknown",
+    label: "Unknown",
+    dc: null,
+    foodDc: null,
+    waterDc: null,
+  });
+}
+
+/* Literal v1 forage receipts upgrade without losing their scalar DC or result. */
+{
+  const upgraded = normalizeRunReceipt({
+    version: 1,
+    runId: "legacy-forage-v1",
+    kind: "forage",
+    trigger: "forage",
+    status: "complete",
+    day: 40,
+    days: 1,
+    recordedAt: 1_700_000_011_000,
+    environment: { id: "limited", label: "Limited", dc: 15 },
+    actors: [
+      {
+        actorId: "actor-a",
+        name: "Aria",
+        resources: [],
+        forage: {
+          attempted: true,
+          success: true,
+          suppressed: false,
+          food: 4,
+          water: 3,
+          errors: [],
+        },
+        errors: [],
+      },
+    ],
+    partyResources: [],
+    exhaustionSuggestions: [],
+    forageContext: {
+      target: "food-water",
+      destination: { mode: "draw-sources" },
+    },
+    forageDrive: {
+      target: "food-water",
+      mode: "each",
+      dc: 15,
+      destination: { mode: "draw-sources" },
+      totalFood: 4,
+      totalWater: 3,
+      errors: [],
+    },
+  });
+  assert.equal(upgraded.version, RESOURCE_RUN_RECEIPT_VERSION);
+  assert.equal(upgraded.forageDrive.dc, 15);
+  assert.equal(upgraded.forageDrive.foodDc, 15);
+  assert.equal(upgraded.forageDrive.waterDc, 15);
+  assert.deepEqual(upgraded.forageDrive.assignments, []);
+  const [view] = presentRecentRuns([upgraded]);
+  assert.equal(view.forageDrive.dcLabel, "15");
+  assert.equal(view.forageDrive.targetLabel, "Food and water");
+  assert.equal(view.actors[0].forageNote, "Gathered +4 food / +3 water");
+}
+
+/* A no-response row keeps unknown per-channel DCs out of the receipt. */
+{
+  const receipt = buildForageRunReceipt({
+    runId: "forage-no-response",
+    environment: {
+      id: "biome-rainforest",
+      label: "Rainforest",
+      dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+    },
+    forageAssignments: [{ actorId: "actor-a", forageTarget: "food-water" }],
+    perForager: [
+      {
+        actorId: "actor-a",
+        name: "Aria",
+        forageTarget: "food-water",
+        attempted: false,
+        success: false,
+        foodDc: null,
+        waterDc: null,
+        food: 0,
+        water: 0,
+      },
+    ],
+    forageTarget: "food-water",
+  });
+  assert.equal("foodDc" in receipt.actors[0].forage, false);
+  assert.equal("waterDc" in receipt.actors[0].forage, false);
+  const [view] = presentRecentRuns([receipt]);
+  assert.equal(view.actors[0].forageNote, "Food and water: no roll recorded");
 }
 
 /* Normalization is allowlisted, newest-first, deduplicated, and exactly 20. */

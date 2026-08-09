@@ -1,6 +1,6 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the v0.3.1 interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
+This guide covers the v0.3.2 interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
 
 ## Open Home
 
@@ -14,7 +14,7 @@ Home groups destinations by intent:
 - **Run the Session** for active loot, downtime, and calendar work.
 - **Track the Campaign** for Quartermaster supplies, factions, and injuries.
 
-Quick-start cards are optional. Dismissed cards can be restored from **Help & Diagnostics** or **Infinity Settings**. Diagnostics can be copied safely; they include versions and integration availability, not campaign or character data.
+Home keeps its short guide and keyboard shortcuts behind the **Help** button in the header. Workspace-specific quick-start cards, such as Downtime's, can still be dismissed and restored from **Infinity Settings**.
 
 ## Use Loot Studio
 
@@ -62,7 +62,7 @@ Status messages answer three questions: what happened, whether anything changed,
 - **Validation error:** nothing changed. Correct the named field and submit again.
 - **Success:** the message names the confirmed result and the next available action.
 
-Technical identifiers remain in Advanced diagnostics. If a problem persists, copy Help & Diagnostics and give it to the GM without adding private character or campaign details.
+Technical identifiers remain in Advanced details where a workflow provides them. If a problem persists, give the GM the exact status message without adding private character or campaign details.
 
 ## Monk's Active Tiles
 

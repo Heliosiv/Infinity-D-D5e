@@ -1,6 +1,6 @@
 # Resource System Product Roadmap
 
-## v0.3.1 interface quick start
+## v0.3.2 interface quick start
 
 Open **Home → Track the Campaign → Quartermaster**. Start in Today, follow the recommended next action, and review visible safety or disabled-control reasons. **Recent Runs** remains read-only. Open **Setup & Rules** for the first-setup checklist, environments, roster, sources, and automation. Players use Home or `Shift+Q` for the permission-safe Party Supplies view. Offline and interrupted states state whether anything changed and whether to retry or wait for recovery.
 
@@ -41,7 +41,7 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.73 source has a useful foundation; its installed-world acceptance
+The v0.3.2 source has a useful foundation; its installed-world acceptance
 status remains bounded by the release gates below.
 
 ### Available now
@@ -63,14 +63,17 @@ status remains bounded by the release gates below.
   keyword. Search the Infinity item library and current Actor inventories, or
   use **Paste an Item UUID** for an item from any other world or compendium
   source. UUID and flag matches take priority over keywords.
-- Default environments cover abundant, limited, sparse, settlement, and
-  underground travel.
+- Default environments cover abundant, limited, sparse, settlement, underground,
+  forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra,
+  and riverlands travel. The legacy scarcity tiers follow the established
+  foraging DCs; biome presets are module starting points, not claimed
+  as additional core rules.
 - The active environment can be copied into a collision-safe custom region and
-  edited in Quartermaster. Custom names, forage availability, Survival DCs,
-  and bounded food/water yield formulas are validated before persistence;
+  edited in Quartermaster. Custom names, forage availability, separate food and
+  water Survival DCs, and bounded food/water yield formulas are validated before persistence;
   built-in presets remain immutable.
-- The GM can change the current environment, manually advance one upkeep day,
-  or start a forage-only drive.
+- The GM can change the current environment, use one day of supplies without
+  moving the world clock, or start a forage-only drive.
 - Automatic upkeep can react to Simple Calendar or core world-time day changes.
   Forward jumps are capped, same-day events are deduplicated, and backward time
   does not create negative upkeep.
@@ -93,7 +96,7 @@ status remains bounded by the release gates below.
 - The GM and player surfaces share one source-aware outlook model, so individual
   packs, nominated stashes, the party stash, and party-wide pools are counted
   consistently.
-- Structural configuration is schema version 4. The legacy duplicated runtime
+- Structural configuration is schema version 5. The legacy duplicated runtime
   rules migrate once into the normal visible Foundry settings. Exact former
   defaults are repaired to whole-word ration matching, broad `food` matching is
   removed, reusable Waterskins are no longer disposable water, and customized
@@ -113,10 +116,11 @@ status remains bounded by the release gates below.
   stop a visible competing or interrupted run for explicit GM review instead of
   replaying the whole operation. The lease snapshots the initiating GM, start
   time, environment, participants, every possible inventory write target, and
-  forage target/destination so an interrupted receipt identifies the character
-  sheets and stashes to review without claiming an outcome.
+  forage assignments/destination so an interrupted receipt identifies each
+  character's requested supplies plus the sheets and stashes to review without
+  claiming an outcome.
 - Quartermaster keeps the newest 20 detailed, read-only receipts for automatic
-  upkeep, Advance Day, Forage Drive, and explicitly acknowledged interrupted
+  upkeep, Use Daily Supplies, Forage Drive, and explicitly acknowledged interrupted
   runs. Receipts are normalized plain data in the private run state. They store
   historical labels, initiating GM, timing, affected actors and inventory
   targets, and accounting outcomes, never Actor or Item documents, match rules,
@@ -214,7 +218,7 @@ automation and deterministic test worlds.
 
 ### 4. Manual upkeep
 
-1. The GM chooses **Advance Day**.
+1. The GM chooses **Use Daily Supplies**.
 2. A confirmation names the roster size and explains that the world clock will
    not change.
 3. The same durable consumption pipeline used by automatic upkeep runs for one
@@ -226,18 +230,21 @@ Manual upkeep must not be a separate calculation or write path.
 
 ### 5. Forage-only drive
 
-1. The GM chooses **Forage Drive**, selects tracked actors, chooses food and
-   water together, food only, or water only, and reviews the DC and destination.
+1. The GM chooses **Forage Drive**, selects tracked actors, assigns food and
+   water together, food only, or water only separately to each forager, and
+   reviews the food DC, water DC, and destination.
 2. Selected online owners roll or skip. For selected characters whose owners
    are offline, the active GM makes the Actor's Survival roll locally so the
    drive can run between sessions.
 3. A dismissed GM fallback roll or timed-out player is recorded as no response,
    not as a failed roll.
-4. The authoritative GM deposits only the chosen supplies, combining the result
-   once using the configured `each` or `best` rule.
+4. The authoritative GM checks each roll against only the assigned channels and
+   deposits only the chosen supplies. With `best`, homogeneous both-supply runs
+   retain the combined-haul rule; mixed runs keep one best food haul and one best
+   water haul.
 5. No day passes and no daily consumption occurs.
-6. A private receipt records the chosen supply target, resolved per-forager
-   outcome, destination, applied totals, and deposit errors.
+6. A private receipt records every per-forager assignment, both DCs, resolved
+   channel outcomes, destination, applied totals, and deposit errors.
 
 ### 6. Interrupted run
 
@@ -258,14 +265,14 @@ projections, not competing storage.
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
 | Auto-run, player view, default environment, forage mode, water, half rations, catch-up cap, report audience   | Normal Foundry world settings                                       | Full GM          | These are visible rules. Quartermaster and Module Settings must edit the same keys.                            |
 | Resource definitions, matching rules, roster, consumer and stash mapping, environment catalog, forage timeout | Versioned `resourceConfig` flag in the restricted private journal   | Full GM          | Structural configuration only. It is never synchronized to player clients.                                     |
-| Last seen day, selected current environment, latest report, active lease, recent receipts                     | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Schema v3 retains 20 normalized GM-only receipts; players receive only the latest sanitized upkeep projection. |
+| Last seen day, selected current environment, latest report, active lease, recent receipts                     | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Schema v4 retains 20 normalized GM-only receipts; players receive only the latest sanitized upkeep projection. |
 | Item quantities and exhaustion                                                                                | Foundry Actor and embedded Item documents                           | Authoritative GM | Actor documents remain the inventory source of truth.                                                          |
 | Quartermaster display                                                                                         | Live canonical reads                                                | None             | A privileged projection.                                                                                       |
 | Supplies display                                                                                              | Sanitized snapshot from authoritative GM                            | None             | Never persist a client copy as a second source of truth.                                                       |
 
 ### Configuration versioning
 
-The current structural resource configuration is version 4. The migration:
+The current structural resource configuration is version 5. The migration:
 
 1. Detect an unmigrated version 1 configuration.
 2. Copy each legacy runtime rule to its visible Foundry setting.
@@ -277,18 +284,21 @@ The current structural resource configuration is version 4. The migration:
 5. Repair the exact former water matcher by removing `waterskin`; reusable
    containers are not disposable day-unit stacks. Customized matcher lists are
    left alone.
-6. Save only the current structural shape in the private `resourceConfig` flag.
-7. Be safe to run more than once.
-8. Preserve the old world's customized behavior on the first upgraded launch.
-9. Leave malformed or absent fields at registered defaults.
+6. Infer built-in provenance for the five legacy preset IDs, preserve custom
+   collisions, and append missing shipped biome presets without overwriting
+   stored labels, DCs, yields, or order.
+7. Save only the current structural shape in the private `resourceConfig` flag.
+8. Be safe to run more than once.
+9. Preserve the old world's customized behavior on the first upgraded launch.
+10. Leave malformed or absent fields at registered defaults.
 
 All future changes follow the same pattern: normalize, migrate, serialize the
 current schema, then read it back in a test.
 
-The moving `resourceRunState` schema is version 3. Upgrading a version 2 state
-preserves the last seen day, selected environment, latest upkeep report, and
-active safety lease, then initializes an empty receipt history. Old latest
-reports are not reinterpreted as receipts.
+The moving `resourceRunState` schema is version 4. It preserves the last seen
+day, selected environment, latest upkeep report, active safety lease, and recent
+history while adding normalized per-forager assignments to forage leases.
+Older latest reports are not reinterpreted as receipts.
 
 ## Canonical data flow
 
@@ -301,7 +311,7 @@ flowchart LR
   Coordinator --> Services
   Settings["Visible world settings"] <--> Services
   Private["Restricted private-state journal"] <--> Services
-  RunStore["Private recent-run receipts (v3)"] <--> Services
+  RunStore["Private recent-run receipts (run state v4)"] <--> Services
   Actors["Actor and Item documents"] <--> Services
   Services --> Projection["Snapshot and report projection"]
   Projection --> GMUI
@@ -473,7 +483,7 @@ and `npm run ui:audit` pass.
 
 The first vertical slice is implemented in source: a GM can copy the current
 preset or custom region, immediately activate the copy, and safely edit its
-name, forage availability, DC, and food/water yields. The remaining deliverables
+name, forage availability, separate food and water DCs, and food/water yields. The remaining deliverables
 below cover full catalog management, preset previews, and portable files.
 
 #### Deliverables
@@ -481,7 +491,7 @@ below cover full catalog management, preset previews, and portable files.
 - Add create, duplicate, rename, reorder, and remove actions for environments.
 - Keep built-in presets available through reset or copy; do not require code
   edits for a custom region.
-- Edit forageability, DC, food formula, and water formula with inline
+- Edit forageability, food DC, water DC, food formula, and water formula with inline
   validation.
 - Preview the effect of a preset before applying it.
 - Prevent duplicate or blank IDs and unsafe dice formulas.

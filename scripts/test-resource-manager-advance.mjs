@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import Handlebars from "handlebars";
 
 const savedConst = globalThis.CONST;
 const savedFoundry = globalThis.foundry;
@@ -55,6 +58,20 @@ try {
   };
   globalThis.foundry = {
     applications: {
+      handlebars: {
+        async renderTemplate(path, context) {
+          assert.equal(
+            path,
+            "modules/infinity-dnd5e/templates/forage-drive-dialog.hbs",
+          );
+          return Handlebars.compile(
+            readFileSync(
+              new URL("../templates/forage-drive-dialog.hbs", import.meta.url),
+              "utf8",
+            ),
+          )(context);
+        },
+      },
       api: {
         ApplicationV2: class {
           constructor() {
@@ -206,7 +223,7 @@ try {
   assert.equal(
     confirmationCount,
     1,
-    "only one Advance Day request may await confirmation at a time",
+    "only one Use Daily Supplies request may await confirmation at a time",
   );
   assert.match(confirmationOptions.content, /Consume one day of supplies/);
   assert.match(confirmationOptions.content, /without foraging/);
@@ -239,7 +256,7 @@ try {
   assert.equal(
     renderCount,
     renderCountBeforeUnavailableDialogs,
-    "Advance Day cancels when its confirmation dialog is unavailable",
+    "Use Daily Supplies cancels when its confirmation dialog is unavailable",
   );
   globalThis.foundry.applications.api.DialogV2.confirm = () => {
     throw new Error("dialog failed to open");
@@ -248,7 +265,7 @@ try {
   assert.equal(
     renderCount,
     renderCountBeforeUnavailableDialogs,
-    "Advance Day cancels when its confirmation dialog throws",
+    "Use Daily Supplies cancels when its confirmation dialog throws",
   );
 
   const resetConfig = ResourceManagerApp.DEFAULT_OPTIONS.actions.resetConfig;
@@ -293,11 +310,11 @@ try {
   assert.match(foragePromptOptions.content, /Food &amp; water/);
   assert.match(foragePromptOptions.content, /Food only/);
   assert.match(foragePromptOptions.content, /Water only/);
-  assert.match(foragePromptOptions.content, /offline — GM rolls/);
+  assert.match(foragePromptOptions.content, /GM rolls/);
   assert.match(foragePromptOptions.content, /value="hero" checked \/>/);
   assert.match(
     foragePromptOptions.content,
-    /GM will roll every selected check/,
+    /active GM will roll each selected check/,
   );
   assert.equal(forageButton.disabled, true);
   assert.equal(forageButton.attributes.get("aria-busy"), "true");
@@ -316,4 +333,4 @@ try {
   else globalThis.ui = savedUi;
 }
 
-process.stdout.write("resource manager Advance Day validation passed\n");
+process.stdout.write("resource manager daily-supplies validation passed\n");

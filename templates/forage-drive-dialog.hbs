@@ -1,0 +1,64 @@
+{{!-- Infinity D&D5e - active-GM Forage Drive setup. --}}
+<div class="rfd-shell">
+  <header class="rfd-head">
+    <div>
+      <p class="rfd-eyebrow">Current environment</p>
+      <h2>{{environmentLabel}}</h2>
+    </div>
+    <span class="rfd-destination"><i class="fa-solid fa-box-open" aria-hidden="true"></i> {{destinationLabel}}</span>
+  </header>
+
+  <section class="rfd-dcs" aria-labelledby="rfd-dcs-heading">
+    <div class="rfd-section-heading">
+      <h3 id="rfd-dcs-heading">Survival DCs</h3>
+      <p>One Survival roll is checked against each supply the character gathers.</p>
+    </div>
+    <div class="rfd-dc-grid">
+      {{#if canForageFood}}
+      <label class="rm-field">
+        <span><i class="fa-solid fa-bread-slice" aria-hidden="true"></i> Food DC</span>
+        <input class="mw-input mw-input--num" type="number" name="foodDc" min="0" max="100" step="1" value="{{foodDc}}" />
+      </label>
+      {{/if}}
+      {{#if canForageWater}}
+      <label class="rm-field">
+        <span><i class="fa-solid fa-droplet" aria-hidden="true"></i> Water DC</span>
+        <input class="mw-input mw-input--num" type="number" name="waterDc" min="0" max="100" step="1" value="{{waterDc}}" />
+      </label>
+      {{/if}}
+    </div>
+    {{#if dcsDiffer}}<p class="rfd-rule-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> A character gathering both can find one supply even when the same roll misses the other DC.</p>{{/if}}
+  </section>
+
+  <fieldset class="rfd-foragers">
+    <legend>Foragers and assignments</legend>
+    <p class="rfd-fieldset-help">Choose Food, Water, or Both separately for every character.</p>
+    <div class="rfd-forager-list">
+      {{#each candidates}}
+      <div class="rfd-forager" data-forager-row>
+        <label class="rfd-forager__person">
+          <input type="checkbox" name="forager" value="{{actorId}}" checked />
+          <span>
+            <strong>{{name}}</strong>
+            <small class="{{#if online}}is-online{{else}}is-offline{{/if}}">{{statusLabel}}</small>
+          </span>
+        </label>
+        <label class="rfd-forager__target">
+          <span>Gather</span>
+          <select class="mw-input" data-forage-target aria-label="What {{name}} gathers">
+            {{#each targetOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+      </div>
+      {{else}}
+      <p class="rfd-empty">No consuming party members are available.</p>
+      {{/each}}
+    </div>
+  </fieldset>
+
+  {{#if allOffline}}
+  <p class="rfd-rule-note"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> No selected player is online. The active GM will roll each selected check.</p>
+  {{/if}}
+</div>

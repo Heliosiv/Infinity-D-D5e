@@ -96,7 +96,7 @@ import {
 {
   const cfg = normalizeResourceConfig({});
   assert.equal(cfg.version, RESOURCE_CONFIG_VERSION);
-  assert.equal(RESOURCE_CONFIG_VERSION, 4, "current structural schema is v4");
+  assert.equal(RESOURCE_CONFIG_VERSION, 5, "current structural schema is v5");
   assert.equal(cfg.forageMode, "each");
   assert.equal(cfg.halfRations, false);
   assert.equal(cfg.waterEnabled, true);
@@ -205,6 +205,56 @@ import {
   assert.ok(
     customizedV2.resources[0].matching.nameKeywords.includes("ration"),
     "customized legacy matcher lists are preserved",
+  );
+
+  const upgradedV4Environments = normalizeResourceConfig({
+    version: 4,
+    environments: [
+      {
+        id: "limited",
+        label: "Wind-scoured Limited Lands",
+        dc: 17,
+        forageable: true,
+        yieldFood: "2d4",
+        yieldWater: "1d4",
+      },
+      {
+        id: "biome-forest",
+        label: "Campaign Forest",
+        dc: 18,
+        forageable: true,
+        yieldFood: "1d4",
+        yieldWater: "1d4",
+      },
+      { id: "moon-marsh", label: "Moon Marsh", dc: 16 },
+    ],
+  }).environments;
+  assert.deepEqual(
+    upgradedV4Environments.slice(0, 3).map((environment) => environment.id),
+    ["limited", "biome-forest", "moon-marsh"],
+    "v5 migration preserves the saved catalog order",
+  );
+  const editedLimited = upgradedV4Environments[0];
+  assert.equal(editedLimited.builtIn, true);
+  assert.equal(editedLimited.label, "Wind-scoured Limited Lands");
+  assert.equal(editedLimited.dc, 17);
+  assert.equal(editedLimited.yieldFood, "2d4");
+  const customForest = upgradedV4Environments[1];
+  assert.equal(customForest.builtIn, false);
+  assert.equal(customForest.label, "Campaign Forest");
+  assert.equal(
+    upgradedV4Environments.filter(
+      (environment) => environment.id.toLowerCase() === "biome-forest",
+    ).length,
+    1,
+    "a custom biome collision wins instead of being overwritten",
+  );
+  assert.equal(
+    upgradedV4Environments.find(
+      (environment) => environment.id === "biome-desert",
+    )?.builtIn,
+    true,
+    "missing shipped biomes append during v5 normalization",
   );
 
   // Idempotent.
@@ -452,7 +502,7 @@ import {
   assert.equal(fresh.lastUpkeepResult, null);
   assert.equal(fresh.activeUpkeep, null);
   assert.deepEqual(fresh.recentRuns, []);
-  assert.equal(RESOURCE_RUN_STATE_VERSION, 3, "current run-state schema is v3");
+  assert.equal(RESOURCE_RUN_STATE_VERSION, 4, "current run-state schema is v4");
 
   const live = normalizeRunState({
     lastSeenDay: 12.9,
@@ -506,7 +556,18 @@ import {
         get(moduleId, key) {
           if (moduleId !== "infinity-dnd5e") return undefined;
           if (key === "resourceConfig")
-            return { forageMode: "best", waterEnabled: false };
+            return {
+              version: 4,
+              forageMode: "best",
+              waterEnabled: false,
+              environments: [
+                {
+                  id: "biome-desert",
+                  label: "Campaign Salt Desert",
+                  dc: 23,
+                },
+              ],
+            };
           return undefined;
         },
       },
@@ -515,6 +576,22 @@ import {
     assert.equal(cfg.forageMode, "best");
     assert.equal(cfg.waterEnabled, false);
     assert.ok(cfg.resources.length >= 3, "still seeds resources");
+    assert.equal(cfg.environments[0].label, "Campaign Salt Desert");
+    assert.equal(
+      cfg.environments[0].builtIn,
+      false,
+      "load preserves an old custom collision until migration persists it",
+    );
+    assert.equal(
+      cfg.environments.filter(
+        (environment) => environment.id === "biome-desert",
+      ).length,
+      1,
+    );
+    assert.ok(
+      cfg.environments.some((environment) => environment.id === "biome-forest"),
+      "load exposes missing shipped presets before the v5 write",
+    );
   } finally {
     if (originalGame === undefined) delete globalThis.game;
     else globalThis.game = originalGame;
@@ -593,6 +670,24 @@ import {
           matching: { flagTag: "medicine" },
         },
       ],
+      environments: [
+        {
+          id: "limited",
+          label: "Legacy Edited Limited",
+          dc: 17,
+          forageable: true,
+          yieldFood: "2d4",
+          yieldWater: "1d4",
+        },
+        {
+          id: "biome-forest",
+          label: "Legacy Custom Forest",
+          dc: 18,
+          forageable: true,
+          yieldFood: "1d4",
+          yieldWater: "1d4",
+        },
+      ],
     };
     const writes = [];
     let stored = raw;
@@ -649,6 +744,40 @@ import {
     assert.equal(writes[4].value.version, RESOURCE_CONFIG_VERSION);
     assert.equal(writes[4].value.forageTimeoutSeconds, 30);
     assert.equal(writes[4].value.resources[0].id, "medicine");
+    assert.deepEqual(
+      writes[4].value.environments.slice(0, 2).map((environment) => ({
+        id: environment.id,
+        label: environment.label,
+        builtIn: environment.builtIn,
+      })),
+      [
+        {
+          id: "limited",
+          label: "Legacy Edited Limited",
+          builtIn: true,
+        },
+        {
+          id: "biome-forest",
+          label: "Legacy Custom Forest",
+          builtIn: false,
+        },
+      ],
+      "v5 migration preserves edited legacy entries and custom collisions",
+    );
+    assert.equal(writes[4].value.environments[0].yieldFood, "2d4");
+    assert.equal(
+      writes[4].value.environments.filter(
+        (environment) => environment.id === "biome-forest",
+      ).length,
+      1,
+    );
+    assert.equal(
+      writes[4].value.environments.find(
+        (environment) => environment.id === "biome-desert",
+      )?.builtIn,
+      true,
+      "v5 migration appends missing biome presets",
+    );
     assert.equal(writes[5].key, "resourceRunState");
     assert.equal(
       writes[5].value.version,
@@ -673,6 +802,7 @@ import {
       initiator: null,
       actors: [],
       forageTarget: null,
+      forageAssignments: [],
       forageDestination: null,
     });
     assert.deepEqual(
@@ -1297,6 +1427,7 @@ import {
       initiator: null,
       actors: [],
       forageTarget: null,
+      forageAssignments: [],
       forageDestination: null,
     });
     assert.equal(assertUpkeepClaimCurrent("calendar-run"), true);
@@ -1438,6 +1569,7 @@ import {
     });
     assert.deepEqual(stored.recentRuns[0].forageContext, {
       target: "food",
+      assignments: [],
       destination: {
         mode: "party-stash",
         actorId: "stash-a",

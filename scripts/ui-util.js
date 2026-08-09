@@ -89,6 +89,16 @@ export const ENVIRONMENT_LABELS = Object.freeze({
   sparse: "Sparse",
   settlement: "Settlement",
   underground: "Underground",
+  "biome-forest": "Forest",
+  "biome-rainforest": "Rainforest",
+  "biome-grassland": "Grassland",
+  "biome-coast": "Coast",
+  "biome-hills": "Hills",
+  "biome-mountains": "Mountains",
+  "biome-swamp": "Swamp",
+  "biome-desert": "Desert",
+  "biome-tundra": "Tundra",
+  "biome-riverlands": "Riverlands",
 });
 
 /** Plain-English label for a resource id. Empty in -> empty out. */

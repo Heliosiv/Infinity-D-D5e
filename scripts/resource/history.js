@@ -6,7 +6,7 @@
  * configuration, and socket payloads never belong here.
  */
 
-export const RESOURCE_RUN_RECEIPT_VERSION = 1;
+export const RESOURCE_RUN_RECEIPT_VERSION = 2;
 export const RESOURCE_RUN_HISTORY_LIMIT = 20;
 
 const MAX_ACTORS = 100;
@@ -33,6 +33,14 @@ function text(value, fallback = "", maxLength = 160) {
 function nullableInteger(value) {
   if (value == null || !Number.isFinite(Number(value))) return null;
   return Math.floor(Number(value));
+}
+
+function nullableNumber(value) {
+  if (value == null || (typeof value === "string" && !value.trim())) {
+    return null;
+  }
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
 }
 
 function timestamp(value) {
@@ -62,11 +70,15 @@ export function normalizeRunEnvironmentSnapshot(value) {
   const requestedLabel = text(value.label, "", 200);
   if (!id && !requestedLabel) return null;
   const label = requestedLabel || id;
-  const dc = Number(value.dc);
+  const dc = nullableNumber(value.dc);
+  const foodDc = nullableNumber(value.foodDc);
+  const waterDc = nullableNumber(value.waterDc);
   return {
     id: id || null,
     label,
-    dc: Number.isFinite(dc) ? dc : null,
+    dc,
+    foodDc: foodDc ?? dc,
+    waterDc: waterDc ?? dc,
   };
 }
 
@@ -89,10 +101,14 @@ export function normalizeRunActorSnapshots(values) {
     const actorId = text(value.actorId, "", 200);
     if (!actorId || seen.has(actorId)) continue;
     seen.add(actorId);
+    const forageTarget = FORAGE_TARGETS.has(value.forageTarget)
+      ? value.forageTarget
+      : null;
     out.push({
       actorId,
       name: text(value.name, "Character", 200),
       role: RUN_ACTOR_ROLES.has(value.role) ? value.role : "participant",
+      ...(forageTarget ? { forageTarget } : {}),
     });
     if (out.length >= MAX_ACTORS) break;
   }
@@ -118,6 +134,11 @@ export function buildRunActorSnapshots({
       actorId,
       name: current?.name ?? text(value.name, "Character", 200),
       role: current && current.role !== role ? "participant-inventory" : role,
+      ...(FORAGE_TARGETS.has(value.forageTarget)
+        ? { forageTarget: value.forageTarget }
+        : current?.forageTarget
+          ? { forageTarget: current.forageTarget }
+          : {}),
     });
   };
   for (const actor of Array.isArray(writeTargets) ? writeTargets : []) {
@@ -131,12 +152,26 @@ export function buildRunActorSnapshots({
 
 function normalizeForage(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const forageTarget = FORAGE_TARGETS.has(value.forageTarget ?? value.target)
+    ? (value.forageTarget ?? value.target)
+    : null;
+  const foodDc = nullableNumber(value.foodDc);
+  const waterDc = nullableNumber(value.waterDc);
   return {
     attempted: value.attempted === true,
     success: value.success === true,
     suppressed: value.suppressed === true,
+    suppressedFood:
+      value.suppressedFood === true || value.foodSuppressed === true,
+    suppressedWater:
+      value.suppressedWater === true || value.waterSuppressed === true,
+    foodSuccess: value.foodSuccess === true,
+    waterSuccess: value.waterSuccess === true,
     food: amount(value.food),
     water: amount(value.water),
+    ...(forageTarget ? { forageTarget } : {}),
+    ...(foodDc !== null ? { foodDc } : {}),
+    ...(waterDc !== null ? { waterDc } : {}),
     errors: strings(value.errors),
   };
 }
@@ -233,15 +268,37 @@ export function normalizeForageDestination(value) {
   };
 }
 
+export function normalizeForageAssignments(values) {
+  const rows = Array.isArray(values) ? values : [];
+  const seen = new Set();
+  const assignments = [];
+  for (const value of rows.slice(0, MAX_ACTORS)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const actorId = text(value.actorId, "", 200);
+    const forageTarget = FORAGE_TARGETS.has(value.forageTarget ?? value.target)
+      ? (value.forageTarget ?? value.target)
+      : null;
+    if (!actorId || !forageTarget || seen.has(actorId)) continue;
+    seen.add(actorId);
+    assignments.push({ actorId, forageTarget });
+  }
+  return assignments;
+}
+
 function normalizeForageDrive(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const target = FORAGE_TARGETS.has(value.target) ? value.target : null;
   if (!target) return null;
-  const dc = Number(value.dc);
+  const dc = nullableNumber(value.dc);
+  const foodDc = nullableNumber(value.foodDc);
+  const waterDc = nullableNumber(value.waterDc);
   return {
     target,
     mode: value.mode === "best" ? "best" : "each",
-    dc: Number.isFinite(dc) ? dc : null,
+    dc,
+    foodDc: foodDc ?? dc,
+    waterDc: waterDc ?? dc,
+    assignments: normalizeForageAssignments(value.assignments),
     destination: normalizeForageDestination(value.destination),
     totalFood: amount(value.totalFood),
     totalWater: amount(value.totalWater),
@@ -253,8 +310,9 @@ function normalizeForageContext(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const target = FORAGE_TARGETS.has(value.target) ? value.target : null;
   const destination = normalizeForageDestination(value.destination);
-  if (!target && !destination) return null;
-  return { target, destination };
+  const assignments = normalizeForageAssignments(value.assignments);
+  if (!target && !destination && assignments.length === 0) return null;
+  return { target, assignments, destination };
 }
 
 /** Normalize one durable private receipt, dropping every unapproved field. */
@@ -441,6 +499,7 @@ export function buildForageRunReceipt({
   environment = null,
   perForager = [],
   forageTarget = "food-water",
+  forageAssignments = [],
   forageMode = "each",
   destination = null,
   totalFood = 0,
@@ -469,11 +528,18 @@ export function buildForageRunReceipt({
     })),
     partyResources: [],
     exhaustionSuggestions: [],
-    forageContext: { target: forageTarget, destination },
+    forageContext: {
+      target: forageTarget,
+      assignments: forageAssignments,
+      destination,
+    },
     forageDrive: {
       target: forageTarget,
       mode: forageMode,
       dc: environment?.dc,
+      foodDc: environment?.foodDc ?? environment?.dc,
+      waterDc: environment?.waterDc ?? environment?.dc,
+      assignments: forageAssignments,
       destination,
       totalFood,
       totalWater,
@@ -506,6 +572,7 @@ export function buildInterruptedRunReceipt(
       activeUpkeep.trigger === "forage"
         ? {
             target: activeUpkeep.forageTarget,
+            assignments: activeUpkeep.forageAssignments,
             destination: activeUpkeep.forageDestination,
           }
         : null,
@@ -527,7 +594,37 @@ function formatDateTime(value, { locale, timeZone } = {}) {
 }
 
 function forageNote(forage) {
-  if (!forage?.attempted) return "No roll recorded";
+  if (!forage?.attempted) {
+    return forage?.forageTarget
+      ? `${targetLabel(forage.forageTarget)}: no roll recorded`
+      : "No roll recorded";
+  }
+  if (forage.forageTarget) {
+    const channels =
+      forage.forageTarget === "food"
+        ? ["food"]
+        : forage.forageTarget === "water"
+          ? ["water"]
+          : ["food", "water"];
+    const details = channels.map((channel) => {
+      const title = channel === "food" ? "Food" : "Water";
+      const suppressed =
+        channel === "food"
+          ? forage.suppressedFood === true
+          : forage.suppressedWater === true;
+      const success =
+        channel === "food"
+          ? forage.foodSuccess === true
+          : forage.waterSuccess === true;
+      const gathered = amount(forage[channel]);
+      const dc = channel === "food" ? forage.foodDc : forage.waterDc;
+      if (suppressed) return `${title} gathered; best ${channel} haul kept`;
+      if (success && gathered > 0) return `+${gathered} ${channel}`;
+      if (success) return `${title} check succeeded; no usable amount`;
+      return `${title} missed${Number.isFinite(dc) ? ` DC ${dc}` : ""}`;
+    });
+    return `${targetLabel(forage.forageTarget)}: ${details.join(" / ")}`;
+  }
   if (!forage.success) return "No supplies gathered";
   if (forage.suppressed) return "Gathered; best party haul kept";
   const totals = [];
@@ -542,6 +639,26 @@ function targetLabel(target) {
   if (target === "food") return "Food only";
   if (target === "water") return "Water only";
   return "Food and water";
+}
+
+function forageDcLabel(forageDrive) {
+  const foodDc = forageDrive?.foodDc;
+  const waterDc = forageDrive?.waterDc;
+  const target = forageDrive?.target;
+  if (target === "food") {
+    return Number.isFinite(foodDc) ? `Food ${foodDc}` : "Not recorded";
+  }
+  if (target === "water") {
+    return Number.isFinite(waterDc) ? `Water ${waterDc}` : "Not recorded";
+  }
+  if (Number.isFinite(foodDc) && Number.isFinite(waterDc)) {
+    return foodDc === waterDc
+      ? String(foodDc)
+      : `Food ${foodDc} / Water ${waterDc}`;
+  }
+  return Number.isFinite(forageDrive?.dc)
+    ? String(forageDrive.dc)
+    : "Not recorded";
 }
 
 function runActorRoleLabel(role) {
@@ -566,6 +683,11 @@ export function presentRecentRuns(history, dateOptions = {}) {
         ...actor,
         roleLabel: isInterrupted ? runActorRoleLabel(actor.role) : "",
         hasRole: isInterrupted,
+        forageTargetLabel:
+          isInterrupted && actor.forageTarget
+            ? targetLabel(actor.forageTarget)
+            : "",
+        hasForageTarget: isInterrupted && Boolean(actor.forageTarget),
         forageNote: actor.forage ? forageNote(actor.forage) : "",
         hasForage: Boolean(actor.forage),
         hasResources: actor.resources.length > 0,
@@ -576,8 +698,19 @@ export function presentRecentRuns(history, dateOptions = {}) {
     const forageDrive = receipt.forageDrive
       ? {
           ...receipt.forageDrive,
-          hasDc: receipt.forageDrive.dc !== null,
-          targetLabel: targetLabel(receipt.forageDrive.target),
+          hasDc:
+            receipt.forageDrive.dc !== null ||
+            receipt.forageDrive.foodDc !== null ||
+            receipt.forageDrive.waterDc !== null,
+          dcLabel: forageDcLabel(receipt.forageDrive),
+          targetLabel:
+            new Set(
+              receipt.forageDrive.assignments.map(
+                (assignment) => assignment.forageTarget,
+              ),
+            ).size > 1
+              ? "Per-forager choices"
+              : targetLabel(receipt.forageDrive.target),
           modeLabel:
             receipt.forageDrive.mode === "best"
               ? "Best haul feeds the party"
@@ -590,9 +723,16 @@ export function presentRecentRuns(history, dateOptions = {}) {
     const forageContext = receipt.forageContext
       ? {
           ...receipt.forageContext,
-          targetLabel: receipt.forageContext.target
-            ? targetLabel(receipt.forageContext.target)
-            : "Target not recorded",
+          targetLabel:
+            new Set(
+              receipt.forageContext.assignments.map(
+                (assignment) => assignment.forageTarget,
+              ),
+            ).size > 1
+              ? "Per-forager choices"
+              : receipt.forageContext.target
+                ? targetLabel(receipt.forageContext.target)
+                : "Target not recorded",
           destinationLabel:
             receipt.forageContext.destination?.name ??
             "Destination not recorded",
@@ -603,12 +743,12 @@ export function presentRecentRuns(history, dateOptions = {}) {
         ? "Interrupted forage drive"
         : receipt.trigger === "calendar"
           ? "Interrupted automatic upkeep"
-          : "Interrupted Advance Day"
+          : "Interrupted daily supplies"
       : receipt.trigger === "forage"
         ? "Forage Drive"
         : receipt.trigger === "calendar"
           ? "Automatic upkeep"
-          : "Advance Day";
+          : "Use Daily Supplies";
     const statusLabel = isInterrupted
       ? "Interrupted"
       : receipt.status === "partial"

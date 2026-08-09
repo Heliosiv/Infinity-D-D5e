@@ -69,6 +69,7 @@ import {
   isInfinityDialogAvailable,
   promptInfinityDialog,
 } from "./dialog-contract.js";
+import { promptForageDriveDialog } from "./forage-drive-dialog.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
@@ -252,6 +253,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     if (hasBlockingResourceConflicts) this._setupExpanded = true;
     const isAuthoritative = isAuthoritativeGM();
     const activeUpkeep = state.activeUpkeep;
+    const currentEnvForageable = Boolean(
+      currentEnv && currentEnv.forageable !== false,
+    );
+    const currentEnvFoodDc = currentEnv?.foodDc ?? currentEnv?.dc ?? null;
+    const currentEnvWaterDc = currentEnv?.waterDc ?? currentEnv?.dc ?? null;
+    const canRunResourceWrites =
+      isAuthoritative && !hasBlockingResourceConflicts && !activeUpkeep;
     const overview = buildResourceOverview({
       config,
       state,
@@ -394,10 +402,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         : null,
       canCopyEnvironment: isAuthoritative && Boolean(currentEnv),
       currentEnvLabel: currentEnv ? environmentDisplayLabel(currentEnv) : "—",
-      currentEnvForageable: currentEnv
-        ? currentEnv.forageable !== false
-        : false,
+      currentEnvForageable: currentEnv ? currentEnvForageable : false,
       currentEnvDc: currentEnv?.dc ?? null,
+      currentEnvFoodDc,
+      currentEnvWaterDc,
+      currentEnvDcsDiffer:
+        currentEnvFoodDc !== null &&
+        currentEnvWaterDc !== null &&
+        currentEnvFoodDc !== currentEnvWaterDc,
       forageMode: config.forageMode,
       forageModeEach: config.forageMode === "each",
       halfRations: config.halfRations,
@@ -405,8 +417,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       maxCatchUpDays: config.maxCatchUpDays,
       autoTrigger,
       isAuthoritative,
-      canRunResourceWrites:
-        isAuthoritative && !hasBlockingResourceConflicts && !activeUpkeep,
+      canRunResourceWrites,
+      canRunForageDrive: canRunResourceWrites && currentEnvForageable,
       hasActiveUpkeep: Boolean(activeUpkeep),
       activeUpkeep: activeUpkeep
         ? {
@@ -416,7 +428,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
                 ? "automatic day change"
                 : activeUpkeep.trigger === "forage"
                   ? "forage drive"
-                  : "manual Advance Day",
+                  : "manual daily supplies",
             dayLabel:
               activeUpkeep.day == null
                 ? "unknown day"
@@ -465,9 +477,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       this._setupExpanded = event.currentTarget?.open === true;
     });
 
-    // Enter = primary action (Advance Day), matching the loot tools. Bound once;
-    // skips form fields and respects the keyboard-shortcuts setting. Advance Day
-    // confirms first, so an accidental Enter can't blow through.
+    // Enter = primary action (Use Daily Supplies), matching the loot tools.
+    // Bound once; skips form fields and respects the keyboard-shortcuts setting.
+    // The action confirms first, so an accidental Enter can't blow through.
     if (root.dataset.idxKeydownBound !== "true") {
       root.dataset.idxKeydownBound = "true";
       root.addEventListener("keydown", (event) => {
@@ -688,7 +700,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       // the service-level upkeep guard has already been released.
       const party = discoverPartyActors();
       const ok = await confirmInfinityDialog({
-        window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
+        window: {
+          title: "Use daily supplies?",
+          icon: "fa-solid fa-utensils",
+        },
         content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
         rejectClose: false,
       });
@@ -720,6 +735,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       // deposit what they gather — no consumption, no day tick.
       const {
         defaultDc,
+        defaultFoodDc,
+        defaultWaterDc,
+        environmentLabel,
+        forageable,
         stashName,
         candidates,
         canForageFood,
@@ -731,92 +750,38 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         );
         return;
       }
-      if (!isInfinityDialogAvailable("prompt")) return;
       if (!canForageFood && !canForageWater) {
         notify("warn", `enable and configure food or water before foraging.`);
         return;
       }
+      if (!forageable) {
+        notify(
+          "warn",
+          `${environmentLabel} does not allow foraging. Choose a forageable environment first; nothing changed.`,
+        );
+        return;
+      }
 
-      const anyOnline = candidates.some((c) => c.online);
-      const rows = candidates
-        .map((c) => {
-          const tag = c.online
-            ? ""
-            : ' <span style="opacity:0.6;">(offline — GM rolls)</span>';
-          return `<label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" name="forager" value="${escapeHtml(c.actorId)}" checked />
-          <span>${escapeHtml(c.name)}${tag}</span>
-        </label>`;
-        })
-        .join("");
-      const destLine = stashName
-        ? `Gathered supplies go to <strong>${escapeHtml(stashName)}</strong>'s stash.`
-        : `No party stash set — each forager keeps their own haul.`;
-      const defaultTarget =
-        canForageFood && canForageWater
-          ? "food-water"
-          : canForageFood
-            ? "food"
-            : "water";
-      const content = `
-      <p>Send a Wisdom (Survival) check to selected online players. You will roll for selected characters whose players are offline.</p>
-      <label class="rm-field" style="display:grid; gap:4px; margin-bottom:8px;">
-        <span>Survival DC</span>
-        <input type="number" name="dc" min="1" step="1" value="${Number(defaultDc) || 15}" />
-      </label>
-      <fieldset style="border:1px solid var(--color-border-light-tertiary,#5553); border-radius:6px; padding:6px 10px; margin-bottom:8px;">
-        <legend>Gather</legend>
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="radio" name="forageTarget" value="food-water" ${defaultTarget === "food-water" ? "checked" : ""} ${canForageFood && canForageWater ? "" : "disabled"} />
-          <span>Food &amp; water</span>
-        </label>
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="radio" name="forageTarget" value="food" ${defaultTarget === "food" ? "checked" : ""} ${canForageFood ? "" : "disabled"} />
-          <span>Food only</span>
-        </label>
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="radio" name="forageTarget" value="water" ${defaultTarget === "water" ? "checked" : ""} ${canForageWater ? "" : "disabled"} />
-          <span>Water only</span>
-        </label>
-      </fieldset>
-      <fieldset style="border:1px solid var(--color-border-light-tertiary,#5553); border-radius:6px; padding:6px 10px;">
-        <legend>Foragers</legend>
-        ${rows || "<p>No party members.</p>"}
-      </fieldset>
-      <p style="opacity:0.8; margin:8px 0 0;">${destLine}</p>
-      ${anyOnline ? "" : '<p style="opacity:0.8; margin:6px 0 0;">No selected player is online, so the GM will roll every selected check.</p>'}`;
-
-      const result = await promptInfinityDialog({
-        window: { title: "Forage Drive", icon: "fa-solid fa-wheat-awn" },
-        content,
-        ok: {
-          label: "Send check",
-          icon: "fa-solid fa-paper-plane",
-          callback: (_e, button) => {
-            const form = button?.form;
-            if (!form) return null;
-            const dc = Math.max(1, Number(form.elements?.dc?.value) || 0);
-            const ids = Array.from(
-              form.querySelectorAll('input[name="forager"]:checked'),
-            ).map((el) => el.value);
-            const forageTarget = String(
-              form.elements?.forageTarget?.value ?? "",
-            );
-            return { dc, ids, forageTarget };
-          },
-        },
-        rejectClose: false,
+      const result = await promptForageDriveDialog({
+        defaultDc,
+        defaultFoodDc,
+        defaultWaterDc,
+        environmentLabel,
+        stashName,
+        candidates,
+        canForageFood,
+        canForageWater,
       });
       if (!result) return;
-      if (!Array.isArray(result.ids) || result.ids.length === 0) {
+      if (!Array.isArray(result.foragers) || result.foragers.length === 0) {
         notify("info", `select at least one forager.`);
         return;
       }
       playModuleSound(SOUND_EVENTS.ROLL_START);
       await runForageDrive({
-        dc: result.dc,
-        targetActorIds: result.ids,
-        forageTarget: result.forageTarget,
+        foodDc: result.foodDc,
+        waterDc: result.waterDc,
+        foragers: result.foragers,
       });
       this.render(false);
     } finally {

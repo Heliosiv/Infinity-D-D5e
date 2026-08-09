@@ -10,19 +10,14 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
 import {
   getPlayerSurfaceAvailability,
-  getPlayerSurfaceStatus,
   openPlayerSurface,
   PLAYER_SURFACE_LABELS,
   PLAYER_SURFACES,
 } from "./player-surface.js";
+import { promptInfinityDialog } from "./dialog-contract.js";
 import * as settingsApi from "./settings.js";
 import { getTool, getTools, TOOL_INTENTS } from "./tool-registry.js";
-import {
-  dismissQuickStart as dismissStoredQuickStart,
-  getUiPreferences as getStoredUiPreferences,
-  restoreQuickStarts as restoreStoredQuickStarts,
-} from "./ui-preferences.js";
-import { prettyCategory, notify } from "./ui-util.js";
+import { escapeHtml, prettyCategory, notify } from "./ui-util.js";
 import { bindFullGmWindowGuard, openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -97,38 +92,12 @@ const PLAYER_HOME_SURFACE_SET = new Set(
   PLAYER_HOME_DESTINATIONS.map((entry) => entry.surface),
 );
 
-const QUICK_STARTS = Object.freeze({
-  gm: Object.freeze({
-    id: "home-gm:v1",
-    version: 1,
-    title: "Quick start for a Game Master",
-    body: "Prepare what the group needs, keep one session tool open during play, then record the lasting result.",
-    steps: Object.freeze([
-      "Prepare a merchant or review Quartermaster supplies before play.",
-      "Use Run the Session for loot and active downtime.",
-      "Use Track the Campaign for supplies, factions, and lasting changes.",
-    ]),
-  }),
-  player: Object.freeze({
-    id: "home-player:v1",
-    version: 1,
-    title: "Quick start",
-    body: "Everything here is already limited to information and actions available to you.",
-    steps: Object.freeze([
-      "Open Shops or Downtime when the GM makes them available.",
-      "Check Calendar during play.",
-      "Review Party Supplies, Factions, and Injuries between turns.",
-    ]),
-  }),
-});
-
 export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   ApplicationV2,
 ) {
   static _instance = null;
   static _recentToolIds = [];
   static _recentsHydrated = false;
-  static _sessionDismissedQuickStarts = new Set();
   static RECENT_LIMIT = 3;
 
   static _hydrateRecents() {
@@ -170,9 +139,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       launch: InfinityDashboardApp._onLaunch,
       openSettings: InfinityDashboardApp._onOpenSettings,
       help: InfinityDashboardApp._onHelp,
-      copyDiagnostics: InfinityDashboardApp._onCopyDiagnostics,
-      dismissQuickStart: InfinityDashboardApp._onDismissQuickStart,
-      restoreQuickStarts: InfinityDashboardApp._onRestoreQuickStarts,
     },
   };
 
@@ -199,7 +165,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     this._unbindFullGmWindowGuard = isFullGM()
       ? bindFullGmWindowGuard(this)
       : bindPlayerHomePromotionGuard(this);
-    this._focusAfterRender = null;
   }
 
   async _prepareContext() {
@@ -215,14 +180,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       : buildPlayerHomeActions();
     const groups = groupHomeActionsByIntent(actions);
     const recentActions = resolveRecentActions(actions);
-    const preferences = await readUiPreferences();
-    const quickStart = fullGm ? QUICK_STARTS.gm : QUICK_STARTS.player;
-    const dismissedQuickStarts = readDismissedQuickStarts(preferences);
-    const quickStartDismissed = isQuickStartDismissed(
-      quickStart,
-      dismissedQuickStarts,
-    );
-    const diagnostics = buildDiagnostics({ moduleVersion });
 
     return {
       moduleId: MODULE_ID,
@@ -241,22 +198,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       groups,
       recentTools: recentActions,
       hasRecentTools: recentActions.length > 0,
-      quickStart: quickStartDismissed ? null : quickStart,
-      hasDismissedQuickStarts:
-        quickStartDismissed || dismissedQuickStarts.size > 0,
-      helpSteps: fullGm
-        ? [
-            "Start in Prepare before the session.",
-            "Keep the relevant Run the Session tool open during play.",
-            "Record lasting changes under Track the Campaign.",
-          ]
-        : [
-            "Only destinations available to your role appear here.",
-            "A grey destination explains what needs to become available.",
-            "Direct shortcuts still open their matching player windows.",
-          ],
-      shortcuts: buildShortcuts({ fullGm }),
-      diagnostics,
 
       // Compatibility context for existing harnesses and extensions that still
       // call this surface a dashboard.
@@ -264,16 +205,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       tools: registeredTools.map(normalizeRegisteredTool),
       categories: groupByCategory(registeredTools),
     };
-  }
-
-  _onRender(context, options) {
-    super._onRender?.(context, options);
-    const selector = this._focusAfterRender;
-    this._focusAfterRender = null;
-    if (!selector) return;
-    globalThis.queueMicrotask?.(() => {
-      this.element?.querySelector?.(selector)?.focus?.();
-    });
   }
 
   _onClose(options) {
@@ -314,64 +245,21 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {InfinityDashboardApp} */
-  static _onHelp(_event, target) {
-    const root = this.element ?? target?.closest?.(".id-shell");
-    const panel = root?.querySelector?.("[data-home-help]");
-    if (!panel) return;
-    panel.open = true;
-    panel.querySelector?.("summary")?.focus?.();
-  }
-
-  /** @this {InfinityDashboardApp} */
-  static async _onCopyDiagnostics() {
-    const moduleVersion = String(
-      globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "0.0.0",
-    );
-    const text = buildPrivacySafeDiagnosticsText(
-      buildDiagnostics({ moduleVersion }),
-    );
-    const writeText = globalThis.navigator?.clipboard?.writeText;
-    if (typeof writeText !== "function") {
-      globalThis.ui?.notifications?.info?.(
-        "Clipboard access is unavailable. Select the diagnostics text and copy it manually.",
-      );
-      return;
-    }
-    try {
-      await writeText.call(globalThis.navigator.clipboard, text);
-      globalThis.ui?.notifications?.info?.(
-        "Infinity diagnostics copied. No character, campaign, or user data was included.",
-      );
-    } catch (error) {
-      console.warn(`${MODULE_ID} | could not copy diagnostics`, error);
-      globalThis.ui?.notifications?.warn?.(
-        "Diagnostics were not copied. Select the text and copy it manually.",
-      );
-    }
-  }
-
-  /** @this {InfinityDashboardApp} */
-  static async _onDismissQuickStart(_event, target) {
-    const quickStart = isFullGM() ? QUICK_STARTS.gm : QUICK_STARTS.player;
-    if (
-      target?.dataset?.quickStartId !== quickStart.id ||
-      Number(target?.dataset?.quickStartVersion) !== quickStart.version
-    ) {
-      return;
-    }
-
-    InfinityDashboardApp._sessionDismissedQuickStarts.add(quickStart.id);
-    await persistDismissedQuickStart(quickStart);
-    this._focusAfterRender = '[data-action="help"]';
-    await this.render(false);
-  }
-
-  /** @this {InfinityDashboardApp} */
-  static async _onRestoreQuickStarts() {
-    InfinityDashboardApp._sessionDismissedQuickStarts.clear();
-    await restoreDismissedQuickStarts();
-    this._focusAfterRender = '[data-action="dismissQuickStart"]';
-    await this.render(false);
+  static async _onHelp() {
+    const fullGm = isFullGM();
+    await promptInfinityDialog({
+      window: {
+        title: "Infinity D&D5e — Home Help",
+        icon: "fa-solid fa-circle-question",
+      },
+      content: buildHomeHelpDialogContent({ fullGm }),
+      ok: {
+        label: "Close",
+        icon: "fa-solid fa-check",
+        callback: () => true,
+      },
+      rejectClose: false,
+    });
   }
 
   /** @this {InfinityDashboardApp} */
@@ -483,20 +371,35 @@ export function groupHomeActionsByIntent(actions) {
   })).filter((group) => group.actions.length > 0);
 }
 
-/** Convert already-sanitized diagnostic metadata into copyable plain text. */
-export function buildPrivacySafeDiagnosticsText(diagnostics) {
-  const versions = (diagnostics?.versions ?? []).map(
-    (entry) => `${entry.label}: ${entry.value}`,
-  );
-  const integrations = (diagnostics?.integrations ?? []).map(
-    (entry) => `${entry.label}: ${entry.status} — ${entry.detail}`,
-  );
-  return [
-    "Infinity D&D5e diagnostics",
-    ...versions,
-    "Integrations",
-    ...integrations,
-  ].join("\n");
+/** Build the concise, role-aware content opened by the Home header Help button. */
+export function buildHomeHelpDialogContent({ fullGm = false } = {}) {
+  const steps = fullGm
+    ? [
+        "Prepare: set up merchants and supplies before play.",
+        "Run the Session: open loot, downtime, or the calendar while play is moving.",
+        "Track the Campaign: review lasting supplies, faction, and injury changes.",
+      ]
+    : [
+        "Open any available destination; Home only shows player-safe tools.",
+        "Unavailable cards explain what the GM needs to enable.",
+        "Use a shortcut below to reopen a familiar window.",
+      ];
+  const stepMarkup = steps
+    .map((step) => `<li>${escapeHtml(step)}</li>`)
+    .join("");
+  const shortcutMarkup = buildShortcuts({ fullGm })
+    .map(
+      ({ keys, label }) =>
+        `<div><dt><kbd>${escapeHtml(keys)}</kbd></dt><dd>${escapeHtml(label)}</dd></div>`,
+    )
+    .join("");
+  return `<div class="id-help-dialog">
+    <p>Choose a destination in Home. Disabled cards explain what is needed without changing campaign data.</p>
+    <ol>${stepMarkup}</ol>
+    <h3>Keyboard shortcuts</h3>
+    <dl class="id-help-dialog__shortcuts">${shortcutMarkup}</dl>
+    <p>Restore dismissed workspace guides from Infinity Settings.</p>
+  </div>`;
 }
 
 function normalizeRegisteredTool(tool) {
@@ -571,64 +474,6 @@ function bindPlayerHomePromotionGuard(application) {
   };
 }
 
-async function readUiPreferences() {
-  const moduleApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api;
-  const readers = [
-    [moduleApi, moduleApi?.getUiPreferences],
-    [null, getStoredUiPreferences],
-  ];
-  for (const [owner, reader] of readers) {
-    if (typeof reader !== "function") continue;
-    try {
-      const value = await reader.call(owner);
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        return value;
-      }
-    } catch (error) {
-      console.warn(`${MODULE_ID} | could not read UI preferences`, error);
-    }
-  }
-  return null;
-}
-
-async function persistDismissedQuickStart(quickStart) {
-  try {
-    await dismissStoredQuickStart(quickStart.id);
-    return true;
-  } catch (error) {
-    console.warn(`${MODULE_ID} | could not dismiss Home quick start`, error);
-    return false;
-  }
-}
-
-async function restoreDismissedQuickStarts() {
-  try {
-    await restoreStoredQuickStarts();
-    return true;
-  } catch (error) {
-    console.warn(`${MODULE_ID} | could not restore Home quick starts`, error);
-    return false;
-  }
-}
-
-function readDismissedQuickStarts(preferences) {
-  const dismissed = new Set();
-  const stored = preferences?.dismissedQuickStarts;
-  if (Array.isArray(stored)) {
-    for (const id of stored) {
-      if (typeof id === "string" && id.trim()) dismissed.add(id.trim());
-    }
-  }
-  for (const id of InfinityDashboardApp._sessionDismissedQuickStarts) {
-    dismissed.add(id);
-  }
-  return dismissed;
-}
-
-function isQuickStartDismissed(quickStart, dismissed) {
-  return dismissed.has(quickStart.id);
-}
-
 function buildShortcuts({ fullGm }) {
   const shortcuts = [
     { keys: "Shift+I", label: "Open Infinity Home" },
@@ -645,84 +490,6 @@ function buildShortcuts({ fullGm }) {
     });
   }
   return shortcuts;
-}
-
-function buildDiagnostics({ moduleVersion, gameRef = globalThis.game }) {
-  const playerBridge = getPlayerSurfaceStatus(gameRef);
-  const socketlib = gameRef?.modules?.get?.("socketlib");
-  const matt = gameRef?.modules?.get?.("monks-active-tiles");
-  const calendars = [
-    gameRef?.modules?.get?.("foundryvtt-simple-calendar-reborn"),
-    gameRef?.modules?.get?.("foundryvtt-simple-calendar"),
-  ].filter(Boolean);
-  const calendar = calendars.find((entry) => entry.active === true) ?? null;
-  const calendarAvailability = getPlayerSurfaceAvailability(
-    PLAYER_SURFACES.CALENDAR,
-    { gameRef },
-  );
-
-  return {
-    versions: [
-      { label: "Infinity D&D5e", value: moduleVersion },
-      {
-        label: "Foundry",
-        value: String(
-          gameRef?.version ?? gameRef?.release?.version ?? "Unknown",
-        ),
-      },
-      {
-        label: "D&D5e system",
-        value: String(gameRef?.system?.version ?? "Unknown"),
-      },
-    ],
-    integrations: [
-      {
-        label: "Simple Calendar",
-        status: calendarAvailability.available ? "Ready" : "Not available",
-        ready: calendarAvailability.available,
-        className: calendarAvailability.available ? "is-ready" : "is-not-ready",
-        icon: calendarAvailability.available
-          ? "fa-circle-check"
-          : "fa-circle-minus",
-        detail: calendarAvailability.available
-          ? `Active${calendar?.version ? ` · v${calendar.version}` : ""}`
-          : calendarAvailability.reason,
-      },
-      {
-        label: "Monk's Active Tiles launcher",
-        status: playerBridge.mattSenderGuardReady ? "Ready" : "Not ready",
-        ready: playerBridge.mattSenderGuardReady,
-        className: playerBridge.mattSenderGuardReady
-          ? "is-ready"
-          : "is-not-ready",
-        icon: playerBridge.mattSenderGuardReady
-          ? "fa-circle-check"
-          : "fa-circle-minus",
-        detail: matt?.active
-          ? `Installed${playerBridge.mattVersion ? ` · v${playerBridge.mattVersion}` : ""}`
-          : "Monk's Active Tiles is not active.",
-      },
-      {
-        label: "Player-window transport",
-        status:
-          socketlib?.active && playerBridge.handlerRegistered
-            ? "Ready"
-            : "Not ready",
-        ready: Boolean(socketlib?.active && playerBridge.handlerRegistered),
-        className:
-          socketlib?.active && playerBridge.handlerRegistered
-            ? "is-ready"
-            : "is-not-ready",
-        icon:
-          socketlib?.active && playerBridge.handlerRegistered
-            ? "fa-circle-check"
-            : "fa-circle-minus",
-        detail: socketlib?.active
-          ? `SocketLib active${socketlib.version ? ` · v${socketlib.version}` : ""}`
-          : "SocketLib is not active; remote tile launches are unavailable.",
-      },
-    ],
-  };
 }
 
 /** Legacy category grouping retained for dashboard context compatibility. */

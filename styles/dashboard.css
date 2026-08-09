@@ -31,18 +31,12 @@
 }
 
 .id-head,
-.id-quick-start,
 .id-recent,
-.id-help,
 .id-section,
 .id-empty {
   border: 1px solid var(--lf-border);
   border-radius: var(--lf-radius);
   background: var(--lf-bg-alt);
-}
-
-.id-help:not([open]) > .id-help__body {
-  display: none;
 }
 
 .id-head {
@@ -89,7 +83,6 @@
 
 .id-head__aside,
 .id-button,
-.id-icon-button,
 .id-recent__button {
   display: inline-flex;
   align-items: center;
@@ -102,7 +95,6 @@
 }
 
 .id-button,
-.id-icon-button,
 .id-recent__button,
 .id-tile__button {
   box-sizing: border-box;
@@ -123,7 +115,6 @@
 }
 
 .id-button:hover,
-.id-icon-button:hover,
 .id-recent__button:hover,
 .id-tile__button:hover {
   border-color: var(--lf-border-strong);
@@ -142,18 +133,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.id-quick-start {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--lf-space-3, 12px);
-  padding: var(--lf-space-4, 16px);
-  border-color: color-mix(in srgb, var(--lf-accent) 55%, var(--lf-border));
-  background: color-mix(in srgb, var(--lf-accent) 8%, var(--lf-bg-alt));
-}
-
-.id-quick-start__icon,
 .id-section__icon,
 .id-tile__icon {
   display: inline-flex;
@@ -166,48 +145,13 @@
   color: var(--lf-accent);
 }
 
-.id-quick-start__icon,
 .id-section__icon {
   width: var(--lf-control-size, 44px);
   height: var(--lf-control-size, 44px);
 }
 
-.id-quick-start h3,
-.id-quick-start p,
-.id-quick-start ol {
-  margin: 0;
-}
-
-.id-quick-start h3,
-.id-section__head h3,
-.id-help h3 {
+.id-section__head h3 {
   color: var(--lf-text-strong);
-}
-
-.id-quick-start h3 {
-  font-size: 1rem;
-}
-
-.id-quick-start p,
-.id-quick-start li {
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.id-quick-start p {
-  margin-top: var(--lf-space-1, 4px);
-  color: var(--lf-muted);
-}
-
-.id-quick-start ol {
-  margin-top: var(--lf-space-2, 8px);
-  padding-left: 1.25rem;
-}
-
-.id-icon-button {
-  width: var(--lf-control-size, 44px);
-  min-width: var(--lf-control-size, 44px);
-  padding: 0;
 }
 
 .id-recent {
@@ -397,92 +341,44 @@
   font-size: 0.82rem;
 }
 
-.id-help {
-  overflow: clip;
-}
-
-.id-help > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.application.infinity-dialog .id-help-dialog {
+  display: grid;
   gap: var(--lf-space-3, 12px);
-  min-height: var(--lf-control-size, 44px);
-  padding: var(--lf-space-2, 8px) var(--lf-space-4, 16px);
-  color: var(--lf-text-strong);
-  font-weight: 700;
-  cursor: pointer;
+  max-inline-size: 38rem;
 }
 
-.id-help > summary::marker {
-  color: var(--lf-accent);
-}
-
-.id-help > summary i {
-  margin-right: var(--lf-space-2, 8px);
-  color: var(--lf-accent);
-}
-
-.id-help__summary-hint {
-  color: var(--lf-muted);
-  font-size: 0.75rem;
-  font-weight: 400;
-}
-
-.id-help__body {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--lf-space-4, 16px);
-  padding: var(--lf-space-4, 16px);
-  border-top: 1px solid var(--lf-border);
-  background: var(--lf-bg);
-}
-
-.id-help__body section {
-  min-width: 0;
-}
-
-.id-help h3 {
-  margin: 0 0 var(--lf-space-2, 8px);
-  font-size: 0.9rem;
-}
-
-.id-help ol {
-  margin: 0 0 var(--lf-space-3, 12px);
-  padding-left: 1.2rem;
-}
-
-.id-help li,
-.id-help dd,
-.id-help dt,
-.id-help small,
-.id-help__privacy {
-  font-size: 0.75rem;
-  line-height: 1.45;
-}
-
-.id-shortcuts,
-.id-versions {
-  display: grid;
-  gap: var(--lf-space-2, 8px);
+.application.infinity-dialog .id-help-dialog :is(p, ol, h3, dl) {
   margin: 0;
 }
 
-.id-shortcuts > div,
-.id-versions > div {
+.application.infinity-dialog .id-help-dialog ol {
+  display: grid;
+  gap: var(--lf-space-1, 4px);
+  padding-inline-start: 1.25rem;
+}
+
+.application.infinity-dialog .id-help-dialog h3 {
+  color: var(--lf-text-strong);
+  font-size: 0.9rem;
+}
+
+.application.infinity-dialog .id-help-dialog__shortcuts {
+  display: grid;
+  gap: var(--lf-space-2, 8px);
+}
+
+.application.infinity-dialog .id-help-dialog__shortcuts > div {
   display: grid;
   grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
   gap: var(--lf-space-2, 8px);
   align-items: baseline;
 }
 
-.id-shortcuts dt,
-.id-shortcuts dd,
-.id-versions dt,
-.id-versions dd {
+.application.infinity-dialog .id-help-dialog__shortcuts :is(dt, dd) {
   margin: 0;
 }
 
-.id-shortcuts kbd {
+.application.infinity-dialog .id-help-dialog__shortcuts kbd {
   display: inline-block;
   padding: 2px 6px;
   border: 1px solid var(--lf-border-strong);
@@ -491,63 +387,6 @@
   color: var(--lf-text-strong);
   font: inherit;
   font-weight: 700;
-}
-
-.id-versions dt {
-  color: var(--lf-muted);
-}
-
-.id-versions dd {
-  color: var(--lf-text-strong);
-  overflow-wrap: anywhere;
-}
-
-.id-integrations {
-  display: grid;
-  gap: var(--lf-space-2, 8px);
-  margin: var(--lf-space-3, 12px) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.id-help__copy {
-  margin-top: var(--lf-space-3, 12px);
-}
-
-.id-integrations li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--lf-space-2, 8px);
-}
-
-.id-integrations__state {
-  margin-top: 2px;
-}
-
-.id-integrations .is-ready .id-integrations__state {
-  color: var(--lf-success);
-}
-
-.id-integrations .is-not-ready .id-integrations__state {
-  color: var(--lf-warn);
-}
-
-.id-integrations strong,
-.id-integrations small {
-  display: block;
-}
-
-.id-integrations small {
-  color: var(--lf-muted);
-}
-
-.id-help__privacy {
-  margin: var(--lf-space-3, 12px) 0 0;
-  color: var(--lf-muted);
-}
-
-.id-help__privacy i {
-  color: var(--lf-success);
 }
 
 .id-foot {
@@ -561,8 +400,7 @@
 }
 
 @container infinity-home (max-width: 720px) {
-  .id-grid,
-  .id-help__body {
+  .id-grid {
     grid-template-columns: 1fr;
   }
 
@@ -586,20 +424,6 @@
   .id-foot .id-button {
     width: 100%;
   }
-
-  .id-quick-start {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .id-quick-start__icon {
-    display: none;
-  }
-
-  .id-help > summary {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: center;
-  }
 }
 
 @container infinity-home (max-width: 380px) {
@@ -608,9 +432,7 @@
   }
 
   .id-head,
-  .id-section,
-  .id-quick-start,
-  .id-help__body {
+  .id-section {
     padding: var(--lf-space-3, 12px);
   }
 
@@ -622,28 +444,12 @@
   .id-tile__button {
     grid-template-columns: auto minmax(0, 1fr);
   }
-
-  .id-shortcuts > div,
-  .id-versions > div {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
 }
 
 @media (pointer: coarse) {
   .infinity-dnd5e.infinity-dashboard
-    :is(
-      .id-button,
-      .id-icon-button,
-      .id-recent__button,
-      .id-tile__button,
-      .id-help > summary
-    ) {
+    :is(.id-button, .id-recent__button, .id-tile__button) {
     min-height: 44px;
-  }
-
-  .infinity-dnd5e.infinity-dashboard .id-icon-button {
-    min-width: 44px;
   }
 }
 
@@ -661,20 +467,16 @@
   .infinity-dnd5e.infinity-dashboard
     :is(
       .id-head,
-      .id-quick-start,
       .id-recent,
-      .id-help,
       .id-section,
       .id-tile__button,
       .id-button,
-      .id-icon-button,
       .id-recent__button
     ) {
     border-color: CanvasText;
   }
 
-  .infinity-dnd5e.infinity-dashboard
-    :is(.id-tile__badge, .id-integrations__state) {
+  .infinity-dnd5e.infinity-dashboard .id-tile__badge {
     forced-color-adjust: none;
   }
 }

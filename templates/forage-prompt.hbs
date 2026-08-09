@@ -7,8 +7,8 @@
   <header class="fp-head">
     <i class="fa-solid fa-wheat-awn fp-head__icon" aria-hidden="true"></i>
     <div class="fp-head__copy">
-      <h2 class="fp-head__title">A new day in {{environmentLabel}}</h2>
-      {{#if dc}}<p class="fp-head__dc">Foraging DC {{dc}} (Wisdom · Survival)</p>{{/if}}
+      <h2 class="fp-head__title">Foraging in {{environmentLabel}}</h2>
+      {{#if dcLabel}}<p class="fp-head__dc">Foraging {{dcLabel}} (Wisdom · Survival)</p>{{/if}}
     </div>
   </header>
 
@@ -75,7 +75,8 @@
     <p class="fp-result fp-result--win">
       <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
       {{#if forageTargetBoth}}
-      You foraged <strong>+{{result.food}}</strong> food and <strong>+{{result.water}}</strong> water.
+      Food: {{#if result.foodSuccess}}{{#if result.foodSuppressed}}gathered, but another food haul was kept{{else}}<strong>+{{result.food}}</strong>{{/if}}{{else}}not found{{/if}}.<br />
+      Water: {{#if result.waterSuccess}}{{#if result.waterSuppressed}}gathered, but another water haul was kept{{else}}<strong>+{{result.water}}</strong>{{/if}}{{else}}not found{{/if}}.
       {{else if forageTargetFood}}
       You foraged <strong>+{{result.food}}</strong> food.
       {{else}}

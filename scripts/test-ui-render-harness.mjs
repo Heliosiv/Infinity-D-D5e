@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  89,
+  90,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -163,6 +163,7 @@ for (const expectedId of [
   "resource-manager-locked",
   "resource-manager-recent-runs",
   "resource-manager-custom-environment",
+  "forage-drive-dialog",
   "resource-overview",
   "resource-overview-offline",
   "resource-overview-loading",
@@ -741,7 +742,7 @@ assert.equal(
 for (const expectedText of [
   "Interrupted automatic upkeep",
   "Forage Drive",
-  "Advance Day",
+  "Use Daily Supplies",
   "Complete",
   "Partial",
   "Interrupted",
@@ -810,8 +811,23 @@ assert.match(
 );
 assert.match(customEnvironmentView.html, /Edit current custom environment/);
 assert.match(customEnvironmentView.html, /data-environment-field="label"/);
+assert.match(customEnvironmentView.html, /data-environment-field="foodDc"/);
+assert.match(customEnvironmentView.html, /data-environment-field="waterDc"/);
 assert.match(customEnvironmentView.html, /data-environment-field="yieldFood"/);
 assert.match(customEnvironmentView.html, /Ashen March/);
+
+const forageDriveDialog = views.find(
+  (view) => view.id === "forage-drive-dialog",
+);
+assert.ok(forageDriveDialog, "harness includes the per-forager setup dialog");
+assert.match(forageDriveDialog.html, /Food DC/);
+assert.match(forageDriveDialog.html, /Water DC/);
+assert.match(
+  forageDriveDialog.html,
+  /aria-label="What Aric the Ranger gathers"/,
+);
+assert.match(forageDriveDialog.html, /Food only/);
+assert.match(forageDriveDialog.html, /Water only/);
 
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.
@@ -903,6 +919,7 @@ for (const id of ["per-encounter", "per-creature"]) {
   );
   const html = renderFixture(resourceFixture, {
     canRunResourceWrites: false,
+    canRunForageDrive: false,
     setupExpanded: true,
     hasResourceConflictWarnings: true,
     hasBlockingResourceConflicts: true,

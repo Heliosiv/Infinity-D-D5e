@@ -1330,7 +1330,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       console.error(`${MODULE_ID} | failed to send loot to chat`, error);
       ui.notifications?.error(
-        "Loot was not sent to chat. Nothing else changed; try again, then use Help & Diagnostics if it continues.",
+        "Loot was not sent to chat. Nothing else changed; try again, then share this exact message with the GM if it continues.",
       );
     }
   }

@@ -11,7 +11,7 @@
         type="button"
         class="id-button id-button--secondary"
         data-action="help"
-        aria-controls="infinity-home-help"
+        aria-haspopup="dialog"
       >
         <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
         <span>Help</span>
@@ -19,34 +19,6 @@
       <span class="id-head__version" aria-label="Infinity D&amp;D5e version {{moduleVersion}}">v{{moduleVersion}}</span>
     </div>
   </header>
-
-  {{#if quickStart}}
-  <aside class="id-quick-start" aria-labelledby="infinity-home-quick-start-title">
-    <div class="id-quick-start__icon" aria-hidden="true">
-      <i class="fa-solid fa-wand-magic-sparkles"></i>
-    </div>
-    <div class="id-quick-start__copy">
-      <h3 id="infinity-home-quick-start-title">{{quickStart.title}}</h3>
-      <p>{{quickStart.body}}</p>
-      <ol>
-        {{#each quickStart.steps}}
-        <li>{{this}}</li>
-        {{/each}}
-      </ol>
-    </div>
-    <button
-      type="button"
-      class="id-icon-button"
-      data-action="dismissQuickStart"
-      data-quick-start-id="{{quickStart.id}}"
-      data-quick-start-version="{{quickStart.version}}"
-      aria-label="Dismiss {{quickStart.title}}"
-      title="Dismiss this guide. You can restore it from Help &amp; Diagnostics."
-    >
-      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-    </button>
-  </aside>
-  {{/if}}
 
   {{#if hasRecentTools}}
   <nav class="id-recent" aria-labelledby="infinity-home-recent-title">
@@ -145,60 +117,6 @@
       {{/each}}
     {{/if}}
   </main>
-
-  <details class="id-help" id="infinity-home-help" data-home-help>
-    <summary>
-      <span><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Help &amp; Diagnostics</span>
-      <span class="id-help__summary-hint">Quick starts, shortcuts, and readiness</span>
-    </summary>
-    <div class="id-help__body">
-      <section aria-labelledby="infinity-home-help-start">
-        <h3 id="infinity-home-help-start">How to use Home</h3>
-        <ol>
-          {{#each helpSteps}}
-          <li>{{this}}</li>
-          {{/each}}
-        </ol>
-        {{#if hasDismissedQuickStarts}}
-        <button type="button" class="id-button id-button--secondary" data-action="restoreQuickStarts">
-          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-          <span>Show Quick Start Again</span>
-        </button>
-        {{/if}}
-      </section>
-
-      <section aria-labelledby="infinity-home-help-shortcuts">
-        <h3 id="infinity-home-help-shortcuts">Keyboard shortcuts</h3>
-        <dl class="id-shortcuts">
-          {{#each shortcuts}}
-          <div><dt><kbd>{{keys}}</kbd></dt><dd>{{label}}</dd></div>
-          {{/each}}
-        </dl>
-      </section>
-
-      <section aria-labelledby="infinity-home-help-diagnostics">
-        <h3 id="infinity-home-help-diagnostics">Diagnostics</h3>
-        <dl class="id-versions">
-          {{#each diagnostics.versions}}
-          <div><dt>{{label}}</dt><dd>{{value}}</dd></div>
-          {{/each}}
-        </dl>
-        <button type="button" class="id-button id-button--secondary id-help__copy" data-action="copyDiagnostics">
-          <i class="fa-solid fa-copy" aria-hidden="true"></i>
-          <span>Copy Diagnostics</span>
-        </button>
-        <ul class="id-integrations">
-          {{#each diagnostics.integrations}}
-          <li class="{{className}}">
-            <span class="id-integrations__state" aria-hidden="true"><i class="fa-solid {{icon}}"></i></span>
-            <span><strong>{{label}} — {{status}}</strong><small>{{detail}}</small></span>
-          </li>
-          {{/each}}
-        </ul>
-        <p class="id-help__privacy"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Diagnostics show product versions and availability only. No character, campaign, user, or hidden GM data is included.</p>
-      </section>
-    </div>
-  </details>
 
   <footer class="id-foot">
     <p aria-live="polite">Choose a destination above. Disabled cards explain what is needed.</p>

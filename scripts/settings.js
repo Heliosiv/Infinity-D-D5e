@@ -372,7 +372,7 @@ export const SETTINGS = Object.freeze([
     hint:
       "When a new in-game day begins (via Simple Calendar or the world clock), " +
       "automatically prompt foraging and consume the party's food, water, and " +
-      "light. Turn off to only run upkeep from the Quartermaster's Advance Day button.",
+      "light. Turn off to only run upkeep from Quartermaster's Use Daily Supplies button.",
     scope: "world",
     config: true,
     type: Boolean,
@@ -404,6 +404,16 @@ export const SETTINGS = Object.freeze([
       sparse: "Sparse — hard foraging (DC 20)",
       settlement: "Settlement — buy supplies, no foraging",
       underground: "Underground — no foraging",
+      "biome-forest": "Forest — food DC 10, water DC 10",
+      "biome-rainforest": "Rainforest — food DC 10, water DC 15",
+      "biome-grassland": "Grassland — food DC 10, water DC 15",
+      "biome-coast": "Coast — food DC 10, water DC 15",
+      "biome-hills": "Hills — food DC 15, water DC 15",
+      "biome-mountains": "Mountains — food DC 20, water DC 15",
+      "biome-swamp": "Swamp — food DC 15, water DC 20",
+      "biome-desert": "Desert — food DC 20, water DC 25",
+      "biome-tundra": "Tundra — food DC 20, water DC 15",
+      "biome-riverlands": "Riverlands — food DC 10, water DC 10",
     },
   },
   {

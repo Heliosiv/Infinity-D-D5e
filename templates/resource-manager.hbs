@@ -29,17 +29,17 @@
         <h3 id="rm-today-heading">Today</h3>
       </div>
       <div class="rm-today__actions">
-        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
-          <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
+        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging or moving the world clock{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+          <i class="fa-solid fa-utensils" aria-hidden="true"></i> Use Daily Supplies
         </button>
-        <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunResourceWrites}}Run Survival checks for chosen characters to gather food, water, or both (no day passes){{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+        <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunForageDrive}}Choose what each character gathers and run their Survival checks (no day passes){{else}}{{#if canRunResourceWrites}}Foraging is closed in the current environment.{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}{{/if}}" {{#unless canRunForageDrive}}disabled aria-disabled="true" aria-describedby="{{#if canRunResourceWrites}}rm-forage-drive-reason{{else}}rm-resource-write-reason{{/if}}"{{/unless}}>
           <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
         </button>
       </div>
     </div>
 
     <article class="rm-next-action {{#if hasActiveUpkeep}}rm-next-action--warning{{/if}}{{#if hasBlockingResourceConflicts}} rm-next-action--warning{{/if}}" aria-labelledby="rm-next-action-heading">
-      <span class="rm-next-action__icon" aria-hidden="true"><i class="fa-solid {{#unless isAuthoritative}}fa-user-shield{{else}}{{#if hasActiveUpkeep}}fa-shield-halved{{else}}{{#if hasBlockingResourceConflicts}}fa-triangle-exclamation{{else}}{{#unless hasParty}}fa-users{{else}}fa-forward-step{{/unless}}{{/if}}{{/if}}{{/unless}}"></i></span>
+      <span class="rm-next-action__icon" aria-hidden="true"><i class="fa-solid {{#unless isAuthoritative}}fa-user-shield{{else}}{{#if hasActiveUpkeep}}fa-shield-halved{{else}}{{#if hasBlockingResourceConflicts}}fa-triangle-exclamation{{else}}{{#unless hasParty}}fa-users{{else}}fa-utensils{{/unless}}{{/if}}{{/if}}{{/unless}}"></i></span>
       <div>
         <p>Recommended next action</p>
         {{#unless isAuthoritative}}
@@ -55,7 +55,7 @@
         <h4 id="rm-next-action-heading">Add the party roster</h4>
         <span>Open Setup &amp; Rules and add the actors whose supplies should be tracked.</span>
         {{else}}
-        <h4 id="rm-next-action-heading">Review supplies, then Advance Day</h4>
+        <h4 id="rm-next-action-heading">Review supplies, then use daily supplies</h4>
         <span>Use Forage Drive first when supplies are low and foraging is open; otherwise consume one configured day.</span>
         {{/unless}}{{/if}}{{/if}}{{/unless}}
       </div>
@@ -64,7 +64,7 @@
     {{#unless canRunResourceWrites}}
     <p id="rm-resource-write-reason" class="rm-disabled-reason" role="status">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-      <strong>Advance Day and Forage Drive are unavailable:</strong>
+      <strong>Use Daily Supplies and Forage Drive are unavailable:</strong>
       {{#unless isAuthoritative}}Another full GM is currently authoritative. Run upkeep from their client.{{else}}{{#if hasActiveUpkeep}}Review and acknowledge the interrupted run before changing more inventory.{{else}}Fix every blocking resource conflict in Setup &amp; Rules.{{/if}}{{/unless}}
     </p>
     {{/unless}}
@@ -87,7 +87,7 @@
   {{#if hasResourceConflictWarnings}}
   <div class="rm-note rm-note--warn" {{#if hasBlockingResourceConflicts}}role="alert"{{else}}role="status"{{/if}}>
     <p><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <strong>Resource rules need attention.</strong>
-      {{#if hasBlockingResourceConflicts}}Advance Day and Forage Drive are paused until the blocking conflicts are fixed.{{else}}These shared match rules are warnings; check them before they claim the same inventory item.{{/if}}
+      {{#if hasBlockingResourceConflicts}}Use Daily Supplies and Forage Drive are paused until the blocking conflicts are fixed.{{else}}These shared match rules are warnings; check them before they claim the same inventory item.{{/if}}
     </p>
     <ul>
       {{#each resourceConflictWarnings}}
@@ -97,7 +97,7 @@
   </div>
   {{/if}}
 
-  <p class="rm-note">Set where the party is, check supplies below, then <strong>Advance Day</strong> — or turn on Auto-run to do it automatically as in-game days pass.</p>
+  <p class="rm-note">Set where the party is, check supplies below, then <strong>Use Daily Supplies</strong> — or turn on Auto-run to do it automatically as in-game days pass.</p>
 
   <section class="rm-section rm-environment">
     <h3>Where is the party?</h3>
@@ -109,12 +109,15 @@
       </select>
       <span class="rm-environment__status">
         {{#if currentEnvForageable}}
-        <i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open · DC {{currentEnvDc}}
+        <i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open · {{#if currentEnvDcsDiffer}}Food DC {{currentEnvFoodDc}} · Water DC {{currentEnvWaterDc}}{{else}}DC {{currentEnvFoodDc}}{{/if}}
         {{else}}
         <i class="fa-solid fa-ban" aria-hidden="true"></i> No foraging here
         {{/if}}
       </span>
     </div>
+    {{#if canRunResourceWrites}}{{#unless currentEnvForageable}}
+    <p id="rm-forage-drive-reason" class="rm-disabled-reason" role="status"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Forage Drive is unavailable here. Choose a forageable environment first.</p>
+    {{/unless}}{{/if}}
   </section>
 
   {{#if hasOverviewResources}}
@@ -213,7 +216,7 @@
             {{#if forageDrive}}
             <dl class="rm-run__facts">
               <div><dt>Target</dt><dd>{{forageDrive.targetLabel}}</dd></div>
-              {{#if forageDrive.hasDc}}<div><dt>DC</dt><dd>{{forageDrive.dc}}</dd></div>{{/if}}
+              {{#if forageDrive.hasDc}}<div><dt>DC</dt><dd>{{forageDrive.dcLabel}}</dd></div>{{/if}}
               <div><dt>Yield rule</dt><dd>{{forageDrive.modeLabel}}</dd></div>
               <div><dt>Destination</dt><dd>{{forageDrive.destinationLabel}}</dd></div>
               <div><dt>Applied</dt><dd>+{{forageDrive.totalFood}} food / +{{forageDrive.totalWater}} water</dd></div>
@@ -232,6 +235,7 @@
                 <div class="rm-run-actor__head">
                   <strong>{{name}}</strong>
                   {{#if hasRole}}<span>{{roleLabel}}</span>{{/if}}
+                  {{#if hasForageTarget}}<span>{{forageTargetLabel}}</span>{{/if}}
                   {{#if hasForage}}<span>{{forageNote}}</span>{{/if}}
                 </div>
                 {{#if hasResources}}
@@ -343,8 +347,12 @@
               <input type="checkbox" {{#if currentEnvironment.forageable}}checked{{/if}} data-environment-id="{{currentEnvironment.id}}" data-environment-field="forageable" /> Foraging open
             </label>
             <label class="rm-field rm-field--narrow">
-              <span>Survival DC</span>
-              <input class="mw-input mw-input--num" type="number" min="0" max="100" step="1" value="{{currentEnvironment.dc}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="dc" />
+              <span>Food DC</span>
+              <input class="mw-input mw-input--num" type="number" min="0" max="100" step="1" value="{{currentEnvironment.foodDc}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="foodDc" />
+            </label>
+            <label class="rm-field rm-field--narrow">
+              <span>Water DC</span>
+              <input class="mw-input mw-input--num" type="number" min="0" max="100" step="1" value="{{currentEnvironment.waterDc}}" data-environment-id="{{currentEnvironment.id}}" data-environment-field="waterDc" />
             </label>
             <label class="rm-field">
               <span>Food yield</span>
@@ -355,7 +363,7 @@
               <input class="mw-input" type="text" maxlength="64" inputmode="text" value="{{currentEnvironment.yieldWater}}" placeholder="1d6" data-environment-id="{{currentEnvironment.id}}" data-environment-field="yieldWater" />
             </label>
           </div>
-          <p class="rm-note">Yield accepts a number or bounded dice math such as <code>1d6</code> or <code>2d4+1</code>. Turn foraging off for settlements, dungeons, or other closed regions.</p>
+          <p class="rm-note">Each Survival roll is checked against the requested supply's DC. Yield accepts a number or bounded dice math such as <code>1d6</code> or <code>2d4+1</code>. Turn foraging off for settlements, dungeons, or other closed regions.</p>
         </div>
         {{else}}
         <p class="rm-note">Built-in regions stay unchanged. Copy the current region to make an editable campaign variant.</p>

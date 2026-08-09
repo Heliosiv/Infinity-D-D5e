@@ -31,11 +31,13 @@ import { persistedValuesEqual } from "../utils/persisted-data.js";
 import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   getDefaultEnvironments,
-  normalizeEnvironmentCatalog,
+  LEGACY_BUILT_IN_ENVIRONMENT_IDS,
+  mergeBuiltInEnvironments,
 } from "./environment.js";
 import {
   appendRecentRunReceipt,
   buildInterruptedRunReceipt,
+  normalizeForageAssignments,
   normalizeForageDestination,
   normalizeRecentRuns,
   normalizeRunActorSnapshots,
@@ -44,8 +46,9 @@ import {
   normalizeRunReceipt,
 } from "./history.js";
 
-export const RESOURCE_CONFIG_VERSION = 4;
-export const RESOURCE_RUN_STATE_VERSION = 3;
+export const RESOURCE_CONFIG_VERSION = 5;
+export const RESOURCE_RUN_STATE_VERSION = 4;
+const ENVIRONMENT_PROVENANCE_CONFIG_VERSION = 5;
 
 /** Resource consumption scope. Food/water are per-character; light is party-wide. */
 export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
@@ -298,6 +301,7 @@ export function resolveDrawSourceId(entry) {
  */
 export function normalizeResourceConfig(input) {
   const raw = input && typeof input === "object" ? input : {};
+  const rawVersion = Math.max(0, Math.floor(Number(raw.version) || 0));
   const resourcesRaw = Array.isArray(raw.resources) ? raw.resources : [];
   const seenResourceIds = new Set();
   const resources = resourcesRaw.map(normalizeResource).filter((resource) => {
@@ -320,7 +324,12 @@ export function normalizeResourceConfig(input) {
     // sheet (or their per-row nomination). When set, it overrides per-member
     // `drawFrom` so the GM can run one communal pile with one pick.
     partyStashId: toStr(raw.partyStashId),
-    environments: normalizeEnvironmentCatalog(raw.environments),
+    environments: mergeBuiltInEnvironments(raw.environments, {
+      legacyBuiltInIds:
+        rawVersion < ENVIRONMENT_PROVENANCE_CONFIG_VERSION
+          ? LEGACY_BUILT_IN_ENVIRONMENT_IDS
+          : [],
+    }),
   };
 }
 
@@ -451,6 +460,10 @@ function normalizeActiveUpkeep(input) {
       ["food-water", "food", "water"].includes(input.forageTarget)
         ? input.forageTarget
         : null,
+    forageAssignments:
+      trigger === "forage"
+        ? normalizeForageAssignments(input.forageAssignments)
+        : [],
     forageDestination:
       trigger === "forage"
         ? normalizeForageDestination(input.forageDestination)
@@ -1184,6 +1197,10 @@ export async function completeUpkeepRun({
               target:
                 activeUpkeep.forageTarget ??
                 requestedReceipt.forageContext?.target,
+              assignments:
+                activeUpkeep.forageAssignments?.length > 0
+                  ? activeUpkeep.forageAssignments
+                  : requestedReceipt.forageContext?.assignments,
               destination:
                 activeUpkeep.forageDestination ??
                 requestedReceipt.forageContext?.destination,

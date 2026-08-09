@@ -494,6 +494,14 @@ export function buildHarnessViews() {
       { width: 880, height: 700 },
     ),
     view(
+      "forage-drive-dialog",
+      "Forage Drive setup",
+      "infinity-forage-drive-dialog",
+      "templates/forage-drive-dialog.hbs",
+      forageDriveDialogContext(),
+      { width: 660, height: 620, requiresActions: false },
+    ),
+    view(
       "resource-overview",
       "Party Supplies (player)",
       "infinity-resource-overview",
@@ -1218,28 +1226,7 @@ function dashboardContext() {
     roleLabel: "Game Master Home",
     headingHint:
       "Prepare the session, run active workflows, and track what changes.",
-    quickStart: {
-      id: "home-gm",
-      version: 1,
-      title: "Quick start for a Game Master",
-      body: "Start with the next session outcome you need to prepare.",
-      steps: [
-        "Prepare merchants and campaign defaults.",
-        "Run loot or downtime while play is active.",
-        "Track supplies and faction changes afterward.",
-      ],
-    },
     groups: [],
-    hasDismissedQuickStarts: false,
-    helpSteps: [
-      "Start in Prepare before the session.",
-      "Keep one Run the Session tool open during play.",
-    ],
-    shortcuts: [
-      { keys: "Shift+I", label: "Open Infinity Home" },
-      { keys: "Shift+D", label: "Open Downtime Activities" },
-    ],
-    diagnostics: diagnosticsContext(),
     hasTools: true,
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
@@ -1258,34 +1245,6 @@ function dashboardContext() {
         category: "party",
         label: "Party",
         tools: decorated.filter((tool) => tool.category === "party"),
-      },
-    ],
-  };
-}
-
-function diagnosticsContext() {
-  return {
-    versions: [
-      { label: "Infinity D&D5e", value: MODULE_VERSION },
-      { label: "Foundry", value: "13.351" },
-      { label: "D&D5e system", value: "4.4.4" },
-    ],
-    integrations: [
-      {
-        label: "Simple Calendar",
-        status: "Ready",
-        ready: true,
-        className: "is-ready",
-        icon: "fa-circle-check",
-        detail: "Active · v2.4.0",
-      },
-      {
-        label: "Player-window transport",
-        status: "Ready",
-        ready: true,
-        className: "is-ready",
-        icon: "fa-circle-check",
-        detail: "SocketLib is active.",
       },
     ],
   };
@@ -1337,13 +1296,6 @@ function playerHomeContext() {
     moduleVersion: MODULE_VERSION,
     roleLabel: "Player Home",
     headingHint: "Open the campaign tools currently available to you.",
-    quickStart: {
-      id: "home-player",
-      version: 1,
-      title: "Quick start",
-      body: "Every destination here is already limited to your role.",
-      steps: ["Open a destination.", "Follow its next-action message."],
-    },
     groups: [
       {
         id: "prepare",
@@ -1369,16 +1321,6 @@ function playerHomeContext() {
     ],
     hasRecentTools: true,
     recentTools: [actions[0]],
-    hasDismissedQuickStarts: false,
-    helpSteps: [
-      "Only authorized destinations appear.",
-      "Unavailable destinations explain what is needed.",
-    ],
-    shortcuts: [
-      { keys: "Shift+I", label: "Open Infinity Home" },
-      { keys: "Shift+O", label: "Open Shops" },
-    ],
-    diagnostics: diagnosticsContext(),
     hasTools: false,
     tools: [],
     categories: [],
@@ -2412,6 +2354,7 @@ function resourceManagerContext() {
   return {
     isAuthoritative: true,
     canRunResourceWrites: true,
+    canRunForageDrive: true,
     setupExpanded: false,
     hasResourceConflictWarnings: false,
     hasBlockingResourceConflicts: false,
@@ -2422,12 +2365,25 @@ function resourceManagerContext() {
       { id: "sparse", optionLabel: "Sparse", selected: false },
       { id: "settlement", optionLabel: "Settlement", selected: false },
       { id: "underground", optionLabel: "Underground", selected: false },
+      { id: "biome-forest", optionLabel: "Forest", selected: false },
+      { id: "biome-rainforest", optionLabel: "Rainforest", selected: false },
+      { id: "biome-grassland", optionLabel: "Grassland", selected: false },
+      { id: "biome-coast", optionLabel: "Coast", selected: false },
+      { id: "biome-hills", optionLabel: "Hills", selected: false },
+      { id: "biome-mountains", optionLabel: "Mountains", selected: false },
+      { id: "biome-swamp", optionLabel: "Swamp", selected: false },
+      { id: "biome-desert", optionLabel: "Desert", selected: false },
+      { id: "biome-tundra", optionLabel: "Tundra", selected: false },
+      { id: "biome-riverlands", optionLabel: "Riverlands", selected: false },
     ],
     currentEnvironment: {
       id: "limited",
       label: "Limited (hills, farmland, woods)",
       dc: 15,
+      foodDc: 15,
+      waterDc: 15,
       forageable: true,
+      builtIn: true,
       yieldFood: "1d6",
       yieldWater: "1d6",
       isCustom: false,
@@ -2436,6 +2392,9 @@ function resourceManagerContext() {
     currentEnvLabel: "Limited",
     currentEnvForageable: true,
     currentEnvDc: 15,
+    currentEnvFoodDc: 15,
+    currentEnvWaterDc: 15,
+    currentEnvDcsDiffer: false,
     forageMode: "each",
     forageModeEach: true,
     halfRations: false,
@@ -2587,6 +2546,7 @@ function resourceManagerLockedContext() {
   return {
     ...resourceManagerContext(),
     canRunResourceWrites: false,
+    canRunForageDrive: false,
     hasActiveUpkeep: true,
     activeUpkeep: {
       triggerLabel: "automatic upkeep",
@@ -2828,7 +2788,10 @@ function resourceManagerCustomEnvironmentContext() {
     id: "custom-ashen-march",
     label: "Ashen March",
     dc: 18,
+    foodDc: 14,
+    waterDc: 18,
     forageable: true,
+    builtIn: false,
     yieldFood: "1d4",
     yieldWater: "1d6-1",
     isCustom: true,
@@ -2846,6 +2809,66 @@ function resourceManagerCustomEnvironmentContext() {
     currentEnvironment: custom,
     currentEnvLabel: custom.label,
     currentEnvDc: custom.dc,
+    currentEnvFoodDc: custom.foodDc,
+    currentEnvWaterDc: custom.waterDc,
+    currentEnvDcsDiffer: true,
+  };
+}
+
+function forageDriveDialogContext() {
+  const optionsFor = (selected) => [
+    {
+      value: "food-water",
+      label: "Food & water",
+      selected: selected === "food-water",
+      disabled: false,
+    },
+    {
+      value: "food",
+      label: "Food only",
+      selected: selected === "food",
+      disabled: false,
+    },
+    {
+      value: "water",
+      label: "Water only",
+      selected: selected === "water",
+      disabled: false,
+    },
+  ];
+  return {
+    environmentLabel: "Rainforest",
+    destinationLabel: "Quartermaster Mule's party stash",
+    canForageFood: true,
+    canForageWater: true,
+    foodDc: 10,
+    waterDc: 15,
+    dcsDiffer: true,
+    hasCandidates: true,
+    allOffline: false,
+    candidates: [
+      {
+        actorId: "a1",
+        name: "Aric the Ranger",
+        online: true,
+        statusLabel: "Player rolls",
+        targetOptions: optionsFor("food"),
+      },
+      {
+        actorId: "a2",
+        name: "Mira Quickstep",
+        online: true,
+        statusLabel: "Player rolls",
+        targetOptions: optionsFor("water"),
+      },
+      {
+        actorId: "a3",
+        name: "Torren Stone",
+        online: false,
+        statusLabel: "GM rolls",
+        targetOptions: optionsFor("food-water"),
+      },
+    ],
   };
 }
 
@@ -4252,8 +4275,9 @@ function downtimeReceiptContext() {
 
 function foragePromptContext() {
   return {
-    environmentLabel: "Limited (hills, farmland, woods)",
+    environmentLabel: "Rainforest",
     dc: 15,
+    dcLabel: "Food DC 10 · Water DC 15",
     noActor: false,
     offline: false,
     isPrompt: true,
@@ -4301,7 +4325,11 @@ function forageSuccessContext() {
     result: {
       success: true,
       food: 3,
-      water: 4,
+      water: 0,
+      foodSuccess: true,
+      waterSuccess: false,
+      foodSuppressed: false,
+      waterSuppressed: false,
       timedOut: false,
       noResponse: false,
       suppressed: false,

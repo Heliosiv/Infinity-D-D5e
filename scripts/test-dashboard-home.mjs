@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
+let helpDialogOptions = null;
 globalThis.foundry = {
   applications: {
     api: {
       ApplicationV2: class {},
       HandlebarsApplicationMixin: (Base) => class extends Base {},
+      DialogV2: {
+        prompt(options) {
+          helpDialogOptions = options;
+          return null;
+        },
+      },
     },
   },
 };
@@ -28,8 +35,6 @@ const settings = new Map([
   ["resourcePlayerView", true],
 ]);
 const moduleApi = {
-  getUiPreferences: () =>
-    settings.get("uiPreferences") ?? { dismissedQuickStarts: [] },
   openCriticalInjuries: () => {},
   openDowntimeActivities: () => {},
   openHub: () => {},
@@ -68,7 +73,7 @@ globalThis.SimpleCalendar = {
 };
 
 const {
-  buildPrivacySafeDiagnosticsText,
+  buildHomeHelpDialogContent,
   buildPlayerHomeActions,
   groupHomeActionsByIntent,
   InfinityDashboardApp,
@@ -109,7 +114,6 @@ registerTool({
 
 InfinityDashboardApp._recentsHydrated = false;
 InfinityDashboardApp._recentToolIds = [];
-InfinityDashboardApp._sessionDismissedQuickStarts.clear();
 const app = Object.create(InfinityDashboardApp.prototype);
 const gmContext = await app._prepareContext();
 assert.equal(gmContext.isFullGm, true);
@@ -122,7 +126,6 @@ assert.deepEqual(
   ["merchant-workspace", "per-encounter-loot", "reputation"],
   "full GM Home contains only registered GM tools grouped by intent",
 );
-assert.equal(gmContext.quickStart.id, "home-gm:v1");
 const renderHome = Handlebars.compile(
   readFileSync("templates/dashboard.hbs", "utf8"),
 );
@@ -141,65 +144,20 @@ const gmHtml = renderHome(gmContext);
 assert.match(gmHtml, /Merchant Workspace/);
 assert.match(gmHtml, /Per-Encounter Loot/);
 assert.match(gmHtml, /Reputation &amp; Factions/);
-
-await InfinityDashboardApp._onDismissQuickStart.call(
-  { render: async () => {} },
-  null,
-  {
-    dataset: {
-      quickStartId: "home-gm:v1",
-      quickStartVersion: "1",
-    },
-  },
+assert.match(gmHtml, /data-action="help"/);
+assert.match(gmHtml, /aria-haspopup="dialog"/);
+assert.doesNotMatch(gmHtml, /aria-controls="infinity-home-help"/);
+assert.doesNotMatch(
+  gmHtml,
+  /id-quick-start|data-home-help|Help &amp; Diagnostics/,
 );
-assert.deepEqual(settings.get("uiPreferences").dismissedQuickStarts, [
-  "home-gm:v1",
-]);
-assert.equal((await app._prepareContext()).quickStart, null);
-await InfinityDashboardApp._onRestoreQuickStarts.call({
-  render: async () => {},
-});
-assert.deepEqual(settings.get("uiPreferences").dismissedQuickStarts, []);
-
-const { dismissQuickStart } = await import("./ui-preferences.js");
-let releaseFirstDismissal;
-const firstDismissalGate = new Promise((resolve) => {
-  releaseFirstDismissal = resolve;
-});
-let firstDismissalStarted;
-const firstDismissalReady = new Promise((resolve) => {
-  firstDismissalStarted = resolve;
-});
-let preferenceWriteCount = 0;
-globalThis.game.settings.set = async (_moduleId, key, value) => {
-  preferenceWriteCount += 1;
-  if (preferenceWriteCount === 1) {
-    firstDismissalStarted();
-    await firstDismissalGate;
-  }
-  settings.set(key, value);
-};
-const downtimeDismissal = dismissQuickStart("downtime-workspace:v0.3.0");
-await firstDismissalReady;
-const homeDismissal = InfinityDashboardApp._onDismissQuickStart.call(
-  { render: async () => {} },
-  null,
-  {
-    dataset: {
-      quickStartId: "home-gm:v1",
-      quickStartVersion: "1",
-    },
-  },
-);
-releaseFirstDismissal();
-await Promise.all([downtimeDismissal, homeDismissal]);
-assert.deepEqual(
-  settings.get("uiPreferences").dismissedQuickStarts.sort(),
-  ["downtime-workspace:v0.3.0", "home-gm:v1"].sort(),
-  "overlapping Home and Downtime dismissals preserve both identifiers",
-);
-globalThis.game.settings.set = async (_moduleId, key, value) =>
-  settings.set(key, value);
+await InfinityDashboardApp._onHelp();
+assert.equal(helpDialogOptions.window.title, "Infinity D&D5e — Home Help");
+assert.ok(helpDialogOptions.classes.includes("infinity-dialog"));
+assert.match(helpDialogOptions.content, /Prepare:/);
+assert.match(helpDialogOptions.content, /Shift\+I/);
+assert.equal(helpDialogOptions.ok.label, "Close");
+assert.doesNotMatch(buildHomeHelpDialogContent(), /Prepare:/);
 
 let settingsOpenCalls = 0;
 moduleApi.openSettings = () => {
@@ -240,15 +198,10 @@ globalThis.game.user = {
 };
 settings.set("criticalInjuriesEnabled", false);
 settings.set("resourcePlayerView", false);
-moduleApi.getUiPreferences = () => ({
-  dismissedQuickStarts: ["home-player:v1"],
-});
 const assistantContext = await app._prepareContext();
 assert.equal(assistantContext.isFullGm, false);
 assert.equal(assistantContext.isAssistantGm, true);
 assert.equal(assistantContext.roleLabel, "Assistant GM Home");
-assert.equal(assistantContext.quickStart, null);
-assert.equal(assistantContext.hasDismissedQuickStarts, true);
 const assistantActions = assistantContext.groups.flatMap(
   (group) => group.actions,
 );
@@ -287,14 +240,9 @@ assert.ok(
     .every((action) => action.launchKind === "surface"),
   "Assistant GM receives only permission-scoped player destinations",
 );
-const safeDiagnostics = JSON.stringify(assistantContext.diagnostics);
-assert.doesNotMatch(safeDiagnostics, /assistant-secret-id|gm-secret-id/);
-assert.match(safeDiagnostics, /13\.351|0\.3\.0/);
-const copiedDiagnostics = buildPrivacySafeDiagnosticsText(
-  assistantContext.diagnostics,
-);
-assert.match(copiedDiagnostics, /Infinity D&D5e: 0\.3\.0/);
-assert.doesNotMatch(copiedDiagnostics, /assistant-secret-id|gm-secret-id/);
+const playerHelp = buildHomeHelpDialogContent({ fullGm: false });
+assert.match(playerHelp, /player-safe tools/);
+assert.doesNotMatch(playerHelp, /assistant-secret-id|gm-secret-id/);
 const assistantHtml = renderHome(assistantContext);
 assert.doesNotMatch(
   assistantHtml,

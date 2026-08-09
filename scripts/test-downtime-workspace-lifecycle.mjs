@@ -711,10 +711,7 @@ try {
     "the six-step lifecycle should show five directional connectors",
   );
   assert.match(idleHtml, /data-action="dismissQuickStart"/);
-  assert.match(
-    idleHtml,
-    /Restore this guide from Help (?:&|&amp;) Diagnostics/,
-  );
+  assert.match(idleHtml, /Restore this guide from Infinity Settings/);
   assert.match(idleHtml, /data-step-state="current"[^>]+aria-current="step"/);
   assert.match(idleHtml, /data-step-state="pending"/);
   assert.match(template(locked), /data-step-state="completed"/);
@@ -775,7 +772,7 @@ try {
   assert.deepEqual(storedPreferences.dismissedQuickStarts, [
     DOWNTIME_WORKSPACE_QUICK_START_ID,
   ]);
-  assert.match(dismissingApp._statusMessage, /Help & Diagnostics/);
+  assert.match(dismissingApp._statusMessage, /Infinity Settings/);
   assert.equal(dismissingApp._pendingFocus, '[data-action="refresh"]');
   const dismissedContext =
     await DowntimeWorkspaceApp.prototype._prepareContext.call({

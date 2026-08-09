@@ -92,7 +92,7 @@ export async function loadCompendiumItems(opts = {}) {
   } catch (err) {
     console.error(`infinity-dnd5e | failed to load compendium ${packId}`, err);
     ui.notifications?.error(
-      "The curated item library could not be loaded. No loot was generated; reload Foundry and try again, then use Help & Diagnostics if it continues.",
+      "The curated item library could not be loaded. No loot was generated; reload Foundry and try again, then share this exact message with the GM if it continues.",
     );
     return [];
   }

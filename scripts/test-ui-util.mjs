@@ -7,7 +7,9 @@ import {
   formatGp,
   formatMagicBias,
   formatMultiplier,
+  ENVIRONMENT_LABELS,
   plainTextLootSummary,
+  prettyEnvironment,
   prettyLootType,
   prettyRarity,
   LOOT_TYPE_LABELS,
@@ -51,6 +53,24 @@ for (const key of LOOT_TYPES) {
     `LOOT_TYPE_LABELS is missing a label for ${key}`,
   );
 }
+
+/* prettyEnvironment — all shipped biome ids stay player-friendly */
+for (const [id, label] of [
+  ["biome-forest", "Forest"],
+  ["biome-rainforest", "Rainforest"],
+  ["biome-grassland", "Grassland"],
+  ["biome-coast", "Coast"],
+  ["biome-hills", "Hills"],
+  ["biome-mountains", "Mountains"],
+  ["biome-swamp", "Swamp"],
+  ["biome-desert", "Desert"],
+  ["biome-tundra", "Tundra"],
+  ["biome-riverlands", "Riverlands"],
+]) {
+  assert.equal(ENVIRONMENT_LABELS[id], label);
+  assert.equal(prettyEnvironment(id), label);
+}
+assert.equal(prettyEnvironment("campaign-moon-marsh"), "Campaign moon marsh");
 
 /* prettyRarity */
 assert.equal(prettyRarity("very-rare"), "Very Rare");

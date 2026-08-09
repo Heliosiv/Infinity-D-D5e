@@ -88,7 +88,7 @@ import { shouldRunUpkeepForaging } from "./resource/calendar-watcher.js";
 }
 
 /* ------------------------------------------------------------------ *
- * Manual Advance Day is consumption-only.
+ * Manual Use Daily Supplies is consumption-only.
  * ------------------------------------------------------------------ */
 {
   const forageable = { forageable: true };
@@ -100,7 +100,7 @@ import { shouldRunUpkeepForaging } from "./resource/calendar-watcher.js";
   assert.equal(
     shouldRunUpkeepForaging({ manual: true, environment: forageable }),
     false,
-    "manual Advance Day skips foraging even in a forageable environment",
+    "manual Use Daily Supplies skips foraging even in a forageable environment",
   );
   assert.equal(
     shouldRunUpkeepForaging({

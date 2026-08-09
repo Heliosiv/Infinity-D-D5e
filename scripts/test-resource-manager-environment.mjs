@@ -154,10 +154,26 @@ try {
     "valid formula is canonicalized",
   );
 
+  const waterDcInput = environmentInput(copied.id, "waterDc", "19");
+  await ResourceManagerApp.prototype._onEnvironmentInput.call(
+    fakeApp,
+    waterDcInput,
+  );
+  savedCustom = store
+    .normalizeResourceConfig(settingValues.get("resourceConfig"))
+    .environments.find((environment) => environment.id === copied.id);
+  assert.equal(savedCustom.foodDc, 15);
+  assert.equal(savedCustom.waterDc, 19);
+  assert.equal(savedCustom.dc, 19, "compatibility DC follows the harder check");
+
   const context =
     await ResourceManagerApp.prototype._prepareContext.call(fakeApp);
   assert.equal(context.currentEnvironment.isCustom, true);
   assert.equal(context.currentEnvLabel, "Ashen March");
+  assert.equal(context.currentEnvFoodDc, 15);
+  assert.equal(context.currentEnvWaterDc, 19);
+  assert.equal(context.currentEnvDcsDiffer, true);
+  assert.equal(context.canRunForageDrive, true);
   assert.equal(
     context.environments.find((environment) => environment.id === copied.id)
       ?.optionLabel,
@@ -174,7 +190,11 @@ try {
   const html = template(context);
   assert.match(html, /data-action="copyEnvironment"/);
   assert.match(html, /aria-label="Edit current custom environment"/);
+  assert.match(html, /data-environment-field="foodDc"/);
+  assert.match(html, /data-environment-field="waterDc"/);
   assert.match(html, /data-environment-field="yieldWater"/);
+  assert.match(html, /Food DC 15/);
+  assert.match(html, /Water DC 19/);
   assert.match(html, /Ashen March/);
 } finally {
   if (savedFoundry === undefined) delete globalThis.foundry;

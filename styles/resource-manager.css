@@ -1147,3 +1147,164 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Template-backed Forage Drive setup dialog. */
+.infinity-dnd5e.infinity-forage-drive-dialog .window-content {
+  background: var(--lf-bg);
+  color: var(--lf-text);
+  overflow: auto;
+}
+
+.infinity-dnd5e .rfd-shell {
+  display: grid;
+  gap: var(--lf-space-4, 16px);
+  container: forage-drive / inline-size;
+}
+
+.infinity-dnd5e .rfd-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lf-space-3, 12px);
+}
+
+.infinity-dnd5e .rfd-head h2,
+.infinity-dnd5e .rfd-section-heading h3,
+.infinity-dnd5e .rfd-section-heading p,
+.infinity-dnd5e .rfd-eyebrow,
+.infinity-dnd5e .rfd-fieldset-help,
+.infinity-dnd5e .rfd-rule-note {
+  margin: 0;
+}
+
+.infinity-dnd5e .rfd-eyebrow,
+.infinity-dnd5e .rfd-forager__target > span {
+  color: var(--lf-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.infinity-dnd5e .rfd-destination {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lf-space-2, 8px);
+  max-width: 18rem;
+  color: var(--lf-muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.infinity-dnd5e .rfd-dcs,
+.infinity-dnd5e .rfd-foragers {
+  display: grid;
+  gap: var(--lf-space-3, 12px);
+  min-width: 0;
+  padding: var(--lf-space-3, 12px);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  background: var(--lf-bg-alt);
+}
+
+.infinity-dnd5e .rfd-foragers legend {
+  padding: 0 var(--lf-space-2, 8px);
+  color: var(--lf-text-strong);
+  font-weight: 700;
+}
+
+.infinity-dnd5e .rfd-section-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.infinity-dnd5e .rfd-section-heading p,
+.infinity-dnd5e .rfd-fieldset-help,
+.infinity-dnd5e .rfd-rule-note,
+.infinity-dnd5e .rfd-forager small {
+  color: var(--lf-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.infinity-dnd5e .rfd-dc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--lf-space-3, 12px);
+}
+
+.infinity-dnd5e .rfd-rule-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lf-space-2, 8px);
+}
+
+.infinity-dnd5e .rfd-forager-list {
+  display: grid;
+  gap: var(--lf-space-2, 8px);
+}
+
+.infinity-dnd5e .rfd-forager {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 0.7fr);
+  align-items: center;
+  gap: var(--lf-space-3, 12px);
+  min-width: 0;
+  padding: var(--lf-space-2, 8px);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-bg);
+}
+
+.infinity-dnd5e .rfd-forager__person {
+  display: flex;
+  align-items: center;
+  gap: var(--lf-space-2, 8px);
+  min-width: 0;
+}
+
+.infinity-dnd5e .rfd-forager__person > span,
+.infinity-dnd5e .rfd-forager__target {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.infinity-dnd5e .rfd-forager__person strong {
+  overflow: hidden;
+  color: var(--lf-text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infinity-dnd5e .rfd-forager small.is-online {
+  color: var(--lf-success);
+}
+
+.infinity-dnd5e .rfd-empty {
+  margin: 0;
+  color: var(--lf-muted);
+}
+
+@container forage-drive (max-width: 520px) {
+  .infinity-dnd5e .rfd-head,
+  .infinity-dnd5e .rfd-forager {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-dnd5e .rfd-head {
+    display: grid;
+  }
+
+  .infinity-dnd5e .rfd-destination {
+    max-width: none;
+    text-align: left;
+  }
+}
+
+@container forage-drive (max-width: 360px) {
+  .infinity-dnd5e .rfd-dc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
