@@ -42,6 +42,12 @@ const CSS_FILES = [
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
+const LOOT_RESULT_PARTIAL =
+  "modules/infinity-dnd5e/templates/loot-result-item.hbs";
+Handlebars.registerPartial(
+  LOOT_RESULT_PARTIAL,
+  readFileSync("templates/loot-result-item.hbs", "utf8"),
+);
 
 const COMMON_RARITIES = [
   ["common", "Common", 298],
@@ -109,6 +115,47 @@ export function buildHarnessViews() {
       { width: 680, height: 660 },
     ),
     view(
+      "settings-dirty",
+      "Infinity Settings (unsaved changes)",
+      "infinity-settings",
+      "templates/settings.hbs",
+      settingsStatusContext({
+        fullGm: false,
+        dirty: true,
+        statusTone: "attention",
+        status: "Changes are ready to save.",
+      }),
+      { width: 680, height: 660 },
+    ),
+    view(
+      "settings-saved",
+      "Infinity Settings (saved)",
+      "infinity-settings",
+      "templates/settings.hbs",
+      settingsStatusContext({
+        fullGm: false,
+        dirty: false,
+        statusTone: "success",
+        status:
+          "2 changes saved. Open windows now use the updated preferences.",
+      }),
+      { width: 680, height: 660 },
+    ),
+    view(
+      "settings-save-error",
+      "Infinity Settings (retryable save error)",
+      "infinity-settings",
+      "templates/settings.hbs",
+      settingsStatusContext({
+        fullGm: true,
+        dirty: true,
+        statusTone: "danger",
+        status:
+          "Some changes were not saved: Interface density. Review them and try again.",
+      }),
+      { width: 760, height: 720 },
+    ),
+    view(
       "search-picker",
       "Searchable item picker",
       "infinity-search-picker",
@@ -122,6 +169,27 @@ export function buildHarnessViews() {
       "infinity-dialog",
       dialogFixtureHtml(),
       { width: 520, height: 420 },
+    ),
+    rawView(
+      "shared-dialog-busy",
+      "Shared dialog (busy)",
+      "infinity-dialog",
+      dialogBusyFixtureHtml(),
+      { width: 520, height: 360 },
+    ),
+    rawView(
+      "shared-dialog-error",
+      "Shared dialog (retryable error)",
+      "infinity-dialog",
+      dialogErrorFixtureHtml(),
+      { width: 520, height: 380 },
+    ),
+    rawView(
+      "shared-dialog-interrupted",
+      "Shared dialog (interrupted outcome)",
+      "infinity-dialog",
+      dialogInterruptedFixtureHtml(),
+      { width: 520, height: 400 },
     ),
     rawView(
       "chat-card",
@@ -138,12 +206,72 @@ export function buildHarnessViews() {
       }),
       { width: 460, height: 520, requiresActions: false },
     ),
+    rawView(
+      "chat-card-pending",
+      "Shared chat outcome card (pending)",
+      "infinity-chat-fixture",
+      buildInfinityChatCard({
+        title: "Merchant trade",
+        outcome: "The trade is waiting for GM confirmation.",
+        audience: "Visible to GMs and the character's controlling player.",
+        details: "The request was sent once. No receipt has arrived yet.",
+        nextAction: "Keep the session open and do not submit the trade again.",
+        tone: "info",
+      }),
+      { width: 460, height: 520, requiresActions: false },
+    ),
+    rawView(
+      "chat-card-interrupted",
+      "Shared chat outcome card (interrupted)",
+      "infinity-chat-fixture",
+      buildInfinityChatCard({
+        title: "Downtime application",
+        outcome: "Confirmation was interrupted and the outcome is uncertain.",
+        audience: "Visible only to GMs and affected character owners.",
+        details:
+          "The saved operation may already have changed campaign data before the connection ended.",
+        nextAction:
+          "Do not repeat it. Reconnect, review the saved receipt, and recover only if the GM confirms it is needed.",
+        tone: "warning",
+      }),
+      { width: 460, height: 560, requiresActions: false },
+    ),
+    rawView(
+      "chat-card-error",
+      "Shared chat outcome card (retryable error)",
+      "infinity-chat-fixture",
+      buildInfinityChatCard({
+        title: "Foraging request",
+        outcome: "The request could not be sent. Nothing changed.",
+        audience: "Visible to the requesting player and full GMs.",
+        details: "No authoritative receipt or inventory write was created.",
+        nextAction: "Check the connection, then retry the same request once.",
+        tone: "danger",
+      }),
+      { width: 460, height: 520, requiresActions: false },
+    ),
     view(
       "per-encounter",
       "Per-Encounter Loot",
       "loot-studio loot-forge",
       "templates/loot-forge.hbs",
       perEncounterContext(),
+      { width: 860, height: 760 },
+    ),
+    view(
+      "per-encounter-loading",
+      "Per-Encounter Loot (item library loading)",
+      "loot-studio loot-forge",
+      "templates/loot-forge.hbs",
+      lootLoadingContext(perEncounterContext()),
+      { width: 860, height: 760 },
+    ),
+    view(
+      "per-encounter-unavailable",
+      "Per-Encounter Loot (no available items)",
+      "loot-studio loot-forge",
+      "templates/loot-forge.hbs",
+      lootUnavailableContext(perEncounterContext()),
       { width: 860, height: 760 },
     ),
     view(
@@ -158,11 +286,43 @@ export function buildHarnessViews() {
       },
     ),
     view(
+      "hoard-loading",
+      "Hoard Loot (item library loading)",
+      "loot-studio hoard-loot",
+      "templates/hoard-loot.hbs",
+      lootLoadingContext(hoardContext()),
+      { width: 820, height: 720 },
+    ),
+    view(
+      "hoard-unavailable",
+      "Hoard Loot (no available items)",
+      "loot-studio hoard-loot",
+      "templates/hoard-loot.hbs",
+      lootUnavailableContext(hoardContext()),
+      { width: 820, height: 720 },
+    ),
+    view(
       "per-creature",
       "Per-Creature Loot",
       "loot-studio per-creature-loot",
       "templates/per-creature-loot.hbs",
       perCreatureContext(),
+      { width: 820, height: 760 },
+    ),
+    view(
+      "per-creature-loading",
+      "Per-Creature Loot (item library loading)",
+      "loot-studio per-creature-loot",
+      "templates/per-creature-loot.hbs",
+      lootLoadingContext(perCreatureContext()),
+      { width: 820, height: 760 },
+    ),
+    view(
+      "per-creature-unavailable",
+      "Per-Creature Loot (no available items)",
+      "loot-studio per-creature-loot",
+      "templates/per-creature-loot.hbs",
+      lootUnavailableContext(perCreatureContext()),
       { width: 820, height: 760 },
     ),
     view(
@@ -179,6 +339,14 @@ export function buildHarnessViews() {
       "infinity-merchant-workspace",
       "templates/merchant-workspace.hbs",
       merchantWorkspaceClosedContext(),
+      { width: 1000, height: 720 },
+    ),
+    view(
+      "merchant-workspace-save-error",
+      "Merchant Workspace (save needs retry)",
+      "infinity-merchant-workspace",
+      "templates/merchant-workspace.hbs",
+      merchantWorkspaceSaveErrorContext(),
       { width: 1000, height: 720 },
     ),
     view(
@@ -203,6 +371,14 @@ export function buildHarnessViews() {
       "infinity-merchant-session",
       "templates/merchant-session.hbs",
       merchantSessionPendingContext(),
+      { width: 720, height: 600 },
+    ),
+    view(
+      "merchant-session-completed",
+      "Merchant Session - transaction completed",
+      "infinity-merchant-session",
+      "templates/merchant-session.hbs",
+      merchantSessionCompletedContext(),
       { width: 720, height: 600 },
     ),
     view(
@@ -331,6 +507,38 @@ export function buildHarnessViews() {
       "infinity-resource-overview",
       "templates/resource-overview.hbs",
       resourceOverviewOfflineContext(),
+      { width: 540, height: 420 },
+    ),
+    view(
+      "resource-overview-loading",
+      "Party Supplies (loading)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      resourceOverviewLoadingContext(),
+      { width: 540, height: 420 },
+    ),
+    view(
+      "resource-overview-error",
+      "Party Supplies (retryable error)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      resourceOverviewErrorContext(),
+      { width: 540, height: 440 },
+    ),
+    view(
+      "resource-overview-empty",
+      "Party Supplies (no snapshot)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      resourceOverviewEmptyContext(),
+      { width: 540, height: 420 },
+    ),
+    view(
+      "resource-overview-disabled",
+      "Party Supplies (sharing disabled)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      resourceOverviewDisabledContext(),
       { width: 540, height: 420 },
     ),
     view(
@@ -534,6 +742,14 @@ export function buildHarnessViews() {
       { width: 520, height: 700 },
     ),
     view(
+      "critical-injury-character-unavailable",
+      "Critical Injuries (character access changed)",
+      "infinity-critical-injury",
+      "templates/critical-injury.hbs",
+      criticalInjuryCharacterUnavailableContext(),
+      { width: 520, height: 460 },
+    ),
+    view(
       "critical-injury-hud",
       "Critical Injury Body HUD (player overlay)",
       "infinity-critical-injury-hud",
@@ -580,6 +796,30 @@ export function buildHarnessViews() {
       "templates/reputation-view.hbs",
       reputationViewEmptyContext(),
       { width: 420, height: 560 },
+    ),
+    view(
+      "reputation-view-loading",
+      "Reputation (loading)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewLoadingContext(),
+      { width: 420, height: 460 },
+    ),
+    view(
+      "reputation-view-offline",
+      "Reputation (GM offline)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewOfflineContext(),
+      { width: 420, height: 460 },
+    ),
+    view(
+      "reputation-view-error",
+      "Reputation (retryable error)",
+      "infinity-reputation-view",
+      "templates/reputation-view.hbs",
+      reputationViewErrorContext(),
+      { width: 420, height: 460 },
     ),
   ];
 }
@@ -702,8 +942,14 @@ export function buildUiHarnessDocument() {
 
     .ui-harness__overlay-stage .infinity-critical-injury-hud {
       position: absolute !important;
-      right: 16px !important;
-      bottom: 16px !important;
+      inset: 0 !important;
+      width: auto !important;
+      height: auto !important;
+    }
+
+    .ui-harness__overlay-stage .ci-hud-shell {
+      right: 16px;
+      bottom: 16px;
     }
 
     .ui-harness__overlay-stage .ci-hud-card {
@@ -712,17 +958,17 @@ export function buildUiHarnessDocument() {
       bottom: -33px;
     }
 
-    @media (max-width: 520px) {
-      .ui-harness__overlay-stage .infinity-critical-injury-hud {
-        right: 8px !important;
-        bottom: 16px !important;
+    @container critical-injury-overlay (max-width: 520px) {
+      .ui-harness__overlay-stage .ci-hud-shell {
+        right: 8px;
+        bottom: 16px;
       }
 
       .ui-harness__overlay-stage .ci-hud-card {
         right: 40px;
         bottom: 88px;
         left: auto;
-        width: min(260px, calc(100vw - 40px));
+        width: min(260px, calc(100cqi - 40px));
       }
     }
   </style>
@@ -781,6 +1027,42 @@ function dialogFixtureHtml() {
     <footer class="form-footer infinity-dialog-actions">
       <button type="button" class="infinity-button" data-action="cancel" autofocus>Cancel</button>
       <button type="button" class="infinity-button infinity-button--primary" data-action="confirm">Confirm change</button>
+    </footer>
+  </form>`;
+}
+
+function dialogBusyFixtureHtml() {
+  return `<form class="standard-form" aria-labelledby="infinity-dialog-busy-title" aria-busy="true">
+    <h2 id="infinity-dialog-busy-title">Applying the saved change</h2>
+    <p>The authoritative GM is writing the confirmed standing and its reason.</p>
+    <p class="infinity-banner infinity-banner--info" role="status" aria-live="polite" aria-atomic="true">Please wait. Do not submit the change again.</p>
+    <footer class="form-footer infinity-dialog-actions">
+      <button type="button" class="infinity-button" data-action="cancel" autofocus>Close dialog</button>
+      <button type="button" class="infinity-button infinity-button--primary" data-action="confirm" disabled>Applying…</button>
+    </footer>
+  </form>`;
+}
+
+function dialogErrorFixtureHtml() {
+  return `<form class="standard-form" aria-labelledby="infinity-dialog-error-title">
+    <h2 id="infinity-dialog-error-title">The change was not saved</h2>
+    <p>No campaign data changed because the authoritative write did not start.</p>
+    <p class="infinity-banner infinity-banner--danger" role="alert">Check the connection, then retry the same change once.</p>
+    <footer class="form-footer infinity-dialog-actions">
+      <button type="button" class="infinity-button" data-action="cancel" autofocus>Cancel</button>
+      <button type="button" class="infinity-button infinity-button--primary" data-action="retry">Try again</button>
+    </footer>
+  </form>`;
+}
+
+function dialogInterruptedFixtureHtml() {
+  return `<form class="standard-form" aria-labelledby="infinity-dialog-interrupted-title">
+    <h2 id="infinity-dialog-interrupted-title">Confirmation was interrupted</h2>
+    <p>The saved change may already have been applied before the connection ended.</p>
+    <p class="infinity-banner infinity-banner--warning" role="status" aria-live="polite" aria-atomic="true">Do not repeat the action. Reconnect and verify the canonical record first.</p>
+    <footer class="form-footer infinity-dialog-actions">
+      <button type="button" class="infinity-button" data-action="cancel" autofocus>Close</button>
+      <button type="button" class="infinity-button infinity-button--primary" data-action="refresh">Check saved record</button>
     </footer>
   </form>`;
 }
@@ -970,7 +1252,7 @@ function diagnosticsContext() {
     versions: [
       { label: "Infinity D&D5e", value: MODULE_VERSION },
       { label: "Foundry", value: "13.351" },
-      { label: "D&D5e system", value: "4.0.4" },
+      { label: "D&D5e system", value: "4.4.4" },
     ],
     integrations: [
       {
@@ -1171,6 +1453,15 @@ function settingsContext({ fullGm }) {
     status: "No unsaved changes.",
     statusTone: "neutral",
     dirty: false,
+  };
+}
+
+function settingsStatusContext({ fullGm, dirty, statusTone, status }) {
+  return {
+    ...settingsContext({ fullGm }),
+    dirty: Boolean(dirty),
+    statusTone: String(statusTone),
+    status: String(status),
   };
 }
 
@@ -1473,6 +1764,31 @@ function perCreatureContext() {
   };
 }
 
+function lootLoadingContext(context) {
+  return {
+    ...context,
+    loadingItems: true,
+    hasResult: false,
+    generateDisabled: true,
+    generateDisabledReason: "The item library is still loading.",
+  };
+}
+
+function lootUnavailableContext(context) {
+  return {
+    ...context,
+    loadingItems: false,
+    hasResult: false,
+    candidateLabel: "No items are available for the current filters",
+    noCandidates: true,
+    candidateUnavailableReason:
+      "The item library or current filters produced no available items.",
+    generateDisabled: true,
+    generateDisabledReason:
+      "No available items match the current filters. Review the filters and try again.",
+  };
+}
+
 function merchantWorkspaceContext() {
   const selected = {
     id: "m-curios",
@@ -1636,6 +1952,13 @@ function merchantWorkspaceContext() {
     suspendedSessionCountIsOne: false,
     canOpenSession: true,
     saveStatus: "Saved",
+  };
+}
+
+function merchantWorkspaceSaveErrorContext() {
+  return {
+    ...merchantWorkspaceContext(),
+    saveStatus: "Save failed — retry with Save now",
   };
 }
 
@@ -1810,6 +2133,22 @@ function merchantSessionPendingContext() {
     bargainLocked: true,
     bargainPending: true,
   }));
+  return context;
+}
+
+function merchantSessionCompletedContext() {
+  const context = merchantSessionContext("buy");
+  context.transactionTone = "success";
+  context.transactionTitle = "Trade confirmed";
+  context.transactionMessage =
+    "The active GM confirmed the purchase. Aric's wallet, inventory, and the shop stock now show the saved result.";
+  context.walletLabel = "6 gp · 5 sp";
+  context.sessionSpentValue = "84.00 gp";
+  context.sessionSpentLabel = "84.00 gp";
+  context.log = [
+    ...context.log,
+    { kind: "buy", text: "Bought 3× Silk Rope for 32.40 gp" },
+  ];
   return context;
 }
 
@@ -2629,6 +2968,37 @@ function resourceOverviewOfflineContext() {
     hasResources: false,
     resources: [],
     lastUpkeep: null,
+  };
+}
+
+function resourceOverviewLoadingContext() {
+  return {
+    ...resourceOverviewOfflineContext(),
+    noGm: false,
+    loading: true,
+  };
+}
+
+function resourceOverviewErrorContext() {
+  return {
+    ...resourceOverviewOfflineContext(),
+    noGm: false,
+    requestFailed: true,
+  };
+}
+
+function resourceOverviewEmptyContext() {
+  return {
+    ...resourceOverviewOfflineContext(),
+    noGm: false,
+  };
+}
+
+function resourceOverviewDisabledContext() {
+  return {
+    ...resourceOverviewOfflineContext(),
+    noGm: false,
+    disabled: true,
   };
 }
 
@@ -3758,6 +4128,26 @@ function criticalInjuryContext() {
     actorName: "Aric the Ranger",
     actorImg: iconDataUri("#8a3f43", "AR"),
     noActor: false,
+    hasActorOptions: true,
+    canSwitchActor: true,
+    needsActorChoice: false,
+    actorSwitchLocked: false,
+    actorSelectDisabled: false,
+    actorSelectDisabledAttribute: "",
+    actorOptions: [
+      {
+        id: "actor-aric",
+        name: "Aric the Ranger",
+        selected: true,
+        selectedAttribute: "selected",
+      },
+      {
+        id: "actor-mira",
+        name: "Mira Quickstep",
+        selected: false,
+        selectedAttribute: "",
+      },
+    ],
     offline: false,
     statusTone: "success",
     outcomeUncertain: false,
@@ -3769,6 +4159,9 @@ function criticalInjuryContext() {
     hasPending: true,
     pendingCount: 1,
     waitingForRoll: false,
+    rollActionDisabled: false,
+    rollActionDisabledAttribute: "",
+    rollActionTitle: "Roll the approved critical injury",
     latestResult: {
       injuryRoll: 47,
       injuryName: "Shattered Knee",
@@ -3782,6 +4175,7 @@ function criticalInjuryContext() {
       {
         id: "injury-knee",
         domId: "injury-knee",
+        headingId: "ci-injury-actor-aric-injury-knee",
         name: "Shattered Knee",
         roll: 47,
         detailLabel: "Left knee",
@@ -3791,17 +4185,23 @@ function criticalInjuryContext() {
         recoveryRule:
           "1 week or 3 Healer's Kit charges. It becomes permanent if untreated.",
         permanent: false,
+        permanentClass: "",
         stabilized: false,
         kitCharges: 3,
         treatmentCheck: "No check",
         canTreat: true,
         treating: false,
+        treatmentDisabled: false,
+        treatmentDisabledAttribute: "",
+        treatmentActionTitle: "Request treatment for Shattered Knee",
+        treatmentActionLabel: "Request treatment for Shattered Knee",
         treatmentMessage: "",
         automatedChanges: 1,
       },
       {
         id: "injury-scar",
         domId: "injury-scar",
+        headingId: "ci-injury-actor-aric-injury-scar",
         name: "Deep Scar",
         roll: 74,
         detailLabel: "Visible facial scar",
@@ -3810,11 +4210,16 @@ function criticalInjuryContext() {
         dueLabel: "",
         recoveryRule: "Permanent.",
         permanent: true,
+        permanentClass: "ci-injury--permanent",
         stabilized: false,
         kitCharges: 0,
         treatmentCheck: "No check",
         canTreat: false,
         treating: false,
+        treatmentDisabled: false,
+        treatmentDisabledAttribute: "",
+        treatmentActionTitle: "Request treatment for Deep Scar",
+        treatmentActionLabel: "Request treatment for Deep Scar",
         treatmentMessage: "",
         automatedChanges: 2,
       },
@@ -3831,18 +4236,31 @@ function criticalInjuryContext() {
 }
 
 function criticalInjuryOfflineContext() {
-  return {
+  const context = {
     ...criticalInjuryContext(),
     offline: true,
+    rollActionDisabled: true,
+    rollActionDisabledAttribute: "disabled",
+    rollActionTitle: "A full GM must be online",
     statusTone: "warning",
     statusMessage:
       "No full GM is connected. Existing injuries are unchanged; actions resume after reconnection.",
   };
+  context.activeInjuries = context.activeInjuries.map((injury) => ({
+    ...injury,
+    treatmentDisabled: true,
+    treatmentDisabledAttribute: "disabled",
+    treatmentActionTitle: "A full GM must be online",
+  }));
+  return context;
 }
 
 function criticalInjuryTreatingContext() {
   const context = criticalInjuryContext();
   context.statusTone = "info";
+  context.actorSwitchLocked = true;
+  context.actorSelectDisabled = true;
+  context.actorSelectDisabledAttribute = "disabled";
   context.statusMessage =
     "The treatment request was sent. Do not submit it again while confirmation is pending.";
   context.activeInjuries = context.activeInjuries.map((injury, index) =>
@@ -3850,6 +4268,10 @@ function criticalInjuryTreatingContext() {
       ? {
           ...injury,
           treating: true,
+          treatmentDisabled: true,
+          treatmentDisabledAttribute: "disabled",
+          treatmentActionTitle: "Treatment confirmation is pending",
+          treatmentActionLabel: "Waiting for treatment of Shattered Knee",
           treatmentMessage: "Waiting for the active GM to confirm treatment.",
         }
       : injury,
@@ -3882,6 +4304,33 @@ function criticalInjuryUncertainContext() {
     statusTone: "warning",
     statusMessage:
       "Confirmation did not arrive. Do not repeat the injury action; check the Actor and chat receipt, then ask the GM if the result remains unclear.",
+  };
+}
+
+function criticalInjuryCharacterUnavailableContext() {
+  return {
+    ...criticalInjuryContext(),
+    actorName: "Unavailable character",
+    actorImg: "icons/svg/mystery-man.svg",
+    noActor: true,
+    needsActorChoice: true,
+    actorOptions: [
+      {
+        id: "actor-aric",
+        name: "Aric the Ranger",
+        selected: false,
+        selectedAttribute: "",
+      },
+      {
+        id: "actor-mira",
+        name: "Mira Quickstep",
+        selected: false,
+        selectedAttribute: "",
+      },
+    ],
+    statusTone: "warning",
+    statusMessage:
+      "Character access changed. Nothing changed; choose a character you control.",
   };
 }
 
@@ -4132,6 +4581,27 @@ function reputationViewEmptyContext() {
     requestFailed: false,
     hasFactions: false,
     factions: [],
+  };
+}
+
+function reputationViewLoadingContext() {
+  return {
+    ...reputationViewEmptyContext(),
+    loading: true,
+  };
+}
+
+function reputationViewOfflineContext() {
+  return {
+    ...reputationViewEmptyContext(),
+    noGm: true,
+  };
+}
+
+function reputationViewErrorContext() {
+  return {
+    ...reputationViewEmptyContext(),
+    requestFailed: true,
   };
 }
 

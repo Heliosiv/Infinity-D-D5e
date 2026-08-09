@@ -136,9 +136,16 @@ export class PerCreatureLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
+    this._initializeModeState();
+  }
+
+  /** Initialize Creature-owned state for either a standalone test instance
+   *  or the unified Loot Studio host's non-rendering mode controller. */
+  _initializeModeState({ restoreForStudio = false } = {}) {
     const persistEnabled =
       getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
-      PerCreatureLootApp._lootStudioRestoreState === true;
+      PerCreatureLootApp._lootStudioRestoreState === true ||
+      restoreForStudio;
     const persisted = persistEnabled
       ? PerCreatureLootApp._persistedState
       : null;

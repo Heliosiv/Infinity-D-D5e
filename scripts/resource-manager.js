@@ -61,6 +61,9 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
 import { pickSearchOption } from "./search-picker.js";
 import { loadCompendiumItems } from "./loot/pack.js";
+import { bindFocusRestoration } from "./infinity-app.js";
+import { initializePrivateState } from "./private-state.js";
+import { normalizeInfinityItemUuid } from "./item-uuid-compat.js";
 import {
   confirmInfinityDialog,
   isInfinityDialogAvailable,
@@ -118,6 +121,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!ResourceManagerApp._instance) {
       ResourceManagerApp._instance = new ResourceManagerApp();
+      bindFocusRestoration(ResourceManagerApp._instance);
     }
     if (ResourceManagerApp._instance.rendered) {
       ResourceManagerApp._instance.bringToFront();
@@ -136,7 +140,15 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     ];
     this._userConnectionHook =
       globalThis.Hooks?.on?.("userConnected", () => {
-        if (this.rendered) this.render(false);
+        if (!this.rendered) return;
+        void initializePrivateState()
+          .then((ready) => {
+            if (ready && this.rendered) this.render(false);
+          })
+          .catch(() => {
+            // The central recovery loop will retry. Keep the existing verified
+            // view in place rather than surfacing a transient render failure.
+          });
       }) ?? null;
     this._userRoleHook =
       globalThis.Hooks?.on?.("updateUser", (user) => {
@@ -342,10 +354,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       config.resources.map(async (res) => {
         const tags = await Promise.all(
           (res.matching.itemUuids ?? []).map(async (uuid) => {
-            let name = uuid;
+            const canonicalUuid = normalizeInfinityItemUuid(uuid);
+            let name = canonicalUuid;
             let missing = true;
             try {
-              const doc = await fromUuid(uuid);
+              const doc = await fromUuid(canonicalUuid);
               if (doc?.name) {
                 name = doc.name;
                 missing = false;
@@ -353,7 +366,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
             } catch {
               /* keep raw uuid + missing flag */
             }
-            return { uuid, name, missing };
+            return { uuid: canonicalUuid, name, missing };
           }),
         );
         return {
@@ -673,14 +686,12 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       // clicks can queue multiple confirmations that resume one at a time after
       // the service-level upkeep guard has already been released.
       const party = discoverPartyActors();
-      if (party.length > 0 && isInfinityDialogAvailable("confirm")) {
-        const ok = await confirmInfinityDialog({
-          window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
-          content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
-          rejectClose: false,
-        });
-        if (!ok) return;
-      }
+      const ok = await confirmInfinityDialog({
+        window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
+        content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
+        rejectClose: false,
+      });
+      if (!ok) return;
       playModuleSound(SOUND_EVENTS.ROLL_START);
       await advanceDayNow();
       this.render(false);
@@ -1111,18 +1122,15 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onResetConfig(_event, _target) {
-    let ok = true;
-    if (isInfinityDialogAvailable("confirm")) {
-      ok = await confirmInfinityDialog({
-        window: {
-          title: "Reset Quartermaster?",
-          icon: "fa-solid fa-rotate-left",
-        },
-        content:
-          "<p>Reset all resource definitions and environments to the defaults? Your day-tracking is kept.</p>",
-        rejectClose: false,
-      });
-    }
+    const ok = await confirmInfinityDialog({
+      window: {
+        title: "Reset Quartermaster?",
+        icon: "fa-solid fa-rotate-left",
+      },
+      content:
+        "<p>Reset all resource definitions and environments to the defaults? Your day-tracking is kept.</p>",
+      rejectClose: false,
+    });
     if (!ok) return;
     const defaults = createDefaultResourceConfig();
     await Promise.all([saveResourceConfig(defaults), resetResourceRules()]);
@@ -1156,7 +1164,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
 /** Resolve and persist one exact Item UUID against the latest resource config. */
 async function saveExactItemMatch(resourceId, rawUuid) {
-  const uuid = String(rawUuid ?? "").trim();
+  const uuid = normalizeInfinityItemUuid(rawUuid);
   if (!uuid || uuid.length > 1000) {
     notify(
       "warn",

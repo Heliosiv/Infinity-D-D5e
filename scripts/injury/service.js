@@ -10,6 +10,7 @@
 
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { isFullGM } from "../permissions.js";
+import { initializePrivateState } from "../private-state.js";
 import { isAuthoritativeGM, authoritativeGMId } from "../socket-authority.js";
 import {
   CRITICAL_INJURY_EVENTS,
@@ -152,6 +153,11 @@ function requestCriticalInjuryStartupMaintenance() {
   if (!isAuthoritativeGM()) return;
   void (async () => {
     try {
+      const livePrivateStore = Boolean(
+        globalThis.game?.ready && globalThis.JournalEntry?.create,
+      );
+      if (livePrivateStore && (await initializePrivateState()) !== true) return;
+      if (!isAuthoritativeGM()) return;
       await ensureCriticalInjuryWorkflowAuthority();
       await reconcileCriticalInjuryPendingProjections();
       await processExpiredCriticalInjuries();
@@ -161,7 +167,9 @@ function requestCriticalInjuryStartupMaintenance() {
       if (
         !isAuthoritativeGM() ||
         String(error?.message ?? "").includes("RequiresAuthority") ||
-        String(error?.message ?? "").includes("AuthorityChanged")
+        String(error?.message ?? "").includes("AuthorityChanged") ||
+        String(error?.message ?? "").includes("StoreUnavailable") ||
+        String(error?.message ?? "").includes("PrivateStateUnavailable")
       ) {
         return;
       }

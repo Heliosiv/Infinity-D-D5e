@@ -151,6 +151,17 @@ assert.match(resourceTemplate, /Campaign readiness/);
 assert.match(resourceTemplate, /rm-resource-write-reason/);
 assert.match(resourceTemplate, /Quartermaster will not replay the run/);
 assert.doesNotMatch(resourceTemplate, /data-action="(?:retry|replay|rollback)/);
+assert.match(resourceTemplate, /Advanced receipt details/);
+assert.equal(
+  (resourceTemplate.match(/\{\{runId\}\}/g) ?? []).length,
+  1,
+  "technical receipt IDs appear only inside Advanced details",
+);
+assert.ok(
+  resourceTemplate.indexOf("Advanced receipt details") <
+    resourceTemplate.indexOf("{{runId}}"),
+  "receipt IDs are confined to the Advanced disclosure",
+);
 assert.match(resourceStyle, /container-name:\s*quartermaster/);
 assert.match(resourceStyle, /@container quartermaster/);
 assert.doesNotMatch(resourceStyle, /@media\s*\(max-width/);

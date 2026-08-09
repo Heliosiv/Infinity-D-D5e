@@ -63,6 +63,13 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   static open({ actorId, pendingId = null, result = null } = {}) {
     const id = String(actorId ?? "").trim();
     if (!id) return null;
+    const actor = globalThis.game?.actors?.get?.(id) ?? null;
+    if (actor && !canCurrentUserOperateCriticalInjuryActor(actor)) {
+      globalThis.ui?.notifications?.warn?.(
+        "You no longer control that character. Nothing changed; choose a character you control.",
+      );
+      return null;
+    }
     let app = instances.get(id);
     if (!app) {
       app = new CriticalInjuryApp({
@@ -178,7 +185,8 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   }
 
   _resolveActor() {
-    return globalThis.game?.actors?.get?.(this._actorId) ?? null;
+    const actor = globalThis.game?.actors?.get?.(this._actorId) ?? null;
+    return canCurrentUserOperateCriticalInjuryActor(actor) ? actor : null;
   }
 
   _onClose(options) {
@@ -203,6 +211,11 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     const actor = this._resolveActor();
+    const controlledActors = getControlledCriticalInjuryActors();
+    const domId = String(this._actorId || "character").replace(
+      /[^a-zA-Z0-9_-]/g,
+      "-",
+    );
     const currentUserId = String(globalThis.game?.user?.id ?? "");
     const currentUserIsAuthority =
       currentUserId === String(authoritativeGMId() ?? "");
@@ -262,6 +275,20 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       globalThis.game?.modules?.get?.("foundryvtt-simple-calendar")?.active ===
       true;
     const offline = !Boolean(authoritativeGMId());
+    for (const injury of activeInjuries) {
+      const treatmentDisabled = Boolean(injury.treating || offline);
+      injury.headingId = `ci-injury-${domId}-${injury.domId}`;
+      injury.treatmentDisabled = treatmentDisabled;
+      injury.treatmentDisabledAttribute = treatmentDisabled ? "disabled" : "";
+      injury.treatmentActionTitle = injury.treating
+        ? "Treatment confirmation is pending"
+        : offline
+          ? "A full GM must be online"
+          : `Request treatment for ${injury.name}`;
+      injury.treatmentActionLabel = injury.treating
+        ? `Waiting for treatment of ${injury.name}`
+        : `Request treatment for ${injury.name}`;
+    }
     const treatmentBusy = treatmentStates.some((state) => state.busy === true);
     const treatmentUncertain = treatmentStates.some(
       (state) =>
@@ -286,21 +313,48 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
             : statusMessage
               ? "success"
               : "ready";
+    const actorSwitchLocked = this._waitingForRoll || treatmentBusy;
+    const actorSelectDisabled =
+      actorSwitchLocked ||
+      (actor ? controlledActors.length <= 1 : controlledActors.length === 0);
+    const rollActionDisabled = this._waitingForRoll || offline;
 
     return {
-      domId: String(this._actorId || "character").replace(
-        /[^a-zA-Z0-9_-]/g,
-        "-",
-      ),
+      domId,
       actorName: actor?.name ?? "Character",
       actorImg: actor?.img ?? "icons/svg/mystery-man.svg",
       noActor: !actor,
+      hasActorOptions: controlledActors.length > 0,
+      canSwitchActor: actor
+        ? controlledActors.length > 1
+        : controlledActors.length > 0,
+      needsActorChoice:
+        !actor && controlledActors.length > 0 && !actorSwitchLocked,
+      actorSwitchLocked,
+      actorSelectDisabled,
+      actorSelectDisabledAttribute: actorSelectDisabled ? "disabled" : "",
+      actorOptions: controlledActors.map((candidate) => ({
+        id: String(candidate.id ?? ""),
+        name: String(candidate.name ?? "Character"),
+        selected: String(candidate.id ?? "") === String(actor?.id ?? ""),
+        selectedAttribute:
+          String(candidate.id ?? "") === String(actor?.id ?? "")
+            ? "selected"
+            : "",
+      })),
       offline,
       outcomeUncertain,
       pending,
       hasPending: Boolean(pending),
       pendingCount: pendingList.length,
       waitingForRoll: this._waitingForRoll,
+      rollActionDisabled,
+      rollActionDisabledAttribute: rollActionDisabled ? "disabled" : "",
+      rollActionTitle: offline
+        ? "A full GM must be online"
+        : this._waitingForRoll
+          ? "Waiting for the full GM to confirm the injury roll"
+          : "Roll the approved critical injury",
       latestResult: this._latestResult
         ? buildResultView(this._latestResult)
         : null,
@@ -324,6 +378,38 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       "ci-no-anim",
       getSetting(SETTING_KEYS.ANIMATIONS) === false,
     );
+    this._wireActorSelect(this.element);
+  }
+
+  /** Keep selection client-local. Opening the selected Actor's keyed window
+   * preserves existing per-Actor pending and treatment controllers. */
+  _wireActorSelect(root) {
+    const select = root?.querySelector?.('[data-role="critical-injury-actor"]');
+    if (!select || typeof select.addEventListener !== "function") return;
+    select.addEventListener("change", async () => {
+      if (this._waitingForRoll) {
+        this._statusMessage =
+          "Wait for the current injury roll to finish before switching characters.";
+        this.render(false);
+        return;
+      }
+      const actor = resolveControlledCriticalInjuryActor(select.value);
+      if (!actor) {
+        this._statusMessage =
+          "That character is no longer available to you. Nothing changed; choose a character you control.";
+        this.render(false);
+        return;
+      }
+      if (String(actor.id ?? "") === this._actorId) return;
+      const next = CriticalInjuryApp.open({ actorId: actor.id });
+      if (!next) {
+        this._statusMessage =
+          "That character could not be opened. Nothing changed; refresh and choose again.";
+        this.render(false);
+        return;
+      }
+      await this.close({ animate: false });
+    });
   }
 
   /** @this {CriticalInjuryApp} */
@@ -331,7 +417,13 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     if (this._waitingForRoll) return;
     const actor = this._resolveActor();
     const pendingId = String(this._pendingId ?? "");
-    if (!actor || !pendingId) return;
+    if (!actor) {
+      this._statusMessage =
+        "You no longer control this character. Nothing changed; choose a character you control.";
+      this.render(false);
+      return;
+    }
+    if (!pendingId) return;
     if (getSetting(SETTING_KEYS.CRITICAL_INJURIES_ENABLED) === false) {
       this._statusMessage =
         "Critical Injury automation is disabled. This approved roll will stay pending.";
@@ -402,7 +494,13 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   static _onRequestTreatment(_event, target) {
     const actor = this._resolveActor();
     const injuryId = String(target?.dataset?.injuryId ?? "");
-    if (!actor || !injuryId) return;
+    if (!actor) {
+      this._statusMessage =
+        "You no longer control this character. No treatment request was sent; choose a character you control.";
+      this.render(false);
+      return;
+    }
+    if (!injuryId) return;
     const effect = findActorCriticalInjuryEffect(actor, injuryId);
     const injury = getCriticalInjuryData(effect);
     if (
@@ -807,6 +905,7 @@ function buildInjuryView(effect, treatmentState) {
     createdAt: Number(injury.createdAt ?? 0),
     roll: injury.injuryRoll,
     permanent: Boolean(injury.permanent),
+    permanentClass: injury.permanent ? "ci-injury--permanent" : "",
     stabilized: Boolean(injury.stabilized),
     kitCharges: Math.max(0, Number(injury.kitCharges ?? 0)),
     treatmentCheck,
@@ -834,31 +933,79 @@ function buildResultView(result) {
   };
 }
 
-function resolveCurrentUserActor() {
-  const assigned = globalThis.game?.user?.character;
-  if (assigned && typeof assigned !== "string") return assigned;
-  if (typeof assigned === "string") {
-    const actor = globalThis.game?.actors?.get?.(assigned);
-    if (actor) return actor;
-  }
+export function getControlledCriticalInjuryActors() {
   const user = globalThis.game?.user;
-  return (
-    (globalThis.game?.actors?.contents ?? []).find(
+  if (!user) return [];
+  const actors = globalThis.game?.actors;
+  const documents = Array.isArray(actors?.contents)
+    ? actors.contents
+    : Array.isArray(actors)
+      ? actors
+      : actors?.values
+        ? [...actors.values()]
+        : [];
+  return documents
+    .filter(
       (actor) =>
         actor?.type === "character" &&
-        hasDirectOwnerPermission(actor, user?.id),
+        canCurrentUserOperateCriticalInjuryActor(actor, user),
+    )
+    .sort((left, right) =>
+      String(left?.name ?? "").localeCompare(String(right?.name ?? "")),
+    );
+}
+
+export function resolveControlledCriticalInjuryActor(actorId) {
+  const requested = String(actorId ?? "").trim();
+  if (!requested) return null;
+  return (
+    getControlledCriticalInjuryActors().find(
+      (actor) => String(actor?.id ?? "") === requested,
     ) ?? null
   );
 }
 
-function currentUserCanOperateActor(actor) {
+export function resolveCurrentUserActor() {
+  const assigned = globalThis.game?.user?.character;
+  if (
+    assigned &&
+    typeof assigned !== "string" &&
+    canCurrentUserOperateCriticalInjuryActor(assigned)
+  ) {
+    return assigned;
+  }
+  if (typeof assigned === "string") {
+    const actor = globalThis.game?.actors?.get?.(assigned);
+    if (canCurrentUserOperateCriticalInjuryActor(actor)) return actor;
+  }
   const user = globalThis.game?.user;
+  const directlyOwned =
+    (globalThis.game?.actors?.contents ?? []).find(
+      (actor) =>
+        actor?.type === "character" &&
+        hasDirectOwnerPermission(actor, user?.id),
+    ) ?? null;
+  if (directlyOwned) return directlyOwned;
+  const controlled = getControlledCriticalInjuryActors();
+  return controlled.length === 1 ? controlled[0] : null;
+}
+
+function currentUserCanOperateActor(actor) {
+  return canCurrentUserOperateCriticalInjuryActor(actor);
+}
+
+/** Mirror the authoritative GM service's userCanOperateActor boundary so the
+ * selector and every submission fail closed after assignment/ownership drift. */
+export function canCurrentUserOperateCriticalInjuryActor(
+  actor,
+  user = globalThis.game?.user,
+) {
+  if (!actor || !user) return false;
   if (isFullGM(user)) return true;
   const characterId =
-    typeof user?.character === "string" ? user.character : user?.character?.id;
-  return (
-    characterId === actor?.id || hasEffectiveOwnerPermission(actor, user?.id)
-  );
+    typeof user.character === "string" ? user.character : user.character?.id;
+  if (String(characterId ?? "") === String(actor.id ?? "")) return true;
+  return hasEffectiveOwnerPermission(actor, user.id);
 }
 
 function hasDirectOwnerPermission(actor, userId) {

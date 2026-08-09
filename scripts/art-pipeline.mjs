@@ -26,8 +26,12 @@ const MODULE_ID = "infinity-dnd5e";
 const ABSENT_ART_PATHS = new Set([
   "icons/svg/item-bag.svg",
   "icons/commodities/gems/gem-faceted-round-red.webp",
+  "icons/commodities/gems/gem-faceted-radiant-red.webp",
+  "icons/commodities/gems/gem-amber-insect-orange.webp",
   "icons/equipment/head/mask-ornate-silver.webp",
+  "icons/magic/symbols/mask-metal-silver-white.webp",
   "icons/commodities/treasure/statue-carved-faceless.webp",
+  "icons/commodities/treasure/statue-bust-stone-grey.webp",
 ]);
 
 const ABSENT_ART_PATTERNS = Object.freeze([

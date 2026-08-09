@@ -272,7 +272,7 @@
 
     <ul class="lf-result__list">
       {{#each result.items}}
-      {{> lootItem}}
+      {{> "modules/infinity-dnd5e/templates/loot-result-item.hbs" showLockControl=true}}
       {{/each}}
     </ul>
 
@@ -335,55 +335,6 @@
   </div>
   {{/if}}
 </div>
-{{/inline}}
-
-{{!--
-  Reusable result-item row, shared across all three loot windows.
-  Lock / open / quantity / re-roll / send / delete — every per-item
-  control. Quantity steppers hide for unique art variants (variant set).
---}}
-{{#*inline "lootItem"}}
-<li
-  class="lf-result__item lf-result__item--{{rarity}} {{#if locked}}is-locked{{/if}}"
-  style="--lf-stagger: {{@index}}"
-  draggable="true"
-  data-result-item
-  data-draggable-result-id
-  data-entry-id="{{entryId}}"
-  data-result-id="{{entryId}}"
-  data-uuid="{{item.uuid}}"
-  data-search-text="{{displayName}} {{rarity}}"
-  title="Double-click to open sheet"
->
-  <button
-    type="button"
-    class="lf-result__lock"
-    data-action="toggleLock"
-    data-entry-id="{{entryId}}"
-    aria-pressed="{{#if locked}}true{{else}}false{{/if}}"
-    title="{{#if locked}}Locked — won't be re-rolled{{else}}Lock this item{{/if}}"
-  >
-    <i class="fa-solid {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}" aria-hidden="true"></i>
-  </button>
-  <button type="button" class="lf-result__open" data-action="openItem" data-uuid="{{item.uuid}}" title="Open item sheet">
-    <img class="lf-result__icon" src="{{imageSrc}}" alt="" loading="lazy" data-result-image data-fallback-src="icons/svg/item-bag.svg" />
-    <div class="lf-result__copy">
-      <strong class="lf-result__name">{{displayName}}</strong>
-      {{#if variantSummary}}<span class="lf-result__variant">{{variantSummary}}</span>{{/if}}
-      {{#if sourceLabel}}<span class="lf-result__source">{{sourceLabel}}</span>{{/if}}
-      <span class="lf-result__meta">{{quantityLabel}}{{rarity}} · {{gpTotalLabel}}{{#if valueLabel}} · {{valueLabel}}{{/if}}</span>
-    </div>
-  </button>
-  <div class="lf-result__controls">
-    {{#unless variant}}
-    <button type="button" class="lf-result__ctrl" data-action="itemQtyDec" data-entry-id="{{entryId}}" title="Fewer" aria-label="Decrease quantity"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
-    <button type="button" class="lf-result__ctrl" data-action="itemQtyInc" data-entry-id="{{entryId}}" title="More" aria-label="Increase quantity"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
-    {{/unless}}
-    <button type="button" class="lf-result__ctrl" data-action="rerollOne" data-entry-id="{{entryId}}" title="Re-roll just this item" aria-label="Re-roll this item"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
-    <button type="button" class="lf-result__ctrl" data-action="distributeOne" data-entry-id="{{entryId}}" title="Send to one actor" aria-label="Send to actor"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
-    <button type="button" class="lf-result__ctrl lf-result__ctrl--danger" data-action="deleteItem" data-entry-id="{{entryId}}" title="Remove this item" aria-label="Remove item"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
-  </div>
-</li>
 {{/inline}}
 
 {{!--

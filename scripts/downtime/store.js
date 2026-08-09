@@ -7,6 +7,7 @@
 import {
   PRIVATE_STATE_CHANGED_HOOK,
   getPrivateState,
+  initializePrivateState,
   onPrivateStateChanged,
   setPrivateState,
 } from "../private-state.js";
@@ -2039,7 +2040,19 @@ export function registerDowntimeWorkflowObserver() {
   const reconcile = () => {
     observeDowntimeWorkflowAuthorityTransition();
     if (!isAuthoritativeGM()) return;
-    void ensureDowntimeWorkflowAuthority().catch((error) => {
+    void (async () => {
+      if ((await initializePrivateState()) !== true) return;
+      if (!isAuthoritativeGM()) return;
+      await ensureDowntimeWorkflowAuthority();
+    })().catch((error) => {
+      const message = String(error?.message ?? "");
+      if (
+        message.includes("StoreUnavailable") ||
+        message.includes("PrivateStateUnavailable") ||
+        message.includes("AuthorityChanged")
+      ) {
+        return;
+      }
       console.error(
         `${MODULE_ID} | downtime workflow reconciliation failed`,
         error,

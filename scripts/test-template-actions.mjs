@@ -34,19 +34,33 @@ const CHECKS = [
   },
   {
     name: "per-encounter loot",
-    templates: ["templates/loot-studio.hbs", "templates/loot-forge.hbs"],
+    templates: [
+      "templates/loot-studio.hbs",
+      "templates/loot-forge.hbs",
+      "templates/loot-result-item.hbs",
+    ],
     script: "./app.js",
     dynamicActions: ["useParty"],
   },
   {
     name: "hoard loot",
-    templates: ["templates/loot-studio.hbs", "templates/hoard-loot.hbs"],
+    templates: [
+      "templates/loot-studio.hbs",
+      "templates/hoard-loot.hbs",
+      "templates/loot-result-item.hbs",
+    ],
     script: "./hoard-loot.js",
+    ignoredTemplateActions: ["toggleLock"],
   },
   {
     name: "per-creature loot",
-    templates: ["templates/loot-studio.hbs", "templates/per-creature-loot.hbs"],
+    templates: [
+      "templates/loot-studio.hbs",
+      "templates/per-creature-loot.hbs",
+      "templates/loot-result-item.hbs",
+    ],
     script: "./per-creature-loot.js",
+    ignoredTemplateActions: ["toggleLock"],
   },
   {
     name: "merchant workspace",
@@ -100,6 +114,9 @@ for (const check of CHECKS) {
     .map((template) => readFileSync(template, "utf8"))
     .join("\n");
   const templateActions = extractTemplateActions(templateSource);
+  for (const action of check.ignoredTemplateActions ?? []) {
+    templateActions.delete(action);
+  }
   const dynamicTemplateActions = extractDynamicTemplateActions(templateSource);
   const registeredActions = await loadRegisteredActions(check);
   const dynamicActions = new Set(check.dynamicActions ?? []);

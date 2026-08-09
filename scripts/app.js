@@ -195,9 +195,16 @@ export class PerEncounterLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
+    this._initializeModeState();
+  }
+
+  /** Initialize Encounter-owned state for either a standalone test instance
+   *  or the unified Loot Studio host's non-rendering mode controller. */
+  _initializeModeState({ restoreForStudio = false } = {}) {
     const persistEnabled =
       getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
-      PerEncounterLootApp._lootStudioRestoreState === true;
+      PerEncounterLootApp._lootStudioRestoreState === true ||
+      restoreForStudio;
     const persisted = persistEnabled
       ? PerEncounterLootApp._persistedState
       : null;

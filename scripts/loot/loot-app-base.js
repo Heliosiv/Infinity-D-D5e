@@ -24,6 +24,7 @@
  */
 
 import { SOUND_EVENTS, playModuleSound, playResultSound } from "../audio.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   depositToActors,
   planEvenSplit,
@@ -124,10 +125,9 @@ export const LOOT_STUDIO_MODES = Object.freeze([
 
 const LOOT_STUDIO_DEFAULT_MODE = "encounter";
 const lootStudioClasses = new Map();
+let lootStudioHostClass = null;
 let activeLootStudioInstance = null;
 let lastLootStudioModeInMemory = null;
-let pendingLootStudioTarget = null;
-let lootStudioSwitchPromise = null;
 
 function isPlainObject(value) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -204,6 +204,13 @@ export function registerLootStudioMode(mode, AppClass) {
   return AppClass;
 }
 
+/** Register the one rendered ApplicationV2 host without creating a circular
+ *  import from the mode classes back into Loot Studio. */
+export function registerLootStudioHost(HostClass) {
+  if (typeof HostClass === "function") lootStudioHostClass = HostClass;
+  return HostClass;
+}
+
 async function loadLootStudioModeClass(mode) {
   const normalized = normalizeLootStudioMode(mode);
   if (lootStudioClasses.has(normalized))
@@ -217,77 +224,51 @@ async function loadLootStudioModeClass(mode) {
 function activateLootStudioMode(mode, AppClass) {
   const normalized = normalizeLootStudioMode(mode);
   registerLootStudioMode(normalized, AppClass);
-  playModuleSound(SOUND_EVENTS.UI_OPEN);
-  if (!AppClass._instance) {
-    AppClass._lootStudioRestoreState = true;
-    try {
-      AppClass._instance = new AppClass();
-      bindFocusRestoration(AppClass._instance);
-    } finally {
-      AppClass._lootStudioRestoreState = false;
-    }
+  const HostClass = lootStudioHostClass;
+  if (typeof HostClass !== "function") {
+    throw new Error("LootStudioHostUnavailable");
   }
-  activeLootStudioInstance = AppClass._instance;
+
+  let created = false;
+  if (!HostClass._instance) {
+    HostClass._instance = new HostClass({ initialMode: normalized });
+    bindFocusRestoration(HostClass._instance);
+    created = true;
+  }
+
+  const host = HostClass._instance;
+  const changed = host._activateLootMode(normalized, AppClass);
+  activeLootStudioInstance = host;
   lastLootStudioModeInMemory = normalized;
   void writeLootStudioUiPreferences({ lastLootStudioMode: normalized });
-  if (activeLootStudioInstance.rendered) {
-    activeLootStudioInstance.bringToFront();
+
+  playModuleSound(SOUND_EVENTS.UI_OPEN);
+  if (host.rendered) {
+    if (changed) {
+      const rendered = host.render(false);
+      host._lootStudioRenderPromise =
+        rendered && typeof rendered.then === "function" ? rendered : null;
+    } else {
+      host.bringToFront();
+      host._lootStudioRenderPromise = null;
+    }
   } else {
-    const rendered = activeLootStudioInstance.render(true);
-    activeLootStudioInstance._lootStudioRenderPromise =
+    const rendered = host.render(true);
+    host._lootStudioRenderPromise =
       rendered && typeof rendered.then === "function" ? rendered : null;
   }
-  return activeLootStudioInstance;
-}
-
-async function drainLootStudioSwitches() {
-  let opened = activeLootStudioInstance;
-  while (pendingLootStudioTarget) {
-    let requested = pendingLootStudioTarget;
-    pendingLootStudioTarget = null;
-    const active = activeLootStudioInstance;
-
-    if (active && active.constructor !== requested.AppClass) {
-      active._lootStudioSwitching = true;
-      try {
-        await active.close?.();
-      } catch (error) {
-        active._lootStudioSwitching = false;
-        throw error;
-      }
-
-      // A newer request made while the prior mode was closing supersedes the
-      // original target. Skipping the intermediate render keeps one window.
-      requested = pendingLootStudioTarget ?? requested;
-      pendingLootStudioTarget = null;
-    }
-
-    opened = activateLootStudioMode(requested.mode, requested.AppClass);
-  }
-  return opened;
+  if (created) host._lootStudioOpenedAt = Date.now();
+  return host;
 }
 
 function openRegisteredLootStudioMode(mode, AppClass) {
   const normalized = normalizeLootStudioMode(mode);
-  if (lootStudioSwitchPromise) {
-    pendingLootStudioTarget = { mode: normalized, AppClass };
-    return lootStudioSwitchPromise;
-  }
-
-  const active = activeLootStudioInstance;
-  if (!active || active.constructor === AppClass) {
+  if (typeof lootStudioHostClass === "function") {
     return activateLootStudioMode(normalized, AppClass);
   }
-
-  pendingLootStudioTarget = { mode: normalized, AppClass };
-  const transition = drainLootStudioSwitches();
-  const trackedTransition = transition.finally(() => {
-    if (lootStudioSwitchPromise !== trackedTransition) return;
-    pendingLootStudioTarget = null;
-    lootStudioSwitchPromise = null;
-  });
-  lootStudioSwitchPromise = trackedTransition;
-  return trackedTransition;
+  return import("../loot-studio.js").then(() =>
+    activateLootStudioMode(normalized, AppClass),
+  );
 }
 
 /**
@@ -328,6 +309,23 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeResultItemUuids(result) {
+  const normalizeEntries = (entries) => {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (entry?.item?.uuid) {
+        entry.item.uuid = normalizeInfinityItemUuid(entry.item.uuid);
+      }
+    }
+  };
+  normalizeEntries(result?.items);
+  for (const creature of Array.isArray(result?.creatures)
+    ? result.creatures
+    : []) {
+    normalizeEntries(creature?.items);
+  }
+  return result;
+}
+
 /** Slim a result for history storage — drop heavy item docs to uuid/name/img. */
 function slimResult(result) {
   const copy = cloneData(result);
@@ -339,7 +337,7 @@ function slimResult(result) {
           String(entry.rollCategory ?? "").trim() ||
           getItemRollCategory(entry.item);
         entry.item = {
-          uuid: entry.item.uuid,
+          uuid: normalizeInfinityItemUuid(entry.item.uuid),
           name: entry.item.name,
           img: entry.item.img,
         };
@@ -373,6 +371,55 @@ function summarizeResult(result) {
     return `${result.creatures.length} creature(s) · ${result.grandTotalLabel ?? ""}`;
   }
   return `${result.items?.length ?? 0} item(s) · ${result.totalGpLabel ?? ""}`;
+}
+
+/**
+ * Create a non-rendering mode controller backed by the established mode
+ * prototype. The controller owns form/result/undo/cache state and every
+ * existing generation method, while all ApplicationV2 lifecycle and DOM
+ * access are delegated to the one LootStudioApp host.
+ */
+export function createLootModeController(AppClass, host) {
+  if (typeof AppClass !== "function" || !host) return null;
+  const controller = Object.create(AppClass.prototype);
+  Object.defineProperties(controller, {
+    _lootStudioHost: {
+      configurable: true,
+      value: host,
+    },
+    element: {
+      configurable: true,
+      get: () => host.element,
+    },
+    rendered: {
+      configurable: true,
+      get: () => host.rendered,
+    },
+    render: {
+      configurable: true,
+      value: (...args) => host.render(...args),
+    },
+    bringToFront: {
+      configurable: true,
+      value: (...args) => host.bringToFront(...args),
+    },
+    close: {
+      configurable: true,
+      value: (...args) => host.close(...args),
+    },
+  });
+
+  controller._loadingItems = false;
+  controller._cachedItems = null;
+  controller._cachedItemsAt = 0;
+  controller._packStats = null;
+  controller._pendingScrollState = null;
+  controller._lastScrollState = null;
+  controller._lootStudioAdvancedOpen = getAdvancedDisclosure(
+    AppClass.LOOT_STUDIO_MODE,
+  );
+  controller._initializeModeState?.({ restoreForStudio: true });
+  return controller;
 }
 
 export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -461,8 +508,19 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _onRender(context, options) {
     super._onRender?.(context, options);
-    const root = this.element;
+    const modeOwner = this._activeLootController ?? this;
+    return modeOwner._onRenderLootMode(context, options, this.element);
+  }
+
+  /** Bind the currently active mode to the host's rendered DOM. */
+  async _onRenderLootMode(context, options, root = this.element) {
     if (!root) return;
+
+    const mode = normalizeLootStudioMode(this.constructor.LOOT_STUDIO_MODE);
+    root.classList.toggle("loot-forge", mode === "encounter");
+    root.classList.toggle("hoard-loot", mode === "hoard");
+    root.classList.toggle("per-creature-loot", mode === "creature");
+    const eventHost = this._lootStudioHost ?? this;
 
     // Reflect visual prefs as classes on the root so CSS can opt out.
     root.classList.toggle(
@@ -502,14 +560,18 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // ApplicationV2 re-renders, so re-binding would stack listeners).
     if (root.dataset.infinityDnd5eKeydownBound !== "true") {
       root.dataset.infinityDnd5eKeydownBound = "true";
-      root.addEventListener("keydown", (event) => this._onKeyDown(event));
+      root.addEventListener("keydown", (event) => {
+        const owner = eventHost._activeLootController ?? this;
+        owner._onKeyDown(event);
+      });
     }
     if (root.dataset.infinityDnd5eScrollPointerTracked !== "true") {
       root.dataset.infinityDnd5eScrollPointerTracked = "true";
       root.addEventListener(
         "pointerdown",
         () => {
-          this._lastScrollState = this._captureScrollState();
+          const owner = eventHost._activeLootController ?? this;
+          owner._lastScrollState = owner._captureScrollState();
         },
         { capture: true, passive: true },
       );
@@ -575,19 +637,26 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super._onClose?.(options);
     this._unbindFullGmWindowGuard?.();
     this._unbindFullGmWindowGuard = null;
-    // Clear any pending debounced work so a timer can't fire into a torn-down app.
-    if (this._debounceTimers) {
-      for (const id of this._debounceTimers.values()) {
-        globalThis.clearTimeout?.(id);
+    const modeOwners = this._lootStudioControllers
+      ? [...this._lootStudioControllers.values()]
+      : [this];
+
+    // Clear pending work for every mode so no timer can fire into a closed host.
+    for (const owner of modeOwners) {
+      if (owner._debounceTimers) {
+        for (const id of owner._debounceTimers.values()) {
+          globalThis.clearTimeout?.(id);
+        }
+        owner._debounceTimers.clear();
       }
-      this._debounceTimers.clear();
     }
-    const Cls = this.constructor;
-    const switchingModes = this._lootStudioSwitching === true;
+
     const persistAcrossCloses =
       getSetting(SETTING_KEYS.PERSIST_STATE) !== false;
-    if (switchingModes || persistAcrossCloses) {
-      Cls._persistedState = this._snapshotState();
+    if (persistAcrossCloses) {
+      for (const owner of modeOwners) {
+        owner.constructor._persistedState = owner._snapshotState();
+      }
     } else {
       // A genuine Studio close ends the whole in-memory tab session. Clear
       // every visited mode so reopening and switching cannot revive stale
@@ -596,8 +665,12 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ModeClass._persistedState = null;
       }
     }
-    this._lootStudioSwitching = false;
-    Cls._instance = null;
+
+    for (const owner of modeOwners) {
+      owner._lootStudioSwitching = false;
+      owner.constructor._instance = null;
+    }
+    this.constructor._instance = null;
     releaseLootStudioInstance(this);
   }
 
@@ -614,6 +687,15 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (timers.has(key)) globalThis.clearTimeout?.(timers.get(key));
     const id = globalThis.setTimeout?.(() => {
       timers.delete(key);
+      // A controller can remain alive while another Studio tab owns the DOM.
+      // Do not let delayed readout work from the previous mode patch the
+      // newly active panel; its context is recomputed when that mode returns.
+      if (
+        this._lootStudioHost &&
+        this._lootStudioHost._activeLootController !== this
+      ) {
+        return;
+      }
       fn();
     }, delay);
     timers.set(key, id);
@@ -677,11 +759,13 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _bindScrollTracking(root) {
+    const eventHost = this._lootStudioHost ?? this;
     bindScrollTracking(
       root,
       this._scrollTargets(),
       () => {
-        this._lastScrollState = this._captureScrollState();
+        const owner = eventHost._activeLootController ?? this;
+        owner._lastScrollState = owner._captureScrollState();
       },
       { flag: "infinityDnd5eScrollTracked" },
     );
@@ -1735,7 +1819,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (entry.form) {
       this._form = this._normalizeStoredForm(entry.form);
     }
-    this._lastResult = entry.result ? cloneData(entry.result) : null;
+    this._lastResult = entry.result
+      ? normalizeResultItemUuids(cloneData(entry.result))
+      : null;
     if (this._lastResult) {
       try {
         const items = await this._loadItems();

@@ -40,6 +40,7 @@ import {
   createArtVariantItemData,
   isVariableArtItem,
 } from "./art-variants.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   getItemLootCategories,
   getItemRollCategory,
@@ -557,7 +558,7 @@ function clampFraction(raw, fallback) {
  * table. Falls back to `_id`/`id` for raw fixtures / items without a uuid.
  */
 export function itemIdentity(item) {
-  return String(item?.uuid ?? item?._id ?? item?.id ?? "");
+  return normalizeInfinityItemUuid(item?.uuid ?? item?._id ?? item?.id ?? "");
 }
 
 /* ------------------------------------------------------------------ *

@@ -11,6 +11,8 @@
  * real actors in the Foundry-touching layer (calendar-watcher.js).
  */
 
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
+
 const MODULE_ID = "infinity-dnd5e";
 
 function toQty(value) {
@@ -70,10 +72,10 @@ function itemResourceTag(item) {
 function itemSourceUuids(item) {
   const out = [];
   const stats = item?._stats?.compendiumSource;
-  if (stats) out.push(String(stats));
+  if (stats) out.push(normalizeInfinityItemUuid(stats));
   const legacy = item?.flags?.core?.sourceId;
-  if (legacy) out.push(String(legacy));
-  if (item?.uuid) out.push(String(item.uuid));
+  if (legacy) out.push(normalizeInfinityItemUuid(legacy));
+  if (item?.uuid) out.push(normalizeInfinityItemUuid(item.uuid));
   return out;
 }
 
@@ -110,7 +112,9 @@ function describeResources(resourceDefs) {
           resource.forageYields === "food" || resource.forageYields === "water"
             ? resource.forageYields
             : null,
-        itemUuids: uniqueValues(matching.itemUuids),
+        itemUuids: uniqueValues(matching.itemUuids).map(
+          normalizeInfinityItemUuid,
+        ),
         flagTag: text(matching.flagTag),
         keywords: uniqueValues(matching.nameKeywords, { lowerCase: true }),
         excludedKeywords: uniqueValues(matching.excludeNameKeywords, {
@@ -283,7 +287,7 @@ export function matchResourceItems(itemSnapshots, resourceDef) {
   const matching = resourceDef?.matching ?? {};
   const uuidSet = new Set(
     (Array.isArray(matching.itemUuids) ? matching.itemUuids : [])
-      .map((u) => String(u ?? "").trim())
+      .map(normalizeInfinityItemUuid)
       .filter(Boolean),
   );
   const flagTag = String(matching.flagTag ?? "").trim();

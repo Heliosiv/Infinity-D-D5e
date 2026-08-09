@@ -75,10 +75,7 @@ import {
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 import { pickSearchOption } from "./search-picker.js";
-import {
-  confirmInfinityDialog,
-  isInfinityDialogAvailable,
-} from "./dialog-contract.js";
+import { confirmInfinityDialog } from "./dialog-contract.js";
 import {
   applyVisualPrefs,
   bindFullGmWindowGuard,
@@ -779,7 +776,6 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
-    if (!isInfinityDialogAvailable()) return;
     const confirmed = await confirmInfinityDialog({
       window: {
         title: `Delete "${merchant.name}"?`,
@@ -912,16 +908,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Re-Generate clears the whole shelf first — confirm if there's curated
     // stock to lose (Generate, which appends, never needs this).
     if (replace && merchant.items.length > 0) {
-      const confirmed = isInfinityDialogAvailable()
-        ? await confirmInfinityDialog({
-            window: {
-              title: "Replace all stock?",
-              icon: "fa-solid fa-arrows-rotate",
-            },
-            content: `<p>Clear all <strong>${merchant.items.length}</strong> current item(s) from <strong>${escapeHtml(merchant.name)}</strong> and roll a fresh shelf? (Use <em>Generate</em> instead to add without clearing.)</p>`,
-            rejectClose: false,
-          })
-        : true;
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: "Replace all stock?",
+          icon: "fa-solid fa-arrows-rotate",
+        },
+        content: `<p>Clear all <strong>${merchant.items.length}</strong> current item(s) from <strong>${escapeHtml(merchant.name)}</strong> and roll a fresh shelf? (Use <em>Generate</em> instead to add without clearing.)</p>`,
+        rejectClose: false,
+      });
       if (!confirmed) return;
     }
     if (replace) merchant = clearInventory(merchant);
@@ -993,13 +987,11 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
     if (!merchant || merchant.items.length === 0) return;
-    const confirmed = isInfinityDialogAvailable()
-      ? await confirmInfinityDialog({
-          window: { title: "Clear inventory?", icon: "fa-solid fa-trash" },
-          content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeHtml(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
-          rejectClose: false,
-        })
-      : true;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Clear inventory?", icon: "fa-solid fa-trash" },
+      content: `<p>Remove all <strong>${merchant.items.length}</strong> item(s) from <strong>${escapeHtml(merchant.name)}</strong>? Compendium entries are untouched.</p>`,
+      rejectClose: false,
+    });
     if (!confirmed) return;
     await commitMerchantWrite(
       this._selectedId,
@@ -1040,16 +1032,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Confirm before overwriting hand-tuned quantities (mirrors Clear All).
     const finiteRows = merchant.items.filter((r) => !r.unlimited);
     if (finiteRows.length > 0) {
-      const confirmed = isInfinityDialogAvailable()
-        ? await confirmInfinityDialog({
-            window: {
-              title: "Restock all items?",
-              icon: "fa-solid fa-boxes-stacked",
-            },
-            content: `<p>Reset every item's current quantity back to its starting amount for <strong>${escapeHtml(merchant.name)}</strong>? This discards any current-stock changes.</p>`,
-            rejectClose: false,
-          })
-        : true;
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: "Restock all items?",
+          icon: "fa-solid fa-boxes-stacked",
+        },
+        content: `<p>Reset every item's current quantity back to its starting amount for <strong>${escapeHtml(merchant.name)}</strong>? This discards any current-stock changes.</p>`,
+        rejectClose: false,
+      });
       if (!confirmed) return;
     }
     await commitMerchantWrite(this._selectedId, (fresh) => restockAll(fresh), {
@@ -1177,16 +1167,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     }
 
     const activeCount = listSessions().length;
-    const confirmed = isInfinityDialogAvailable()
-      ? await confirmInfinityDialog({
-          window: {
-            title: "Close every shop?",
-            icon: "fa-solid fa-shop-lock",
-          },
-          content: `<p>This closes every live merchant window and blocks all self-service shops until you reopen them globally.</p><p><strong>${activeCount}</strong> active session${activeCount === 1 ? "" : "s"} will be remembered and restored later. Each merchant's Open, Knock, or Off setting stays unchanged.</p>`,
-          rejectClose: false,
-        })
-      : true;
+    const confirmed = await confirmInfinityDialog({
+      window: {
+        title: "Close every shop?",
+        icon: "fa-solid fa-shop-lock",
+      },
+      content: `<p>This closes every live merchant window and blocks all self-service shops until you reopen them globally.</p><p><strong>${activeCount}</strong> active session${activeCount === 1 ? "" : "s"} will be remembered and restored later. Each merchant's Open, Knock, or Off setting stays unchanged.</p>`,
+      rejectClose: false,
+    });
     if (!confirmed) return;
 
     try {

@@ -30,6 +30,10 @@
   align-items: center;
 }
 
+.ci-hero > div {
+  min-width: 0;
+}
+
 .ci-portrait {
   width: 64px;
   height: 64px;
@@ -53,6 +57,32 @@
 .ci-hero > div > p:last-child {
   margin-top: 4px;
   color: var(--lf-muted, #b8b3aa);
+}
+
+.ci-actor-picker {
+  display: grid;
+  gap: 4px;
+  width: min(100%, 330px);
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.ci-actor-picker > span {
+  color: var(--lf-text, #ece8de);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.ci-actor-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--lf-control-size, 44px);
+}
+
+.ci-actor-picker small {
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 
 .ci-eyebrow {
@@ -340,5 +370,17 @@
   .ci-injury-heading > div {
     flex: 0 1 auto;
     width: 100%;
+  }
+}
+
+@container critical-injury (max-width: 380px) {
+  .ci-hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .ci-portrait {
+    width: 52px;
+    height: 52px;
   }
 }

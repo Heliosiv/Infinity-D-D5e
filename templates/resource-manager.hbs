@@ -185,7 +185,6 @@
             <span class="rm-run__summary">
               <span class="rm-run__status">{{statusLabel}}</span>
               <small>{{summaryLabel}}</small>
-              <code>{{runId}}</code>
             </span>
           </summary>
           <div class="rm-run__detail">
@@ -275,7 +274,10 @@
             </div>
             {{/if}}
 
-            <p class="rm-run__id"><span>Run ID</span> <code>{{runId}}</code></p>
+            <details class="rm-run__diagnostics">
+              <summary>Advanced receipt details</summary>
+              <p class="rm-run__id"><span>Run ID</span> <code>{{runId}}</code></p>
+            </details>
           </div>
         </details>
         {{/each}}

@@ -73,10 +73,10 @@ Requires a Whetstone or Smith's Tools and a nonmagical melee weapon with
 slashing or piercing damage. The selected weapon gains +1 damage for its next
 three damage rolls or until the next long rest. It never gains an attack bonus,
 does not become magical, and cannot stack with another downtime sharpening.
-On the target D&D5e 4.0.4 baseline, the module keeps the enchantment embedded on
-the weapon but supplies its typed +1 through the damage-roll hook. This avoids
-the system's Foundry 13 damage-part enchantment bug without changing the
-weapon's permanent source. D&D5e 4.4.3 and newer use the fixed native locked
+On D&D5e releases before 4.4.3, the module keeps the enchantment embedded on the
+weapon but supplies its typed +1 through the damage-roll hook. This avoids the
+older damage-part enchantment bug without changing the weapon's permanent
+source. The verified D&D5e 4.4.4 baseline uses the fixed native locked
 damage-part enchantment instead.
 
 ### Market Trading — 2, 4, 6, or 8 hours
@@ -218,9 +218,9 @@ data, or merchant internals.
 
 ## Current compatibility
 
-This version targets Foundry VTT 13.351 and D&D5e 4.0.4. Sharpening uses a
-module-owned Active Effect embedded on the weapon and listens to D&D5e's
-`preRollDamageV2`, `rollDamageV2`, and `restCompleted` hooks for the 4.0.4
-compatibility bonus, charge consumption, and long-rest removal. The fallback is
-disabled automatically on D&D5e 4.4.3 and newer, where the native locked damage
-part is safe.
+This version targets Foundry VTT 13.351 and is verified with D&D5e 4.4.4.
+Sharpening uses a module-owned Active Effect embedded on the weapon and listens
+to D&D5e's `preRollDamageV2`, `rollDamageV2`, and `restCompleted` hooks for
+charge consumption and long-rest removal. The compatibility damage hook remains
+available for supported D&D5e versions before 4.4.3; 4.4.3 and newer use the
+native locked damage part.

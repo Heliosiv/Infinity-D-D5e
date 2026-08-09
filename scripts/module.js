@@ -116,6 +116,7 @@ import {
   updateUiPreferences,
 } from "./ui-preferences.js";
 import { registerUiFoundationHooks } from "./infinity-app.js";
+import { registerInfinityItemUuidRedirects } from "./item-uuid-compat.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK_ID = `${MODULE_ID}.infinity-dnd5e-items`;
@@ -567,6 +568,11 @@ Hooks.once("init", () => {
     registerUiFoundationHooks();
   } catch (error) {
     console.error(`${MODULE_ID} | UI foundation registration failed`, error);
+  }
+  try {
+    registerInfinityItemUuidRedirects();
+  } catch (error) {
+    console.error(`${MODULE_ID} | legacy item UUID redirects failed`, error);
   }
   try {
     registerKeybindings();

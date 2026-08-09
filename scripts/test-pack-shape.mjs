@@ -17,6 +17,7 @@ import {
   getItemRarity,
   getItemTier,
 } from "./loot/tag-vocabulary.js";
+import { LEGACY_INFINITY_ITEM_ID_ALIASES } from "./item-uuid-compat.js";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const DEFAULT_IMAGE_PATHS = new Set([
@@ -25,7 +26,9 @@ const DEFAULT_IMAGE_PATHS = new Set([
 ]);
 const BROKEN_CORE_IMAGE_PATHS = new Set([
   "icons/commodities/treasure/incense-burner-silver.webp",
+  "icons/sundries/flags/banner-symbol-sword-blue.webp",
 ]);
+const FOUNDRY_DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{16}$/;
 const GENERATED_LOCAL_IMAGE_PATTERN = /DALL|^ddb-images\//i;
 const LEAKED_SOURCE_ID =
   /^(Compendium\.party-operations|Compendium\.world|Actor\.|Item\.)/;
@@ -90,6 +93,10 @@ const generatedLocalImageItems = [];
 const brokenCoreImageItems = [];
 const invalidDnd5eFormulaItems = [];
 const leakedSourceIdItems = [];
+const invalidDocumentIds = [];
+const duplicateDocumentIds = [];
+const seenDocumentIds = new Set();
+const itemsById = new Map();
 
 for (const [index, line] of lines.entries()) {
   let item;
@@ -103,6 +110,16 @@ for (const [index, line] of lines.entries()) {
   assert.ok(item._id, `line ${index} missing _id`);
   assert.ok(item.name, `line ${index} missing name`);
   assert.ok(item.type, `line ${index} missing type`);
+
+  const documentId = String(item._id ?? "");
+  if (!FOUNDRY_DOCUMENT_ID_PATTERN.test(documentId)) {
+    invalidDocumentIds.push(`${index + 1}:${item.name}:${documentId}`);
+  }
+  if (seenDocumentIds.has(documentId)) {
+    duplicateDocumentIds.push(`${index + 1}:${item.name}:${documentId}`);
+  }
+  seenDocumentIds.add(documentId);
+  itemsById.set(documentId, item);
 
   const imagePath = String(item.img ?? "").trim();
   if (imagePath) withImage += 1;
@@ -197,6 +214,33 @@ assert.equal(
   0,
   `broken core image paths remain: ${brokenCoreImageItems.join(", ")}`,
 );
+assert.equal(
+  invalidDocumentIds.length,
+  0,
+  `Foundry-invalid document ids remain: ${invalidDocumentIds.join(", ")}`,
+);
+assert.equal(
+  duplicateDocumentIds.length,
+  0,
+  `duplicate document ids remain: ${duplicateDocumentIds.join(", ")}`,
+);
+for (const [legacyId, currentId] of Object.entries(
+  LEGACY_INFINITY_ITEM_ID_ALIASES,
+)) {
+  assert.equal(itemsById.has(legacyId), false, `${legacyId} remains in pack`);
+  const item = itemsById.get(currentId);
+  assert.ok(item, `${currentId} alias target is missing from pack`);
+  const expectedUuid = `Compendium.infinity-dnd5e.infinity-dnd5e-items.Item.${currentId}`;
+  assert.equal(item.flags?.core?.sourceId, expectedUuid);
+  assert.match(
+    String(item.system?.description?.value ?? ""),
+    new RegExp(`data-item-id=["']${currentId}["']`),
+  );
+  assert.match(
+    String(item.system?.unidentified?.description ?? ""),
+    new RegExp(`data-item-id=["']${currentId}["']`),
+  );
+}
 assert.equal(
   invalidDnd5eFormulaItems.length,
   0,

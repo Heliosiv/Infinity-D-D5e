@@ -17,6 +17,7 @@ import {
   isVariableTreasureBase,
 } from "./tag-vocabulary.js";
 import { getVariableTreasureKind, isVariableArtItem } from "./art-variants.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 
 const VIRTUAL_LOOT_TYPE_TESTS = Object.freeze([
   Object.freeze({ key: "loot.gem", test: isVariableGemItem }),
@@ -145,7 +146,7 @@ export function restoreStoredRollCategories(entries, candidates = []) {
 }
 
 function itemCategoryIdentity(item) {
-  return String(item?.uuid ?? item?._id ?? item?.id ?? "").trim();
+  return normalizeInfinityItemUuid(item?.uuid ?? item?._id ?? item?.id ?? "");
 }
 
 /**

@@ -14,6 +14,7 @@
  */
 
 import { formatGp } from "../ui-util.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 
 export const MODULE_ID = "infinity-dnd5e";
 export const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
@@ -25,12 +26,13 @@ export const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
  * session each used to hand-roll (with slightly different null handling).
  */
 export async function resolveItemSnapshot(uuid) {
+  const canonicalUuid = normalizeInfinityItemUuid(uuid);
   try {
-    const doc = await fromUuid(uuid);
+    const doc = await fromUuid(canonicalUuid);
     if (!doc) return null;
     const snapshot =
       typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
-    if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? uuid;
+    if (!snapshot.uuid) snapshot.uuid = doc.uuid ?? canonicalUuid;
     return snapshot;
   } catch (error) {
     console.warn(`${MODULE_ID} | failed to resolve item ${uuid}`, error);
@@ -120,8 +122,9 @@ export async function openItemByUuid(uuid, { onOpened } = {}) {
   if (!uuid) return false;
   const resolve = globalThis.fromUuid;
   if (typeof resolve !== "function") return false;
+  const canonicalUuid = normalizeInfinityItemUuid(uuid);
   try {
-    const doc = await resolve(uuid);
+    const doc = await resolve(canonicalUuid);
     if (doc?.sheet) {
       doc.sheet.render(true);
       onOpened?.();

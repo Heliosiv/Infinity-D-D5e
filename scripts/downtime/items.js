@@ -12,6 +12,7 @@ import {
   merchantItemId,
   updateActorItemQuantityVerified,
 } from "../merchant/write-verification.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const PACK = `Compendium.${MODULE_ID}.infinity-dnd5e-items.Item`;
@@ -354,7 +355,7 @@ export function planWalletDeltaCp(wallet, deltaCp) {
 }
 
 export async function resolveItemSnapshot(uuid) {
-  const id = String(uuid ?? "").trim();
+  const id = normalizeInfinityItemUuid(uuid);
   if (!id || typeof globalThis.fromUuid !== "function") return null;
   try {
     const item = await globalThis.fromUuid(id);

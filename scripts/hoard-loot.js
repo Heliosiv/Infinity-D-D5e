@@ -155,9 +155,16 @@ export class HoardLootApp extends BaseLootApp {
 
   constructor(options = {}) {
     super(options);
+    this._initializeModeState();
+  }
+
+  /** Initialize Hoard-owned state for either a standalone test instance or
+   *  the unified Loot Studio host's non-rendering mode controller. */
+  _initializeModeState({ restoreForStudio = false } = {}) {
     const persistEnabled =
       getSetting(SETTING_KEYS.PERSIST_STATE) !== false ||
-      HoardLootApp._lootStudioRestoreState === true;
+      HoardLootApp._lootStudioRestoreState === true ||
+      restoreForStudio;
     const persisted = persistEnabled ? HoardLootApp._persistedState : null;
     const defaults = HoardLootApp.buildDefaultForm();
     this._form = HoardLootApp.normalizeForm(persisted?.form, defaults);

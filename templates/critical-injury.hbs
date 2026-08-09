@@ -5,21 +5,52 @@
       <p class="ci-eyebrow">Critical Injury Table V2</p>
       <h2>{{actorName}}</h2>
       <p>Roll approved injuries, follow recovery, and request treatment.</p>
+      {{#if hasActorOptions}}
+        <label class="ci-actor-picker">
+          <span>Active character</span>
+          <select
+            data-role="critical-injury-actor"
+            aria-describedby="ci-actor-help-{{domId}}"
+            aria-disabled="{{actorSelectDisabled}}"
+            {{actorSelectDisabledAttribute}}
+          >
+            {{#if needsActorChoice}}<option value="" selected>Choose a character</option>{{/if}}
+            {{#each actorOptions}}
+              <option value="{{id}}" {{selectedAttribute}}>{{name}}</option>
+            {{/each}}
+          </select>
+          <small id="ci-actor-help-{{domId}}">
+            {{#if actorSwitchLocked}}
+              Wait for the current action to finish before switching.
+            {{else if canSwitchActor}}
+              Injury history and treatment actions follow this selection.
+            {{else}}
+              This is the character you currently control.
+            {{/if}}
+          </small>
+        </label>
+      {{/if}}
     </div>
   </header>
 
   {{#if noActor}}
     <div class="ci-notice ci-notice--danger" role="alert">
-      <span><strong>This character is no longer available.</strong> Nothing changed. Close this window and choose a character you control.</span>
+      <span><strong>This character is no longer available to you.</strong>
+        Nothing changed. Choose a controlled character above, or close this
+        window.</span>
     </div>
   {{else}}
     {{#if offline}}
       <div class="ci-notice ci-notice--danger" role="status">
         <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
         {{#if outcomeUncertain}}
-          <span><strong>Confirmation was interrupted.</strong> A roll or treatment may already have changed this character. Do not repeat the action. Keep this window open while the GM reconnects.</span>
+          <span><strong>Confirmation was interrupted.</strong>
+            A roll or treatment may already have changed this character. Do not
+            repeat the action. Keep this window open while the GM reconnects.</span>
         {{else}}
-          <span><strong>Injury actions are offline.</strong> No full GM is connected. No new action can start; approved rolls and treatment can resume after reconnection.</span>
+          <span><strong>Injury actions are offline.</strong>
+            No full GM is connected. No new action can start; approved rolls and
+            treatment can resume after reconnection.</span>
         {{/if}}
       </div>
     {{/if}}
@@ -36,18 +67,30 @@
       </div>
     {{/unless}}
 
-    <p class="ci-status ci-status--{{statusTone}}" role="status" aria-live="polite" aria-atomic="true">{{statusMessage}}</p>
+    <p
+      class="ci-status ci-status--{{statusTone}}"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >{{statusMessage}}</p>
 
     {{#if hasPending}}
-      <section class="ci-roll-card" aria-labelledby="ci-roll-heading-{{domId}}" {{#if waitingForRoll}}aria-busy="true"{{/if}}>
-        <span class="ci-roll-icon"><i class="fa-solid fa-dice-d20" aria-hidden="true"></i></span>
+      <section
+        class="ci-roll-card"
+        aria-labelledby="ci-roll-heading-{{domId}}"
+        aria-busy="{{waitingForRoll}}"
+      >
+        <span class="ci-roll-icon"><i
+            class="fa-solid fa-dice-d20"
+            aria-hidden="true"
+          ></i></span>
         <div>
           <p class="ci-eyebrow">GM approved</p>
           <h3 id="ci-roll-heading-{{domId}}">Roll your critical injury</h3>
           <p>
             Your character recovered from 0 hit points or the dead state. The
-            active GM securely rolls and applies the d100 result when you
-            click below.
+            active GM securely rolls and applies the d100 result when you click
+            below.
           </p>
           {{#if pendingCount}}
             <small>{{pendingCount}} approved roll(s) waiting</small>
@@ -56,12 +99,17 @@
         <button
           type="button"
           class="ci-primary"
-          data-action="rollInjury" {{#if waitingForRoll}}disabled{{else if offline}}disabled title="A full GM must be online"{{/if}}
+          data-action="rollInjury"
+          aria-disabled="{{rollActionDisabled}}"
+          title="{{rollActionTitle}}"
+          {{rollActionDisabledAttribute}}
         >
           {{#if waitingForRoll}}
-            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting for GM…
+            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+            Waiting for GM…
           {{else}}
-            <i class="fa-solid fa-dice" aria-hidden="true"></i> Roll d100
+            <i class="fa-solid fa-dice" aria-hidden="true"></i>
+            Roll d100
           {{/if}}
         </button>
       </section>
@@ -97,11 +145,14 @@
 
       {{#if hasActiveInjuries}}
         {{#each activeInjuries}}
-          <article class="ci-injury{{#if permanent}} ci-injury--permanent{{/if}}" aria-labelledby="ci-injury-{{../domId}}-{{domId}}">
+          <article
+            class="ci-injury {{permanentClass}}"
+            aria-labelledby="{{headingId}}"
+          >
             <div class="ci-injury-heading">
               <div>
                 <span class="ci-roll-badge">d100 {{roll}}</span>
-                <h4 id="ci-injury-{{../domId}}-{{domId}}">{{name}}</h4>
+                <h4 id="{{headingId}}">{{name}}</h4>
               </div>
               {{#if permanent}}
                 <span class="ci-tag ci-tag--danger">Permanent</span>
@@ -130,10 +181,7 @@
             </dl>
 
             {{#if canTreat}}
-              <div
-                class="ci-treatment"
-                aria-busy="{{#if treating}}true{{else}}false{{/if}}"
-              >
+              <div class="ci-treatment" aria-busy="{{treating}}">
                 <div>
                   <strong>Healer's Kit: {{kitCharges}} charge(s)</strong>
                   <span>{{treatmentCheck}}</span>
@@ -141,18 +189,27 @@
                 <button
                   type="button"
                   data-action="requestTreatment"
-                  aria-label="{{#if treating}}Waiting for treatment of {{name}}{{else}}Request treatment for {{name}}{{/if}}"
-                  aria-disabled="{{#if treating}}true{{else if ../offline}}true{{else}}false{{/if}}"
-                  data-injury-id="{{id}}" {{#if treating}}disabled{{else if ../offline}}disabled title="A full GM must be online"{{/if}}
+                  aria-label="{{treatmentActionLabel}}"
+                  aria-disabled="{{treatmentDisabled}}"
+                  title="{{treatmentActionTitle}}"
+                  data-injury-id="{{id}}"
+                  {{treatmentDisabledAttribute}}
                 >
                   {{#if treating}}
-                    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Waiting…
+                    <i
+                      class="fa-solid fa-spinner fa-spin"
+                      aria-hidden="true"
+                    ></i>
+                    Waiting…
                   {{else}}
-                    <i class="fa-solid fa-kit-medical" aria-hidden="true"></i> Request treatment
+                    <i class="fa-solid fa-kit-medical" aria-hidden="true"></i>
+                    Request treatment
                   {{/if}}
                 </button>
               </div>
-              {{#if treatmentMessage}}<p class="ci-treatment-message">{{treatmentMessage}}</p>{{/if}}
+              {{#if treatmentMessage}}<p
+                  class="ci-treatment-message"
+                >{{treatmentMessage}}</p>{{/if}}
             {{/if}}
           </article>
         {{/each}}
@@ -167,7 +224,8 @@
 
   <footer class="ci-footer">
     <button type="button" data-action="dismiss">
-      <i class="fa-solid fa-xmark" aria-hidden="true"></i> Close
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      Close
     </button>
   </footer>
 </div>

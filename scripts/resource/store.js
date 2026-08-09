@@ -28,6 +28,7 @@ import {
   setSetting,
 } from "../settings.js";
 import { persistedValuesEqual } from "../utils/persisted-data.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   getDefaultEnvironments,
   normalizeEnvironmentCatalog,
@@ -137,6 +138,14 @@ function toStrArray(value) {
   return out;
 }
 
+function toItemUuidArray(value) {
+  return toStrArray(value).reduce((uuids, uuid) => {
+    const canonicalUuid = normalizeInfinityItemUuid(uuid);
+    if (!uuids.includes(canonicalUuid)) uuids.push(canonicalUuid);
+    return uuids;
+  }, []);
+}
+
 /** Default per-resource matching + rates. Keys stay stable; labels are friendly. */
 function defaultResources() {
   return [
@@ -214,7 +223,7 @@ export function normalizeResource(raw) {
       // Every resource needs a stable module-owned identity for stacks that
       // Quartermaster creates. The id is the collision-safe fallback.
       flagTag: toStr(matching.flagTag, id),
-      itemUuids: toStrArray(matching.itemUuids),
+      itemUuids: toItemUuidArray(matching.itemUuids),
     },
   };
 }

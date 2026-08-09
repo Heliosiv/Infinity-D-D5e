@@ -12,6 +12,7 @@
  */
 
 import { buildInfRecord } from "./tag-vocabulary.js";
+import { normalizeInfinityItemId } from "../item-uuid-compat.js";
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 export const DEFAULT_ITEM_PACK_ID = "infinity-dnd5e.infinity-dnd5e-items";
@@ -24,7 +25,11 @@ export function buildCompendiumItemUuid(
   documentName = "Item",
 ) {
   const cleanPackId = String(packId ?? "").trim() || DEFAULT_ITEM_PACK_ID;
-  const cleanItemId = String(itemId ?? "").trim();
+  const rawItemId = String(itemId ?? "").trim();
+  const cleanItemId =
+    cleanPackId === DEFAULT_ITEM_PACK_ID
+      ? normalizeInfinityItemId(rawItemId)
+      : rawItemId;
   const cleanDocumentName = String(documentName ?? "").trim() || "Item";
   return cleanItemId
     ? `Compendium.${cleanPackId}.${cleanDocumentName}.${cleanItemId}`

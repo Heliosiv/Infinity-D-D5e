@@ -66,7 +66,6 @@ import {
 } from "./merchant/scroll.js";
 import {
   confirmInfinityDialog,
-  isInfinityDialogAvailable,
   promptInfinityDialog,
 } from "./dialog-contract.js";
 import { isFullGM } from "./permissions.js";
@@ -1670,11 +1669,9 @@ function cssEscape(value) {
 /**
  * Ask the player to confirm a buy/sell before it commits. Gated by the
  * MERCHANT_CONFIRM_TRANSACTIONS setting at the call site. Resolves true when
- * confirmed (or when no dialog implementation exists, so it never blocks a
- * headless flow), false when declined or dismissed.
+ * confirmed, false when declined, dismissed, unavailable, or interrupted.
  */
 async function confirmTransaction({ side, name, qty, totalGp }) {
-  if (!isInfinityDialogAvailable("confirm")) return true;
   const verb = side === "sell" ? "Sell" : "Buy";
   const qtyLabel = Number(qty) > 1 ? `${qty}× ` : "";
   const price = Number(totalGp) || 0;
@@ -1702,7 +1699,6 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
     Array.isArray(allowedSkills) && allowedSkills.length > 0
       ? allowedSkills
       : ["per", "dec"];
-  if (!isInfinityDialogAvailable()) return allowed[0];
   const options = allowed
     .map((id) => `<option value="${id}">${labels[id] ?? id}</option>`)
     .join("");
@@ -1714,7 +1710,7 @@ async function promptSkillPicker(allowedSkills, { dc, failPct } = {}) {
     Number.isFinite(dcNum) && Number.isFinite(failNum)
       ? `<p>Beat <strong>DC ${dcNum}</strong> to lower the price. Fail and it rises about <strong>${failNum}%</strong> — one attempt per item.</p>`
       : `<p>Haggling is a gamble: succeed to lower the price, fail and it rises — one attempt per item.</p>`;
-  if (allowed.length === 1 && isInfinityDialogAvailable("confirm")) {
+  if (allowed.length === 1) {
     const skillLabel = labels[allowed[0]] ?? allowed[0];
     const confirmed = await confirmInfinityDialog(
       {

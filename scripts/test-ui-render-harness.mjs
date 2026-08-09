@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  62,
+  87,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -86,17 +86,34 @@ for (const expectedId of [
   "home-player",
   "settings-gm",
   "settings-player",
+  "settings-dirty",
+  "settings-saved",
+  "settings-save-error",
   "search-picker",
   "shared-dialog",
+  "shared-dialog-busy",
+  "shared-dialog-error",
+  "shared-dialog-interrupted",
   "chat-card",
+  "chat-card-pending",
+  "chat-card-interrupted",
+  "chat-card-error",
   "per-encounter",
+  "per-encounter-loading",
+  "per-encounter-unavailable",
   "hoard",
+  "hoard-loading",
+  "hoard-unavailable",
   "per-creature",
+  "per-creature-loading",
+  "per-creature-unavailable",
   "merchant-workspace",
   "merchant-workspace-closed",
+  "merchant-workspace-save-error",
   "merchant-session-buy",
   "merchant-session-sell",
   "merchant-session-pending",
+  "merchant-session-completed",
   "merchant-session-uncertain",
   "merchant-session-offline",
   "merchant-session-no-actor",
@@ -113,6 +130,10 @@ for (const expectedId of [
   "resource-manager-custom-environment",
   "resource-overview",
   "resource-overview-offline",
+  "resource-overview-loading",
+  "resource-overview-error",
+  "resource-overview-empty",
+  "resource-overview-disabled",
   "downtime-workspace-empty",
   "downtime-workspace-load-error",
   "downtime-workspace-collecting",
@@ -138,10 +159,16 @@ for (const expectedId of [
   "critical-injury-treating",
   "critical-injury-treatment-outcome",
   "critical-injury-uncertain",
+  "critical-injury-character-unavailable",
   "critical-injury-hud",
+  "critical-injury-hud-offline",
+  "critical-injury-hud-uncertain",
   "reputation-workspace",
   "reputation-view",
   "reputation-view-empty",
+  "reputation-view-loading",
+  "reputation-view-offline",
+  "reputation-view-error",
 ]) {
   assert.ok(
     documentHtml.includes(`data-harness-window="${expectedId}"`),
@@ -152,10 +179,50 @@ for (const expectedId of [
 const dialogView = views.find((view) => view.id === "shared-dialog");
 assert.match(dialogView.html, /autofocus>Cancel/);
 assert.match(dialogView.html, /data-action="confirm"/);
+assert.match(
+  views.find((view) => view.id === "shared-dialog-busy").html,
+  /aria-busy="true"[\s\S]*Do not submit the change again/i,
+);
+assert.match(
+  views.find((view) => view.id === "shared-dialog-error").html,
+  /role="alert"[\s\S]*data-action="retry"/,
+);
+assert.match(
+  views.find((view) => view.id === "shared-dialog-interrupted").html,
+  /Do not repeat the action[\s\S]*Check saved record/i,
+);
 const chatCardView = views.find((view) => view.id === "chat-card");
 for (const section of ["Outcome", "Audience", "Details", "Next action"]) {
   assert.match(chatCardView.html, new RegExp(`>${section}<`));
 }
+assert.match(
+  views.find((view) => view.id === "chat-card-pending").html,
+  /waiting for GM confirmation[\s\S]*do not submit the trade again/i,
+);
+assert.match(
+  views.find((view) => view.id === "chat-card-interrupted").html,
+  /outcome is uncertain[\s\S]*Do not repeat it/i,
+);
+assert.match(
+  views.find((view) => view.id === "chat-card-error").html,
+  /Nothing changed[\s\S]*retry the same request once/i,
+);
+
+const dirtySettingsView = views.find((view) => view.id === "settings-dirty");
+assert.match(dirtySettingsView.html, /Changes are ready to save/);
+assert.doesNotMatch(
+  dirtySettingsView.html.match(/<button\b[^>]*data-action="save"[^>]*>/)?.[0] ??
+    "",
+  /\bdisabled\b/,
+);
+assert.match(
+  views.find((view) => view.id === "settings-saved").html,
+  /2 changes saved/,
+);
+assert.match(
+  views.find((view) => view.id === "settings-save-error").html,
+  /Some changes were not saved[\s\S]*try again/i,
+);
 
 const encounterView = views.find((view) => view.id === "per-encounter");
 assert.ok(encounterView, "harness includes Per-Encounter Loot");
@@ -163,6 +230,38 @@ assert.match(encounterView.html, /Roll Chances/);
 assert.match(encounterView.html, /First item of a fresh Generate/);
 assert.match(encounterView.html, /data-chance-group="category"/);
 assert.match(encounterView.html, /mixed bundles stop at one spell scroll/i);
+
+for (const id of [
+  "per-encounter-loading",
+  "hoard-loading",
+  "per-creature-loading",
+]) {
+  const html = views.find((view) => view.id === id)?.html ?? "";
+  assert.match(html, /Loading items/i, `${id}: exposes item-library loading`);
+  assert.match(
+    html.match(/<button\b[^>]*data-action="generate"[^>]*>/)?.[0] ?? "",
+    /\bdisabled\b[\s\S]*aria-busy="true"|aria-busy="true"[\s\S]*\bdisabled\b/,
+    `${id}: disables and marks Generate busy while items load`,
+  );
+}
+
+for (const id of [
+  "per-encounter-unavailable",
+  "hoard-unavailable",
+  "per-creature-unavailable",
+]) {
+  const html = views.find((view) => view.id === id)?.html ?? "";
+  assert.match(
+    html,
+    /No items are available for the current filters/i,
+    `${id}: explains why generation is unavailable`,
+  );
+  assert.match(
+    html.match(/<button\b[^>]*data-action="generate"[^>]*>/)?.[0] ?? "",
+    /\bdisabled\b[\s\S]*aria-disabled="true"|aria-disabled="true"[\s\S]*\bdisabled\b/,
+    `${id}: disables Generate when no items are available`,
+  );
+}
 
 const dashboardView = views.find((view) => view.id === "dashboard");
 assert.ok(dashboardView, "harness includes the GM dashboard");
@@ -189,6 +288,22 @@ assert.match(closedMerchantWorkspaceView.html, /All shops closed/);
 assert.match(closedMerchantWorkspaceView.html, /data-action="reopenSessions"/);
 assert.match(closedMerchantWorkspaceView.html, /2 saved sessions/);
 
+const merchantWorkspaceSaveErrorView = views.find(
+  (view) => view.id === "merchant-workspace-save-error",
+);
+assert.ok(
+  merchantWorkspaceSaveErrorView,
+  "harness includes the Merchant Workspace retryable save error",
+);
+assert.match(
+  merchantWorkspaceSaveErrorView.html,
+  /role="status"[\s\S]*Save failed[\s\S]*retry with Save now/i,
+);
+assert.match(
+  merchantWorkspaceSaveErrorView.html,
+  /data-action="save"[\s\S]*Save now/i,
+);
+
 const closedShopPickerView = views.find(
   (view) => view.id === "shop-picker-closed",
 );
@@ -205,6 +320,60 @@ assert.ok(merchantSellView, "harness includes the merchant sell tab");
 assert.match(merchantSellView.html, /Stolen Signet Ring/);
 assert.match(merchantSellView.html, /require fencing during downtime/);
 assert.match(merchantSellView.html, /Fencing only/);
+
+const merchantCompletedView = views.find(
+  (view) => view.id === "merchant-session-completed",
+);
+assert.match(merchantCompletedView.html, /Trade confirmed/);
+assert.match(
+  merchantCompletedView.html,
+  /wallet, inventory, and the shop stock/i,
+);
+
+const resourceLoadingView = views.find(
+  (view) => view.id === "resource-overview-loading",
+);
+assert.match(resourceLoadingView.html, /Loading the party's supplies/);
+assert.match(
+  resourceLoadingView.html.match(
+    /<button\b[^>]*data-action="refresh"[^>]*>/,
+  )?.[0] ?? "",
+  /\bdisabled\b/,
+);
+assert.match(
+  views.find((view) => view.id === "resource-overview-error").html,
+  /snapshot did not arrive[\s\S]*Try again/i,
+);
+assert.match(
+  views.find((view) => view.id === "resource-overview-empty").html,
+  /No supply snapshot is available yet/i,
+);
+assert.match(
+  views.find((view) => view.id === "resource-overview-disabled").html,
+  /has not shared the Party Supplies view/i,
+);
+
+const criticalInjuryView = views.find((view) => view.id === "critical-injury");
+assert.match(criticalInjuryView.html, /Active character/);
+assert.match(criticalInjuryView.html, /data-role="critical-injury-actor"/);
+assert.match(
+  views.find((view) => view.id === "critical-injury-character-unavailable")
+    .html,
+  /no longer available to you[\s\S]*Choose a controlled character/i,
+);
+
+assert.match(
+  views.find((view) => view.id === "reputation-view-loading").html,
+  /Loading reputations/,
+);
+assert.match(
+  views.find((view) => view.id === "reputation-view-offline").html,
+  /Reputation is offline[\s\S]*Try again/i,
+);
+assert.match(
+  views.find((view) => view.id === "reputation-view-error").html,
+  /standings did not arrive[\s\S]*Try again/i,
+);
 
 const downtimeEmptyView = views.find(
   (view) => view.id === "downtime-workspace-empty",
@@ -560,18 +729,23 @@ const interruptedSummary = recentRunsView.html.match(
   /<details class="rm-run rm-run--unknown"[^>]*>[\s\S]*?<summary>([\s\S]*?)<\/summary>/,
 )?.[1];
 assert.ok(interruptedSummary, "interrupted receipt has a collapsed summary");
-for (const summaryText of [
-  "Limited",
-  "Day 42",
-  "2 affected actors",
-  "run-interrupted-calendar-0042",
-]) {
+for (const summaryText of ["Limited", "Day 42", "2 affected actors"]) {
   assert.match(
     interruptedSummary,
     new RegExp(summaryText),
     `collapsed receipt identifies ${summaryText}`,
   );
 }
+assert.doesNotMatch(
+  interruptedSummary,
+  /run-interrupted-calendar-0042/,
+  "technical receipt IDs stay out of the ordinary collapsed summary",
+);
+assert.match(
+  recentRunsView.html,
+  /Advanced receipt details[\s\S]*?run-interrupted-calendar-0042/,
+  "technical receipt IDs remain available inside Advanced details",
+);
 assert.match(
   recentRunsView.html,
   /class="[^"\n]*is-error[^"\n]*"[^>]*>[\s\S]*?Torch stack update needs review/,

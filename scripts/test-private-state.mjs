@@ -557,6 +557,57 @@ try {
     };
   }
 
+  // A full GM that already hydrated the canonical private Journal keeps that
+  // verified cache across a live authority handoff. Open GM applications and
+  // workflow observers may rerender synchronously from userConnected, so an
+  // empty-cache transition here would surface StoreUnavailable errors even
+  // though both GMs are legitimately allowed to read the same private store.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const gmA = { id: "gm-a", isGM: true, role: 4, active: true };
+    const gmB = { id: "gm-b", isGM: true, role: 4, active: true };
+    const store = activeJournal.insert(
+      makeStoreData({
+        resourceConfig: {
+          version: 2,
+          roster: [{ actorId: "handoff-secret" }],
+        },
+      }),
+    );
+    const users = makeUsers("gm-a", [gmA, gmB]);
+    configureGame({
+      user: gmB,
+      users,
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    const changes = [];
+    const changeHookId = onPrivateStateChanged((payload) =>
+      changes.push(payload),
+    );
+
+    assert.equal(await initializePrivateState(), true);
+    assert.equal(isPrivilegedPrivateStateReady(), true);
+    users.activeGM = gmB;
+    globalThis.Hooks.call("userConnected", gmA, false);
+
+    assert.equal(
+      isPrivilegedPrivateStateReady(),
+      true,
+      "a ready full-GM cache stays available throughout authority handoff",
+    );
+    assert.equal(
+      getPrivateState("resourceConfig").roster[0].actorId,
+      "handoff-secret",
+    );
+    assert.ok(
+      changes.some((payload) => payload.reason === "authority-change"),
+      "workflow observers are still told to adopt the new authority epoch",
+    );
+    globalThis.Hooks.off(PRIVATE_STATE_CHANGED_HOOK, changeHookId);
+  }
+
   // If document creation fails, legacy secrets stay put and initialization can
   // retry later instead of reporting a ready store backed by null.
   {

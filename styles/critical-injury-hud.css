@@ -2,14 +2,11 @@
    artwork; only the body-location interaction pattern is genre-inspired. */
 .infinity-critical-injury-hud {
   position: fixed !important;
-  top: auto !important;
-  right: calc(var(--sidebar-width, 300px) + 16px) !important;
-  bottom: 96px !important;
-  left: auto !important;
+  inset: 0 !important;
   z-index: 70;
-  width: 124px !important;
+  width: auto !important;
   min-width: 0 !important;
-  height: 242px !important;
+  height: auto !important;
   min-height: 0 !important;
   margin: 0 !important;
   overflow: visible !important;
@@ -31,14 +28,21 @@
 }
 
 .infinity-critical-injury-hud .window-content {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
   padding: 0;
   overflow: visible;
   background: transparent;
   pointer-events: none;
+  container: critical-injury-overlay / size;
 }
 
 .infinity-critical-injury-hud .ci-hud-shell {
-  position: relative;
+  position: absolute;
+  right: calc(var(--sidebar-width, 300px) + 16px);
+  bottom: 96px;
   width: 124px;
   height: 242px;
   overflow: visible;
@@ -301,8 +305,8 @@
   right: calc(var(--sidebar-width, 300px) + 152px);
   bottom: 96px;
   z-index: 9;
-  width: min(330px, calc(100vw - var(--sidebar-width, 300px) - 176px));
-  max-height: min(560px, calc(100vh - 120px));
+  width: min(330px, calc(100cqi - var(--sidebar-width, 300px) - 176px));
+  max-height: min(560px, calc(100cqb - 120px));
   padding: 13px;
   overflow: auto;
   overscroll-behavior: contain;
@@ -499,15 +503,10 @@
   }
 }
 
-@media (max-width: 900px) {
-  .infinity-critical-injury-hud {
-    right: 14px !important;
-    bottom: 88px !important;
-    width: 94px !important;
-    height: 184px !important;
-  }
-
+@container critical-injury-overlay (max-width: 900px) {
   .infinity-critical-injury-hud .ci-hud-shell {
+    right: 14px;
+    bottom: 88px;
     width: 94px;
     height: 184px;
   }
@@ -535,14 +534,14 @@
   .infinity-critical-injury-hud .ci-hud-card {
     right: 122px;
     bottom: 88px;
-    width: min(330px, calc(100vw - 146px));
+    width: min(330px, calc(100cqi - 146px));
   }
 }
 
-@media (max-width: 520px) {
-  .infinity-critical-injury-hud {
-    right: 8px !important;
-    bottom: 82px !important;
+@container critical-injury-overlay (max-width: 520px) {
+  .infinity-critical-injury-hud .ci-hud-shell {
+    right: 8px;
+    bottom: 82px;
   }
 
   .infinity-critical-injury-hud .ci-hud-card {
@@ -550,7 +549,7 @@
     bottom: calc(88px + env(safe-area-inset-bottom, 0px));
     left: 8px;
     width: auto;
-    max-height: min(58vh, 500px);
+    max-height: min(58cqb, 500px);
   }
 
   .infinity-critical-injury-hud .ci-hud-preview {
@@ -559,7 +558,7 @@
     bottom: 274px;
     left: auto;
     top: auto;
-    max-width: min(220px, calc(100vw - 16px));
+    max-width: min(220px, calc(100cqi - 16px));
     translate: 0 4px;
   }
 

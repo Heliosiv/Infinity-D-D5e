@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const GLOBAL_KEYS = [
   "CONST",
@@ -193,7 +194,12 @@ try {
     registerCriticalInjuryHud,
     resolveCurrentUserHudActor,
   } = hudModule;
-  const { CriticalInjuryApp, registerCriticalInjuryApp } = injuryAppModule;
+  const {
+    CriticalInjuryApp,
+    canCurrentUserOperateCriticalInjuryActor,
+    getControlledCriticalInjuryActors,
+    registerCriticalInjuryApp,
+  } = injuryAppModule;
   const {
     getCriticalInjuryTreatmentState,
     handleCriticalInjuryTreatmentResult,
@@ -204,17 +210,116 @@ try {
   // selected; owned NPCs and default-only permissions do not qualify.
   player.character = assignedActor;
   assert.equal(resolveCurrentUserHudActor(), assignedActor);
+  assert.equal(
+    canCurrentUserOperateCriticalInjuryActor(assignedActor),
+    true,
+    "an assigned character passes the same control boundary as the GM service",
+  );
   player.character = assignedActor.id;
   assert.equal(resolveCurrentUserHudActor(), assignedActor);
   player.character = null;
   assert.equal(resolveCurrentUserHudActor(), fallbackActor);
+  assert.deepEqual(
+    getControlledCriticalInjuryActors().map((actor) => actor.id),
+    [assignedActor.id, defaultOnlyCharacter.id, fallbackActor.id],
+    "the full app selector includes only controlled characters and mirrors effective Owner permission",
+  );
+  assert.equal(
+    canCurrentUserOperateCriticalInjuryActor(unownedCharacter),
+    false,
+  );
+  assert.equal(
+    canCurrentUserOperateCriticalInjuryActor(unrelatedOwnedNpc),
+    true,
+    "canonical control is independent of the selector's character-only presentation filter",
+  );
   const fullAppSelection = CriticalInjuryApp.openForCurrentUser();
   assert.equal(
     fullAppSelection?._actorId,
     fallbackActor.id,
     "the full injury log and compact HUD choose the same directly owned fallback",
   );
-  await fullAppSelection.close({ animate: false });
+  const fullAppContext = await fullAppSelection._prepareContext();
+  assert.equal(fullAppContext.hasActorOptions, true);
+  assert.equal(fullAppContext.canSwitchActor, true);
+  assert.equal(fullAppContext.actorSelectDisabled, false);
+  assert.equal(fullAppContext.actorSelectDisabledAttribute, "");
+  assert.equal(
+    fullAppContext.actorOptions.find((option) => option.selected)?.id,
+    fallbackActor.id,
+  );
+  assert.equal(
+    fullAppContext.actorOptions.find(
+      (option) => option.selectedAttribute === "selected",
+    )?.id,
+    fallbackActor.id,
+  );
+
+  const selectorListeners = new Map();
+  const actorSelect = {
+    value: "",
+    addEventListener(type, handler) {
+      selectorListeners.set(type, handler);
+    },
+  };
+  fullAppSelection._wireActorSelect({
+    querySelector: () => actorSelect,
+  });
+  const realSelectorOpen = CriticalInjuryApp.open;
+  const selectorOpens = [];
+  CriticalInjuryApp.open = (options) => {
+    selectorOpens.push(structuredClone(options));
+    return { options };
+  };
+  actorSelect.value = unownedCharacter.id;
+  await selectorListeners.get("change")();
+  assert.deepEqual(selectorOpens, []);
+  assert.match(fullAppSelection._statusMessage, /no longer available/i);
+
+  const fallbackInjury = injuryEffect(fallbackActor, {
+    id: "injury-selector-revalidation",
+    injuryKey: "concussion",
+    injuryName: "Selector Revalidation Injury",
+    effect: "Test effect.",
+    remainingDays: 1,
+    recoveryDueTs: 200_000,
+    kitCharges: 1,
+  });
+  fallbackActor.effects.contents.push(fallbackInjury);
+  const frameCountBeforeRevocation = socketFrames.length;
+  delete fallbackActor.ownership[player.id];
+  CriticalInjuryApp.DEFAULT_OPTIONS.actions.requestTreatment.call(
+    fullAppSelection,
+    null,
+    { dataset: { injuryId: "injury-selector-revalidation" } },
+  );
+  assert.equal(
+    socketFrames.length,
+    frameCountBeforeRevocation,
+    "treatment submission revalidates current control instead of trusting the rendered selector",
+  );
+  assert.match(fullAppSelection._statusMessage, /no longer control/i);
+  fallbackActor.ownership[player.id] = 3;
+  fallbackActor.effects.contents.splice(
+    fallbackActor.effects.contents.indexOf(fallbackInjury),
+    1,
+  );
+
+  actorSelect.value = defaultOnlyCharacter.id;
+  await selectorListeners.get("change")();
+  assert.deepEqual(selectorOpens, [{ actorId: defaultOnlyCharacter.id }]);
+  assert.equal(fullAppSelection.rendered, false);
+  CriticalInjuryApp.open = realSelectorOpen;
+
+  player.character = assignedActor;
+  delete assignedActor.ownership[player.id];
+  assert.equal(
+    canCurrentUserOperateCriticalInjuryActor(assignedActor),
+    true,
+    "assignment remains a canonical control grant even without explicit Owner permission",
+  );
+  assignedActor.ownership[player.id] = 3;
+  player.character = null;
 
   registerCriticalInjuryApp();
   const infectionForRest = injuryEffect(defaultOnlyCharacter, {
@@ -798,6 +903,15 @@ try {
     else globalThis[key] = value;
   }
 }
+
+const hudCss = readFileSync("styles/critical-injury-hud.css", "utf8");
+assert.match(hudCss, /container:\s*critical-injury-overlay\s*\/\s*size/);
+assert.match(
+  hudCss,
+  /@container\s+critical-injury-overlay\s*\(max-width:\s*520px\)/,
+);
+assert.doesNotMatch(hudCss, /@media\s*\(max-width/i);
+assert.doesNotMatch(hudCss, /\b\d+(?:\.\d+)?(?:d|s|l)?v[wh]\b/i);
 
 process.stdout.write("critical injury body HUD validation passed\n");
 

@@ -87,6 +87,16 @@ for (const item of generatedScrolls) {
     Object.keys(item.system?.activities ?? {}).length > 0,
     `${item.name} should carry cast activity data`,
   );
+  assert.equal(
+    item._stats?.duplicateSource,
+    po.spellScroll?.sourceSpellUuid,
+    `${item.name} duplicate provenance must be a complete Foundry UUID`,
+  );
+  assert.match(
+    item._stats.duplicateSource,
+    /^Compendium\.dnd5e\.spells\.Item\.[A-Za-z0-9]{16}$/,
+    `${item.name} duplicate provenance must pass Foundry 13 validation`,
+  );
   for (const activity of Object.values(item.system?.activities ?? {})) {
     assert.ok(
       activity?.consumption?.targets?.some(

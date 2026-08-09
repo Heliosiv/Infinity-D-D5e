@@ -13,8 +13,13 @@ import {
       "infinity-dnd5e.infinity-dnd5e-items",
       "aRt16Scn4Rs0Ht7",
     ),
-    "Compendium.infinity-dnd5e.infinity-dnd5e-items.Item.aRt16Scn4Rs0Ht7",
-    "fallback UUID includes the Item document type",
+    "Compendium.infinity-dnd5e.infinity-dnd5e-items.Item.aRt16Scrn4Rs0Ht7",
+    "fallback UUID includes the Item document type and repairs legacy ids",
+  );
+  assert.equal(
+    buildCompendiumItemUuid("third-party.items", "aRt16Scn4Rs0Ht7"),
+    "Compendium.third-party.items.Item.aRt16Scn4Rs0Ht7",
+    "legacy aliases never rewrite a third-party pack's document ids",
   );
   assert.equal(
     isFullCompendiumDocumentUuid(

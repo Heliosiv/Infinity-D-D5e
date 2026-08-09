@@ -121,6 +121,12 @@ const LEVEL_FALLBACKS = Object.freeze({
 });
 
 const rawItems = readPack(PACK_PATH);
+const existingGeneratedBySpellId = new Map(
+  rawItems
+    .filter(isGeneratedSpellScroll)
+    .map((item) => [item.flags?.[MODULE_ID]?.spellScroll?.sourceSpellId, item])
+    .filter(([spellId]) => spellId),
+);
 const itemsWithoutGenerated = rawItems.filter(
   (item) => !isGeneratedSpellScroll(item),
 );
@@ -143,6 +149,7 @@ const generated = spells.map((spell) =>
     spell,
     templates.get(normalizeLevel(spell.system?.level)),
     distributedLootWeights.get(spell._id),
+    existingGeneratedBySpellId.get(spell._id),
   ),
 );
 
@@ -340,13 +347,19 @@ function roundLootWeight(value) {
   return Math.max(Number.EPSILON, Number(Number(value).toFixed(12)));
 }
 
-function createSpellScroll(spell, template, distributedLootWeight) {
+function createSpellScroll(
+  spell,
+  template,
+  distributedLootWeight,
+  existingGenerated,
+) {
   const level = normalizeLevel(spell.system?.level);
   const fallback = LEVEL_FALLBACKS[level] ?? LEVEL_FALLBACKS[9];
   const templatePo =
     template?.flags?.[MODULE_ID] ?? template?.flags?.["party-operations"] ?? {};
   const sourcePo =
     spell.flags?.[MODULE_ID] ?? spell.flags?.["party-operations"] ?? {};
+  const existingPo = existingGenerated?.flags?.[MODULE_ID] ?? {};
   const id = deterministicId(spell._id);
   const name = `Spell Scroll: ${spell.name}`;
   const spellUuid = sourcePo.details?.coreSourceId
@@ -476,16 +489,18 @@ function createSpellScroll(spell, template, distributedLootWeight) {
       school: spell.system?.school ?? "",
       sourceUuid: spellUuid,
     },
-    art: {
-      ...(templatePo.art ?? {}),
-      schema: "infinity-dnd5e-art-assignment-v1",
-      mode: "reusable",
-      assetId: "shared/consumable-spells-spell-scrolls",
-      plannedPath:
-        "assets/item-art/shared/consumable-spells-spell-scrolls.webp",
-      fallbackIcon: template.img ?? fallback.img,
-      generated: false,
-    },
+    art: clone(
+      existingPo.art ?? {
+        ...(templatePo.art ?? {}),
+        schema: "infinity-dnd5e-art-assignment-v1",
+        mode: "reusable",
+        assetId: "shared/consumable-spells-spell-scrolls",
+        plannedPath:
+          "assets/item-art/shared/consumable-spells-spell-scrolls.webp",
+        fallbackIcon: template.img ?? fallback.img,
+        generated: false,
+      },
+    ),
   };
   delete po.variableTreasureKind;
 
@@ -511,7 +526,7 @@ function createSpellScroll(spell, template, distributedLootWeight) {
     _id: id,
     name,
     type: "consumable",
-    img: template.img ?? fallback.img,
+    img: existingGenerated?.img ?? template.img ?? fallback.img,
     system: {
       ...clone(template.system ?? {}),
       description: {
@@ -576,7 +591,7 @@ function createSpellScroll(spell, template, distributedLootWeight) {
     },
     _stats: {
       compendiumSource: spellUuid,
-      duplicateSource: spell._id,
+      duplicateSource: spellUuid,
       coreVersion: "12.343",
       systemId: "dnd5e",
       systemVersion: "4.4.4",

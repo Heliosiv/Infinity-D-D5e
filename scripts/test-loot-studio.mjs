@@ -5,6 +5,42 @@ import { readFile } from "node:fs/promises";
 
 import Handlebars from "handlebars";
 
+import { fakeItem } from "./test-utils/fixtures.mjs";
+
+function inspectTopLevelElements(html) {
+  const voidTags = new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+  ]);
+  const stack = [];
+  let count = 0;
+  for (const match of html.matchAll(
+    /<\/?([a-z][\w:-]*)(?:\s[^<>]*?)?\s*\/?>/gi,
+  )) {
+    const token = match[0];
+    const tag = match[1].toLowerCase();
+    if (token.startsWith("</")) {
+      assert.equal(stack.pop(), tag, `balanced closing tag for ${tag}`);
+      continue;
+    }
+    if (stack.length === 0) count += 1;
+    if (!token.endsWith("/>") && !voidTags.has(tag)) stack.push(tag);
+  }
+  return { count, unclosed: stack };
+}
+
 const renderLog = [];
 const closeLog = [];
 
@@ -71,20 +107,13 @@ globalThis.game = {
   },
 };
 
-function deferred() {
-  let resolve;
-  const promise = new Promise((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
 const { LootStudioApp, LOOT_STUDIO_MODE_CLASSES, openLootStudio } =
   await import("./loot-studio.js");
 const { PerEncounterLootApp } = await import("./app.js");
 const { HoardLootApp } = await import("./hoard-loot.js");
 const { PerCreatureLootApp } = await import("./per-creature-loot.js");
-const { normalizeLootStudioMode } = await import("./loot/loot-app-base.js");
+const { BaseLootApp, normalizeLootStudioMode } =
+  await import("./loot/loot-app-base.js");
 
 assert.equal(normalizeLootStudioMode("encounter"), "encounter");
 assert.equal(normalizeLootStudioMode(" HOARD "), "hoard");
@@ -168,39 +197,61 @@ for (const [mode, Cls] of Object.entries(LOOT_STUDIO_MODE_CLASSES)) {
   );
 }
 
-const encounter = openLootStudio({ mode: "encounter" });
-assert.ok(encounter instanceof PerEncounterLootApp);
-assert.equal(LootStudioApp.instance, encounter);
-assert.equal(LootStudioApp.mode, "encounter");
-assert.equal(encounter.rendered, true);
+assert.equal(
+  LootStudioApp.prototype instanceof BaseLootApp,
+  true,
+  "LootStudioApp is the one real ApplicationV2 host",
+);
+assert.match(
+  LootStudioApp.PARTS.body.template,
+  /templates\/loot-studio-body\.hbs$/,
+);
+assert.deepEqual(
+  new Set(LootStudioApp.PARTS.body.templates),
+  new Set([
+    "modules/infinity-dnd5e/templates/loot-forge.hbs",
+    "modules/infinity-dnd5e/templates/hoard-loot.hbs",
+    "modules/infinity-dnd5e/templates/per-creature-loot.hbs",
+    "modules/infinity-dnd5e/templates/loot-result-item.hbs",
+  ]),
+  "ApplicationV2 preloads every mode and nested result partial",
+);
 
-encounter._form = { ...encounter._form, partySize: 7 };
-encounter._lastResult = { items: [{ entryId: "encounter-result" }] };
-encounter._undoStack = [
+const encounterHost = openLootStudio({ mode: "encounter" });
+assert.ok(encounterHost instanceof LootStudioApp);
+assert.equal(LootStudioApp.instance, encounterHost);
+assert.equal(LootStudioApp.mode, "encounter");
+assert.ok(encounterHost.controller instanceof PerEncounterLootApp);
+assert.equal(encounterHost.rendered, true);
+
+const encounterController = encounterHost.controller;
+encounterHost._form = { ...encounterHost._form, partySize: 7 };
+encounterHost._lastResult = { items: [{ entryId: "encounter-result" }] };
+encounterHost._undoStack = [
   { items: [{ entryId: "undo-1" }] },
   { items: [{ entryId: "undo-2" }] },
 ];
 
-const hoard = await HoardLootApp.open();
-assert.ok(hoard instanceof HoardLootApp, "legacy Hoard open routes to Studio");
-assert.equal(LootStudioApp.instance, hoard);
+const hoardHost = await HoardLootApp.open();
+assert.equal(hoardHost, encounterHost, "legacy Hoard open reuses the host");
+assert.ok(hoardHost.controller instanceof HoardLootApp);
 assert.equal(LootStudioApp.mode, "hoard");
-assert.equal(encounter.rendered, false, "the prior mode closes before render");
-assert.equal(hoard.rendered, true);
-assert.deepEqual(closeLog, ["PerEncounterLootApp"]);
+assert.equal(encounterHost.rendered, true, "the host remains rendered");
+assert.deepEqual(closeLog, [], "tab switching never closes an application");
 
-hoard._form = { ...hoard._form, scale: "large" };
-hoard._lastResult = { items: [{ entryId: "hoard-result" }] };
-hoard._undoStack = [{ items: [{ entryId: "hoard-undo" }] }];
+const hoardController = hoardHost.controller;
+hoardHost._form = { ...hoardHost._form, scale: "large" };
+hoardHost._lastResult = { items: [{ entryId: "hoard-result" }] };
+hoardHost._undoStack = [{ items: [{ entryId: "hoard-undo" }] }];
 
-const creature = await LootStudioApp.open({ mode: "creature" });
-assert.ok(creature instanceof PerCreatureLootApp);
-assert.equal(hoard.rendered, false);
-assert.equal(creature.rendered, true);
+const creatureHost = await LootStudioApp.open({ mode: "creature" });
+assert.equal(creatureHost, encounterHost);
+assert.ok(creatureHost.controller instanceof PerCreatureLootApp);
+assert.equal(closeLog.length, 0);
 
 const restoredEncounter = await PerEncounterLootApp.open();
-assert.ok(restoredEncounter instanceof PerEncounterLootApp);
-assert.notEqual(restoredEncounter, encounter, "closed mode gets a fresh host");
+assert.equal(restoredEncounter, encounterHost);
+assert.equal(restoredEncounter.controller, encounterController);
 assert.equal(restoredEncounter._form.partySize, 7);
 assert.equal(
   restoredEncounter._lastResult.items[0].entryId,
@@ -209,13 +260,16 @@ assert.equal(
 assert.deepEqual(
   restoredEncounter._undoStack.map((entry) => entry.items[0].entryId),
   ["undo-1", "undo-2"],
-  "tab switching restores a mode's bounded undo stack even when cross-close persistence is disabled",
+  "each live controller retains its bounded undo stack",
 );
 
 const restoredHoard = await openLootStudio("hoard");
+assert.equal(restoredHoard, encounterHost);
+assert.equal(restoredHoard.controller, hoardController);
 assert.equal(restoredHoard._form.scale, "large");
 assert.equal(restoredHoard._lastResult.items[0].entryId, "hoard-result");
 assert.equal(restoredHoard._undoStack[0].items[0].entryId, "hoard-undo");
+await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(uiPreferences.lastLootStudioMode, "hoard");
 assert.deepEqual(
   Object.keys(uiPreferences).sort(),
@@ -229,45 +283,51 @@ assert.deepEqual(
   "preference writes pass through the sanitized v1 schema",
 );
 
-/* A delayed close coalesces rapid requests and renders only the latest mode. */
-const closeGate = deferred();
-restoredHoard._testCloseGate = closeGate.promise;
-const closeCountBeforeRace = closeLog.length;
-const renderCountBeforeRace = renderLog.length;
-const firstSwitch = LootStudioApp.open({ mode: "creature" });
-const latestSwitch = LootStudioApp.open({ mode: "encounter" });
-assert.equal(
-  LootStudioApp.instance,
-  restoredHoard,
-  "the closing mode remains authoritative until its close finishes",
-);
-closeGate.resolve();
-const [firstResolved, latestResolved] = await Promise.all([
-  firstSwitch,
-  latestSwitch,
-]);
-assert.ok(firstResolved instanceof PerEncounterLootApp);
-assert.equal(latestResolved, firstResolved);
-assert.equal(LootStudioApp.instance, firstResolved);
+const rapidCreature = LootStudioApp.open({ mode: "creature" });
+const rapidEncounter = LootStudioApp.open({ mode: "encounter" });
+assert.equal(rapidCreature, encounterHost);
+assert.equal(rapidEncounter, encounterHost);
 assert.equal(LootStudioApp.mode, "encounter");
-assert.equal(
-  closeLog.length,
-  closeCountBeforeRace + 1,
-  "one in-flight close serves every coalesced switch request",
-);
-assert.deepEqual(
-  renderLog.slice(renderCountBeforeRace),
-  ["PerEncounterLootApp"],
-  "an intermediate requested mode never renders",
+assert.equal(closeLog.length, 0);
+assert.ok(
+  renderLog.every((name) => name === "LootStudioApp"),
+  "only the unified ApplicationV2 host renders",
 );
 
+let delayedReadoutCalls = 0;
+encounterController._debounce(
+  "mode-switch-test",
+  () => {
+    delayedReadoutCalls += 1;
+  },
+  0,
+);
+LootStudioApp.open({ mode: "hoard" });
+await new Promise((resolve) => setTimeout(resolve, 5));
+assert.equal(
+  delayedReadoutCalls,
+  0,
+  "delayed work from an inactive controller cannot patch the active panel",
+);
+hoardController._debounce(
+  "active-mode-test",
+  () => {
+    delayedReadoutCalls += 1;
+  },
+  0,
+);
+await new Promise((resolve) => setTimeout(resolve, 5));
+assert.equal(delayedReadoutCalls, 1, "the active controller still runs work");
+
 /* A real close ends the tab session when Persist Last Result is disabled. */
-const activeCreature = await LootStudioApp.open({ mode: "creature" });
-await activeCreature.close();
+await encounterHost.close();
 assert.equal(LootStudioApp.instance, null);
+assert.deepEqual(closeLog, ["LootStudioApp"]);
 const reopenedCreature = openLootStudio({ mode: "creature" });
-assert.ok(reopenedCreature instanceof PerCreatureLootApp);
+assert.ok(reopenedCreature instanceof LootStudioApp);
+assert.notEqual(reopenedCreature, encounterHost);
 const freshEncounter = await LootStudioApp.open({ mode: "encounter" });
+assert.equal(freshEncounter, reopenedCreature);
 assert.equal(
   freshEncounter._form.partySize,
   4,
@@ -275,6 +335,113 @@ assert.equal(
 );
 assert.equal(freshEncounter._lastResult, null);
 assert.deepEqual(freshEncounter._undoStack, []);
+await freshEncounter.close();
+
+/* Deterministic business-outcome equivalence for every compatibility route. */
+const equivalencePool = [
+  fakeItem({
+    _id: "eq-dagger",
+    name: "Dagger",
+    tier: "t1",
+    gpValue: 5,
+    lootType: "loot.weapon.mundane",
+  }),
+  fakeItem({
+    _id: "eq-rope",
+    name: "Silk Rope",
+    tier: "t1",
+    gpValue: 10,
+    lootType: "loot.equipment",
+    type: "equipment",
+  }),
+  fakeItem({
+    _id: "eq-gem",
+    name: "Moonstone",
+    tier: "t1",
+    gpValue: 15,
+    lootType: "loot.gem",
+    type: "loot",
+  }),
+  fakeItem({
+    _id: "eq-potion",
+    name: "Healing Draught",
+    tier: "t1",
+    gpValue: 20,
+    lootType: "loot.potion",
+    type: "consumable",
+  }),
+  fakeItem({
+    _id: "eq-mail",
+    name: "Chain Shirt",
+    tier: "t2",
+    rarity: "uncommon",
+    gpValue: 75,
+    lootType: "loot.armor.mundane",
+    type: "equipment",
+  }),
+  fakeItem({
+    _id: "eq-blade",
+    name: "Amber Blade",
+    tier: "t2",
+    rarity: "uncommon",
+    gpValue: 125,
+    lootType: "loot.weapon.magic",
+    properties: ["mgc"],
+  }),
+  fakeItem({
+    _id: "eq-elixir",
+    name: "Elixir of Vigor",
+    tier: "t2",
+    rarity: "uncommon",
+    gpValue: 175,
+    lootType: "loot.consumable",
+    type: "consumable",
+    properties: ["mgc"],
+  }),
+  fakeItem({
+    _id: "eq-art",
+    name: "Silver Icon",
+    tier: "t2",
+    gpValue: 50,
+    lootType: "loot.art",
+    type: "loot",
+  }),
+];
+
+const equivalenceCases = [
+  ["encounter", PerEncounterLootApp, 0x31f00d],
+  ["hoard", HoardLootApp, 0x42f00d],
+  ["creature", PerCreatureLootApp, 0x53f00d],
+];
+
+for (const [mode, CompatibilityClass, seed] of equivalenceCases) {
+  const legacyController = new CompatibilityClass();
+  configureEquivalenceController(mode, legacyController, equivalencePool);
+  await withSeed(seed, () => legacyController._primaryGenerate());
+  const expected = projectBusinessOutcome(mode, legacyController._lastResult);
+  assert.ok(
+    projectedItemCount(mode, expected) > 0,
+    `${mode} seeded baseline exercises generated item outcomes`,
+  );
+
+  const unifiedHost = openLootStudio({ mode });
+  assert.equal(
+    await CompatibilityClass.open(),
+    unifiedHost,
+    `${mode} compatibility API resolves to the unified host`,
+  );
+  const unifiedController = unifiedHost.controller;
+  configureEquivalenceController(mode, unifiedController, equivalencePool);
+  await withSeed(seed, () => unifiedController._primaryGenerate());
+  const actual = projectBusinessOutcome(mode, unifiedController._lastResult);
+
+  assert.deepEqual(
+    actual,
+    expected,
+    `${mode} compatibility and unified routes preserve seeded business outcomes`,
+  );
+  await unifiedHost.close();
+}
 
 const studioTemplate = await readFile(
   new URL("../templates/loot-studio.hbs", import.meta.url),
@@ -300,6 +467,11 @@ const renderedStudio = Handlebars.compile(studioTemplate)({
     })),
   },
 });
+assert.deepEqual(
+  inspectTopLevelElements(renderedStudio),
+  { count: 1, unclosed: [] },
+  "the studio ApplicationV2 part renders one root element",
+);
 assert.equal(
   renderedStudio.match(/role="tabpanel"/g)?.length,
   2,
@@ -328,6 +500,70 @@ for (const templateName of [
   assert.match(source, /no selection = Any/);
   assert.match(source, />Select all</);
   assert.match(source, />Clear selection</);
+  assert.match(source, /templates\/loot-result-item\.hbs/);
+  assert.doesNotMatch(source, /#\*inline "lootItem"/);
+  Handlebars.registerPartial(
+    `modules/infinity-dnd5e/templates/${templateName}`,
+    source,
+  );
+}
+
+const sharedResultItem = await readFile(
+  new URL("../templates/loot-result-item.hbs", import.meta.url),
+  "utf8",
+);
+const renderResultItem = Handlebars.compile(sharedResultItem);
+Handlebars.registerPartial(
+  "modules/infinity-dnd5e/templates/loot-result-item.hbs",
+  sharedResultItem,
+);
+const resultItemContext = {
+  entryId: "shared-row",
+  rarity: "uncommon",
+  item: { uuid: "Item.shared", name: "Shared Result" },
+  displayName: "Shared Result",
+  imageSrc: "icons/svg/item-bag.svg",
+  quantityLabel: "",
+  gpTotalLabel: "25 gp",
+  locked: false,
+};
+assert.match(
+  renderResultItem({ ...resultItemContext, showLockControl: true }),
+  /data-action="toggleLock"/,
+  "Encounter enables the mode-specific lock branch",
+);
+assert.doesNotMatch(
+  renderResultItem(resultItemContext),
+  /data-action="toggleLock"/,
+  "Hoard and Creature reuse the row without Encounter lock controls",
+);
+
+const studioBodyTemplate = await readFile(
+  new URL("../templates/loot-studio-body.hbs", import.meta.url),
+  "utf8",
+);
+for (const templateName of [
+  "loot-forge.hbs",
+  "hoard-loot.hbs",
+  "per-creature-loot.hbs",
+]) {
+  assert.match(
+    studioBodyTemplate,
+    new RegExp(templateName.replace(".", "\\.")),
+  );
+}
+
+const renderStudioBody = Handlebars.compile(studioBodyTemplate);
+for (const mode of ["encounter", "hoard", "creature"]) {
+  const host = openLootStudio({ mode });
+  const context = await host._prepareContext();
+  const html = renderStudioBody(context);
+  assert.match(
+    html,
+    new RegExp(`id="loot-studio-panel-${mode}"`),
+    `${mode} renders inside the persistent host body`,
+  );
+  await host.close();
 }
 
 const studioSource = await readFile(
@@ -337,9 +573,137 @@ const studioSource = await readFile(
 assert.doesNotMatch(
   studioSource,
   /rollLoot|computeLootBudget|computeHoardBudget|splitCoinPile/,
-  "the Studio facade must not duplicate or alter loot engines",
+  "the Studio host must not duplicate or alter loot engines",
 );
 assert.ok(renderLog.length >= 5, "every routed mode rendered through the host");
+
+function configureEquivalenceController(mode, controller, items) {
+  controller._cachedItems = items;
+  controller._cachedItemsAt = Date.now();
+  controller._packStats = { totalItems: items.length };
+  controller._lastResult = null;
+  controller._undoStack = [];
+
+  if (mode === "encounter") {
+    controller._form = {
+      ...controller._form,
+      tier: "t2",
+      scaleMultiplier: 1,
+      generosityMultiplier: 1,
+      partySize: 4,
+      itemLimitEnabled: true,
+      count: 3,
+      budgetOverride: 800,
+      artVariants: false,
+      magicBias: 0,
+      rarities: [],
+      lootTypes: [],
+      minItemGp: 0,
+      maxItemGp: 0,
+    };
+  } else if (mode === "hoard") {
+    controller._form = {
+      ...controller._form,
+      tier: "t2",
+      scale: "standard",
+      pileBias: 0,
+      maxItems: 3,
+      artVariants: false,
+      magicBias: 0,
+      rarities: [],
+      lootTypes: [],
+      minItemGp: 0,
+      maxItemGp: 0,
+    };
+  } else {
+    controller._form = {
+      ...controller._form,
+      defaultTier: "t1",
+      itemsPerCreature: 2,
+      magicBias: 0,
+      rarities: [],
+      lootTypes: [],
+      minItemGp: 0,
+      maxItemGp: 0,
+      roster: [
+        { id: "eq-scout", name: "Scout", tier: "t1" },
+        { id: "eq-brute", name: "Brute", tier: "t2" },
+      ],
+    };
+  }
+}
+
+async function withSeed(seed, operation) {
+  const originalRandom = Math.random;
+  let state = seed >>> 0;
+  Math.random = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+  try {
+    return await operation();
+  } finally {
+    Math.random = originalRandom;
+  }
+}
+
+function projectBusinessOutcome(mode, result) {
+  const projectEntry = (entry) => ({
+    itemId: entry.item?.uuid ?? entry.item?._id ?? entry.item?.id ?? "",
+    name: entry.displayName ?? entry.item?.name ?? "",
+    quantity: entry.quantity,
+    gpTotal: entry.gpTotal,
+    rarity: entry.rarity,
+    rollCategory: entry.rollCategory,
+  });
+
+  if (mode === "encounter") {
+    return {
+      totalGp: result?.totalGp,
+      budgetGp: result?.budgetGp,
+      droppedForBudget: result?.droppedForBudget,
+      warnings: result?.warnings,
+      items: (result?.items ?? []).map(projectEntry),
+    };
+  }
+  if (mode === "hoard") {
+    return {
+      itemsTotalGp: result?.itemsTotalGp,
+      itemBudget: result?.itemBudget,
+      coinPileGp: result?.coinPileGp,
+      coinBreakdown: result?.coinBreakdown,
+      totalGp: result?.totalGp,
+      droppedForBudget: result?.droppedForBudget,
+      warnings: result?.warnings,
+      items: (result?.items ?? []).map(projectEntry),
+    };
+  }
+  return {
+    grandTotal: result?.grandTotal,
+    creatures: (result?.creatures ?? []).map((creature) => ({
+      id: creature.id,
+      name: creature.name,
+      tier: creature.tier,
+      budgetGp: creature.budgetGp,
+      totalGp: creature.totalGp,
+      warnings: creature.warnings,
+      items: (creature.items ?? []).map(projectEntry),
+    })),
+  };
+}
+
+function projectedItemCount(mode, outcome) {
+  if (mode === "creature") {
+    return (outcome?.creatures ?? []).reduce(
+      (total, creature) => total + (creature.items?.length ?? 0),
+      0,
+    );
+  }
+  return outcome?.items?.length ?? 0;
+}
 
 delete globalThis.game;
 delete globalThis.CONST;

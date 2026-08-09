@@ -56,7 +56,24 @@ try {
   globalThis.foundry = {
     applications: {
       api: {
-        ApplicationV2: class {},
+        ApplicationV2: class {
+          constructor() {
+            this.rendered = false;
+          }
+
+          render() {
+            this.rendered = true;
+            return this;
+          }
+
+          bringToFront() {}
+
+          async close(options = {}) {
+            this.rendered = false;
+            this._onClose?.(options);
+            return this;
+          }
+        },
         HandlebarsApplicationMixin: (Base) => class extends Base {},
         DialogV2: {
           confirm(options) {
@@ -98,6 +115,14 @@ try {
   };
 
   const { ResourceManagerApp } = await import("./resource-manager.js");
+
+  const openedApp = ResourceManagerApp.open();
+  assert.equal(
+    openedApp?._infinityFocusBound,
+    true,
+    "Quartermaster uses centralized close-focus restoration",
+  );
+  await openedApp.close({ animate: false });
 
   const lifecycleApp = new ResourceManagerApp();
   assert.equal(
@@ -206,6 +231,44 @@ try {
     "the action is restored after completion",
   );
   assert.equal(button.attributes.has("aria-busy"), false);
+
+  const originalConfirm = globalThis.foundry.applications.api.DialogV2.confirm;
+  const renderCountBeforeUnavailableDialogs = renderCount;
+  delete globalThis.foundry.applications.api.DialogV2.confirm;
+  await advanceDay.call(app, null, button);
+  assert.equal(
+    renderCount,
+    renderCountBeforeUnavailableDialogs,
+    "Advance Day cancels when its confirmation dialog is unavailable",
+  );
+  globalThis.foundry.applications.api.DialogV2.confirm = () => {
+    throw new Error("dialog failed to open");
+  };
+  await advanceDay.call(app, null, button);
+  assert.equal(
+    renderCount,
+    renderCountBeforeUnavailableDialogs,
+    "Advance Day cancels when its confirmation dialog throws",
+  );
+
+  const resetConfig = ResourceManagerApp.DEFAULT_OPTIONS.actions.resetConfig;
+  delete globalThis.foundry.applications.api.DialogV2.confirm;
+  await resetConfig.call(app, null, button);
+  assert.equal(
+    renderCount,
+    renderCountBeforeUnavailableDialogs,
+    "Reset cancels when its confirmation dialog is unavailable",
+  );
+  globalThis.foundry.applications.api.DialogV2.confirm = () => {
+    throw new Error("dialog failed to open");
+  };
+  await resetConfig.call(app, null, button);
+  assert.equal(
+    renderCount,
+    renderCountBeforeUnavailableDialogs,
+    "Reset cancels when its confirmation dialog throws",
+  );
+  globalThis.foundry.applications.api.DialogV2.confirm = originalConfirm;
 
   users.activeGM = gm;
   const forageButton = {

@@ -17,6 +17,7 @@ import {
   resolveRarityWeights,
 } from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import { getPrivateState, setPrivateState } from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -134,7 +135,7 @@ function generateId(prefix = "m") {
  */
 export function normalizeInventoryRow(row) {
   if (!row || typeof row !== "object") return null;
-  const uuid = toStr(row.uuid);
+  const uuid = normalizeInfinityItemUuid(toStr(row.uuid));
   if (!uuid) return null;
   const startingQty = toInt(row.startingQty ?? row.qty, 1);
   const unlimited = row.unlimited === true;

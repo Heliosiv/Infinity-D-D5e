@@ -117,6 +117,7 @@ try {
   restoreGlobal("requestAnimationFrame", previousAnimationFrame);
 }
 
+const callerSources = new Map();
 for (const file of [
   "ui-util.js",
   "downtime-workspace.js",
@@ -130,12 +131,31 @@ for (const file of [
   "injury/service.js",
 ]) {
   const source = await readFile(new URL(file, import.meta.url), "utf8");
+  callerSources.set(file, source);
   assert.doesNotMatch(
     source,
     /DialogV2\.(?:confirm|prompt|wait)\(/,
     `${file} delegates direct DialogV2 calls to the shared contract`,
   );
 }
+
+for (const [file, source] of callerSources) {
+  assert.doesNotMatch(
+    source,
+    /isInfinityDialogAvailable[\s\S]{0,500}?(?:return|:)\s*true\b/,
+    `${file} must not approve an action when a dialog is unavailable`,
+  );
+}
+assert.doesNotMatch(
+  callerSources.get("resource-manager.js"),
+  /let\s+ok\s*=\s*true[\s\S]{0,200}?isInfinityDialogAvailable/,
+  "Quartermaster reset must default to cancellation",
+);
+assert.doesNotMatch(
+  callerSources.get("merchant-session.js"),
+  /!isInfinityDialogAvailable[^\n]*return\s+(?:true|allowed\[0\])/,
+  "merchant transactions and bargaining must default to cancellation",
+);
 
 function restoreGlobal(key, value) {
   if (value === undefined) delete globalThis[key];

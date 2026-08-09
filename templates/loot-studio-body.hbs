@@ -1,0 +1,7 @@
+{{#if lootStudio.isEncounter}}
+  {{> "modules/infinity-dnd5e/templates/loot-forge.hbs"}}
+{{else if lootStudio.isHoard}}
+  {{> "modules/infinity-dnd5e/templates/hoard-loot.hbs"}}
+{{else}}
+  {{> "modules/infinity-dnd5e/templates/per-creature-loot.hbs"}}
+{{/if}}

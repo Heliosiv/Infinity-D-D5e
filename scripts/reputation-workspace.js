@@ -45,7 +45,6 @@ import {
 import { runAsFullGM } from "./permissions.js";
 import {
   confirmInfinityDialog,
-  isInfinityDialogAvailable,
   promptInfinityDialog,
 } from "./dialog-contract.js";
 
@@ -534,16 +533,14 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     if (!this._selectedId) return;
     const faction = findFaction(this._selectedId);
     if (!faction) return;
-    const confirmed = isInfinityDialogAvailable()
-      ? await confirmInfinityDialog({
-          window: {
-            title: `Delete "${faction.name}"?`,
-            icon: "fa-solid fa-trash",
-          },
-          content: `<p>This permanently removes <strong>${escapeHtml(faction.name)}</strong> and its reputation history. This can't be undone.</p>`,
-          rejectClose: false,
-        })
-      : true;
+    const confirmed = await confirmInfinityDialog({
+      window: {
+        title: `Delete "${faction.name}"?`,
+        icon: "fa-solid fa-trash",
+      },
+      content: `<p>This permanently removes <strong>${escapeHtml(faction.name)}</strong> and its reputation history. This can't be undone.</p>`,
+      rejectClose: false,
+    });
     if (!confirmed) return;
     await removeFaction(this._selectedId);
     this._selectedId = null;
@@ -610,10 +607,9 @@ function readFormFields(form) {
 
 /**
  * Prompt for a free-text reason. Returns the trimmed string (possibly empty)
- * on confirm, or null when cancelled / no dialog available proceeds with "".
+ * on confirm, or null when cancelled or no dialog is available.
  */
 async function promptReason(title, hint) {
-  if (!isInfinityDialogAvailable()) return "";
   const value = await promptInfinityDialog({
     window: { title, icon: "fa-solid fa-feather" },
     content: `
@@ -638,7 +634,6 @@ async function promptReason(title, hint) {
  * `{ value, reason }` on confirm, or null when cancelled.
  */
 async function promptSetStanding(faction) {
-  if (!isInfinityDialogAvailable()) return null;
   const current = faction.standing;
   const options = [];
   for (let n = STANDING_MAX; n >= STANDING_MIN; n -= 1) {

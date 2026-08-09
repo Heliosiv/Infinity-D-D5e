@@ -1,39 +1,41 @@
-<nav class="loot-studio-nav" aria-label="Loot Studio">
-  <div class="loot-studio-nav__identity">
-    <i class="fa-solid fa-coins" aria-hidden="true"></i>
-    <span>
-      <strong>Loot Studio</strong>
-      <small>{{lootStudio.activeLabel}} mode</small>
-    </span>
-  </div>
-  <div class="loot-studio-tabs" role="tablist" aria-label="Loot generation mode">
-    {{#each lootStudio.tabs}}
-    <button
-      type="button"
-      id="{{tabId}}"
-      class="loot-studio-tab {{#if active}}is-active{{/if}}"
-      role="tab"
-      aria-selected="{{#if active}}true{{else}}false{{/if}}"
-      aria-controls="{{panelId}}"
-      tabindex="{{#if active}}0{{else}}-1{{/if}}"
-      data-action="switchLootMode"
-      data-loot-studio-tab
-      data-loot-studio-switch
-      data-loot-mode="{{id}}"
-    >
-      <i class="{{icon}}" aria-hidden="true"></i>
-      <span>{{label}}</span>
-    </button>
-    {{/each}}
-  </div>
-</nav>
-{{#each lootStudio.tabs}}
-{{#unless active}}
-<div
-  id="{{panelId}}"
-  role="tabpanel"
-  aria-labelledby="{{tabId}}"
-  hidden
-></div>
-{{/unless}}
-{{/each}}
+<div class="loot-studio-chrome">
+  <nav class="loot-studio-nav" aria-label="Loot Studio">
+    <div class="loot-studio-nav__identity">
+      <i class="fa-solid fa-coins" aria-hidden="true"></i>
+      <span>
+        <strong>Loot Studio</strong>
+        <small>{{lootStudio.activeLabel}} mode</small>
+      </span>
+    </div>
+    <div class="loot-studio-tabs" role="tablist" aria-label="Loot generation mode">
+      {{#each lootStudio.tabs}}
+      <button
+        type="button"
+        id="{{tabId}}"
+        class="loot-studio-tab {{#if active}}is-active{{/if}}"
+        role="tab"
+        aria-selected="{{#if active}}true{{else}}false{{/if}}"
+        aria-controls="{{panelId}}"
+        tabindex="{{#if active}}0{{else}}-1{{/if}}"
+        data-action="switchLootMode"
+        data-loot-studio-tab
+        data-loot-studio-switch
+        data-loot-mode="{{id}}"
+      >
+        <i class="{{icon}}" aria-hidden="true"></i>
+        <span>{{label}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </nav>
+  {{#each lootStudio.tabs}}
+  {{#unless active}}
+  <div
+    id="{{panelId}}"
+    role="tabpanel"
+    aria-labelledby="{{tabId}}"
+    hidden
+  ></div>
+  {{/unless}}
+  {{/each}}
+</div>

@@ -128,7 +128,7 @@ const dnd5eRelationship = manifest.relationships?.systems?.find(
 assert.ok(dnd5eRelationship, "manifest declares a dnd5e system relationship");
 assert.equal(
   dnd5eRelationship.compatibility?.verified,
-  "4.0.4",
+  "4.4.4",
   "manifest should reference the dnd5e system line actually tested against",
 );
 

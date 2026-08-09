@@ -113,6 +113,10 @@ import {
 } from "../reputation/standing.js";
 import { loadFactions, updateFaction } from "../reputation/store.js";
 import { isFullGM } from "../permissions.js";
+import {
+  normalizeInfinityItemUuid,
+  sameInfinityItemUuid,
+} from "../item-uuid-compat.js";
 import { isAuthoritativeGM } from "../socket-authority.js";
 import {
   DOWNTIME_EVENTS,
@@ -738,7 +742,7 @@ export async function lockActiveDowntimeBlock(blockId) {
 
 function shopliftStockKey(fact) {
   const merchantId = String(fact?.merchantId ?? "").trim();
-  const itemUuid = String(fact?.itemUuid ?? "").trim();
+  const itemUuid = normalizeInfinityItemUuid(fact?.itemUuid);
   return merchantId && itemUuid ? `${merchantId}\u0000${itemUuid}` : "";
 }
 
@@ -1770,8 +1774,8 @@ export function verifyFreshDowntimeOperationPreconditions(actor, operation) {
       return freshOperationDrift("stolen-issuance-already-present");
     }
     const merchant = findMerchant(operation.merchantId);
-    const row = merchant?.items?.find(
-      (entry) => entry.uuid === operation.itemUuid,
+    const row = merchant?.items?.find((entry) =>
+      sameInfinityItemUuid(entry.uuid, operation.itemUuid),
     );
     if (
       !row ||
@@ -2132,8 +2136,8 @@ async function applyShopliftOperation(
     updated = await updateMerchant(
       operation.merchantId,
       (merchant) => {
-        const row = merchant.items.find(
-          (entry) => entry.uuid === operation.itemUuid,
+        const row = merchant.items.find((entry) =>
+          sameInfinityItemUuid(entry.uuid, operation.itemUuid),
         );
         if (!row || row.unlimited) throw new Error("merchant-stock-drift");
         if (Number(row.qty) === Number(operation.quantityAfter))
@@ -2144,7 +2148,7 @@ async function applyShopliftOperation(
         return {
           ...merchant,
           items: merchant.items.map((entry) =>
-            entry.uuid === operation.itemUuid
+            sameInfinityItemUuid(entry.uuid, operation.itemUuid)
               ? { ...entry, qty: operation.quantityAfter }
               : entry,
           ),
@@ -2156,8 +2160,8 @@ async function applyShopliftOperation(
     updateError = error;
   }
   const canonical = findMerchant(operation.merchantId);
-  const row = canonical?.items?.find(
-    (entry) => entry.uuid === operation.itemUuid,
+  const row = canonical?.items?.find((entry) =>
+    sameInfinityItemUuid(entry.uuid, operation.itemUuid),
   );
   const itemPresent = Boolean(
     findActorItem(actor, operation.stolenItemSnapshot._id),
@@ -2524,8 +2528,8 @@ async function reconcileInterruptedStolenLedgerWrite(
     const shopStockApplied =
       operation.kind !== "shoplift" ||
       Number(
-        findMerchant(operation.merchantId)?.items?.find(
-          (row) => row.uuid === operation.itemUuid,
+        findMerchant(operation.merchantId)?.items?.find((row) =>
+          sameInfinityItemUuid(row.uuid, operation.itemUuid),
         )?.qty,
       ) === Number(operation.quantityAfter);
     if (itemPresent && shopStockApplied) {
@@ -2631,8 +2635,8 @@ export async function inspectDowntimeOperation(operation) {
       if (operation.stolenItemSnapshot) {
         const item = findActorItem(actor, operation.stolenItemSnapshot._id);
         const merchant = findMerchant(operation.merchantId);
-        const row = merchant?.items?.find(
-          (entry) => entry.uuid === operation.itemUuid,
+        const row = merchant?.items?.find((entry) =>
+          sameInfinityItemUuid(entry.uuid, operation.itemUuid),
         );
         const ledgerRecord = stolenGoodsRecord(
           loadDowntimeConfig(),

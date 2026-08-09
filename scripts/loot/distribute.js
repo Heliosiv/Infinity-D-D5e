@@ -34,6 +34,7 @@ import {
   isInfinityDialogAvailable,
   promptInfinityDialog,
 } from "../dialog-contract.js";
+import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const SPELL_SCROLL_SCHEMA = "infinity-dnd5e-spell-scroll-v1";
@@ -445,7 +446,10 @@ export async function distributeItemsToActor(actorId, items) {
   ensureFoundry();
   const actor = game.actors?.get?.(actorId);
   if (!actor) {
-    notify("error", `actor ${actorId} not found.`);
+    notify(
+      "error",
+      "The selected character is no longer available. Nothing changed. Choose an available character and try again.",
+    );
     return 0;
   }
   const { created, failures } = await depositItemsCore(actor, items);
@@ -481,7 +485,10 @@ export async function depositToActor(
   ensureFoundry();
   const actor = game.actors?.get?.(actorId);
   if (!actor) {
-    notify("error", `actor ${actorId} not found.`);
+    notify(
+      "error",
+      "The selected character is no longer available. Nothing changed. Choose an available character and try again.",
+    );
     return { created: 0, failures: [], currencyAdded: null };
   }
 
@@ -741,12 +748,14 @@ export function normalizeDistributableItems(items) {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
       if (typeof item === "string") {
-        const uuid = item.trim();
+        const uuid = normalizeInfinityItemUuid(item);
         return uuid ? { uuid, quantity: 1 } : null;
       }
       if (!item || typeof item !== "object") return null;
       const quantity = normalizeQty(item.quantity);
-      const uuid = String(item.uuid ?? item.item?.uuid ?? "").trim();
+      const uuid = normalizeInfinityItemUuid(
+        item.uuid ?? item.item?.uuid ?? "",
+      );
       const itemData = cloneItemData(item.itemData ?? item.data);
       if (itemData) {
         return {

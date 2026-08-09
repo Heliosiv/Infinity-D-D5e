@@ -7,6 +7,8 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
+Version 0.3.0 targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+
 Open Home in either of these ways:
 
 1. Left scene-controls toolbar: the d20 icon labeled **Infinity D&D5e**.
@@ -73,7 +75,7 @@ Loot rolls use only spell-specific scrolls such as **Spell Scroll: Fireball**. T
 
 ### Keyboard
 
-In Loot Studio, Left/Right Arrow moves between mode tabs and Home/End jumps to the first or last mode. Inside Encounter mode, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Tabs, disclosures, item rows, HUD markers, and queue controls retain keyboard alternatives. Press Escape to dismiss dialogs and unpin the Critical Injury HUD card.
+In Loot Studio, Left/Right Arrow moves between mode tabs and Home/End jumps to the first or last mode. In any mode, **Enter** or **R** triggers Generate. Shortcuts are guarded so they do not fire while the cursor is in a text or number input. Tabs, disclosures, item rows, HUD markers, and queue controls retain keyboard alternatives. Press Escape to dismiss dialogs and unpin the Critical Injury HUD card.
 
 ### Settings
 

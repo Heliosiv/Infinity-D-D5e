@@ -35,6 +35,8 @@
   "templates": [
     "templates/dashboard.hbs",
     "templates/loot-studio.hbs",
+    "templates/loot-studio-body.hbs",
+    "templates/loot-result-item.hbs",
     "templates/loot-forge.hbs",
     "templates/hoard-loot.hbs",
     "templates/per-creature-loot.hbs",
@@ -70,7 +72,7 @@
       {
         "id": "dnd5e",
         "type": "system",
-        "compatibility": { "minimum": "4.0.0", "verified": "4.0.4" }
+        "compatibility": { "minimum": "4.0.0", "verified": "4.4.4" }
       }
     ],
     "requires": [

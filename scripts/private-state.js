@@ -500,7 +500,15 @@ function onAuthorityPossiblyChanged() {
   lastKnownAuthorityId = authorityId;
 
   if (isFullGM()) {
-    resetForRoleTransition({ safeDefaults: false });
+    // Every full GM is allowed to hold the same restricted Journal cache. If
+    // this client already verified that canonical store, changing which full
+    // GM is authoritative must not create a transient empty-cache window.
+    // Workflow stores apply their own authority epochs after this invalidation.
+    // Retaining the verified cache also lets open GM applications rerender
+    // cleanly during a live handoff instead of throwing StoreUnavailable.
+    if (!isPrivilegedPrivateStateReady()) {
+      resetForRoleTransition({ safeDefaults: false });
+    }
     registerSyncHooks();
   } else {
     lifecycleGeneration += 1;

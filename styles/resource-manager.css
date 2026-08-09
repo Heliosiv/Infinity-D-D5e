@@ -551,8 +551,19 @@
   font-size: 0.75rem;
 }
 
+.infinity-dnd5e .rm-run__diagnostics {
+  margin-top: var(--lf-space-2);
+  border-top: 1px solid var(--lf-border);
+}
+
+.infinity-dnd5e .rm-run__diagnostics > summary {
+  color: var(--lf-muted);
+  font-size: var(--lf-text-xs);
+  cursor: pointer;
+}
+
 .infinity-dnd5e .rm-run__id {
-  margin: 0;
+  margin: var(--lf-space-1) 0 0;
   color: var(--lf-muted);
   font-size: var(--lf-text-xs);
 }

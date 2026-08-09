@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { currencyAddFromBreakdown } from "./loot/hoard-budget.js";
 import { normalizeDistributableItems } from "./loot/distribute.js";
@@ -93,5 +94,15 @@ import { normalizeDistributableItems } from "./loot/distribute.js";
   assert.deepEqual(normalizeDistributableItems(null), []);
   assert.deepEqual(normalizeDistributableItems(undefined), []);
 }
+
+const distributeSource = await readFile(
+  new URL("./loot/distribute.js", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  distributeSource,
+  /actor\s+\$\{actorId\}\s+not found/i,
+  "player-facing errors do not expose raw Actor identifiers",
+);
 
 process.stdout.write("distribute validation passed\n");
