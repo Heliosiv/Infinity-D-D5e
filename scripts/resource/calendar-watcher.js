@@ -219,6 +219,11 @@ export async function advanceDayNow() {
   }
 }
 
+/** Manual Advance Day is consumption-only; calendar upkeep may still forage. */
+export function shouldRunUpkeepForaging({ manual = false, environment } = {}) {
+  return manual !== true && isForageable(environment);
+}
+
 /* ------------------------------------------------------------------ *
  * Forage drive (GM-pushed Survival check, gather-only)
  * ------------------------------------------------------------------ */
@@ -1162,9 +1167,11 @@ async function runDailyUpkeep({
   });
   if (conflict) return conflict;
 
-  // 1) Foraging window (only when the environment allows it).
+  // 1) Automatic calendar upkeep may forage when the environment allows it.
+  //    Manual Advance Day is deliberately consumption-only; the separate
+  //    Forage Drive owns all GM-initiated gathering.
   let foragedByActor = new Map();
-  if (isForageable(env)) {
+  if (shouldRunUpkeepForaging({ manual, environment: env })) {
     foragedByActor = await runForagingWindow({ env, party, cfg });
   }
 

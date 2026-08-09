@@ -192,7 +192,8 @@ automation and deterministic test worlds.
 1. The GM chooses **Advance Day**.
 2. A confirmation names the roster size and explains that the world clock will
    not change.
-3. The same durable pipeline used by automatic upkeep runs for one day.
+3. The same durable consumption pipeline used by automatic upkeep runs for one
+   day, but the manual action skips forage prompts and gathered deposits.
 4. The result appears in Quartermaster, the configured chat audience, history,
    and the player Supplies overview.
 

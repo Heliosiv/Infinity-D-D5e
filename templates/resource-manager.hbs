@@ -10,7 +10,7 @@
       <p class="rm-head__sub">Party supplies — food, water &amp; light.</p>
     </div>
     <div class="rm-head__actions">
-      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Run one day of foraging + consumption now{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
+      <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Consume one day of configured resources without foraging{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>
         <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Day
       </button>
       <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if hasBlockingResourceConflicts}}Paused until blocking resource conflicts are fixed{{else}}Run Survival checks for chosen characters to gather food, water, or both (no day passes){{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true"{{/unless}}>

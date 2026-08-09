@@ -16,6 +16,7 @@ const foragePrompt = new Promise((resolve) => {
 let confirmationCount = 0;
 let promptCount = 0;
 let renderCount = 0;
+let confirmationOptions = null;
 let foragePromptOptions = null;
 
 const gm = {
@@ -58,8 +59,9 @@ try {
         ApplicationV2: class {},
         HandlebarsApplicationMixin: (Base) => class extends Base {},
         DialogV2: {
-          confirm() {
+          confirm(options) {
             confirmationCount += 1;
+            confirmationOptions = options;
             return confirmation;
           },
           prompt(options) {
@@ -124,6 +126,9 @@ try {
     1,
     "only one Advance Day request may await confirmation at a time",
   );
+  assert.match(confirmationOptions.content, /Consume one day of supplies/);
+  assert.match(confirmationOptions.content, /without foraging/);
+  assert.doesNotMatch(confirmationOptions.content, /prompt online players/);
   assert.equal(button.disabled, true, "the action is disabled while pending");
   assert.equal(
     button.attributes.get("aria-busy"),

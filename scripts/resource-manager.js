@@ -653,7 +653,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       if (party.length > 0 && typeof DialogV2?.confirm === "function") {
         const ok = await DialogV2.confirm({
           window: { title: "Advance a day?", icon: "fa-solid fa-forward-step" },
-          content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s) and prompt online players to forage?</p><p style="opacity:0.8;">This is a manual day tick — it doesn't change the world clock, and runs even if auto-upkeep is off.</p>`,
+          content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
           rejectClose: false,
         }).catch(() => false);
         if (!ok) return;

@@ -184,9 +184,11 @@ about overlapping resource matchers and blocks unsafe inventory writes when a
 live item is claimed by more than one resource. The built-in food and water
 rules are distinct, including whole-word ration names for food and disposable
 day-unit names such as `water ration` for water. Reusable Waterskins are not
-spent or multiplied as day-unit inventory. Advance Day and Forage Drive accept
-only one prompt and one authority-fenced resource run at a time. A persisted
-safety lease reserves an automatic calendar day before Actor inventory changes.
+spent or multiplied as day-unit inventory. Advance Day consumes one day of
+configured resources without foraging; Forage Drive handles GM-initiated
+gathering separately. Quartermaster accepts only one authority-fenced resource
+run at a time. A persisted safety lease reserves an automatic calendar day
+before Actor inventory changes.
 After a short cross-client stabilization check, an interrupted run is locked for
 GM review instead of replaying consumption.
 

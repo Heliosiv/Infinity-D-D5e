@@ -7,6 +7,7 @@ import {
   diffDays,
   clampElapsedForUpkeep,
 } from "./resource/calendar.js";
+import { shouldRunUpkeepForaging } from "./resource/calendar-watcher.js";
 
 /* ------------------------------------------------------------------ *
  * resolveSecondsPerDay
@@ -84,6 +85,31 @@ import {
   assert.equal(clampElapsedForUpkeep(-3, 7), 0);
   // max floored to ≥ 1.
   assert.equal(clampElapsedForUpkeep(5, 0), 1);
+}
+
+/* ------------------------------------------------------------------ *
+ * Manual Advance Day is consumption-only.
+ * ------------------------------------------------------------------ */
+{
+  const forageable = { forageable: true };
+  assert.equal(
+    shouldRunUpkeepForaging({ manual: false, environment: forageable }),
+    true,
+    "automatic calendar upkeep may forage",
+  );
+  assert.equal(
+    shouldRunUpkeepForaging({ manual: true, environment: forageable }),
+    false,
+    "manual Advance Day skips foraging even in a forageable environment",
+  );
+  assert.equal(
+    shouldRunUpkeepForaging({
+      manual: false,
+      environment: { forageable: false },
+    }),
+    false,
+    "automatic upkeep still respects non-forageable environments",
+  );
 }
 
 process.stdout.write("resource-calendar validation passed\n");
