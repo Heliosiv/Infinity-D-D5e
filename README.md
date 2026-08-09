@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.73 (unreleased)** - Hardens Quartermaster inventory writes with canonical Actor read-back and honest **Needs review** outcomes, while retaining the private 20-run receipt history introduced in v0.2.72.
+**v0.2.74 (unreleased)** - Automates one-gp spell-component consumption for leveled casts, drawing from Component Pouch charges and loose Spell Components while retaining the Quartermaster write hardening introduced in v0.2.73.
 
 - GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -28,6 +28,7 @@ Three ways to open the dashboard:
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
+- **Spell components**: every leveled spell cast spends one 1-gp component per cast level, including the chosen upcast level. Component Pouch charges are used before loose Spell Components; combined shortages block the cast before its native consumption updates are applied. Cantrips and spell-scroll item uses are exempt.
 - **Player launchers**: `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
 - **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The action can open Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile; it carries no campaign projection and performs no world write.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
@@ -58,6 +59,12 @@ Inside the Per-Encounter window, **Enter** or **R** triggers Generate. Shortcuts
 Every default the loot tools ship with is editable from Foundry's Game Settings -> Configure Settings -> Module Settings -> Infinity D&D5e. The dashboard footer has a **Configure Defaults** button that opens the same settings surface.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
+
+### Spell components
+
+Enable or disable **Spell Component Consumption** in module settings. When it is enabled, an owned character casting a leveled spell must have component units equal to the level at which the spell is cast. A level 3 cast costs three units (3 gp), while an upcast at level 5 costs five units (5 gp).
+
+The automation recognizes the module's **Component Pouch** as a 25-use source and **Spell Components** as 1-gp loose units. It spends pouch charges first, then loose stacks, even when those source items are nested inside a native dnd5e container. Several sources can cover one cast. If their combined balance is short, the spell is canceled without spending a spell slot or partially consuming components. Cantrips cost zero, and using a spell-scroll Item does not invoke this generic component rule.
 
 ### Monk's Active Tiles integration
 

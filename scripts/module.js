@@ -79,6 +79,7 @@ import {
 import { registerMonksTokenbarCompat } from "./compat/monks-tokenbar.js";
 import { registerMonksActiveTilesCompat } from "./compat/monks-active-tiles.js";
 import { registerSoundAutomation } from "./compat/sound-automation.js";
+import { registerSpellComponentHooks } from "./spell-components/hooks.js";
 import {
   getPlayerSurfaceStatus,
   openCalendar,
@@ -702,6 +703,10 @@ Hooks.once("ready", async () => {
     // including the merchant socket + session auto-open, which left players
     // unable to receive a pushed shop session.
     safeInitializeSubsystem("sound socket", registerSoundSocket);
+    safeInitializeSubsystem(
+      "spell component consumption",
+      registerSpellComponentHooks,
+    );
     safeInitializeSubsystem("sound automation", registerSoundAutomation);
     safeInitializeSubsystem(
       "player-surface SocketLib",

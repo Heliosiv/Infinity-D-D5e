@@ -56,6 +56,8 @@ export const SETTING_KEYS = Object.freeze({
   // Critical Injury Table V2 workflow.
   CRITICAL_INJURIES_ENABLED: "criticalInjuriesEnabled",
   CRITICAL_INJURY_HUD_ENABLED: "criticalInjuryHudEnabled",
+  // Leveled-spell component consumption.
+  SPELL_COMPONENTS_ENABLED: "spellComponentsEnabled",
   // Hidden resource stores (no config UI) — edited via the Resource Manager.
   RESOURCE_CONFIG: "resourceConfig",
   RESOURCE_RUNSTATE: "resourceRunState",
@@ -479,6 +481,15 @@ export const SETTINGS = Object.freeze([
     name: "Critical Injury Body HUD",
     hint: "Show a small body silhouette when your assigned or directly owned character has active Critical Injuries. Hover or focus a wound marker for details and Healer's Kit treatment.",
     scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+  },
+  {
+    key: SETTING_KEYS.SPELL_COMPONENTS_ENABLED,
+    name: "Spell Component Consumption",
+    hint: "Spend one 1-gp spell component per cast level, using Component Pouch charges before loose Spell Components. Cantrips and spell-scroll item uses cost no generic components.",
+    scope: "world",
     config: true,
     type: Boolean,
     default: true,
