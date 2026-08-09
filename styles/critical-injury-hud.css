@@ -401,6 +401,7 @@
   display: grid;
   gap: 2px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .infinity-critical-injury-hud .ci-hud-treatment span,

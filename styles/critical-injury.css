@@ -226,11 +226,12 @@
 
 .ci-facts > div {
   display: grid;
-  grid-template-columns: 80px 1fr;
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 9px;
 }
 
 .ci-facts dt {
+  min-width: 0;
   color: var(--lf-muted, #b8b3aa);
   font-size: 0.75rem;
   font-weight: 750;

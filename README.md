@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.71 (unreleased)** - Hardens downtime planning, handoff recovery, item writes, and player-safe results, and adds authenticated player-hub launchers.
+**v0.2.71** - Hardens downtime planning, handoff recovery, item writes, and player-safe results; adds authenticated player-hub launchers; and streamlines Quartermaster with targeted forage drives, consumption-only Advance Day, and routine-first setup.
 
 - GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
