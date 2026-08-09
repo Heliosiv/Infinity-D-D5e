@@ -244,6 +244,22 @@ try {
     "restricted-projection-data",
     "the socket boundary rejects a projection containing the private secret",
   );
+  assert.equal(
+    socket.validateDowntimePayload({
+      type: socket.DOWNTIME_EVENTS.STATE_UPDATE,
+      targetUserId: player.id,
+      projection: {
+        status: "locked",
+        nested: {
+          planningDraft: {
+            rows: { privateRoll: { total: 20, formula: "1d20 + 5" } },
+          },
+        },
+      },
+    }).reason,
+    "restricted-projection-data",
+    "partial hidden-roll journals can never cross the player socket boundary",
+  );
   let receivedSubmission = null;
   const unsubscribeReceived = socket.subscribeDowntime(
     socket.DOWNTIME_EVENTS.SUBMIT_QUEUE,

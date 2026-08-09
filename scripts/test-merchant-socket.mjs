@@ -681,6 +681,170 @@ try {
     clearAllSessions();
   }
 
+  /* A stale assigned-character pointer cannot bypass an explicit ownership
+     downgrade when a player omits actorId from a forged sale frame. */
+  {
+    clearAllSessions();
+    const rec = openSession({
+      merchantId: "m-stale-character",
+      viewerUserId: "player1",
+    });
+    let savedList = [
+      {
+        id: "m-stale-character",
+        name: "Pawn",
+        sellRatio: 0.5,
+        goldOnHand: 100,
+        allowedUserIds: ["player1"],
+        items: [],
+      },
+    ];
+    const actor = makeTransactionActor({
+      id: "stale-owned-item",
+      name: "Longsword",
+      type: "weapon",
+      system: { quantity: 1, price: { value: 10, denomination: "gp" } },
+      flags: {},
+    });
+    actor.ownership = { player1: 0 };
+    actor.testUserPermission = () => true;
+    const savedInner = globalThis.game;
+    globalThis.game = {
+      user: { id: "gm", isGM: true },
+      ...actorAccess(actor),
+      settings: {
+        get: (_moduleId, key) => (key === "merchants" ? savedList : undefined),
+        set: (_moduleId, key, value) => {
+          if (key === "merchants") savedList = value;
+          return value;
+        },
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) =>
+      acks.push(payload),
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "stale-character-sale",
+        itemUuid: "stale-owned-item",
+        qty: 1,
+        totalGp: 5,
+      },
+      "player1",
+    );
+    off();
+    assert.ok(
+      acks.some(
+        (ack) =>
+          ack.commitId === "stale-character-sale" &&
+          ack.ok === false &&
+          ack.reason === "no-actor",
+      ),
+    );
+    assert.ok(actor.items.get("stale-owned-item"));
+    assert.equal(savedList[0].goldOnHand, 100);
+    globalThis.game = savedInner;
+    clearAllSessions();
+  }
+
+  /* Assistant GM role permissions must not turn every character into a valid
+     self-service shop Actor when that character is not assigned or owned. */
+  {
+    clearAllSessions();
+    const rec = openSession({
+      merchantId: "m-assistant-boundary",
+      viewerUserId: "assistant-gm",
+    });
+    const actor = makeTransactionActor({
+      id: "assistant-target-item",
+      name: "Longsword",
+      type: "weapon",
+      system: { quantity: 1, price: { value: 10, denomination: "gp" } },
+      flags: {},
+    });
+    actor.ownership = { default: 0 };
+    actor.testUserPermission = () => true;
+    const assistant = {
+      id: "assistant-gm",
+      isGM: true,
+      role: 3,
+      active: true,
+      character: null,
+    };
+    const gm = { id: "gm", isGM: true, role: 4, active: true };
+    const users = new Map([
+      [gm.id, gm],
+      [assistant.id, assistant],
+    ]);
+    users.activeGM = gm;
+    const savedInner = globalThis.game;
+    const savedConst = globalThis.CONST;
+    globalThis.CONST = {
+      USER_ROLES: { GAMEMASTER: 4 },
+      DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 },
+    };
+    globalThis.game = {
+      user: gm,
+      users,
+      actors: {
+        get: (id) => (id === actor.id ? actor : null),
+        find: (predicate) => (predicate(actor) ? actor : null),
+      },
+      settings: {
+        get: (_moduleId, key) =>
+          key === "merchants"
+            ? [
+                {
+                  id: "m-assistant-boundary",
+                  name: "Pawn",
+                  sellRatio: 0.5,
+                  goldOnHand: 100,
+                  allowedUserIds: [assistant.id],
+                  items: [],
+                },
+              ]
+            : undefined,
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const acks = [];
+    const off = subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) =>
+      acks.push(payload),
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: assistant.id,
+        sessionId: rec.sessionId,
+        commitId: "assistant-unowned-sale",
+        actorId: actor.id,
+        itemUuid: "assistant-target-item",
+        qty: 1,
+        totalGp: 5,
+      },
+      assistant.id,
+    );
+    off();
+    assert.ok(
+      acks.some(
+        (ack) =>
+          ack.commitId === "assistant-unowned-sale" &&
+          ack.ok === false &&
+          ack.reason === "no-actor",
+      ),
+    );
+    assert.ok(actor.items.get("assistant-target-item"));
+    globalThis.game = savedInner;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
+    clearAllSessions();
+  }
+
   /* OVERSELL: a finite item with 1 in stock hit by a 2-unit buy (a concurrent
      buyer took the last unit) is REJECTED with ok:false reason:"out-of-stock"
      and the merchant's gold is left untouched — not charged for a phantom unit. */

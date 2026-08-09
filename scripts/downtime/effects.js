@@ -156,10 +156,43 @@ function sharpeningReference(item, effect) {
   };
 }
 
+function hasCompleteSharpeningMarker(item, effect) {
+  const data = sourceOf(effect);
+  const marker = data.flags?.[MODULE_ID]?.downtimeSharpen;
+  const reference = sharpeningReference(item, effect);
+  const markerActorId = String(marker?.actorId ?? "").trim();
+  const markerItemId = String(marker?.itemId ?? "").trim();
+  const liveActorId = String(item?.parent?.id ?? item?.actor?.id ?? "").trim();
+  const damageType = String(
+    marker?.types?.[0] ?? marker?.damageType ?? "",
+  ).toLowerCase();
+  const charges = Number(marker?.charges);
+  return Boolean(
+    data.type === "enchantment" &&
+    reference.itemId &&
+    reference.effectId &&
+    reference.operationId &&
+    markerActorId &&
+    markerItemId === reference.itemId &&
+    (!liveActorId || markerActorId === liveActorId) &&
+    marker?.bonus === "1" &&
+    marker?.locked === true &&
+    marker?.enchantment === true &&
+    typeof marker?.compatibilityFallback === "boolean" &&
+    Number.isInteger(charges) &&
+    charges >= 0 &&
+    charges <= 3 &&
+    Array.isArray(marker?.rollIds) &&
+    marker.rollIds.length <= 3 &&
+    ["piercing", "slashing"].includes(damageType),
+  );
+}
+
 export function sharpeningEffectReferences(actor) {
   const references = [];
   for (const item of valuesOf(actor?.items)) {
     for (const effect of sharpeningEffects(item)) {
+      if (!hasCompleteSharpeningMarker(item, effect)) continue;
       const reference = sharpeningReference(item, effect);
       if (reference.itemId && reference.effectId && reference.operationId) {
         references.push(reference);
@@ -250,6 +283,15 @@ export async function applySharpeningEffect(
   if (!item || typeof item.createEmbeddedDocuments !== "function") {
     return { ok: false, reason: "invalid-weapon" };
   }
+  const normalizedOperationId = String(operationId ?? "").trim();
+  const normalizedActorId = String(actorId ?? "").trim();
+  const liveActorId = String(item?.parent?.id ?? item?.actor?.id ?? "").trim();
+  if (!normalizedOperationId || !normalizedActorId) {
+    return { ok: false, reason: "invalid-sharpening-reference" };
+  }
+  if (liveActorId && liveActorId !== normalizedActorId) {
+    return { ok: false, reason: "actor-mismatch" };
+  }
   if (!isSharpenableWeapon(item)) {
     return { ok: false, reason: "ineligible-weapon" };
   }
@@ -258,8 +300,8 @@ export async function applySharpeningEffect(
   }
   const damageType = sharpenDamageType(item);
   const effectData = buildSharpeningEffect({
-    operationId,
-    actorId,
+    operationId: normalizedOperationId,
+    actorId: normalizedActorId,
     itemId: documentId(item),
     damageType,
     timestamp,
@@ -298,7 +340,7 @@ export async function applySharpeningEffect(
     !error &&
     returnedId === createdId &&
     Boolean(canonical) &&
-    flag?.operationId === String(operationId ?? "").trim() &&
+    flag?.operationId === normalizedOperationId &&
     Number(flag?.charges) === 3 &&
     flag?.compatibilityFallback ===
       effectData.flags[MODULE_ID].downtimeSharpen.compatibilityFallback;
@@ -368,6 +410,7 @@ export async function consumeSharpeningCharge(
   const expectedOperationId = String(operationId ?? "").trim();
   const effect =
     activeSharpeningEffects(item).find((candidate) => {
+      if (!hasCompleteSharpeningMarker(item, candidate)) return false;
       const marker =
         sourceOf(candidate).flags?.[MODULE_ID]?.downtimeSharpen ?? {};
       return (
@@ -504,6 +547,7 @@ function rollSubjectItem(subject) {
 
 function fallbackMarker(item) {
   for (const effect of activeSharpeningEffects(item)) {
+    if (!hasCompleteSharpeningMarker(item, effect)) continue;
     const data = sourceOf(effect);
     const marker = data.flags?.[MODULE_ID]?.downtimeSharpen;
     const damageType = String(
@@ -534,6 +578,7 @@ function fallbackMarker(item) {
 
 function availableSharpening(item) {
   for (const effect of activeSharpeningEffects(item)) {
+    if (!hasCompleteSharpeningMarker(item, effect)) continue;
     const marker = sourceOf(effect).flags?.[MODULE_ID]?.downtimeSharpen ?? {};
     const reference = sharpeningReference(item, effect);
     const availability = sharpeningLifecycleAvailability({

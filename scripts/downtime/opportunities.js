@@ -74,6 +74,9 @@ const PICKPOCKET_MARK_ARCHETYPES = Object.freeze([
 
 export const PICKPOCKET_OPPORTUNITY_COUNT = 3;
 
+const DOWNTIME_SECRET_HEX_LENGTH = 64;
+const DOWNTIME_SECRET_SEPARATOR = ".";
+
 /**
  * Create a private per-block secret using the host's cryptographic RNG.
  * Downtime creation fails closed when no secure random source is available.
@@ -87,12 +90,34 @@ export function createDowntimeOpportunitySecret(cryptoApi = globalThis.crypto) {
     ).join("");
   }
   if (typeof cryptoApi?.randomUUID === "function") {
-    return cryptoApi
-      .randomUUID()
-      .replace(/[^A-Fa-f0-9]/g, "")
-      .toLowerCase();
+    const secret = [cryptoApi.randomUUID(), cryptoApi.randomUUID()]
+      .map((value) =>
+        String(value)
+          .replace(/[^A-Fa-f0-9]/g, "")
+          .toLowerCase(),
+      )
+      .join("");
+    if (/^[0-9a-f]{64}$/.test(secret)) return secret;
   }
   throw new Error("DowntimeSecureRandomUnavailable");
+}
+
+/**
+ * Keep the player-visible mark stream and the hidden reward stream on
+ * independent 256-bit keys. FNV-1a is intentionally only a deterministic
+ * shuffle here; exposing one of its outputs must not reveal the state used to
+ * calculate a reward.
+ *
+ * Both keys live inside the already-restricted `opportunitySecret` field so a
+ * new player-projectable secret-shaped property is never introduced.
+ */
+export function createDowntimeOpportunitySecretBundle(
+  cryptoApi = globalThis.crypto,
+) {
+  return [
+    createDowntimeOpportunitySecret(cryptoApi),
+    createDowntimeOpportunitySecret(cryptoApi),
+  ].join(DOWNTIME_SECRET_SEPARATOR);
 }
 
 /** Build the canonical per-character opportunity seed for a downtime block. */
@@ -102,7 +127,30 @@ export function buildPickpocketOpportunitySeed({
   actorId,
   secret,
 } = {}) {
-  return ["pickpocket-v2", secret, blockId, settlementId, actorId]
+  const { markSecret } = splitDowntimeOpportunitySecret(secret);
+  return ["pickpocket-v2", markSecret, blockId, settlementId, actorId]
+    .map((part) => String(part ?? "").trim())
+    .join("|");
+}
+
+/** Build the GM-only reward seed from a key independent of safe mark ids. */
+export function buildPickpocketRewardSeed({
+  blockId,
+  settlementId,
+  actorId,
+  markId,
+  secret,
+} = {}) {
+  const { rewardSecret } = splitDowntimeOpportunitySecret(secret);
+  if (!rewardSecret) throw new Error("DowntimeRewardSecretUnavailable");
+  return [
+    "pickpocket-reward-v1",
+    rewardSecret,
+    blockId,
+    settlementId,
+    actorId,
+    markId,
+  ]
     .map((part) => String(part ?? "").trim())
     .join("|");
 }
@@ -170,4 +218,17 @@ function stableHash32(value) {
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+function splitDowntimeOpportunitySecret(value) {
+  const secret = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  const parts = secret.split(DOWNTIME_SECRET_SEPARATOR);
+  const isHexKey = (part) =>
+    part.length === DOWNTIME_SECRET_HEX_LENGTH && /^[0-9a-f]+$/.test(part);
+  if (parts.length === 2 && parts.every(isHexKey)) {
+    return { markSecret: parts[0], rewardSecret: parts[1] };
+  }
+  return { markSecret: secret, rewardSecret: "" };
 }

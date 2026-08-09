@@ -363,6 +363,130 @@ try {
     heat: { greyhaven: { [actor.id]: 2 } },
   });
 
+  const reusableRollActor = makeActor({ id: "reusable-roll-actor" });
+  reusableRollActor.name = "Reusable Roll Hero";
+  actors.set(reusableRollActor.id, reusableRollActor);
+  let reusableRollCalls = 0;
+  reusableRollActor.rollSkill = async () => {
+    reusableRollCalls += 1;
+    reusableRollActor.system.currency.gp = 0;
+    return {
+      total: 18,
+      dice: [{ total: 14 }],
+      formula: "PRIVATE_REUSABLE_ROLL_1d20 + 4",
+    };
+  };
+  let reusableRollBlock = await service.openDowntimeBlock({
+    settlementId: "greyhaven",
+    hours: 2,
+    actorIds: [reusableRollActor.id],
+  });
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "submit-reusable-hidden-roll",
+    blockId: reusableRollBlock.id,
+    actorId: reusableRollActor.id,
+    queue: [
+      {
+        id: "reusable-trade",
+        activityId: "market-trading",
+        hours: 2,
+        skill: "persuasion",
+        stakeCp: 100,
+      },
+    ],
+  });
+  reusableRollBlock = await service.lockActiveDowntimeBlock(
+    reusableRollBlock.id,
+  );
+  await assert.rejects(
+    service.planActiveDowntimeBlock(reusableRollBlock.id),
+    /does not have the selected trading stake/,
+    "a post-roll enrichment failure leaves the completed roll durably journaled",
+  );
+  assert.equal(reusableRollCalls, 1);
+  reusableRollBlock = workflow.getActiveDowntimeBlock();
+  assert.equal(reusableRollBlock.state, "locked");
+  assert.equal(reusableRollBlock.planningDraft.state, "complete");
+  const reusablePlayerProjection = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: reusableRollActor.id,
+  });
+  assert.equal("planningDraft" in reusablePlayerProjection, false);
+  assert.equal(
+    JSON.stringify(reusablePlayerProjection).includes("PRIVATE_REUSABLE_ROLL"),
+    false,
+    "partial hidden-roll data is absent from the player projection",
+  );
+  reusableRollActor.system.currency.gp = 1;
+  reusableRollBlock = await service.planActiveDowntimeBlock(
+    reusableRollBlock.id,
+  );
+  assert.equal(reusableRollBlock.state, "planned");
+  assert.equal(
+    reusableRollCalls,
+    1,
+    "planning retry reuses the completed hidden check instead of rerolling",
+  );
+  await service.cancelActiveDowntimeBlock(reusableRollBlock.id);
+
+  const orphanedRollActor = makeActor({ id: "orphaned-roll-actor" });
+  orphanedRollActor.name = "Orphaned Roll Hero";
+  actors.set(orphanedRollActor.id, orphanedRollActor);
+  let orphanedRollCalls = 0;
+  orphanedRollActor.rollSkill = async () => {
+    orphanedRollCalls += 1;
+    throw new Error("simulated roller interruption");
+  };
+  let orphanedRollBlock = await service.openDowntimeBlock({
+    settlementId: "greyhaven",
+    hours: 2,
+    actorIds: [orphanedRollActor.id],
+  });
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "submit-orphaned-hidden-roll",
+    blockId: orphanedRollBlock.id,
+    actorId: orphanedRollActor.id,
+    queue: [
+      {
+        id: "orphaned-trade",
+        activityId: "market-trading",
+        hours: 2,
+        skill: "persuasion",
+        stakeCp: 100,
+      },
+    ],
+  });
+  orphanedRollBlock = await service.lockActiveDowntimeBlock(
+    orphanedRollBlock.id,
+  );
+  await assert.rejects(
+    service.planActiveDowntimeBlock(orphanedRollBlock.id),
+    /will not reroll it; cancel the block/,
+  );
+  orphanedRollBlock = workflow.getActiveDowntimeBlock();
+  assert.equal(orphanedRollBlock.state, "locked");
+  assert.equal(orphanedRollBlock.planningDraft.state, "needs-review");
+  assert.equal(
+    Object.values(orphanedRollBlock.planningDraft.rows)[0].state,
+    "in-flight",
+  );
+  const orphanedWorkspace = await service.getWorkspaceProjection();
+  assert.equal(orphanedWorkspace.workflow.canPlan, false);
+  assert.match(orphanedWorkspace.workflow.planReason, /cancel the block/i);
+  orphanedRollActor.rollSkill = async () => {
+    orphanedRollCalls += 1;
+    return { total: 20, dice: [{ total: 20 }], formula: "1d20" };
+  };
+  await assert.rejects(
+    service.planActiveDowntimeBlock(orphanedRollBlock.id),
+    /will not reroll|Cancel this locked block/,
+    "an orphaned in-flight roll fails closed on every retry",
+  );
+  assert.equal(orphanedRollCalls, 1);
+  await service.cancelActiveDowntimeBlock(orphanedRollBlock.id);
+
   const lifecycleEffectSource = effects.buildSharpeningEffect({
     operationId: "lifecycle-effect",
     actorId: actor.id,
@@ -545,7 +669,7 @@ try {
     hours: 8,
     actorIds: [actor.id],
   });
-  assert.match(block.opportunitySecret, /^[0-9a-f]{64}$/);
+  assert.match(block.opportunitySecret, /^[0-9a-f]{64}\.[0-9a-f]{64}$/);
   const playerProjection = await service.getPlayerProjectionForUser({
     userId: player.id,
     actorId: actor.id,
@@ -952,6 +1076,57 @@ try {
     "fresh crafting cannot claim a coincidentally matching wallet/item post-state",
   );
 
+  const wrongStackIdentityActor = makeActor({ id: "wrong-stack-identity" });
+  wrongStackIdentityActor.addItem({
+    _id: "planned-arrow-stack",
+    name: "Arrow",
+    type: "consumable",
+    system: {
+      quantity: 5,
+      rarity: "common",
+      properties: [],
+      type: { value: "potion", subtype: "" },
+    },
+    flags: {},
+  });
+  const wrongStackOperation = {
+    kind: "craft-ammunition",
+    operationId: "wrong-stack-operation",
+    actorId: wrongStackIdentityActor.id,
+    recipeId: "arrows",
+    walletBefore: clone(wrongStackIdentityActor.system.currency),
+    walletAfter: { pp: 0, gp: 0, ep: 0, sp: 5, cp: 0 },
+    delivery: {
+      itemId: "planned-arrow-stack",
+      mode: "stack",
+      quantityBefore: 5,
+      quantityAfter: 25,
+    },
+  };
+  const freshWrongStack = service.verifyFreshDowntimeOperationPreconditions(
+    wrongStackIdentityActor,
+    wrongStackOperation,
+  );
+  assert.equal(freshWrongStack.ok, false);
+  assert.equal(freshWrongStack.reason, "item-identity-drift");
+
+  actors.set(wrongStackIdentityActor.id, wrongStackIdentityActor);
+  assert.equal(
+    await service.inspectDowntimeOperation(wrongStackOperation),
+    "uncertain",
+    "recovery cannot call a wrong-identity stack verified-unapplied from quantity alone",
+  );
+  wrongStackIdentityActor.system.currency = clone(
+    wrongStackOperation.walletAfter,
+  );
+  wrongStackIdentityActor.items.get("planned-arrow-stack").system.quantity =
+    wrongStackOperation.delivery.quantityAfter;
+  assert.equal(
+    await service.inspectDowntimeOperation(wrongStackOperation),
+    "uncertain",
+    "recovery cannot call a wrong-identity stack applied from wallet and quantity alone",
+  );
+
   const preexistingPickpocketActor = makeActor({
     id: "pickpocket-after-state",
   });
@@ -1251,7 +1426,7 @@ try {
   let fenceContext = await targets.buildActorDowntimeContext({
     block: {
       id: "ledger-target-block",
-      opportunitySecret: "1".repeat(64),
+      opportunitySecret: `${"1".repeat(64)}.${"a".repeat(64)}`,
     },
     actor,
     settlement: workflow.loadDowntimeConfig().settlements[0],
@@ -1320,7 +1495,7 @@ try {
   fenceContext = await targets.buildActorDowntimeContext({
     block: {
       id: "ledger-subset-block",
-      opportunitySecret: "4".repeat(64),
+      opportunitySecret: `${"4".repeat(64)}.${"b".repeat(64)}`,
     },
     actor,
     settlement: workflow.loadDowntimeConfig().settlements[0],
@@ -1353,7 +1528,7 @@ try {
   fenceContext = await targets.buildActorDowntimeContext({
     block: {
       id: "ledger-copy-block",
-      opportunitySecret: "2".repeat(64),
+      opportunitySecret: `${"2".repeat(64)}.${"c".repeat(64)}`,
     },
     actor,
     settlement: workflow.loadDowntimeConfig().settlements[0],
@@ -1386,7 +1561,7 @@ try {
   fenceContext = await targets.buildActorDowntimeContext({
     block: {
       id: "ledger-value-block",
-      opportunitySecret: "3".repeat(64),
+      opportunitySecret: `${"3".repeat(64)}.${"d".repeat(64)}`,
     },
     actor,
     settlement: workflow.loadDowntimeConfig().settlements[0],

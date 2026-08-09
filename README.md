@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.70 (unreleased)** - Adds an hour-budgeted Downtime Workspace with crafting, weapon sharpening, market trading, pickpocketing, shoplifting, fencing, local Heat, and durable preview-before-apply recovery.
+**v0.2.71 (unreleased)** - Hardens downtime planning, handoff recovery, item writes, and player-safe results, and adds authenticated player-hub launchers.
 
 - GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -269,9 +269,9 @@ npm run release
 
 For a GitHub-Releases workflow:
 
-1. Tag the commit (`git tag v0.2.70 && git push origin refs/tags/v0.2.70`).
+1. Tag the commit (`git tag v0.2.71 && git push origin refs/tags/v0.2.71`).
 2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named `v0.2.70` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
+3. Create a GitHub Release named `v0.2.71` and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
 4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
 
 ## Tag Schema

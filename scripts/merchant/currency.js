@@ -271,7 +271,11 @@ export async function deductCurrency(actor, gpAmount) {
  * Write an exact wallet and require both a confirming Actor return value and
  * canonical actor.system.currency read-back.
  */
-export async function updateCurrencyVerified(actor, wallet) {
+export async function updateCurrencyVerified(
+  actor,
+  wallet,
+  { authorizeWrite = null } = {},
+) {
   const expectedRead = readWalletStrict(wallet);
   const expected = expectedRead.wallet;
   if (!expectedRead.ok) {
@@ -290,10 +294,16 @@ export async function updateCurrencyVerified(actor, wallet) {
       actual: actor?.system?.currency ?? null,
     };
   }
+  if (!currencyWriteAuthorized(authorizeWrite)) {
+    return currencyAuthorityLostResult(actor, expected, true);
+  }
   let returned;
   try {
     returned = await actor.update(currencyUpdate(expected));
   } catch (error) {
+    if (!currencyWriteAuthorized(authorizeWrite)) {
+      return currencyAuthorityLostResult(actor, expected, false, error);
+    }
     return {
       ok: false,
       reason: "update-failed",
@@ -301,6 +311,12 @@ export async function updateCurrencyVerified(actor, wallet) {
       expected,
       actual: readWalletStrict(actor.system?.currency).wallet,
     };
+  }
+  // Actor.update yields to Foundry hooks and the server. Recheck the caller's
+  // epoch fence before treating any canonical state as this authority's write.
+  // A post-await loss is necessarily ambiguous: the update may have landed.
+  if (!currencyWriteAuthorized(authorizeWrite)) {
+    return currencyAuthorityLostResult(actor, expected, false);
   }
   const actualRead = readWalletStrict(actor.system?.currency);
   const actual = actualRead.wallet;
@@ -318,6 +334,33 @@ export async function updateCurrencyVerified(actor, wallet) {
     reason: ok ? "" : actualRead.ok ? "update-unconfirmed" : "invalid-wallet",
     expected,
     actual,
+  };
+}
+
+function currencyWriteAuthorized(authorizeWrite) {
+  if (authorizeWrite == null) return true;
+  if (typeof authorizeWrite !== "function") return false;
+  try {
+    return authorizeWrite() === true;
+  } catch {
+    return false;
+  }
+}
+
+function currencyAuthorityLostResult(
+  actor,
+  expected,
+  provenUnapplied,
+  error = null,
+) {
+  const actual = readWalletStrict(actor?.system?.currency).wallet;
+  return {
+    ok: false,
+    reason: "authority-lost",
+    expected,
+    actual,
+    provenUnapplied: provenUnapplied === true,
+    ...(error ? { error } : {}),
   };
 }
 

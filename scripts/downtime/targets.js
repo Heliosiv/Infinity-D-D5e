@@ -11,6 +11,7 @@ import {
 } from "./math.js";
 import {
   buildPickpocketOpportunitySeed,
+  buildPickpocketRewardSeed,
   generatePickpocketOpportunities,
 } from "./opportunities.js";
 import { getDowntimeHeat } from "./settlements.js";
@@ -144,6 +145,8 @@ export async function buildActorDowntimeContext({
       id: recipe.id,
       label: recipe.label,
       detail: `20 per batch; materials cost ${formatGp(costCp)}.`,
+      hasTool,
+      canAfford,
       disabled: !hasTool || !canAfford,
       reason: !hasTool
         ? "You do not own an appropriate tool."
@@ -161,7 +164,13 @@ export async function buildActorDowntimeContext({
       ...mark,
       sourceId: mark.id,
       valueCapCp: getPickpocketValueCapCp(settlement?.wealthTier),
-      rewardSeed: `${opportunitySeed}|${mark.id}`,
+      rewardSeed: buildPickpocketRewardSeed({
+        blockId: block?.id,
+        settlementId: settlement?.id,
+        actorId: actor?.id,
+        markId: mark.id,
+        secret: block?.opportunitySecret,
+      }),
     };
   }
   for (const target of merchantTargets.hidden) targetFacts[target.id] = target;
@@ -393,9 +402,11 @@ function unavailableReason(activityId, facts) {
   }
   switch (activityId) {
     case DOWNTIME_ACTIVITY_IDS.CRAFT_AMMUNITION:
-      return facts.ammoTargets.some((target) => !target.disabled)
-        ? ""
-        : "You do not own an appropriate ammunition-crafting tool.";
+      if (facts.ammoTargets.some((target) => !target.disabled)) return "";
+      if (facts.ammoTargets.some((target) => target.hasTool)) {
+        return "You do not have enough coin for ammunition materials.";
+      }
+      return "You do not own an appropriate ammunition-crafting tool.";
     case DOWNTIME_ACTIVITY_IDS.SHARPEN_WEAPON:
       if (!facts.sharpenTool) return "Requires a Whetstone or Smith's Tools.";
       return facts.weapons.some((target) => !target.disabled)

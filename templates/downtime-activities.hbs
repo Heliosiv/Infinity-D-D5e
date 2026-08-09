@@ -1,5 +1,5 @@
 {{!-- Infinity D&D5e - player-facing Downtime Activities. --}}
-<div class="dt-shell dt-shell--activities" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
+<div class="dt-shell dt-shell--activities" aria-busy="{{#if ariaBusy}}true{{else}}false{{/if}}">
   <header class="dt-head dt-player-head">
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{settlementName}}{{else}}City actions and personal projects{{/if}}</p>
@@ -44,7 +44,7 @@
       <nav class="dt-actor-tabs" aria-label="Eligible characters">
         {{#each actors}}
           {{#if eligible}}
-          <button type="button" data-action="selectActor" data-actor-id="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}}>
+          <button type="button" data-action="selectActor" data-actor-id="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>
             <img src="{{img}}" alt="" /> <span>{{name}}</span>
           </button>
           {{/if}}
@@ -74,7 +74,7 @@
       {{#if editable}}
       <nav class="dt-categories" aria-label="Activity categories">
         {{#each categories}}
-        <button type="button" data-action="selectCategory" data-category="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}}>{{label}}</button>
+        <button type="button" data-action="selectCategory" data-category="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>{{label}}</button>
         {{/each}}
       </nav>
       {{/if}}
@@ -124,10 +124,10 @@
                   <label class="dt-field dt-field--wide">
                     <span>{{#if multiTarget}}Goods to fence{{else}}Target{{/if}}</span>
                     {{#if multiTarget}}
-                    <select name="targetIds" multiple size="5" data-activity-input required>
+                    <select name="targetIds" multiple size="5" data-activity-input required aria-describedby="dt-target-help-{{id}}">
                       {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
                     </select>
-                    <small>Select any combination that fits this activity's value capacity. Use Ctrl or Cmd to select more than one.</small>
+                    <small id="dt-target-help-{{id}}">Select any combination that fits this activity's value capacity. On desktop, use Ctrl or Cmd to select more than one.</small>
                     {{else}}
                     <select name="targetId" data-activity-input>
                       {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
@@ -169,7 +169,7 @@
           {{else}}
           <div class="dt-state-inline">
             <i class="fa-solid fa-lock" aria-hidden="true"></i>
-            <p>{{#if submitted}}Your queue is submitted. Recall it while the block is collecting if you need to edit.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
+            <p>{{#if canRecall}}Your queue is submitted. Recall it if you need to edit.{{else if submitted}}Your queue is submitted and locked. It will resolve exactly as shown.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
           </div>
           {{/if}}
         </section>
@@ -185,15 +185,15 @@
             <li data-queue-entry-id="{{id}}" tabindex="-1">
               <span class="dt-queue__position">{{position}}</span>
               <span class="dt-queue__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
-              <div><strong>{{label}}</strong><span>{{hours}} hours{{#if detail}} · {{detail}}{{/if}}</span></div>
+              <div><strong>{{label}}</strong><span class="dt-queue__detail" {{#if detail}}title="{{detail}}"{{/if}}>{{hours}} hours{{#if detail}} · {{detail}}{{/if}}</span></div>
               <div class="dt-queue__actions">
-                <button type="button" data-action="moveActivityUp" data-queue-entry-id="{{id}}" title="Move earlier" aria-label="Move {{label}} earlier" {{#unless canMoveUp}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}}>
+                <button type="button" data-action="moveActivityUp" data-queue-entry-id="{{id}}" title="Move earlier" aria-label="Move {{label}} earlier" {{#unless canMoveUp}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
                 </button>
-                <button type="button" data-action="moveActivityDown" data-queue-entry-id="{{id}}" title="Move later" aria-label="Move {{label}} later" {{#unless canMoveDown}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}}>
+                <button type="button" data-action="moveActivityDown" data-queue-entry-id="{{id}}" title="Move later" aria-label="Move {{label}} later" {{#unless canMoveDown}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
                 </button>
-                <button type="button" class="is-danger" data-action="removeActivity" data-queue-entry-id="{{id}}" title="Remove" aria-label="Remove {{label}}" {{#unless ../editable}}disabled{{/unless}}>
+                <button type="button" class="is-danger" data-action="removeActivity" data-queue-entry-id="{{id}}" title="Remove" aria-label="Remove {{label}}" {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
               </div>

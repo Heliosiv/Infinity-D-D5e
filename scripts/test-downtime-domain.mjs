@@ -25,7 +25,10 @@ import {
 } from "./downtime/math.js";
 import {
   buildPickpocketOpportunitySeed,
+  buildPickpocketRewardSeed,
   createDowntimeOpportunitySecret,
+  createDowntimeOpportunitySecretBundle,
+  deterministicDowntimeRoll,
   generatePickpocketOpportunities,
   isGeneratedPickpocketOpportunityId,
 } from "./downtime/opportunities.js";
@@ -341,6 +344,34 @@ import {
     () => createDowntimeOpportunitySecret({}),
     /DowntimeSecureRandomUnavailable/,
   );
+  let uuidCall = 0;
+  const uuidSecret = createDowntimeOpportunitySecret({
+    randomUUID() {
+      uuidCall += 1;
+      return uuidCall === 1
+        ? "00112233-4455-4677-8899-aabbccddeeff"
+        : "ffeeddcc-bbaa-4988-8766-554433221100";
+    },
+  });
+  assert.equal(
+    uuidSecret,
+    "00112233445546778899aabbccddeeffffeeddccbbaa49888766554433221100",
+    "the UUID-only secure fallback still produces one 256-bit hex key",
+  );
+  let secretCall = 0;
+  const secretBundle = createDowntimeOpportunitySecretBundle({
+    getRandomValues(bytes) {
+      const offset = secretCall++ * bytes.length;
+      bytes.forEach((_, index) => {
+        bytes[index] = offset + index;
+      });
+      return bytes;
+    },
+  });
+  assert.equal(
+    secretBundle,
+    `${generatedSecret}.202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f`,
+  );
   const seed = buildPickpocketOpportunitySeed({
     blockId: "block-7",
     settlementId: "brass-briar",
@@ -383,6 +414,61 @@ import {
     assert.equal("dc" in mark, false);
     assert.equal("valueCp" in mark, false);
   }
+
+  const sharedMarkSecret = "11".repeat(32);
+  const firstSecret = `${sharedMarkSecret}.${"22".repeat(32)}`;
+  const secondSecret = `${sharedMarkSecret}.${"33".repeat(32)}`;
+  const firstSafeSeed = buildPickpocketOpportunitySeed({
+    blockId: "block-private-reward",
+    settlementId: "brass-briar",
+    actorId: "hero-a",
+    secret: firstSecret,
+  });
+  const secondSafeSeed = buildPickpocketOpportunitySeed({
+    blockId: "block-private-reward",
+    settlementId: "brass-briar",
+    actorId: "hero-a",
+    secret: secondSecret,
+  });
+  assert.equal(firstSafeSeed, secondSafeSeed);
+  const safeMarks = generatePickpocketOpportunities({
+    seed: firstSafeSeed,
+    settlementId: "brass-briar",
+  });
+  assert.deepEqual(
+    safeMarks,
+    generatePickpocketOpportunities({
+      seed: secondSafeSeed,
+      settlementId: "brass-briar",
+    }),
+    "the complete player-safe mark projection can stay identical",
+  );
+  const rewardInput = {
+    blockId: "block-private-reward",
+    settlementId: "brass-briar",
+    actorId: "hero-a",
+    markId: safeMarks[0].id,
+  };
+  const firstRewardSeed = buildPickpocketRewardSeed({
+    ...rewardInput,
+    secret: firstSecret,
+  });
+  const secondRewardSeed = buildPickpocketRewardSeed({
+    ...rewardInput,
+    secret: secondSecret,
+  });
+  assert.notEqual(firstRewardSeed, secondRewardSeed);
+  assert.notEqual(
+    deterministicDowntimeRoll(firstRewardSeed, "value"),
+    deterministicDowntimeRoll(secondRewardSeed, "value"),
+    "safe mark ids do not determine the independent GM-only reward stream",
+  );
+  assert.throws(
+    () =>
+      buildPickpocketRewardSeed({ ...rewardInput, secret: generatedSecret }),
+    /DowntimeRewardSecretUnavailable/,
+    "legacy single-key blocks fail closed instead of exposing predictable rewards",
+  );
 }
 
 process.stdout.write("downtime-domain validation passed\n");

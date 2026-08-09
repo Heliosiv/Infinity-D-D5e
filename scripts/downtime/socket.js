@@ -26,6 +26,7 @@ const RESTRICTED_PLAYER_PROJECTION_KEYS = new Set([
   "opportunitySecret",
   "opportunitySalt",
   "opportunitySeed",
+  "planningDraft",
   "rewardSeed",
   "targetFacts",
 ]);

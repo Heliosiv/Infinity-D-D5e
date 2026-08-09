@@ -335,6 +335,24 @@ try {
   );
   assert.equal(JSON.stringify(local).includes("hiddenTable"), false);
 
+  bus.emit(DOWNTIME_EVENTS.STATE_UPDATE, {
+    projection: projection({
+      status: "locked",
+      rawQueue: submittedPayload.queue,
+      queue: submittedPayload.queue,
+      submitted: false,
+      canSubmit: false,
+      canRecall: false,
+    }),
+  });
+  local = await adapter.getPlayerProjection({ actorId: "actor-1" });
+  assert.deepEqual(
+    local.rawQueue.map((entry) => entry.id),
+    submittedPayload.queue.map((entry) => entry.id),
+    "locking submissions replaces an unsent local draft with the authoritative saved queue",
+  );
+  assert.equal(local.status, "locked");
+
   bus.emit(DOWNTIME_EVENTS.AUTO_OPEN, {
     actorId: "actor-1",
     blockId: "block-1",

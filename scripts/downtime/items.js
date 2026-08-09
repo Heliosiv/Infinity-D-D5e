@@ -186,6 +186,21 @@ export function stolenProvenance(item) {
     : null;
 }
 
+function stolenProvenanceMatches(left, right) {
+  const actual = stolenProvenance(left);
+  const expected = stolenProvenance(right);
+  if (!actual || !expected) return false;
+  return [
+    "settlementId",
+    "targetType",
+    "sourceId",
+    "merchantId",
+    "operationId",
+    "timestamp",
+    "appraisedValueCp",
+  ].every((key) => String(actual[key] ?? "") === String(expected[key] ?? ""));
+}
+
 export function markStolenSnapshot(
   item,
   {
@@ -269,20 +284,59 @@ export function stolenItemValueCp(item) {
 export function cleanAmmoStack(actor, recipeId) {
   const recipe = AMMUNITION_RECIPES[String(recipeId ?? "")];
   if (!recipe) return null;
+  return (
+    collectionValues(actor?.items).find((item) =>
+      isCleanAmmoRecipeStack(item, recipe.id),
+    ) ?? null
+  );
+}
+
+/**
+ * Whether one embedded Item is a clean, mundane stack of the exact recipe's
+ * D&D5e ammunition. A canonical source ID, when present, wins over a mutable
+ * display name; name aliases are only a fallback for unsourced world items.
+ */
+export function isCleanAmmoRecipeStack(item, recipeId) {
+  const recipe = AMMUNITION_RECIPES[String(recipeId ?? "")];
+  if (!recipe || !item || isStolenItem(item) || isMagicalItem(item)) {
+    return false;
+  }
+  const data = sourceOf(item);
+  if (String(data.type ?? "").toLowerCase() !== "consumable") return false;
+  if (String(data.system?.type?.value ?? "").toLowerCase() !== "ammo") {
+    return false;
+  }
+  const sourceId = String(
+    data.flags?.core?.sourceId ?? data._stats?.compendiumSource ?? "",
+  ).trim();
+  if (sourceId) {
+    return (
+      sourceId === recipe.uuid ||
+      sourceId.endsWith(`.Item.${String(recipe.itemId)}`)
+    );
+  }
   const stackNames = new Set(
     [recipe.label, ...(recipe.stackNameAliases ?? [])].map(normalizeItemName),
   );
-  return (
-    collectionValues(actor?.items).find((item) => {
-      if (isStolenItem(item) || isMagicalItem(item)) return false;
-      const data = sourceOf(item);
-      if (String(data.type ?? "").toLowerCase() !== "consumable") return false;
-      const sourceId = String(
-        data.flags?.core?.sourceId ?? data._stats?.compendiumSource ?? "",
-      );
-      if (sourceId === recipe.uuid) return true;
-      return stackNames.has(normalizeItemName(data.name));
-    }) ?? null
+  return stackNames.has(normalizeItemName(data.name));
+}
+
+/** Match the exact item identity a persisted craft operation may mutate. */
+export function ammoCraftDeliveryItemMatches(item, operation) {
+  const delivery = operation?.delivery ?? {};
+  if (
+    !item ||
+    String(item?.id ?? item?._id ?? "").trim() !==
+      String(delivery.itemId ?? "").trim() ||
+    !isCleanAmmoRecipeStack(item, operation?.recipeId)
+  ) {
+    return false;
+  }
+  if (delivery.mode !== "create") return delivery.mode === "stack";
+  const marker = sourceOf(item).flags?.[MODULE_ID]?.downtimeCraft;
+  return Boolean(
+    marker?.operationId === String(operation?.operationId ?? "").trim() &&
+    marker?.recipeId === String(operation?.recipeId ?? ""),
   );
 }
 
@@ -389,21 +443,30 @@ function deliveryState(actor, delivery) {
   return { item, quantity: quantityOf(item) };
 }
 
-async function deliverExact(actor, delivery, { authorizeWrite = null } = {}) {
+async function deliverExact(actor, operation, { authorizeWrite = null } = {}) {
+  const delivery = operation?.delivery ?? {};
   const state = deliveryState(actor, delivery);
   if (delivery.mode === "create") {
     if (state.item) {
-      return state.quantity === delivery.quantityAfter
+      return ammoCraftDeliveryItemMatches(state.item, operation) &&
+        state.quantity === delivery.quantityAfter
         ? { ok: true, alreadyApplied: true, item: state.item }
         : { ok: false, reason: "item-create-conflict" };
     }
     if (!writeAuthorized(authorizeWrite)) return authorityLostResult(true);
-    return createActorItemVerified(actor, delivery.snapshot, {
+    const created = await createActorItemVerified(actor, delivery.snapshot, {
       expectedItemId: delivery.itemId,
       expectedQuantity: delivery.quantityAfter,
     });
+    if (created.ok && !ammoCraftDeliveryItemMatches(created.item, operation)) {
+      return { ok: false, reason: "item-create-conflict" };
+    }
+    return created;
   }
   if (!state.item) return { ok: false, reason: "item-missing" };
+  if (!ammoCraftDeliveryItemMatches(state.item, operation)) {
+    return { ok: false, reason: "item-identity-drift" };
+  }
   if (state.quantity === delivery.quantityAfter) {
     return { ok: true, alreadyApplied: true, item: state.item };
   }
@@ -411,28 +474,45 @@ async function deliverExact(actor, delivery, { authorizeWrite = null } = {}) {
     return { ok: false, reason: "item-quantity-drift" };
   }
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(true);
-  return updateActorItemQuantityVerified(
+  const updated = await updateActorItemQuantityVerified(
     actor,
     state.item,
     delivery.quantityAfter,
     { expectedBeforeQuantity: delivery.quantityBefore },
   );
+  if (
+    updated.ok &&
+    !ammoCraftDeliveryItemMatches(
+      findActorItem(actor, delivery.itemId),
+      operation,
+    )
+  ) {
+    return { ok: false, reason: "item-identity-drift" };
+  }
+  return updated;
 }
 
 async function restoreDelivery(
   actor,
-  delivery,
+  operation,
   { authorizeWrite = null } = {},
 ) {
+  const delivery = operation?.delivery ?? {};
   const state = deliveryState(actor, delivery);
   if (delivery.mode === "create") {
     if (!state.item) return { ok: true };
+    if (!ammoCraftDeliveryItemMatches(state.item, operation)) {
+      return { ok: false, reason: "item-create-conflict" };
+    }
     if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
     return deleteActorItemVerified(actor, delivery.itemId, {
       expectedBeforeQuantity: delivery.quantityAfter,
     });
   }
   if (!state.item) return { ok: false, reason: "item-missing" };
+  if (!ammoCraftDeliveryItemMatches(state.item, operation)) {
+    return { ok: false, reason: "item-identity-drift" };
+  }
   if (state.quantity === delivery.quantityBefore) return { ok: true };
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
   return updateActorItemQuantityVerified(
@@ -443,41 +523,101 @@ async function restoreDelivery(
   );
 }
 
+function validateAmmoCraftPlan(actor, operation) {
+  const recipe = AMMUNITION_RECIPES[String(operation?.recipeId ?? "")];
+  const delivery = operation?.delivery ?? {};
+  const operationId = String(operation?.operationId ?? "").trim();
+  const snapshot = sourceOf(delivery.snapshot);
+  const craftMarker = snapshot.flags?.[MODULE_ID]?.downtimeCraft;
+  const beforeQuantity = Number(delivery.quantityBefore);
+  const afterQuantity = Number(delivery.quantityAfter);
+  const expectedWallet = planWalletDeltaCp(
+    operation?.walletBefore,
+    -ammoCraftCostCp(recipe?.id),
+  );
+  const canonicalTools = recipe?.toolKeys ?? [];
+  const plannedTools = Array.isArray(operation?.toolKeys)
+    ? operation.toolKeys.map(String)
+    : [];
+  const sourceId = String(snapshot.flags?.core?.sourceId ?? "");
+  const canonicalSourceSuffix = `.Item.${String(recipe?.itemId ?? "")}`;
+  return Boolean(
+    recipe &&
+    operation?.kind === "craft-ammunition" &&
+    operationId &&
+    String(operation?.actorId ?? "") === String(actor?.id ?? "") &&
+    Number(operation?.costCp) === ammoCraftCostCp(recipe.id) &&
+    JSON.stringify(plannedTools) === JSON.stringify(canonicalTools) &&
+    ["create", "stack"].includes(delivery.mode) &&
+    String(delivery.itemId ?? "") &&
+    String(snapshot._id ?? snapshot.id ?? "") ===
+      String(delivery.itemId ?? "") &&
+    Number.isSafeInteger(beforeQuantity) &&
+    beforeQuantity >= 0 &&
+    Number.isSafeInteger(afterQuantity) &&
+    afterQuantity === beforeQuantity + recipe.batchSize &&
+    Number(snapshot.system?.quantity) === afterQuantity &&
+    String(snapshot.type ?? "").toLowerCase() === "consumable" &&
+    String(snapshot.system?.type?.value ?? "").toLowerCase() === "ammo" &&
+    (sourceId === recipe.uuid || sourceId.endsWith(canonicalSourceSuffix)) &&
+    craftMarker?.operationId === operationId &&
+    craftMarker?.recipeId === recipe.id &&
+    expectedWallet &&
+    walletsEqual(expectedWallet, operation?.walletAfter),
+  );
+}
+
 /** Apply a preplanned craft without recomputing cost, target, or quantity. */
 export async function applyAmmoCraftOperation(
   actor,
   operation,
   { authorizeWrite = null } = {},
 ) {
-  if (!actorHasAnyTool(actor, operation?.toolKeys)) {
+  if (!writeAuthorized(authorizeWrite)) return authorityLostResult(true);
+  if (!validateAmmoCraftPlan(actor, operation)) {
+    return { ok: false, reason: "invalid-craft-plan", provenUnapplied: true };
+  }
+  const recipe = AMMUNITION_RECIPES[operation.recipeId];
+  if (!actorHasAnyTool(actor, recipe.toolKeys)) {
     return { ok: false, reason: "missing-tool", provenUnapplied: true };
   }
   const walletRead = readWalletStrict(actor?.system?.currency);
   if (!walletRead.ok) return { ok: false, reason: "invalid-wallet" };
   const itemState = deliveryState(actor, operation?.delivery);
+  const itemMatches = itemState.item
+    ? ammoCraftDeliveryItemMatches(itemState.item, operation)
+    : false;
   if (
     walletsEqual(walletRead.wallet, operation.walletAfter) &&
+    itemMatches &&
     itemState.quantity === operation.delivery.quantityAfter
   ) {
     return { ok: true, alreadyApplied: true };
   }
-  if (
-    !walletsEqual(walletRead.wallet, operation.walletBefore) ||
-    itemState.quantity !== operation.delivery.quantityBefore
-  ) {
+  const itemBefore =
+    operation.delivery.mode === "create"
+      ? !itemState.item
+      : itemMatches && itemState.quantity === operation.delivery.quantityBefore;
+  if (!walletsEqual(walletRead.wallet, operation.walletBefore) || !itemBefore) {
     return { ok: false, reason: "state-drift", provenUnapplied: false };
   }
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(true);
-  const paid = await updateCurrencyVerified(actor, operation.walletAfter);
+  const paid = await updateCurrencyVerified(actor, operation.walletAfter, {
+    authorizeWrite,
+  });
   if (!paid.ok) {
-    return { ok: false, reason: paid.reason, provenUnapplied: true };
+    return {
+      ok: false,
+      reason: paid.reason,
+      provenUnapplied: paid.provenUnapplied === true,
+    };
   }
-  const delivered = await deliverExact(actor, operation.delivery, {
+  const delivered = await deliverExact(actor, operation, {
     authorizeWrite,
   });
   if (delivered.ok) return { ok: true, alreadyApplied: false };
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
-  const itemRestored = await restoreDelivery(actor, operation.delivery, {
+  const itemRestored = await restoreDelivery(actor, operation, {
     authorizeWrite,
   });
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
@@ -502,8 +642,7 @@ export async function applyStolenItemDelivery(
   if (!itemId) return { ok: false, reason: "bad-item" };
   const existing = findActorItem(actor, itemId);
   if (existing) {
-    const op = stolenProvenance(existing)?.operationId;
-    return op === stolenProvenance(snapshot)?.operationId
+    return stolenProvenanceMatches(existing, snapshot)
       ? { ok: true, alreadyApplied: true, itemId }
       : { ok: false, reason: "item-create-conflict" };
   }
@@ -512,6 +651,14 @@ export async function applyStolenItemDelivery(
     expectedItemId: itemId,
     expectedQuantity: 1,
   });
+  if (created.ok && !stolenProvenanceMatches(created.item, snapshot)) {
+    return {
+      ok: false,
+      reason: "stolen-delivery-unconfirmed",
+      itemId,
+      provenUnapplied: false,
+    };
+  }
   return { ...created, alreadyApplied: false };
 }
 
@@ -523,6 +670,9 @@ export async function removeStolenItemDelivery(
   const itemId = String(snapshot?._id ?? "").trim();
   const existing = findActorItem(actor, itemId);
   if (!existing) return { ok: true, alreadyRemoved: true };
+  if (!stolenProvenanceMatches(existing, snapshot)) {
+    return { ok: false, reason: "stolen-item-conflict" };
+  }
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(true);
   return deleteActorItemVerified(actor, itemId, { expectedBeforeQuantity: 1 });
 }
@@ -545,6 +695,34 @@ export async function applyFenceOperation(
   ) {
     return { ok: false, reason: "invalid-fencing-payout" };
   }
+  const itemIds = snapshots.map((snapshot) =>
+    String(snapshot?._id ?? "").trim(),
+  );
+  if (
+    itemIds.length === 0 ||
+    itemIds.some((itemId) => !itemId) ||
+    new Set(itemIds).size !== itemIds.length
+  ) {
+    return {
+      ok: false,
+      reason: "invalid-fencing-bundle",
+      provenUnapplied: true,
+    };
+  }
+  const expectedWalletAfter = planWalletDeltaCp(
+    operation?.walletBefore,
+    Number(operation.payoutCp),
+  );
+  if (
+    !expectedWalletAfter ||
+    !walletsEqual(expectedWalletAfter, operation?.walletAfter)
+  ) {
+    return {
+      ok: false,
+      reason: "invalid-fencing-wallet-plan",
+      provenUnapplied: true,
+    };
+  }
   const walletRead = readWalletStrict(actor?.system?.currency);
   if (!walletRead.ok) return { ok: false, reason: "invalid-wallet" };
   const allAbsent = snapshots.every(
@@ -558,7 +736,12 @@ export async function applyFenceOperation(
   }
   for (const snapshot of snapshots) {
     const item = findActorItem(actor, snapshot._id);
-    if (!item || !isStolenItem(item) || quantityOf(item) !== 1) {
+    if (
+      !item ||
+      !isStolenItem(item) ||
+      !stolenProvenanceMatches(item, snapshot) ||
+      quantityOf(item) !== 1
+    ) {
       return {
         ok: false,
         reason: "stolen-bundle-drift",
@@ -586,7 +769,9 @@ export async function applyFenceOperation(
     removed.push(snapshot);
   }
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
-  const paid = await updateCurrencyVerified(actor, operation.walletAfter);
+  const paid = await updateCurrencyVerified(actor, operation.walletAfter, {
+    authorizeWrite,
+  });
   if (paid.ok) return { ok: true, alreadyApplied: false };
   if (!writeAuthorized(authorizeWrite)) return authorityLostResult(false);
   const restored = await restoreSnapshots(actor, removed, { authorizeWrite });

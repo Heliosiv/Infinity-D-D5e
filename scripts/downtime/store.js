@@ -29,6 +29,7 @@ const STORE_VERSION = 1;
 const CHECKPOINT_VERSION = 1;
 const CONFIG_CHECKPOINT_VERSION = 1;
 const BLOCK_SCHEMA = 1;
+const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
 const MAX_ID_LENGTH = 160;
 const OPERATION_STATES = new Set([
@@ -48,6 +49,8 @@ const OPERATION_TERMINAL_STATES = new Set([
 const RECOVERED_OPERATION_RESOLUTION = Symbol(
   "recovered-downtime-operation-resolution",
 );
+const PLANNING_DRAFT_STATES = new Set(["active", "complete", "needs-review"]);
+const PLANNING_ROLL_STATES = new Set(["pending", "in-flight", "completed"]);
 
 let writeQueue = Promise.resolve();
 let authorityObservationStarted = false;
@@ -186,10 +189,13 @@ function normalizeOperationRecord(raw, operationId, actorId = "") {
         .trim()
         .slice(0, 500) || null,
   };
+  const authorityEpoch = toId(value.authorityEpoch);
+  if (authorityEpoch) normalized.authorityEpoch = authorityEpoch;
   if (state === "pending" || state === "verified-unapplied") {
     normalized.attemptId = null;
     normalized.claimedBy = null;
     normalized.startedAt = 0;
+    delete normalized.authorityEpoch;
   }
   return normalized;
 }
@@ -207,6 +213,94 @@ export function normalizeDowntimeOperationLedger(raw) {
   }
   entries.sort(([left], [right]) => left.localeCompare(right));
   return Object.fromEntries(entries);
+}
+
+function normalizePlanningRoll(raw, rowId) {
+  if (!isPlainObject(raw)) return null;
+  const value = sanitizeJson(raw);
+  const state = PLANNING_ROLL_STATES.has(value.state) ? value.state : "pending";
+  const roll = isPlainObject(value.roll)
+    ? {
+        total:
+          value.roll.total !== null &&
+          value.roll.total !== undefined &&
+          Number.isSafeInteger(Number(value.roll.total))
+            ? Math.trunc(Number(value.roll.total))
+            : null,
+        dieResult:
+          value.roll.dieResult !== null &&
+          value.roll.dieResult !== undefined &&
+          Number.isFinite(Number(value.roll.dieResult))
+            ? Math.trunc(Number(value.roll.dieResult))
+            : null,
+        skillModifier:
+          value.roll.skillModifier !== null &&
+          value.roll.skillModifier !== undefined &&
+          Number.isFinite(Number(value.roll.skillModifier))
+            ? Math.trunc(Number(value.roll.skillModifier))
+            : null,
+        formula: String(value.roll.formula ?? "").slice(0, 500),
+      }
+    : null;
+  if (state === "completed" && !Number.isSafeInteger(roll?.total)) return null;
+  const normalized = {
+    rowId,
+    actorId: toId(value.actorId),
+    actionId: toId(value.actionId),
+    activityId: toId(value.activityId),
+    order: nonNegativeInteger(value.order),
+    state,
+    claimedBy: toId(value.claimedBy) || null,
+    authorityEpoch: toId(value.authorityEpoch) || null,
+    startedAt: toTimestamp(value.startedAt),
+    completedAt: toTimestamp(value.completedAt),
+    roll: state === "completed" ? roll : null,
+  };
+  if (!normalized.actorId || !normalized.actionId || !normalized.activityId) {
+    return null;
+  }
+  if (state === "pending") {
+    normalized.claimedBy = null;
+    normalized.authorityEpoch = null;
+    normalized.startedAt = 0;
+  }
+  return normalized;
+}
+
+function normalizeDowntimePlanningDraft(raw) {
+  if (!isPlainObject(raw)) return null;
+  const value = sanitizeJson(raw);
+  const manifest = isPlainObject(value.manifest) ? value.manifest : null;
+  if (!manifest) return null;
+  const rows = {};
+  for (const [rawRowId, rawRow] of Object.entries(value.rows ?? {})) {
+    const rowId = toId(rawRowId) || toId(rawRow?.rowId);
+    const row = rowId ? normalizePlanningRoll(rawRow, rowId) : null;
+    if (!row || Object.hasOwn(rows, rowId)) return null;
+    rows[rowId] = row;
+  }
+  const orderedRows = Object.fromEntries(
+    Object.entries(rows).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  const state = PLANNING_DRAFT_STATES.has(value.state) ? value.state : "active";
+  if (
+    state === "complete" &&
+    Object.values(orderedRows).some((row) => row.state !== "completed")
+  ) {
+    return null;
+  }
+  return {
+    version: PLANNING_DRAFT_VERSION,
+    state,
+    manifest,
+    rows: orderedRows,
+    createdAt: toTimestamp(value.createdAt),
+    updatedAt: toTimestamp(value.updatedAt),
+    reviewReason:
+      String(value.reviewReason ?? "")
+        .trim()
+        .slice(0, 500) || null,
+  };
 }
 
 function plannedOperations(plan) {
@@ -311,6 +405,9 @@ export function normalizeDowntimeBlock(raw) {
     plan: isPlainObject(value.plan) ? value.plan : null,
     operationLedger: normalizeDowntimeOperationLedger(value.operationLedger),
   };
+  const planningDraft = normalizeDowntimePlanningDraft(value.planningDraft);
+  if (planningDraft) block.planningDraft = planningDraft;
+  else delete block.planningDraft;
   try {
     assertDowntimeWorkflowStateInvariant(block);
     if (block.plan)
@@ -511,7 +608,7 @@ function parseRecoveryCheckpoint(raw) {
 
 function createAuthorityEpoch(authorityId) {
   const id = toId(authorityId);
-  return id ? `${id}:active-authority` : null;
+  return id ? `${id}:${createWriteToken()}` : null;
 }
 
 function currentUserOwnsAuthority(authorityId) {
@@ -809,10 +906,31 @@ async function commitEnvelope(
 
 function markInterruptedOperationsForReview(store, fence) {
   const block = store.activeBlock;
-  if (!block || block.state !== "applying") return store;
+  if (!block) return store;
+  const authorityEpochChanged = Boolean(
+    toId(store.authorityEpoch) &&
+    toId(fence.authorityEpoch) &&
+    store.authorityEpoch !== fence.authorityEpoch,
+  );
+  if (
+    block.state === "locked" &&
+    block.planningDraft &&
+    Object.values(block.planningDraft.rows ?? {}).some(
+      (row) => row.state === "in-flight",
+    )
+  ) {
+    const next = clone(store);
+    next.activeBlock.planningDraft.state = "needs-review";
+    next.activeBlock.planningDraft.reviewReason =
+      "authority-handoff-during-hidden-roll";
+    next.activeBlock.planningDraft.updatedAt = currentTimestamp();
+    return next;
+  }
+  if (block.state !== "applying") return store;
   const hasForeignInFlight = Object.values(block.operationLedger).some(
     (record) =>
-      record.state === "applying" && record.claimedBy !== fence.userId,
+      record.state === "applying" &&
+      (record.claimedBy !== fence.userId || authorityEpochChanged),
   );
   const hasOperationUnderReview = Object.values(block.operationLedger).some(
     (record) => record.state === "needs-review",
@@ -1101,16 +1219,230 @@ export async function persistDowntimePlan(blockId, plan, options = {}) {
     }
     if (current.state !== "locked")
       throw new Error("DowntimeWorkflowPlanNotLocked");
+    if (
+      current.planningDraft &&
+      (current.planningDraft.state === "needs-review" ||
+        Object.values(current.planningDraft.rows ?? {}).some(
+          (row) => row.state !== "completed",
+        ))
+    ) {
+      throw new Error("DowntimeWorkflowPlanningDraftIncomplete");
+    }
     const withPlan = {
       ...current,
       plan: normalizedPlan,
       operationLedger,
+      ...(current.planningDraft
+        ? {
+            planningDraft: {
+              ...current.planningDraft,
+              state: "complete",
+              updatedAt: options.at ?? currentTimestamp(),
+            },
+          }
+        : {}),
     };
     store.activeBlock = transitionDowntimeWorkflowState(withPlan, "planned", {
       at: options.at ?? currentTimestamp(),
       by: options.by ?? fence.userId,
     });
     return { store, mapResult: (committed) => committed.activeBlock };
+  });
+}
+
+function assertLockedPlanningBlock(store, blockId) {
+  const active = store.activeBlock;
+  if (!active || active.id !== blockId) {
+    throw new Error("DowntimeWorkflowBlockNotFound");
+  }
+  if (active.state !== "locked" || active.plan) {
+    throw new Error("DowntimeWorkflowPlanningDraftClosed");
+  }
+  return active;
+}
+
+export async function initializeDowntimePlanningDraft(
+  blockId,
+  manifest,
+  { at = null } = {},
+) {
+  const id = toId(blockId);
+  const normalizedManifest = isPlainObject(manifest)
+    ? sanitizeJson(manifest)
+    : null;
+  const checkedRows = Array.isArray(normalizedManifest?.checkedRows)
+    ? normalizedManifest.checkedRows
+    : null;
+  if (!id || !normalizedManifest || !checkedRows) {
+    throw new Error("DowntimeWorkflowPlanningManifestInvalid");
+  }
+  const rows = {};
+  for (const raw of checkedRows) {
+    const rowId = toId(raw?.rowId);
+    const row = rowId
+      ? normalizePlanningRoll({ ...raw, state: "pending" }, rowId)
+      : null;
+    if (!row || Object.hasOwn(rows, rowId)) {
+      throw new Error("DowntimeWorkflowPlanningManifestInvalid");
+    }
+    rows[rowId] = row;
+  }
+  const createdAt = toTimestamp(at, currentTimestamp());
+  const candidate = normalizeDowntimePlanningDraft({
+    version: PLANNING_DRAFT_VERSION,
+    state: checkedRows.length === 0 ? "complete" : "active",
+    manifest: normalizedManifest,
+    rows,
+    createdAt,
+    updatedAt: createdAt,
+    reviewReason: null,
+  });
+  if (!candidate) throw new Error("DowntimeWorkflowPlanningManifestInvalid");
+
+  return mutateWorkflow((store) => {
+    const active = assertLockedPlanningBlock(store, id);
+    if (active.planningDraft) {
+      if (
+        !persistedValuesEqual(active.planningDraft.manifest, candidate.manifest)
+      ) {
+        throw new Error("DowntimeWorkflowPlanningManifestMismatch");
+      }
+      return { store, result: active.planningDraft };
+    }
+    active.planningDraft = candidate;
+    return {
+      store,
+      mapResult: (committed) => committed.activeBlock.planningDraft,
+    };
+  });
+}
+
+export async function claimDowntimePlanningRoll(
+  blockId,
+  rowId,
+  { at = null } = {},
+) {
+  const id = toId(blockId);
+  const row = toId(rowId);
+  if (!id || !row) throw new Error("DowntimeWorkflowPlanningRollInvalid");
+  return mutateWorkflow((store, fence) => {
+    const active = assertLockedPlanningBlock(store, id);
+    const draft = active.planningDraft;
+    if (!draft || draft.state === "needs-review") {
+      throw new Error("DowntimeWorkflowPlanningDraftNeedsReview");
+    }
+    const current = draft.rows[row];
+    if (!current) throw new Error("DowntimeWorkflowPlanningRollNotFound");
+    if (current.state === "completed") {
+      return { store, result: { claimedNow: false, row: current } };
+    }
+    if (current.state === "in-flight") {
+      throw new Error("DowntimeWorkflowPlanningRollOrphaned");
+    }
+    draft.rows[row] = {
+      ...current,
+      state: "in-flight",
+      claimedBy: fence.userId,
+      authorityEpoch: fence.authorityEpoch ?? null,
+      startedAt: toTimestamp(at, currentTimestamp()),
+      completedAt: 0,
+      roll: null,
+    };
+    draft.updatedAt = toTimestamp(at, currentTimestamp());
+    return {
+      store,
+      mapResult: (committed) => ({
+        claimedNow: true,
+        row: committed.activeBlock.planningDraft.rows[row],
+      }),
+    };
+  });
+}
+
+export async function resolveDowntimePlanningRoll(
+  blockId,
+  rowId,
+  roll,
+  { at = null } = {},
+) {
+  const id = toId(blockId);
+  const row = toId(rowId);
+  const normalizedRoll = normalizePlanningRoll(
+    {
+      actorId: "placeholder",
+      actionId: "placeholder",
+      activityId: "placeholder",
+      state: "completed",
+      roll,
+    },
+    row || "placeholder",
+  )?.roll;
+  if (!id || !row || !normalizedRoll) {
+    throw new Error("DowntimeWorkflowPlanningRollInvalid");
+  }
+  return mutateWorkflow((store, fence) => {
+    const active = assertLockedPlanningBlock(store, id);
+    const draft = active.planningDraft;
+    if (!draft || draft.state === "needs-review") {
+      throw new Error("DowntimeWorkflowPlanningDraftNeedsReview");
+    }
+    const current = draft.rows[row];
+    if (!current) throw new Error("DowntimeWorkflowPlanningRollNotFound");
+    if (current.state === "completed") {
+      if (!persistedValuesEqual(current.roll, normalizedRoll)) {
+        throw new Error("DowntimeWorkflowPlanningRollCollision");
+      }
+      return { store, result: current };
+    }
+    if (
+      current.state !== "in-flight" ||
+      current.claimedBy !== fence.userId ||
+      (fence.live && current.authorityEpoch !== fence.authorityEpoch)
+    ) {
+      throw new Error("DowntimeWorkflowPlanningRollClaimLost");
+    }
+    const completedAt = toTimestamp(at, currentTimestamp());
+    draft.rows[row] = {
+      ...current,
+      state: "completed",
+      completedAt,
+      roll: normalizedRoll,
+    };
+    draft.updatedAt = completedAt;
+    if (
+      Object.values(draft.rows).every((entry) => entry.state === "completed")
+    ) {
+      draft.state = "complete";
+    }
+    return {
+      store,
+      mapResult: (committed) => committed.activeBlock.planningDraft.rows[row],
+    };
+  });
+}
+
+export async function markDowntimePlanningDraftNeedsReview(
+  blockId,
+  reason,
+  { at = null } = {},
+) {
+  const id = toId(blockId);
+  if (!id) throw new Error("DowntimeWorkflowBlockIdInvalid");
+  return mutateWorkflow((store) => {
+    const active = assertLockedPlanningBlock(store, id);
+    if (!active.planningDraft) {
+      throw new Error("DowntimeWorkflowPlanningDraftMissing");
+    }
+    active.planningDraft.state = "needs-review";
+    active.planningDraft.reviewReason =
+      String(reason ?? "")
+        .trim()
+        .slice(0, 500) || "hidden-roll-interrupted";
+    active.planningDraft.updatedAt = toTimestamp(at, currentTimestamp());
+    return {
+      store,
+      mapResult: (committed) => committed.activeBlock.planningDraft,
+    };
   });
 }
 
@@ -1161,6 +1493,7 @@ export async function claimDowntimeOperation(
       state: "applying",
       attemptId: attempt,
       claimedBy: fence.userId,
+      authorityEpoch: fence.authorityEpoch ?? store.authorityEpoch,
       startedAt: toTimestamp(at, currentTimestamp()),
       resolvedAt: 0,
       receipt: null,

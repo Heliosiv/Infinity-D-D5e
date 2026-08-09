@@ -13,6 +13,7 @@ const {
   isSharpenableWeapon,
   registerSharpeningHooks,
   sharpenDamageType,
+  sharpeningEffectReferences,
   supportsNativeDamagePartEnchantments,
 } = await import("./downtime/effects.js");
 
@@ -340,6 +341,51 @@ function liveWeapon() {
     });
   return item;
 }
+
+const missingReferenceSword = liveWeapon();
+assert.deepEqual(
+  await applySharpeningEffect(missingReferenceSword, {
+    actorId: "actor-1",
+  }),
+  { ok: false, reason: "invalid-sharpening-reference" },
+  "a malformed plan cannot create an untracked permanent sharpening effect",
+);
+assert.equal(missingReferenceSword.effects.size, 0);
+
+const mismatchedActorSword = liveWeapon();
+mismatchedActorSword.parent = { id: "actor-1" };
+assert.deepEqual(
+  await applySharpeningEffect(mismatchedActorSword, {
+    operationId: "op-wrong-actor",
+    actorId: "actor-2",
+  }),
+  { ok: false, reason: "actor-mismatch" },
+  "a sharpening operation cannot be applied to another Actor's weapon",
+);
+assert.equal(mismatchedActorSword.effects.size, 0);
+
+const malformedFallback = structuredClone(fallbackEffect);
+malformedFallback.flags["infinity-dnd5e"].downtimeSharpen.operationId = "";
+const malformedFallbackSword = weapon({ effects: [malformedFallback] });
+assert.equal(
+  injectSharpeningDamageBonus({
+    subject: { item: malformedFallbackSword },
+    rolls: [],
+  }),
+  false,
+  "an incomplete module marker cannot grant a compatibility damage bonus",
+);
+assert.deepEqual(
+  sharpeningEffectReferences({ items: [malformedFallbackSword] }),
+  [],
+  "an incomplete marker cannot enter the durable rest lifecycle",
+);
+assert.equal(
+  (await consumeSharpeningCharge(malformedFallbackSword, "forged-roll"))
+    .consumed,
+  false,
+  "an incomplete marker cannot consume lifecycle state",
+);
 
 // The effect is the only mutation: the weapon's permanent system source stays
 // unchanged while three distinct damage rolls consume the three charges.

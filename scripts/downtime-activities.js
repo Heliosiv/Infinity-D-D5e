@@ -149,6 +149,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     return {
       ...context,
       busy: this._busy,
+      ariaBusy: this._busy || context.status === "applying",
       statusMessage: this._statusMessage,
       errorMessage: this._errorMessage,
       hasError: Boolean(this._errorMessage),
@@ -413,9 +414,9 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     actor &&
     !submitted &&
     !needsRecovery;
+  const withinBudget = usedHours <= budgetHours;
   const canSubmit =
-    source.canSubmit ??
-    (editable && queue.length > 0 && usedHours <= budgetHours);
+    editable && withinBudget && Boolean(source.canSubmit ?? true);
   const progressPercent =
     budgetHours > 0
       ? Math.min(100, Math.round((usedHours / budgetHours) * 100))
@@ -463,14 +464,15 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
         ? submitted
           ? "Your queue is already submitted."
           : "Submissions are not open."
-        : queue.length === 0
-          ? "Add at least one activity."
-          : usedHours > budgetHours
-            ? "Your queue exceeds the time budget."
-            : ""),
+        : usedHours > budgetHours
+          ? "Your queue exceeds the time budget."
+          : ""),
     canRecall:
-      source.canRecall ??
-      (hasActiveBlock && status === "collecting" && submitted && !noGm),
+      hasActiveBlock &&
+      status === "collecting" &&
+      submitted &&
+      !noGm &&
+      Boolean(source.canRecall ?? true),
     receipt,
     hasReceipt: Boolean(receipt),
     completionMessage: String(source.completionMessage ?? ""),
@@ -666,11 +668,11 @@ function playerStatusTone(status) {
 
 function safeReceiptTone(value) {
   const tone = cleanId(value);
-  if (
-    ["exceptional", "success", "setback", "failure", "serious"].includes(tone)
-  ) {
-    return tone;
+  if (["exceptional", "exceptional-success"].includes(tone)) {
+    return "exceptional";
   }
+  if (["serious", "serious-failure"].includes(tone)) return "serious";
+  if (["success", "setback", "failure"].includes(tone)) return tone;
   return "neutral";
 }
 

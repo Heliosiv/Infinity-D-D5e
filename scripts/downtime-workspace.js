@@ -790,11 +790,11 @@ function workflowTone(status) {
 
 function cleanTone(value) {
   const tone = cleanId(value);
-  if (
-    ["exceptional", "success", "setback", "failure", "serious"].includes(tone)
-  ) {
-    return tone;
+  if (["exceptional", "exceptional-success"].includes(tone)) {
+    return "exceptional";
   }
+  if (["serious", "serious-failure"].includes(tone)) return "serious";
+  if (["success", "setback", "failure"].includes(tone)) return tone;
   return "neutral";
 }
 

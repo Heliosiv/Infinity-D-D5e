@@ -107,7 +107,28 @@ try {
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
       settlements: [{ id: "haven", name: "Haven" }],
-      workflow: { id: "block-2", status: "planned", hours: 8 },
+      workflow: {
+        id: "block-2",
+        status: "planned",
+        hours: 8,
+        plan: {
+          characters: [
+            {
+              actorId: "ada",
+              operations: [
+                {
+                  id: "exceptional-trade",
+                  outcomeTier: "exceptional-success",
+                },
+                {
+                  id: "serious-theft",
+                  outcomeTier: "serious-failure",
+                },
+              ],
+            },
+          ],
+        },
+      },
     },
     { view: "current" },
   );
@@ -115,6 +136,13 @@ try {
     previewWorkspace.currentBlock.canCancel,
     true,
     "a full GM may cancel an immutable preview before application begins",
+  );
+  assert.deepEqual(
+    previewWorkspace.currentBlock.planCharacters[0].operations.map(
+      (operation) => operation.tone,
+    ),
+    ["exceptional", "serious"],
+    "canonical downtime outcome tiers retain their exceptional and serious UI tones",
   );
   assert.equal(
     workspaceModule.DowntimeWorkspaceApp.prototype._currentBlockId.call({
@@ -157,6 +185,59 @@ try {
   assert.equal(JSON.stringify(player).includes("hiddenDc"), false);
   assert.equal(JSON.stringify(player).includes("hiddenRoll"), false);
   assert.equal(JSON.stringify(player).includes("secret"), false);
+
+  const emptyQueuePlayer = activitiesModule.normalizePlayerDowntimeProjection(
+    {
+      status: "collecting",
+      hasActiveBlock: true,
+      blockId: "block-empty",
+      settlementName: "Haven",
+      actors: [{ id: "ada", name: "Ada" }],
+      budgetHours: 8,
+      queue: [],
+    },
+    { actorId: "ada" },
+  );
+  assert.equal(
+    emptyQueuePlayer.canSubmit,
+    true,
+    "a player may submit an empty queue and leave the entire budget unused",
+  );
+  assert.equal(emptyQueuePlayer.submitReason, "");
+
+  const lockedPlayer = activitiesModule.normalizePlayerDowntimeProjection(
+    {
+      status: "locked",
+      hasActiveBlock: true,
+      blockId: "block-locked",
+      actors: [{ id: "ada", name: "Ada" }],
+      budgetHours: 8,
+      submitted: true,
+      canSubmit: true,
+      canRecall: true,
+    },
+    { actorId: "ada" },
+  );
+  assert.equal(lockedPlayer.canSubmit, false);
+  assert.equal(
+    lockedPlayer.canRecall,
+    false,
+    "stale command flags cannot reopen a queue after submissions lock",
+  );
+
+  const receiptPlayer = activitiesModule.normalizePlayerDowntimeProjection({
+    status: "completed",
+    receipt: {
+      activities: [
+        { id: "great", tone: "exceptional-success" },
+        { id: "bad", tone: "serious-failure" },
+      ],
+    },
+  });
+  assert.deepEqual(
+    receiptPlayer.receipt.activities.map((activity) => activity.tone),
+    ["exceptional", "serious"],
+  );
 
   const allowed = activitiesModule.readAllowedActivityInputs({
     querySelectorAll() {
@@ -233,6 +314,10 @@ try {
     /name="stakeGp" min="0\.01"[^>]*value="0\.01"[^>]*required/,
   );
   assert.match(commerceHtml, /name="targetIds" multiple size="5"[^>]*required/);
+  assert.match(
+    commerceHtml,
+    /aria-describedby="dt-target-help-fence-stolen-goods"/,
+  );
 
   let refreshCall = null;
   await activitiesModule.DowntimeActivitiesApp.DEFAULT_OPTIONS.actions.refresh.call(
@@ -246,6 +331,31 @@ try {
   );
   assert.equal(refreshCall.method, "refreshPlayerProjection");
   assert.deepEqual(refreshCall.payload, { actorId: "ada" });
+
+  const applyingContext =
+    await activitiesModule.DowntimeActivitiesApp.prototype._prepareContext.call(
+      {
+        _adapter: {
+          getPlayerProjection: async () => ({
+            status: "applying",
+            hasActiveBlock: true,
+            blockId: "block-applying",
+            actors: [{ id: "ada", name: "Ada" }],
+            submitted: true,
+          }),
+        },
+        _actorId: "ada",
+        _category: "all",
+        _busy: false,
+        _statusMessage: "",
+        _errorMessage: "",
+      },
+    );
+  assert.equal(
+    applyingContext.ariaBusy,
+    true,
+    "the player window announces an applying workflow as busy after a state update",
+  );
 
   assertActionCoverage(
     "templates/downtime-workspace.hbs",

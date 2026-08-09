@@ -857,7 +857,15 @@ export class DowntimePlayerAdapter {
     if (projection.blockId && actorId) {
       const key = this._draftKey(projection.blockId, actorId);
       const draft = this._drafts.get(key);
-      if (!draft || replaceDraft || projection.submitted || !draft.dirty) {
+      const submissionsClosed =
+        !projection.hasActiveBlock || projection.status !== "collecting";
+      if (
+        !draft ||
+        replaceDraft ||
+        submissionsClosed ||
+        projection.submitted ||
+        !draft.dirty
+      ) {
         this._drafts.set(key, {
           queue: sanitizeDowntimeSubmissionQueue(projection.rawQueue),
           dirty: false,

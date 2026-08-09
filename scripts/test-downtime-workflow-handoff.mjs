@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
 
 const saved = Object.fromEntries(
-  ["game", "foundry", "CONST", "Hooks", "JournalEntry"].map((key) => [
-    key,
-    globalThis[key],
-  ]),
+  [
+    "game",
+    "foundry",
+    "CONST",
+    "Hooks",
+    "JournalEntry",
+    "setTimeout",
+    "clearTimeout",
+  ].map((key) => [key, globalThis[key]]),
 );
 
 const MODULE_ID = "infinity-dnd5e";
 const CHECKPOINT_PATH = `flags.${MODULE_ID}.downtimeWorkflowCheckpoint`;
 const CONFIG_PATH = `flags.${MODULE_ID}.downtimeConfig`;
+const WORKFLOW_PATH = `flags.${MODULE_ID}.downtimeWorkflow`;
 
 try {
   let nextHookId = 0;
@@ -59,6 +65,7 @@ try {
     downtimeWorkflowCheckpoint: {},
   };
   let blockedUpdate = null;
+  let failedUpdatePath = null;
   const document = {
     id: "private-downtime-store",
     ownership: { default: 0 },
@@ -67,6 +74,10 @@ try {
     },
     async update(changes) {
       for (const [path, value] of Object.entries(changes)) {
+        if (failedUpdatePath === path) {
+          failedUpdatePath = null;
+          throw new Error("simulated workflow primary interruption");
+        }
         if (blockedUpdate?.path === path) {
           const blocked = blockedUpdate;
           blockedUpdate = null;
@@ -90,6 +101,9 @@ try {
       });
       blockedUpdate = { path, releasePromise, startedResolve };
       return { started, release: releaseResolve };
+    },
+    failNext(path) {
+      failedUpdatePath = path;
     },
   };
 
@@ -134,6 +148,8 @@ try {
 
   const privateState = await import("./private-state.js");
   const workflow = await import("./downtime/store.js");
+  const downtimeService = await import("./downtime/service.js");
+  const downtimeItems = await import("./downtime/items.js");
   privateState.resetPrivateStateForTests();
   workflow.resetDowntimeWorkflowStoreForTests();
   assert.equal(await privateState.initializePrivateState(), true);
@@ -298,6 +314,276 @@ try {
   assert.deepEqual(
     flags.downtimeWorkflow.configCheckpoint,
     flags.downtimeWorkflowCheckpoint.config,
+  );
+
+  // A -> B -> A can happen quickly when two GM clients reconnect. The
+  // returning A must not reuse its earlier authority epoch and silently resume
+  // an operation claimed before B became authoritative. Exercise the narrow
+  // interruption where B's review checkpoint lands but its primary mirror is
+  // fenced out when A returns.
+  users.activeGM = gmA;
+  globalThis.game.user = gmA;
+  await freshAfterLateConfigCheckpoint.ensureDowntimeWorkflowAuthority();
+  await freshAfterLateConfigCheckpoint.cancelDowntimeBlock(
+    "stale-write-block",
+    { reason: "prepare repeated-authority handoff fixture" },
+  );
+  await freshAfterLateConfigCheckpoint.createDowntimeBlock({
+    id: "repeated-authority-block",
+    settlementId: "greyhaven",
+    budgetHours: 4,
+  });
+  await freshAfterLateConfigCheckpoint.lockDowntimeBlock(
+    "repeated-authority-block",
+  );
+  await freshAfterLateConfigCheckpoint.persistDowntimePlan(
+    "repeated-authority-block",
+    {
+      operations: [
+        {
+          operationId: "repeated-authority-operation",
+          actorId: "actor-1",
+          summary: "Repeated authority handoff operation",
+        },
+      ],
+    },
+  );
+  await freshAfterLateConfigCheckpoint.beginDowntimeApplication(
+    "repeated-authority-block",
+  );
+  const repeatedAuthorityClaim =
+    await freshAfterLateConfigCheckpoint.claimDowntimeOperation(
+      "repeated-authority-block",
+      "repeated-authority-operation",
+      { attemptId: "gm-a-old-epoch-attempt" },
+    );
+  const retiredAttemptToken = {
+    blockId: "repeated-authority-block",
+    operationId: "repeated-authority-operation",
+    attemptId: "gm-a-old-epoch-attempt",
+    authorityEpoch: repeatedAuthorityClaim.record.authorityEpoch,
+    userId: repeatedAuthorityClaim.record.claimedBy,
+  };
+  const retiredAttemptWriteAuthority = () =>
+    downtimeService.hasCurrentDowntimeWriteAuthority(retiredAttemptToken);
+  assert.equal(retiredAttemptWriteAuthority(), true);
+  const firstGmAEpoch = flags.downtimeWorkflow.authorityEpoch;
+
+  document.failNext(WORKFLOW_PATH);
+  users.activeGM = gmB;
+  globalThis.game.user = gmB;
+  await assert.rejects(
+    freshAfterLateConfigCheckpoint.ensureDowntimeWorkflowAuthority(),
+    /simulated workflow primary interruption/,
+  );
+  assert.equal(
+    flags.downtimeWorkflowCheckpoint.workflow.activeBlock.state,
+    "needs-review",
+    "the handoff checkpoint fences the in-flight operation",
+  );
+  assert.equal(
+    flags.downtimeWorkflow.activeBlock.state,
+    "applying",
+    "the interrupted primary still contains A's stale in-flight claim",
+  );
+  users.activeGM = gmA;
+  globalThis.game.user = gmA;
+
+  const returningGmA = await import(
+    `./downtime/store.js?returning-gm-a=${Date.now()}`
+  );
+  await returningGmA.ensureDowntimeWorkflowAuthority();
+  active = returningGmA.getActiveDowntimeBlock();
+  assert.equal(active.state, "needs-review");
+  assert.equal(
+    active.operationLedger["repeated-authority-operation"].state,
+    "needs-review",
+    "a repeated GM id cannot revive an operation claimed under its retired epoch",
+  );
+  assert.notEqual(
+    flags.downtimeWorkflow.authorityEpoch,
+    firstGmAEpoch,
+    "each authority tenure has a unique fencing epoch",
+  );
+  assert.equal(
+    retiredAttemptWriteAuthority(),
+    false,
+    "returning to the same GM id does not revive the old operation epoch",
+  );
+  let deferredExternalWrites = 0;
+  const deferredActor = {
+    id: "deferred-write-actor",
+    items: new Map(),
+    async createEmbeddedDocuments() {
+      deferredExternalWrites += 1;
+      return [];
+    },
+  };
+  const deniedDeferredWrite = await downtimeItems.applyStolenItemDelivery(
+    deferredActor,
+    { _id: "deferred-stolen-item", system: { quantity: 1 }, flags: {} },
+    { authorizeWrite: retiredAttemptWriteAuthority },
+  );
+  assert.equal(deniedDeferredWrite.reason, "authority-lost");
+  assert.equal(
+    deferredExternalWrites,
+    0,
+    "a deferred A -> B -> A Actor write is fenced before mutation",
+  );
+
+  await returningGmA.cancelDowntimeBlock("repeated-authority-block", {
+    reason: "prepare hidden-roll handoff fixture",
+  });
+  await returningGmA.createDowntimeBlock({
+    id: "hidden-roll-handoff-block",
+    settlementId: "greyhaven",
+    budgetHours: 2,
+  });
+  await returningGmA.lockDowntimeBlock("hidden-roll-handoff-block");
+  await returningGmA.initializeDowntimePlanningDraft(
+    "hidden-roll-handoff-block",
+    {
+      version: 1,
+      blockId: "hidden-roll-handoff-block",
+      settlementId: "greyhaven",
+      budgetHours: 2,
+      participants: [
+        {
+          actorId: "actor-1",
+          queue: [
+            {
+              id: "handoff-trade",
+              activityId: "market-trading",
+              hours: 2,
+            },
+          ],
+        },
+      ],
+      checkedRows: [
+        {
+          rowId: "handoff-hidden-roll",
+          actorId: "actor-1",
+          actionId: "handoff-trade",
+          activityId: "market-trading",
+          order: 0,
+        },
+      ],
+    },
+  );
+  await returningGmA.claimDowntimePlanningRoll(
+    "hidden-roll-handoff-block",
+    "handoff-hidden-roll",
+  );
+  users.activeGM = gmB;
+  globalThis.game.user = gmB;
+  await returningGmA.ensureDowntimeWorkflowAuthority();
+  active = returningGmA.getActiveDowntimeBlock();
+  assert.equal(
+    active.state,
+    "locked",
+    "the public workflow remains locked until a complete plan exists",
+  );
+  assert.equal(active.planningDraft.state, "needs-review");
+  assert.equal(
+    active.planningDraft.reviewReason,
+    "authority-handoff-during-hidden-roll",
+    "an active-GM handoff fails an orphaned hidden roll closed",
+  );
+  assert.equal(
+    active.planningDraft.rows["handoff-hidden-roll"].state,
+    "in-flight",
+    "the uncertain roll reservation is retained as private recovery evidence",
+  );
+
+  const lifecycleTimers = [];
+  globalThis.setTimeout = (callback, delay = 0) => {
+    const timer = {
+      callback,
+      delay,
+      cancelled: false,
+      unref() {},
+    };
+    lifecycleTimers.push(timer);
+    return timer;
+  };
+  globalThis.clearTimeout = (timer) => {
+    if (timer) timer.cancelled = true;
+  };
+  const flushAsyncTurns = async (turns = 12) => {
+    for (let index = 0; index < turns; index += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+  const runLifecycleTimers = async () => {
+    for (const timer of lifecycleTimers.splice(0)) {
+      if (!timer.cancelled) timer.callback();
+    }
+    await flushAsyncTurns();
+  };
+
+  downtimeService.registerDowntimeService();
+  await flushAsyncTurns();
+  await runLifecycleTimers();
+  await workflow.ensureDowntimeWorkflowAuthority();
+  await workflow.updateDowntimeConfig((current) => ({
+    ...current,
+    sharpeningLifecycle: {
+      pending: [
+        {
+          eventId: "lifecycle-handoff-ordering",
+          kind: "damage",
+          actorId: "missing-actor",
+          itemId: "missing-item",
+          effectId: "missing-effect",
+          operationId: "missing-operation",
+          rollId: "missing-roll",
+          originUserId: "missing-player",
+          acceptedAt: 20_000,
+          attempts: 0,
+          lastAttemptAt: 0,
+          lastError: null,
+        },
+      ],
+      completed: [],
+    },
+  }));
+  lifecycleTimers.length = 0;
+
+  users.activeGM = gmA;
+  globalThis.game.user = gmA;
+  globalThis.Hooks.call("userConnected", gmA);
+  assert.equal(
+    lifecycleTimers.length,
+    0,
+    "lifecycle reconciliation is not scheduled under the retired epoch",
+  );
+  assert.equal(
+    workflow.loadDowntimeConfig().sharpeningLifecycle.pending.length,
+    1,
+    "the pending lifecycle event remains durable during authority installation",
+  );
+  await flushAsyncTurns(20);
+  assert.equal(flags.downtimeWorkflow.authorityId, gmA.id);
+  assert.equal(
+    workflow.loadDowntimeConfig().sharpeningLifecycle.pending.length,
+    1,
+    "installing the new epoch does not discard the pending lifecycle event",
+  );
+  assert.equal(
+    lifecycleTimers.some((timer) => timer.delay === 0 && !timer.cancelled),
+    true,
+    "the lifecycle pass is scheduled only after the new authority epoch is durable",
+  );
+  await runLifecycleTimers();
+  const lifecycleAfterHandoff =
+    workflow.loadDowntimeConfig().sharpeningLifecycle;
+  assert.equal(lifecycleAfterHandoff.pending.length, 0);
+  assert.equal(
+    lifecycleAfterHandoff.completed.some(
+      (entry) => entry.eventId === "lifecycle-handoff-ordering",
+    ),
+    true,
+    "the new authority reconciles the event preserved across hook ordering",
   );
 } finally {
   for (const [key, value] of Object.entries(saved)) {

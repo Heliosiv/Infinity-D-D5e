@@ -198,6 +198,154 @@ try {
     /SubmissionsClosed/,
   );
 
+  const planningManifest = {
+    version: 1,
+    blockId: "block-1",
+    settlementId: "greyhaven",
+    budgetHours: 8,
+    participants: [
+      {
+        actorId: "actor-1",
+        queue: [
+          {
+            id: "hidden-trade",
+            activityId: "market-trading",
+            hours: 2,
+            skill: "persuasion",
+            stakeCp: 100,
+          },
+        ],
+      },
+    ],
+    checkedRows: [
+      {
+        rowId: "planning-roll-1",
+        actorId: "actor-1",
+        actionId: "hidden-trade",
+        activityId: "market-trading",
+        order: 0,
+      },
+    ],
+  };
+  let planningDraft = await workflow.initializeDowntimePlanningDraft(
+    "block-1",
+    planningManifest,
+    { at: 1_110 },
+  );
+  assert.equal(planningDraft.state, "active");
+  assert.equal(planningDraft.rows["planning-roll-1"].state, "pending");
+  await assert.rejects(
+    workflow.initializeDowntimePlanningDraft("block-1", {
+      ...planningManifest,
+      budgetHours: 4,
+    }),
+    /PlanningManifestMismatch/,
+    "a locked draft is bound to the exact queue manifest",
+  );
+  const planningClaim = await workflow.claimDowntimePlanningRoll(
+    "block-1",
+    "planning-roll-1",
+    { at: 1_120 },
+  );
+  assert.equal(planningClaim.claimedNow, true);
+  await assert.rejects(
+    workflow.claimDowntimePlanningRoll("block-1", "planning-roll-1"),
+    /PlanningRollOrphaned/,
+    "an in-flight hidden check can never be invoked a second time",
+  );
+  const completedPlanningRoll = await workflow.resolveDowntimePlanningRoll(
+    "block-1",
+    "planning-roll-1",
+    {
+      total: 17,
+      dieResult: 12,
+      skillModifier: 5,
+      formula: "1d20 + 5",
+    },
+    { at: 1_130 },
+  );
+  assert.equal(completedPlanningRoll.state, "completed");
+  planningDraft = workflow.getActiveDowntimeBlock().planningDraft;
+  assert.equal(planningDraft.state, "complete");
+  assert.deepEqual(
+    (
+      await workflow.initializeDowntimePlanningDraft(
+        "block-1",
+        planningManifest,
+      )
+    ).rows["planning-roll-1"].roll,
+    completedPlanningRoll.roll,
+    "a retry reuses the exact completed hidden roll",
+  );
+  const normalizedNullMetadataBlock = workflow.normalizeDowntimeBlock({
+    id: "null-roll-metadata",
+    state: "locked",
+    plan: null,
+    operationLedger: {},
+    planningDraft: {
+      version: 1,
+      state: "complete",
+      manifest: { checkedRows: [] },
+      rows: {
+        "null-metadata-row": {
+          rowId: "null-metadata-row",
+          actorId: "actor-1",
+          actionId: "check-1",
+          activityId: "market-trading",
+          order: 0,
+          state: "completed",
+          claimedBy: "gm-1",
+          authorityEpoch: "epoch-1",
+          startedAt: 1,
+          completedAt: 2,
+          roll: {
+            total: 14,
+            dieResult: null,
+            skillModifier: null,
+            formula: "",
+          },
+        },
+      },
+    },
+  });
+  assert.equal(
+    normalizedNullMetadataBlock.planningDraft.rows["null-metadata-row"].roll
+      .dieResult,
+    null,
+    "unavailable cross-version die metadata is not rewritten as a real zero",
+  );
+  assert.equal(
+    normalizedNullMetadataBlock.planningDraft.rows["null-metadata-row"].roll
+      .skillModifier,
+    null,
+    "unavailable cross-version modifier metadata is not rewritten as a real zero",
+  );
+  const missingTotalBlock = workflow.normalizeDowntimeBlock({
+    ...normalizedNullMetadataBlock,
+    planningDraft: {
+      ...normalizedNullMetadataBlock.planningDraft,
+      rows: {
+        ...normalizedNullMetadataBlock.planningDraft.rows,
+        "null-metadata-row": {
+          ...normalizedNullMetadataBlock.planningDraft.rows[
+            "null-metadata-row"
+          ],
+          roll: {
+            ...normalizedNullMetadataBlock.planningDraft.rows[
+              "null-metadata-row"
+            ].roll,
+            total: null,
+          },
+        },
+      },
+    },
+  });
+  assert.equal(
+    "planningDraft" in missingTotalBlock,
+    false,
+    "a completed hidden roll without the required total is rejected",
+  );
+
   const plan = {
     generatedAt: 1_200,
     rolls: [{ actionId: "action-1", dieResult: 12, total: 17 }],
@@ -232,6 +380,11 @@ try {
     "operation-2",
     "operation-3",
   ]);
+  await assert.rejects(
+    workflow.claimDowntimePlanningRoll("block-1", "planning-roll-1"),
+    /PlanningDraftClosed/,
+    "planning-roll state cannot mutate after immutable plan persistence",
+  );
 
   const replayedPlan = await workflow.persistDowntimePlan("block-1", plan);
   assert.deepEqual(replayedPlan.plan, plan);
@@ -274,6 +427,11 @@ try {
     at: 1_310,
   });
   assert.equal(claim.claimedNow, true);
+  assert.equal(
+    claim.record.authorityEpoch,
+    workflow.loadDowntimeWorkflowStore().authorityEpoch,
+    "operation claims are fenced to the exact GM authority tenure",
+  );
   claim = await workflow.claimDowntimeOperation("block-1", "operation-1", {
     attemptId: "attempt-1",
   });

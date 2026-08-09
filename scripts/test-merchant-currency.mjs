@@ -288,6 +288,64 @@ for (const [label, wallet] of [
   assert.match(result.error.message, /denied/);
 }
 
+{
+  const actor = makeCurrencyActor();
+  const result = await updateCurrencyVerified(
+    actor,
+    { gp: 4 },
+    { authorizeWrite: () => false },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(
+    actor.updateCalls.length,
+    0,
+    "lost authority prevents the write",
+  );
+  assert.equal(actor.system.currency.gp, 10);
+}
+
+{
+  const actor = makeCurrencyActor();
+  let authorized = true;
+  const update = actor.update.bind(actor);
+  actor.update = async (...args) => {
+    const returned = await update(...args);
+    authorized = false;
+    return returned;
+  };
+  const result = await updateCurrencyVerified(
+    actor,
+    { gp: 4 },
+    { authorizeWrite: () => authorized },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(
+    actor.system.currency.gp,
+    4,
+    "a post-await authority loss reports the possibly applied canonical state",
+  );
+}
+
+{
+  const actor = makeCurrencyActor();
+  const result = await updateCurrencyVerified(
+    actor,
+    { gp: 4 },
+    {
+      authorizeWrite() {
+        throw new Error("stale epoch");
+      },
+    },
+  );
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(actor.updateCalls.length, 0, "a throwing fence fails closed");
+}
+
 /* ------------------------------------------------------------------ *
  * Deduction rejects invalid canonical state before writing
  * ------------------------------------------------------------------ */

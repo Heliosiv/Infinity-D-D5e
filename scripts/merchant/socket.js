@@ -930,21 +930,40 @@ function resolveSessionActor(session, requestedActorId = null) {
   if (!user) return null;
   if (requestedActorId) {
     const requested = globalThis.game?.actors?.get?.(requestedActorId);
-    if (
-      requested?.type === "character" &&
-      requested.testUserPermission?.(user, "OWNER")
-    ) {
-      return requested;
-    }
-    return null;
+    return userOwnsSessionActor(user, requested) ? requested : null;
   }
-  if (user.character) return user.character;
+  const assignedId =
+    typeof user.character === "string" ? user.character : user.character?.id;
+  const assigned = assignedId
+    ? (globalThis.game?.actors?.get?.(assignedId) ??
+      (typeof user.character === "object" ? user.character : null))
+    : null;
+  if (userOwnsSessionActor(user, assigned)) return assigned;
   const actors = globalThis.game?.actors;
-  return (
-    actors?.find?.(
-      (a) => a?.type === "character" && a?.testUserPermission?.(user, "OWNER"),
-    ) ?? null
-  );
+  return actors?.find?.((actor) => userOwnsSessionActor(user, actor)) ?? null;
+}
+
+/**
+ * Resolve effective player ownership without letting an Assistant GM's role
+ * grant access to every Actor or a stale User.character pointer override an
+ * explicit permission downgrade.
+ */
+function userOwnsSessionActor(user, actor) {
+  if (!user || actor?.type !== "character") return false;
+  if (isFullGM(user)) return true;
+  const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  const ownership = actor.ownership ?? {};
+  if (Object.hasOwn(ownership, user.id)) {
+    return Number(ownership[user.id]) >= Number(ownerLevel);
+  }
+  const assignedId =
+    typeof user.character === "string" ? user.character : user.character?.id;
+  if (assignedId && String(assignedId) === String(actor.id)) return true;
+  if (user.isGM === true) return false;
+  if (Object.hasOwn(ownership, "default")) {
+    return Number(ownership.default) >= Number(ownerLevel);
+  }
+  return actor.testUserPermission?.(user, "OWNER") === true;
 }
 
 async function broadcastState(merchant) {

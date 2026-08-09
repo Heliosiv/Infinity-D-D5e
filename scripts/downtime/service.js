@@ -1,11 +1,12 @@
 import { DOWNTIME_ACTIVITY_IDS, getDowntimeActivity } from "./catalog.js";
 import { DOWNTIME_OUTCOME_TIERS, getFencingValueCapCp } from "./math.js";
 import {
-  createDowntimeOpportunitySecret,
+  createDowntimeOpportunitySecretBundle,
   deterministicDowntimeRoll,
 } from "./opportunities.js";
 import {
   DOWNTIME_SUBMISSION_MAX_ACTIONS,
+  buildDowntimeOperationId,
   normalizeDowntimeQueue,
   normalizeDowntimeSkill,
   resolveDowntimeQueue,
@@ -27,15 +28,19 @@ import {
   ensureDowntimeWorkflowAuthority,
   getActiveDowntimeBlock,
   getDowntimeWorkflowRevision,
+  initializeDowntimePlanningDraft,
   loadDowntimeConfig,
   loadDowntimeWorkflowStore,
   lockDowntimeBlock,
   markDowntimeNeedsReview,
+  markDowntimePlanningDraftNeedsReview,
   persistDowntimePlan,
   registerDowntimeWorkflowObserver,
   resolveDowntimeOperation,
   resolveRecoveredDowntimeOperation,
+  resolveDowntimePlanningRoll,
   saveDowntimeConfig,
+  claimDowntimePlanningRoll,
   updateDowntimeConfig,
   updateCollectingDowntimeBlock,
 } from "./store.js";
@@ -43,6 +48,7 @@ import {
   applyAmmoCraftOperation,
   applyFenceOperation,
   applyStolenItemDelivery,
+  ammoCraftDeliveryItemMatches,
   actorHasAnyTool,
   ammoCraftCostCp,
   buildAmmoCraftOperation,
@@ -655,7 +661,7 @@ export async function openDowntimeBlock({
     const createdAt = now();
     const block = await createDowntimeBlock({
       id: newId("downtime"),
-      opportunitySecret: createDowntimeOpportunitySecret(),
+      opportunitySecret: createDowntimeOpportunitySecretBundle(),
       settlementId: settlement.id,
       settlementName: settlement.name,
       settlementSnapshot: settlement,
@@ -770,6 +776,61 @@ function reserveShopliftPlanStock(preparedCharacters) {
   );
 }
 
+function buildDowntimePlanningManifest(block, settlement, preparedCharacters) {
+  const checkedRows = [];
+  const participants = preparedCharacters.map(({ actor, validation }) => {
+    validation.normalizedQueue.forEach((action, index) => {
+      if (!CHECKED_ACTIVITIES.has(action.activityId)) return;
+      checkedRows.push({
+        rowId: buildDowntimeOperationId({
+          blockId: block.id,
+          actorId: actor.id,
+          actionId: action.id,
+          index,
+        }),
+        actorId: String(actor.id),
+        actionId: action.id,
+        activityId: action.activityId,
+        order: index,
+      });
+    });
+    return {
+      actorId: String(actor.id),
+      queue: validation.normalizedQueue,
+    };
+  });
+  return {
+    version: 1,
+    blockId: block.id,
+    settlementId: settlement.id,
+    budgetHours: block.budgetHours,
+    participants,
+    checkedRows,
+  };
+}
+
+function interruptedPlanningMessage(participant, action) {
+  return `${participant.actorName}'s hidden ${action.skill} check was interrupted after its roll slot was reserved. This locked block will not reroll it; cancel the block and create a new one.`;
+}
+
+async function markPlanningReviewBestEffort(blockId, reason) {
+  try {
+    const active = getActiveDowntimeBlock();
+    if (
+      active?.id === blockId &&
+      active.state === "locked" &&
+      active.planningDraft?.state !== "needs-review"
+    ) {
+      await markDowntimePlanningDraftNeedsReview(blockId, reason, {
+        at: now(),
+      });
+    }
+  } catch {
+    // A lost authority fence leaves the durable in-flight row for the new GM
+    // to classify during handoff reconciliation.
+  }
+}
+
 export async function planActiveDowntimeBlock(blockId) {
   return runServiceMutation(async () => {
     assertAuthority();
@@ -833,27 +894,83 @@ export async function planActiveDowntimeBlock(blockId) {
     // before the first hidden roll. A rejected preview can therefore never be
     // retried to fish for different outcomes.
     const projectedMerchantStock = reserveShopliftPlanStock(preparedCharacters);
+    const planningManifest = buildDowntimePlanningManifest(
+      block,
+      settlement,
+      preparedCharacters,
+    );
+    if (planningManifest.checkedRows.length > 0) {
+      const draft = await initializeDowntimePlanningDraft(
+        block.id,
+        planningManifest,
+        { at: createdAt },
+      );
+      if (draft.state === "needs-review") {
+        throw new Error(
+          draft.reviewReason ||
+            "A hidden roll was interrupted. Cancel this locked block; its checks will not be rerolled.",
+        );
+      }
+    }
 
     for (const prepared of preparedCharacters) {
       const { actor, participant, context, validation } = prepared;
       const rolls = {};
-      for (const action of validation.normalizedQueue) {
+      for (
+        let actionIndex = 0;
+        actionIndex < validation.normalizedQueue.length;
+        actionIndex += 1
+      ) {
+        const action = validation.normalizedQueue[actionIndex];
         if (!CHECKED_ACTIVITIES.has(action.activityId)) continue;
-        assertAuthority();
-        const skillId = SKILL_IDS[action.skill];
-        const rolled = await rollSkillTotal(actor, skillId, {
-          chatMessage: false,
-          fastForward: true,
+        const rowId = buildDowntimeOperationId({
+          blockId: block.id,
+          actorId: actor.id,
+          actionId: action.id,
+          index: actionIndex,
         });
-        if (!rolled.ok) {
-          throw new Error(
-            `${participant.actorName}'s hidden ${action.skill} check did not complete.`,
-          );
+        let draftRow =
+          getActiveDowntimeBlock()?.planningDraft?.rows?.[rowId] ?? null;
+        if (draftRow?.state === "completed") {
+          rolls[action.id] = draftRow.roll;
+          continue;
+        }
+        const interruptionMessage = interruptedPlanningMessage(
+          participant,
+          action,
+        );
+        if (draftRow?.state === "in-flight") {
+          await markPlanningReviewBestEffort(block.id, interruptionMessage);
+          throw new Error(interruptionMessage);
+        }
+        assertAuthority();
+        const claim = await claimDowntimePlanningRoll(block.id, rowId, {
+          at: now(),
+        });
+        if (claim.claimedNow !== true) {
+          if (claim.row?.state === "completed") {
+            rolls[action.id] = claim.row.roll;
+            continue;
+          }
+          await markPlanningReviewBestEffort(block.id, interruptionMessage);
+          throw new Error(interruptionMessage);
+        }
+        const skillId = SKILL_IDS[action.skill];
+        let rolled;
+        try {
+          rolled = await rollSkillTotal(actor, skillId, {
+            chatMessage: false,
+            fastForward: true,
+          });
+          if (!rolled.ok) throw new Error("hidden-roll-did-not-complete");
+        } catch {
+          await markPlanningReviewBestEffort(block.id, interruptionMessage);
+          throw new Error(interruptionMessage);
         }
         const dieResult = Number(
           rolled.roll?.dice?.[0]?.total ?? rolled.roll?.terms?.[0]?.total,
         );
-        rolls[action.id] = {
+        const completedRoll = {
           total: rolled.total,
           dieResult: Number.isFinite(dieResult) ? dieResult : null,
           skillModifier: Number.isFinite(dieResult)
@@ -861,6 +978,24 @@ export async function planActiveDowntimeBlock(blockId) {
             : null,
           formula: String(rolled.roll?.formula ?? ""),
         };
+        try {
+          draftRow = await resolveDowntimePlanningRoll(
+            block.id,
+            rowId,
+            completedRoll,
+            { at: now() },
+          );
+        } catch (error) {
+          const canonical =
+            getActiveDowntimeBlock()?.planningDraft?.rows?.[rowId] ?? null;
+          if (canonical?.state === "completed") {
+            draftRow = canonical;
+          } else {
+            await markPlanningReviewBestEffort(block.id, interruptionMessage);
+            throw new Error(interruptionMessage, { cause: error });
+          }
+        }
+        rolls[action.id] = draftRow.roll;
       }
       const domainPlan = resolveDowntimeQueue({
         blockId: block.id,
@@ -1303,6 +1438,14 @@ async function applyBlockInternal(blockId) {
       blockedActors.add(operation.actorId);
       continue;
     }
+    const writeAuthority = () =>
+      hasCurrentDowntimeWriteAuthority({
+        blockId: block.id,
+        operationId: operation.operationId,
+        attemptId,
+        authorityEpoch: claim.record?.authorityEpoch,
+        userId: claim.record?.claimedBy,
+      });
     let outcome;
     try {
       outcome = await applyPlannedOperation(operation, {
@@ -1310,6 +1453,7 @@ async function applyBlockInternal(blockId) {
         // Every operation reaching this path is a newly claimed before-state
         // write and may not accept a coincidental projected post-state.
         allowAlreadyApplied: false,
+        authorizeWrite: writeAuthority,
       });
     } catch (error) {
       outcome = {
@@ -1367,7 +1511,10 @@ async function applyBlockInternal(blockId) {
 
 async function applyPlannedOperation(
   operation,
-  { allowAlreadyApplied = false } = {},
+  {
+    allowAlreadyApplied = false,
+    authorizeWrite = hasCurrentDowntimeWriteAuthority,
+  } = {},
 ) {
   if (
     !String(operation?.operationId ?? "").trim() ||
@@ -1403,32 +1550,40 @@ async function applyPlannedOperation(
       primary = await runWithActorMutex(actor.id, () =>
         applyFreshGuard(() =>
           applyAmmoCraftOperation(actor, operation, {
-            authorizeWrite: hasCurrentDowntimeWriteAuthority,
+            authorizeWrite,
           }),
         ),
       );
       break;
     case "sharpen-weapon":
       primary = await runWithActorMutex(actor.id, () =>
-        applyFreshGuard(() => applySharpenOperation(actor, operation)),
+        applyFreshGuard(() =>
+          applySharpenOperation(actor, operation, { authorizeWrite }),
+        ),
       );
       break;
     case "currency":
       primary = await runWithActorMutex(actor.id, () =>
-        applyFreshGuard(() => applyWalletOperation(actor, operation)),
+        applyFreshGuard(() =>
+          applyWalletOperation(actor, operation, { authorizeWrite }),
+        ),
       );
       break;
     case "pickpocket":
       primary = operation.stolenItemSnapshot
         ? await runWithActorMutex(actor.id, () =>
-            applyFreshGuard(() => applyPickpocketOperation(actor, operation)),
+            applyFreshGuard(() =>
+              applyPickpocketOperation(actor, operation, { authorizeWrite }),
+            ),
           )
         : { ok: true, noWrite: true };
       break;
     case "shoplift":
       primary = operation.stolenItemSnapshot
         ? await runWithMerchantActorMutex(operation.merchantId, actor.id, () =>
-            applyFreshGuard(() => applyShopliftOperation(actor, operation)),
+            applyFreshGuard(() =>
+              applyShopliftOperation(actor, operation, { authorizeWrite }),
+            ),
           )
         : { ok: true, noWrite: true };
       break;
@@ -1444,7 +1599,9 @@ async function applyPlannedOperation(
               operation,
             );
             if (!precondition.ok) return precondition;
-            return applyFenceAndConsumeOperation(actor, operation);
+            return applyFenceAndConsumeOperation(actor, operation, {
+              authorizeWrite,
+            });
           })
         : { ok: true, noWrite: true };
       break;
@@ -1458,6 +1615,7 @@ async function applyPlannedOperation(
   if (!primary.ok) return primary;
   const consequences = await applyOperationConsequences(operation, {
     allowAlreadyApplied,
+    authorizeWrite,
   });
   if (!consequences.ok) {
     return {
@@ -1571,7 +1729,15 @@ export function verifyFreshDowntimeOperationPreconditions(actor, operation) {
     const delivery = operation?.delivery ?? {};
     const state = operationItemQuantity(actor, delivery.itemId);
     const createConflict = delivery.mode === "create" && Boolean(state.item);
-    if (createConflict || state.quantity !== Number(delivery.quantityBefore)) {
+    const stackIdentityDrift =
+      delivery.mode === "stack" &&
+      !ammoCraftDeliveryItemMatches(state.item, operation);
+    if (
+      createConflict ||
+      stackIdentityDrift ||
+      state.quantity !== Number(delivery.quantityBefore)
+    ) {
+      if (stackIdentityDrift) return freshOperationDrift("item-identity-drift");
       return freshOperationDrift("item-quantity-drift");
     }
   }
@@ -1712,7 +1878,11 @@ function actorItemMatchesStolenIssuance(actor, issuance) {
   return stolenGoodsRecordsEqual(observed, issuance);
 }
 
-async function persistStolenIssuance(actor, issuance) {
+async function persistStolenIssuance(
+  actor,
+  issuance,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   if (!issuance || !actorItemMatchesStolenIssuance(actor, issuance)) {
     return {
       ok: false,
@@ -1730,12 +1900,13 @@ async function persistStolenIssuance(actor, issuance) {
           provenUnapplied: false,
         };
   }
-  if (!hasCurrentDowntimeWriteAuthority()) {
+  if (!authorizeWrite()) {
     return authorityLostOperationResult(false);
   }
   let error = null;
   try {
     await updateDowntimeConfig((config) => {
+      if (!authorizeWrite()) throw new Error("authority-lost");
       const issued = issueStolenGoodsRecord(config.stolenGoods, issuance);
       if (!issued.ok) throw new Error(issued.reason);
       return { ...config, stolenGoods: issued.ledger };
@@ -1754,7 +1925,11 @@ async function persistStolenIssuance(actor, issuance) {
   };
 }
 
-async function persistStolenConsumptions(actor, consumptions) {
+async function persistStolenConsumptions(
+  actor,
+  consumptions,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const planned = Array.isArray(consumptions) ? consumptions : [];
   if (planned.length === 0) {
     return {
@@ -1784,12 +1959,13 @@ async function persistStolenConsumptions(actor, consumptions) {
     ),
   );
   if (allConsumed) return { ok: true, alreadyApplied: true };
-  if (!hasCurrentDowntimeWriteAuthority()) {
+  if (!authorizeWrite()) {
     return authorityLostOperationResult(false);
   }
   let error = null;
   try {
     await updateDowntimeConfig((config) => {
+      if (!authorizeWrite()) throw new Error("authority-lost");
       let ledger = config.stolenGoods;
       for (const consumption of planned) {
         const consumed = consumeStolenGoodsRecord(ledger, consumption);
@@ -1819,14 +1995,20 @@ async function persistStolenConsumptions(actor, consumptions) {
   };
 }
 
-async function applyPickpocketOperation(actor, operation) {
+async function applyPickpocketOperation(
+  actor,
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const delivered = await applyStolenItemDelivery(
     actor,
     operation.stolenItemSnapshot,
-    { authorizeWrite: hasCurrentDowntimeWriteAuthority },
+    { authorizeWrite },
   );
   if (!delivered.ok) return delivered;
-  const issued = await persistStolenIssuance(actor, operation.stolenIssuance);
+  const issued = await persistStolenIssuance(actor, operation.stolenIssuance, {
+    authorizeWrite,
+  });
   if (!issued.ok) return issued;
   return {
     ok: true,
@@ -1835,14 +2017,19 @@ async function applyPickpocketOperation(actor, operation) {
   };
 }
 
-async function applyFenceAndConsumeOperation(actor, operation) {
+async function applyFenceAndConsumeOperation(
+  actor,
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const fenced = await applyFenceOperation(actor, operation, {
-    authorizeWrite: hasCurrentDowntimeWriteAuthority,
+    authorizeWrite,
   });
   if (!fenced.ok) return fenced;
   const consumed = await persistStolenConsumptions(
     actor,
     operation.stolenConsumptionRecords,
+    { authorizeWrite },
   );
   if (!consumed.ok) return consumed;
   return {
@@ -1852,7 +2039,11 @@ async function applyFenceAndConsumeOperation(actor, operation) {
   };
 }
 
-async function applyWalletOperation(actor, operation) {
+async function applyWalletOperation(
+  actor,
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const current = readWalletStrict(actor.system?.currency);
   if (!current.ok) return { ok: false, reason: "invalid-wallet" };
   if (walletsEqual(current.wallet, operation.walletAfter)) {
@@ -1861,16 +2052,22 @@ async function applyWalletOperation(actor, operation) {
   if (!walletsEqual(current.wallet, operation.walletBefore)) {
     return { ok: false, reason: "wallet-drift", provenUnapplied: false };
   }
-  if (!hasCurrentDowntimeWriteAuthority()) {
+  if (!authorizeWrite()) {
     return authorityLostOperationResult(true);
   }
-  const updated = await updateCurrencyVerified(actor, operation.walletAfter);
+  const updated = await updateCurrencyVerified(actor, operation.walletAfter, {
+    authorizeWrite,
+  });
   return updated.ok
     ? { ok: true, alreadyApplied: false }
     : { ok: false, reason: updated.reason, provenUnapplied: false };
 }
 
-async function applySharpenOperation(actor, operation) {
+async function applySharpenOperation(
+  actor,
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const weapon = findActorItem(actor, operation.weaponId);
   if (!weapon)
     return { ok: false, reason: "weapon-missing", provenUnapplied: true };
@@ -1892,7 +2089,7 @@ async function applySharpenOperation(actor, operation) {
     operationId: operation.operationId,
     actorId: actor.id,
     timestamp: operation.createdAt ?? now(),
-    authorizeWrite: hasCurrentDowntimeWriteAuthority,
+    authorizeWrite,
   });
   if (applied.ok) return { ok: true, alreadyApplied: false };
   const recovered = sharpeningEffects(weapon).some(
@@ -1909,11 +2106,15 @@ async function applySharpenOperation(actor, operation) {
       };
 }
 
-async function applyShopliftOperation(actor, operation) {
+async function applyShopliftOperation(
+  actor,
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const delivered = await applyStolenItemDelivery(
     actor,
     operation.stolenItemSnapshot,
-    { authorizeWrite: hasCurrentDowntimeWriteAuthority },
+    { authorizeWrite },
   );
   if (!delivered.ok) return delivered;
   let updated = null;
@@ -1940,7 +2141,7 @@ async function applyShopliftOperation(actor, operation) {
           ),
         };
       },
-      { authorizeWrite: hasCurrentDowntimeWriteAuthority },
+      { authorizeWrite },
     );
   } catch (error) {
     updateError = error;
@@ -1953,7 +2154,13 @@ async function applyShopliftOperation(actor, operation) {
     findActorItem(actor, operation.stolenItemSnapshot._id),
   );
   if (Number(row?.qty) === Number(operation.quantityAfter) && itemPresent) {
-    const issued = await persistStolenIssuance(actor, operation.stolenIssuance);
+    const issued = await persistStolenIssuance(
+      actor,
+      operation.stolenIssuance,
+      {
+        authorizeWrite,
+      },
+    );
     if (!issued.ok) return issued;
     return {
       ok: true,
@@ -1966,7 +2173,7 @@ async function applyShopliftOperation(actor, operation) {
   const item = findActorItem(actor, operation.stolenItemSnapshot._id);
   let restored = !item;
   if (item) {
-    if (!hasCurrentDowntimeWriteAuthority()) {
+    if (!authorizeWrite()) {
       return authorityLostOperationResult(false);
     }
     try {
@@ -1993,7 +2200,10 @@ async function applyShopliftOperation(actor, operation) {
 
 async function applyOperationConsequences(
   operation,
-  { allowAlreadyApplied = false } = {},
+  {
+    allowAlreadyApplied = false,
+    authorizeWrite = hasCurrentDowntimeWriteAuthority,
+  } = {},
 ) {
   let required = false;
   let alreadyApplied = true;
@@ -2026,11 +2236,12 @@ async function applyOperationConsequences(
       // claim evidence.
       consequencePresent = true;
     } else if (current === operation.heatBefore) {
-      if (!hasCurrentDowntimeWriteAuthority()) {
+      if (!authorizeWrite()) {
         return authorityLostOperationResult(true);
       }
       try {
         await updateDowntimeConfig((latest) => {
+          if (!authorizeWrite()) throw new Error("authority-lost");
           if (
             getDowntimeHeat(latest, settlementId, operation.actorId) !==
             operation.heatBefore
@@ -2080,7 +2291,7 @@ async function applyOperationConsequences(
       status = "existing";
       consequencePresent = true;
     }
-    if (status !== "existing" && !hasCurrentDowntimeWriteAuthority()) {
+    if (status !== "existing" && !authorizeWrite()) {
       return authorityLostOperationResult(!consequencePresent);
     }
     let updated;
@@ -2122,7 +2333,7 @@ async function applyOperationConsequences(
               history: [entry, ...faction.history].slice(0, HISTORY_CAP),
             });
           },
-          { authorizeWrite: hasCurrentDowntimeWriteAuthority },
+          { authorizeWrite },
         );
     } catch (error) {
       return {
@@ -2149,8 +2360,39 @@ async function applyOperationConsequences(
   return { ok: true, required, alreadyApplied };
 }
 
-export function hasCurrentDowntimeWriteAuthority() {
-  return isAuthoritativeGM();
+export function hasCurrentDowntimeWriteAuthority(token = null) {
+  if (!isAuthoritativeGM()) return false;
+  if (!token) return true;
+  try {
+    const store = loadDowntimeWorkflowStore();
+    const authorityMatches =
+      store.authorityId === String(token.userId ?? "") &&
+      store.authorityEpoch === String(token.authorityEpoch ?? "");
+    if (!String(token.operationId ?? "")) return authorityMatches;
+    const block = store.activeBlock;
+    const record = block?.operationLedger?.[String(token.operationId ?? "")];
+    return Boolean(
+      block &&
+      block.id === String(token.blockId ?? "") &&
+      block.state === "applying" &&
+      authorityMatches &&
+      record?.state === "applying" &&
+      record.attemptId === String(token.attemptId ?? "") &&
+      record.claimedBy === String(token.userId ?? "") &&
+      record.authorityEpoch === String(token.authorityEpoch ?? ""),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function captureDowntimeAuthorityEpochGuard() {
+  const store = loadDowntimeWorkflowStore();
+  const token = {
+    userId: String(globalThis.game?.user?.id ?? ""),
+    authorityEpoch: String(store.authorityEpoch ?? ""),
+  };
+  return () => hasCurrentDowntimeWriteAuthority(token);
 }
 
 function authorityLostOperationResult(provenUnapplied) {
@@ -2194,7 +2436,10 @@ export async function recoverActiveDowntimeBlock(blockId) {
       const record = block.operationLedger?.[operation.operationId];
       if (!record || !["applying", "needs-review"].includes(record.state))
         continue;
-      await reconcileInterruptedStolenLedgerWrite(operation);
+      const recoveryAuthority = captureDowntimeAuthorityEpochGuard();
+      await reconcileInterruptedStolenLedgerWrite(operation, {
+        authorizeWrite: recoveryAuthority,
+      });
       const inspection = await inspectDowntimeOperation(operation);
       if (inspection === "applied") {
         if (record.state === "needs-review") {
@@ -2256,7 +2501,10 @@ export async function recoverActiveDowntimeBlock(blockId) {
   });
 }
 
-async function reconcileInterruptedStolenLedgerWrite(operation) {
+async function reconcileInterruptedStolenLedgerWrite(
+  operation,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const actor = actorById(operation?.actorId);
   if (!actor) return false;
   if (operation?.stolenIssuance) {
@@ -2275,6 +2523,7 @@ async function reconcileInterruptedStolenLedgerWrite(operation) {
       const issued = await persistStolenIssuance(
         actor,
         operation.stolenIssuance,
+        { authorizeWrite },
       );
       return issued.ok;
     }
@@ -2294,6 +2543,7 @@ async function reconcileInterruptedStolenLedgerWrite(operation) {
       const consumed = await persistStolenConsumptions(
         actor,
         operation.stolenConsumptionRecords,
+        { authorizeWrite },
       );
       return consumed.ok;
     }
@@ -2321,14 +2571,20 @@ export async function inspectDowntimeOperation(operation) {
       const wallet = readWalletStrict(actor.system?.currency);
       const item = findActorItem(actor, operation.delivery?.itemId);
       const quantity = Number(item?.system?.quantity ?? 0);
+      const itemMatches = ammoCraftDeliveryItemMatches(item, operation);
       const after =
         wallet.ok &&
         walletsEqual(wallet.wallet, operation.walletAfter) &&
+        itemMatches &&
         quantity === operation.delivery.quantityAfter;
+      const beforeItem =
+        operation.delivery.mode === "create"
+          ? !item && Number(operation.delivery.quantityBefore) === 0
+          : itemMatches && quantity === operation.delivery.quantityBefore;
       const before =
         wallet.ok &&
         walletsEqual(wallet.wallet, operation.walletBefore) &&
-        quantity === operation.delivery.quantityBefore;
+        beforeItem;
       primary = after ? "applied" : before ? "unapplied" : "uncertain";
       break;
     }
@@ -2606,6 +2862,8 @@ function projectWorkspaceBlock(block) {
       character,
     ]),
   );
+  const planningNeedsReview =
+    block.state === "locked" && block.planningDraft?.state === "needs-review";
   return {
     ...block,
     status: block.state,
@@ -2645,7 +2903,11 @@ function projectWorkspaceBlock(block) {
         }
       : null,
     canLock: block.state === "collecting",
-    canPlan: block.state === "locked",
+    canPlan: block.state === "locked" && !planningNeedsReview,
+    planReason: planningNeedsReview
+      ? block.planningDraft.reviewReason ||
+        "A hidden roll was interrupted. Cancel this block; it cannot reroll that check."
+      : "",
     canApply: block.state === "planned",
     canCancel: ["collecting", "locked", "planned"].includes(block.state),
     canRecover: ["applying", "needs-review"].includes(block.state),
@@ -3023,7 +3285,18 @@ function registerSharpeningLifecycleAuthorityHooks() {
   sharpeningLifecycleAuthorityHooksRegistered = true;
   for (const event of ["updateUser", "userConnected"]) {
     globalThis.Hooks.on(event, () => {
-      if (isAuthoritativeGM()) scheduleSharpeningLifecycleReconciliation(0);
+      if (!isAuthoritativeGM()) return;
+      void ensureDowntimeWorkflowAuthority()
+        .then(() => scheduleSharpeningLifecycleReconciliation(0))
+        .catch((error) => {
+          console.warn(
+            `${MODULE_ID} | sharpening lifecycle authority reconciliation`,
+            error,
+          );
+          if (isAuthoritativeGM()) {
+            scheduleSharpeningLifecycleReconciliation();
+          }
+        });
     });
   }
 }
@@ -3068,7 +3341,10 @@ function lifecycleEventFromPayload(payload, kind) {
   };
 }
 
-async function applySharpeningLifecycleEvent(event) {
+async function applySharpeningLifecycleEvent(
+  event,
+  { authorizeWrite = hasCurrentDowntimeWriteAuthority } = {},
+) {
   const actor = actorById(event.actorId);
   const user = userById(event.originUserId);
   if (!actor || !user || !userOwnsDowntimeActor(user, actor)) {
@@ -3077,7 +3353,7 @@ async function applySharpeningLifecycleEvent(event) {
   if (event.kind === "long-rest") {
     const result = await runWithActorMutex(actor.id, () =>
       clearSharpeningOnLongRest(actor, {
-        authorizeWrite: hasCurrentDowntimeWriteAuthority,
+        authorizeWrite,
         references: [event],
       }),
     );
@@ -3091,7 +3367,7 @@ async function applySharpeningLifecycleEvent(event) {
   }
   const result = await runWithActorMutex(actor.id, () =>
     consumeSharpeningCharge(item, event.rollId, {
-      authorizeWrite: hasCurrentDowntimeWriteAuthority,
+      authorizeWrite,
       effectId: event.effectId,
       operationId: event.operationId,
     }),
@@ -3106,12 +3382,14 @@ async function applySharpeningLifecycleEvent(event) {
 
 async function persistSharpeningLifecycleEvent(payload, kind) {
   assertAuthority();
+  const authorizeWrite = captureDowntimeAuthorityEpochGuard();
   const actor = actorById(payload.actorId);
   const user = userById(payload.originUserId);
   if (!actor || !userOwnsDowntimeActor(user, actor)) return false;
   const event = lifecycleEventFromPayload(payload, kind);
   let queueStatus = null;
   const config = await updateDowntimeConfig((current) => {
+    if (!authorizeWrite()) throw new Error("authority-lost");
     const queued = enqueueSharpeningLifecycleEvent(
       current.sharpeningLifecycle,
       event,
@@ -3125,26 +3403,34 @@ async function persistSharpeningLifecycleEvent(payload, kind) {
     emitSharpeningLifecycleAck(event.originUserId, event.eventId);
     return true;
   }
-  await reconcileSharpeningLifecycleQueueInternal(config);
+  await reconcileSharpeningLifecycleQueueInternal(config, authorizeWrite);
   return true;
 }
 
-async function reconcileSharpeningLifecycleQueueInternal(initialConfig = null) {
+async function reconcileSharpeningLifecycleQueueInternal(
+  initialConfig = null,
+  authorizeWrite = captureDowntimeAuthorityEpochGuard(),
+) {
   if (!isAuthoritativeGM()) return { ok: false, reason: "authority-lost" };
   let config = initialConfig ?? loadDowntimeConfig();
   const pending = [...(config.sharpeningLifecycle?.pending ?? [])];
   let failed = 0;
   let completed = 0;
   for (const event of pending) {
-    if (!hasCurrentDowntimeWriteAuthority()) {
+    if (!authorizeWrite()) {
+      if (isAuthoritativeGM()) scheduleSharpeningLifecycleReconciliation();
       return { ok: false, reason: "authority-lost", completed, failed };
     }
-    const result = await applySharpeningLifecycleEvent(event);
-    if (!hasCurrentDowntimeWriteAuthority()) {
+    const result = await applySharpeningLifecycleEvent(event, {
+      authorizeWrite,
+    });
+    if (!authorizeWrite()) {
+      if (isAuthoritativeGM()) scheduleSharpeningLifecycleReconciliation();
       return { ok: false, reason: "authority-lost", completed, failed };
     }
     try {
       config = await updateDowntimeConfig((current) => {
+        if (!authorizeWrite()) throw new Error("authority-lost");
         const lifecycle = result.ok
           ? completeSharpeningLifecycleEvent(
               current.sharpeningLifecycle,
@@ -3159,7 +3445,7 @@ async function reconcileSharpeningLifecycleQueueInternal(initialConfig = null) {
         return { ...current, sharpeningLifecycle: lifecycle };
       });
     } catch (error) {
-      if (isAuthoritativeGM()) scheduleSharpeningLifecycleReconciliation();
+      if (authorizeWrite()) scheduleSharpeningLifecycleReconciliation();
       throw error;
     }
     if (result.ok) {

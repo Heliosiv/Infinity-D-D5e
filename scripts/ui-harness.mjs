@@ -2000,6 +2000,7 @@ function downtimeActivitiesApplyingContext() {
     remainingHours: 0,
     progressPercent: 100,
     busy: true,
+    ariaBusy: true,
     statusMessage: "Applying the immutable downtime plan…",
   });
 }
@@ -2119,6 +2120,7 @@ function downtimeActivitiesBaseContext(overrides = {}) {
     hasReceipt: false,
     completionMessage: "",
     busy: false,
+    ariaBusy: false,
     statusMessage: "",
     errorMessage: "",
     hasError: false,
