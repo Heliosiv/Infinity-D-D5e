@@ -420,7 +420,7 @@
 
 .infinity-downtime-workspace .dt-lifecycle__steps {
   display: grid;
-  grid-template-columns: repeat(6, minmax(112px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 7px;
   min-width: 0;
   margin: 0;

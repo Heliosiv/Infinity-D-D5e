@@ -511,6 +511,16 @@ async function auditPage(scenario) {
         behavior: "instant",
       });
     }
+
+    // Let the browser make the final visibility adjustment. Chromium's Linux
+    // scrollbar and font metrics can clamp the arithmetic above a few pixels
+    // outside a nested scrollport at narrow widths. `nearest` only moves a
+    // clipped target; the hit-test below still rejects genuinely covered UI.
+    element.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "instant",
+    });
   }
 
   function isRenderedForAudit(element) {

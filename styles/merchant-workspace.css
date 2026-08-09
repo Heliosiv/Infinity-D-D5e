@@ -996,7 +996,7 @@
   }
   .mw-inv__head,
   .mw-inv__row {
-    grid-template-columns: minmax(0, 1.3fr) 56px 56px 60px repeat(
+    grid-template-columns: minmax(0, 1.3fr) 56px 64px 60px repeat(
         3,
         var(--lf-control-size, 44px)
       );
