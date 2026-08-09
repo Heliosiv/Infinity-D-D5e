@@ -31,6 +31,19 @@ assert.equal(
   `inert loot/container items must have no activities:\n  ${offenders.slice(0, 40).join("\n  ")}`,
 );
 
+const componentPouch = items.find((item) => item._id === "eZGmdOhaTWMicXPW");
+assert.ok(componentPouch, "Component Pouch must remain in the compendium");
+assert.equal(
+  componentPouch.system?.uses?.max,
+  "25",
+  "Component Pouch must provide 25 charges",
+);
+assert.match(
+  componentPouch.system?.description?.value ?? "",
+  /<li>25 use\(s\)<\/li>/,
+  "Component Pouch metadata must display 25 uses",
+);
+
 process.stdout.write(
-  `pack activities check passed (loot/container items inert)\n`,
+  `pack activities check passed (loot/container items inert; Component Pouch has 25 charges)\n`,
 );
