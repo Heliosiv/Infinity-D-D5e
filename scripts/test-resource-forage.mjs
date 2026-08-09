@@ -11,6 +11,7 @@ import {
 } from "./resource/forage.js";
 import {
   owningOnlineUserId,
+  resolveForageRollTargets,
   resolveForageTimeoutMs,
   resolveExpectedForageActorId,
   validateForageResultPayload,
@@ -24,6 +25,41 @@ const ABUNDANT = {
   yieldFood: "1d6",
   yieldWater: "1d6",
 };
+
+/* ------------------------------------------------------------------ *
+ * Offline Forage Drive routing.
+ * ------------------------------------------------------------------ */
+{
+  const party = [
+    { id: "online", onlineUserId: "player-a" },
+    { id: "offline", onlineUserId: null },
+  ];
+  const resolveOnlineUserId = (actor) => actor.onlineUserId;
+  assert.deepEqual(
+    resolveForageRollTargets(party, { resolveOnlineUserId }).map((target) => ({
+      actorId: target.actor.id,
+      userId: target.userId,
+      gmRoll: target.gmRoll,
+    })),
+    [{ actorId: "online", userId: "player-a", gmRoll: false }],
+    "automatic upkeep keeps its online-player-only behavior",
+  );
+  assert.deepEqual(
+    resolveForageRollTargets(party, {
+      allowGmRolls: true,
+      resolveOnlineUserId,
+    }).map((target) => ({
+      actorId: target.actor.id,
+      userId: target.userId,
+      gmRoll: target.gmRoll,
+    })),
+    [
+      { actorId: "online", userId: "player-a", gmRoll: false },
+      { actorId: "offline", userId: null, gmRoll: true },
+    ],
+    "Forage Drive routes offline characters to the active GM",
+  );
+}
 const TOWN = {
   id: "town",
   dc: 0,

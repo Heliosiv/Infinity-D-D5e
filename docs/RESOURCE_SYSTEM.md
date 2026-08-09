@@ -202,9 +202,11 @@ Manual upkeep must not be a separate calculation or write path.
 
 1. The GM chooses **Forage Drive**, selects tracked actors, chooses food and
    water together, food only, or water only, and reviews the DC and destination.
-2. Selected online owners roll or skip.
-3. Offline or timed-out actors are recorded as no response, not as a failed
-   roll.
+2. Selected online owners roll or skip. For selected characters whose owners
+   are offline, the active GM makes the Actor's Survival roll locally so the
+   drive can run between sessions.
+3. A dismissed GM fallback roll or timed-out player is recorded as no response,
+   not as a failed roll.
 4. The authoritative GM deposits only the chosen supplies, combining the result
    once using the configured `each` or `best` rule.
 5. No day passes and no daily consumption occurs.

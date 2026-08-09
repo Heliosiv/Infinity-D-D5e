@@ -706,12 +706,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       const anyOnline = candidates.some((c) => c.online);
       const rows = candidates
         .map((c) => {
-          const dis = c.online ? "" : " disabled";
           const tag = c.online
             ? ""
-            : ' <span style="opacity:0.6;">(offline)</span>';
+            : ' <span style="opacity:0.6;">(offline — GM rolls)</span>';
           return `<label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" name="forager" value="${escapeHtml(c.actorId)}" ${c.online ? "checked" : ""}${dis} />
+          <input type="checkbox" name="forager" value="${escapeHtml(c.actorId)}" checked />
           <span>${escapeHtml(c.name)}${tag}</span>
         </label>`;
         })
@@ -726,7 +725,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
             ? "food"
             : "water";
       const content = `
-      <p>Send a Wisdom (Survival) check to the selected players. Choose which supplies a successful check gathers.</p>
+      <p>Send a Wisdom (Survival) check to selected online players. You will roll for selected characters whose players are offline.</p>
       <label class="rm-field" style="display:grid; gap:4px; margin-bottom:8px;">
         <span>Survival DC</span>
         <input type="number" name="dc" min="1" step="1" value="${Number(defaultDc) || 15}" />
@@ -751,7 +750,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         ${rows || "<p>No party members.</p>"}
       </fieldset>
       <p style="opacity:0.8; margin:8px 0 0;">${destLine}</p>
-      ${anyOnline ? "" : '<p style="color:#ef6f74; margin:6px 0 0;">No selected player is online to roll right now.</p>'}`;
+      ${anyOnline ? "" : '<p style="opacity:0.8; margin:6px 0 0;">No selected player is online, so the GM will roll every selected check.</p>'}`;
 
       let result = null;
       try {

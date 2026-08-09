@@ -35,7 +35,7 @@ import {
   FORAGE_TARGETS,
   planForageDriveDeposits,
 } from "./forage.js";
-import { getWisMod } from "./roll.js";
+import { getWisMod, rollSurvivalTotal } from "./roll.js";
 import {
   diagnoseResourceConfiguration,
   diagnoseResourceItemOverlaps,
@@ -383,6 +383,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     party,
     cfg,
     forageTarget: channels.target,
+    allowGmRolls: true,
   });
 
   // Player rolls can leave this client waiting long enough for inventory,
@@ -1466,11 +1467,25 @@ function resolveCurrentEnvironment(cfg, state) {
  * Foraging window
  * ------------------------------------------------------------------ */
 
+export function resolveForageRollTargets(
+  party,
+  { allowGmRolls = false, resolveOnlineUserId = owningOnlineUserId } = {},
+) {
+  return (Array.isArray(party) ? party : [])
+    .filter((actor) => actor?.id)
+    .map((actor) => {
+      const userId = resolveOnlineUserId(actor);
+      return { actor, userId, gmRoll: !userId };
+    })
+    .filter((target) => target.userId || allowGmRolls);
+}
+
 async function runForagingWindow({
   env,
   party,
   cfg,
   forageTarget = FORAGE_TARGETS.BOTH,
+  allowGmRolls = false,
 }) {
   const requested = forageTargetChannels(forageTarget);
   const effectiveTarget =
@@ -1479,18 +1494,18 @@ async function runForagingWindow({
       : requested.target;
   const channels = forageTargetChannels(effectiveTarget);
   const out = new Map();
-  const targets = party
-    .map((actor) => ({ actor, userId: owningOnlineUserId(actor) }))
-    .filter((t) => t.userId);
-  if (targets.length === 0) return out; // nobody online to forage
+  const targets = resolveForageRollTargets(party, { allowGmRolls });
+  if (targets.length === 0) return out; // no eligible online or GM-rolled target
+  const playerTargets = targets.filter((target) => !target.gmRoll);
+  const gmTargets = targets.filter((target) => target.gmRoll);
 
   const runId = generateRunId();
-  const expected = new Set(targets.map((t) => t.actor.id));
+  const expected = new Set(playerTargets.map((t) => t.actor.id));
   // userId -> [expected actorIds]. Results must echo the exact user/actor pair
   // that received the prompt; ownership or a single pending entry never acts
   // as a fallback identity.
   const expectedByUser = new Map();
-  for (const t of targets) {
+  for (const t of playerTargets) {
     const list = expectedByUser.get(t.userId) ?? [];
     list.push(t.actor.id);
     expectedByUser.set(t.userId, list);
@@ -1500,15 +1515,17 @@ async function runForagingWindow({
   const done = new Promise((res) => {
     resolveFn = res;
   });
-  pendingRuns.set(runId, {
-    expected,
-    results,
-    resolve: resolveFn,
-    expectedByUser,
-  });
+  if (playerTargets.length > 0) {
+    pendingRuns.set(runId, {
+      expected,
+      results,
+      resolve: resolveFn,
+      expectedByUser,
+    });
+  }
 
   const state = loadRunState();
-  for (const t of targets) {
+  for (const t of playerTargets) {
     emitResourceEvent(RESOURCE_EVENTS.DAY_PROMPT, {
       runId,
       day: state.lastSeenDay,
@@ -1525,9 +1542,24 @@ async function runForagingWindow({
     });
   }
 
-  const timeoutMs = resolveForageTimeoutMs(cfg.forageTimeoutSeconds);
-  await Promise.race([done, wait(timeoutMs)]);
-  pendingRuns.delete(runId);
+  // A one-off Forage Drive can be completed between sessions. The active GM
+  // rolls selected offline characters locally while any online owners answer
+  // their normal targeted prompts. Automatic upkeep never enables this path.
+  for (const t of gmTargets) {
+    const rolled = await rollSurvivalTotal(t.actor, { chatMessage: true });
+    if (!rolled) continue;
+    results.set(t.actor.id, {
+      rollTotal: rolled.total,
+      wisMod: getWisMod(t.actor),
+      skipped: false,
+    });
+  }
+
+  if (playerTargets.length > 0) {
+    const timeoutMs = resolveForageTimeoutMs(cfg.forageTimeoutSeconds);
+    await Promise.race([done, wait(timeoutMs)]);
+    pendingRuns.delete(runId);
+  }
 
   // Resolve each forager's yield (GM rolls the yield dice).
   const perForager = [];
@@ -1540,6 +1572,7 @@ async function runForagingWindow({
         food: 0,
         water: 0,
         success: false,
+        noResponse: !r,
       });
       continue;
     }
@@ -1570,15 +1603,17 @@ async function runForagingWindow({
       targetUserId: userId,
       noResponse: !results.has(entry.actorId),
     });
-    out.set(entry.actorId, {
-      food: acknowledgement.food,
-      water: acknowledgement.water,
-      success: acknowledgement.success,
-      // "best" mode zeroes the losing foragers but keeps success=true; carry the
-      // suppressed marker so the report can say "gathered, best haul kept" rather
-      // than greet a loser with a green "+0 food / +0 water".
-      suppressed: acknowledgement.suppressed,
-    });
+    if (!entry.noResponse) {
+      out.set(entry.actorId, {
+        food: acknowledgement.food,
+        water: acknowledgement.water,
+        success: acknowledgement.success,
+        // "best" mode zeroes the losing foragers but keeps success=true; carry the
+        // suppressed marker so the report can say "gathered, best haul kept" rather
+        // than greet a loser with a green "+0 food / +0 water".
+        suppressed: acknowledgement.suppressed,
+      });
+    }
     if (userId) {
       // `noResponse` distinguishes a GM timeout from an active skip.
       emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, acknowledgement);

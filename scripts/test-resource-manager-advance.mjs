@@ -168,6 +168,12 @@ try {
   assert.match(foragePromptOptions.content, /Food &amp; water/);
   assert.match(foragePromptOptions.content, /Food only/);
   assert.match(foragePromptOptions.content, /Water only/);
+  assert.match(foragePromptOptions.content, /offline — GM rolls/);
+  assert.match(foragePromptOptions.content, /value="hero" checked \/>/);
+  assert.match(
+    foragePromptOptions.content,
+    /GM will roll every selected check/,
+  );
   assert.equal(forageButton.disabled, true);
   assert.equal(forageButton.attributes.get("aria-busy"), "true");
   resolveForagePrompt(null);
