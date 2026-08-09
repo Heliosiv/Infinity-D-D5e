@@ -16,6 +16,7 @@ const foragePrompt = new Promise((resolve) => {
 let confirmationCount = 0;
 let promptCount = 0;
 let renderCount = 0;
+let foragePromptOptions = null;
 
 const gm = {
   id: "gm-a",
@@ -61,8 +62,9 @@ try {
             confirmationCount += 1;
             return confirmation;
           },
-          prompt() {
+          prompt(options) {
             promptCount += 1;
+            foragePromptOptions = options;
             return foragePrompt;
           },
         },
@@ -163,6 +165,9 @@ try {
     1,
     "only one Forage Drive request may await its prompt at a time",
   );
+  assert.match(foragePromptOptions.content, /Food &amp; water/);
+  assert.match(foragePromptOptions.content, /Food only/);
+  assert.match(foragePromptOptions.content, /Water only/);
   assert.equal(forageButton.disabled, true);
   assert.equal(forageButton.attributes.get("aria-busy"), "true");
   resolveForagePrompt(null);

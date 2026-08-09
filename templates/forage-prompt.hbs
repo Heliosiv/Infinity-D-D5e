@@ -16,7 +16,7 @@
   <p class="fp-empty" role="alert">No character is assigned to you — ask your GM to assign one so you can forage.</p>
   {{else if isPrompt}}
   <section class="fp-body">
-    <p class="fp-prompt">Will <strong>{{actorName}}</strong> spend time foraging for food and water today?</p>
+    <p class="fp-prompt">Will <strong>{{actorName}}</strong> spend time foraging for {{#if forageTargetBoth}}food and water{{else if forageTargetFood}}food{{else}}water{{/if}} today?</p>
     {{#if passiveLabel}}<p class="fp-hint">{{passiveLabel}}{{#if wisLabel}} · {{wisLabel}}{{/if}}</p>{{/if}}
     <div class="fp-actions">
       <button type="button" class="mw-btn mw-btn--primary" data-action="rollSurvival">
@@ -52,7 +52,13 @@
     {{else if result.success}}
     <p class="fp-result fp-result--win">
       <i class="fa-solid fa-basket-shopping" aria-hidden="true"></i>
+      {{#if forageTargetBoth}}
       You foraged <strong>+{{result.food}}</strong> food and <strong>+{{result.water}}</strong> water.
+      {{else if forageTargetFood}}
+      You foraged <strong>+{{result.food}}</strong> food.
+      {{else}}
+      You foraged <strong>+{{result.water}}</strong> water.
+      {{/if}}
     </p>
     {{else}}
     <p class="fp-result fp-result--fail">

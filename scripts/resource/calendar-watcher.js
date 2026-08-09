@@ -31,6 +31,8 @@ import {
   buildForageAcknowledgement,
   computeForageYield,
   combineYields,
+  forageTargetChannels,
+  FORAGE_TARGETS,
   planForageDriveDeposits,
 } from "./forage.js";
 import { getWisMod } from "./roll.js";
@@ -235,6 +237,10 @@ export function describeForageDrive(config = null) {
   return {
     defaultDc: Number.isFinite(dc) && dc > 0 ? dc : 15,
     stashName: resolveDriveStashActor(cfg, roster)?.name ?? null,
+    canForageFood: cfg.resources.some((r) => r.forageYields === "food"),
+    canForageWater:
+      cfg.waterEnabled !== false &&
+      cfg.resources.some((r) => r.forageYields === "water"),
     candidates: roster
       .filter((member) => member.consumes)
       .map(({ actor }) => ({
@@ -266,8 +272,13 @@ function resolveDriveStashActor(cfg, roster) {
  * @param {object} args
  * @param {number} args.dc - the Survival DC the GM set for this drive.
  * @param {string[]} args.targetActorIds - roster actor ids to send the check to.
+ * @param {"food-water"|"food"|"water"} args.forageTarget - supplies to gather.
  */
-export async function runForageDrive({ dc, targetActorIds } = {}) {
+export async function runForageDrive({
+  dc,
+  targetActorIds,
+  forageTarget,
+} = {}) {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
       `${MODULE_ID}: only the active GM can run a forage drive.`,
@@ -281,13 +292,13 @@ export async function runForageDrive({ dc, targetActorIds } = {}) {
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
-    return await runForageDriveInner({ dc, targetActorIds });
+    return await runForageDriveInner({ dc, targetActorIds, forageTarget });
   } finally {
     upkeepInFlight = false;
   }
 }
 
-async function runForageDriveInner({ dc, targetActorIds }) {
+async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   let cfg = loadResourceConfig();
   const state = loadRunState();
   const runId = generateRunId();
@@ -315,6 +326,20 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     return null;
   }
   const party = selected.map((r) => r.actor);
+  const channels = forageTargetChannels(forageTarget);
+  const configuredFood = cfg.resources.some((r) => r.forageYields === "food");
+  const configuredWater =
+    cfg.waterEnabled !== false &&
+    cfg.resources.some((r) => r.forageYields === "water");
+  if (
+    (channels.food && !configuredFood) ||
+    (channels.water && !configuredWater)
+  ) {
+    globalThis.ui?.notifications?.warn(
+      `${MODULE_ID}: the selected forage supplies are not enabled and configured.`,
+    );
+    return null;
+  }
 
   // Build the drive environment: the GM-set DC overrides the region DC, but keep
   // the current region's yield dice (defaulting to 1d6 when the party is somewhere
@@ -327,8 +352,16 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     label: baseEnv?.label ?? "Foraging drive",
     dc: Number.isFinite(gmDc) && gmDc >= 0 ? gmDc : (baseEnv?.dc ?? 15),
     forageable: true,
-    yieldFood: baseForageable ? baseEnv.yieldFood : "1d6",
-    yieldWater: baseForageable ? baseEnv.yieldWater : "1d6",
+    yieldFood: channels.food
+      ? baseForageable
+        ? baseEnv.yieldFood
+        : "1d6"
+      : "0",
+    yieldWater: channels.water
+      ? baseForageable
+        ? baseEnv.yieldWater
+        : "1d6"
+      : "0",
   };
 
   let actorById = new Map(roster.map((r) => [r.actor.id, r.actor]));
@@ -349,6 +382,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     env: driveEnv,
     party,
     cfg,
+    forageTarget: channels.target,
   });
 
   // Player rolls can leave this client waiting long enough for inventory,
@@ -389,8 +423,12 @@ async function runForageDriveInner({ dc, targetActorIds }) {
   });
   if (lateConflict) return lateConflict;
 
-  const foodRes = cfg.resources.find((r) => r.forageYields === "food");
-  const waterRes = cfg.resources.find((r) => r.forageYields === "water");
+  const foodRes = channels.food
+    ? cfg.resources.find((r) => r.forageYields === "food")
+    : null;
+  const waterRes = channels.water
+    ? cfg.resources.find((r) => r.forageYields === "water")
+    : null;
 
   // Decide where every haul lands with the pure planner (no Foundry objects):
   // one communal pile when a stash is set (rations to the stash; water tops up —
@@ -414,7 +452,9 @@ async function runForageDriveInner({ dc, targetActorIds }) {
       suppressed: y.suppressed,
     })),
     partyStashId: cfg.partyStashId,
-    waterEnabled: cfg.waterEnabled && Boolean(waterRes),
+    foodEnabled: channels.food && Boolean(foodRes),
+    waterEnabled:
+      channels.water && cfg.waterEnabled !== false && Boolean(waterRes),
   });
 
   const proposedDeposits = [];
@@ -570,6 +610,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     totalFood: landedFood,
     totalWater: landedWater,
     depositErrors,
+    forageTarget: channels.target,
   });
   return {
     runId,
@@ -579,6 +620,7 @@ async function runForageDriveInner({ dc, targetActorIds }) {
     totalWater: landedWater,
     depositErrors,
     stashActor,
+    forageTarget: channels.target,
   };
 }
 
@@ -589,8 +631,16 @@ async function postForageDriveReport({
   totalFood,
   totalWater,
   depositErrors = [],
+  forageTarget = FORAGE_TARGETS.BOTH,
 }) {
   if (typeof globalThis.ChatMessage?.create !== "function") return null;
+  const channels = forageTargetChannels(forageTarget);
+  const formatYield = (food, water) => {
+    if (channels.food && channels.water)
+      return `+${food} food / +${water} water`;
+    if (channels.food) return `+${food} food`;
+    return `+${water} water`;
+  };
   const rows = perForager
     .map((f) => {
       const name = `<strong>${escapeHtml(f.name)}</strong>`;
@@ -603,7 +653,7 @@ async function postForageDriveReport({
       if (!f.success) {
         return `<li>${name} — <span style="color:#ef6f74;">found nothing</span></li>`;
       }
-      return `<li>${name} — <span style="color:#6dd5a2;">+${f.food} food / +${f.water} water</span></li>`;
+      return `<li>${name} — <span style="color:#6dd5a2;">${formatYield(f.food, f.water)}</span></li>`;
     })
     .join("");
   const dest = stashActor
@@ -616,7 +666,7 @@ async function postForageDriveReport({
     <div class="infinity-dnd5e infinity-quartermaster-receipt">
       <h3 style="margin:0 0 4px;">Forage Drive — DC ${escapeHtml(env.dc)}</h3>
       <ul style="margin:4px 0; padding-left:18px;">${rows}</ul>
-      <div>${dest}: <strong>+${totalFood} food / +${totalWater} water</strong> total.</div>
+      <div>${dest}: <strong>${formatYield(totalFood, totalWater)}</strong> total.</div>
       ${errorLine}
     </div>`;
   const speaker = globalThis.ChatMessage.getSpeaker?.({
@@ -1416,7 +1466,18 @@ function resolveCurrentEnvironment(cfg, state) {
  * Foraging window
  * ------------------------------------------------------------------ */
 
-async function runForagingWindow({ env, party, cfg }) {
+async function runForagingWindow({
+  env,
+  party,
+  cfg,
+  forageTarget = FORAGE_TARGETS.BOTH,
+}) {
+  const requested = forageTargetChannels(forageTarget);
+  const effectiveTarget =
+    requested.food && requested.water && cfg.waterEnabled === false
+      ? FORAGE_TARGETS.FOOD
+      : requested.target;
+  const channels = forageTargetChannels(effectiveTarget);
   const out = new Map();
   const targets = party
     .map((actor) => ({ actor, userId: owningOnlineUserId(actor) }))
@@ -1460,6 +1521,7 @@ async function runForagingWindow({ env, party, cfg }) {
         dc: env.dc,
         forageable: true,
       },
+      forageTarget: channels.target,
     });
   }
 
@@ -1481,8 +1543,11 @@ async function runForagingWindow({ env, party, cfg }) {
       });
       continue;
     }
-    const foodDie = await rollDie(env.yieldFood);
-    const waterDie = await rollDie(env.yieldWater);
+    const foodDie = channels.food ? await rollDie(env.yieldFood) : 0;
+    const waterDie =
+      channels.water && cfg.waterEnabled !== false
+        ? await rollDie(env.yieldWater)
+        : 0;
     const yld = computeForageYield({
       rollTotal: r.rollTotal,
       dc: env.dc,
@@ -1490,7 +1555,8 @@ async function runForagingWindow({ env, party, cfg }) {
       foodDie,
       waterDie,
       env,
-      waterEnabled: cfg.waterEnabled,
+      foodEnabled: channels.food,
+      waterEnabled: channels.water && cfg.waterEnabled !== false,
     });
     perForager.push({ actorId: t.actor.id, name: t.actor.name, ...yld });
   }

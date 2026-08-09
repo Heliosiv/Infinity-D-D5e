@@ -24,6 +24,7 @@ import { isCustomEnvironment } from "./resource/environment.js";
 import { prettyEnvironment } from "./ui-util.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
+import { forageTargetChannels, FORAGE_TARGETS } from "./resource/forage.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
@@ -65,7 +66,14 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   /** Open (or focus) the window for a forage run + a specific tracked actor. */
-  static open({ runId, environment, actorName, day, actorId } = {}) {
+  static open({
+    runId,
+    environment,
+    actorName,
+    day,
+    actorId,
+    forageTarget,
+  } = {}) {
     if (!runId) return null;
     const key = instanceKey(runId, actorId);
     let app = instances.get(key);
@@ -77,10 +85,12 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
         actorName,
         day,
         actorId,
+        forageTarget,
       });
       instances.set(key, app);
     } else {
       app._environment = environment ?? app._environment;
+      app._forageTarget = forageTarget ?? app._forageTarget;
     }
     if (app.rendered) app.bringToFront();
     else app.render(true);
@@ -103,6 +113,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._environment = options.environment ?? null;
     this._actorName = options.actorName ?? null;
     this._day = options.day ?? null;
+    this._forageTarget = options.forageTarget ?? FORAGE_TARGETS.BOTH;
     this._state = "prompt"; // prompt | waiting | done
     this._result = null;
   }
@@ -140,6 +151,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const env = this._environment ?? {};
     const passive = getSurvivalPassive(actor);
     const wisMod = actor ? getWisMod(actor) : 0;
+    const channels = forageTargetChannels(this._forageTarget);
     return {
       actorName: actor?.name ?? this._actorName ?? null,
       noActor: !actor,
@@ -152,6 +164,9 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isWaiting: this._state === "waiting",
       isDone: this._state === "done",
       result: this._result,
+      forageTargetBoth: channels.food && channels.water,
+      forageTargetFood: channels.food && !channels.water,
+      forageTargetWater: channels.water && !channels.food,
     };
   }
 
@@ -285,6 +300,7 @@ export function registerForagePromptAutoOpen() {
       actorName: payload.actorName,
       day: payload.day,
       actorId: payload.actorId,
+      forageTarget: payload.forageTarget,
     });
   });
 

@@ -4,6 +4,9 @@ import {
   buildForageAcknowledgement,
   computeForageYield,
   combineYields,
+  forageTargetChannels,
+  FORAGE_TARGETS,
+  normalizeForageTarget,
   planForageDriveDeposits,
 } from "./resource/forage.js";
 import {
@@ -28,6 +31,32 @@ const TOWN = {
   yieldFood: "0",
   yieldWater: "0",
 };
+
+/* ------------------------------------------------------------------ *
+ * Forage drive resource targeting.
+ * ------------------------------------------------------------------ */
+{
+  assert.deepEqual(forageTargetChannels(FORAGE_TARGETS.BOTH), {
+    target: "food-water",
+    food: true,
+    water: true,
+  });
+  assert.deepEqual(forageTargetChannels(FORAGE_TARGETS.FOOD), {
+    target: "food",
+    food: true,
+    water: false,
+  });
+  assert.deepEqual(forageTargetChannels(FORAGE_TARGETS.WATER), {
+    target: "water",
+    food: false,
+    water: true,
+  });
+  assert.equal(
+    normalizeForageTarget("unexpected"),
+    FORAGE_TARGETS.BOTH,
+    "unknown API input keeps the backward-compatible combined target",
+  );
+}
 
 /* ------------------------------------------------------------------ *
  * Forage response timeout normalization.
@@ -115,6 +144,18 @@ const TOWN = {
   });
   assert.equal(noWater.food, 6);
   assert.equal(noWater.water, 0, "global water toggle off");
+
+  const waterOnly = computeForageYield({
+    rollTotal: 20,
+    dc: 10,
+    wisMod: 2,
+    foodDie: 4,
+    waterDie: 4,
+    env: ABUNDANT,
+    foodEnabled: false,
+  });
+  assert.equal(waterOnly.food, 0, "water-only math suppresses food");
+  assert.equal(waterOnly.water, 6);
 
   const dryEnv = computeForageYield({
     rollTotal: 20,
@@ -365,6 +406,20 @@ const TOWN = {
     assert.equal(byId.A.suppressed, false, "winner is not suppressed");
     assert.equal(plan.totalFood, 6, "only the winner's haul counts");
     assert.deepEqual(plan.deposits, [{ actorId: "S", food: 6, water: 4 }]);
+  }
+
+  /* Water-only drive → food zeroed, water still deposited. */
+  {
+    const plan = planForageDriveDeposits({
+      roster,
+      selectedIds: ["A", "B"],
+      foraged,
+      partyStashId: "S",
+      foodEnabled: false,
+    });
+    assert.equal(plan.totalFood, 0, "food suppressed");
+    assert.equal(plan.totalWater, 4, "water unaffected");
+    assert.deepEqual(plan.deposits, [{ actorId: "S", food: 0, water: 4 }]);
   }
 
   /* A selection not in the roster is ignored (no phantom deposit). */

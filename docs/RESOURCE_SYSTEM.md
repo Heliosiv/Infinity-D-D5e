@@ -200,13 +200,13 @@ Manual upkeep must not be a separate calculation or write path.
 
 ### 5. Forage-only drive
 
-1. The GM chooses **Forage Drive**, selects tracked actors, and reviews the DC
-   and destination.
+1. The GM chooses **Forage Drive**, selects tracked actors, chooses food and
+   water together, food only, or water only, and reviews the DC and destination.
 2. Selected online owners roll or skip.
 3. Offline or timed-out actors are recorded as no response, not as a failed
    roll.
-4. The authoritative GM deposits the combined result once using the configured
-   `each` or `best` rule.
+4. The authoritative GM deposits only the chosen supplies, combining the result
+   once using the configured `each` or `best` rule.
 5. No day passes and no daily consumption occurs.
 
 ### 6. Interrupted run

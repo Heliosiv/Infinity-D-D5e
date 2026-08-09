@@ -11,6 +11,29 @@
  * with +2 Wis nets 6 days of that resource added to their own sheet.
  */
 
+export const FORAGE_TARGETS = Object.freeze({
+  BOTH: "food-water",
+  FOOD: "food",
+  WATER: "water",
+});
+
+/** Normalize caller/UI input to one of the three supported forage targets. */
+export function normalizeForageTarget(value) {
+  return Object.values(FORAGE_TARGETS).includes(value)
+    ? value
+    : FORAGE_TARGETS.BOTH;
+}
+
+/** Resolve the resource channels enabled by a normalized forage target. */
+export function forageTargetChannels(value) {
+  const target = normalizeForageTarget(value);
+  return {
+    target,
+    food: target !== FORAGE_TARGETS.WATER,
+    water: target !== FORAGE_TARGETS.FOOD,
+  };
+}
+
 /**
  * Resolve a single forager's yield.
  *
@@ -21,6 +44,7 @@
  * @param {number} [args.foodDie=0]     - the pre-rolled food die (e.g. a 1d6 result)
  * @param {number} [args.waterDie=0]    - the pre-rolled water die
  * @param {object} [args.env]           - the environment ({ forageable, yieldFood, yieldWater })
+ * @param {boolean} [args.foodEnabled=true] - whether this check gathers food
  * @param {boolean} [args.waterEnabled=true] - global water toggle
  * @returns {{ success:boolean, food:number, water:number, margin:number }}
  */
@@ -31,6 +55,7 @@ export function computeForageYield({
   foodDie = 0,
   waterDie = 0,
   env = null,
+  foodEnabled = true,
   waterEnabled = true,
 } = {}) {
   const total = Number(rollTotal);
@@ -42,7 +67,8 @@ export function computeForageYield({
   if (!success) {
     return { success: false, food: 0, water: 0, margin };
   }
-  const wantsFood = !env || String(env.yieldFood ?? "1d6") !== "0";
+  const wantsFood =
+    foodEnabled && (!env || String(env.yieldFood ?? "1d6") !== "0");
   const wantsWater =
     waterEnabled && (!env || String(env.yieldWater ?? "1d6") !== "0");
   const food = wantsFood
@@ -129,14 +155,16 @@ export function buildForageAcknowledgement({
  *     and water, OR
  *   - with no party stash, each successful forager's haul goes to that
  *     member's own resolved draw source.
- * Failed/offline foragers contribute nothing; water is zeroed when the global
- * water toggle is off. Returns the report rows plus the merged deposit list.
+ * Failed/offline foragers contribute nothing; either resource can be zeroed
+ * when that channel is excluded from the drive. Returns the report rows plus
+ * the merged deposit list.
  *
  * @param {object} args
  * @param {Array<{actorId,name,isStash,drawFromId}>} args.roster
  * @param {string[]} args.selectedIds  - actor ids the GM sent the check to
  * @param {Array<{actorId,food,water,success}>} args.foraged - online foragers' results
  * @param {string} [args.partyStashId] - the configured single stash id ("" = none)
+ * @param {boolean} [args.foodEnabled=true]
  * @param {boolean} [args.waterEnabled=true]
  * @returns {{ stashActorId:string|null,
  *             perForager:Array<{actorId,name,attempted,success,food,water}>,
@@ -148,6 +176,7 @@ export function planForageDriveDeposits({
   selectedIds = [],
   foraged = [],
   partyStashId = "",
+  foodEnabled = true,
   waterEnabled = true,
 } = {}) {
   const rosterById = new Map(
@@ -156,6 +185,7 @@ export function planForageDriveDeposits({
   const yieldById = new Map(
     (Array.isArray(foraged) ? foraged : []).map((y) => [String(y.actorId), y]),
   );
+  const wantFood = foodEnabled !== false;
   const wantWater = waterEnabled !== false;
 
   // A flagged stash is only an available per-member source. It becomes the one
@@ -192,7 +222,8 @@ export function planForageDriveDeposits({
       continue;
     }
     const success = y.success === true;
-    const food = success ? Math.max(0, Math.floor(Number(y.food) || 0)) : 0;
+    const food =
+      success && wantFood ? Math.max(0, Math.floor(Number(y.food) || 0)) : 0;
     const water =
       success && wantWater ? Math.max(0, Math.floor(Number(y.water) || 0)) : 0;
     totalFood += food;

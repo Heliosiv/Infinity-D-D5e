@@ -683,7 +683,13 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       setActionBusy(target, true);
       // Push a one-off Survival check (GM-set DC) to chosen party members and
       // deposit what they gather — no consumption, no day tick.
-      const { defaultDc, stashName, candidates } = describeForageDrive();
+      const {
+        defaultDc,
+        stashName,
+        candidates,
+        canForageFood,
+        canForageWater,
+      } = describeForageDrive();
       if (candidates.length === 0) {
         ui.notifications?.info(
           `${MODULE_ID}: add party members before running a forage drive.`,
@@ -692,6 +698,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       }
       const DialogV2 = foundry?.applications?.api?.DialogV2;
       if (typeof DialogV2?.prompt !== "function") return;
+      if (!canForageFood && !canForageWater) {
+        notify("warn", `enable and configure food or water before foraging.`);
+        return;
+      }
 
       const anyOnline = candidates.some((c) => c.online);
       const rows = candidates
@@ -709,12 +719,33 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       const destLine = stashName
         ? `Gathered supplies go to <strong>${escapeHtml(stashName)}</strong>'s stash.`
         : `No party stash set — each forager keeps their own haul.`;
+      const defaultTarget =
+        canForageFood && canForageWater
+          ? "food-water"
+          : canForageFood
+            ? "food"
+            : "water";
       const content = `
-      <p>Send a Wisdom (Survival) check to the selected players. Those who meet the DC add food &amp; water to the party's supplies.</p>
+      <p>Send a Wisdom (Survival) check to the selected players. Choose which supplies a successful check gathers.</p>
       <label class="rm-field" style="display:grid; gap:4px; margin-bottom:8px;">
         <span>Survival DC</span>
         <input type="number" name="dc" min="1" step="1" value="${Number(defaultDc) || 15}" />
       </label>
+      <fieldset style="border:1px solid var(--color-border-light-tertiary,#5553); border-radius:6px; padding:6px 10px; margin-bottom:8px;">
+        <legend>Gather</legend>
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="radio" name="forageTarget" value="food-water" ${defaultTarget === "food-water" ? "checked" : ""} ${canForageFood && canForageWater ? "" : "disabled"} />
+          <span>Food &amp; water</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="radio" name="forageTarget" value="food" ${defaultTarget === "food" ? "checked" : ""} ${canForageFood ? "" : "disabled"} />
+          <span>Food only</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="radio" name="forageTarget" value="water" ${defaultTarget === "water" ? "checked" : ""} ${canForageWater ? "" : "disabled"} />
+          <span>Water only</span>
+        </label>
+      </fieldset>
       <fieldset style="border:1px solid var(--color-border-light-tertiary,#5553); border-radius:6px; padding:6px 10px;">
         <legend>Foragers</legend>
         ${rows || "<p>No party members.</p>"}
@@ -737,7 +768,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
               const ids = Array.from(
                 form.querySelectorAll('input[name="forager"]:checked'),
               ).map((el) => el.value);
-              return { dc, ids };
+              const forageTarget = String(
+                form.elements?.forageTarget?.value ?? "",
+              );
+              return { dc, ids, forageTarget };
             },
           },
           rejectClose: false,
@@ -751,7 +785,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         return;
       }
       playModuleSound(SOUND_EVENTS.ROLL_START);
-      await runForageDrive({ dc: result.dc, targetActorIds: result.ids });
+      await runForageDrive({
+        dc: result.dc,
+        targetActorIds: result.ids,
+        forageTarget: result.forageTarget,
+      });
       this.render(false);
     } finally {
       manualForageRequestInFlight = false;

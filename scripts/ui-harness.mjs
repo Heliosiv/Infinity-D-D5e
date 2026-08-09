@@ -2407,6 +2407,9 @@ function foragePromptContext() {
     actorName: "Aric the Ranger",
     passiveLabel: "Your passive Survival is 14",
     wisLabel: "Wisdom +2",
+    forageTargetBoth: true,
+    forageTargetFood: false,
+    forageTargetWater: false,
     result: { success: false, food: 0, water: 0 },
   };
 }
