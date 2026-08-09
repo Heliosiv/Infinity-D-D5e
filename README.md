@@ -95,17 +95,20 @@ both registered and active.
 
 ### Downtime and city actions
 
-The full GM opens **Downtime Workspace** from the dashboard. Create or select a
-settlement, choose eligible characters, and assign a shared productive-hour
-budget. Each selected character receives that full budget independently. Day
-presets use eight productive hours per day, unused hours are allowed, and a
-character can queue several activities before submitting. This workflow does
-not advance Foundry's clock or run Quartermaster upkeep.
+The full GM opens **Downtime Workspace** from the dashboard, chooses eligible
+characters, and assigns a shared productive-hour budget. A settlement is
+optional: select one for city-specific markets, crime, fencing, and local Heat,
+or name a camp, wilderness, shipboard, roadside, or other location. Crafting
+ammunition and sharpening remain available anywhere when their normal
+prerequisites are met. Each selected character receives the full budget
+independently. Day presets use eight productive hours per day, unused hours are
+allowed, and a character can queue several activities before submitting. This
+workflow does not advance Foundry's clock or run Quartermaster upkeep.
 
 Players open **Downtime Activities** from scene controls or `Shift + D`. The
-window explains unmet prerequisites, shows remaining hours and local Heat, and
-supports a reorderable queue. The built-in catalog includes ammunition
-crafting, weapon sharpening, market trading, pickpocketing, finite-stock
+window explains unmet prerequisites, shows remaining hours and, when relevant,
+local Heat, and supports a reorderable queue. The built-in catalog includes
+ammunition crafting, weapon sharpening, market trading, pickpocketing, finite-stock
 shoplifting, fencing stolen goods, and laying low. Routine activities repeat in
 fixed batches; commerce and crime offer bounded extra time where the rules
 allow it.

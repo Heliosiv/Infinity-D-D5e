@@ -1,4 +1,4 @@
-# Downtime, City Actions, and Theft
+# Downtime, Locations, City Actions, and Theft
 
 Infinity D&D5e downtime is a GM-authoritative planning block for activities
 that take hours rather than combat turns. It is intentionally separate from
@@ -7,10 +7,11 @@ Foundry world time and Quartermaster upkeep.
 ## Running a downtime block
 
 1. A full GM opens **Downtime Workspace** from the Infinity D&D5e dashboard.
-2. In **Settlements**, create or select a profile with wealth, security, market
-   DC, optional faction, linked merchants, and enabled activities.
-3. In **Current Block**, select the eligible characters and set the productive
-   hours. One day equals eight productive hours.
+2. In **Current Block**, optionally select a saved settlement. If the party is
+   at camp, in the wilderness, aboard a ship, on the road, or somewhere else,
+   leave the settlement unset and enter an **Other location** name instead.
+3. Select the eligible characters and set the productive hours. One day equals
+   eight productive hours.
 4. Start the block and optionally open **Downtime Activities** for the owning
    players.
 5. Each character queues any allowed combination that fits their personal
@@ -30,7 +31,27 @@ are not divided across the party.
 
 Starting, planning, or applying a block never advances Foundry time and never
 triggers Quartermaster consumption. The GM advances campaign time separately.
-Only one settlement and one downtime block may be active at once.
+Only one downtime block may be active at once. A block stores an immutable
+snapshot of its chosen settlement or its non-settlement location, so later
+profile edits cannot change a queued or planned result.
+
+## Locations and activity availability
+
+A settlement is optional. **Craft Ammunition** and **Sharpen Weapon** can be
+performed anywhere, including camp or the wilderness, as long as the character
+meets the activity's own tool, item, material, and currency requirements.
+
+**Market Trading**, **Pickpocket**, **Shoplift**, **Fence Stolen Goods**, and
+**Lay Low** require a selected settlement because their rules depend on that
+settlement's market, crowds, merchants, fencing capacity, security, or local
+Heat. These activities stay visible in a non-settlement block but explain why
+they are unavailable. Selecting a saved settlement enables only the activities
+allowed by that settlement profile; it does not affect the base availability
+of location-independent activities unless the GM explicitly disabled them in
+that profile.
+
+The **Settlements** tab is therefore optional campaign setup for city-specific
+rules. It is not a prerequisite for opening or resolving a downtime block.
 
 ## Built-in activities
 
@@ -56,6 +77,8 @@ damage-part enchantment instead.
 
 ### Market Trading — 2, 4, 6, or 8 hours
 
+Requires a selected settlement.
+
 The character stakes coin and chooses Persuasion or Deception. Each additional
 two hours after the first grants +1, up to +3. The settlement wealth tier caps
 the stake. A character may trade once in a block.
@@ -65,6 +88,8 @@ to worst tier.
 
 ### Pickpocket — 2 or 4 hours
 
+Requires a selected settlement.
+
 The player chooses one of three deterministic, player-safe marks generated for
 the block. Four hours grants +2. The GM resolves Sleight of Hand against hidden
 settlement security plus the character's current Heat and earlier crime in the
@@ -72,6 +97,8 @@ same block. A successful theft produces a bounded mundane item or a module
 created **Stolen Coin Purse**.
 
 ### Shoplift — 4 or 8 hours
+
+Requires a selected settlement.
 
 The player chooses one eligible finite-stock row from a merchant explicitly
 linked to the active settlement. Eight hours grants +2. Empty rows, unlimited
@@ -81,6 +108,8 @@ purchases.
 
 ### Fence Stolen Goods — 2, 4, 6, or 8 hours
 
+Requires a selected settlement.
+
 The character selects any combination of their eligible stolen items that fits
 the activity's value capacity, then chooses Persuasion or Deception. More time
 improves the roll and the value capacity. Payouts are 60%, 40%, 25%, 0%, or 0%
@@ -89,6 +118,8 @@ copper because currency is indivisible; failed fencing keeps the goods. A
 character may fence once per block.
 
 ### Lay Low — 4 hours
+
+Requires a selected settlement because Heat is local to that settlement.
 
 Deterministically reduces the character's Heat in the active settlement by one.
 It may be used twice per block and never reduces Heat below zero.
@@ -137,8 +168,9 @@ custom activity authoring are outside this version.
 
 The authoritative state moves through **collecting → locked → planned →
 applying → completed**, with explicit **cancelled** and **needs review** states.
-Settlement configuration, the active workflow, and its recovery checkpoint are
-stored in the module's restricted private-state Journal.
+Settlement configuration, the selected location snapshot, the active workflow,
+and its recovery checkpoint are stored in the module's restricted private-state
+Journal.
 
 Before external mutation, the module persists the complete operation plan,
 including hidden rolls, outcomes, projected state, and stable operation IDs.
@@ -160,15 +192,16 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-Only the active full GM can configure settlements, create or transition a
-block, roll hidden checks, or apply results. A player can view and submit only
-directly owned or assigned eligible Actors. Socket requests are authenticated,
+Only the active full GM can optionally configure settlements, create or
+transition a block, roll hidden checks, or apply results. A player can view and
+submit only directly owned or assigned eligible Actors. Socket requests are authenticated,
 targeted to the active GM, and re-derived from IDs, hours, skill choice, stake,
 and target IDs; player-supplied DCs, rolls, modifiers, costs, and rewards are
 ignored.
 
-Player projections contain their eligible Actors, safe opportunity labels,
-prerequisite explanations, own queue and Heat, and completed receipts. They do
+Player projections contain their eligible Actors, location, safe opportunity
+labels, prerequisite explanations, own queue and (when a settlement is
+selected) local Heat, and completed receipts. They do
 not contain hidden DCs or rolls, another character's queue, unrevealed faction
 data, or merchant internals.
 

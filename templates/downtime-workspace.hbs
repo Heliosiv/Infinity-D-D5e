@@ -57,7 +57,8 @@
         <div class="dt-block-head">
           <div>
             <p class="dt-eyebrow">{{currentBlock.dayLabel}}</p>
-            <h3 id="dt-current-heading">{{currentBlock.settlementName}}</h3>
+            <h3 id="dt-current-heading">{{currentBlock.locationName}}</h3>
+            <p>{{#if currentBlock.hasSettlement}}Settlement downtime{{else}}Away from a settlement{{/if}}</p>
             <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. Unused time is allowed.</p>
           </div>
           <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
@@ -170,10 +171,17 @@
         </div>
         <form class="dt-form" data-form="new-block">
           <label class="dt-field">
-            <span>Settlement</span>
-            <select name="settlementId" required {{#unless hasSettlements}}disabled{{/unless}}>
+            <span>Settlement (optional)</span>
+            <select name="settlementId">
+              <option value="">No settlement · camp, wilderness, or elsewhere</option>
               {{#each settlements}}<option value="{{id}}">{{name}} · {{wealthLabel}} / {{securityLabel}}</option>{{/each}}
             </select>
+            <small>Selecting a settlement enables its market, crime, merchant, fencing, and local Heat activities.</small>
+          </label>
+          <label class="dt-field">
+            <span>Other location</span>
+            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." />
+            <small>Used only when no settlement is selected; defaults to Camp or wilderness.</small>
           </label>
           <div class="dt-field">
             <span>Productive hours per character</span>
@@ -335,7 +343,7 @@
         {{#each history}}
         <article>
           <div>
-            <h4>{{settlementName}}</h4>
+            <h4>{{locationName}}</h4>
             <p>{{hours}} hours · {{characterCount}} characters{{#if when}} · {{when}}{{/if}}</p>
             {{#if summary}}<small>{{summary}}</small>{{/if}}
           </div>

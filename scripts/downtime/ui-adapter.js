@@ -331,6 +331,11 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     hasActiveBlock: Boolean(source.hasActiveBlock),
     noGm: source.noGm === true,
     settlementName: cleanText(source.settlementName ?? "Settlement", 200),
+    locationName: cleanText(
+      source.locationName ?? source.settlementName ?? "Camp or wilderness",
+      200,
+    ),
+    hasSettlement: source.hasSettlement !== false,
     blockId: cleanId(source.blockId),
     selectedActorId: cleanId(source.selectedActorId ?? source.actorId),
     actors,

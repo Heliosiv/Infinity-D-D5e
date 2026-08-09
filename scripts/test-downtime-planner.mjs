@@ -142,6 +142,32 @@ function errorCodes(result) {
     },
   );
   assert.ok(errorCodes(disabled).includes("activity-disabled"));
+
+  const awayFromSettlement = {
+    ...settlement,
+    id: "downtime-away-from-settlement",
+    name: "Pinewood camp",
+    hasSettlement: false,
+  };
+  const routine = validateDowntimeQueue(
+    [
+      action("sharpen", DOWNTIME_ACTIVITY_IDS.SHARPEN_WEAPON, 1, {
+        targetId: "weapon-1",
+      }),
+    ],
+    { budgetHours: 8, settlement: awayFromSettlement },
+  );
+  assert.equal(routine.ok, true, "routine work is legal away from settlements");
+  const cityAction = validateDowntimeQueue(
+    [
+      action("trade", DOWNTIME_ACTIVITY_IDS.MARKET_TRADING, 2, {
+        skill: "persuasion",
+        stakeCp: 100,
+      }),
+    ],
+    { budgetHours: 8, settlement: awayFromSettlement },
+  );
+  assert.ok(errorCodes(cityAction).includes("settlement-required"));
 }
 
 /* Commerce and crime repeat limits reject abusive queues. */

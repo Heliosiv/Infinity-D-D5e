@@ -363,6 +363,46 @@ try {
     heat: { greyhaven: { [actor.id]: 2 } },
   });
 
+  let campBlock = await service.openDowntimeBlock({
+    settlementId: "",
+    locationName: "Pinewood camp",
+    hours: 4,
+    actorIds: [actor.id],
+  });
+  assert.equal(campBlock.locationName, "Pinewood camp");
+  assert.equal(campBlock.hasSettlement, false);
+  assert.equal(campBlock.settlementSnapshot.hasSettlement, false);
+  const campProjection = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.equal(campProjection.locationName, "Pinewood camp");
+  assert.equal(campProjection.hasSettlement, false);
+  assert.equal(
+    campProjection.activities.find((entry) => entry.id === "market-trading")
+      .unavailableReason,
+    "Requires a selected settlement; this activity is not available at camp or in the wilderness.",
+  );
+  assert.doesNotMatch(
+    campProjection.activities.find((entry) => entry.id === "craft-ammunition")
+      .unavailableReason,
+    /settlement/i,
+    "routine activity availability remains based on its own prerequisites",
+  );
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "submit-camp-empty",
+    blockId: campBlock.id,
+    actorId: actor.id,
+    queue: [],
+  });
+  campBlock = await service.lockActiveDowntimeBlock(campBlock.id);
+  campBlock = await service.planActiveDowntimeBlock(campBlock.id);
+  assert.equal(campBlock.state, "planned");
+  assert.deepEqual(campBlock.plan.operations, []);
+  campBlock = await service.applyActiveDowntimeBlock(campBlock.id);
+  assert.equal(campBlock.state, "completed");
+
   const reusableRollActor = makeActor({ id: "reusable-roll-actor" });
   reusableRollActor.name = "Reusable Roll Hero";
   actors.set(reusableRollActor.id, reusableRollActor);

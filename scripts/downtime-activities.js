@@ -402,7 +402,10 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
   const submitted =
     source.submitted === true || source.submission?.submitted === true;
   const hasActiveBlock = Boolean(
-    source.hasActiveBlock ?? source.blockId ?? source.settlementName,
+    source.hasActiveBlock ??
+    source.blockId ??
+    source.locationName ??
+    source.settlementName,
   );
   const noGm = source.noGm === true;
   const needsRecovery =
@@ -435,6 +438,10 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
       String(source.recoveryMessage ?? "").trim() ||
       "The GM is reviewing an interrupted application. Your saved queue and receipt remain available.",
     settlementName: String(source.settlementName ?? "Settlement"),
+    locationName: String(
+      source.locationName ?? source.settlementName ?? "Camp or wilderness",
+    ),
+    hasSettlement: source.hasSettlement !== false,
     blockId: cleanId(source.blockId),
     actors,
     hasActors: actors.length > 0,

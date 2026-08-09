@@ -13,6 +13,7 @@ import {
   validateDowntimeQueue,
 } from "./planner.js";
 import {
+  createNonSettlementDowntimeContext,
   createSettlementIdFromName,
   getDowntimeHeat,
   normalizeDowntimeConfig,
@@ -632,6 +633,7 @@ export async function deleteSettlementProfile(settlementId) {
 
 export async function openDowntimeBlock({
   settlementId,
+  locationName,
   hours,
   actorIds,
 } = {}) {
@@ -639,10 +641,15 @@ export async function openDowntimeBlock({
     assertAuthority();
     await ensureDowntimeWorkflowAuthority();
     const config = loadDowntimeConfig();
-    const settlement = config.settlements.find(
-      (entry) => entry.id === String(settlementId ?? ""),
+    const requestedSettlementId = String(settlementId ?? "").trim();
+    const savedSettlement = config.settlements.find(
+      (entry) => entry.id === requestedSettlementId,
     );
-    if (!settlement) throw new Error("Choose a saved settlement.");
+    if (requestedSettlementId && !savedSettlement) {
+      throw new Error("Choose a valid saved settlement or no settlement.");
+    }
+    const settlement =
+      savedSettlement ?? createNonSettlementDowntimeContext(locationName);
     const budgetHours = Math.floor(Number(hours));
     if (
       !Number.isSafeInteger(budgetHours) ||
@@ -664,6 +671,8 @@ export async function openDowntimeBlock({
       opportunitySecret: createDowntimeOpportunitySecretBundle(),
       settlementId: settlement.id,
       settlementName: settlement.name,
+      locationName: settlement.name,
+      hasSettlement: settlement.hasSettlement,
       settlementSnapshot: settlement,
       budgetHours,
       hours: budgetHours,
@@ -2819,6 +2828,8 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
       id: block.id,
       status: block.state,
       settlementName: block.settlementName,
+      locationName: block.locationName ?? block.settlementName,
+      hasSettlement: block.hasSettlement !== false,
       hours: block.budgetHours,
       characterCount: block.participants?.length ?? 0,
       completedAt: block.completedAt,
@@ -2947,6 +2958,8 @@ export async function getPlayerProjectionForUser({
       status: active.state,
       hasActiveBlock: true,
       settlementName: active.settlementName,
+      locationName: active.locationName ?? active.settlementName,
+      hasSettlement: active.hasSettlement !== false,
       blockId: active.id,
     };
   }
@@ -2968,6 +2981,8 @@ export async function getPlayerProjectionForUser({
     status: active.state,
     hasActiveBlock: true,
     settlementName: active.settlementName,
+    locationName: active.locationName ?? active.settlementName,
+    hasSettlement: active.hasSettlement !== false,
     blockId: active.id,
     actors: eligible.map((participant) => {
       const participantActor = actorById(participant.actorId);
@@ -3004,6 +3019,7 @@ function emptyPlayerProjection({ noGm }) {
   return {
     status: "idle",
     hasActiveBlock: false,
+    hasSettlement: false,
     noGm,
     actors: [],
     activities: [],
@@ -3539,6 +3555,8 @@ async function broadcastCompletedState(completed) {
           ...emptyPlayerProjection({ noGm: false }),
           status: completed.state,
           settlementName: completed.settlementName,
+          locationName: completed.locationName ?? completed.settlementName,
+          hasSettlement: completed.hasSettlement !== false,
           receipt,
           completionMessage: receipt?.summary ?? completed.reason ?? "",
         },

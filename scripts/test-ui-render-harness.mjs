@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  34,
+  35,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -100,6 +100,7 @@ for (const expectedId of [
   "downtime-workspace-applying",
   "downtime-workspace-history-completed",
   "downtime-activities-available",
+  "downtime-activities-camp",
   "downtime-activities-pending",
   "downtime-activities-locked",
   "downtime-activities-applying",
@@ -144,6 +145,9 @@ assert.ok(downtimeEmptyView, "harness includes empty GM downtime state");
 assert.match(downtimeEmptyView.html, /Open a downtime block/);
 assert.match(downtimeEmptyView.html, /data-action="createBlock"/);
 assert.match(downtimeEmptyView.html, /8 productive hours per day/);
+assert.match(downtimeEmptyView.html, /Settlement \(optional\)/);
+assert.match(downtimeEmptyView.html, /No settlement · camp, wilderness/);
+assert.match(downtimeEmptyView.html, /name="locationName"/);
 
 const downtimeCollectingView = views.find(
   (view) => view.id === "downtime-workspace-collecting",
@@ -223,6 +227,15 @@ assert.match(downtimeAvailableView.html, /data-action="submitQueue"/);
 assert.match(downtimeAvailableView.html, /name="targetIds" multiple/);
 assert.match(downtimeAvailableView.html, /Ctrl or Cmd/);
 assert.match(downtimeAvailableView.html, /name="stakeGp" min="0\.01"/);
+
+const downtimeCampView = views.find(
+  (view) => view.id === "downtime-activities-camp",
+);
+assert.ok(downtimeCampView, "harness includes camp or wilderness downtime");
+assert.match(downtimeCampView.html, /Pinewood camp/);
+assert.match(downtimeCampView.html, /Outside a settlement/);
+assert.match(downtimeCampView.html, /Requires a selected settlement/);
+assert.doesNotMatch(downtimeCampView.html, /Local Heat/);
 
 const downtimePendingView = views.find(
   (view) => view.id === "downtime-activities-pending",

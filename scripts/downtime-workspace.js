@@ -258,8 +258,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
 
   static _onBeginNextBlock() {
     this._newBlockMode = true;
-    this._statusMessage =
-      "Choose the next settlement, time budget, and characters.";
+    this._statusMessage = "Choose the location, time budget, and characters.";
     this._pendingFocus = '[data-form="new-block"] select[name="settlementId"]';
     this.render(false);
   }
@@ -281,6 +280,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     const data = new FormData(form);
     const payload = {
       settlementId: cleanId(data.get("settlementId")),
+      locationName: String(data.get("locationName") ?? "").trim(),
       hours: positiveInteger(data.get("hours"), 0),
       actorIds: data.getAll("actorIds").map(cleanId).filter(Boolean),
     };
@@ -534,16 +534,11 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     canCreateBlock:
       source.canCreateBlock !== false &&
       !currentBlock &&
-      settlements.length > 0 &&
       (!normalizedCurrentBlock ||
         ["completed", "cancelled"].includes(normalizedCurrentBlock.status)),
     createBlockReason:
       String(source.createBlockReason ?? "").trim() ||
-      (settlements.length === 0
-        ? "Save a settlement before opening downtime."
-        : currentBlock
-          ? "Finish or cancel the current block first."
-          : ""),
+      (currentBlock ? "Finish or cancel the current block first." : ""),
     history,
     hasHistory: history.length > 0,
     recovery: source.recovery ?? null,
@@ -639,6 +634,13 @@ function normalizeCurrentBlock(workflow, root) {
     settlementName: String(
       workflow.settlementName ?? workflow.settlement?.name ?? "Settlement",
     ),
+    locationName: String(
+      workflow.locationName ??
+        workflow.settlementName ??
+        workflow.settlement?.name ??
+        "Camp or wilderness",
+    ),
+    hasSettlement: workflow.hasSettlement !== false,
     hours: positiveInteger(workflow.hours ?? workflow.budgetHours, 0),
     dayLabel: formatDays(workflow.hours ?? workflow.budgetHours),
     participants,
@@ -751,6 +753,13 @@ function normalizeHistoryEntry(entry) {
     settlementName: String(
       source.settlementName ?? source.settlement?.name ?? "Settlement",
     ),
+    locationName: String(
+      source.locationName ??
+        source.settlementName ??
+        source.settlement?.name ??
+        "Camp or wilderness",
+    ),
+    hasSettlement: source.hasSettlement !== false,
     status,
     statusLabel: workflowLabel(status),
     statusTone: workflowTone(status),

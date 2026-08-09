@@ -258,6 +258,14 @@ export function buildHarnessViews() {
       { width: 780, height: 720 },
     ),
     view(
+      "downtime-activities-camp",
+      "Downtime Activities (camp or wilderness)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesCampContext(),
+      { width: 780, height: 720 },
+    ),
+    view(
       "downtime-activities-pending",
       "Downtime Activities (pending)",
       "infinity-downtime-activities",
@@ -1960,6 +1968,8 @@ function downtimeWorkspaceCompletedHistoryContext() {
       {
         id: "downtime-block-haven",
         settlementName: "Haven",
+        locationName: "Haven",
+        hasSettlement: true,
         hours: 8,
         characterCount: 2,
         when: "Aug 8, 2026, 3:24 PM",
@@ -2060,6 +2070,8 @@ function downtimeBlockContext(status) {
     statusTone: tones[status] ?? "neutral",
     settlementId: "settlement-haven",
     settlementName: "Haven",
+    locationName: "Haven",
+    hasSettlement: true,
     hours: 8,
     dayLabel: "1 productive day",
     participants: [
@@ -2177,6 +2189,43 @@ function downtimeActivitiesAvailableContext() {
     usedHours: 4,
     remainingHours: 4,
     progressPercent: 50,
+  });
+}
+
+function downtimeActivitiesCampContext() {
+  const settlementOnly = new Set([
+    "market-trading",
+    "pickpocket",
+    "shoplift",
+    "fence-stolen-goods",
+    "lay-low",
+  ]);
+  return downtimeActivitiesBaseContext({
+    status: "collecting",
+    statusLabel: "Planning",
+    statusTone: "neutral",
+    hasActiveBlock: true,
+    hasSettlement: false,
+    locationName: "Pinewood camp",
+    editable: true,
+    canSubmit: true,
+    submitReason: "",
+    activities: downtimeActivityCards().map((activity) =>
+      settlementOnly.has(activity.id)
+        ? {
+            ...activity,
+            available: false,
+            unavailableReason:
+              "Requires a selected settlement; this activity is not available at camp or in the wilderness.",
+          }
+        : activity,
+    ),
+    hasActivities: true,
+    queue: [],
+    hasQueue: false,
+    usedHours: 0,
+    remainingHours: 8,
+    progressPercent: 0,
   });
 }
 
@@ -2327,6 +2376,8 @@ function downtimeActivitiesBaseContext(overrides = {}) {
     needsRecovery: false,
     recoveryMessage: "",
     settlementName: "Haven",
+    locationName: "Haven",
+    hasSettlement: true,
     blockId: "downtime-block-haven",
     actors: [aric, mira],
     hasActors: true,

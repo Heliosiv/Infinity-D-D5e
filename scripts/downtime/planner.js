@@ -156,6 +156,9 @@ export function validateDowntimeQueue(rawQueue, options = {}) {
     if (!enabled.has(activity.id)) {
       errors.push(errorRecord("activity-disabled", index, identity));
     }
+    if (activity.requiresSettlement && !settlement.hasSettlement) {
+      errors.push(errorRecord("settlement-required", index, identity));
+    }
     if (!isAllowedActivityDuration(activity.id, action.hours)) {
       errors.push(
         errorRecord("invalid-hours", index, {

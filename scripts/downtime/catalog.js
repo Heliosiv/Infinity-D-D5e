@@ -45,6 +45,7 @@ const ACTIVITY_DEFINITIONS = [
     requiresSkill: true,
     allowedSkills: ["persuasion", "deception"],
     requiresStake: true,
+    requiresSettlement: true,
   },
   {
     id: DOWNTIME_ACTIVITY_IDS.PICKPOCKET,
@@ -56,6 +57,7 @@ const ACTIVITY_DEFINITIONS = [
     requiresTarget: true,
     targetType: "generated-mark",
     forcedSkill: "sleight-of-hand",
+    requiresSettlement: true,
   },
   {
     id: DOWNTIME_ACTIVITY_IDS.SHOPLIFT,
@@ -67,6 +69,7 @@ const ACTIVITY_DEFINITIONS = [
     requiresTarget: true,
     targetType: "merchant-stock",
     forcedSkill: "sleight-of-hand",
+    requiresSettlement: true,
   },
   {
     id: DOWNTIME_ACTIVITY_IDS.FENCE_STOLEN_GOODS,
@@ -80,6 +83,7 @@ const ACTIVITY_DEFINITIONS = [
     targetType: "stolen-bundle",
     requiresSkill: true,
     allowedSkills: ["persuasion", "deception"],
+    requiresSettlement: true,
   },
   {
     id: DOWNTIME_ACTIVITY_IDS.LAY_LOW,
@@ -88,6 +92,7 @@ const ACTIVITY_DEFINITIONS = [
     allowedHours: [4],
     repeatable: true,
     maxPerBlock: 2,
+    requiresSettlement: true,
   },
 ];
 

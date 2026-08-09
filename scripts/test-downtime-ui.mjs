@@ -59,6 +59,7 @@ try {
   );
 
   assert.equal(workspace.currentBlock.dayLabel, "2 productive days");
+  assert.equal(workspace.currentBlock.locationName, "Camp or wilderness");
   assert.equal(workspace.currentBlock.participants[0].remainingHours, 12);
   assert.equal(workspace.currentBlock.canLock, true);
   assert.equal(
@@ -103,6 +104,13 @@ try {
     false,
     "an intentionally disabled activity catalog must remain disabled when reopened",
   );
+
+  const campWorkspace = workspaceModule.normalizeWorkspaceProjection(
+    { settlements: [], actors: [{ id: "ada", name: "Ada" }] },
+    { view: "current" },
+  );
+  assert.equal(campWorkspace.canCreateBlock, true);
+  assert.equal(campWorkspace.createBlockReason, "");
 
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
@@ -180,6 +188,8 @@ try {
   );
 
   assert.equal(player.editable, true);
+  assert.equal(player.locationName, "Haven");
+  assert.equal(player.hasSettlement, true);
   assert.equal(player.remainingHours, 8);
   assert.equal(player.activities[0].targets[0].label, "Distracted pilgrim");
   assert.equal(JSON.stringify(player).includes("hiddenDc"), false);
@@ -204,6 +214,22 @@ try {
     "a player may submit an empty queue and leave the entire budget unused",
   );
   assert.equal(emptyQueuePlayer.submitReason, "");
+
+  const campPlayer = activitiesModule.normalizePlayerDowntimeProjection(
+    {
+      status: "collecting",
+      hasActiveBlock: true,
+      hasSettlement: false,
+      blockId: "block-camp",
+      locationName: "Pinewood camp",
+      actors: [{ id: "ada", name: "Ada" }],
+      budgetHours: 4,
+      queue: [],
+    },
+    { actorId: "ada" },
+  );
+  assert.equal(campPlayer.locationName, "Pinewood camp");
+  assert.equal(campPlayer.hasSettlement, false);
 
   const lockedPlayer = activitiesModule.normalizePlayerDowntimeProjection(
     {

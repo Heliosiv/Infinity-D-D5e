@@ -35,6 +35,7 @@ import {
 import {
   DOWNTIME_CONFIG_VERSION,
   SETTLEMENT_SECURITY_DCS,
+  createNonSettlementDowntimeContext,
   createSettlementIdFromName,
   getDowntimeHeat,
   getSettlementSecurityDc,
@@ -85,6 +86,7 @@ import {
   assert.deepEqual(profile, {
     id: "settlement-brass-briar",
     name: "Brass & Briar",
+    hasSettlement: true,
     wealthTier: "wealthy",
     securityTier: "high",
     marketDc: 17,
@@ -124,6 +126,14 @@ import {
     }).enabledActivityIds,
     ["pickpocket"],
   );
+
+  const camp = createNonSettlementDowntimeContext("  Pinewood camp  ");
+  assert.equal(camp.name, "Pinewood camp");
+  assert.equal(camp.hasSettlement, false);
+  assert.deepEqual(camp.enabledActivityIds, DOWNTIME_ACTIVITY_ID_LIST);
+  assert.deepEqual(camp.linkedMerchantIds, []);
+  assert.equal(camp.linkedFactionId, "");
+  assert.equal(createNonSettlementDowntimeContext().name, "Camp or wilderness");
 }
 
 /* Private config and Heat are safe, persistent, local, and clamped 0–5. */

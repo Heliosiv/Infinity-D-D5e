@@ -6,6 +6,9 @@ import { normalizeSharpeningLifecycle } from "./sharpening-lifecycle.js";
 import { normalizeStolenGoodsLedger } from "./stolen-ledger.js";
 
 export const DOWNTIME_CONFIG_VERSION = 2;
+export const NON_SETTLEMENT_DOWNTIME_CONTEXT_ID =
+  "downtime-away-from-settlement";
+export const DEFAULT_NON_SETTLEMENT_LOCATION_NAME = "Camp or wilderness";
 
 export const SETTLEMENT_SECURITY_TIERS = Object.freeze({
   LOW: "low",
@@ -79,6 +82,7 @@ export function normalizeSettlementProfile(raw = {}, { fallbackId = "" } = {}) {
   return {
     id,
     name,
+    hasSettlement: source.hasSettlement !== false,
     wealthTier,
     securityTier,
     marketDc: boundedInteger(source.marketDc, 1, 40, defaultMarketDc),
@@ -90,6 +94,23 @@ export function normalizeSettlementProfile(raw = {}, { fallbackId = "" } = {}) {
       source.enabledActivityIds ?? source.enabledActivities,
     ),
   };
+}
+
+/**
+ * Build the compatibility profile used when downtime happens away from a
+ * settlement. The non-empty internal id keeps immutable operation receipts
+ * and write recovery stable; `hasSettlement` remains the authority for which
+ * activities are legal.
+ */
+export function createNonSettlementDowntimeContext(name = "") {
+  return normalizeSettlementProfile({
+    id: NON_SETTLEMENT_DOWNTIME_CONTEXT_ID,
+    name: cleanText(name, 120) || DEFAULT_NON_SETTLEMENT_LOCATION_NAME,
+    hasSettlement: false,
+    linkedFactionId: "",
+    linkedMerchantIds: [],
+    enabledActivityIds: DOWNTIME_ACTIVITY_ID_LIST,
+  });
 }
 
 /** Normalize a list and reject duplicate settlement ids deterministically. */

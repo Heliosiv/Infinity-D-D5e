@@ -108,6 +108,7 @@ export async function buildActorDowntimeContext({
   queue = [],
 } = {}) {
   const actorId = String(actor?.id ?? "");
+  const hasSettlement = settlement?.hasSettlement !== false;
   const heat = getDowntimeHeat(config, settlement?.id, actorId);
   const opportunitySeed = buildPickpocketOpportunitySeed({
     blockId: block?.id,
@@ -115,10 +116,12 @@ export async function buildActorDowntimeContext({
     actorId,
     secret: block?.opportunitySecret,
   });
-  const pickpocketMarks = generatePickpocketOpportunities({
-    seed: opportunitySeed,
-    settlementId: settlement?.id,
-  });
+  const pickpocketMarks = hasSettlement
+    ? generatePickpocketOpportunities({
+        seed: opportunitySeed,
+        settlementId: settlement?.id,
+      })
+    : [];
   const walletCp = totalWalletCp(actor?.system?.currency);
 
   const sharpenTool =
@@ -218,6 +221,7 @@ export async function buildActorDowntimeContext({
       merchantTargets: merchantTargets.safe,
       fenceTargets: fenceTargets.safe,
       walletCp,
+      hasSettlement,
     });
     const copy = ACTIVITY_COPY[activity.id] ?? {};
     return {
@@ -390,6 +394,12 @@ function fencingCapacityLabel(wealthTier) {
 }
 
 function unavailableReason(activityId, facts) {
+  const activity = DOWNTIME_ACTIVITY_CATALOG.find(
+    (entry) => entry.id === activityId,
+  );
+  if (activity?.requiresSettlement && !facts.hasSettlement) {
+    return "Requires a selected settlement; this activity is not available at camp or in the wilderness.";
+  }
   if (
     facts.heat >= 5 &&
     [
