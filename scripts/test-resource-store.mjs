@@ -30,6 +30,10 @@ import {
   resetResourceStoreForTests,
 } from "./resource/store.js";
 import {
+  buildForageRunReceipt,
+  buildUpkeepRunReceipt,
+} from "./resource/history.js";
+import {
   initializePrivateState,
   resetPrivateStateForTests,
 } from "./private-state.js";
@@ -441,15 +445,23 @@ import {
   assert.equal(fresh.currentEnvironmentId, null);
   assert.equal(fresh.lastUpkeepResult, null);
   assert.equal(fresh.activeUpkeep, null);
+  assert.deepEqual(fresh.recentRuns, []);
+  assert.equal(RESOURCE_RUN_STATE_VERSION, 3, "current run-state schema is v3");
 
   const live = normalizeRunState({
     lastSeenDay: 12.9,
     currentEnvironmentId: " limited ",
     lastUpkeepResult: { day: 12 },
+    recentRuns: [{ runId: "malformed legacy entry" }],
   });
   assert.equal(live.lastSeenDay, 12, "floored");
   assert.equal(live.currentEnvironmentId, "limited", "trimmed");
   assert.deepEqual(live.lastUpkeepResult, { day: 12 });
+  assert.deepEqual(
+    live.recentRuns,
+    [],
+    "malformed receipt entries are dropped",
+  );
 
   assert.equal(normalizeRunState({ lastSeenDay: "x" }).lastSeenDay, null);
 }
@@ -578,7 +590,22 @@ import {
     };
     const writes = [];
     let stored = raw;
-    let storedRunState;
+    let storedRunState = {
+      version: 2,
+      revision: 4,
+      authorityId: "gm-a",
+      authorityEpoch: "node-test:0",
+      lastSeenDay: 9,
+      currentEnvironmentId: "limited",
+      lastUpkeepResult: { runId: "legacy-report", status: "complete" },
+      activeUpkeep: {
+        runId: "legacy-active",
+        trigger: "calendar",
+        day: 10,
+        days: 1,
+        claimedAt: 1234,
+      },
+    };
     globalThis.game = {
       user: { id: "gm-a", isGM: true, active: true },
       users: {
@@ -624,6 +651,29 @@ import {
     );
     assert.equal(writes[5].value.authorityId, "gm-a");
     assert.match(writes[5].value.authorityEpoch, /^node-test:/);
+    assert.equal(writes[5].value.lastSeenDay, 9);
+    assert.deepEqual(writes[5].value.lastUpkeepResult, {
+      runId: "legacy-report",
+      status: "complete",
+    });
+    assert.deepEqual(writes[5].value.activeUpkeep, {
+      runId: "legacy-active",
+      trigger: "calendar",
+      day: 10,
+      days: 1,
+      startedAt: 1234,
+      claimedAt: 1234,
+      environment: null,
+      initiator: null,
+      actors: [],
+      forageTarget: null,
+      forageDestination: null,
+    });
+    assert.deepEqual(
+      writes[5].value.recentRuns,
+      [],
+      "v2 worlds migrate with an empty receipt history",
+    );
     for (const duplicateRule of [
       "forageMode",
       "waterEnabled",
@@ -1164,6 +1214,7 @@ import {
         currentEnvironmentId: null,
         lastUpkeepResult: null,
         activeUpkeep: null,
+        recentRuns: [],
       },
       {
         version: RESOURCE_RUN_STATE_VERSION,
@@ -1174,6 +1225,7 @@ import {
         currentEnvironmentId: "underdark",
         lastUpkeepResult: null,
         activeUpkeep: null,
+        recentRuns: [],
       },
       {
         version: RESOURCE_RUN_STATE_VERSION,
@@ -1184,6 +1236,7 @@ import {
         currentEnvironmentId: "underdark",
         lastUpkeepResult: { day: 18, shortages: 2 },
         activeUpkeep: null,
+        recentRuns: [],
       },
     ]);
     assert.deepEqual(loadRunState(), normalizeRunState(writes[2]));
@@ -1232,7 +1285,13 @@ import {
       trigger: "calendar",
       day: 22,
       days: 1,
+      startedAt: 1234,
       claimedAt: 1234,
+      environment: null,
+      initiator: null,
+      actors: [],
+      forageTarget: null,
+      forageDestination: null,
     });
     assert.equal(assertUpkeepClaimCurrent("calendar-run"), true);
     await assert.rejects(
@@ -1245,12 +1304,36 @@ import {
       /ResourceUpkeepAlreadyActive/,
       "a second run cannot replace the canonical lease",
     );
+    const beforeInvalidReceipt = structuredClone(stored);
+    await assert.rejects(
+      completeUpkeepRun({ runId: "calendar-run", receipt: { runId: "bad" } }),
+      /ResourceRunReceiptInvalid/,
+    );
+    assert.deepEqual(
+      stored,
+      beforeInvalidReceipt,
+      "an invalid receipt cannot append history or release the lease",
+    );
 
-    const report = { runId: "calendar-run", status: "complete" };
-    await completeUpkeepRun({ runId: "calendar-run", result: report });
+    const report = {
+      runId: "calendar-run",
+      trigger: "calendar",
+      day: 22,
+      days: 1,
+      status: "complete",
+      resourceSnapshot: [],
+      perActor: [],
+      party: {},
+      suggestions: [],
+    };
+    const receipt = buildUpkeepRunReceipt({ result: report, recordedAt: 2500 });
+    await completeUpkeepRun({ runId: "calendar-run", result: report, receipt });
     assert.equal(stored.activeUpkeep, null);
     assert.deepEqual(stored.lastUpkeepResult, report);
     assert.equal(stored.lastSeenDay, 22);
+    assert.equal(stored.recentRuns.length, 1);
+    assert.equal(stored.recentRuns[0].runId, "calendar-run");
+    assert.equal(stored.recentRuns[0].claimedAt, 1234);
 
     await assert.rejects(
       claimUpkeepRun({
@@ -1286,9 +1369,111 @@ import {
       22,
       "manual work never moves the calendar baseline",
     );
-    await clearUpkeepClaim("manual-run");
+    await clearUpkeepClaim("manual-run", { recordedAt: 2800 });
     assert.equal(stored.activeUpkeep, null);
     assert.equal(stored.lastSeenDay, 22);
+    assert.equal(stored.recentRuns.length, 2);
+    assert.equal(stored.recentRuns[0].runId, "manual-run");
+    assert.equal(stored.recentRuns[0].status, "interrupted");
+    assert.equal(stored.recentRuns[0].outcomeUnknown, true);
+
+    const latestReport = structuredClone(stored.lastUpkeepResult);
+    await claimUpkeepRun({
+      runId: "forage-run",
+      trigger: "forage",
+      day: 22,
+      startedAt: 2900,
+      claimedAt: 3000,
+      environment: {
+        id: "road",
+        label: "Road",
+        dc: 14,
+        rawConfig: { forbidden: true },
+      },
+      initiator: { userId: "gm-a", name: "Morgan", role: 4 },
+      actors: [
+        { actorId: "actor-a", name: "Aria", document: { forbidden: true } },
+      ],
+      forageTarget: "food",
+      forageDestination: {
+        mode: "party-stash",
+        actorId: "stash-a",
+        name: "Party Mule",
+        actor: { forbidden: true },
+      },
+    });
+    const forageReceipt = buildForageRunReceipt({
+      runId: "forage-run",
+      day: 999,
+      environment: { id: "road", label: "Road", dc: 14 },
+      forageTarget: "food",
+      totalFood: 3,
+      recordedAt: 3100,
+    });
+    await completeUpkeepRun({
+      runId: "forage-run",
+      receipt: forageReceipt,
+      persistResult: false,
+    });
+    assert.deepEqual(
+      stored.lastUpkeepResult,
+      latestReport,
+      "forage history does not replace the latest upkeep report",
+    );
+    assert.equal(stored.recentRuns[0].runId, "forage-run");
+    assert.equal(
+      stored.recentRuns[0].day,
+      22,
+      "the canonical lease owns the day",
+    );
+    assert.deepEqual(stored.recentRuns[0].initiator, {
+      userId: "gm-a",
+      name: "Morgan",
+    });
+    assert.deepEqual(stored.recentRuns[0].forageContext, {
+      target: "food",
+      destination: {
+        mode: "party-stash",
+        actorId: "stash-a",
+        name: "Party Mule",
+      },
+    });
+    assert.equal(
+      JSON.stringify(stored.recentRuns[0]).includes("forbidden"),
+      false,
+      "lease provenance stores only allowlisted plain data",
+    );
+
+    await claimUpkeepRun({
+      runId: "manual-no-clock",
+      trigger: "manual",
+      day: null,
+      claimedAt: 3200,
+    });
+    const manualFallbackResult = {
+      runId: "manual-no-clock",
+      trigger: "manual",
+      day: 22,
+      days: 1,
+      status: "complete",
+      resourceSnapshot: [],
+      perActor: [],
+      party: {},
+      suggestions: [],
+    };
+    await completeUpkeepRun({
+      runId: "manual-no-clock",
+      result: manualFallbackResult,
+      receipt: buildUpkeepRunReceipt({
+        result: manualFallbackResult,
+        recordedAt: 3300,
+      }),
+    });
+    assert.equal(
+      stored.recentRuns[0].day,
+      22,
+      "a no-clock manual lease retains the report's last-seen-day fallback",
+    );
   } finally {
     resetResourceStoreForTests();
     if (originalGame === undefined) delete globalThis.game;
@@ -1341,6 +1526,7 @@ import {
       currentEnvironmentId: "forest",
       lastUpkeepResult: { day: 5, shortages: 0 },
       activeUpkeep: null,
+      recentRuns: [],
     });
   } finally {
     if (originalGame === undefined) delete globalThis.game;

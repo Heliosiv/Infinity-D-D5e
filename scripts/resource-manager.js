@@ -39,6 +39,7 @@ import {
   isCustomEnvironment,
   updateEnvironmentFields,
 } from "./resource/environment.js";
+import { presentRecentRuns } from "./resource/history.js";
 import {
   diagnoseResourceConfiguration,
   diagnoseResourceItemOverlaps,
@@ -238,6 +239,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       generatedAt: Date.now(),
       roster: rosterSnapshots,
     });
+    const recentRuns = presentRecentRuns(state.recentRuns);
     // The inventory table always mirrors every configured resource, including
     // water while water consumption is disabled. Its columns therefore stay
     // aligned with the resource editor while the operational outlook omits
@@ -418,6 +420,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       })),
       hasOverviewResources: overview.resources.length > 0,
       report: presentOverviewReport(overview.lastUpkeep, config.environments),
+      recentRuns,
+      hasRecentRuns: recentRuns.length > 0,
+      recentRunCountLabel: `${recentRuns.length} saved`,
     };
   }
 
@@ -823,12 +828,12 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       title: "Clear interrupted resource run?",
       content:
         "<p>This releases the safety lock only. It will not restore inventory or replay the interrupted run.</p>" +
-        "<p>Review the party's supplies first, then clear the lock to resume Quartermaster automation.</p>",
+        "<p>Review the party's supplies first. Quartermaster will save a receipt that explicitly marks the inventory outcome as unknown.</p>",
       icon: "fa-solid fa-unlock",
     });
     if (!confirmed) return;
     await clearUpkeepClaim(activeUpkeep.runId);
-    notify("info", `cleared the interrupted resource-run lock.`);
+    notify("info", `cleared the lock and recorded the interrupted run.`);
     this.render(false);
   }
 

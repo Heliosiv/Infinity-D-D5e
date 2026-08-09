@@ -37,7 +37,7 @@ Use these terms consistently in code, UI, tests, and release notes:
 
 ## Current product state
 
-The v0.2.64 source has a useful foundation; its installed-world acceptance
+The v0.2.72 source has a useful foundation; its installed-world acceptance
 status remains bounded by the release gates below.
 
 ### Available now
@@ -101,7 +101,16 @@ status remains bounded by the release gates below.
   immediately before the first Actor mutation. Calendar leases reserve the day
   in that same write. A short stabilization window and per-write claim checks
   stop a visible competing or interrupted run for explicit GM review instead of
-  replaying the whole operation.
+  replaying the whole operation. The lease snapshots the initiating GM, start
+  time, environment, participants, every possible inventory write target, and
+  forage target/destination so an interrupted receipt identifies the character
+  sheets and stashes to review without claiming an outcome.
+- Quartermaster keeps the newest 20 detailed, read-only receipts for automatic
+  upkeep, Advance Day, Forage Drive, and explicitly acknowledged interrupted
+  runs. Receipts are normalized plain data in the private run state. They store
+  historical labels, initiating GM, timing, affected actors and inventory
+  targets, and accounting outcomes, never Actor or Item documents, match rules,
+  raw configuration, or a player-facing socket projection.
 
 ### Current limits
 
@@ -113,8 +122,9 @@ status remains bounded by the release gates below.
   previewing presets, and versioned import/export are not implemented yet.
 - Active forage runs live in client memory. A reload, GM handoff, or disconnect
   can lose the pending run even though actor or world state remains.
-- Only the latest upkeep result is retained. There is no durable, bounded run
-  history or operation ledger.
+- The fixed Recent Runs history is inspection-only. It has no operation ledger,
+  retry, replay, rollback, filters, or proof that a suggested exhaustion change
+  was applied.
 - A persisted active-run lease rejects automatic same-day replay and fences
   competing clients after a short propagation check. Foundry Journal updates do
   not provide a server-side compare-and-swap primitive, so this is not a proof
@@ -216,6 +226,8 @@ Manual upkeep must not be a separate calculation or write path.
 4. The authoritative GM deposits only the chosen supplies, combining the result
    once using the configured `each` or `best` rule.
 5. No day passes and no daily consumption occurs.
+6. A private receipt records the chosen supply target, resolved per-forager
+   outcome, destination, applied totals, and deposit errors.
 
 ### 6. Interrupted run
 
@@ -232,15 +244,14 @@ Manual upkeep must not be a separate calculation or write path.
 Every value must have one canonical owner. UI state and socket payloads are
 projections, not competing storage.
 
-| Data                                                                                                          | Canonical owner                                                     | Write authority  | Notes                                                                                            |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
-| Auto-run, player view, default environment, forage mode, water, half rations, catch-up cap, report audience   | Normal Foundry world settings                                       | Full GM          | These are visible rules. Quartermaster and Module Settings must edit the same keys.              |
-| Resource definitions, matching rules, roster, consumer and stash mapping, environment catalog, forage timeout | Versioned `resourceConfig` flag in the restricted private journal   | Full GM          | Structural configuration only. It is never synchronized to player clients.                       |
-| Last seen day, selected current environment, latest report                                                    | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Small moving state needed by the current runtime; players receive only its sanitized projection. |
-| Active and recent runs                                                                                        | Versioned bounded run store                                         | Authoritative GM | Added in the durable-run phase. Contains state, operation keys, outcomes, and audit metadata.    |
-| Item quantities and exhaustion                                                                                | Foundry Actor and embedded Item documents                           | Authoritative GM | Actor documents remain the inventory source of truth.                                            |
-| Quartermaster display                                                                                         | Live canonical reads                                                | None             | A privileged projection.                                                                         |
-| Supplies display                                                                                              | Sanitized snapshot from authoritative GM                            | None             | Never persist a client copy as a second source of truth.                                         |
+| Data                                                                                                          | Canonical owner                                                     | Write authority  | Notes                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| Auto-run, player view, default environment, forage mode, water, half rations, catch-up cap, report audience   | Normal Foundry world settings                                       | Full GM          | These are visible rules. Quartermaster and Module Settings must edit the same keys.                            |
+| Resource definitions, matching rules, roster, consumer and stash mapping, environment catalog, forage timeout | Versioned `resourceConfig` flag in the restricted private journal   | Full GM          | Structural configuration only. It is never synchronized to player clients.                                     |
+| Last seen day, selected current environment, latest report, active lease, recent receipts                     | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Schema v3 retains 20 normalized GM-only receipts; players receive only the latest sanitized upkeep projection. |
+| Item quantities and exhaustion                                                                                | Foundry Actor and embedded Item documents                           | Authoritative GM | Actor documents remain the inventory source of truth.                                                          |
+| Quartermaster display                                                                                         | Live canonical reads                                                | None             | A privileged projection.                                                                                       |
+| Supplies display                                                                                              | Sanitized snapshot from authoritative GM                            | None             | Never persist a client copy as a second source of truth.                                                       |
 
 ### Configuration versioning
 
@@ -264,6 +275,11 @@ The current structural resource configuration is version 4. The migration:
 All future changes follow the same pattern: normalize, migrate, serialize the
 current schema, then read it back in a test.
 
+The moving `resourceRunState` schema is version 3. Upgrading a version 2 state
+preserves the last seen day, selected environment, latest upkeep report, and
+active safety lease, then initializes an empty receipt history. Old latest
+reports are not reinterpreted as receipts.
+
 ## Canonical data flow
 
 ```mermaid
@@ -275,7 +291,7 @@ flowchart LR
   Coordinator --> Services
   Settings["Visible world settings"] <--> Services
   Private["Restricted private-state journal"] <--> Services
-  RunStore["Durable run store (Milestone 3)"] <--> Services
+  RunStore["Private recent-run receipts (v3)"] <--> Services
   Actors["Actor and Item documents"] <--> Services
   Services --> Projection["Snapshot and report projection"]
   Projection --> GMUI
@@ -473,6 +489,10 @@ import it into a fresh world, and get the same normalized behavior.
 
 ### Milestone 3 - Durable forage resume, idempotency, and history
 
+The first observability slice is complete in source: a fixed, private history
+of 20 detailed read-only receipts. The durable state machine, operation ledger,
+resume, and provably safe recovery work below remain future slices.
+
 #### Durable run state machine
 
 Use one state machine for automatic upkeep, manual upkeep, and forage-only runs:
@@ -494,10 +514,10 @@ as `failed` with the exact completed operations and recovery action.
   closure idempotent.
 - Reject late or replayed results after closure while returning the recorded
   outcome to the sender.
-- Keep a bounded, configurable history with timestamps, initiator, trigger,
-  environment, affected actors, totals, failures, and schema version.
-- Add a GM history view with filters and a safe retry action for operations
-  proven not to have been applied.
+- Extend the fixed read-only history only when additional metadata has a stable,
+  privacy-reviewed source; configurable retention and filters are not part of
+  the current slice.
+- Add a safe retry action only for operations proven not to have been applied.
 - Never implement retry as "run the whole day again."
 
 #### Milestone exit
@@ -591,6 +611,7 @@ without importing an application class or directly reading private settings.
 | Snapshot privacy       | Correct totals, allowed fields only, hidden match detail absent, disabled view, no GM online, malformed request                           | `npm run check`                    |
 | Socket authority       | Spoofed origin, inactive sender, wrong actor owner, non-authoritative GM, wrong target, unknown event or version                          | `npm run check` plus multi-client  |
 | Idempotency            | Duplicate hook/prompt, claim failure before writes, competing lease, failed completion, same-day retry, authority loss                    | `npm run check` plus restart tests |
+| Recent run history     | v2 migration, allowlisted receipt shapes, completion/clear atomicity, newest-first dedupe, 20-run cap, player omission                    | `npm run check` plus UI audit      |
 | Resume                 | GM reload and player reload at each run state, authority handoff, stale prompt, completed-run replay                                      | Restart harness plus multi-client  |
 | Reports and exhaustion | All chat audiences, sanitized player data, shortfall reasons, cap at six, cancelled prompt, failed write visibility                       | `npm run check` plus multi-client  |
 | UI                     | GM and player launchers, empty/loading/error/low/healthy states, keyboard, narrow and phone widths, no unreachable controls               | `npm run ui:audit`                 |

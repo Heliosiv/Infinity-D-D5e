@@ -58,7 +58,21 @@ const hero = {
     throw new Error("unexpected delete");
   },
 };
-const actors = [hero];
+const stash = {
+  id: "stash",
+  name: "Party Mule",
+  type: "npc",
+  hasPlayerOwner: false,
+  ownership: {},
+  system: { attributes: { exhaustion: 0 } },
+  items: {
+    contents: [],
+    get() {
+      return null;
+    },
+  },
+};
+const actors = [hero, stash];
 actors.get = (id) => actors.find((actor) => actor.id === id) ?? null;
 
 const resourceConfig = {
@@ -83,6 +97,12 @@ const resourceConfig = {
       actorId: "hero",
       isStash: false,
       consumes: true,
+      drawFrom: "self",
+    },
+    {
+      actorId: "stash",
+      isStash: true,
+      consumes: false,
       drawFrom: "self",
     },
   ],
@@ -213,6 +233,26 @@ try {
   );
   assert.equal(updateCalls, 1);
   assert.equal(ration.system.quantity, 19);
+  assert.equal(settings.get("resourceRunState").recentRuns.length, 1);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].status,
+    "complete",
+  );
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].initiator.userId,
+    "gm-a",
+  );
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].environment.label,
+    "Settlement",
+  );
+  assert.deepEqual(
+    settings.get("resourceRunState").recentRuns[0].actors.map((actor) => ({
+      actorId: actor.actorId,
+      name: actor.name,
+    })),
+    [{ actorId: "hero", name: "Aria" }],
+  );
 
   // If completion persistence fails after consumption, the claimed day stays
   // reserved. Same-day hooks never replay the Actor mutation.
@@ -238,6 +278,11 @@ try {
   assert.equal(ration.system.quantity, 18);
   assert.equal(settings.get("resourceRunState").lastSeenDay, 12);
   assert.ok(settings.get("resourceRunState").activeUpkeep?.runId);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns.length,
+    1,
+    "a failed completion appends no receipt",
+  );
   onWorldTime();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(updateCalls, 2, "a claimed day is never consumed twice");
@@ -246,6 +291,34 @@ try {
   globalThis.game.settings.set = normalSet;
   await clearUpkeepClaim(settings.get("resourceRunState").activeUpkeep.runId);
   assert.equal(settings.get("resourceRunState").activeUpkeep, null);
+  assert.equal(settings.get("resourceRunState").recentRuns.length, 2);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].outcomeUnknown,
+    true,
+  );
+  assert.equal(settings.get("resourceRunState").recentRuns[0].day, 12);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].environment.label,
+    "Settlement",
+  );
+  assert.deepEqual(
+    settings
+      .get("resourceRunState")
+      .recentRuns[0].actors.map(({ actorId, name, role }) => ({
+        actorId,
+        name,
+        role,
+      })),
+    [
+      {
+        actorId: "hero",
+        name: "Aria",
+        role: "participant-inventory",
+      },
+      { actorId: "stash", name: "Party Mule", role: "inventory" },
+    ],
+    "interrupted review retains participants and possible inventory targets without outcomes",
+  );
 
   // A competing client that becomes canonical during the post-claim
   // stabilization window stops this run before its first Actor write.
@@ -285,6 +358,11 @@ try {
   globalThis.game.settings.set = normalSet;
   await clearUpkeepClaim("competing-client-run");
   assert.equal(settings.get("resourceRunState").activeUpkeep, null);
+  assert.equal(settings.get("resourceRunState").recentRuns.length, 3);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns[0].runId,
+    "competing-client-run",
+  );
 
   // An authority change during lease persistence invalidates the old client
   // before its first Actor write.
@@ -306,6 +384,11 @@ try {
   );
   assert.equal(updateCalls, 2);
   assert.equal(ration.system.quantity, 18);
+  assert.equal(
+    settings.get("resourceRunState").recentRuns.length,
+    3,
+    "authority loss before Actor writes creates no receipt",
+  );
 } finally {
   console.error = originalConsoleError;
   for (const [key, value] of Object.entries(saved)) {

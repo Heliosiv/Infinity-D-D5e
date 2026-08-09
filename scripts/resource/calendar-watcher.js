@@ -28,6 +28,11 @@ import {
 } from "./store.js";
 import { findEnvironment, isForageable } from "./environment.js";
 import {
+  buildForageRunReceipt,
+  buildRunActorSnapshots,
+  buildUpkeepRunReceipt,
+} from "./history.js";
+import {
   buildForageAcknowledgement,
   computeForageYield,
   combineYields,
@@ -307,6 +312,7 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   let cfg = loadResourceConfig();
   const state = loadRunState();
   const runId = generateRunId();
+  const startedAt = Date.now();
   let roster = getPartyRoster(cfg);
   const operationFingerprint = resourceOperationFingerprint({
     config: cfg,
@@ -573,6 +579,26 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
     day: currentAbsoluteDay(),
     days: 1,
     operation: "forage drive",
+    startedAt,
+    environment: driveEnv,
+    actors: buildRunActorSnapshots({
+      participants: selected.map(({ actor }) => ({
+        actorId: actor.id,
+        name: actor.name,
+      })),
+      writeTargets: depositTargets.map((actor) => ({
+        actorId: actor.id,
+        name: actor.name,
+      })),
+    }),
+    forageTarget: channels.target,
+    forageDestination: driveStash
+      ? {
+          mode: "party-stash",
+          actorId: driveStash.id,
+          name: driveStash.name,
+        }
+      : { mode: "draw-sources" },
   });
   if (claimConflict) return claimConflict;
   const assertWriteAllowed = () => assertResourceRunWriteAllowed(runId);
@@ -607,7 +633,25 @@ async function runForageDriveInner({ dc, targetActorIds, forageTarget }) {
   const stashActor = plan.stashActorId
     ? (actorById.get(plan.stashActorId) ?? null)
     : null;
-  await completeUpkeepRun({ runId, persistResult: false });
+  const receipt = buildForageRunReceipt({
+    runId,
+    day: currentAbsoluteDay(),
+    environment: driveEnv,
+    perForager: plan.perForager,
+    forageTarget: channels.target,
+    forageMode: cfg.forageMode,
+    destination: stashActor
+      ? {
+          mode: "party-stash",
+          actorId: stashActor.id,
+          name: stashActor.name,
+        }
+      : { mode: "draw-sources" },
+    totalFood: landedFood,
+    totalWater: landedWater,
+    depositErrors,
+  });
+  await completeUpkeepRun({ runId, receipt, persistResult: false });
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   await postForageDriveReport({
     env: driveEnv,
@@ -846,14 +890,32 @@ function assertResourceRunWriteAllowed(runId) {
   return assertUpkeepClaimCurrent(runId);
 }
 
-async function claimResourceRun({ runId, trigger, day, days, operation }) {
+async function claimResourceRun({
+  runId,
+  trigger,
+  day,
+  days,
+  operation,
+  startedAt = null,
+  environment = null,
+  actors = [],
+  forageTarget = null,
+  forageDestination = null,
+}) {
+  const user = globalThis.game?.user;
   try {
     await claimUpkeepRun({
       runId,
       trigger,
       day,
       days,
+      startedAt,
       claimedAt: Date.now(),
+      environment,
+      initiator: user?.id ? { userId: user.id, name: user.name } : null,
+      actors,
+      forageTarget,
+      forageDestination,
     });
   } catch (error) {
     if (
@@ -1132,6 +1194,7 @@ async function runDailyUpkeep({
   const days = Math.max(1, Math.floor(Number(elapsedDays) || 1));
   const state = loadRunState();
   const runId = generateRunId();
+  const startedAt = Date.now();
   const env = resolveCurrentEnvironment(cfg, state);
   let roster = getPartyRoster(cfg);
   const operationFingerprint = resourceOperationFingerprint({
@@ -1326,6 +1389,20 @@ async function runDailyUpkeep({
     day,
     days,
     operation: "daily upkeep",
+    startedAt,
+    environment: env,
+    actors: buildRunActorSnapshots({
+      participants: consumers.map(({ actor }) => ({
+        actorId: actor.id,
+        name: actor.name,
+      })),
+      // Party-scope draws may walk the entire roster, while per-character
+      // resources can draw from another member's nominated stash.
+      writeTargets: inventoryActors.map((actor) => ({
+        actorId: actor.id,
+        name: actor.name,
+      })),
+    }),
   });
   if (claimConflict) return claimConflict;
   const assertWriteAllowed = () => assertResourceRunWriteAllowed(runId);
@@ -1419,7 +1496,8 @@ async function runDailyUpkeep({
     status: hasErrors ? "partial" : "complete",
     hasErrors,
   };
-  await completeUpkeepRun({ runId, result });
+  const receipt = buildUpkeepRunReceipt({ result, environment: env });
+  await completeUpkeepRun({ runId, result, receipt });
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   emitResourceEvent(RESOURCE_EVENTS.UPKEEP_REPORT, {
     day: result.day,

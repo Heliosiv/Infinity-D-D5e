@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  33,
+  34,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -88,6 +88,7 @@ for (const expectedId of [
   "shop-picker-empty",
   "resource-manager",
   "resource-manager-locked",
+  "resource-manager-recent-runs",
   "resource-manager-custom-environment",
   "resource-overview",
   "resource-overview-offline",
@@ -347,6 +348,7 @@ for (const routineLabel of [
   "Where is the party?",
   "Supply outlook",
   "Last upkeep",
+  "Recent runs",
 ]) {
   const routineIndex = routineManagerView.html.indexOf(routineLabel);
   assert.ok(routineIndex >= 0, `${routineLabel} remains in the routine view`);
@@ -355,6 +357,16 @@ for (const routineLabel of [
     `${routineLabel} renders outside the setup disclosure`,
   );
 }
+assert.match(
+  routineManagerView.html,
+  /No resource runs have been recorded yet\./,
+  "a migrated or fresh world shows an honest empty-history state",
+);
+assert.ok(
+  routineManagerView.html.indexOf("Last upkeep") <
+    routineManagerView.html.indexOf("Recent runs"),
+  "the latest upkeep report remains ahead of the bounded history",
+);
 for (const setupLabel of [
   "Environment setup",
   "Rules",
@@ -378,6 +390,73 @@ assert.ok(
 assert.match(lockedManagerView.html, /did not finish cleanly/);
 assert.match(lockedManagerView.html, /data-action="clearInterruptedRun"/);
 assert.match(lockedManagerView.html, /Clear after review/);
+
+const recentRunsView = views.find(
+  (view) => view.id === "resource-manager-recent-runs",
+);
+assert.ok(recentRunsView, "harness includes detailed Quartermaster receipts");
+assert.match(
+  recentRunsView.html,
+  /<details\b[^>]*class="rm-runs__disclosure"[^>]*\sopen(?:\s|=|>)/,
+  "recent-runs fixture opens the bounded history for responsive auditing",
+);
+assert.equal(
+  countMatches(recentRunsView.html, /<details\b[^>]*class="rm-run\s/g),
+  4,
+  "history fixture includes complete, partial, interrupted, and write-error receipts",
+);
+for (const expectedText of [
+  "Interrupted automatic upkeep",
+  "Forage Drive",
+  "Advance Day",
+  "Complete",
+  "Partial",
+  "Interrupted",
+  "Inventory outcome unknown",
+  "Participant and inventory",
+  "Inventory to review",
+  "Food and water",
+  "Aric the Ranger",
+  "Exhaustion suggestions",
+  "Torch stack update needs review",
+  "run-interrupted-calendar-0042",
+]) {
+  assert.match(
+    recentRunsView.html,
+    new RegExp(expectedText),
+    `recent receipts render ${expectedText}`,
+  );
+}
+const interruptedSummary = recentRunsView.html.match(
+  /<details class="rm-run rm-run--unknown"[^>]*>[\s\S]*?<summary>([\s\S]*?)<\/summary>/,
+)?.[1];
+assert.ok(interruptedSummary, "interrupted receipt has a collapsed summary");
+for (const summaryText of [
+  "Limited",
+  "Day 42",
+  "2 affected actors",
+  "run-interrupted-calendar-0042",
+]) {
+  assert.match(
+    interruptedSummary,
+    new RegExp(summaryText),
+    `collapsed receipt identifies ${summaryText}`,
+  );
+}
+assert.match(
+  recentRunsView.html,
+  /class="[^"\n]*is-error[^"\n]*"[^>]*>[\s\S]*?Torch stack update needs review/,
+  "party write errors are visibly warned even without a shortage",
+);
+const historyMarkup = recentRunsView.html.match(
+  /<section class="rm-section rm-runs"[\s\S]*?<details class="rm-setup"/,
+)?.[0];
+assert.ok(historyMarkup, "history renders immediately before Setup & rules");
+assert.doesNotMatch(
+  historyMarkup,
+  /data-action=/,
+  "run history is inspection-only with no retry, replay, rollback, or clear action",
+);
 
 const customEnvironmentView = views.find(
   (view) => view.id === "resource-manager-custom-environment",

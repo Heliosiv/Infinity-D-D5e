@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
+import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
 
 /** Market-filter context (mirrors BaseLootApp._marketContext) for the harness. */
@@ -158,6 +159,14 @@ export function buildHarnessViews() {
       "infinity-resource-manager",
       "templates/resource-manager.hbs",
       resourceManagerLockedContext(),
+      { width: 880, height: 700 },
+    ),
+    view(
+      "resource-manager-recent-runs",
+      "Quartermaster (recent runs)",
+      "infinity-resource-manager",
+      "templates/resource-manager.hbs",
+      resourceManagerRecentRunsContext(),
       { width: 880, height: 700 },
     ),
     view(
@@ -1410,6 +1419,9 @@ function resourceManagerContext() {
         },
       ],
     },
+    recentRuns: [],
+    hasRecentRuns: false,
+    recentRunCountLabel: "0 saved",
   };
 }
 
@@ -1422,6 +1434,233 @@ function resourceManagerLockedContext() {
       triggerLabel: "automatic upkeep",
       dayLabel: "day 42",
     },
+  };
+}
+
+function resourceManagerRecentRunsContext() {
+  const hostileLongLabel = `FieldMedicine${"X".repeat(188)}`;
+  const recentRuns = presentRecentRuns(
+    [
+      {
+        version: 1,
+        runId: "run-interrupted-calendar-0042",
+        kind: "interrupted",
+        trigger: "calendar",
+        status: "interrupted",
+        outcomeUnknown: true,
+        day: 42,
+        days: 1,
+        startedAt: Date.UTC(2026, 7, 8, 18, 20),
+        claimedAt: Date.UTC(2026, 7, 8, 18, 25),
+        recordedAt: Date.UTC(2026, 7, 8, 18, 30),
+        environment: { id: "limited", label: "Limited", dc: 15 },
+        initiator: { userId: "gm-a", name: "Morgan (GM)" },
+        actors: [
+          {
+            actorId: "a1",
+            name: "Aric the Ranger",
+            role: "participant-inventory",
+          },
+          { actorId: "a2", name: "Party Mule", role: "inventory" },
+        ],
+      },
+      {
+        version: 1,
+        runId: "run-forage-food-water-0041",
+        kind: "forage",
+        trigger: "forage",
+        status: "partial",
+        outcomeUnknown: false,
+        day: 41,
+        days: 1,
+        startedAt: Date.UTC(2026, 7, 8, 17, 50),
+        claimedAt: Date.UTC(2026, 7, 8, 17, 55),
+        recordedAt: Date.UTC(2026, 7, 8, 18, 0),
+        environment: { id: "limited", label: "Limited", dc: 15 },
+        initiator: { userId: "gm-a", name: "Morgan (GM)" },
+        actors: [
+          {
+            actorId: "a1",
+            name: "Aric the Ranger",
+            resources: [],
+            forage: {
+              attempted: true,
+              success: true,
+              suppressed: false,
+              food: 5,
+              water: 4,
+              errors: [],
+            },
+            errors: [],
+          },
+          {
+            actorId: "a2",
+            name: "Mira Quickstep",
+            resources: [],
+            forage: {
+              attempted: true,
+              success: false,
+              suppressed: false,
+              food: 0,
+              water: 0,
+              errors: [],
+            },
+            errors: [],
+          },
+        ],
+        partyResources: [],
+        exhaustionSuggestions: [],
+        forageDrive: {
+          target: "food-water",
+          mode: "each",
+          dc: 15,
+          destination: {
+            mode: "party-stash",
+            actorId: "a1",
+            name: "Aric's Pack",
+          },
+          totalFood: 5,
+          totalWater: 3,
+          errors: ["Aric's Pack: water deposit was only partially applied"],
+        },
+      },
+      {
+        version: 1,
+        runId: `run-party-error-${"Y".repeat(180)}`,
+        kind: "upkeep",
+        trigger: "calendar",
+        status: "partial",
+        outcomeUnknown: false,
+        day: 40,
+        days: 1,
+        startedAt: Date.UTC(2026, 7, 8, 17, 20),
+        claimedAt: Date.UTC(2026, 7, 8, 17, 25),
+        recordedAt: Date.UTC(2026, 7, 8, 17, 30),
+        environment: {
+          id: "custom-long-label",
+          label: hostileLongLabel,
+          dc: 18,
+        },
+        initiator: { userId: "gm-a", name: "Morgan (GM)" },
+        actors: [
+          {
+            actorId: "a1",
+            name: hostileLongLabel,
+            resources: [
+              {
+                id: "medicine",
+                label: hostileLongLabel,
+                consumed: 1,
+                shortfall: 0,
+              },
+            ],
+            forage: null,
+            errors: [],
+          },
+        ],
+        partyResources: [
+          {
+            id: "light",
+            label: "Light (Torches)",
+            consumed: 0,
+            shortfall: 0,
+            error: "Torch stack update needs review",
+          },
+        ],
+        exhaustionSuggestions: [],
+        forageDrive: null,
+      },
+      {
+        version: 1,
+        runId: "run-manual-advance-0040",
+        kind: "upkeep",
+        trigger: "manual",
+        status: "complete",
+        outcomeUnknown: false,
+        day: 40,
+        days: 1,
+        startedAt: Date.UTC(2026, 7, 8, 16, 50),
+        claimedAt: Date.UTC(2026, 7, 8, 16, 55),
+        recordedAt: Date.UTC(2026, 7, 8, 17, 0),
+        environment: { id: "limited", label: "Limited", dc: 15 },
+        initiator: { userId: "gm-a", name: "Morgan (GM)" },
+        actors: [
+          {
+            actorId: "a1",
+            name: "Aric the Ranger",
+            resources: [
+              {
+                id: "food",
+                label: "Food (Rations)",
+                consumed: 1,
+                shortfall: 0,
+              },
+              {
+                id: "water",
+                label: "Water",
+                consumed: 1,
+                shortfall: 0,
+              },
+            ],
+            forage: {
+              attempted: false,
+              success: false,
+              suppressed: false,
+              food: 0,
+              water: 0,
+              errors: [],
+            },
+            errors: [],
+          },
+          {
+            actorId: "a2",
+            name: "Mira Quickstep",
+            resources: [
+              {
+                id: "food",
+                label: "Food (Rations)",
+                consumed: 0,
+                shortfall: 1,
+              },
+              {
+                id: "water",
+                label: "Water",
+                consumed: 1,
+                shortfall: 0,
+              },
+            ],
+            forage: null,
+            errors: [],
+          },
+        ],
+        partyResources: [
+          {
+            id: "light",
+            label: "Light (Torches)",
+            consumed: 2,
+            shortfall: 0,
+            error: "",
+          },
+        ],
+        exhaustionSuggestions: [
+          {
+            actorId: "a2",
+            name: "Mira Quickstep",
+            suggestDelta: 1,
+            reasons: ["Food shortfall"],
+          },
+        ],
+        forageDrive: null,
+      },
+    ],
+    { locale: "en-CA", timeZone: "UTC" },
+  ).map((receipt) => ({ ...receipt, expanded: true }));
+  return {
+    ...resourceManagerContext(),
+    recentRunsExpanded: true,
+    recentRuns,
+    hasRecentRuns: true,
+    recentRunCountLabel: `${recentRuns.length} saved`,
   };
 }
 

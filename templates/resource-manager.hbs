@@ -114,6 +114,128 @@
   </section>
   {{/if}}
 
+  <section class="rm-section rm-runs" aria-labelledby="rm-runs-heading">
+    <h3 id="rm-runs-heading">Recent runs</h3>
+    {{#if hasRecentRuns}}
+    <details class="rm-runs__disclosure" {{#if recentRunsExpanded}}open{{/if}}>
+      <summary>
+        <span><i class="fa-solid fa-chevron-right rm-disclosure-chevron" aria-hidden="true"></i> <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Run receipts</span>
+        <small>{{recentRunCountLabel}}</small>
+      </summary>
+      <div class="rm-runs__list">
+        {{#each recentRuns}}
+        <details class="rm-run rm-run--{{statusTone}}" {{#if expanded}}open{{/if}}>
+          <summary>
+            <i class="fa-solid fa-chevron-right rm-disclosure-chevron" aria-hidden="true"></i>
+            <span class="rm-run__identity">
+              <strong>{{triggerLabel}}</strong>
+              <small>{{recordedAtLabel}}</small>
+              <small class="rm-run__summary-meta">{{environmentLabel}} · {{dayLabel}} · {{actorCountLabel}}</small>
+            </span>
+            <span class="rm-run__summary">
+              <span class="rm-run__status">{{statusLabel}}</span>
+              <small>{{summaryLabel}}</small>
+              <code>{{runId}}</code>
+            </span>
+          </summary>
+          <div class="rm-run__detail">
+            <div class="rm-run__meta">
+              <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{environmentLabel}}</span>
+              <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{dayLabel}}</span>
+              <span><i class="fa-solid fa-user-shield" aria-hidden="true"></i> {{initiatorLabel}}</span>
+              <span><i class="fa-regular fa-clock" aria-hidden="true"></i> Started {{startedAtLabel}}</span>
+            </div>
+
+            {{#if isInterrupted}}
+            <p class="rm-run__unknown" role="note"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              <strong>Inventory outcome unknown.</strong> Clearing the safety lock acknowledged the interruption; it did not prove which inventory changes finished.
+            </p>
+            {{/if}}
+
+            {{#if isInterrupted}}
+            {{#if forageContext}}
+            <dl class="rm-run__facts">
+              <div><dt>Requested</dt><dd>{{forageContext.targetLabel}}</dd></div>
+              <div><dt>Destination</dt><dd>{{forageContext.destinationLabel}}</dd></div>
+            </dl>
+            {{/if}}
+            {{/if}}
+
+            {{#if forageDrive}}
+            <dl class="rm-run__facts">
+              <div><dt>Target</dt><dd>{{forageDrive.targetLabel}}</dd></div>
+              {{#if forageDrive.hasDc}}<div><dt>DC</dt><dd>{{forageDrive.dc}}</dd></div>{{/if}}
+              <div><dt>Yield rule</dt><dd>{{forageDrive.modeLabel}}</dd></div>
+              <div><dt>Destination</dt><dd>{{forageDrive.destinationLabel}}</dd></div>
+              <div><dt>Applied</dt><dd>+{{forageDrive.totalFood}} food / +{{forageDrive.totalWater}} water</dd></div>
+            </dl>
+            {{#if forageDrive.hasErrors}}
+            <ul class="rm-run__errors">
+              {{#each forageDrive.errors}}<li>{{this}}</li>{{/each}}
+            </ul>
+            {{/if}}
+            {{/if}}
+
+            {{#if hasActors}}
+            <div class="rm-run__actors">
+              {{#each actors}}
+              <article class="rm-run-actor">
+                <div class="rm-run-actor__head">
+                  <strong>{{name}}</strong>
+                  {{#if hasRole}}<span>{{roleLabel}}</span>{{/if}}
+                  {{#if hasForage}}<span>{{forageNote}}</span>{{/if}}
+                </div>
+                {{#if hasResources}}
+                <ul>
+                  {{#each resources}}
+                  <li><span>{{label}}</span><span>Used {{consumed}} · short {{shortfall}}</span></li>
+                  {{/each}}
+                </ul>
+                {{/if}}
+                {{#if hasErrors}}
+                <ul class="rm-run__errors">
+                  {{#each displayErrors}}<li>{{this}}</li>{{/each}}
+                </ul>
+                {{/if}}
+              </article>
+              {{/each}}
+            </div>
+            {{/if}}
+
+            {{#if hasPartyResources}}
+            <div class="rm-run__party">
+              <strong>Party resources</strong>
+              <ul>
+                {{#each partyResources}}
+                <li class="{{#if hasShortfall}}is-short{{/if}} {{#if hasError}}is-error{{/if}}"><span>{{label}}</span><span>Used {{consumed}} · short {{shortfall}}{{#if hasError}} · <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{error}}{{/if}}</span></li>
+                {{/each}}
+              </ul>
+            </div>
+            {{/if}}
+
+            {{#if hasExhaustionSuggestions}}
+            <div class="rm-run__suggestions">
+              <strong>Exhaustion suggestions</strong>
+              <p>Suggestion only; this receipt does not confirm it was applied.</p>
+              <ul>
+                {{#each exhaustionSuggestions}}
+                <li><strong>{{name}} +{{suggestDelta}}</strong>{{#if reasons}} — {{#each reasons}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}{{/if}}</li>
+                {{/each}}
+              </ul>
+            </div>
+            {{/if}}
+
+            <p class="rm-run__id"><span>Run ID</span> <code>{{runId}}</code></p>
+          </div>
+        </details>
+        {{/each}}
+      </div>
+    </details>
+    {{else}}
+    <p class="rm-note">No resource runs have been recorded yet.</p>
+    {{/if}}
+  </section>
+
   <details class="rm-setup" data-role="setup-disclosure" {{#if setupExpanded}}open{{/if}}>
     <summary class="rm-setup__summary">
       <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; rules</span>

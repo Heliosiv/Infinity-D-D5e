@@ -15,7 +15,7 @@ Three ways to open the dashboard:
 
 ## Status
 
-**v0.2.71** - Hardens downtime planning, handoff recovery, item writes, and player-safe results; adds authenticated player-hub launchers; and streamlines Quartermaster with targeted forage drives, consumption-only Advance Day, and routine-first setup.
+**v0.2.72 (unreleased)** - Adds private, read-only Quartermaster receipts for the 20 most recent upkeep, forage, and acknowledged interrupted runs.
 
 - GM dashboard with seven dedicated tools and scene-control launchers.
 - Privileged dashboard, loot, merchant, reputation, and GM-preview windows require a full GM and close if that user is demoted; Assistant GMs use the player-scoped launchers.
@@ -25,7 +25,7 @@ Three ways to open the dashboard:
 - Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and authoritative buy/sell transactions with canonical item, wallet, and merchant read-back, verified compensation, and request-bound replay protection.
 - **Downtime & City Actions**: the GM assigns the same hour budget to each eligible character; players queue several routine, commerce, and crime activities; the GM locks an immutable hidden-roll preview before applying exact receipts. Local Heat and stolen-goods provenance persist by settlement.
-- **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, and a read-only player **Party Supplies** outlook.
+- **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, and a read-only player **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: when a PC gets up from 0 HP or the dead state, the GM approves or declines a player-triggered, GM-authoritative d100 roll; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Player launchers**: `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
@@ -196,6 +196,12 @@ run at a time. A persisted safety lease reserves an automatic calendar day
 before Actor inventory changes.
 After a short cross-client stabilization check, an interrupted run is locked for
 GM review instead of replaying consumption.
+
+**Recent runs** keeps detailed, read-only receipts for the latest 20 automatic
+upkeep, Advance Day, Forage Drive, and acknowledged interrupted runs. The
+history is GM-private and fixed-size; it offers inspection only, with no retry,
+replay, rollback, or player-socket projection. An acknowledged interruption is
+recorded as an unknown inventory outcome rather than assuming nothing changed.
 
 Campaign-specific regions can be created directly in Quartermaster: select the
 closest built-in environment, choose **Copy as custom**, then edit its name,

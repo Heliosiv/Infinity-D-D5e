@@ -147,6 +147,19 @@ async function auditPage() {
     }
   }
 
+  if (document.documentElement.clientWidth <= 460) {
+    for (const summary of document.querySelectorAll(
+      '[data-harness-window="resource-manager-recent-runs"] .rm-run > summary',
+    )) {
+      const height = summary.getBoundingClientRect().height;
+      if (height > 300) {
+        issues.push(
+          `resource-manager-recent-runs: phone receipt summary is too tall (${Math.round(height)}px)`,
+        );
+      }
+    }
+  }
+
   async function auditButton(button, { skipCover = false } = {}) {
     button.scrollIntoView({ block: "center", inline: "nearest" });
     await nextFrame();

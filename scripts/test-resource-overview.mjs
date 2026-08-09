@@ -351,6 +351,8 @@ function roster({ shared = false } = {}) {
 
   assert.equal(player.generatedAt, null);
   assert.equal("members" in player, false);
+  assert.equal("recentRuns" in player, false);
+  assert.equal("history" in player, false);
   assert.equal("runId" in player.lastUpkeep, false);
   assert.equal("errors" in player.lastUpkeep.rows[0], false);
   assert.equal("error" in player.lastUpkeep.partyShortages[0], false);

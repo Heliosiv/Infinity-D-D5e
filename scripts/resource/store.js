@@ -5,8 +5,8 @@
  * moving run-state. Both live in the restricted private-state Journal:
  *   - `resourceConfig`   — the GM-tunable structure (resources, environments,
  *                          modes). Rewritten only when the GM edits it.
- *   - `resourceRunState` — the small moving parts (lastSeenDay, current
- *                          environment, last upkeep report). Written each day.
+ *   - `resourceRunState` — day/environment state, the latest report, active
+ *                          safety lease, and bounded private run receipts.
  *
  * Pure shaping (normalize/create) is exported for node tests; the Foundry-
  * touching load/save use private-state.js. Legacy world-setting fallback is
@@ -32,9 +32,19 @@ import {
   getDefaultEnvironments,
   normalizeEnvironmentCatalog,
 } from "./environment.js";
+import {
+  appendRecentRunReceipt,
+  buildInterruptedRunReceipt,
+  normalizeForageDestination,
+  normalizeRecentRuns,
+  normalizeRunActorSnapshots,
+  normalizeRunEnvironmentSnapshot,
+  normalizeRunInitiatorSnapshot,
+  normalizeRunReceipt,
+} from "./history.js";
 
 export const RESOURCE_CONFIG_VERSION = 4;
-export const RESOURCE_RUN_STATE_VERSION = 2;
+export const RESOURCE_RUN_STATE_VERSION = 3;
 
 /** Resource consumption scope. Food/water are per-character; light is party-wide. */
 export const RESOURCE_SCOPES = Object.freeze(["per-character", "party"]);
@@ -402,20 +412,38 @@ function normalizeActiveUpkeep(input) {
       ? null
       : Math.floor(Number(rawDay));
   const rawClaimedAt = Number(input.claimedAt);
+  const claimedAt =
+    Number.isSafeInteger(rawClaimedAt) && rawClaimedAt >= 0 ? rawClaimedAt : 0;
+  const rawStartedAt = Number(input.startedAt);
+  const startedAt =
+    Number.isSafeInteger(rawStartedAt) && rawStartedAt >= 0
+      ? rawStartedAt
+      : claimedAt;
+  const trigger =
+    input.trigger === "calendar"
+      ? "calendar"
+      : input.trigger === "forage"
+        ? "forage"
+        : "manual";
   return {
     runId,
-    trigger:
-      input.trigger === "calendar"
-        ? "calendar"
-        : input.trigger === "forage"
-          ? "forage"
-          : "manual",
+    trigger,
     day,
     days: Math.max(1, toInt(input.days, 1)),
-    claimedAt:
-      Number.isSafeInteger(rawClaimedAt) && rawClaimedAt >= 0
-        ? rawClaimedAt
-        : 0,
+    startedAt,
+    claimedAt,
+    environment: normalizeRunEnvironmentSnapshot(input.environment),
+    initiator: normalizeRunInitiatorSnapshot(input.initiator),
+    actors: normalizeRunActorSnapshots(input.actors),
+    forageTarget:
+      trigger === "forage" &&
+      ["food-water", "food", "water"].includes(input.forageTarget)
+        ? input.forageTarget
+        : null,
+    forageDestination:
+      trigger === "forage"
+        ? normalizeForageDestination(input.forageDestination)
+        : null,
   };
 }
 
@@ -436,6 +464,7 @@ export function normalizeRunState(input) {
     currentEnvironmentId: toStr(raw.currentEnvironmentId) || null,
     lastUpkeepResult: result,
     activeUpkeep: normalizeActiveUpkeep(raw.activeUpkeep),
+    recentRuns: normalizeRecentRuns(raw.recentRuns),
   };
 }
 
@@ -475,6 +504,12 @@ function isPersistedRunState(raw) {
     ) {
       return false;
     }
+  }
+  if (
+    !Array.isArray(raw.recentRuns) ||
+    !persistedValuesEqual(raw.recentRuns, normalizeRecentRuns(raw.recentRuns))
+  ) {
+    return false;
   }
   return true;
 }
@@ -1091,23 +1126,64 @@ export function assertUpkeepClaimCurrent(runId) {
   return true;
 }
 
-/** Atomically store the report and release the matching upkeep lease. */
+/**
+ * Atomically append a private receipt, optionally store the latest upkeep
+ * report, and release the matching lease.
+ */
 export async function completeUpkeepRun({
   runId,
   result,
+  receipt,
   persistResult = true,
 } = {}) {
   const expectedRunId = toStr(runId);
   if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
+  const requestedReceipt = normalizeRunReceipt(receipt);
+  if (!requestedReceipt || requestedReceipt.runId !== expectedRunId) {
+    throw new Error("ResourceRunReceiptInvalid");
+  }
   const value =
     result && typeof result === "object"
       ? (globalThis.foundry?.utils?.deepClone?.(result) ??
         structuredClone(result))
       : null;
   return updateRunState((state) => {
-    if (state.activeUpkeep?.runId !== expectedRunId) {
+    const activeUpkeep = state.activeUpkeep;
+    if (activeUpkeep?.runId !== expectedRunId) {
       throw new Error("ResourceUpkeepClaimLost");
     }
+    const expectedKind =
+      activeUpkeep.trigger === "forage" ? "forage" : "upkeep";
+    if (requestedReceipt.kind !== expectedKind) {
+      throw new Error("ResourceRunReceiptInvalid");
+    }
+    const completedReceipt = normalizeRunReceipt({
+      ...requestedReceipt,
+      runId: activeUpkeep.runId,
+      trigger: activeUpkeep.trigger,
+      day: activeUpkeep.day ?? requestedReceipt.day,
+      days: activeUpkeep.days,
+      startedAt: activeUpkeep.startedAt,
+      claimedAt: activeUpkeep.claimedAt,
+      environment: activeUpkeep.environment ?? requestedReceipt.environment,
+      initiator: activeUpkeep.initiator ?? requestedReceipt.initiator,
+      forageContext:
+        activeUpkeep.trigger === "forage"
+          ? {
+              target:
+                activeUpkeep.forageTarget ??
+                requestedReceipt.forageContext?.target,
+              destination:
+                activeUpkeep.forageDestination ??
+                requestedReceipt.forageContext?.destination,
+            }
+          : null,
+    });
+    if (!completedReceipt) throw new Error("ResourceRunReceiptInvalid");
+    state.recentRuns = appendRecentRunReceipt(
+      state.recentRuns,
+      completedReceipt,
+    );
     if (persistResult) state.lastUpkeepResult = value;
     state.activeUpkeep = null;
   });
@@ -1117,13 +1193,19 @@ export async function completeUpkeepRun({
  * Explicitly acknowledge an interrupted run without replaying it. Calendar
  * claims have already reserved their day, so clearing only releases the lock.
  */
-export async function clearUpkeepClaim(runId) {
+export async function clearUpkeepClaim(
+  runId,
+  { recordedAt = Date.now() } = {},
+) {
   const expectedRunId = toStr(runId);
   if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
   return updateRunState((state) => {
     if (state.activeUpkeep?.runId !== expectedRunId) {
       throw new Error("ResourceUpkeepClaimLost");
     }
+    const receipt = buildInterruptedRunReceipt(state.activeUpkeep, recordedAt);
+    if (!receipt) throw new Error("ResourceRunReceiptInvalid");
+    state.recentRuns = appendRecentRunReceipt(state.recentRuns, receipt);
     state.activeUpkeep = null;
   });
 }
