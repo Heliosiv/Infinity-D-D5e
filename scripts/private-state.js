@@ -22,13 +22,36 @@ import { persistedValuesEqual } from "./utils/persisted-data.js";
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
 const RECOVERY_SOURCE_FLAG = "privateStateRecoverySource";
-export const PRIVATE_STATE_SCHEMA_VERSION = 6;
+export const PRIVATE_STATE_SCHEMA_VERSION = 7;
 const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
+const MERCHANT_TRANSACTION_KEYS = Object.freeze([
+  "version",
+  "revision",
+  "authorityId",
+  "authorityEpoch",
+  "writeToken",
+  "replayFloors",
+  "records",
+]);
+const EMPTY_MERCHANT_TRANSACTIONS = Object.freeze({
+  version: 1,
+  revision: 0,
+  authorityId: null,
+  authorityEpoch: null,
+  writeToken: null,
+  replayFloors: Object.freeze([]),
+  records: Object.freeze([]),
+});
 const PRIVATE_STATE_FIELDS = Object.freeze({
   merchants: Object.freeze({ legacyKey: "merchants", type: "array" }),
   merchantAccess: Object.freeze({ legacyKey: null, type: "object" }),
+  merchantTransactions: Object.freeze({
+    legacyKey: null,
+    type: "merchant-transactions",
+    defaultValue: EMPTY_MERCHANT_TRANSACTIONS,
+  }),
   factions: Object.freeze({ legacyKey: "factions", type: "array" }),
   resourceConfig: Object.freeze({
     legacyKey: "resourceConfig",
@@ -162,18 +185,61 @@ function isFoundryEnvironment() {
 }
 
 function fieldDefinition(key) {
+  if (typeof key !== "string" || !Object.hasOwn(PRIVATE_STATE_FIELDS, key)) {
+    throw new Error(`UnknownPrivateStateKey:${String(key)}`);
+  }
   const definition = PRIVATE_STATE_FIELDS[key];
-  if (!definition) throw new Error(`UnknownPrivateStateKey:${key}`);
   return definition;
 }
 
 function defaultValue(key) {
-  return fieldDefinition(key).type === "array" ? [] : {};
+  const definition = fieldDefinition(key);
+  if (definition.defaultValue !== undefined) {
+    return clone(definition.defaultValue);
+  }
+  return definition.type === "array" ? [] : {};
 }
 
 function isValidValue(key, value) {
-  if (fieldDefinition(key).type === "array") return Array.isArray(value);
+  const definition = fieldDefinition(key);
+  if (definition.type === "merchant-transactions") {
+    return isValidMerchantTransactions(value);
+  }
+  if (definition.type === "array") return Array.isArray(value);
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isPersistedRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isNullablePersistedId(value) {
+  return (
+    value === null ||
+    (typeof value === "string" && value.length > 0 && value.trim() === value)
+  );
+}
+
+function isValidMerchantTransactions(value) {
+  return Boolean(
+    isPersistedRecord(value) &&
+    Reflect.ownKeys(value).length === MERCHANT_TRANSACTION_KEYS.length &&
+    MERCHANT_TRANSACTION_KEYS.every((key) => Object.hasOwn(value, key)) &&
+    value.version === 1 &&
+    Number.isSafeInteger(value.revision) &&
+    value.revision >= 0 &&
+    isNullablePersistedId(value.authorityId) &&
+    isNullablePersistedId(value.authorityEpoch) &&
+    isNullablePersistedId(value.writeToken) &&
+    Array.isArray(value.replayFloors) &&
+    value.replayFloors.every(isPersistedRecord) &&
+    Array.isArray(value.records) &&
+    value.records.every(isPersistedRecord),
+  );
 }
 
 function cleanValue(key, value) {
@@ -1365,84 +1431,180 @@ export function getPrivateState(key) {
   return cache.has(key) ? clone(cache.get(key)) : undefined;
 }
 
+function cleanPrivateStateUpdates(updates) {
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+    throw new TypeError("Private-state updates must be a key/value object");
+  }
+  const entries = Object.entries(updates);
+  if (entries.length === 0) {
+    throw new TypeError("Private-state updates must not be empty");
+  }
+  return Object.fromEntries(
+    entries.map(([key, value]) => {
+      const definition = fieldDefinition(key);
+      if (
+        definition.type === "merchant-transactions" &&
+        !isValidValue(key, value)
+      ) {
+        throw new TypeError(`InvalidPrivateStateValue:${key}`);
+      }
+      return [key, cleanValue(key, value)];
+    }),
+  );
+}
+
+function privateStateWriteContext(keys) {
+  return keys.join(",");
+}
+
+function liveWriteFence(document) {
+  return Object.freeze({
+    document,
+    generation: lifecycleGeneration,
+    userId: String(globalThis.game?.user?.id ?? ""),
+    authorityId: authoritativeGMId(),
+  });
+}
+
+function isLiveWriteFenceCurrent(fence) {
+  return Boolean(
+    fence?.document &&
+    lifecycleGeneration === fence.generation &&
+    isFullGM() &&
+    String(globalThis.game?.user?.id ?? "") === fence.userId &&
+    authoritativeGMId() === fence.authorityId &&
+    initialized &&
+    storeDocument === fence.document &&
+    isVerifiedCanonicalStore(fence.document),
+  );
+}
+
+function privateStateWriteFenceError(context) {
+  const error = new Error(`PrivateStateWriteAuthorityFenceFailed:${context}`);
+  error.code = "PRIVATE_STATE_WRITE_AUTHORITY_FENCE_FAILED";
+  return error;
+}
+
+function verifyPrivateStateWrite(document, cleaned) {
+  for (const [key, expected] of Object.entries(cleaned)) {
+    const stored = readDocumentValue(document, key);
+    if (!stored.present || !valuesEqual(stored.value, expected)) {
+      throw new Error(`PrivateStateWriteVerificationFailed:${key}`);
+    }
+  }
+}
+
 /**
- * Persist private state, falling back to legacy settings in node tests.
+ * Persist one or more private-state fields in one canonical Journal update.
  *
  * Optional guards let a caller implement a read/write/read-back fence around
  * moving state without weakening the default full-GM permission boundary.
  */
-export async function setPrivateState(
-  key,
-  value,
+export async function setPrivateStates(
+  updates,
   { beforeWrite = null, afterWrite = null } = {},
 ) {
-  const definition = fieldDefinition(key);
-  const cleaned = cleanValue(key, value);
+  const cleaned = cleanPrivateStateUpdates(updates);
+  const keys = Object.keys(cleaned);
+  const context = privateStateWriteContext(keys);
   if (isFoundryEnvironment() && !globalThis.game?.ready) {
     setPrivateStateStatus({
       state: "pending",
       code: "foundry-not-ready",
       retryable: true,
     });
-    throw createPrivateStateUnavailableError(key);
+    throw createPrivateStateUnavailableError(context);
   }
   if (!isFoundryEnvironment()) {
     if (!globalThis.game?.settings?.set) {
       throw new Error("NotInFoundry: private state requires game.settings");
     }
     if (typeof beforeWrite === "function" && beforeWrite() !== true) {
-      throw new Error(`PrivateStateWritePreconditionFailed:${key}`);
+      throw new Error(`PrivateStateWritePreconditionFailed:${context}`);
     }
-    await globalThis.game.settings.set(
-      MODULE_ID,
-      definition.legacyKey ?? key,
-      cleaned,
-    );
+    // This branch exists only for isolated node tests. Live Foundry writes use
+    // the single Journal update below so related fields cannot be split across
+    // separate persistence calls.
+    for (const [key, value] of Object.entries(cleaned)) {
+      const definition = fieldDefinition(key);
+      await globalThis.game.settings.set(
+        MODULE_ID,
+        definition.legacyKey ?? key,
+        value,
+      );
+    }
     if (typeof afterWrite === "function" && afterWrite() !== true) {
-      throw new Error(`PrivateStateWritePostconditionFailed:${key}`);
+      throw new Error(`PrivateStateWritePostconditionFailed:${context}`);
     }
-    return cleaned;
+    return clone(cleaned);
   }
   if (!isFullGM()) {
     throw new Error("PermissionDenied: only a full GM may write private state");
   }
   const ready = await initializePrivateState();
-  if (!ready) throw createPrivateStateUnavailableError(key);
+  if (!ready) throw createPrivateStateUnavailableError(context);
   if (!isPrivilegedPrivateStateReady()) {
-    throw createPrivateStateUnavailableError(key);
+    throw createPrivateStateUnavailableError(context);
   }
   const document = storeDocument;
+  const fence = liveWriteFence(document);
   if (typeof beforeWrite === "function" && beforeWrite() !== true) {
-    throw new Error(`PrivateStateWritePreconditionFailed:${key}`);
+    throw new Error(`PrivateStateWritePreconditionFailed:${context}`);
   }
   if (
     !ensureStoreCanBeWritten(document, {
       invalidate: true,
     })
   ) {
-    throw createPrivateStateUnavailableError(key);
+    throw createPrivateStateUnavailableError(context);
   }
-  await document.update({ [`flags.${MODULE_ID}.${key}`]: cleaned });
+  if (!isLiveWriteFenceCurrent(fence)) {
+    if (privateStateStatus.state === "blocked") {
+      throw createPrivateStateUnavailableError(context);
+    }
+    throw privateStateWriteFenceError(context);
+  }
+  await document.update(
+    Object.fromEntries(
+      Object.entries(cleaned).map(([key, value]) => [
+        `flags.${MODULE_ID}.${key}`,
+        value,
+      ]),
+    ),
+  );
   if (privateStateStatus.state === "blocked") {
-    throw createPrivateStateUnavailableError(key);
+    throw createPrivateStateUnavailableError(context);
+  }
+  if (!isLiveWriteFenceCurrent(fence)) {
+    throw privateStateWriteFenceError(context);
+  }
+  verifyPrivateStateWrite(document, cleaned);
+  if (typeof afterWrite === "function" && afterWrite() !== true) {
+    throw new Error(`PrivateStateWritePostconditionFailed:${context}`);
   }
   if (
-    !isFullGM() ||
-    storeDocument !== document ||
-    !isVerifiedCanonicalStore(document)
+    !ensureStoreCanBeWritten(document, {
+      invalidate: true,
+    })
   ) {
-    throw new Error("PermissionDenied: only a full GM may write private state");
+    throw createPrivateStateUnavailableError(context);
   }
-  const stored = readDocumentValue(document, key);
-  if (!stored.present || !valuesEqual(stored.value, cleaned)) {
-    throw new Error(`PrivateStateWriteVerificationFailed:${key}`);
+  if (!isLiveWriteFenceCurrent(fence)) {
+    if (privateStateStatus.state === "blocked") {
+      throw createPrivateStateUnavailableError(context);
+    }
+    throw privateStateWriteFenceError(context);
   }
-  if (typeof afterWrite === "function" && afterWrite() !== true) {
-    throw new Error(`PrivateStateWritePostconditionFailed:${key}`);
-  }
+  verifyPrivateStateWrite(document, cleaned);
   const changedKeys = hydrateCache(document);
   callPrivateStateChanged(changedKeys, "local-write");
   return clone(cleaned);
+}
+
+/** Persist one private-state field while retaining the historical return type. */
+export async function setPrivateState(key, value, guards = {}) {
+  const written = await setPrivateStates({ [key]: value }, guards);
+  return clone(written[key]);
 }
 
 /**

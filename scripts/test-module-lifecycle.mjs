@@ -143,8 +143,8 @@ function createFixture({
         state: privateAvailable ? "ready" : "pending",
         code: privateAvailable ? "ready" : "store-unavailable",
         retryable: !privateAvailable,
-        supportedSchema: 6,
-        observedSchema: privateAvailable ? 6 : null,
+        supportedSchema: 7,
+        observedSchema: privateAvailable ? 7 : null,
       },
     onPrivateStateChanged: (callback) => {
       trace.push("private-state:hook");
@@ -388,8 +388,8 @@ function createFixture({
       state: "blocked",
       code: "future-schema",
       retryable: false,
-      supportedSchema: 6,
-      observedSchema: 7,
+      supportedSchema: 7,
+      observedSchema: 8,
     },
   });
   createModuleBootstrap(fixture.bindings).register();
@@ -404,7 +404,7 @@ function createFixture({
   assert.ok(fixture.trace.includes("injury-socket"));
   assert.equal(fixture.trace.includes("recovery-timer"), false);
   assert.equal(fixture.timers.length, 0);
-  assert.match(fixture.notifications[0], /schema \(7\)/);
+  assert.match(fixture.notifications[0], /schema \(8\)/);
   assert.match(fixture.notifications[0], /automatic retries are stopped/);
   assert.match(fixture.notifications[0], /Home > Campaign data/);
 }
@@ -417,7 +417,7 @@ function createFixture({
       state: "blocked",
       code: "missing-store",
       retryable: false,
-      supportedSchema: 6,
+      supportedSchema: 7,
       observedSchema: null,
     },
   });

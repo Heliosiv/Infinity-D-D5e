@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  PRIVATE_STATE_SCHEMA_VERSION,
   PRIVATE_STATE_CHANGED_HOOK,
   applyEmptyPrivateStateReplacement,
   applyPrivateStateCandidateAdoption,
@@ -17,11 +18,26 @@ import {
   previewPrivateStateSnapshotRecovery,
   resetPrivateStateForTests,
   setPrivateState,
+  setPrivateStates,
 } from "./private-state.js";
 import { saveMerchants } from "./merchant/store.js";
 import { saveFactions } from "./reputation/store.js";
 
 const MODULE_ID = "infinity-dnd5e";
+const CURRENT_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
+const FUTURE_SCHEMA = CURRENT_SCHEMA + 1;
+
+function emptyMerchantTransactions() {
+  return {
+    version: 1,
+    revision: 0,
+    authorityId: null,
+    authorityEpoch: null,
+    writeToken: null,
+    replayFloors: [],
+    records: [],
+  };
+}
 const saved = {
   game: globalThis.game,
   Hooks: globalThis.Hooks,
@@ -147,9 +163,10 @@ async function waitFor(predicate, message) {
 }
 
 function makeStoreData({
-  schemaVersion = 6,
+  schemaVersion = CURRENT_SCHEMA,
   merchants = [],
   merchantAccess = {},
+  merchantTransactions = emptyMerchantTransactions(),
   factions = [],
   resourceConfig = {},
   resourceRunState = {},
@@ -160,6 +177,7 @@ function makeStoreData({
   downtimeWorkflowCheckpoint = {},
   includeCriticalInjuryWorkflow = true,
   includeMerchantAccess = true,
+  includeMerchantTransactions = true,
   includeCriticalInjuryWorkflowCheckpoint = true,
   includeDowntimeConfig = true,
   includeDowntimeWorkflow = true,
@@ -174,6 +192,7 @@ function makeStoreData({
         schemaVersion,
         merchants,
         ...(includeMerchantAccess ? { merchantAccess } : {}),
+        ...(includeMerchantTransactions ? { merchantTransactions } : {}),
         factions,
         resourceConfig,
         resourceRunState,
@@ -281,6 +300,10 @@ try {
     );
     assert.equal(getPrivateState("resourceRunState").lastSeenDay, 42);
     assert.deepEqual(getPrivateState("merchantAccess"), {});
+    assert.deepEqual(
+      getPrivateState("merchantTransactions"),
+      emptyMerchantTransactions(),
+    );
     assert.deepEqual(getPrivateState("criticalInjuryWorkflow"), {});
     assert.deepEqual(getPrivateState("criticalInjuryWorkflowCheckpoint"), {});
     assert.deepEqual(getPrivateState("downtimeConfig"), {});
@@ -288,7 +311,7 @@ try {
     assert.deepEqual(getPrivateState("downtimeWorkflowCheckpoint"), {});
     assert.equal(
       activeJournal.entries[0].getFlag(MODULE_ID, "schemaVersion"),
-      6,
+      CURRENT_SCHEMA,
     );
     assert.deepEqual(state.cleared.sort(), [
       "factions",
@@ -316,6 +339,185 @@ try {
       "private resource writes emit a value-free invalidation hook",
     );
     globalThis.Hooks.off(PRIVATE_STATE_CHANGED_HOOK, changeHookId);
+  }
+
+  // Schema 6 did not define a Merchant transaction ledger. Its migration adds
+  // one deterministic empty v1 envelope without changing any existing field.
+  for (const migrationCase of ["missing", "invalid"]) {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const source = makeStoreData({
+      schemaVersion: 6,
+      merchants: [{ id: `schema-6-${migrationCase}` }],
+      merchantAccess: { closed: true },
+      merchantTransactions:
+        migrationCase === "invalid" ? { version: 99 } : undefined,
+      factions: [{ id: "preserved-faction" }],
+      resourceConfig: { roster: [{ actorId: "preserved-actor" }] },
+      resourceRunState: { lastSeenDay: 18 },
+      criticalInjuryWorkflow: { requests: [] },
+      criticalInjuryWorkflowCheckpoint: { requests: [] },
+      downtimeConfig: { locations: [] },
+      downtimeWorkflow: { requests: [] },
+      downtimeWorkflowCheckpoint: { requests: [] },
+      includeMerchantTransactions: migrationCase !== "missing",
+    });
+    const preserved = structuredClone(source.flags[MODULE_ID]);
+    delete preserved.schemaVersion;
+    delete preserved.merchantTransactions;
+    const store = activeJournal.insert(source);
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+
+    assert.equal(await initializePrivateState(), true);
+    assert.equal(store.getFlag(MODULE_ID, "schemaVersion"), CURRENT_SCHEMA);
+    assert.deepEqual(
+      store.getFlag(MODULE_ID, "merchantTransactions"),
+      emptyMerchantTransactions(),
+    );
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.keys(preserved).map((key) => [
+          key,
+          store.getFlag(MODULE_ID, key),
+        ]),
+      ),
+      preserved,
+      `schema 6 ${migrationCase} migration changed an existing field`,
+    );
+    assert.deepEqual(store.updateCalls, [
+      {
+        [`flags.${MODULE_ID}.merchantTransactions`]:
+          emptyMerchantTransactions(),
+      },
+      { [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA },
+    ]);
+  }
+
+  // Related private fields share one Journal update and are accepted only
+  // after exact canonical read-back of every requested value.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const store = activeJournal.insert(makeStoreData());
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+    const updateCount = store.updateCalls.length;
+    const transactions = {
+      ...emptyMerchantTransactions(),
+      revision: 1,
+      authorityId: "gm-a",
+      authorityEpoch: "gm-a:epoch-1",
+      writeToken: "write-1",
+      records: [{ commitId: "commit-1", stage: "prepared" }],
+    };
+    const written = await setPrivateStates({
+      merchants: [{ id: "atomic-shop", goldOnHand: 75 }],
+      merchantTransactions: transactions,
+    });
+
+    assert.deepEqual(written, {
+      merchants: [{ id: "atomic-shop", goldOnHand: 75 }],
+      merchantTransactions: transactions,
+    });
+    assert.equal(store.updateCalls.length, updateCount + 1);
+    assert.deepEqual(store.updateCalls.at(-1), {
+      [`flags.${MODULE_ID}.merchants`]: [{ id: "atomic-shop", goldOnHand: 75 }],
+      [`flags.${MODULE_ID}.merchantTransactions`]: transactions,
+    });
+    assert.deepEqual(getPrivateState("merchants"), written.merchants);
+    assert.deepEqual(
+      getPrivateState("merchantTransactions"),
+      written.merchantTransactions,
+    );
+  }
+
+  // A failed guard writes neither field. A storage layer that silently drops
+  // one path is also detected by exact read-back and never reports success.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const store = activeJournal.insert(
+      makeStoreData({ merchants: [{ id: "before-atomic-failure" }] }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+    const updateCount = store.updateCalls.length;
+    const nextTransactions = {
+      ...emptyMerchantTransactions(),
+      revision: 1,
+      records: [{ commitId: "must-not-succeed" }],
+    };
+
+    await assert.rejects(
+      setPrivateStates(Object.fromEntries([["__proto__", {}]])),
+      /UnknownPrivateStateKey:__proto__/,
+    );
+    assert.equal(store.updateCalls.length, updateCount);
+
+    await assert.rejects(
+      setPrivateStates({
+        merchants: [{ id: "invalid-ledger-shop" }],
+        merchantTransactions: { version: 1, records: [] },
+      }),
+      /InvalidPrivateStateValue:merchantTransactions/,
+    );
+    assert.equal(store.updateCalls.length, updateCount);
+
+    await assert.rejects(
+      setPrivateStates(
+        {
+          merchants: [{ id: "guarded-shop" }],
+          merchantTransactions: nextTransactions,
+        },
+        { beforeWrite: () => false },
+      ),
+      /PrivateStateWritePreconditionFailed:merchants,merchantTransactions/,
+    );
+    assert.equal(store.updateCalls.length, updateCount);
+    assert.equal(
+      store.getFlag(MODULE_ID, "merchants")[0].id,
+      "before-atomic-failure",
+    );
+    assert.deepEqual(
+      store.getFlag(MODULE_ID, "merchantTransactions"),
+      emptyMerchantTransactions(),
+    );
+
+    store.ignoreNextUpdate(`flags.${MODULE_ID}.merchantTransactions`);
+    await assert.rejects(
+      setPrivateStates({
+        merchants: [{ id: "partial-readback-shop" }],
+        merchantTransactions: nextTransactions,
+      }),
+      /PrivateStateWriteVerificationFailed:merchantTransactions/,
+    );
+    assert.equal(store.updateCalls.length, updateCount + 1);
+    assert.deepEqual(Object.keys(store.updateCalls.at(-1)), [
+      `flags.${MODULE_ID}.merchants`,
+      `flags.${MODULE_ID}.merchantTransactions`,
+    ]);
+    assert.deepEqual(
+      store.getFlag(MODULE_ID, "merchantTransactions"),
+      emptyMerchantTransactions(),
+    );
   }
 
   // A blank canonical id with an existing marked Journal requires explicit
@@ -433,7 +635,7 @@ try {
     createCalls = 0;
     const canonicalId = `late-${replica.label}-canonical`;
     const lateCanonicalData = makeStoreData({
-      schemaVersion: replica.schemaVersion ?? 6,
+      schemaVersion: replica.schemaVersion ?? CURRENT_SCHEMA,
       merchants: [{ id: `late-${replica.label}-merchant` }],
     });
     if (replica.schemaVersion === undefined) {
@@ -472,13 +674,16 @@ try {
     );
 
     assert.equal(getPrivateStateStatus().code, "ready");
-    assert.equal(lateCanonical.getFlag(MODULE_ID, "schemaVersion"), 6);
+    assert.equal(
+      lateCanonical.getFlag(MODULE_ID, "schemaVersion"),
+      CURRENT_SCHEMA,
+    );
     assert.equal(state.legacy.privateStateStoreId, canonicalId);
     assert.equal(createCalls, 0);
     assert.deepEqual(state.cleared, []);
     assert.equal(activeJournal.entries.length, 1);
     assert.deepEqual(lateCanonical.updateCalls, [
-      { [`flags.${MODULE_ID}.schemaVersion`]: 6 },
+      { [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA },
     ]);
   }
 
@@ -490,7 +695,7 @@ try {
     createCalls = 0;
     const store = activeJournal.insert(
       makeStoreData({
-        schemaVersion: 7,
+        schemaVersion: FUTURE_SCHEMA,
         merchants: [{ id: "future-shop", name: "Must remain untouched" }],
       }),
     );
@@ -506,8 +711,8 @@ try {
       state: "blocked",
       code: "future-schema",
       retryable: false,
-      supportedSchema: 6,
-      observedSchema: 7,
+      supportedSchema: CURRENT_SCHEMA,
+      observedSchema: FUTURE_SCHEMA,
     });
     assert.equal(getPrivateState("merchants"), undefined);
     assert.equal(createCalls, 0);
@@ -528,7 +733,9 @@ try {
 
     // Simulate an external repair or compatible module restoring the canonical
     // schema. The existing hook requests one normal initialization pass.
-    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    await store.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA,
+    });
     await waitFor(
       () => getPrivateStateStatus().state === "ready",
       "a supported schema did not resume private-state initialization",
@@ -547,7 +754,9 @@ try {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
     createCalls = 0;
-    const store = activeJournal.insert(makeStoreData({ schemaVersion: 6.5 }));
+    const store = activeJournal.insert(
+      makeStoreData({ schemaVersion: CURRENT_SCHEMA + 0.5 }),
+    );
     const gm = { id: "gm-a", isGM: true, role: 4, active: true };
     const state = configureGame({
       user: gm,
@@ -565,7 +774,16 @@ try {
 
   // Present values that merely coerce to integers are malformed. A canonical
   // integer string remains compatible with older persisted flags.
-  for (const malformedSchema of [null, "", true, false, [5], [], {}, " 6 "]) {
+  for (const malformedSchema of [
+    null,
+    "",
+    true,
+    false,
+    [5],
+    [],
+    {},
+    ` ${CURRENT_SCHEMA} `,
+  ]) {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
     createCalls = 0;
@@ -587,7 +805,9 @@ try {
   {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
-    const store = activeJournal.insert(makeStoreData({ schemaVersion: "6" }));
+    const store = activeJournal.insert(
+      makeStoreData({ schemaVersion: String(CURRENT_SCHEMA) }),
+    );
     const gm = { id: "gm-a", isGM: true, role: 4, active: true };
     configureGame({
       user: gm,
@@ -601,7 +821,12 @@ try {
   // A current-schema store with a missing or invalid required field is
   // corruption, not a legacy migration source. It is never default-filled or
   // replaced when no verified snapshot exists.
-  for (const corruption of ["missing", "invalid"]) {
+  for (const corruption of [
+    "merchants-missing",
+    "merchants-invalid",
+    "transactions-missing",
+    "transactions-invalid",
+  ]) {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
     createCalls = 0;
@@ -610,10 +835,17 @@ try {
       factions: [{ id: "must-remain-private" }],
       resourceConfig: { roster: [{ actorId: "secret-roster" }] },
     });
-    if (corruption === "missing") {
+    if (corruption === "merchants-missing") {
       delete data.flags[MODULE_ID].merchants;
-    } else {
+    } else if (corruption === "merchants-invalid") {
       data.flags[MODULE_ID].merchants = null;
+    } else if (corruption === "transactions-missing") {
+      delete data.flags[MODULE_ID].merchantTransactions;
+    } else {
+      data.flags[MODULE_ID].merchantTransactions = {
+        ...emptyMerchantTransactions(),
+        revision: -1,
+      };
     }
     const store = activeJournal.insert(data);
     const gm = { id: "gm-a", isGM: true, role: 4, active: true };
@@ -628,8 +860,8 @@ try {
       state: "blocked",
       code: "corrupt",
       retryable: false,
-      supportedSchema: 6,
-      observedSchema: 6,
+      supportedSchema: CURRENT_SCHEMA,
+      observedSchema: CURRENT_SCHEMA,
     });
     assert.equal(getPrivateState("factions"), undefined);
     assert.equal(createCalls, 0);
@@ -663,7 +895,7 @@ try {
     globalThis.JournalEntry.create = async (data) => {
       createCalls += 1;
       const future = structuredClone(data);
-      future.flags[MODULE_ID].schemaVersion = 7;
+      future.flags[MODULE_ID].schemaVersion = FUTURE_SCHEMA;
       return activeJournal.insert(future);
     };
     try {
@@ -678,7 +910,7 @@ try {
 
   // Once a verified canonical store is seen at a future schema, canonical-id
   // replication gaps and deletion cannot turn its old snapshot into an
-  // automatic schema-6 replacement.
+  // automatic current-schema replacement.
   {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
@@ -697,7 +929,9 @@ try {
     assert.equal(await initializePrivateState(), true);
     assert.equal(getPrivateState("merchants")[0].id, "verified-before-upgrade");
 
-    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 7 });
+    await store.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: FUTURE_SCHEMA,
+    });
     assert.equal(getPrivateStateStatus().code, "future-schema");
     const createCallsAtBlock = createCalls;
     const settingWritesAtBlock = state.cleared.length;
@@ -749,7 +983,7 @@ try {
     assert.equal(await initializePrivateState(), true);
 
     await oldStore.update({
-      [`flags.${MODULE_ID}.schemaVersion`]: 7,
+      [`flags.${MODULE_ID}.schemaVersion`]: FUTURE_SCHEMA,
       [`flags.${MODULE_ID}.merchants`]: [{ id: "newer-data-on-old-doc" }],
     });
     assert.equal(getPrivateStateStatus().code, "future-schema");
@@ -762,7 +996,9 @@ try {
     const settingWritesAtBlock = state.cleared.length;
     const oldStoreWritesAtBlock = oldStore.updateCalls.length;
 
-    await oldStore.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    await oldStore.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA,
+    });
     assert.equal(await initializePrivateState(), false);
     assert.equal(getPrivateStateStatus().code, "future-schema");
     assert.equal(createCalls, createCallsAtBlock);
@@ -804,7 +1040,7 @@ try {
     assert.equal(await initializePrivateState(), true);
 
     await store.update({
-      [`flags.${MODULE_ID}.schemaVersion`]: 7,
+      [`flags.${MODULE_ID}.schemaVersion`]: FUTURE_SCHEMA,
       [`flags.${MODULE_ID}.merchants`]: [{ id: "after-compatible-repair" }],
     });
     assert.equal(getPrivateStateStatus().code, "future-schema");
@@ -815,7 +1051,9 @@ try {
     });
     const createCallsAtBlock = createCalls;
     const settingWritesAtBlock = legacy.privateStateStoreId;
-    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    await store.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA,
+    });
     assert.equal(await initializePrivateState(), false);
 
     assert.equal(getPrivateStateStatus().code, "candidate-review-required");
@@ -1296,7 +1534,7 @@ try {
       const result = await baseUpdate(changes);
       if (!flipped && Object.hasOwn(changes, "ownership")) {
         flipped = true;
-        store.setFlagDirect("schemaVersion", 7);
+        store.setFlagDirect("schemaVersion", FUTURE_SCHEMA);
         throw new Error("injected failure after schema quarantine");
       }
       return result;
@@ -1333,7 +1571,7 @@ try {
   }
 
   // Reclassify after a caller's write precondition. A synchronous schema flip
-  // there cannot slip a stale schema-6 write into a newly upgraded store.
+  // there cannot slip a stale current-schema write into an upgraded store.
   {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
@@ -1353,7 +1591,7 @@ try {
     await assert.rejects(
       setPrivateState("merchants", [{ id: "must-not-be-written" }], {
         beforeWrite: () => {
-          store.setFlagDirect("schemaVersion", 7);
+          store.setFlagDirect("schemaVersion", FUTURE_SCHEMA);
           return true;
         },
       }),

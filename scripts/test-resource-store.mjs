@@ -1111,7 +1111,16 @@ import {
     };
 
     await initializePrivateState();
-    assert.equal(flags.schemaVersion, 6);
+    assert.equal(flags.schemaVersion, 7);
+    assert.deepEqual(flags.merchantTransactions, {
+      version: 1,
+      revision: 0,
+      authorityId: null,
+      authorityEpoch: null,
+      writeToken: null,
+      replayFloors: [],
+      records: [],
+    });
     assert.deepEqual(flags.criticalInjuryWorkflow, {});
     assert.deepEqual(flags.criticalInjuryWorkflowCheckpoint, {});
     assert.equal(
@@ -1305,7 +1314,7 @@ import {
       false,
       "an old private-store schema cannot satisfy automation readiness",
     );
-    flags.schemaVersion = 6;
+    flags.schemaVersion = 7;
     assert.equal(isResourceAutomationReady(), true);
 
     const acceptedBeforeWrite = structuredClone(flags.resourceRunState);

@@ -7,7 +7,7 @@ import {
   fingerprintPrivateStateRecoveryValue,
 } from "./private-state-recovery-service.js";
 
-const SUPPORTED_SCHEMA = 6;
+const SUPPORTED_SCHEMA = 7;
 
 function clone(value) {
   return structuredClone(value);
@@ -31,6 +31,15 @@ function payload(secret = "candidate-private-value") {
   return {
     merchants: [{ id: secret }],
     merchantAccess: {},
+    merchantTransactions: {
+      version: 1,
+      revision: 0,
+      authorityId: null,
+      authorityEpoch: null,
+      writeToken: null,
+      replayFloors: [],
+      records: [],
+    },
     factions: [],
     resourceConfig: {},
     resourceRunState: {},
@@ -343,7 +352,11 @@ async function rejectsCode(promise, expectedCode) {
   assert.equal(healthyOverview.canRecoverSnapshot, false);
   assert.equal(healthyOverview.canCreateEmpty, false);
 
-  harness.state.status = status("blocked", "future-schema", 7);
+  harness.state.status = status(
+    "blocked",
+    "future-schema",
+    SUPPORTED_SCHEMA + 1,
+  );
   harness.state.authority.authoritative = false;
   const secondaryOverview = await harness.service.getOverview();
   assert.equal(secondaryOverview.authoritative, false);
@@ -461,7 +474,11 @@ async function rejectsCode(promise, expectedCode) {
 // ineligible and rejected before any canonical-setting write.
 {
   const cases = [
-    candidate({ id: "future", schemaState: "future", observedSchema: 7 }),
+    candidate({
+      id: "future",
+      schemaState: "future",
+      observedSchema: SUPPORTED_SCHEMA + 1,
+    }),
     candidate({ id: "invalid", schemaState: "invalid", observedSchema: null }),
     candidate({ id: "incomplete", payloadState: "incomplete" }),
     candidate({ id: "unsafe", ownershipState: "unsafe" }),
@@ -745,8 +762,11 @@ async function rejectsCode(promise, expectedCode) {
     {
       afterCreate({ created }) {
         created.schemaState = "future";
-        created.observedSchema = 7;
-        created.fingerprintInput.schemaVersion = { present: true, value: 7 };
+        created.observedSchema = SUPPORTED_SCHEMA + 1;
+        created.fingerprintInput.schemaVersion = {
+          present: true,
+          value: SUPPORTED_SCHEMA + 1,
+        };
       },
     },
   );

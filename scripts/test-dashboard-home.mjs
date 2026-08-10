@@ -146,7 +146,7 @@ let recoveryOverview = {
   status: {
     state: "blocked",
     code: "missing-store",
-    supportedSchema: 6,
+    supportedSchema: 7,
     observedSchema: null,
   },
   fullGm: true,
@@ -160,7 +160,7 @@ let recoveryOverview = {
       createdTime: 1_720_000_000_000,
       modifiedTime: 1_720_000_100_000,
       schemaState: "current",
-      observedSchema: 6,
+      observedSchema: 7,
       payloadState: "complete",
       ownershipState: "private",
       eligible: true,

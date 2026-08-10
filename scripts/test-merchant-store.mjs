@@ -988,8 +988,17 @@ import {
     };
     const flags = {
       privateStateStore: true,
-      schemaVersion: 6,
+      schemaVersion: 7,
       merchants: [],
+      merchantTransactions: {
+        version: 1,
+        revision: 0,
+        authorityId: null,
+        authorityEpoch: null,
+        writeToken: null,
+        replayFloors: [],
+        records: [],
+      },
       merchantAccess: {},
       factions: [],
       resourceConfig: {},
