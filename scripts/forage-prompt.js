@@ -27,9 +27,13 @@ import { SETTING_KEYS, getSetting } from "./settings.js";
 import { forageTargetChannels, FORAGE_TARGETS } from "./resource/forage.js";
 import { bindFocusRestoration } from "./infinity-app.js";
 import { authoritativeGMId } from "./socket-authority.js";
+import { isFullGM } from "./permissions.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
+const MAX_PROTOCOL_ID_LENGTH = 160;
+const HANDLED_DELIVERY_LIMIT = 256;
+const WAIT_FOR_ACK_MS = 130000;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -38,6 +42,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  *  several), all sharing a runId, so keying by runId alone would collapse them
  *  into one window and strand the other actors' results. */
 const instances = new Map();
+const handledDeliveryIds = new Set();
 
 /** Composite window key. Falls back to the bare runId when no actor is named. */
 function instanceKey(runId, actorId) {
@@ -76,9 +81,13 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     day,
     actorId,
     forageTarget,
+    promptId,
+    responseAccepted = false,
+    initialAck = null,
   } = {}) {
     if (!runId) return null;
     const key = instanceKey(runId, actorId);
+    const incomingPromptId = normalizeProtocolId(promptId);
     let app = instances.get(key);
     if (!app) {
       app = new ForagePromptApp({
@@ -89,24 +98,69 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
         day,
         actorId,
         forageTarget,
+        promptId: incomingPromptId,
       });
       bindFocusRestoration(app);
       instances.set(key, app);
     } else {
+      if (
+        app._promptId &&
+        incomingPromptId &&
+        app._promptId !== incomingPromptId
+      ) {
+        console.warn(`${MODULE_ID} | ignored mismatched forage prompt`, {
+          runId: String(runId).slice(0, MAX_PROTOCOL_ID_LENGTH),
+          actorId: String(actorId ?? "").slice(0, MAX_PROTOCOL_ID_LENGTH),
+        });
+        return app;
+      }
+      app._promptId ??= incomingPromptId;
       app._environment = environment ?? app._environment;
+      app._actorName = actorName ?? app._actorName;
+      app._day = day ?? app._day;
       app._forageTarget = forageTarget ?? app._forageTarget;
     }
-    if (app.rendered) app.bringToFront();
-    else app.render(true);
+    const stateChanged = initialAck
+      ? app._applyAck(initialAck, { render: false })
+      : responseAccepted === true
+        ? app._markWaiting()
+        : false;
+    if (app.rendered) {
+      if (stateChanged) app.render(false);
+      app.bringToFront();
+    } else app.render(true);
     return app;
   }
 
   /** Route a GM FORAGE_ACK to the matching window (by run + actor). */
   static handleAck(payload) {
-    const app =
+    let app =
       instances.get(instanceKey(payload?.runId, payload?.actorId)) ??
       instances.get(String(payload?.runId));
-    if (app) app._onAck(payload);
+    if (!ackMatchesPrompt(app, payload)) return app ?? null;
+
+    const deliveryId = normalizeProtocolId(payload?.deliveryId);
+    const duplicate = deliveryId ? handledDeliveryIds.has(deliveryId) : false;
+    if (deliveryId && !duplicate) rememberDeliveryId(deliveryId);
+
+    if (!duplicate) {
+      if (app) {
+        app._onAck(payload);
+      } else {
+        app = ForagePromptApp.open({
+          runId: payload?.runId,
+          actorId: payload?.actorId,
+          promptId: payload?.promptId,
+          environment: payload?.environment,
+          actorName: payload?.actorName,
+          day: payload?.day,
+          forageTarget: payload?.forageTarget,
+          initialAck: payload,
+        });
+      }
+    }
+    confirmAckDelivery(payload);
+    return app ?? null;
   }
 
   constructor(options = {}) {
@@ -118,8 +172,10 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._actorName = options.actorName ?? null;
     this._day = options.day ?? null;
     this._forageTarget = options.forageTarget ?? FORAGE_TARGETS.BOTH;
+    this._promptId = normalizeProtocolId(options.promptId);
     this._state = "prompt"; // prompt | waiting | done
     this._result = null;
+    this._rollInFlight = false;
     this._userConnectionHook =
       globalThis.Hooks?.on?.("userConnected", (user) => {
         if (!user?.isGM || !this.rendered) return;
@@ -166,6 +222,23 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  _markWaiting() {
+    if (this._state !== "prompt") return false;
+    this._state = "waiting";
+    this._armWaitTimer();
+    return true;
+  }
+
+  _armWaitTimer() {
+    this._clearWaitTimer();
+    this._waitTimer = globalThis.setTimeout?.(() => {
+      if (this._state !== "waiting") return;
+      this._state = "done";
+      this._result = { success: false, food: 0, water: 0, timedOut: true };
+      this.render(false);
+    }, WAIT_FOR_ACK_MS);
+  }
+
   async _prepareContext() {
     const actor = this._resolveActor();
     const env = this._environment ?? {};
@@ -209,87 +282,75 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  _onAck(payload) {
+  _applyAck(payload, { render = true } = {}) {
+    if (!ackMatchesPrompt(this, payload)) return false;
     this._clearWaitTimer();
     // The GM resolved the run without our input (timeout) while we were still
     // deciding — show a neutral "wrapped up" note, not "came up empty-handed".
     const noResponse = payload?.noResponse === true && this._state === "prompt";
-    const channels = forageTargetChannels(this._forageTarget);
-    const success = payload?.success === true;
     this._state = "done";
-    this._result = {
-      success,
-      food: Number(payload?.food) || 0,
-      water: Number(payload?.water) || 0,
-      foodSuccess:
-        typeof payload?.foodSuccess === "boolean"
-          ? payload.foodSuccess
-          : success && channels.food,
-      waterSuccess:
-        typeof payload?.waterSuccess === "boolean"
-          ? payload.waterSuccess
-          : success && channels.water,
-      foodSuppressed: payload?.foodSuppressed === true,
-      waterSuppressed: payload?.waterSuppressed === true,
-      noResponse,
-      // "best" mode: this forager gathered but a bigger haul was kept for the party.
-      suppressed: payload?.suppressed === true,
-    };
+    this._promptId ??= normalizeProtocolId(payload?.promptId);
+    this._result = ackResult(payload, this._forageTarget, { noResponse });
     playModuleSound(
       this._result.success ? SOUND_EVENTS.DEPOSIT : SOUND_EVENTS.WARNING_MUTED,
     );
-    this.render(false);
+    if (render) this.render(false);
+    return true;
+  }
+
+  _onAck(payload) {
+    return this._applyAck(payload);
   }
 
   /* -------------------- actions -------------------- */
 
   /** @this {ForagePromptApp} */
   static async _onRoll(_event, _target) {
-    const actor = this._resolveActor();
-    if (!actor) {
-      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.warn(
-        "No character is assigned to you — ask your GM to assign one.",
-      );
-      return;
-    }
-    if (!this._hasAuthoritativeGM) {
-      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-      ui.notifications?.warn(
-        "No full GM is online. Nothing changed; retry after the GM reconnects.",
-      );
+    if (this._state !== "prompt" || this._rollInFlight) return;
+    this._rollInFlight = true;
+    try {
+      const actor = this._resolveActor();
+      if (!actor) {
+        playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+        ui.notifications?.warn(
+          "No character is assigned to you — ask your GM to assign one.",
+        );
+        return;
+      }
+      if (!this._hasAuthoritativeGM) {
+        playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+        ui.notifications?.warn(
+          "No full GM is online. Nothing changed; retry after the GM reconnects.",
+        );
+        this.render(false);
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.ROLL_START);
+      const rolled = await rollSurvivalTotal(actor, { chatMessage: true });
+      if (!rolled) {
+        // Dialog dismissed — leave the window in the prompt state to retry.
+        return;
+      }
+      if (this._state !== "prompt") return;
+      emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
+        runId: this._runId,
+        // Report the GM-targeted actor id so the right run entry resolves, even
+        // when this user's assigned character differs from the tracked actor.
+        actorId: this._actorId ?? actor.id,
+        rollTotal: rolled.total,
+        skipped: false,
+        ...optionalPromptId(this._promptId),
+      });
+      this._markWaiting();
       this.render(false);
-      return;
+    } finally {
+      this._rollInFlight = false;
     }
-    playModuleSound(SOUND_EVENTS.ROLL_START);
-    const rolled = await rollSurvivalTotal(actor, { chatMessage: true });
-    if (!rolled) {
-      // Dialog dismissed — leave the window in the prompt state to retry.
-      return;
-    }
-    emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
-      runId: this._runId,
-      // Report the GM-targeted actor id so the right run entry resolves, even
-      // when this user's assigned character differs from the tracked actor.
-      actorId: this._actorId ?? actor.id,
-      rollTotal: rolled.total,
-      skipped: false,
-    });
-    this._state = "waiting";
-    this.render(false);
-    // Fallback: if the GM never sends an ack (e.g. they disconnect mid-run),
-    // don't spin forever — settle into a neutral "wrapped up" state.
-    this._clearWaitTimer();
-    this._waitTimer = globalThis.setTimeout?.(() => {
-      if (this._state !== "waiting") return;
-      this._state = "done";
-      this._result = { success: false, food: 0, water: 0, timedOut: true };
-      this.render(false);
-    }, 130000);
   }
 
   /** @this {ForagePromptApp} */
   static _onSkip(_event, _target) {
+    if (this._state !== "prompt") return;
     if (!this._hasAuthoritativeGM) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       ui.notifications?.warn(
@@ -306,6 +367,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       actorId: this._actorId ?? actor?.id ?? null,
       rollTotal: 0,
       skipped: true,
+      ...optionalPromptId(this._promptId),
     });
     this.close();
   }
@@ -317,6 +379,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** @this {ForagePromptApp} */
   static _onRetryConnection() {
+    requestForagePromptSync();
     this.render(false);
   }
 }
@@ -374,6 +437,8 @@ export function registerForagePromptAutoOpen() {
       day: payload.day,
       actorId: payload.actorId,
       forageTarget: payload.forageTarget,
+      promptId: payload.promptId,
+      responseAccepted: payload.responseAccepted === true,
     });
   });
 
@@ -382,11 +447,103 @@ export function registerForagePromptAutoOpen() {
     if (payload.targetUserId !== globalThis.game?.user?.id) return;
     ForagePromptApp.handleAck(payload);
   });
+
+  globalThis.Hooks?.on?.("userConnected", (user, connected) => {
+    if (connected !== true) return;
+    if (user?.id !== authoritativeGMId()) return;
+    requestForagePromptSync();
+  });
+  requestForagePromptSync();
 }
 
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+/** Ask the authoritative GM to replay this user's outstanding prompt/result. */
+export function requestForagePromptSync() {
+  if (isFullGM()) return null;
+  if (!authoritativeGMId()) return null;
+  return emitResourceEvent(RESOURCE_EVENTS.PROMPT_SYNC_REQUEST, {
+    requestId: createSyncRequestId(),
+  });
+}
+
+function confirmAckDelivery(payload) {
+  const promptId = normalizeProtocolId(payload?.promptId);
+  const deliveryId = normalizeProtocolId(payload?.deliveryId);
+  if (!promptId || !deliveryId || isFullGM()) return null;
+  return emitResourceEvent(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM, {
+    runId: payload.runId,
+    actorId: payload.actorId,
+    promptId,
+    deliveryId,
+  });
+}
+
+function ackMatchesPrompt(app, payload) {
+  if (!app) return true;
+  const appPromptId = normalizeProtocolId(app._promptId);
+  const incomingPromptId = normalizeProtocolId(payload?.promptId);
+  return !appPromptId || !incomingPromptId || appPromptId === incomingPromptId;
+}
+
+function ackResult(payload, forageTarget, { noResponse = false } = {}) {
+  const channels = forageTargetChannels(forageTarget);
+  const success = payload?.success === true;
+  return {
+    success,
+    food: Number(payload?.food) || 0,
+    water: Number(payload?.water) || 0,
+    foodSuccess:
+      typeof payload?.foodSuccess === "boolean"
+        ? payload.foodSuccess
+        : success && channels.food,
+    waterSuccess:
+      typeof payload?.waterSuccess === "boolean"
+        ? payload.waterSuccess
+        : success && channels.water,
+    foodSuppressed: payload?.foodSuppressed === true,
+    waterSuppressed: payload?.waterSuppressed === true,
+    noResponse,
+    // "best" mode: this forager gathered but a bigger haul was kept for the party.
+    suppressed: payload?.suppressed === true,
+  };
+}
+
+function optionalPromptId(promptId) {
+  const normalized = normalizeProtocolId(promptId);
+  return normalized ? { promptId: normalized } : {};
+}
+
+function normalizeProtocolId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= MAX_PROTOCOL_ID_LENGTH
+    ? normalized
+    : null;
+}
+
+function rememberDeliveryId(deliveryId) {
+  if (handledDeliveryIds.size >= HANDLED_DELIVERY_LIMIT) {
+    const oldest = handledDeliveryIds.values().next().value;
+    if (oldest) handledDeliveryIds.delete(oldest);
+  }
+  handledDeliveryIds.add(deliveryId);
+}
+
+function createSyncRequestId() {
+  let nonce = "";
+  try {
+    nonce =
+      normalizeProtocolId(globalThis.foundry?.utils?.randomID?.(24)) ?? "";
+  } catch {}
+  if (!nonce) nonce = Math.random().toString(36).slice(2, 14);
+  return `forage-sync-${Date.now().toString(36)}-${nonce}`.slice(
+    0,
+    MAX_PROTOCOL_ID_LENGTH,
+  );
+}
 
 export function resolvePlayerActor() {
   const assigned = globalThis.game?.user?.character;

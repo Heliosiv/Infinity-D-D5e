@@ -35,6 +35,10 @@ export const RESOURCE_EVENTS = Object.freeze({
   FORAGE_RESULT: "resource:forage-result",
   // GM → player: the resolved yield for that forager (so their prompt updates).
   FORAGE_ACK: "resource:forage-ack",
+  // player → GM: reload/reconnect probe for outstanding forage prompts/results.
+  PROMPT_SYNC_REQUEST: "resource:prompt-sync-request",
+  // player → GM: durable receipt for one targeted forage acknowledgement.
+  ACK_DELIVERY_CONFIRM: "resource:ack-delivery-confirm",
   // GM → all: the daily upkeep report (drives the manager refresh + toasts).
   UPKEEP_REPORT: "resource:upkeep-report",
   // GM → all: run-state changed (manager re-render).
@@ -48,6 +52,8 @@ export const RESOURCE_EVENTS = Object.freeze({
 const RESOURCE_TYPES = new Set(Object.values(RESOURCE_EVENTS));
 const PLAYER_TO_GM_TYPES = new Set([
   RESOURCE_EVENTS.FORAGE_RESULT,
+  RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+  RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
   RESOURCE_EVENTS.OVERVIEW_REQUEST,
 ]);
 const TARGETED_TYPES = new Set([
@@ -56,6 +62,7 @@ const TARGETED_TYPES = new Set([
   RESOURCE_EVENTS.OVERVIEW_REPLY,
 ]);
 const REQUEST_ID_TYPES = new Set([
+  RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
   RESOURCE_EVENTS.OVERVIEW_REQUEST,
   RESOURCE_EVENTS.OVERVIEW_REPLY,
 ]);
@@ -63,6 +70,7 @@ const FORAGE_ACTOR_TYPES = new Set([
   RESOURCE_EVENTS.DAY_PROMPT,
   RESOURCE_EVENTS.FORAGE_RESULT,
   RESOURCE_EVENTS.FORAGE_ACK,
+  RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
 ]);
 const MAX_PROTOCOL_ID_LENGTH = 160;
 const MIN_FORAGE_ROLL_TOTAL = -50;
@@ -164,6 +172,38 @@ export function validateResourcePayloadShape(payload) {
     }
     if (!isBoundedProtocolId(payload.actorId)) {
       return { ok: false, reason: "missing-or-invalid-actor-id" };
+    }
+  }
+  if (
+    Object.hasOwn(payload, "promptId") &&
+    !isBoundedProtocolId(payload.promptId)
+  ) {
+    return { ok: false, reason: "invalid-prompt-id" };
+  }
+  if (
+    payload.type === RESOURCE_EVENTS.DAY_PROMPT &&
+    Object.hasOwn(payload, "responseAccepted") &&
+    typeof payload.responseAccepted !== "boolean"
+  ) {
+    return { ok: false, reason: "invalid-response-accepted-flag" };
+  }
+  if (
+    payload.type === RESOURCE_EVENTS.FORAGE_ACK &&
+    Object.hasOwn(payload, "deliveryId")
+  ) {
+    if (!isBoundedProtocolId(payload.deliveryId)) {
+      return { ok: false, reason: "invalid-delivery-id" };
+    }
+    if (!isBoundedProtocolId(payload.promptId)) {
+      return { ok: false, reason: "delivery-requires-prompt-id" };
+    }
+  }
+  if (payload.type === RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM) {
+    if (!isBoundedProtocolId(payload.promptId)) {
+      return { ok: false, reason: "missing-or-invalid-prompt-id" };
+    }
+    if (!isBoundedProtocolId(payload.deliveryId)) {
+      return { ok: false, reason: "missing-or-invalid-delivery-id" };
     }
   }
   if (payload.type === RESOURCE_EVENTS.FORAGE_RESULT) {

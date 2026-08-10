@@ -22,12 +22,26 @@ const warnings = [];
 console.warn = (...args) => warnings.push(args);
 const requests = [];
 const replies = [];
+const promptSyncRequests = [];
+const ackDeliveryConfirms = [];
 const stopRequests = subscribe(RESOURCE_EVENTS.OVERVIEW_REQUEST, (payload) => {
   requests.push(payload);
 });
 const stopReplies = subscribe(RESOURCE_EVENTS.OVERVIEW_REPLY, (payload) => {
   replies.push(payload);
 });
+const stopPromptSyncRequests = subscribe(
+  RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+  (payload) => {
+    promptSyncRequests.push(payload);
+  },
+);
+const stopAckDeliveryConfirms = subscribe(
+  RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+  (payload) => {
+    ackDeliveryConfirms.push(payload);
+  },
+);
 
 try {
   globalThis.CONST = {
@@ -156,6 +170,124 @@ try {
     true,
     "a bounded integer forage result is accepted",
   );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.FORAGE_RESULT,
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      skipped: false,
+      rollTotal: 23,
+    }).ok,
+    true,
+    "forage results may carry a bounded prompt correlation id",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.DAY_PROMPT,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      responseAccepted: true,
+    }).ok,
+    true,
+    "synced prompts may report that a response was already accepted",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.DAY_PROMPT,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      responseAccepted: "yes",
+    }).ok,
+    false,
+    "the accepted-response marker is strictly boolean",
+  );
+  for (const promptId of ["", "x".repeat(161)]) {
+    assert.equal(
+      validateResourcePayloadShape({
+        type: RESOURCE_EVENTS.FORAGE_RESULT,
+        runId: "run-1",
+        actorId: "actor-a",
+        promptId,
+        skipped: false,
+        rollTotal: 23,
+      }).ok,
+      false,
+      "present prompt ids must be non-empty and bounded",
+    );
+  }
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.FORAGE_ACK,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+    }).ok,
+    true,
+    "legacy forage acknowledgements remain valid without durable ids",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.FORAGE_ACK,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      deliveryId: "delivery-1",
+    }).ok,
+    true,
+    "durable forage acknowledgements carry bounded prompt and delivery ids",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.FORAGE_ACK,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      deliveryId: "delivery-1",
+    }).ok,
+    false,
+    "a durable acknowledgement cannot omit its prompt correlation id",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+      requestId: "sync-1",
+    }).ok,
+    true,
+    "prompt sync requests require only a bounded request id",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+    }).ok,
+    false,
+    "prompt sync requests fail closed without a request id",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      deliveryId: "delivery-1",
+    }).ok,
+    true,
+    "delivery confirmations bind the run, actor, prompt, and delivery",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+    }).ok,
+    false,
+    "delivery confirmations fail closed without a delivery id",
+  );
 
   /* Only the authoritative GM accepts active-player overview requests. */
   globalThis.game = {
@@ -173,6 +305,42 @@ try {
   assert.equal(requests.length, 1);
   assert.equal(requests[0].originUserId, "player-a");
   assert.equal(requests[0].requestId, "request-1");
+
+  receiveResourcePayload(
+    {
+      type: RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+      originUserId: "player-a",
+      requestId: "sync-1",
+    },
+    "player-a",
+  );
+  assert.equal(promptSyncRequests.length, 1);
+  assert.equal(promptSyncRequests[0].originUserId, "player-a");
+
+  receiveResourcePayload(
+    {
+      type: RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+      originUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      deliveryId: "delivery-1",
+    },
+    "player-a",
+  );
+  assert.equal(ackDeliveryConfirms.length, 1);
+  assert.equal(ackDeliveryConfirms[0].originUserId, "player-a");
+
+  receiveResourcePayload({
+    type: RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+    originUserId: "player-a",
+    requestId: "sync-without-transport-id",
+  });
+  assert.equal(
+    promptSyncRequests.length,
+    1,
+    "prompt sync still requires the authenticated transport sender",
+  );
 
   receiveResourcePayload({
     type: RESOURCE_EVENTS.OVERVIEW_REQUEST,
@@ -225,6 +393,19 @@ try {
     requests.length,
     1,
     "a secondary GM does not process the same player request",
+  );
+  receiveResourcePayload(
+    {
+      type: RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+      originUserId: "player-a",
+      requestId: "secondary-gm-sync",
+    },
+    "player-a",
+  );
+  assert.equal(
+    promptSyncRequests.length,
+    1,
+    "a secondary GM does not process prompt synchronization",
   );
 
   const assistantFirstUsers = userCollection(
@@ -406,6 +587,15 @@ try {
     skipped: false,
     rollTotal: 17,
   });
+  emitResourceEvent(RESOURCE_EVENTS.PROMPT_SYNC_REQUEST, {
+    requestId: "player-prompt-sync",
+  });
+  emitResourceEvent(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM, {
+    runId: "run-player-1",
+    actorId: "actor-player-1",
+    promptId: "prompt-player-1",
+    deliveryId: "delivery-player-1",
+  });
   assert.deepEqual(
     emissions[1][2],
     { recipients: [gmA.id] },
@@ -416,19 +606,43 @@ try {
     { recipients: [gmA.id] },
     "forage rolls go only to the authoritative GM",
   );
+  assert.deepEqual(
+    emissions[3][2],
+    { recipients: [gmA.id] },
+    "prompt sync requests go only to the authoritative GM",
+  );
+  assert.deepEqual(
+    emissions[4][2],
+    { recipients: [gmA.id] },
+    "delivery confirmations go only to the authoritative GM",
+  );
 
   globalThis.game.user = gmA;
   emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
   assert.equal(
-    emissions[3].length,
+    emissions[5].length,
     2,
     "public resource state invalidation remains an intentional broadcast",
+  );
+  emitResourceEvent(RESOURCE_EVENTS.FORAGE_ACK, {
+    targetUserId: "player-a",
+    runId: "run-player-1",
+    actorId: "actor-player-1",
+    promptId: "prompt-player-1",
+    deliveryId: "delivery-player-1",
+  });
+  assert.deepEqual(
+    emissions[6][2],
+    { recipients: [playerA.id] },
+    "forage acknowledgements remain private to their exact recipient",
   );
 
   process.stdout.write("resource socket validation passed\n");
 } finally {
   stopRequests();
   stopReplies();
+  stopPromptSyncRequests();
+  stopAckDeliveryConfirms();
   if (originalGame === undefined) delete globalThis.game;
   else globalThis.game = originalGame;
   if (originalConst === undefined) delete globalThis.CONST;
