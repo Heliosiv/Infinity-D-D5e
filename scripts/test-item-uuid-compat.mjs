@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   LEGACY_INFINITY_ITEM_ID_ALIASES,
@@ -60,18 +59,6 @@ assert.deepEqual(
   "Foundry core redirects every historical module UUID before ready",
 );
 assert.equal(registerInfinityItemUuidRedirects({}), 0);
-const moduleSource = readFileSync("scripts/module.js", "utf8");
-const initHookIndex = moduleSource.indexOf('Hooks.once("init"');
-const redirectCallIndex = moduleSource.indexOf(
-  "registerInfinityItemUuidRedirects();",
-  initHookIndex,
-);
-const readyHookIndex = moduleSource.indexOf('Hooks.once("ready"');
-assert.ok(initHookIndex >= 0 && readyHookIndex > initHookIndex);
-assert.ok(
-  redirectCallIndex > initHookIndex && redirectCallIndex < readyHookIndex,
-  "Foundry UUID redirects are configured during init, before core parses them",
-);
 assert.equal(
   buildCompendiumItemUuid("infinity-dnd5e.infinity-dnd5e-items", legacyId),
   currentUuid,

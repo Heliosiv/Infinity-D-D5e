@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createModuleRegistrars } from "./bootstrap/registrars.js";
 
 globalThis.foundry = {
   applications: {
@@ -56,17 +56,58 @@ assert.equal(
   "settings group ids are unique",
 );
 
-const moduleSource = readFileSync("scripts/module.js", "utf8");
-assert.match(
-  moduleSource,
-  /game\.settings\.registerMenu\(MODULE_ID, "infinitySettings"/,
-  "Foundry Module Settings exposes one Infinity Settings application",
-);
-assert.match(
-  moduleSource,
-  /const opts = \{[\s\S]*?config: false,/,
-  "raw catalog controls stay hidden after the parity assertion above",
-);
+{
+  const registered = [];
+  const menus = [];
+  const densityChanges = [];
+  const hookCalls = [];
+  let preferencesChange = null;
+  const root = {};
+  const game = {
+    settings: {
+      register: (moduleId, key, options) =>
+        registered.push({ moduleId, key, options }),
+      registerMenu: (moduleId, key, options) =>
+        menus.push({ moduleId, key, options }),
+    },
+  };
+  const registrars = createModuleRegistrars({
+    moduleId: "infinity-dnd5e",
+    SETTINGS,
+    InfinitySettingsApp,
+    logger: { warn: () => {} },
+    getGame: () => game,
+    getDocument: () => ({ querySelectorAll: () => [root] }),
+    getHooks: () => ({
+      callAll: (...args) => hookCalls.push(args),
+    }),
+    registerUiPreferencesSetting: (_game, { onChange }) => {
+      preferencesChange = onChange;
+    },
+    applyUiDensity: (...args) => densityChanges.push(args),
+  });
+  assert.equal(registrars.registerSettings(), true);
+  assert.equal(registrars.registerSettings(), false);
+  assert.equal(registered.length, SETTINGS.length);
+  assert.ok(
+    registered.every(({ options }) => options.config === false),
+    "raw catalog controls stay hidden after role-aware parity coverage",
+  );
+  assert.deepEqual(
+    registered.map(({ key }) => key),
+    SETTINGS.map(({ key }) => key),
+  );
+  assert.equal(menus.length, 1);
+  assert.equal(menus[0].key, "infinitySettings");
+  assert.equal(menus[0].options.type, InfinitySettingsApp);
+
+  const preferences = { density: "compact" };
+  preferencesChange(preferences);
+  assert.deepEqual(densityChanges, [[root, preferences]]);
+  assert.deepEqual(hookCalls, [
+    ["infinityDnd5eUiPreferencesChanged", preferences],
+  ]);
+}
 
 {
   const previousGame = globalThis.game;
