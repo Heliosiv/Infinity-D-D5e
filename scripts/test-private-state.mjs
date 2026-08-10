@@ -22,6 +22,7 @@ import {
 } from "./private-state.js";
 import { saveMerchants } from "./merchant/store.js";
 import { saveFactions } from "./reputation/store.js";
+import { releaseCampaignTabLeadership } from "./campaign-tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const CURRENT_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
@@ -43,6 +44,7 @@ const saved = {
   Hooks: globalThis.Hooks,
   JournalEntry: globalThis.JournalEntry,
   CONST: globalThis.CONST,
+  window: globalThis.window,
 };
 
 function makeHooks() {
@@ -1167,14 +1169,24 @@ try {
       "a secondary GM never migrates or clears legacy settings",
     );
     assert.equal(legacy.resourceRunState.lastSeenDay, 12);
-    await setPrivateState("resourceConfig", {
-      version: 2,
-      roster: [{ actorId: "secondary-gm-edit" }],
-    });
+    const writesBeforeSecondaryAttempt = shared.updateCalls.length;
+    await assert.rejects(
+      () =>
+        setPrivateState("resourceConfig", {
+          version: 2,
+          roster: [{ actorId: "secondary-gm-edit" }],
+        }),
+      /PrivateStateWriteAuthorityFenceFailed/,
+    );
+    assert.deepEqual(
+      getPrivateState("resourceConfig"),
+      {},
+      "a secondary GM keeps a read-only view of the established private store",
+    );
     assert.equal(
-      getPrivateState("resourceConfig").roster[0].actorId,
-      "secondary-gm-edit",
-      "a full secondary GM may edit an established private store",
+      shared.updateCalls.length,
+      writesBeforeSecondaryAttempt,
+      "a secondary GM cannot write the private journal",
     );
     assert.deepEqual(
       state.cleared,
@@ -2077,6 +2089,54 @@ try {
     assert.equal(isPrivilegedPrivateStateReady(), true);
   }
 
+  // A same-user follower may hydrate an already verified store for inspection,
+  // but it cannot create or update campaign data without the browser lease.
+  {
+    resetPrivateStateForTests();
+    releaseCampaignTabLeadership();
+    globalThis.window = { document: {} };
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(
+      makeStoreData({ resourceConfig: { version: 5, marker: "read-only" } }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+
+    assert.equal(await initializePrivateState(), true);
+    assert.equal(getPrivateState("resourceConfig").marker, "read-only");
+    assert.equal(store.updateCalls.length, 0);
+    assert.equal(createCalls, 0);
+    await assert.rejects(
+      () => setPrivateState("resourceConfig", { version: 5, marker: "write" }),
+      /PrivateStateWriteAuthorityFenceFailed/,
+    );
+    assert.equal(store.updateCalls.length, 0);
+
+    resetPrivateStateForTests();
+    releaseCampaignTabLeadership();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "campaign-leader-unavailable");
+    assert.equal(
+      createCalls,
+      0,
+      "a follower never creates the private journal",
+    );
+    delete globalThis.window;
+    releaseCampaignTabLeadership();
+  }
+
   process.stdout.write("private-state validation passed\n");
 } finally {
   resetPrivateStateForTests();
@@ -2088,4 +2148,6 @@ try {
   else globalThis.JournalEntry = saved.JournalEntry;
   if (saved.CONST === undefined) delete globalThis.CONST;
   else globalThis.CONST = saved.CONST;
+  if (saved.window === undefined) delete globalThis.window;
+  else globalThis.window = saved.window;
 }

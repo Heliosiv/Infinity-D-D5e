@@ -36,7 +36,6 @@ import {
   ensureMerchantTabLeadership,
   hasMerchantTabLeadership,
   MERCHANT_TAB_LEADERSHIP_HOOK,
-  releaseMerchantTabLeadership,
 } from "./tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -1182,7 +1181,6 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     removeAuthoritySubscription = null;
     registered = false;
     resetAuthority();
-    bindings.releaseTabLeadership();
     return true;
   }
 
@@ -1469,7 +1467,6 @@ const PRODUCTION_BINDINGS = Object.freeze({
   isAuthoritativeGM,
   ensureTabLeadership: ensureMerchantTabLeadership,
   hasTabLeadership: hasMerchantTabLeadership,
-  releaseTabLeadership: releaseMerchantTabLeadership,
   currentUserId: () => globalThis.game?.user?.id ?? null,
   createAuthorityEpoch: defaultCreateAuthorityEpoch,
   createWriteToken: defaultCreateWriteToken,
@@ -1495,7 +1492,6 @@ function assertBindings(bindings) {
     "isAuthoritativeGM",
     "ensureTabLeadership",
     "hasTabLeadership",
-    "releaseTabLeadership",
     "currentUserId",
     "createAuthorityEpoch",
     "createWriteToken",

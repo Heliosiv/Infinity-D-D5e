@@ -384,16 +384,17 @@ Duplicate `eventId` or operation keys return the recorded result.
 A full GM may:
 
 - open Quartermaster;
-- change settings and structural configuration;
-- manage the roster, draw sources, resources, and environments;
-- start manual upkeep and forage drives;
 - review privileged matching detail and full history;
-- approve exhaustion or corrective actions.
+- inspect settings, structural configuration, roster, draw sources, resources,
+  and environments.
 
 ### Authoritative GM
 
 Only the authoritative GM client may:
 
+- change resource settings and structural configuration;
+- manage the roster, draw sources, resources, and environments;
+- start manual upkeep and forage drives;
 - react to clock changes;
 - create, resume, resolve, or close runs;
 - accept player results;
@@ -401,9 +402,9 @@ Only the authoritative GM client may:
 - update run state and history;
 - build and send authoritative player snapshots.
 
-A second GM may inspect and configure the control surface, but run controls
-that can write actors must be disabled or clearly redirected while another GM
-is authoritative. A warning alone is not enough for actions that can cause
+A second GM or same-user follower tab may inspect the control surface, but every
+setup and run mutation is disabled or rejected while another client holds
+campaign leadership. A warning alone is not enough for actions that can cause
 duplicate writes.
 
 ### Player and Assistant GM

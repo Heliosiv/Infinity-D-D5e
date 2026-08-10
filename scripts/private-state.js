@@ -19,6 +19,11 @@ import { SETTING_KEYS } from "./settings.js";
 import { authoritativeGMId, isAuthoritativeGM } from "./socket-authority.js";
 import { normalizeMerchantTransactionLedger } from "./merchant/transaction-ledger.js";
 import { persistedValuesEqual } from "./utils/persisted-data.js";
+import {
+  ensureCampaignTabLeadership,
+  getCampaignTabLeadershipStatus,
+  hasCampaignTabLeadership,
+} from "./campaign-tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
@@ -86,6 +91,7 @@ let storeDocument = null;
 let initialized = false;
 let initialization = null;
 let initializing = false;
+let lastWriterLeadershipGeneration = null;
 let syncHooksRegistered = false;
 let roleHookId = null;
 let connectionHookId = null;
@@ -562,7 +568,9 @@ function canExplicitlyResumeStore(document) {
   if (isSchemaBlocked(classification)) return false;
   if (!hasCurrentStoreCorruption(document)) return true;
   return Boolean(
-    isAuthoritativeGM() && canRepairCurrentStoreFromSnapshot(document),
+    isAuthoritativeGM() &&
+    hasCampaignTabLeadership() &&
+    canRepairCurrentStoreFromSnapshot(document),
   );
 }
 
@@ -891,6 +899,7 @@ function resetForRoleTransition({ safeDefaults }) {
   initialized = false;
   initialization = null;
   initializing = false;
+  lastWriterLeadershipGeneration = null;
   if (safeDefaults) {
     lastVerifiedStoreSnapshot = null;
     lastVerifiedStoreId = null;
@@ -1203,7 +1212,18 @@ export function initializePrivateState() {
     return Promise.resolve(false);
   }
   if (isLiveFoundry()) registerRoleHook();
-  if (initialization) return initialization;
+  if (initialization) {
+    const leadership = getCampaignTabLeadershipStatus();
+    const needsWriterFinalization = Boolean(
+      initialized &&
+      isFullGM() &&
+      isAuthoritativeGM() &&
+      hasCampaignTabLeadership() &&
+      leadership.generation !== lastWriterLeadershipGeneration,
+    );
+    if (!needsWriterFinalization) return initialization;
+    initialization = null;
+  }
   const generation = lifecycleGeneration;
   initializing = true;
   if (storeQuarantineStatus) {
@@ -1231,6 +1251,8 @@ export function initializePrivateState() {
     }
 
     registerSyncHooks();
+    const campaignLeader = await ensureCampaignTabLeadership();
+    const leadershipGeneration = getCampaignTabLeadershipStatus().generation;
     const startingAuthorityId = authoritativeGMId();
     const currentUserId =
       String(globalThis.game?.user?.id ?? "").trim() || null;
@@ -1238,11 +1260,17 @@ export function initializePrivateState() {
       generation === lifecycleGeneration &&
       isFullGM() &&
       authoritativeGMId() === startingAuthorityId;
+    const isCurrentWriter = () =>
+      isCurrent() &&
+      campaignLeader === true &&
+      hasCampaignTabLeadership() &&
+      getCampaignTabLeadershipStatus().generation === leadershipGeneration;
     if (!isCurrent()) return false;
     const authoritative =
       isAuthoritativeGM() &&
       currentUserId !== null &&
-      startingAuthorityId === currentUserId;
+      startingAuthorityId === currentUserId &&
+      isCurrentWriter();
     const legacyState = authoritative ? readLegacyState() : null;
     let document = findStoreDocument();
     if (storeQuarantineStatus) {
@@ -1270,6 +1298,10 @@ export function initializePrivateState() {
         setPrivateStateStatus(storeQuarantineStatus);
         return false;
       }
+      if (!authoritative && !isVerifiedCanonicalStore(document)) {
+        setPrivateStateStatus(storeQuarantineStatus);
+        return false;
+      }
       clearStoreQuarantine();
     }
     const persistedStoreId = canonicalStoreIdSetting();
@@ -1290,17 +1322,28 @@ export function initializePrivateState() {
       const initial = Object.fromEntries(
         PRIVATE_STATE_KEYS.map((key) => [key, legacyState[key].value]),
       );
+      if (!isCurrentWriter()) return false;
       const created = await createStoreDocument(initial);
-      if (!isCurrent()) return false;
+      if (!isCurrentWriter()) return false;
       if (!created?.id) {
         console.warn(
           `${MODULE_ID} | private state store is not available yet; initialization will retry`,
         );
         return false;
       }
-      const persisted = await persistCanonicalStoreIdentity(created, isCurrent);
+      const persisted = await persistCanonicalStoreIdentity(
+        created,
+        isCurrentWriter,
+      );
       if (!persisted) return false;
       document = findStoreDocument() ?? created;
+    } else if (!document && !campaignLeader) {
+      setPrivateStateStatus({
+        state: "pending",
+        code: "campaign-leader-unavailable",
+        retryable: false,
+      });
+      return false;
     } else if (!document) {
       document = await waitForStoreDocument();
     }
@@ -1322,24 +1365,36 @@ export function initializePrivateState() {
     storeDocument = document;
     const isCurrentStore = () =>
       isCurrent() && isCanonicalStoreDocument(document);
+    const isCurrentWritableStore = () =>
+      isCurrentWriter() && isCanonicalStoreDocument(document);
 
     let changedKeys;
     if (authoritative) {
       const migration = await migrateStoreDocument(
         document,
         legacyState,
-        isCurrentStore,
+        isCurrentWritableStore,
       );
       if (!migration) return false;
       changedKeys = migration.changedKeys;
     } else {
       if (!isCurrentStore() || !isVerifiedCanonicalStore(document)) {
+        if (!campaignLeader) {
+          setPrivateStateStatus({
+            state: "pending",
+            code: "campaign-leader-unavailable",
+            retryable: false,
+          });
+        }
         return false;
       }
       changedKeys = hydrateCache(document);
     }
     if (!changedKeys || !isCurrentStore()) return false;
     initialized = true;
+    if (authoritative) {
+      lastWriterLeadershipGeneration = leadershipGeneration;
+    }
     clearStoreQuarantine();
     setPrivateStateStatus({
       state: "ready",
@@ -1355,7 +1410,10 @@ export function initializePrivateState() {
         initializing = false;
         if (!result) {
           initialization = null;
-          if (privateStateStatus.state !== "blocked") {
+          if (
+            privateStateStatus.state !== "blocked" &&
+            privateStateStatus.code !== "campaign-leader-unavailable"
+          ) {
             setPrivateStateStatus({
               state: "pending",
               code: "store-unavailable",
@@ -1426,11 +1484,13 @@ function privateStateWriteContext(keys) {
 }
 
 function liveWriteFence(document) {
+  const leadership = getCampaignTabLeadershipStatus();
   return Object.freeze({
     document,
     generation: lifecycleGeneration,
     userId: String(globalThis.game?.user?.id ?? ""),
     authorityId: authoritativeGMId(),
+    leadershipGeneration: leadership.generation,
   });
 }
 
@@ -1439,8 +1499,12 @@ function isLiveWriteFenceCurrent(fence) {
     fence?.document &&
     lifecycleGeneration === fence.generation &&
     isFullGM() &&
+    isAuthoritativeGM() &&
+    hasCampaignTabLeadership() &&
     String(globalThis.game?.user?.id ?? "") === fence.userId &&
     authoritativeGMId() === fence.authorityId &&
+    getCampaignTabLeadershipStatus().generation ===
+      fence.leadershipGeneration &&
     initialized &&
     storeDocument === fence.document &&
     isVerifiedCanonicalStore(fence.document),
@@ -1700,7 +1764,9 @@ function isRecoveryCandidateEligible(
 
 function capturePrivateStateRecoveryState() {
   const fullGm = isFullGM();
-  const authoritative = fullGm && isAuthoritativeGM();
+  const leadership = getCampaignTabLeadershipStatus();
+  const authoritative =
+    fullGm && isAuthoritativeGM() && hasCampaignTabLeadership();
   const candidates = fullGm
     ? findStoreDocuments().map(recoveryCandidateDescriptor)
     : [];
@@ -1713,6 +1779,7 @@ function capturePrivateStateRecoveryState() {
         fullGm && globalThis.game?.user?.id
           ? String(globalThis.game.user.id)
           : null,
+      leadershipGeneration: leadership.generation,
     },
     status: getPrivateStateStatus(),
     canonicalId: fullGm ? canonicalStoreIdSetting() : "",
@@ -1728,7 +1795,7 @@ function capturePrivateStateRecoveryState() {
 }
 
 function assertRecoveryAuthority() {
-  if (!isFullGM() || !isAuthoritativeGM()) {
+  if (!isFullGM() || !isAuthoritativeGM() || !hasCampaignTabLeadership()) {
     throw new Error("PrivateStateRecoveryAuthorityRequired");
   }
 }
@@ -1784,6 +1851,7 @@ async function hydrateRecoveryCanonical(candidateId) {
   initialized = false;
   initialization = null;
   initializing = false;
+  lastWriterLeadershipGeneration = null;
   clearStoreQuarantine();
   setPrivateStateStatus({
     state: "pending",
@@ -1838,6 +1906,7 @@ export function resetPrivateStateForTests() {
   initialized = false;
   initialization = null;
   initializing = false;
+  lastWriterLeadershipGeneration = null;
   syncHooksRegistered = false;
   roleHookId = null;
   connectionHookId = null;

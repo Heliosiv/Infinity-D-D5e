@@ -500,4 +500,208 @@ function deferred() {
   assert.equal(timers.size, 0);
 }
 
+// Same-user follower tabs only hydrate read-only campaign state, then acquire
+// authority through the shared campaign-leadership hook without duplicating
+// the calendar listener. A later regain reconciles the already-installed
+// watcher instead of registering it again.
+{
+  let leader = false;
+  let resourceReady = false;
+  let observeCalls = 0;
+  let initializeCalls = 0;
+  const trace = [];
+  const services = [];
+  const reconciliations = [];
+  const resourceEvents = [];
+  const hooks = new Map();
+  const timers = new Map();
+  let nextTimer = 0;
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => ({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+    }),
+    ensureCampaignTabLeadership: async () => {
+      trace.push("ensure-leadership");
+      return leader;
+    },
+    hasCampaignTabLeadership: () => leader,
+    initializePrivateState: async () => {
+      trace.push("initialize");
+      initializeCalls += 1;
+      return true;
+    },
+    isFullGM: () => true,
+    isAuthoritativeGM: () => leader,
+    migrateResourceConfig: async () => {
+      trace.push("migrate");
+      resourceReady = true;
+    },
+    isResourceAutomationReady: () => resourceReady,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    reconcileResourceCalendarWatcher: (reason) => reconciliations.push(reason),
+    resourceStateUpdateEvent: "resource:state-update",
+    emitResourceEvent: (type, data) => resourceEvents.push({ type, data }),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    observeResourceAuthorityTransition: () => {
+      observeCalls += 1;
+      return {
+        changed: true,
+        newlyAuthoritative: leader,
+      };
+    },
+    onPrivateStateChanged: () => null,
+    campaignTabLeadershipHook: "infinity-dnd5e.campaignTabLeadership",
+    getHooks: () => ({
+      on: (name, callback) => hooks.set(name, callback),
+    }),
+    setTimeout: (callback, delay) => {
+      const id = ++nextTimer;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+  });
+
+  controller.registerHooks();
+  assert.equal(await controller.recover(), false);
+  assert.equal(
+    initializeCalls,
+    1,
+    "follower recovery performs one read-only private-state hydration",
+  );
+  assert.equal(trace.includes("migrate"), false);
+  trace.length = 0;
+  controller.markReadyComplete({ privateStateAvailable: true });
+  assert.deepEqual(services, []);
+
+  leader = true;
+  hooks.get("infinity-dnd5e.campaignTabLeadership")({ leader: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(trace.indexOf("ensure-leadership") < trace.indexOf("initialize"));
+  assert.ok(trace.indexOf("initialize") < trace.indexOf("migrate"));
+  assert.equal(initializeCalls, 2);
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "first leadership gain registers the calendar watcher once",
+  );
+  assert.deepEqual(reconciliations, []);
+  assert.deepEqual(resourceEvents, [
+    {
+      type: "resource:state-update",
+      data: { reason: "authority-recovery" },
+    },
+  ]);
+
+  assert.equal(controller.schedule({ resource: true }), true);
+  leader = false;
+  const observationsBeforeLoss = observeCalls;
+  hooks.get("infinity-dnd5e.campaignTabLeadership")({ leader: false });
+  assert.equal(observeCalls, observationsBeforeLoss + 1);
+  assert.equal(timers.size, 0, "leadership loss clears Resource retries");
+  assert.equal(initializeCalls, 2, "leadership loss starts no new writes");
+
+  leader = true;
+  hooks.get("infinity-dnd5e.campaignTabLeadership")({ leader: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "leadership regain does not duplicate calendar registration",
+  );
+  assert.deepEqual(reconciliations, ["authority-recovery"]);
+  assert.equal(resourceEvents.length, 2);
+}
+
+// A leadership loss and regain while hydration is blocked must queue a fresh
+// generation. Coalescing the gain into the stale promise would otherwise miss
+// migration and calendar registration after the old generation exits.
+{
+  let leader = true;
+  let leadershipGeneration = 1;
+  let initializeCalls = 0;
+  let migrationCalls = 0;
+  const firstInitialization = deferred();
+  const hooks = new Map();
+  const services = [];
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => ({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+    }),
+    ensureCampaignTabLeadership: async () => leader,
+    hasCampaignTabLeadership: () => leader,
+    getCampaignTabLeadershipStatus: () => ({
+      generation: leadershipGeneration,
+    }),
+    initializePrivateState: async () => {
+      initializeCalls += 1;
+      return initializeCalls === 1 ? firstInitialization.promise : true;
+    },
+    isFullGM: () => true,
+    isAuthoritativeGM: () => leader,
+    migrateResourceConfig: async () => {
+      migrationCalls += 1;
+    },
+    isResourceAutomationReady: () => true,
+    registerMerchantSocket: () => services.push("merchant"),
+    registerResourceOverviewService: () => services.push("overview"),
+    registerResourceCalendarWatcher: () => services.push("calendar"),
+    registerReputationSocket: () => services.push("reputation"),
+    registerCriticalInjuryService: () => services.push("injury"),
+    registerDowntimeService: () => services.push("downtime"),
+    observeResourceAuthorityTransition: () => ({
+      changed: true,
+      newlyAuthoritative: leader,
+    }),
+    onPrivateStateChanged: () => null,
+    campaignTabLeadershipHook: "infinity-dnd5e.campaignTabLeadership",
+    getHooks: () => ({
+      on: (name, callback) => hooks.set(name, callback),
+    }),
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+
+  controller.registerHooks();
+  controller.markReadyComplete({ privateStateAvailable: true });
+  const staleRecovery = controller.recover();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(initializeCalls, 1);
+
+  leader = false;
+  hooks.get("infinity-dnd5e.campaignTabLeadership")({ leader: false });
+  leader = true;
+  leadershipGeneration = 2;
+  hooks.get("infinity-dnd5e.campaignTabLeadership")({ leader: true });
+  firstInitialization.resolve(true);
+
+  assert.equal(await staleRecovery, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(initializeCalls, 2);
+  assert.equal(migrationCalls, 1);
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "the regained generation performs one fresh calendar registration",
+  );
+}
+
 process.stdout.write("module recovery validation passed\n");

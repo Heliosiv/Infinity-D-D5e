@@ -6,6 +6,8 @@
 export function createPrivateStateRecovery(bindings) {
   let readyBootComplete = false;
   let recoveryInFlight = null;
+  let recoveryRequestedAgain = false;
+  let recoveryRequestScheduled = false;
   let recoveryTimer = null;
   let recoveryHooksRegistered = false;
   const registeredServices = new Set();
@@ -72,11 +74,55 @@ export function createPrivateStateRecovery(bindings) {
   }
 
   function requestRecoveryAfterHooks() {
-    void Promise.resolve().then(() => recover());
+    if (recoveryInFlight) {
+      recoveryRequestedAgain = true;
+      return;
+    }
+    if (recoveryRequestScheduled) return;
+    recoveryRequestScheduled = true;
+    void Promise.resolve().then(() => {
+      recoveryRequestScheduled = false;
+      return recover();
+    });
+  }
+
+  function campaignLeadershipGeneration() {
+    try {
+      const generation = Number(
+        bindings.getCampaignTabLeadershipStatus?.()?.generation,
+      );
+      return Number.isSafeInteger(generation) && generation >= 0
+        ? generation
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensureResourceLeadership() {
+    if (!bindings.isFullGM()) return true;
+    if (typeof bindings.ensureCampaignTabLeadership !== "function") {
+      return true;
+    }
+    try {
+      return (await bindings.ensureCampaignTabLeadership()) === true;
+    } catch (error) {
+      bindings.logger.error(
+        `${bindings.moduleId} | campaign tab leadership failed`,
+        error,
+      );
+      return false;
+    }
   }
 
   function schedule({ resource = false } = {}) {
     if (!bindings.isFullGM()) return false;
+    if (
+      typeof bindings.hasCampaignTabLeadership === "function" &&
+      !bindings.hasCampaignTabLeadership()
+    ) {
+      return false;
+    }
     const status = currentStatus();
     if (status.state === "blocked") {
       clearTimer();
@@ -100,6 +146,17 @@ export function createPrivateStateRecovery(bindings) {
     const calendarWasRegistered = registeredServices.has("resource-calendar");
     let trackedRecovery;
     trackedRecovery = (async () => {
+      let leadershipAvailable = true;
+      let leadershipGeneration = null;
+      if (
+        bindings.isFullGM() &&
+        typeof bindings.ensureCampaignTabLeadership === "function"
+      ) {
+        leadershipAvailable = await ensureResourceLeadership();
+        if (leadershipAvailable) {
+          leadershipGeneration = campaignLeadershipGeneration();
+        }
+      }
       let available = false;
       try {
         available = (await bindings.initializePrivateState()) === true;
@@ -108,6 +165,16 @@ export function createPrivateStateRecovery(bindings) {
           `${bindings.moduleId} | private state recovery failed`,
           error,
         );
+      }
+      if (
+        bindings.isFullGM() &&
+        (!leadershipAvailable ||
+          (typeof bindings.hasCampaignTabLeadership === "function" &&
+            !bindings.hasCampaignTabLeadership()) ||
+          (leadershipGeneration !== null &&
+            campaignLeadershipGeneration() !== leadershipGeneration))
+      ) {
+        return false;
       }
       if (!available) {
         if (currentStatus().retryable === true) schedule();
@@ -147,12 +214,27 @@ export function createPrivateStateRecovery(bindings) {
       ) {
         bindings.safeInitializeSubsystem(
           "resource calendar authority reconciliation",
-          () => bindings.reconcileResourceCalendarWatcher(),
+          () => bindings.reconcileResourceCalendarWatcher("authority-recovery"),
+        );
+      }
+      if (
+        bindings.isAuthoritativeGM() &&
+        typeof bindings.emitResourceEvent === "function" &&
+        typeof bindings.resourceStateUpdateEvent === "string"
+      ) {
+        bindings.safeInitializeSubsystem("resource authority UI refresh", () =>
+          bindings.emitResourceEvent(bindings.resourceStateUpdateEvent, {
+            reason: "authority-recovery",
+          }),
         );
       }
       return true;
     })().finally(() => {
-      if (recoveryInFlight === trackedRecovery) recoveryInFlight = null;
+      if (recoveryInFlight !== trackedRecovery) return;
+      recoveryInFlight = null;
+      if (!recoveryRequestedAgain) return;
+      recoveryRequestedAgain = false;
+      requestRecoveryAfterHooks();
     });
     recoveryInFlight = trackedRecovery;
     return trackedRecovery;
@@ -171,6 +253,7 @@ export function createPrivateStateRecovery(bindings) {
         reason === "schema-blocked" ||
         payload?.status?.state === "blocked"
       ) {
+        recoveryRequestedAgain = false;
         clearTimer();
         return;
       }
@@ -195,23 +278,53 @@ export function createPrivateStateRecovery(bindings) {
 
     const onAuthorityCandidateChanged = () => {
       const transition = bindings.observeResourceAuthorityTransition();
-      if (!readyBootComplete || !transition.newlyAuthoritative) return;
-      requestRecoveryAfterHooks();
+      if (!readyBootComplete) return;
+      if (
+        transition.newlyAuthoritative ||
+        (transition.changed && bindings.isFullGM())
+      ) {
+        requestRecoveryAfterHooks();
+      }
     };
     const hooks = bindings.getHooks?.();
     hooks?.on?.("updateUser", onAuthorityCandidateChanged);
     hooks?.on?.("userConnected", onAuthorityCandidateChanged);
+    if (typeof bindings.campaignTabLeadershipHook === "string") {
+      hooks?.on?.(bindings.campaignTabLeadershipHook, (status) => {
+        bindings.observeResourceAuthorityTransition();
+        if (!readyBootComplete) return;
+        if (status?.leader !== true) {
+          recoveryRequestedAgain = false;
+          clearTimer();
+          return;
+        }
+        if (bindings.isAuthoritativeGM()) requestRecoveryAfterHooks();
+      });
+    }
     return true;
   }
 
-  function markReadyComplete({ privateStateAvailable = false } = {}) {
+  function markReadyComplete({
+    privateStateAvailable = false,
+    campaignLeadershipAvailable = true,
+  } = {}) {
     const wasComplete = readyBootComplete;
     readyBootComplete = true;
     if (
       !wasComplete &&
       !privateStateAvailable &&
+      campaignLeadershipAvailable &&
       bindings.isFullGM() &&
       currentStatus().state === "ready"
+    ) {
+      requestRecoveryAfterHooks();
+    }
+    if (
+      !wasComplete &&
+      privateStateAvailable &&
+      bindings.isFullGM() &&
+      bindings.isAuthoritativeGM() &&
+      !registeredServices.has("resource-calendar")
     ) {
       requestRecoveryAfterHooks();
     }

@@ -29,10 +29,10 @@
         <h3 id="rm-today-heading">Today</h3>
       </div>
       <div class="rm-today__actions">
-        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging or moving the world clock{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging or moving the world clock{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
           <i class="fa-solid fa-utensils" aria-hidden="true"></i> Use Daily Supplies
         </button>
-        <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunForageDrive}}Choose what each character gathers and run their Survival checks (no day passes){{else}}{{#if canRunResourceWrites}}Foraging is closed in the current environment.{{else}}{{#unless isAuthoritative}}Another full GM is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}{{/if}}" {{#unless canRunForageDrive}}disabled aria-disabled="true" aria-describedby="{{#if canRunResourceWrites}}rm-forage-drive-reason{{else}}rm-resource-write-reason{{/if}}"{{/unless}}>
+        <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunForageDrive}}Choose what each character gathers and run their Survival checks (no day passes){{else}}{{#if canRunResourceWrites}}Foraging is closed in the current environment.{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}{{/if}}" {{#unless canRunForageDrive}}disabled aria-disabled="true" aria-describedby="{{#if canRunResourceWrites}}rm-forage-drive-reason{{else}}rm-resource-write-reason{{/if}}"{{/unless}}>
           <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
         </button>
       </div>
@@ -44,7 +44,7 @@
         <p>Recommended next action</p>
         {{#unless isAuthoritative}}
         <h4 id="rm-next-action-heading">Use the active GM client</h4>
-        <span>Another full GM is authoritative. Run upkeep from their client.</span>
+        <span>Another GM client is authoritative. Run upkeep from that client.</span>
         {{else}}{{#if hasActiveUpkeep}}
         <h4 id="rm-next-action-heading">Review the interrupted run</h4>
         <span>Compare the party's current supplies, then use Clear after review. Quartermaster will not replay the run.</span>
@@ -65,7 +65,7 @@
     <p id="rm-resource-write-reason" class="rm-disabled-reason" role="status">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       <strong>Use Daily Supplies and Forage Drive are unavailable:</strong>
-      {{#unless isAuthoritative}}Another full GM is currently authoritative. Run upkeep from their client.{{else}}{{#if hasActiveUpkeep}}Review and acknowledge the interrupted run before changing more inventory.{{else}}Fix every blocking resource conflict in Setup &amp; Rules.{{/if}}{{/unless}}
+      {{#unless isAuthoritative}}Another GM client is currently authoritative. Run upkeep from that client.{{else}}{{#if hasActiveUpkeep}}Review and acknowledge the interrupted run before changing more inventory.{{else}}Fix every blocking resource conflict in Setup &amp; Rules.{{/if}}{{/unless}}
     </p>
     {{/unless}}
 
@@ -78,7 +78,7 @@
     <p><i class="fa-solid fa-lock" aria-hidden="true"></i> <strong>Resource writes are safety-locked.</strong>
       The {{activeUpkeep.triggerLabel}} run for {{activeUpkeep.dayLabel}} did not finish cleanly. Quartermaster will not replay it or change more inventory until you review the supplies.
     </p>
-    <button type="button" class="mw-btn mw-btn--ghost" data-action="clearInterruptedRun">
+    <button type="button" class="mw-btn mw-btn--ghost" data-action="clearInterruptedRun" title="{{#if isAuthoritative}}Record this run as interrupted after reviewing the party's supplies{{else}}Only the active GM client can clear an interrupted run{{/if}}" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
       <i class="fa-solid fa-unlock" aria-hidden="true"></i> Clear after review
     </button>
   </div>
@@ -297,7 +297,7 @@
       <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; rules</span>
       <small>Environment, resources, safety, and party roster</small>
     </summary>
-    <div class="rm-setup__content">
+    <div class="rm-setup__content" {{#unless isAuthoritative}}aria-disabled="true"{{/unless}}>
       <section class="rm-setup-checklist" aria-labelledby="rm-setup-checklist-heading">
         <div>
           <p class="rm-workspace-section__eyebrow">First setup</p>
@@ -344,10 +344,10 @@
             <code>{{currentEnvironment.id}}</code>
           </div>
           <div class="rm-environment-editor__actions" role="group" aria-label="Reorder or remove {{currentEnvironment.label}}">
-            <button type="button" class="mw-btn mw-btn--ghost" data-action="moveEnvironment" data-environment-id="{{currentEnvironment.id}}" data-direction="earlier" title="{{#if canMoveEnvironmentEarlier}}Move this custom region earlier in the list{{else}}This is already the first custom region{{/if}}" aria-label="Move {{currentEnvironment.label}} earlier" {{#unless canMoveEnvironmentEarlier}}disabled aria-disabled="true"{{/unless}}>
+            <button type="button" class="mw-btn mw-btn--ghost" data-action="moveEnvironment" data-environment-id="{{currentEnvironment.id}}" data-direction="earlier" title="{{#if canMoveEnvironmentEarlier}}Move this custom region earlier in the list{{else}}{{#unless isAuthoritative}}Only the active GM client can reorder custom regions{{else}}This is already the first custom region{{/unless}}{{/if}}" aria-label="Move {{currentEnvironment.label}} earlier" {{#unless canMoveEnvironmentEarlier}}disabled aria-disabled="true"{{/unless}}>
               <i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Earlier
             </button>
-            <button type="button" class="mw-btn mw-btn--ghost" data-action="moveEnvironment" data-environment-id="{{currentEnvironment.id}}" data-direction="later" title="{{#if canMoveEnvironmentLater}}Move this custom region later in the list{{else}}This is already the last custom region{{/if}}" aria-label="Move {{currentEnvironment.label}} later" {{#unless canMoveEnvironmentLater}}disabled aria-disabled="true"{{/unless}}>
+            <button type="button" class="mw-btn mw-btn--ghost" data-action="moveEnvironment" data-environment-id="{{currentEnvironment.id}}" data-direction="later" title="{{#if canMoveEnvironmentLater}}Move this custom region later in the list{{else}}{{#unless isAuthoritative}}Only the active GM client can reorder custom regions{{else}}This is already the last custom region{{/unless}}{{/if}}" aria-label="Move {{currentEnvironment.label}} later" {{#unless canMoveEnvironmentLater}}disabled aria-disabled="true"{{/unless}}>
               <i class="fa-solid fa-arrow-down" aria-hidden="true"></i> Later
             </button>
             <button type="button" class="mw-btn mw-btn--danger" data-action="removeEnvironment" data-environment-id="{{currentEnvironment.id}}" title="{{#if canRemoveEnvironment}}Remove this custom region{{else}}Only the active GM can remove the current custom region{{/if}}" aria-label="Remove {{currentEnvironment.label}}" {{#unless canRemoveEnvironment}}disabled aria-disabled="true"{{/unless}}>

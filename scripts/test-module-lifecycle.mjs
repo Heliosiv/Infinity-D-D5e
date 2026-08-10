@@ -28,6 +28,7 @@ function createFixture({
   privateStatus = null,
   resourceReady = true,
   resourceMigrationError = null,
+  campaignLeader = true,
 } = {}) {
   const trace = [];
   const hooks = createHooks(trace);
@@ -150,11 +151,17 @@ function createFixture({
       trace.push("private-state:hook");
       privateStateCallback = callback;
     },
+    campaignTabLeadershipHook: "infinity-dnd5e.campaignTabLeadership",
+    ensureCampaignTabLeadership: async () => {
+      trace.push("campaign-leadership:ensure");
+      return campaignLeader;
+    },
+    hasCampaignTabLeadership: () => campaignLeader,
     observeResourceAuthorityTransition: () => {
       trace.push("authority:observe");
       return { newlyAuthoritative: false };
     },
-    isAuthoritativeGM: () => fullGm,
+    isAuthoritativeGM: () => fullGm && campaignLeader,
     isResourceAutomationReady: () => resourceReady,
     migrateEncounterBalanceDefaults: async () =>
       trace.push("migrate:encounter"),
@@ -268,6 +275,8 @@ function createFixture({
     "private-state:hook",
     "hook-on:updateUser",
     "hook-on:userConnected",
+    "hook-on:infinity-dnd5e.campaignTabLeadership",
+    "campaign-leadership:ensure",
     "private-state:init",
     "migrate:encounter",
     "migrate:resource",
@@ -297,6 +306,70 @@ function createFixture({
   assert.equal(typeof fixture.getSharpeningOptions().onDamage, "function");
   assert.equal(typeof fixture.getSharpeningOptions().onLongRest, "function");
   assert.equal(typeof fixture.getDowntimeAutoOpen(), "function");
+}
+
+{
+  const fixture = createFixture({
+    campaignLeader: false,
+    privateAvailable: false,
+  });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.ok(fixture.trace.includes("campaign-leadership:ensure"));
+  assert.ok(
+    fixture.trace.includes("private-state:init"),
+    "a follower tab still attempts the private store's read-only hydration",
+  );
+  assert.equal(
+    fixture.trace.includes("migrate:resource"),
+    false,
+    "a follower tab does not migrate Resource state",
+  );
+  assert.equal(
+    fixture.trace.includes("resource-calendar-watcher"),
+    false,
+    "a follower tab does not install calendar authority",
+  );
+  assert.ok(
+    fixture.trace.includes("resource-socket") &&
+      fixture.trace.includes("forage-auto-open"),
+    "a follower tab keeps safe player-facing Resource listeners",
+  );
+  assert.equal(fixture.timers.length, 0);
+  assert.equal(fixture.notifications.length, 0);
+}
+
+{
+  const fixture = createFixture({ campaignLeader: false });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.ok(fixture.trace.includes("private-state:init"));
+  assert.equal(
+    fixture.trace.includes("merchant-socket") ||
+      fixture.trace.includes("resource-overview-service"),
+    false,
+    "a hydrated follower does not start private write services",
+  );
+  assert.equal(fixture.trace.includes("resource-calendar-watcher"), false);
+  assert.ok(fixture.trace.includes("resource-socket"));
+  assert.ok(fixture.trace.includes("forage-auto-open"));
+}
+
+{
+  const fixture = createFixture({ fullGm: false, campaignLeader: false });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.equal(
+    fixture.trace.includes("campaign-leadership:ensure"),
+    false,
+    "players do not wait for GM tab leadership",
+  );
+  assert.ok(fixture.trace.includes("resource-calendar-watcher"));
+  assert.ok(fixture.trace.includes("resource-socket"));
+  assert.ok(fixture.trace.includes("forage-auto-open"));
 }
 
 {

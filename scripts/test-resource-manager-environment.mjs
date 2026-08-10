@@ -399,8 +399,36 @@ try {
   assert.equal(context.canRemoveEnvironment, false);
   assert.equal(
     context.canMoveEnvironmentEarlier,
-    true,
-    "a non-authoritative full GM may still reorder saved config",
+    false,
+    "a non-authoritative full GM inspects saved config without reordering it",
+  );
+  html = template(context);
+  assert.match(
+    html,
+    /class="rm-setup__content" aria-disabled="true"/,
+    "the setup panel exposes its read-only state to assistive technology",
+  );
+  const followerConfig = structuredClone(settingValues.get("resourceConfig"));
+  const followerConfirmations = confirmationCount;
+  await ResourceManagerApp.DEFAULT_OPTIONS.actions.removeResource.call(
+    fakeApp,
+    null,
+    { dataset: { resourceId: "food" } },
+  );
+  await ResourceManagerApp.prototype._onDropItem.call(
+    fakeApp,
+    { preventDefault() {} },
+    "food",
+  );
+  assert.equal(
+    confirmationCount,
+    followerConfirmations,
+    "a follower action does not open a destructive dialog",
+  );
+  assert.deepEqual(
+    settingValues.get("resourceConfig"),
+    followerConfig,
+    "a follower action or drop performs no setup write",
   );
   await ResourceManagerApp.DEFAULT_OPTIONS.actions.moveEnvironment.call(
     fakeApp,
@@ -410,7 +438,11 @@ try {
   catalog = store.normalizeResourceConfig(
     settingValues.get("resourceConfig"),
   ).environments;
-  assert.deepEqual(customEnvironmentIds(catalog), [created.id, copied.id]);
+  assert.deepEqual(
+    customEnvironmentIds(catalog),
+    [copied.id, created.id],
+    "a secondary GM cannot reorder the catalog",
+  );
   await ResourceManagerApp.DEFAULT_OPTIONS.actions.moveEnvironment.call(
     fakeApp,
     null,

@@ -239,12 +239,21 @@ function authorityFence(state) {
       "PrivateStateRecoveryAuthorityRequired",
     );
   }
-  return Object.freeze({ userId: String(authority.userId) });
+  return Object.freeze({
+    userId: String(authority.userId),
+    leadershipGeneration: Number.isSafeInteger(authority.leadershipGeneration)
+      ? authority.leadershipGeneration
+      : null,
+  });
 }
 
 function assertSameAuthority(state, fence) {
   const current = authorityFence(state);
-  if (current.userId !== fence.userId) {
+  if (
+    current.userId !== fence.userId ||
+    (fence.leadershipGeneration !== null &&
+      current.leadershipGeneration !== fence.leadershipGeneration)
+  ) {
     throw recoveryError(
       "PRIVATE_STATE_RECOVERY_AUTHORITY_CHANGED",
       "PrivateStateRecoveryAuthorityChanged",

@@ -333,10 +333,6 @@ function makeHarness({
     isAuthoritativeGM: () => authoritative,
     ensureTabLeadership: async () => tabLeader,
     hasTabLeadership: () => tabLeader,
-    releaseTabLeadership: () => {
-      tabLeader = false;
-      return true;
-    },
     currentUserId: () => "gm-1",
     createAuthorityEpoch: () => `epoch-${++epochCounter}`,
     createWriteToken: () => `token-${++tokenCounter}`,
@@ -405,6 +401,18 @@ function makeHarness({
     },
     runMutex,
   };
+}
+
+/* Feature teardown must not release shared campaign leadership. */
+{
+  const harness = makeHarness();
+  await harness.coordinator.register();
+  assert.equal(harness.coordinator.unregister(), true);
+  assert.equal(
+    (await harness.coordinator.register()).status,
+    "reconciled",
+    "Merchant teardown left the shared campaign leader intact",
+  );
 }
 
 /* A same-user follower tab cannot claim or write; leadership can hand off. */

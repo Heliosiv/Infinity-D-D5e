@@ -72,11 +72,18 @@ import {
   promptInfinityDialog,
 } from "./dialog-contract.js";
 import { promptForageDriveDialog } from "./forage-drive-dialog.js";
+import { CAMPAIGN_TAB_LEADERSHIP_HOOK } from "./campaign-tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-manager.hbs`;
 let manualAdvanceRequestInFlight = false;
 let manualForageRequestInFlight = false;
+
+function requireResourceWriteAuthority(action = "change Quartermaster setup") {
+  if (isAuthoritativeGM()) return true;
+  notify("warn", `only the active GM client can ${action}.`);
+  return false;
+}
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -166,6 +173,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         }
         if (this.rendered) this.render(false);
       }) ?? null;
+    this._campaignLeadershipHook =
+      globalThis.Hooks?.on?.(CAMPAIGN_TAB_LEADERSHIP_HOOK, () => {
+        if (this.rendered) this.render(false);
+      }) ?? null;
   }
 
   _onClose(options) {
@@ -194,6 +205,17 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         // Best effort during Foundry shutdown.
       }
       this._userRoleHook = null;
+    }
+    if (this._campaignLeadershipHook != null) {
+      try {
+        globalThis.Hooks?.off?.(
+          CAMPAIGN_TAB_LEADERSHIP_HOOK,
+          this._campaignLeadershipHook,
+        );
+      } catch {
+        // Best effort during Foundry shutdown.
+      }
+      this._campaignLeadershipHook = null;
     }
     ResourceManagerApp._instance = null;
   }
@@ -413,9 +435,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         : null,
       canCopyEnvironment: isAuthoritative && Boolean(currentEnv),
       canCreateEnvironment: isAuthoritative,
-      canMoveEnvironmentEarlier: isFullGM() && currentCustomIndex > 0,
+      canMoveEnvironmentEarlier: isAuthoritative && currentCustomIndex > 0,
       canMoveEnvironmentLater:
-        isFullGM() &&
+        isAuthoritative &&
         currentCustomIndex >= 0 &&
         currentCustomIndex < customEnvironmentIds.length - 1,
       canRemoveEnvironment:
@@ -496,6 +518,17 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       this._setupExpanded = event.currentTarget?.open === true;
     });
 
+    // Secondary same-user tabs and other full GMs may inspect the canonical
+    // setup, but only the current campaign leader may mutate it.
+    if (!context?.isAuthoritative) {
+      for (const control of root.querySelectorAll(
+        ".rm-setup__content :is(button, input, select, textarea)",
+      )) {
+        control.disabled = true;
+        control.setAttribute("aria-disabled", "true");
+      }
+    }
+
     // Environment select.
     const envSelect = root.querySelector("[data-role='environment']");
     if (envSelect) {
@@ -521,6 +554,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
     // Drop-to-tag zones — drop an item to bind it to a resource by UUID.
     for (const zone of root.querySelectorAll("[data-drop-resource]")) {
+      if (!context?.isAuthoritative) {
+        zone.setAttribute("aria-disabled", "true");
+        continue;
+      }
       zone.addEventListener("dragover", (event) => event.preventDefault());
       zone.addEventListener("drop", (event) =>
         this._onDropItem(event, zone.dataset.dropResource),
@@ -531,6 +568,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   async _onConfigInput(input) {
     const path = input?.dataset?.configPath;
     if (!path) return;
+    if (!isAuthoritativeGM()) {
+      notify("warn", "only the active GM client can change resource setup.");
+      await this._renderPreservingFocus(input);
+      return;
+    }
     const config = loadResourceConfig();
     const value =
       input.type === "checkbox" ? input.checked : String(input.value ?? "");
@@ -618,8 +660,11 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       ]),
     );
     return await enqueueEnvironmentMutation(this, async () => {
-      if (!isFullGM()) {
-        notify("warn", "only a full GM can edit custom environments.");
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "only the active GM client can edit custom environments.",
+        );
         await this._renderPreservingFocus(input);
         return;
       }
@@ -685,6 +730,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   async _onDropItem(event, resourceId) {
     event.preventDefault();
+    if (!requireResourceWriteAuthority()) return;
     const uuid = extractDroppedItemUuid(event);
     if (!uuid || !resourceId) return;
     const config = loadResourceConfig();
@@ -703,10 +749,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAdvanceDay(_event, target) {
-    if (!isAuthoritativeGM()) {
-      notify("warn", `only the active GM can run daily upkeep.`);
-      return;
-    }
+    if (!requireResourceWriteAuthority("run daily upkeep")) return;
     if (manualAdvanceRequestInFlight) return;
 
     manualAdvanceRequestInFlight = true;
@@ -725,6 +768,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         rejectClose: false,
       });
       if (!ok) return;
+      if (!requireResourceWriteAuthority("run daily upkeep")) return;
       playModuleSound(SOUND_EVENTS.ROLL_START);
       await advanceDayNow();
       this.render(false);
@@ -740,10 +784,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onForageDrive(_event, target) {
-    if (!isAuthoritativeGM()) {
-      notify("warn", `only the active GM can run a forage drive.`);
-      return;
-    }
+    if (!requireResourceWriteAuthority("run a forage drive")) return;
     if (manualForageRequestInFlight) return;
     manualForageRequestInFlight = true;
     try {
@@ -790,6 +831,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
         canForageWater,
       });
       if (!result) return;
+      if (!requireResourceWriteAuthority("run a forage drive")) return;
       if (!Array.isArray(result.foragers) || result.foragers.length === 0) {
         notify("info", `select at least one forager.`);
         return;
@@ -813,10 +855,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onClearInterruptedRun() {
-    if (!isAuthoritativeGM()) {
-      notify("warn", `only the active GM can clear an interrupted run.`);
-      return;
-    }
+    if (!requireResourceWriteAuthority("clear an interrupted run")) return;
     const activeUpkeep = loadRunState().activeUpkeep;
     if (!activeUpkeep?.runId) return;
     const confirmed = await confirmDestructive({
@@ -827,6 +866,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       icon: "fa-solid fa-unlock",
     });
     if (!confirmed) return;
+    if (!requireResourceWriteAuthority("clear an interrupted run")) return;
     await clearUpkeepClaim(activeUpkeep.runId);
     notify("info", `cleared the lock and recorded the interrupted run.`);
     this.render(false);
@@ -834,6 +874,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAddResource(_event, _target) {
+    if (!requireResourceWriteAuthority()) return;
     const config = loadResourceConfig();
     const used = new Set(config.resources.map((r) => r.id));
     let n = config.resources.length + 1;
@@ -854,6 +895,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onRemoveResource(_event, target) {
+    if (!requireResourceWriteAuthority()) return;
     const id = target?.dataset?.resourceId;
     if (!id) return;
     const config = loadResourceConfig();
@@ -864,6 +906,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       icon: "fa-solid fa-trash",
     });
     if (!confirmed) return;
+    if (!requireResourceWriteAuthority()) return;
     config.resources = config.resources.filter((r) => r.id !== id);
     await saveResourceConfig(config);
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
@@ -873,6 +916,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   /** @this {ResourceManagerApp} */
   /** Keyboard-friendly alternative to drag-to-tag using the shared item picker. */
   static async _onAddTag(_event, target) {
+    if (!requireResourceWriteAuthority()) return;
     const id = target?.dataset?.resourceId;
     if (!id) return;
     const initialConfig = loadResourceConfig();
@@ -915,6 +959,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       if (!candidatesByUuid.has(item.uuid))
         candidatesByUuid.set(item.uuid, item);
     }
+    if (!requireResourceWriteAuthority()) return;
     const existingUuids = new Set(initialResource.matching.itemUuids ?? []);
     const uuid = await pickSearchOption({
       title: `Match an item to ${initialResource.label ?? "resource"}`,
@@ -931,6 +976,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       confirmLabel: "Match item",
     });
     if (!uuid || !candidatesByUuid.has(uuid)) return;
+    if (!requireResourceWriteAuthority()) return;
     if (!(await saveExactItemMatch(id, uuid))) return;
     playModuleSound(SOUND_EVENTS.DEPOSIT);
     this.render(false);
@@ -939,6 +985,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   /** @this {ResourceManagerApp} */
   /** Preserve exact matching for items outside the searchable local catalog. */
   static async _onAddTagByUuid(_event, target) {
+    if (!requireResourceWriteAuthority()) return;
     const id = target?.dataset?.resourceId;
     if (!id) return;
     const resource = loadResourceConfig().resources.find(
@@ -973,13 +1020,15 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           button?.form?.elements?.uuid?.value?.trim() ?? null,
       },
     });
-    if (!uuid || !(await saveExactItemMatch(id, uuid))) return;
+    if (!uuid || !requireResourceWriteAuthority()) return;
+    if (!(await saveExactItemMatch(id, uuid))) return;
     playModuleSound(SOUND_EVENTS.DEPOSIT);
     this.render(false);
   }
 
   /** @this {ResourceManagerApp} */
   static async _onRemoveTag(_event, target) {
+    if (!requireResourceWriteAuthority()) return;
     const id = target?.dataset?.resourceId;
     const uuid = target?.dataset?.uuid;
     if (!id || !uuid) return;
@@ -995,6 +1044,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onAddRosterMember(_event, _target) {
+    if (!requireResourceWriteAuthority()) return;
     const initialConfig = loadResourceConfig();
     seedRosterIfEmpty(initialConfig);
     const existingActorIds = new Set(
@@ -1018,6 +1068,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       confirmLabel: "Add to roster",
     });
     if (!actorId) return;
+    if (!requireResourceWriteAuthority()) return;
     // Any real actor is eligible — the GM may add NPCs / unowned actors as
     // supply sources, not just player characters.
     const actor = discoverAllActors().find((entry) => entry.id === actorId);
@@ -1044,6 +1095,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onRemoveRosterMember(_event, target) {
+    if (!requireResourceWriteAuthority()) return;
     const actorId = target?.dataset?.actorId;
     if (!actorId) return;
     const config = loadResourceConfig();
@@ -1055,6 +1107,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       icon: "fa-solid fa-user-minus",
     });
     if (!confirmed) return;
+    if (!requireResourceWriteAuthority()) return;
     config.roster = config.roster.filter((r) => r.actorId !== actorId);
     if (config.partyStashId === actorId) config.partyStashId = "";
     await saveResourceConfig(config);
@@ -1195,8 +1248,8 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     const environmentId = String(target?.dataset?.environmentId ?? "").trim();
     const direction = String(target?.dataset?.direction ?? "").trim();
     return await enqueueEnvironmentMutation(this, async () => {
-      if (!isFullGM()) {
-        notify("warn", "only a full GM can reorder environments.");
+      if (!isAuthoritativeGM()) {
+        notify("warn", "only the active GM client can reorder environments.");
         return;
       }
       if (
@@ -1369,6 +1422,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   /** @this {ResourceManagerApp} */
   static async _onResetConfig(_event, _target) {
+    if (!requireResourceWriteAuthority("reset Quartermaster")) return;
     const ok = await confirmInfinityDialog({
       window: {
         title: "Reset Quartermaster?",
@@ -1379,6 +1433,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       rejectClose: false,
     });
     if (!ok) return;
+    if (!requireResourceWriteAuthority("reset Quartermaster")) return;
     const defaults = createDefaultResourceConfig();
     await Promise.all([saveResourceConfig(defaults), resetResourceRules()]);
     const currentEnvironmentId = loadRunState().currentEnvironmentId;

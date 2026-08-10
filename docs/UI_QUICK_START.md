@@ -27,7 +27,7 @@ The main scenario, tier, party or roster, estimated outcome, and **Generate** ac
 ## Use GM workspaces
 
 - **Merchant Workspace** separates Basics, Pricing & Bargaining, Stock, Access, and Sessions. The active full GM can edit and host live trades; other full-GM windows are clearly read-only and may use Preview. Player trade requests and the GM's exact write plan survive reloads, with ambiguous outcomes pinned for review instead of retried blindly. Search the full allowlisted compendium rather than paging through a capped list.
-- **Quartermaster** starts with Today, the recommended next action, supply outlook, and safety warnings. Use Recent Runs for read-only receipts and Setup & Rules for configuration, including creating, copying, ordering, and removing custom regions. Exact resource matches default to a searchable item picker; **Paste an Item UUID** remains available for items from other world or compendium sources.
+- **Quartermaster** starts with Today, the recommended next action, supply outlook, and safety warnings. Use Recent Runs for read-only receipts and Setup & Rules for configuration, including creating, copying, ordering, and removing custom regions. Only the active GM browser tab can change setup or run upkeep; other full-GM tabs stay read-only. Exact resource matches default to a searchable item picker; **Paste an Item UUID** remains available for items from other world or compendium sources.
 - **Downtime Workspace** follows Create, Collect, Lock, Preview, Apply, and Complete. Recovery appears as a separate branch when the authoritative result is uncertain.
 - **Reputation** uses a faction list and detail workspace. Standing changes require the new standing and a reason before the existing authoritative write runs.
 

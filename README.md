@@ -224,6 +224,8 @@ Quartermaster opens on the daily routine: Use Daily Supplies, Forage Drive, curr
 location, supply outlook, safety warnings, and the latest report. Expand
 **Setup & rules** for environment authoring, automation, tracked-resource
 definitions, roster and stash routing, or resetting the configuration.
+Only the active GM browser tab may change this setup or run upkeep; other
+full-GM tabs keep a read-only inspection view.
 
 Roster actors can be marked as daily consumers or inventory-only sources, so a
 mule or NPC stash does not consume an extra ration. Quartermaster also warns

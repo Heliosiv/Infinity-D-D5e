@@ -199,6 +199,26 @@ assert.match(resourceTemplate, /First setup/);
 assert.match(resourceTemplate, /Campaign readiness/);
 assert.match(resourceTemplate, /rm-resource-write-reason/);
 assert.match(resourceTemplate, /Quartermaster will not replay the run/);
+assert.match(
+  resourceTemplate,
+  /data-action="clearInterruptedRun"[\s\S]*?unless isAuthoritative[\s\S]*?disabled aria-disabled="true"/,
+  "Quartermaster disables interrupted-run recovery in a follower tab",
+);
+assert.match(
+  resourceTemplate,
+  /rm-setup__content" \{\{#unless isAuthoritative\}\}aria-disabled="true"/,
+  "Quartermaster marks setup read-only outside the campaign-leading tab",
+);
+assert.match(
+  resourceScript,
+  /CAMPAIGN_TAB_LEADERSHIP_HOOK/,
+  "Quartermaster refreshes when same-browser campaign leadership changes",
+);
+assert.match(
+  resourceScript,
+  /data-drop-resource[\s\S]*?if \(!context\?\.isAuthoritative\)[\s\S]*?aria-disabled/,
+  "Quartermaster does not bind drop mutations in a follower tab",
+);
 assert.doesNotMatch(resourceTemplate, /data-action="(?:retry|replay|rollback)/);
 assert.match(resourceTemplate, /Advanced receipt details/);
 assert.equal(

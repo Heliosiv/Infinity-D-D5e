@@ -405,6 +405,9 @@ try {
           day: 14,
           days: 1,
           claimedAt: Date.now(),
+          authorityId: competing.authorityId,
+          authorityEpoch: competing.authorityEpoch,
+          leadershipGeneration: 0,
         };
         settings.set("resourceRunState", competing);
       }, 25);

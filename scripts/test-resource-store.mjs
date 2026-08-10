@@ -814,6 +814,9 @@ import {
       days: 1,
       startedAt: 1234,
       claimedAt: 1234,
+      authorityId: null,
+      authorityEpoch: null,
+      leadershipGeneration: null,
       environment: null,
       initiator: null,
       actors: [],
@@ -821,6 +824,11 @@ import {
       forageAssignments: [],
       forageDestination: null,
     });
+    assert.throws(
+      () => assertUpkeepClaimCurrent("legacy-active"),
+      /ResourceUpkeepClaimLost/,
+      "a migrated claim without an original authority guard is non-resumable",
+    );
     assert.deepEqual(
       writes[5].value.recentRuns,
       [],
@@ -1499,6 +1507,412 @@ import {
 }
 
 /* ------------------------------------------------------------------ *
+ * Campaign-tab leadership fences every live resource persistence boundary.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  const originalJournalEntry = globalThis.JournalEntry;
+  const originalHooks = globalThis.Hooks;
+  const originalConst = globalThis.CONST;
+  const leadershipState = { active: true, generation: 1 };
+  const leadership = {
+    async ensureLeadership() {
+      return leadershipState.active;
+    },
+    hasLeadership() {
+      return leadershipState.active;
+    },
+    getStatus() {
+      return {
+        required: true,
+        state: leadershipState.active ? "leader" : "waiting",
+        leader: leadershipState.active,
+        generation: leadershipState.generation,
+      };
+    },
+  };
+  try {
+    resetPrivateStateForTests();
+    resetResourceStoreForTests({ leadership });
+
+    let nextHookId = 0;
+    const listeners = new Map();
+    globalThis.Hooks = {
+      on(event, handler) {
+        const id = ++nextHookId;
+        if (!listeners.has(event)) listeners.set(event, new Map());
+        listeners.get(event).set(id, handler);
+        return id;
+      },
+      off(event, id) {
+        listeners.get(event)?.delete(id);
+      },
+      call(event, ...args) {
+        for (const handler of listeners.get(event)?.values() ?? []) {
+          handler(...args);
+        }
+      },
+    };
+    globalThis.CONST = {
+      DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0 },
+      USER_ROLES: { GAMEMASTER: 4 },
+    };
+
+    const flags = {
+      privateStateStore: true,
+      schemaVersion: 2,
+      merchants: [],
+      factions: [],
+      resourceConfig: serializeResourceConfig(createDefaultResourceConfig()),
+      resourceRunState: {
+        lastSeenDay: 8,
+        currentEnvironmentId: "road",
+        lastUpkeepResult: null,
+        activeUpkeep: null,
+        recentRuns: [],
+      },
+    };
+    const settingValues = new Map();
+    const settingWrites = [];
+    let loseOnPrivateKey = null;
+    let loseOnSettingKey = null;
+    let blockedPrivateWrite = null;
+    const store = {
+      id: "leadership-resource-store",
+      ownership: { default: 0 },
+      updateCalls: [],
+      getFlag(scope, key) {
+        return scope === "infinity-dnd5e" ? flags[key] : undefined;
+      },
+      async update(changes) {
+        this.updateCalls.push(structuredClone(changes));
+        const changedKeys = Object.keys(changes).map(
+          (path) => /^flags\.infinity-dnd5e\.(.+)$/.exec(path)?.[1] ?? "",
+        );
+        if (
+          blockedPrivateWrite &&
+          changedKeys.includes(blockedPrivateWrite.key)
+        ) {
+          const blocked = blockedPrivateWrite;
+          blockedPrivateWrite = null;
+          blocked.markStarted();
+          await blocked.wait;
+        }
+        for (const [path, value] of Object.entries(changes)) {
+          const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
+          if (!match) continue;
+          const key = match[1];
+          const snapshot = structuredClone(value);
+          flags[key] =
+            key === "resourceRunState" &&
+            flags[key] &&
+            typeof flags[key] === "object" &&
+            !Array.isArray(flags[key])
+              ? { ...flags[key], ...snapshot }
+              : snapshot;
+        }
+        if (loseOnPrivateKey && changedKeys.includes(loseOnPrivateKey)) {
+          loseOnPrivateKey = null;
+          leadershipState.active = false;
+        }
+        globalThis.Hooks.call("updateJournalEntry", this, changes);
+        return this;
+      },
+      blockNext(key) {
+        let release;
+        let markStarted;
+        const wait = new Promise((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise((resolve) => {
+          markStarted = resolve;
+        });
+        blockedPrivateWrite = {
+          key,
+          wait,
+          markStarted,
+        };
+        return { release, started };
+      },
+    };
+    const gm = { id: "gm-leader", isGM: true, role: 4, active: true };
+    globalThis.game = {
+      ready: true,
+      user: gm,
+      users: { activeGM: gm },
+      journal: {
+        find(predicate) {
+          return predicate(store) ? store : null;
+        },
+      },
+      settings: {
+        get(_moduleId, key) {
+          if (key === "privateStateStoreId") return store.id;
+          if (key === "merchants" || key === "factions") return [];
+          return settingValues.get(key);
+        },
+        async set(_moduleId, key, value) {
+          settingWrites.push({ key, value });
+          settingValues.set(key, value);
+          if (loseOnSettingKey === key) {
+            loseOnSettingKey = null;
+            leadershipState.active = false;
+          }
+          return value;
+        },
+      },
+    };
+    globalThis.JournalEntry = {
+      async create() {
+        throw new Error("existing private store should be reused");
+      },
+    };
+
+    await initializePrivateState();
+    store.updateCalls.length = 0;
+    settingWrites.length = 0;
+    assert.equal(await migrateResourceConfig(), true);
+    const firstEpoch = flags.resourceRunState.authorityEpoch;
+    assert.ok(firstEpoch);
+    assert.equal(isResourceAutomationReady(), true);
+
+    // A second tab signed in as the same GM is still a follower. Every public
+    // persistence entry point stops before either Journal or settings writes.
+    leadershipState.active = false;
+    const loss = observeResourceAuthorityTransition();
+    assert.equal(loss.changed, true);
+    assert.equal(loss.leadershipActive, false);
+    assert.equal(loss.authorityEpoch, null);
+    const followerPrivateWrites = store.updateCalls.length;
+    const followerSettingWrites = settingWrites.length;
+    await assert.rejects(
+      saveResourceConfig(loadResourceConfig()),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    await assert.rejects(
+      setResourceRule("waterEnabled", false),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    await assert.rejects(
+      resetResourceRules(),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    await assert.rejects(
+      setLastSeenDay(9),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    assert.throws(
+      () => assertUpkeepClaimCurrent("not-active"),
+      /ResourceRunStateAuthorityChanged/,
+    );
+    assert.equal(await migrateResourceConfig(), false);
+    assert.equal(store.updateCalls.length, followerPrivateWrites);
+    assert.equal(settingWrites.length, followerSettingWrites);
+
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    const handoff = observeResourceAuthorityTransition();
+    assert.equal(handoff.changed, true);
+    assert.equal(handoff.newlyAuthoritative, true);
+    assert.equal(handoff.leadershipGeneration, 2);
+    assert.notEqual(handoff.authorityEpoch, firstEpoch);
+    assert.equal(await migrateResourceConfig(), true);
+    assert.equal(flags.resourceRunState.authorityEpoch, handoff.authorityEpoch);
+    assert.equal(isResourceAutomationReady(), true);
+
+    // Config and runtime-rule writes both validate the same generation after
+    // their awaited persistence call, not just before it starts.
+    loseOnPrivateKey = "resourceConfig";
+    await assert.rejects(
+      saveResourceConfig({
+        ...loadResourceConfig(),
+        forageTimeoutSeconds: 321,
+      }),
+      /PostconditionFailed|AuthorityChanged/,
+    );
+    assert.equal(flags.resourceConfig.forageTimeoutSeconds, 321);
+    assert.equal(isResourceAutomationReady(), false);
+
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    observeResourceAuthorityTransition();
+    assert.equal(await migrateResourceConfig(), true);
+    loseOnSettingKey = "resourceWaterEnabled";
+    await assert.rejects(
+      setResourceRule("waterEnabled", false),
+      /ResourceRunStateAuthorityChanged/,
+    );
+    assert.equal(settingValues.get("resourceWaterEnabled"), false);
+
+    // Migration keeps one generation fence across rule, config, and run-state
+    // stages. Losing the tab after a legacy-rule write stops later stages.
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    observeResourceAuthorityTransition();
+    flags.resourceConfig = {
+      ...flags.resourceConfig,
+      version: 1,
+      waterEnabled: true,
+    };
+    globalThis.Hooks.call("updateJournalEntry", store, {
+      "flags.infinity-dnd5e.resourceConfig": flags.resourceConfig,
+    });
+    const migrationPrivateWrites = store.updateCalls.length;
+    loseOnSettingKey = "resourceWaterEnabled";
+    await assert.rejects(
+      migrateResourceConfig(),
+      /ResourceRunStateAuthorityChanged/,
+    );
+    assert.equal(flags.resourceConfig.version, 1);
+    assert.equal(store.updateCalls.length, migrationPrivateWrites);
+
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    observeResourceAuthorityTransition();
+    assert.equal(await migrateResourceConfig(), true);
+    const queuedEpoch = flags.resourceRunState.authorityEpoch;
+    const writesBeforeLoss = store.updateCalls.length;
+    const blocked = store.blockNext("resourceRunState");
+    const inFlight = setLastSeenDay(31);
+    await blocked.started;
+    const queuedOldTab = setCurrentEnvironment("queued-old-tab");
+    await Promise.resolve();
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    blocked.release();
+    await assert.rejects(inFlight, /PostconditionFailed|AuthorityChanged/);
+    await assert.rejects(queuedOldTab, /ResourceRunStateAuthorityChanged/);
+    assert.equal(
+      store.updateCalls.length,
+      writesBeforeLoss + 1,
+      "the queued old-generation patch performs no Journal write",
+    );
+    assert.equal(isResourceAutomationReady(), false);
+
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    const recoveredLeader = observeResourceAuthorityTransition();
+    assert.equal(recoveredLeader.newlyAuthoritative, true);
+    assert.notEqual(recoveredLeader.authorityEpoch, queuedEpoch);
+    assert.equal(await migrateResourceConfig(), true);
+    assert.equal(
+      flags.resourceRunState.currentEnvironmentId,
+      "road",
+      "handoff recovery reasserts the last accepted run-state snapshot",
+    );
+    assert.equal(flags.resourceRunState.lastSeenDay, 8);
+    assert.equal(isResourceAutomationReady(), true);
+
+    // A blocked Actor continuation keeps the immutable generation that made
+    // its claim. Losing and later regaining leadership re-epochs the outer
+    // state but cannot make that old async closure current again.
+    await claimUpkeepRun({
+      runId: "generation-a-run",
+      trigger: "manual",
+      day: 8,
+      claimedAt: 4_000,
+    });
+    const originalRunGuard = {
+      authorityId: flags.resourceRunState.activeUpkeep.authorityId,
+      authorityEpoch: flags.resourceRunState.activeUpkeep.authorityEpoch,
+      leadershipGeneration:
+        flags.resourceRunState.activeUpkeep.leadershipGeneration,
+    };
+    assert.deepEqual(originalRunGuard, {
+      authorityId: flags.resourceRunState.authorityId,
+      authorityEpoch: flags.resourceRunState.authorityEpoch,
+      leadershipGeneration: leadershipState.generation,
+    });
+    let releaseActorContinuation;
+    const actorContinuationGate = new Promise((resolve) => {
+      releaseActorContinuation = resolve;
+    });
+    const staleActorContinuation = (async () => {
+      await actorContinuationGate;
+      return assertUpkeepClaimCurrent("generation-a-run");
+    })();
+
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    leadershipState.active = true;
+    leadershipState.generation += 1;
+    const generationC = observeResourceAuthorityTransition();
+    assert.equal(generationC.newlyAuthoritative, true);
+    assert.equal(await migrateResourceConfig(), true);
+    assert.notEqual(
+      flags.resourceRunState.authorityEpoch,
+      originalRunGuard.authorityEpoch,
+    );
+    assert.deepEqual(
+      {
+        authorityId: flags.resourceRunState.activeUpkeep.authorityId,
+        authorityEpoch: flags.resourceRunState.activeUpkeep.authorityEpoch,
+        leadershipGeneration:
+          flags.resourceRunState.activeUpkeep.leadershipGeneration,
+      },
+      originalRunGuard,
+      "authority recovery preserves the claim's original generation guard",
+    );
+    releaseActorContinuation();
+    await assert.rejects(staleActorContinuation, /ResourceUpkeepClaimLost/);
+
+    const staleResult = {
+      runId: "generation-a-run",
+      trigger: "manual",
+      day: 8,
+      days: 1,
+      status: "complete",
+      resourceSnapshot: [],
+      perActor: [],
+      party: {},
+      suggestions: [],
+    };
+    const staleReceipt = buildUpkeepRunReceipt({
+      result: staleResult,
+      recordedAt: 4_100,
+    });
+    const writesBeforeStaleFinalization = store.updateCalls.length;
+    await assert.rejects(
+      completeUpkeepRun({
+        runId: "generation-a-run",
+        result: staleResult,
+        receipt: staleReceipt,
+      }),
+      /ResourceUpkeepClaimLost/,
+    );
+    assert.equal(store.updateCalls.length, writesBeforeStaleFinalization);
+    assert.equal(
+      await clearUpkeepClaim("generation-a-run", { recordedAt: 4_200 }),
+      true,
+    );
+    assert.equal(store.updateCalls.length, writesBeforeStaleFinalization + 1);
+    assert.equal(flags.resourceRunState.activeUpkeep, null);
+    assert.equal(
+      flags.resourceRunState.recentRuns[0].runId,
+      "generation-a-run",
+    );
+    assert.equal(flags.resourceRunState.recentRuns[0].status, "interrupted");
+    assert.equal(flags.resourceRunState.recentRuns[0].outcomeUnknown, true);
+    await assert.rejects(
+      clearUpkeepClaim("generation-a-run", { recordedAt: 4_300 }),
+      /ResourceUpkeepClaimLost/,
+    );
+    assert.equal(store.updateCalls.length, writesBeforeStaleFinalization + 1);
+  } finally {
+    resetResourceStoreForTests();
+    resetPrivateStateForTests();
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalJournalEntry === undefined) delete globalThis.JournalEntry;
+    else globalThis.JournalEntry = originalJournalEntry;
+    if (originalHooks === undefined) delete globalThis.Hooks;
+    else globalThis.Hooks = originalHooks;
+    if (originalConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = originalConst;
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Run-state patch helpers serialize overlapping same-client writes.
  * ------------------------------------------------------------------ */
 {
@@ -1639,6 +2053,9 @@ import {
       days: 1,
       startedAt: 1234,
       claimedAt: 1234,
+      authorityId: "node-test",
+      authorityEpoch: "node-test:0",
+      leadershipGeneration: 0,
       environment: null,
       initiator: null,
       actors: [],

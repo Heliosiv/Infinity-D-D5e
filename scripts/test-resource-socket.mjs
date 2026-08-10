@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   RESOURCE_EVENTS,
   emitResourceEvent,
+  isResourceAuthorityReady,
   receiveResourcePayload,
   subscribe,
   validateResourcePayloadShape,
@@ -48,6 +49,25 @@ try {
     active: false,
   };
   const users = userCollection([gmA, gmB, assistant, playerA, inactivePlayer]);
+
+  assert.equal(
+    isResourceAuthorityReady({
+      isPrimaryGM: () => true,
+      hasTabLeadership: () => false,
+      isAutomationReady: () => true,
+    }),
+    false,
+    "a same-user follower tab is not Resource socket authority",
+  );
+  assert.equal(
+    isResourceAuthorityReady({
+      isPrimaryGM: () => true,
+      hasTabLeadership: () => true,
+      isAutomationReady: () => true,
+    }),
+    true,
+    "the primary GM must also hold tab leadership and have migrated data",
+  );
 
   /* Security-sensitive event contracts fail closed before routing. */
   assert.deepEqual(
@@ -371,6 +391,12 @@ try {
   );
 
   globalThis.game.user = playerA;
+  assert.equal(
+    emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {}),
+    null,
+    "non-authoritative clients cannot emit GM Resource broadcasts",
+  );
+  assert.equal(emissions.length, 1);
   emitResourceEvent(RESOURCE_EVENTS.OVERVIEW_REQUEST, {
     requestId: "player-overview-request",
   });

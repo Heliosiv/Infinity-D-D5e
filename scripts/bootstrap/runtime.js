@@ -13,7 +13,11 @@ import {
   ForagePromptApp,
   registerForagePromptAutoOpen,
 } from "../forage-prompt.js";
-import { registerResourceSocket } from "../resource/socket.js";
+import {
+  RESOURCE_EVENTS,
+  emitResourceEvent,
+  registerResourceSocket,
+} from "../resource/socket.js";
 import { registerResourceOverviewService } from "../resource/overview-service.js";
 import {
   CriticalInjuryApp,
@@ -98,6 +102,12 @@ import {
 import { isFullGM, runAsFullGM } from "../permissions.js";
 import { isAuthoritativeGM } from "../socket-authority.js";
 import {
+  CAMPAIGN_TAB_LEADERSHIP_HOOK,
+  ensureCampaignTabLeadership,
+  getCampaignTabLeadershipStatus,
+  hasCampaignTabLeadership,
+} from "../campaign-tab-leadership.js";
+import {
   applyUiDensity,
   getUiPreferences,
   registerUiPreferencesSetting,
@@ -106,6 +116,10 @@ import {
 import { registerUiFoundationHooks } from "../infinity-app.js";
 import { registerInfinityItemUuidRedirects } from "../item-uuid-compat.js";
 import { MODULE_ID, PACK_ID, PRIVATE_STATE_RETRY_MS } from "./constants.js";
+
+function isCampaignWriteAuthority() {
+  return isAuthoritativeGM() && hasCampaignTabLeadership();
+}
 
 /**
  * The sole production composition root. The lifecycle modules consume these
@@ -138,6 +152,8 @@ export const runtimeBindings = Object.freeze({
   ForagePromptApp,
   registerForagePromptAutoOpen,
   registerResourceSocket,
+  emitResourceEvent,
+  resourceStateUpdateEvent: RESOURCE_EVENTS.STATE_UPDATE,
   registerResourceOverviewService,
   CriticalInjuryApp,
   registerCriticalInjuryApp,
@@ -196,7 +212,11 @@ export const runtimeBindings = Object.freeze({
   onPrivateStateChanged,
   isFullGM,
   runAsFullGM,
-  isAuthoritativeGM,
+  campaignTabLeadershipHook: CAMPAIGN_TAB_LEADERSHIP_HOOK,
+  ensureCampaignTabLeadership,
+  getCampaignTabLeadershipStatus,
+  hasCampaignTabLeadership,
+  isAuthoritativeGM: isCampaignWriteAuthority,
   applyUiDensity,
   getUiPreferences,
   registerUiPreferencesSetting,

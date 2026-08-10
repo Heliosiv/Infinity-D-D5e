@@ -24,6 +24,7 @@ import {
   emitModuleSocketPayload,
   registerModuleSocketRoute,
 } from "../socket-router.js";
+import { hasCampaignTabLeadership } from "../campaign-tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -118,7 +119,16 @@ export function registerResourceSocket() {
  * multi-GM table doesn't double-process.
  */
 export function isAuthoritativeGM() {
-  return sharedIsAuthoritativeGM() && isResourceAutomationReady();
+  return isResourceAuthorityReady();
+}
+
+/** Pure authority composition used by the socket and focused harnesses. */
+export function isResourceAuthorityReady({
+  isPrimaryGM = sharedIsAuthoritativeGM,
+  hasTabLeadership = hasCampaignTabLeadership,
+  isAutomationReady = isResourceAutomationReady,
+} = {}) {
+  return isPrimaryGM() && hasTabLeadership() && isAutomationReady();
 }
 
 /**
@@ -186,6 +196,12 @@ export function validateResourcePayloadShape(payload) {
 export function emitResourceEvent(type, data = {}) {
   if (!RESOURCE_TYPES.has(type)) {
     console.warn(`${MODULE_ID} | refused unknown resource event "${type}"`);
+    return null;
+  }
+  if (!PLAYER_TO_GM_TYPES.has(type) && !isAuthoritativeGM()) {
+    console.warn(
+      `${MODULE_ID} | refused non-authoritative resource event "${type}"`,
+    );
     return null;
   }
   const payload = {

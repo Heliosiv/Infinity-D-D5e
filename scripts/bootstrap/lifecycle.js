@@ -102,6 +102,19 @@ export function createModuleBootstrap(bindings) {
   async function runReady() {
     try {
       recovery.registerHooks();
+      let campaignLeadershipAvailable = true;
+      if (bindings.isFullGM()) {
+        try {
+          campaignLeadershipAvailable =
+            (await bindings.ensureCampaignTabLeadership()) === true;
+        } catch (error) {
+          campaignLeadershipAvailable = false;
+          bindings.logger.error(
+            `${bindings.moduleId} | campaign tab leadership failed`,
+            error,
+          );
+        }
+      }
       let privateStateAvailable = false;
       try {
         privateStateAvailable =
@@ -119,6 +132,10 @@ export function createModuleBootstrap(bindings) {
         supportedSchema: null,
         observedSchema: null,
       };
+      const hasCurrentCampaignLeadership = () =>
+        !bindings.isFullGM() ||
+        (campaignLeadershipAvailable &&
+          bindings.hasCampaignTabLeadership() === true);
 
       const game = bindings.getGame?.();
       const version = game?.modules?.get?.(bindings.moduleId)?.version ?? "?";
@@ -148,7 +165,7 @@ export function createModuleBootstrap(bindings) {
             error,
           );
         }
-        if (privateStateAvailable) {
+        if (privateStateAvailable && bindings.isAuthoritativeGM()) {
           try {
             await bindings.migrateResourceConfig();
           } catch (error) {
@@ -195,7 +212,7 @@ export function createModuleBootstrap(bindings) {
             bindings.notifyLongRest(actor, { references }),
         }),
       );
-      if (privateStateAvailable) {
+      if (privateStateAvailable && hasCurrentCampaignLeadership()) {
         recovery.registerPrivateDependentServices();
       }
       safeInitializeSubsystem(
@@ -223,7 +240,11 @@ export function createModuleBootstrap(bindings) {
         bindings.registerForagePromptAutoOpen,
       );
 
-      if (!privateStateAvailable && bindings.isFullGM()) {
+      if (
+        !privateStateAvailable &&
+        bindings.isFullGM() &&
+        hasCurrentCampaignLeadership()
+      ) {
         if (privateStateStatus.state === "blocked") {
           const corrupt = privateStateStatus.code === "corrupt";
           const missing = [
@@ -268,7 +289,10 @@ export function createModuleBootstrap(bindings) {
         );
       });
       void bindings.preloadModuleSounds();
-      recovery.markReadyComplete({ privateStateAvailable });
+      recovery.markReadyComplete({
+        privateStateAvailable,
+        campaignLeadershipAvailable: hasCurrentCampaignLeadership(),
+      });
     } catch (error) {
       recovery.markReadyComplete();
       bindings.logger.error(`${bindings.moduleId} | ready hook failed`, error);

@@ -241,7 +241,11 @@ try {
   resolveConfirmation(true);
   await Promise.all(requests);
 
-  assert.equal(renderCount, 1, "the accepted request completes only once");
+  assert.equal(
+    renderCount,
+    0,
+    "an authority handoff while confirmation is open cancels before upkeep",
+  );
   assert.equal(
     button.disabled,
     false,

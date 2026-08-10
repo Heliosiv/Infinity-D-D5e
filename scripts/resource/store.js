@@ -20,6 +20,11 @@ import {
   isPrivilegedPrivateStateReady,
   setPrivateState,
 } from "../private-state.js";
+import {
+  ensureCampaignTabLeadership,
+  getCampaignTabLeadershipStatus,
+  hasCampaignTabLeadership,
+} from "../campaign-tab-leadership.js";
 import { isFullGM } from "../permissions.js";
 import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
 import {
@@ -86,6 +91,13 @@ const LEGACY_DEFAULT_WATER_KEYWORDS = Object.freeze([
 ]);
 const DEFAULT_WATER_KEYWORDS = Object.freeze(["water ration", "water (1 day)"]);
 const CORE_RATIONS_UUID = "Compendium.dnd5e.items.Item.f4w4GxBi0nYXmhX4";
+
+const defaultResourceLeadership = Object.freeze({
+  ensureLeadership: ensureCampaignTabLeadership,
+  getStatus: getCampaignTabLeadershipStatus,
+  hasLeadership: hasCampaignTabLeadership,
+});
+let resourceLeadership = defaultResourceLeadership;
 
 /**
  * Runtime rules live in normal Foundry settings so the standard Module
@@ -444,6 +456,15 @@ function normalizeActiveUpkeep(input) {
     Number.isSafeInteger(rawStartedAt) && rawStartedAt >= 0
       ? rawStartedAt
       : claimedAt;
+  const rawLeadershipGeneration =
+    input.leadershipGeneration == null || input.leadershipGeneration === ""
+      ? Number.NaN
+      : Number(input.leadershipGeneration);
+  const leadershipGeneration =
+    Number.isSafeInteger(rawLeadershipGeneration) &&
+    rawLeadershipGeneration >= 0
+      ? rawLeadershipGeneration
+      : null;
   const trigger =
     input.trigger === "calendar"
       ? "calendar"
@@ -457,6 +478,9 @@ function normalizeActiveUpkeep(input) {
     days: Math.max(1, toInt(input.days, 1)),
     startedAt,
     claimedAt,
+    authorityId: toStr(input.authorityId) || null,
+    authorityEpoch: toStr(input.authorityEpoch) || null,
+    leadershipGeneration,
     environment: normalizeRunEnvironmentSnapshot(input.environment),
     initiator: normalizeRunInitiatorSnapshot(input.initiator),
     actors: normalizeRunActorSnapshots(input.actors),
@@ -631,17 +655,28 @@ export function isResourceAutomationReady() {
     rawRunState.authorityId === currentUserId &&
     rawRunState.authorityEpoch === authority.authorityEpoch &&
     authority.authorityId === currentUserId &&
+    authority.leadershipActive === true &&
     revisionIsCurrent,
   );
 }
 
 export async function saveResourceConfig(config) {
+  const fence = await ensureResourceWriteFence();
+  return saveResourceConfigAuthorized(config, fence);
+}
+
+async function saveResourceConfigAuthorized(config, fence) {
+  assertRunStateAuthorityFence(fence);
   assertLiveResourceConfigWritable();
+  const writeAuthorized = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    assertLiveResourceConfigWritable() === true;
   await setPrivateState(
     SETTING_KEYS.RESOURCE_CONFIG,
     serializeResourceConfig(config),
-    { beforeWrite: assertLiveResourceConfigWritable },
+    { beforeWrite: writeAuthorized, afterWrite: writeAuthorized },
   );
+  assertRunStateAuthorityFence(fence);
   return true;
 }
 
@@ -649,19 +684,34 @@ export async function saveResourceConfig(config) {
 export async function setResourceRule(field, value) {
   const settingKey = RESOURCE_RULE_SETTINGS[field];
   if (!settingKey) return false;
+  const fence = await ensureResourceWriteFence();
+  return setResourceRuleAuthorized(field, value, fence);
+}
+
+async function setResourceRuleAuthorized(field, value, fence) {
+  const settingKey = RESOURCE_RULE_SETTINGS[field];
+  if (!settingKey) return false;
+  assertRunStateAuthorityFence(fence);
   preflightResourceDomainVersions();
-  return setSetting(settingKey, normalizeRuleValue(field, value));
+  assertRunStateAuthorityFence(fence);
+  const wrote = await setSetting(settingKey, normalizeRuleValue(field, value));
+  assertRunStateAuthorityFence(fence);
+  return wrote;
 }
 
 /** Restore the four canonical runtime rules to their registered defaults. */
 export async function resetResourceRules() {
+  const fence = await ensureResourceWriteFence();
+  assertRunStateAuthorityFence(fence);
   preflightResourceDomainVersions();
-  const writes = RESOURCE_RULE_FIELDS.map((field) => {
+  for (const field of RESOURCE_RULE_FIELDS) {
     const settingKey = RESOURCE_RULE_SETTINGS[field];
-    return setSetting(settingKey, getSettingDefault(settingKey));
-  });
-  const results = await Promise.all(writes);
-  return results.every(Boolean);
+    assertRunStateAuthorityFence(fence);
+    const wrote = await setSetting(settingKey, getSettingDefault(settingKey));
+    assertRunStateAuthorityFence(fence);
+    if (!wrote) return false;
+  }
+  return true;
 }
 
 /**
@@ -677,6 +727,17 @@ export async function migrateResourceConfig() {
   const activeGM = game.users?.activeGM;
   if (activeGM?.id && activeGM.id !== game.user.id) return false;
 
+  let fence;
+  try {
+    fence = await ensureResourceWriteFence();
+  } catch (error) {
+    if (error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE") {
+      return false;
+    }
+    throw error;
+  }
+  assertRunStateAuthorityFence(fence);
+
   let raw;
   try {
     raw = readRawResourceConfig();
@@ -691,13 +752,17 @@ export async function migrateResourceConfig() {
     const legacy = normalizeResourceConfig(raw);
     for (const field of RESOURCE_RULE_FIELDS) {
       if (!Object.prototype.hasOwnProperty.call(raw ?? {}, field)) continue;
-      const wroteRule = await setResourceRule(field, legacy[field]);
+      const wroteRule = await setResourceRuleAuthorized(
+        field,
+        legacy[field],
+        fence,
+      );
       if (!wroteRule) return false;
     }
-    await saveResourceConfig(legacy);
+    await saveResourceConfigAuthorized(legacy, fence);
     changed = true;
   }
-  const runStateChanged = await ensurePersistedRunStateForAuthority();
+  const runStateChanged = await ensurePersistedRunStateForAuthority(fence);
   return changed || runStateChanged;
 }
 
@@ -708,6 +773,8 @@ export function loadRunState() {
 let runStatePatchQueue = Promise.resolve();
 let authorityObservationStarted = false;
 let observedAuthorityId = null;
+let observedLeadershipActive = null;
+let observedLeadershipGeneration = null;
 let runStateAuthorityEpoch = 0;
 let observedAuthorityEpoch = null;
 let highestObservedRunStateRevision = -1;
@@ -729,6 +796,22 @@ function currentUserOwnsAuthority(authorityId) {
     authorityId === currentUserId &&
     isFullGM(globalThis.game?.user),
   );
+}
+
+function observeCampaignLeadership() {
+  if (!isFoundryEnvironment()) {
+    return { active: true, generation: 0 };
+  }
+  const active = resourceLeadership.hasLeadership() === true;
+  const status = resourceLeadership.getStatus?.() ?? {};
+  const rawGeneration = Number(status.generation);
+  return {
+    active,
+    generation:
+      Number.isSafeInteger(rawGeneration) && rawGeneration >= 0
+        ? rawGeneration
+        : 0,
+  };
 }
 
 function clonePersistedRunState(raw) {
@@ -791,30 +874,42 @@ function recoveryRunStateBase(raw, fence) {
  */
 export function observeResourceAuthorityTransition() {
   const authorityId = authoritativeGMId();
+  const leadership = observeCampaignLeadership();
   if (!authorityObservationStarted) {
     authorityObservationStarted = true;
     observedAuthorityId = authorityId;
-    observedAuthorityEpoch = currentUserOwnsAuthority(authorityId)
-      ? createAuthorityEpoch(authorityId)
-      : null;
+    observedLeadershipActive = leadership.active;
+    observedLeadershipGeneration = leadership.generation;
+    observedAuthorityEpoch =
+      currentUserOwnsAuthority(authorityId) && leadership.active
+        ? createAuthorityEpoch(authorityId)
+        : null;
     return {
       changed: false,
       authorityId,
       epoch: runStateAuthorityEpoch,
       authorityEpoch: observedAuthorityEpoch,
+      leadershipActive: leadership.active,
+      leadershipGeneration: leadership.generation,
       newlyAuthoritative: false,
     };
   }
-  const changed = authorityId !== observedAuthorityId;
+  const changed =
+    authorityId !== observedAuthorityId ||
+    leadership.active !== observedLeadershipActive ||
+    leadership.generation !== observedLeadershipGeneration;
   if (changed) {
     if (observedAuthorityEpoch) {
       retiredAuthorityEpochs.add(observedAuthorityEpoch);
     }
     observedAuthorityId = authorityId;
+    observedLeadershipActive = leadership.active;
+    observedLeadershipGeneration = leadership.generation;
     runStateAuthorityEpoch += 1;
-    observedAuthorityEpoch = currentUserOwnsAuthority(authorityId)
-      ? createAuthorityEpoch(authorityId)
-      : null;
+    observedAuthorityEpoch =
+      currentUserOwnsAuthority(authorityId) && leadership.active
+        ? createAuthorityEpoch(authorityId)
+        : null;
   }
   const currentUserId = toStr(globalThis.game?.user?.id) || null;
   return {
@@ -822,12 +917,47 @@ export function observeResourceAuthorityTransition() {
     authorityId,
     epoch: runStateAuthorityEpoch,
     authorityEpoch: observedAuthorityEpoch,
+    leadershipActive: leadership.active,
+    leadershipGeneration: leadership.generation,
     newlyAuthoritative:
       changed &&
+      leadership.active &&
       currentUserId !== null &&
       authorityId === currentUserId &&
       isFullGM(),
   };
+}
+
+function resourceCampaignAuthorityError() {
+  if (!isAuthoritativeGM()) {
+    const error = new Error(
+      "PermissionDenied: only the authoritative GM may write resource state",
+    );
+    error.code = "RESOURCE_WRITE_PERMISSION_DENIED";
+    return error;
+  }
+  const error = new Error(
+    "Resource campaign writes require the active campaign tab.",
+  );
+  error.code = "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE";
+  return error;
+}
+
+async function ensureResourceWriteFence() {
+  if (!isFoundryEnvironment()) return captureRunStateAuthorityFence();
+  if (!isAuthoritativeGM()) throw resourceCampaignAuthorityError();
+  if (
+    (await resourceLeadership.ensureLeadership()) !== true ||
+    resourceLeadership.hasLeadership() !== true
+  ) {
+    // Observe the loss immediately so any existing run-state epoch is retired
+    // even when this entry point never reaches a persistence call.
+    observeResourceAuthorityTransition();
+    throw resourceCampaignAuthorityError();
+  }
+  const fence = captureRunStateAuthorityFence();
+  assertRunStateAuthorityFence(fence);
+  return fence;
 }
 
 function captureRunStateAuthorityFence() {
@@ -838,6 +968,8 @@ function captureRunStateAuthorityFence() {
     authorityId: observation.authorityId,
     authorityEpoch: observation.authorityEpoch,
     epoch: observation.epoch,
+    leadershipActive: observation.leadershipActive,
+    leadershipGeneration: observation.leadershipGeneration,
     userId: toStr(globalThis.game?.user?.id) || null,
   };
 }
@@ -851,6 +983,10 @@ function isRunStateAuthorityFenceCurrent(fence) {
     observation.authorityId === fence.authorityId &&
     observation.authorityEpoch === fence.authorityEpoch &&
     observation.epoch === fence.epoch &&
+    fence.leadershipActive === true &&
+    observation.leadershipActive === true &&
+    observation.leadershipGeneration === fence.leadershipGeneration &&
+    resourceLeadership.hasLeadership() === true &&
     isAuthoritativeGM(),
   );
 }
@@ -958,13 +1094,21 @@ function cloneRunState(state) {
 }
 
 function enqueueRunStateOperation(operation) {
-  const fence = captureRunStateAuthorityFence();
-  const pending = runStatePatchQueue.then(() => operation(fence));
+  // Acquire and capture before joining the write lane. A same-user tab that
+  // loses leadership while queued keeps its old generation fence and fails;
+  // it cannot silently resume the operation after a later handoff.
+  const fencePromise = ensureResourceWriteFence();
+  const pending = runStatePatchQueue.then(async () =>
+    operation(await fencePromise),
+  );
   runStatePatchQueue = pending.catch(() => {});
   return pending;
 }
 
-async function commitRunState(state, { fence, expectedRaw }) {
+async function commitRunState(
+  state,
+  { fence, expectedRaw, stampActiveClaim = false },
+) {
   assertRunStateAuthorityFence(fence);
   const before = readRawRunState();
   if (!rawRunStatesEqual(before, expectedRaw)) {
@@ -984,6 +1128,15 @@ async function commitRunState(state, { fence, expectedRaw }) {
 
   const writeIdentity = nextRunStateWriteIdentity(fence, before);
   fence = writeIdentity.fence;
+  if (stampActiveClaim) {
+    if (!state.activeUpkeep) throw new Error("ResourceUpkeepClaimInvalid");
+    state.activeUpkeep = normalizeActiveUpkeep({
+      ...state.activeUpkeep,
+      authorityId: writeIdentity.authorityId,
+      authorityEpoch: writeIdentity.authorityEpoch,
+      leadershipGeneration: fence.live ? fence.leadershipGeneration : 0,
+    });
+  }
   const next = serializeRunState(state, {
     revision: writeIdentity.revision,
     authorityId: writeIdentity.authorityId,
@@ -1014,9 +1167,9 @@ async function commitRunState(state, { fence, expectedRaw }) {
   return true;
 }
 
-async function ensurePersistedRunStateForAuthority() {
+async function ensurePersistedRunStateForAuthority(existingFence = null) {
   if (isFoundryEnvironment() && !isAuthoritativeGM()) return false;
-  let fence = captureRunStateAuthorityFence();
+  let fence = existingFence ?? (await ensureResourceWriteFence());
   assertRunStateAuthorityFence(fence);
   const raw = readRawRunState();
   const currentUserId = toStr(globalThis.game?.user?.id) || null;
@@ -1078,12 +1231,16 @@ export function saveRunState(state) {
  * the preceding write has settled, while the detached queue tail absorbs a
  * rejection so one failed write cannot poison later updates.
  */
-function updateRunState(updater) {
+function updateRunState(updater, { stampActiveClaim = false } = {}) {
   return enqueueRunStateOperation(async (fence) => {
     const expectedRaw = readRawRunState();
     const state = normalizeRunState(expectedRaw);
-    updater(state);
-    return commitRunState(state, { fence, expectedRaw });
+    updater(state, { fence, raw: expectedRaw });
+    return commitRunState(state, {
+      fence,
+      expectedRaw,
+      stampActiveClaim,
+    });
   });
 }
 
@@ -1116,6 +1273,38 @@ export async function setLastUpkeepResult(result) {
   });
 }
 
+function activeUpkeepGuardMatches(activeUpkeep, { fence, raw }) {
+  const active = normalizeActiveUpkeep(activeUpkeep);
+  if (
+    !active?.authorityId ||
+    !active.authorityEpoch ||
+    !Number.isSafeInteger(active.leadershipGeneration)
+  ) {
+    return false;
+  }
+  const outerAuthorityId = toStr(raw?.authorityId);
+  const outerAuthorityEpoch = toStr(raw?.authorityEpoch);
+  if (
+    active.authorityId !== outerAuthorityId ||
+    active.authorityEpoch !== outerAuthorityEpoch
+  ) {
+    return false;
+  }
+  if (!fence?.live) {
+    return active.leadershipGeneration === 0;
+  }
+  return Boolean(
+    active.authorityId === fence.userId &&
+    active.authorityEpoch === fence.authorityEpoch &&
+    active.leadershipGeneration === fence.leadershipGeneration,
+  );
+}
+
+function assertActiveUpkeepGuardCurrent(activeUpkeep, context) {
+  if (activeUpkeepGuardMatches(activeUpkeep, context)) return true;
+  throw new Error("ResourceUpkeepClaimLost");
+}
+
 /**
  * Persist the single cross-client upkeep lease immediately before Actor writes.
  * Calendar claims reserve their day in the same verified run-state patch, so a
@@ -1127,22 +1316,25 @@ export async function claimUpkeepRun(claim) {
   if (value.trigger === "calendar" && value.day === null) {
     throw new Error("ResourceUpkeepClaimInvalid");
   }
-  return updateRunState((state) => {
-    if (state.activeUpkeep) {
-      throw new Error(
-        `ResourceUpkeepAlreadyActive: ${state.activeUpkeep.runId}`,
-      );
-    }
-    if (value.trigger === "calendar" && value.day !== null) {
-      if (state.lastSeenDay !== null && value.day <= state.lastSeenDay) {
+  return updateRunState(
+    (state) => {
+      if (state.activeUpkeep) {
         throw new Error(
-          `ResourceUpkeepCalendarDayReserved: ${value.day} <= ${state.lastSeenDay}`,
+          `ResourceUpkeepAlreadyActive: ${state.activeUpkeep.runId}`,
         );
       }
-      state.lastSeenDay = value.day;
-    }
-    state.activeUpkeep = value;
-  });
+      if (value.trigger === "calendar" && value.day !== null) {
+        if (state.lastSeenDay !== null && value.day <= state.lastSeenDay) {
+          throw new Error(
+            `ResourceUpkeepCalendarDayReserved: ${value.day} <= ${state.lastSeenDay}`,
+          );
+        }
+        state.lastSeenDay = value.day;
+      }
+      state.activeUpkeep = value;
+    },
+    { stampActiveClaim: true },
+  );
 }
 
 /**
@@ -1162,6 +1354,7 @@ export function assertUpkeepClaimCurrent(runId) {
   ) {
     throw new Error("ResourceUpkeepClaimLost");
   }
+  assertActiveUpkeepGuardCurrent(state.activeUpkeep, { fence, raw });
   return true;
 }
 
@@ -1186,11 +1379,12 @@ export async function completeUpkeepRun({
       ? (globalThis.foundry?.utils?.deepClone?.(result) ??
         structuredClone(result))
       : null;
-  return updateRunState((state) => {
+  return updateRunState((state, context) => {
     const activeUpkeep = state.activeUpkeep;
     if (activeUpkeep?.runId !== expectedRunId) {
       throw new Error("ResourceUpkeepClaimLost");
     }
+    assertActiveUpkeepGuardCurrent(activeUpkeep, context);
     const expectedKind =
       activeUpkeep.trigger === "forage" ? "forage" : "upkeep";
     if (requestedReceipt.kind !== expectedKind) {
@@ -1246,6 +1440,9 @@ export async function clearUpkeepClaim(
     if (state.activeUpkeep?.runId !== expectedRunId) {
       throw new Error("ResourceUpkeepClaimLost");
     }
+    // This is the explicit GM-reviewed recovery escape hatch. The current
+    // leader may retire a stale/legacy claim after inspecting it, but no
+    // automatic continuation or completion receives this exception.
     const receipt = buildInterruptedRunReceipt(state.activeUpkeep, recordedAt);
     if (!receipt) throw new Error("ResourceRunReceiptInvalid");
     state.recentRuns = appendRecentRunReceipt(state.recentRuns, receipt);
@@ -1322,10 +1519,13 @@ function isFoundryEnvironment() {
 }
 
 /** Test-only reset for authority generations and the detached patch queue. */
-export function resetResourceStoreForTests() {
+export function resetResourceStoreForTests({ leadership = null } = {}) {
+  resourceLeadership = leadership ?? defaultResourceLeadership;
   runStatePatchQueue = Promise.resolve();
   authorityObservationStarted = false;
   observedAuthorityId = null;
+  observedLeadershipActive = null;
+  observedLeadershipGeneration = null;
   observedAuthorityEpoch = null;
   runStateAuthorityEpoch = 0;
   highestObservedRunStateRevision = -1;
