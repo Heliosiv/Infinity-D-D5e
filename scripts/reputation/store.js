@@ -22,7 +22,11 @@ import {
   standingBand,
   standingTier,
 } from "./standing.js";
-import { getPrivateState, setPrivateState } from "../private-state.js";
+import {
+  createPrivateStateUnavailableError,
+  getPrivateState,
+  setPrivateState,
+} from "../private-state.js";
 
 const MODULE_ID = "infinity-dnd5e";
 /** Setting key — mirrors SETTING_KEYS.FACTIONS in settings.js. */
@@ -153,14 +157,21 @@ export function listRevealedForPlayers() {
 /* ------------------------------------------------------------------ *
  * Foundry-backed CRUD
  *
- * Reads degrade gracefully (return []). Writes throw if game isn't
- * available so callers learn about misuse early.
+ * Foundry reads fail closed while the restricted store is unavailable. Node
+ * harnesses without JournalEntry retain the legacy settings fallback.
  * ------------------------------------------------------------------ */
 
-/** Load every faction record from the world setting. */
+function isFoundryEnvironment() {
+  return Boolean(globalThis.game && globalThis.JournalEntry?.create);
+}
+
+/** Load every faction record from the restricted private store. */
 export function loadFactions() {
   const privateValue = getPrivateState("factions");
   if (privateValue !== undefined) return privateValue.map(normalizeFaction);
+  if (isFoundryEnvironment()) {
+    throw createPrivateStateUnavailableError("factions");
+  }
   try {
     const raw = globalThis.game?.settings?.get?.(
       MODULE_ID,

@@ -18,6 +18,12 @@
         {{merchantAccessStatusLabel}}
       </span>
       {{#if merchantAccessClosed}}
+      {{#if globalActiveSessionCount}}
+      <button type="button" class="mw-btn mw-btn--danger" data-action="closeAllSessions" title="Close stale player merchant windows without changing the saved global lock">
+        <i class="fa-solid fa-window-close" aria-hidden="true"></i> Close Stale
+        ({{globalActiveSessionCount}})
+      </button>
+      {{/if}}
       <button type="button" class="mw-btn mw-btn--primary" data-action="reopenSessions" title="Restore global shop access and reopen the saved player sessions">
         <i class="fa-solid fa-store" aria-hidden="true"></i> Reopen All
         {{#if suspendedSessionCount}}({{suspendedSessionCount}}){{/if}}
@@ -37,7 +43,7 @@
   {{#if merchantAccessClosed}}
   <div class="mw-global-notice" role="status">
     <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-    <span>Players cannot open any shop or use a merchant session. Per-shop Open, Knock, and Off settings are preserved. Reopen All restores access and the {{suspendedSessionCount}} saved session{{#unless suspendedSessionCountIsOne}}s{{/unless}}.</span>
+    <span>Players cannot open any shop or complete a merchant transaction. Per-shop Open, Knock, and Off settings are preserved.{{#if globalActiveSessionCount}} Close Stale dismisses the {{globalActiveSessionCount}} remaining player window{{#unless globalActiveSessionCountIsOne}}s{{/unless}} without changing this lock.{{/if}} Reopen All restores access and the {{suspendedSessionCount}} saved session{{#unless suspendedSessionCountIsOne}}s{{/unless}}.</span>
   </div>
   {{/if}}
 

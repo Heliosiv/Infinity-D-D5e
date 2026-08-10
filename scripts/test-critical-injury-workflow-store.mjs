@@ -18,6 +18,7 @@ const users = [gm, secondGm, player];
 users.activeGM = gm;
 users.get = (id) => users.find((user) => user.id === id) ?? null;
 const settings = new Map();
+let settingWrites = 0;
 
 try {
   globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
@@ -38,6 +39,7 @@ try {
       async set(moduleId, key, value) {
         assert.equal(moduleId, "infinity-dnd5e");
         settings.set(key, structuredClone(value));
+        settingWrites += 1;
         return value;
       },
     },
@@ -49,12 +51,14 @@ try {
     completeCriticalInjuryWorkflow,
     createCriticalInjuryApproval,
     discardCriticalInjuryApproval,
+    ensureCriticalInjuryWorkflowAuthority,
     getCriticalInjuryWorkflowLeaseTimestamp,
     getCriticalInjuryWorkflowRecord,
     loadCriticalInjuryWorkflowStore,
     normalizeCriticalInjuryWorkflowStore,
     persistCriticalInjuryResolution,
     renewCriticalInjuryApplication,
+    resetCriticalInjuryWorkflowStoreForTests,
     retargetCriticalInjuryWorkflow,
   } = await import("./injury/workflow-store.js");
 
@@ -332,6 +336,182 @@ try {
   assert.ok(storedPrimary.revision > 0);
   assert.equal(storedPrimary.authorityId, gm.id);
   assert.ok(storedPrimary.writeToken);
+
+  const canonicalPrimary = structuredClone(storedPrimary);
+  const canonicalCheckpoint = structuredClone(storedCheckpoint);
+  const assertVersionBlockedWithoutWrites = async ({
+    primary = canonicalPrimary,
+    checkpoint = canonicalCheckpoint,
+    code,
+    domain,
+    supportedVersion = 2,
+    statusCode,
+    observedVersion,
+    label,
+  }) => {
+    settings.set("criticalInjuryWorkflow", structuredClone(primary));
+    settings.set(
+      "criticalInjuryWorkflowCheckpoint",
+      structuredClone(checkpoint),
+    );
+    resetCriticalInjuryWorkflowStoreForTests();
+    const before = structuredClone(Object.fromEntries(settings));
+    const writesBefore = settingWrites;
+    await assert.rejects(
+      ensureCriticalInjuryWorkflowAuthority(),
+      (error) => {
+        assert.equal(error.name, "PersistedDomainVersionError");
+        assert.equal(error.code, code);
+        assert.deepEqual(error.persistedVersionStatus, {
+          state: "blocked",
+          code: statusCode,
+          retryable: false,
+          domain,
+          supportedVersion,
+          observedVersion,
+        });
+        return true;
+      },
+      label,
+    );
+    assert.equal(
+      settingWrites,
+      writesBefore,
+      `${label}: no replica is written`,
+    );
+    assert.deepEqual(
+      Object.fromEntries(settings),
+      before,
+      `${label}: the blocked replica and its current peer remain exact`,
+    );
+  };
+
+  await assertVersionBlockedWithoutWrites({
+    primary: { ...canonicalPrimary, version: 3 },
+    code: "CRITICAL_INJURY_WORKFLOW_PRIMARY_FUTURE_VERSION",
+    domain: "critical-injury-workflow-primary",
+    statusCode: "future-version",
+    observedVersion: 3,
+    label:
+      "a future injury primary blocks before repairing its current checkpoint",
+  });
+  await assertVersionBlockedWithoutWrites({
+    checkpoint: { ...canonicalCheckpoint, version: 3 },
+    code: "CRITICAL_INJURY_WORKFLOW_CHECKPOINT_FUTURE_VERSION",
+    domain: "critical-injury-workflow-checkpoint",
+    statusCode: "future-version",
+    observedVersion: 3,
+    label:
+      "a future injury checkpoint blocks before repairing its current primary",
+  });
+  for (const [label, version] of [
+    ["Boolean", true],
+    ["array", []],
+    ["blank string", ""],
+    ["whitespace string", " "],
+    ["null", null],
+  ]) {
+    await assertVersionBlockedWithoutWrites({
+      primary: { ...canonicalPrimary, version },
+      code: "CRITICAL_INJURY_WORKFLOW_PRIMARY_INVALID_VERSION",
+      domain: "critical-injury-workflow-primary",
+      statusCode: "invalid-version",
+      observedVersion: null,
+      label: `an explicit ${label} injury version fails closed`,
+    });
+  }
+
+  const futureRecordPrimary = structuredClone(canonicalPrimary);
+  futureRecordPrimary.records[0].schema = 2;
+  await assertVersionBlockedWithoutWrites({
+    primary: futureRecordPrimary,
+    code: "CRITICAL_INJURY_WORKFLOW_PRIMARY_RECORD_SCHEMA_FUTURE_VERSION",
+    domain: "critical-injury-workflow-primary-record",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future injury record schema blocks before repairing its current checkpoint",
+  });
+
+  const futureTreatmentCheckpoint = structuredClone(canonicalCheckpoint);
+  futureTreatmentCheckpoint.records[0].treatments = [{ schema: 2 }];
+  await assertVersionBlockedWithoutWrites({
+    checkpoint: futureTreatmentCheckpoint,
+    code: "CRITICAL_INJURY_WORKFLOW_CHECKPOINT_RECORD_TREATMENT_SCHEMA_FUTURE_VERSION",
+    domain: "critical-injury-workflow-checkpoint-record-treatment",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future treatment schema blocks before repairing its current primary",
+  });
+
+  const futureTreatmentResolutionCheckpoint =
+    structuredClone(canonicalCheckpoint);
+  futureTreatmentResolutionCheckpoint.records[0].treatments = [
+    { schema: 1, resolution: { schema: 2 } },
+  ];
+  await assertVersionBlockedWithoutWrites({
+    checkpoint: futureTreatmentResolutionCheckpoint,
+    code: "CRITICAL_INJURY_WORKFLOW_CHECKPOINT_RECORD_TREATMENT_RESOLUTION_SCHEMA_FUTURE_VERSION",
+    domain: "critical-injury-workflow-checkpoint-record-treatment-resolution",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future treatment-resolution schema blocks before repairing its current primary",
+  });
+
+  const malformedRestPrimary = structuredClone(canonicalPrimary);
+  malformedRestPrimary.restEvents = [{ schema: true }];
+  await assertVersionBlockedWithoutWrites({
+    primary: malformedRestPrimary,
+    code: "CRITICAL_INJURY_WORKFLOW_PRIMARY_REST_EVENT_SCHEMA_INVALID_VERSION",
+    domain: "critical-injury-workflow-primary-rest-event",
+    supportedVersion: 1,
+    statusCode: "invalid-version",
+    observedVersion: null,
+    label:
+      "a malformed rest-event schema blocks without changing its current checkpoint",
+  });
+
+  const futureRestResolutionPrimary = structuredClone(canonicalPrimary);
+  futureRestResolutionPrimary.restEvents = [
+    { schema: 1, resolution: { schema: 2 } },
+  ];
+  await assertVersionBlockedWithoutWrites({
+    primary: futureRestResolutionPrimary,
+    code: "CRITICAL_INJURY_WORKFLOW_PRIMARY_REST_EVENT_RESOLUTION_SCHEMA_FUTURE_VERSION",
+    domain: "critical-injury-workflow-primary-rest-event-resolution",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future rest-resolution schema blocks without changing its current checkpoint",
+  });
+  settings.set("criticalInjuryWorkflow", structuredClone(canonicalPrimary));
+  settings.set(
+    "criticalInjuryWorkflowCheckpoint",
+    structuredClone(canonicalCheckpoint),
+  );
+  resetCriticalInjuryWorkflowStoreForTests();
+
+  // Foundry's pre-ready phase must not expose the legacy workflow settings.
+  let preReadyLegacyReads = 0;
+  const legacySettingsGet = globalThis.game.settings.get;
+  globalThis.game.settings.get = (...args) => {
+    preReadyLegacyReads += 1;
+    return legacySettingsGet(...args);
+  };
+  globalThis.JournalEntry = { create() {} };
+  globalThis.game.ready = false;
+  assert.throws(
+    () => loadCriticalInjuryWorkflowStore(),
+    /CriticalInjuryWorkflowStoreUnavailable/,
+    "pre-ready injury reads fail closed at the private-store boundary",
+  );
+  assert.equal(preReadyLegacyReads, 0);
 } finally {
   if (savedGame === undefined) delete globalThis.game;
   else globalThis.game = savedGame;

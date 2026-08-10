@@ -15,6 +15,7 @@
  */
 
 import {
+  createPrivateStateUnavailableError,
   getPrivateState,
   isPrivilegedPrivateStateReady,
   setPrivateState,
@@ -27,7 +28,11 @@ import {
   getSettingDefault,
   setSetting,
 } from "../settings.js";
-import { persistedValuesEqual } from "../utils/persisted-data.js";
+import {
+  assertSupportedPersistedVersion,
+  persistedValuesEqual,
+  persistedVersionEquals,
+} from "../utils/persisted-data.js";
 import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   getDefaultEnvironments,
@@ -494,7 +499,9 @@ export function normalizeRunState(input) {
 
 function isPersistedRunState(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  if (Number(raw.version) !== RESOURCE_RUN_STATE_VERSION) return false;
+  if (!persistedVersionEquals(raw.version, RESOURCE_RUN_STATE_VERSION)) {
+    return false;
+  }
   const revision = Number(raw.revision);
   if (!Number.isSafeInteger(revision) || revision < 0) return false;
   if (!toStr(raw.authorityId)) return false;
@@ -569,10 +576,7 @@ function runStateValuesEqual(left, right) {
  * ------------------------------------------------------------------ */
 
 export function loadResourceConfig() {
-  const raw = readPrivateResourceValue(
-    SETTING_KEYS.RESOURCE_CONFIG,
-    SETTING_KEYS.RESOURCE_CONFIG,
-  );
+  const raw = readRawResourceConfig();
   const config = normalizeResourceConfig(raw);
   const rawVersion = Math.floor(Number(raw?.version) || 0);
   const hasLegacyRuleValues =
@@ -611,10 +615,10 @@ export function loadResourceConfig() {
  * legacy settings fallback instead of a live restricted Journal.
  */
 export function isResourceAutomationReady() {
-  if (!isLiveFoundrySession()) return true;
+  if (!isFoundryEnvironment()) return true;
   if (!isPrivilegedPrivateStateReady()) return false;
   const rawConfig = getPrivateState(SETTING_KEYS.RESOURCE_CONFIG);
-  if (Math.floor(Number(rawConfig?.version) || 0) < RESOURCE_CONFIG_VERSION) {
+  if (!persistedVersionEquals(rawConfig?.version, RESOURCE_CONFIG_VERSION)) {
     return false;
   }
   const rawRunState = getPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE);
@@ -632,9 +636,11 @@ export function isResourceAutomationReady() {
 }
 
 export async function saveResourceConfig(config) {
+  assertLiveResourceConfigWritable();
   await setPrivateState(
     SETTING_KEYS.RESOURCE_CONFIG,
     serializeResourceConfig(config),
+    { beforeWrite: assertLiveResourceConfigWritable },
   );
   return true;
 }
@@ -643,11 +649,13 @@ export async function saveResourceConfig(config) {
 export async function setResourceRule(field, value) {
   const settingKey = RESOURCE_RULE_SETTINGS[field];
   if (!settingKey) return false;
+  preflightResourceDomainVersions();
   return setSetting(settingKey, normalizeRuleValue(field, value));
 }
 
 /** Restore the four canonical runtime rules to their registered defaults. */
 export async function resetResourceRules() {
+  preflightResourceDomainVersions();
   const writes = RESOURCE_RULE_FIELDS.map((field) => {
     const settingKey = RESOURCE_RULE_SETTINGS[field];
     return setSetting(settingKey, getSettingDefault(settingKey));
@@ -671,11 +679,10 @@ export async function migrateResourceConfig() {
 
   let raw;
   try {
-    raw = readPrivateResourceValue(
-      SETTING_KEYS.RESOURCE_CONFIG,
-      SETTING_KEYS.RESOURCE_CONFIG,
-    );
-  } catch {
+    raw = readRawResourceConfig();
+    readRawRunState();
+  } catch (error) {
+    if (error?.persistedVersionStatus?.state === "blocked") throw error;
     return false;
   }
   const rawVersion = Math.floor(Number(raw?.version) || 0);
@@ -733,7 +740,7 @@ function isAcceptedRunStateRevision(raw) {
   const revision = persistedRunStateRevision(raw);
   const currentUserId = toStr(globalThis.game?.user?.id);
   if (
-    isLiveFoundrySession() &&
+    isFoundryEnvironment() &&
     (raw.authorityId !== currentUserId ||
       raw.authorityEpoch !== observedAuthorityEpoch)
   ) {
@@ -824,7 +831,7 @@ export function observeResourceAuthorityTransition() {
 }
 
 function captureRunStateAuthorityFence() {
-  if (!isLiveFoundrySession()) return { live: false };
+  if (!isFoundryEnvironment()) return { live: false };
   const observation = observeResourceAuthorityTransition();
   return {
     live: true,
@@ -924,10 +931,18 @@ function nextRunStateWriteIdentity(fence, raw, ...additionalSnapshots) {
 }
 
 function readRawRunState() {
-  return readPrivateResourceValue(
+  const raw = readPrivateResourceValue(
     SETTING_KEYS.RESOURCE_RUNSTATE,
     SETTING_KEYS.RESOURCE_RUNSTATE,
   );
+  if (isFoundryEnvironment()) {
+    assertSupportedPersistedVersion(raw?.version, {
+      domain: "resource-run-state",
+      supportedVersion: RESOURCE_RUN_STATE_VERSION,
+      codePrefix: "RESOURCE_RUN_STATE",
+    });
+  }
+  return raw;
 }
 
 function rawRunStatesEqual(left, right) {
@@ -1000,7 +1015,7 @@ async function commitRunState(state, { fence, expectedRaw }) {
 }
 
 async function ensurePersistedRunStateForAuthority() {
-  if (isLiveFoundrySession() && !isAuthoritativeGM()) return false;
+  if (isFoundryEnvironment() && !isAuthoritativeGM()) return false;
   let fence = captureRunStateAuthorityFence();
   assertRunStateAuthorityFence(fence);
   const raw = readRawRunState();
@@ -1256,14 +1271,54 @@ function normalizeRuleValue(field, value) {
 function readPrivateResourceValue(privateKey, legacySettingKey) {
   const privateValue = getPrivateState(privateKey);
   if (privateValue !== undefined) return privateValue;
-  if (isLiveFoundrySession()) {
-    throw new Error(`PrivateStateUnavailable: ${privateKey}`);
+  if (isFoundryEnvironment()) {
+    throw createPrivateStateUnavailableError(privateKey);
   }
   return getSetting(legacySettingKey);
 }
 
-function isLiveFoundrySession() {
-  return Boolean(globalThis.game?.ready && globalThis.JournalEntry?.create);
+function readRawResourceConfig() {
+  const raw = readPrivateResourceValue(
+    SETTING_KEYS.RESOURCE_CONFIG,
+    SETTING_KEYS.RESOURCE_CONFIG,
+  );
+  if (isFoundryEnvironment()) {
+    assertSupportedPersistedVersion(raw?.version, {
+      domain: "resource-config",
+      supportedVersion: RESOURCE_CONFIG_VERSION,
+      codePrefix: "RESOURCE_CONFIG",
+    });
+  }
+  return raw;
+}
+
+function assertLiveResourceConfigWritable() {
+  if (!isFoundryEnvironment()) return true;
+  const rawConfig = getPrivateState(SETTING_KEYS.RESOURCE_CONFIG);
+  const rawRunState = getPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE);
+  if (rawConfig === undefined || rawRunState === undefined) return false;
+  assertSupportedPersistedVersion(rawConfig?.version, {
+    domain: "resource-config",
+    supportedVersion: RESOURCE_CONFIG_VERSION,
+    codePrefix: "RESOURCE_CONFIG",
+  });
+  assertSupportedPersistedVersion(rawRunState?.version, {
+    domain: "resource-run-state",
+    supportedVersion: RESOURCE_RUN_STATE_VERSION,
+    codePrefix: "RESOURCE_RUN_STATE",
+  });
+  return true;
+}
+
+function preflightResourceDomainVersions() {
+  if (!isFoundryEnvironment()) return true;
+  readRawResourceConfig();
+  readRawRunState();
+  return true;
+}
+
+function isFoundryEnvironment() {
+  return Boolean(globalThis.game && globalThis.JournalEntry?.create);
 }
 
 /** Test-only reset for authority generations and the detached patch queue. */

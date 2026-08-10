@@ -42,6 +42,8 @@ function apiFixture() {
     SOUND_REGISTRY: Object.freeze({ click: "sound.ogg" }),
     playSoundEvent: (event, options) => calls.push(["sound", event, options]),
     getPlayerSurfaceStatus: () => ({ ready: true }),
+    getPrivateStateStatus: () =>
+      Object.freeze({ state: "ready", code: "ready", retryable: false }),
     openCalendar: () => calls.push(["calendar"]),
     getUiPreferences: () => ({ density: "comfortable" }),
     updateUiPreferences: (patch) => calls.push(["preferences", patch]),
@@ -111,6 +113,7 @@ function apiFixture() {
     "getUiPreferences",
     "updateUiPreferences",
     "getPlayerSurfaceStatus",
+    "getPrivateStateStatus",
     "advanceDay",
     "MerchantSessionApp",
     "ForagePromptApp",
@@ -131,6 +134,11 @@ function apiFixture() {
     false,
     "the public API exposes downtime launchers, not mutation methods",
   );
+  assert.deepEqual(api.getPrivateStateStatus(), {
+    state: "ready",
+    code: "ready",
+    retryable: false,
+  });
 
   api.openHub();
   api.openDashboard();

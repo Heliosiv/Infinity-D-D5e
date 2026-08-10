@@ -112,6 +112,13 @@ export function createModuleBootstrap(bindings) {
           error,
         );
       }
+      const privateStateStatus = bindings.getPrivateStateStatus?.() ?? {
+        state: privateStateAvailable ? "ready" : "pending",
+        code: privateStateAvailable ? "ready" : "store-unavailable",
+        retryable: !privateStateAvailable,
+        supportedSchema: null,
+        observedSchema: null,
+      };
 
       const game = bindings.getGame?.();
       const version = game?.modules?.get?.(bindings.moduleId)?.version ?? "?";
@@ -131,6 +138,7 @@ export function createModuleBootstrap(bindings) {
       );
       installModuleApi(bindings);
 
+      let resourceMigrationBlocked = false;
       if (bindings.isFullGM()) {
         try {
           await bindings.migrateEncounterBalanceDefaults();
@@ -148,6 +156,8 @@ export function createModuleBootstrap(bindings) {
               `${bindings.moduleId} | resource config migration failed`,
               error,
             );
+            resourceMigrationBlocked =
+              error?.persistedVersionStatus?.state === "blocked";
           }
         }
       }
@@ -214,12 +224,21 @@ export function createModuleBootstrap(bindings) {
       );
 
       if (!privateStateAvailable && bindings.isFullGM()) {
-        bindings
-          .getUi?.()
-          ?.notifications?.error?.(
-            "Campaign tools are still loading. Merchant, downtime, Quartermaster, reputation, and critical-injury services will retry automatically; nothing needs to be repeated.",
-          );
-        recovery.schedule();
+        if (privateStateStatus.state === "blocked") {
+          const corrupt = privateStateStatus.code === "corrupt";
+          const observed = privateStateStatus.observedSchema;
+          const message = corrupt
+            ? "Campaign tools are locked because the current private-state store is incomplete or corrupt. No campaign data was changed and automatic retries are stopped. Restore the store from a verified backup or use a compatible recovery tool before continuing."
+            : `Campaign tools are locked because the private-state schema (${observed == null ? "invalid" : String(observed)}) is newer than or incompatible with this module (supports ${privateStateStatus.supportedSchema}). No campaign data was changed and automatic retries are stopped. Install a compatible module version before continuing.`;
+          bindings.getUi?.()?.notifications?.error?.(message);
+        } else {
+          bindings
+            .getUi?.()
+            ?.notifications?.error?.(
+              "Campaign tools are still loading. Merchant, downtime, Quartermaster, reputation, and critical-injury services will retry automatically; nothing needs to be repeated.",
+            );
+          if (privateStateStatus.retryable === true) recovery.schedule();
+        }
       } else if (
         privateStateAvailable &&
         bindings.isAuthoritativeGM() &&
@@ -228,9 +247,11 @@ export function createModuleBootstrap(bindings) {
         bindings
           .getUi?.()
           ?.notifications?.error?.(
-            "Quartermaster setup is still loading. Automatic upkeep remains safely locked while this client retries; no supplies were changed.",
+            resourceMigrationBlocked
+              ? "Quartermaster is locked because its saved data was written by a newer or incompatible module version. No supplies were changed and automatic retries are stopped."
+              : "Quartermaster setup is still loading. Automatic upkeep remains safely locked while this client retries; no supplies were changed.",
           );
-        recovery.schedule();
+        if (!resourceMigrationBlocked) recovery.schedule({ resource: true });
       }
 
       void bindings.registerMonksTokenbarCompat().catch((error) => {
@@ -240,7 +261,7 @@ export function createModuleBootstrap(bindings) {
         );
       });
       void bindings.preloadModuleSounds();
-      recovery.markReadyComplete();
+      recovery.markReadyComplete({ privateStateAvailable });
     } catch (error) {
       recovery.markReadyComplete();
       bindings.logger.error(`${bindings.moduleId} | ready hook failed`, error);

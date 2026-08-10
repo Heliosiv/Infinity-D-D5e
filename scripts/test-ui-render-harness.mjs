@@ -322,6 +322,11 @@ assert.ok(
 );
 assert.match(closedMerchantWorkspaceView.html, /All shops closed/);
 assert.match(closedMerchantWorkspaceView.html, /data-action="reopenSessions"/);
+assert.match(closedMerchantWorkspaceView.html, /Close Stale/);
+assert.match(
+  closedMerchantWorkspaceView.html,
+  /data-action="closeAllSessions"/,
+);
 assert.match(closedMerchantWorkspaceView.html, /2 saved sessions/);
 
 const merchantWorkspaceSaveErrorView = views.find(

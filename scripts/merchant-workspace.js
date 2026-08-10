@@ -369,6 +369,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         ? "All shops closed"
         : "Global access open",
       globalActiveSessionCount: allActiveSessions.length,
+      globalActiveSessionCountIsOne: allActiveSessions.length === 1,
       suspendedSessionCount: merchantAccess.suspendedSessions.length,
       suspendedSessionCountIsOne: merchantAccess.suspendedSessions.length === 1,
       canOpenSession:
@@ -1163,7 +1164,26 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
   static async _onCloseAllSessions() {
     const current = loadMerchantAccessState();
     if (current.closed) {
-      ui.notifications?.info("All merchant access is already closed.");
+      // The persisted gate can already be closed while a player still has a
+      // stale window (for example, after a private-store schema lock). Run the
+      // idempotent close path so those windows and the sanitized Shops list are
+      // refreshed without rewriting the canonical access record.
+      try {
+        const result = await pushCloseAllMerchantSessions();
+        ui.notifications?.info(
+          result.closedCount > 0
+            ? `Merchant access was already closed. Closed ${result.closedCount} stale session${result.closedCount === 1 ? "" : "s"}.`
+            : "All merchant access is already closed.",
+        );
+      } catch (error) {
+        console.error(
+          `${MODULE_ID} | failed to refresh closed merchant sessions`,
+          error,
+        );
+        ui.notifications?.error(
+          "Merchant access is locked, but stale shop windows could not be refreshed. Players cannot complete transactions while the lock remains active.",
+        );
+      }
       this.render(false);
       return;
     }

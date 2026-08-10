@@ -16,7 +16,11 @@ import {
 } from "../private-state.js";
 import { isFullGM } from "../permissions.js";
 import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
-import { persistedValuesEqual } from "../utils/persisted-data.js";
+import {
+  assertSupportedPersistedVersion,
+  persistedValuesEqual,
+  persistedVersionEquals,
+} from "../utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_KEY = "criticalInjuryWorkflow";
@@ -687,17 +691,116 @@ function isLiveFoundrySession() {
   return Boolean(isFoundryEnvironment() && globalThis.game?.ready);
 }
 
+function assertExplicitPersistedSchema(
+  raw,
+  { domain, supportedVersion, codePrefix },
+) {
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    Array.isArray(raw) ||
+    !Object.hasOwn(raw, "schema")
+  ) {
+    return;
+  }
+  assertSupportedPersistedVersion(
+    raw.schema === undefined ? Number.NaN : raw.schema,
+    { domain, supportedVersion, codePrefix },
+  );
+}
+
+function assertSupportedInjuryRecordSchemas(raw, domain, codePrefix) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  assertExplicitPersistedSchema(raw, {
+    domain,
+    supportedVersion: RECORD_SCHEMA,
+    codePrefix: `${codePrefix}_SCHEMA`,
+  });
+  for (const treatment of Array.isArray(raw.treatments) ? raw.treatments : []) {
+    assertExplicitPersistedSchema(treatment, {
+      domain: `${domain}-treatment`,
+      supportedVersion: TREATMENT_SCHEMA,
+      codePrefix: `${codePrefix}_TREATMENT_SCHEMA`,
+    });
+    if (
+      treatment?.resolution &&
+      typeof treatment.resolution === "object" &&
+      !Array.isArray(treatment.resolution)
+    ) {
+      assertExplicitPersistedSchema(treatment.resolution, {
+        domain: `${domain}-treatment-resolution`,
+        supportedVersion: TREATMENT_SCHEMA,
+        codePrefix: `${codePrefix}_TREATMENT_RESOLUTION_SCHEMA`,
+      });
+    }
+  }
+}
+
+function assertSupportedWorkflowReplicaVersion(key, raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return;
+  }
+  const isPrimary = key === STORE_KEY;
+  const domain = isPrimary
+    ? "critical-injury-workflow-primary"
+    : "critical-injury-workflow-checkpoint";
+  const codePrefix = isPrimary
+    ? "CRITICAL_INJURY_WORKFLOW_PRIMARY"
+    : "CRITICAL_INJURY_WORKFLOW_CHECKPOINT";
+  if (Object.hasOwn(raw, "version")) {
+    assertSupportedPersistedVersion(
+      raw.version === undefined ? Number.NaN : raw.version,
+      {
+        domain,
+        supportedVersion: STORE_VERSION,
+        codePrefix,
+      },
+    );
+  }
+  for (const record of Array.isArray(raw.records) ? raw.records : []) {
+    assertSupportedInjuryRecordSchemas(
+      record,
+      `${domain}-record`,
+      `${codePrefix}_RECORD`,
+    );
+  }
+  for (const restEvent of Array.isArray(raw.restEvents) ? raw.restEvents : []) {
+    assertExplicitPersistedSchema(restEvent, {
+      domain: `${domain}-rest-event`,
+      supportedVersion: REST_EVENT_SCHEMA,
+      codePrefix: `${codePrefix}_REST_EVENT_SCHEMA`,
+    });
+    if (
+      restEvent?.resolution &&
+      typeof restEvent.resolution === "object" &&
+      !Array.isArray(restEvent.resolution)
+    ) {
+      assertExplicitPersistedSchema(restEvent.resolution, {
+        domain: `${domain}-rest-event-resolution`,
+        supportedVersion: REST_EVENT_SCHEMA,
+        codePrefix: `${codePrefix}_REST_EVENT_RESOLUTION_SCHEMA`,
+      });
+    }
+  }
+}
+
 function readRawSlot(key) {
   const privateValue = getPrivateState(key);
-  if (privateValue !== undefined) return privateValue;
-  if (isFoundryEnvironment() && globalThis.game?.ready) {
+  if (privateValue !== undefined) {
+    assertSupportedWorkflowReplicaVersion(key, privateValue);
+    return privateValue;
+  }
+  if (isFoundryEnvironment()) {
     throw new Error("CriticalInjuryWorkflowStoreUnavailable");
   }
+  let raw;
   try {
-    return globalThis.game?.settings?.get?.(MODULE_ID, key) ?? {};
+    raw = globalThis.game?.settings?.get?.(MODULE_ID, key) ?? {};
   } catch {
     return {};
   }
+  assertSupportedWorkflowReplicaVersion(key, raw);
+  return raw;
 }
 
 function readRawPrimary() {
@@ -706,6 +809,17 @@ function readRawPrimary() {
 
 function readRawCheckpoint() {
   return readRawSlot(CHECKPOINT_KEY);
+}
+
+function readRawReplicas() {
+  return {
+    primary: readRawPrimary(),
+    checkpoint: readRawCheckpoint(),
+  };
+}
+
+function replicaValueForKey(replicas, key) {
+  return key === STORE_KEY ? replicas.primary : replicas.checkpoint;
 }
 
 function isEmptyObject(value) {
@@ -722,14 +836,14 @@ function isLegacyEnvelope(raw) {
     raw &&
     typeof raw === "object" &&
     !Array.isArray(raw) &&
-    Number(raw.version) === 1 &&
+    persistedVersionEquals(raw.version, 1) &&
     Array.isArray(raw.records),
   );
 }
 
 function isPersistedEnvelope(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  if (Number(raw.version) !== STORE_VERSION) return false;
+  if (!persistedVersionEquals(raw.version, STORE_VERSION)) return false;
   if (nonNegativeInteger(raw.revision) == null) return false;
   if (!toId(raw.authorityId) || !toId(raw.authorityEpoch)) return false;
   if (!toId(raw.writeToken)) return false;
@@ -1044,9 +1158,10 @@ async function commitEnvelope(
   { fence, expectedPrimary, expectedCheckpoint },
 ) {
   assertAuthorityFence(fence);
+  const replicas = readRawReplicas();
   if (
-    !rawEnvelopesEqual(readRawPrimary(), expectedPrimary) ||
-    !rawEnvelopesEqual(readRawCheckpoint(), expectedCheckpoint)
+    !rawEnvelopesEqual(replicas.primary, expectedPrimary) ||
+    !rawEnvelopesEqual(replicas.checkpoint, expectedCheckpoint)
   ) {
     throw new Error("CriticalInjuryWorkflowStaleWrite");
   }
@@ -1058,30 +1173,49 @@ async function commitEnvelope(
   );
   const next = serializeEnvelope(store, identity);
 
+  readRawReplicas();
   await setPrivateState(CHECKPOINT_KEY, next, {
-    beforeWrite: () =>
-      isAuthorityFenceCurrent(fence) &&
-      rawEnvelopesEqual(readRawCheckpoint(), expectedCheckpoint),
-    afterWrite: () =>
-      isAuthorityFenceCurrent(fence) &&
-      rawEnvelopesEqual(readRawCheckpoint(), next),
+    beforeWrite: () => {
+      const current = readRawReplicas();
+      return (
+        isAuthorityFenceCurrent(fence) &&
+        rawEnvelopesEqual(current.checkpoint, expectedCheckpoint)
+      );
+    },
+    afterWrite: () => {
+      const current = readRawReplicas();
+      return (
+        isAuthorityFenceCurrent(fence) &&
+        rawEnvelopesEqual(current.checkpoint, next)
+      );
+    },
   });
   assertAuthorityFence(fence);
   try {
+    readRawReplicas();
     await setPrivateState(STORE_KEY, next, {
-      beforeWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        rawEnvelopesEqual(readRawPrimary(), expectedPrimary),
-      afterWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        rawEnvelopesEqual(readRawPrimary(), next),
+      beforeWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          rawEnvelopesEqual(current.primary, expectedPrimary)
+        );
+      },
+      afterWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          rawEnvelopesEqual(current.primary, next)
+        );
+      },
     });
   } catch (error) {
     // The checkpoint is the durable commit point. If it was verified and the
     // same authority still owns the fence, the observer can repair a transient
     // primary-slot failure without rerolling or duplicating Actor mutations.
-    const primaryAfterFailure = readRawPrimary();
-    const checkpointAfterFailure = readRawCheckpoint();
+    const afterFailure = readRawReplicas();
+    const primaryAfterFailure = afterFailure.primary;
+    const checkpointAfterFailure = afterFailure.checkpoint;
     let canonical = null;
     if (isAuthorityFenceCurrent(fence)) {
       canonical = selectRecoveryBase(
@@ -1101,8 +1235,9 @@ async function commitEnvelope(
   }
   assertAuthorityFence(fence);
 
-  const storedPrimary = readRawPrimary();
-  const storedCheckpoint = readRawCheckpoint();
+  const stored = readRawReplicas();
+  const storedPrimary = stored.primary;
+  const storedCheckpoint = stored.checkpoint;
   if (
     !rawEnvelopesEqual(storedPrimary, next) ||
     !rawEnvelopesEqual(storedCheckpoint, next) ||
@@ -1115,8 +1250,9 @@ async function commitEnvelope(
 
 async function ensureEnvelopeForFence(fence) {
   assertAuthorityFence(fence);
-  const primary = readRawPrimary();
-  const checkpoint = readRawCheckpoint();
+  const replicas = readRawReplicas();
+  const primary = replicas.primary;
+  const checkpoint = replicas.checkpoint;
   if (
     isPersistedEnvelope(primary) &&
     rawEnvelopesEqual(primary, checkpoint) &&
@@ -1142,8 +1278,9 @@ async function ensureEnvelopeForFence(fence) {
     if (!rawEnvelopesEqual(primary, base)) {
       await repairEnvelopeReplica(STORE_KEY, base, primary, fence);
     }
-    const repairedPrimary = readRawPrimary();
-    const repairedCheckpoint = readRawCheckpoint();
+    const repaired = readRawReplicas();
+    const repairedPrimary = repaired.primary;
+    const repairedCheckpoint = repaired.checkpoint;
     if (
       !rawEnvelopesEqual(repairedPrimary, base) ||
       !rawEnvelopesEqual(repairedCheckpoint, base) ||
@@ -1162,18 +1299,28 @@ async function ensureEnvelopeForFence(fence) {
 
 async function repairEnvelopeReplica(key, envelope, expectedRaw, fence) {
   try {
+    readRawReplicas();
     await setPrivateState(key, envelope, {
-      beforeWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        rawEnvelopesEqual(readRawSlot(key), expectedRaw),
-      afterWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        rawEnvelopesEqual(readRawSlot(key), envelope),
+      beforeWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          rawEnvelopesEqual(replicaValueForKey(current, key), expectedRaw)
+        );
+      },
+      afterWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          rawEnvelopesEqual(replicaValueForKey(current, key), envelope)
+        );
+      },
     });
   } catch (error) {
+    const current = readRawReplicas();
     if (
       isAuthorityFenceCurrent(fence) &&
-      rawEnvelopesEqual(readRawSlot(key), envelope)
+      rawEnvelopesEqual(replicaValueForKey(current, key), envelope)
     ) {
       return true;
     }
@@ -1188,8 +1335,9 @@ export function ensureCriticalInjuryWorkflowAuthority() {
 }
 
 export function loadCriticalInjuryWorkflowStore() {
-  const primary = readRawPrimary();
-  const checkpoint = readRawCheckpoint();
+  const replicas = readRawReplicas();
+  const primary = replicas.primary;
+  const checkpoint = replicas.checkpoint;
   const selected = selectRecoveryBase(primary, checkpoint);
   return normalizeCriticalInjuryWorkflowStore(selected);
 }
@@ -1682,8 +1830,9 @@ export function authorizeCriticalInjuryWorkflowRequest(
 async function mutateStore(mutator) {
   return enqueueWrite(async (fence) => {
     const ensured = await ensureEnvelopeForFence(fence);
-    const expectedPrimary = readRawPrimary();
-    const expectedCheckpoint = readRawCheckpoint();
+    const replicas = readRawReplicas();
+    const expectedPrimary = replicas.primary;
+    const expectedCheckpoint = replicas.checkpoint;
     if (
       !rawEnvelopesEqual(expectedPrimary, ensured) ||
       !rawEnvelopesEqual(expectedCheckpoint, ensured)
@@ -2518,8 +2667,9 @@ export function isCriticalInjuryWorkflowReady() {
   try {
     const fence = captureAuthorityFence();
     if (!isAuthorityFenceCurrent(fence)) return false;
-    const primary = readRawPrimary();
-    const checkpoint = readRawCheckpoint();
+    const replicas = readRawReplicas();
+    const primary = replicas.primary;
+    const checkpoint = replicas.checkpoint;
     return Boolean(
       isPersistedEnvelope(primary) &&
       rawEnvelopesEqual(primary, checkpoint) &&

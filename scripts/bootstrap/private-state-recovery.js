@@ -8,29 +8,48 @@ export function createPrivateStateRecovery(bindings) {
   let recoveryInFlight = null;
   let recoveryTimer = null;
   let recoveryHooksRegistered = false;
+  const registeredServices = new Set();
+
+  function registerService(key, label, registrar) {
+    if (registeredServices.has(key)) return false;
+    const registered = bindings.safeInitializeSubsystem(label, registrar);
+    if (registered !== false) registeredServices.add(key);
+    return registered !== false;
+  }
 
   function registerPrivateDependentServices() {
-    bindings.safeInitializeSubsystem(
+    registerService(
+      "merchant",
       "merchant socket",
       bindings.registerMerchantSocket,
     );
-    bindings.safeInitializeSubsystem(
+    registerService(
+      "resource-overview",
       "resource overview service",
       bindings.registerResourceOverviewService,
     );
-    bindings.safeInitializeSubsystem(
-      "resource calendar watcher",
-      bindings.registerResourceCalendarWatcher,
-    );
-    bindings.safeInitializeSubsystem(
+    if (
+      !bindings.isFullGM() ||
+      (bindings.isAuthoritativeGM() && bindings.isResourceAutomationReady())
+    ) {
+      registerService(
+        "resource-calendar",
+        "resource calendar watcher",
+        bindings.registerResourceCalendarWatcher,
+      );
+    }
+    registerService(
+      "reputation",
       "reputation socket",
       bindings.registerReputationSocket,
     );
-    bindings.safeInitializeSubsystem(
+    registerService(
+      "critical-injury",
       "critical injury service",
       bindings.registerCriticalInjuryService,
     );
-    bindings.safeInitializeSubsystem(
+    registerService(
+      "downtime",
       "downtime service",
       bindings.registerDowntimeService,
     );
@@ -42,8 +61,29 @@ export function createPrivateStateRecovery(bindings) {
     recoveryTimer = null;
   }
 
-  function schedule() {
-    if (!bindings.isFullGM() || recoveryTimer != null) return false;
+  function currentStatus() {
+    return (
+      bindings.getPrivateStateStatus?.() ?? {
+        state: "pending",
+        code: "unknown",
+        retryable: true,
+      }
+    );
+  }
+
+  function requestRecoveryAfterHooks() {
+    void Promise.resolve().then(() => recover());
+  }
+
+  function schedule({ resource = false } = {}) {
+    if (!bindings.isFullGM()) return false;
+    const status = currentStatus();
+    if (status.state === "blocked") {
+      clearTimer();
+      return false;
+    }
+    if (recoveryTimer != null) return false;
+    if (!resource && status.retryable !== true) return false;
     recoveryTimer = bindings.setTimeout(() => {
       recoveryTimer = null;
       void recover();
@@ -53,6 +93,11 @@ export function createPrivateStateRecovery(bindings) {
 
   function recover() {
     if (recoveryInFlight) return recoveryInFlight;
+    if (currentStatus().state === "blocked") {
+      clearTimer();
+      return Promise.resolve(false);
+    }
+    const calendarWasRegistered = registeredServices.has("resource-calendar");
     let trackedRecovery;
     trackedRecovery = (async () => {
       let available = false;
@@ -65,7 +110,8 @@ export function createPrivateStateRecovery(bindings) {
         );
       }
       if (!available) {
-        schedule();
+        if (currentStatus().retryable === true) schedule();
+        else clearTimer();
         return false;
       }
 
@@ -77,15 +123,33 @@ export function createPrivateStateRecovery(bindings) {
             `${bindings.moduleId} | resource config migration failed`,
             error,
           );
+          registerPrivateDependentServices();
+          if (error?.persistedVersionStatus?.state === "blocked") {
+            clearTimer();
+            return false;
+          }
         }
+        registerPrivateDependentServices();
         if (!bindings.isResourceAutomationReady()) {
-          schedule();
+          schedule({ resource: true });
           return false;
         }
       }
 
       clearTimer();
       registerPrivateDependentServices();
+      if (
+        calendarWasRegistered &&
+        bindings.isFullGM() &&
+        bindings.isAuthoritativeGM() &&
+        bindings.isResourceAutomationReady() &&
+        typeof bindings.reconcileResourceCalendarWatcher === "function"
+      ) {
+        bindings.safeInitializeSubsystem(
+          "resource calendar authority reconciliation",
+          () => bindings.reconcileResourceCalendarWatcher(),
+        );
+      }
       return true;
     })().finally(() => {
       if (recoveryInFlight === trackedRecovery) recoveryInFlight = null;
@@ -99,13 +163,14 @@ export function createPrivateStateRecovery(bindings) {
     recoveryHooksRegistered = true;
     bindings.observeResourceAuthorityTransition();
 
-    const requestRecoveryAfterHooks = () => {
-      void Promise.resolve().then(() => recover());
-    };
     bindings.onPrivateStateChanged((payload) => {
       if (!readyBootComplete) return;
       const reason = String(payload?.reason ?? "");
-      if (reason === "role-demotion") {
+      if (
+        reason === "role-demotion" ||
+        reason === "schema-blocked" ||
+        payload?.status?.state === "blocked"
+      ) {
         clearTimer();
         return;
       }
@@ -114,6 +179,7 @@ export function createPrivateStateRecovery(bindings) {
         reason === "store-ready" ||
         reason === "journal-create" ||
         reason === "journal-replacement" ||
+        reason === "schema-retry" ||
         reason === "authority-change"
       ) {
         requestRecoveryAfterHooks();
@@ -138,8 +204,17 @@ export function createPrivateStateRecovery(bindings) {
     return true;
   }
 
-  function markReadyComplete() {
+  function markReadyComplete({ privateStateAvailable = false } = {}) {
+    const wasComplete = readyBootComplete;
     readyBootComplete = true;
+    if (
+      !wasComplete &&
+      !privateStateAvailable &&
+      bindings.isFullGM() &&
+      currentStatus().state === "ready"
+    ) {
+      requestRecoveryAfterHooks();
+    }
   }
 
   return {

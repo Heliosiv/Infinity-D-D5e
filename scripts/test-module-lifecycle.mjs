@@ -22,7 +22,13 @@ function createHooks(trace) {
   };
 }
 
-function createFixture({ privateAvailable = true, fullGm = true } = {}) {
+function createFixture({
+  privateAvailable = true,
+  fullGm = true,
+  privateStatus = null,
+  resourceReady = true,
+  resourceMigrationError = null,
+} = {}) {
   const trace = [];
   const hooks = createHooks(trace);
   const moduleRecord = { version: "0.3.2", api: { stale: true } };
@@ -132,6 +138,14 @@ function createFixture({ privateAvailable = true, fullGm = true } = {}) {
       trace.push("private-state:init");
       return privateAvailable;
     },
+    getPrivateStateStatus: () =>
+      privateStatus ?? {
+        state: privateAvailable ? "ready" : "pending",
+        code: privateAvailable ? "ready" : "store-unavailable",
+        retryable: !privateAvailable,
+        supportedSchema: 6,
+        observedSchema: privateAvailable ? 6 : null,
+      },
     onPrivateStateChanged: (callback) => {
       trace.push("private-state:hook");
       privateStateCallback = callback;
@@ -141,10 +155,13 @@ function createFixture({ privateAvailable = true, fullGm = true } = {}) {
       return { newlyAuthoritative: false };
     },
     isAuthoritativeGM: () => fullGm,
-    isResourceAutomationReady: () => true,
+    isResourceAutomationReady: () => resourceReady,
     migrateEncounterBalanceDefaults: async () =>
       trace.push("migrate:encounter"),
-    migrateResourceConfig: async () => trace.push("migrate:resource"),
+    migrateResourceConfig: async () => {
+      trace.push("migrate:resource");
+      if (resourceMigrationError) throw resourceMigrationError;
+    },
     registerSoundSocket: record("sound-socket"),
     registerSpellComponentHooks: record("spell-components"),
     registerSoundAutomation: record("sound-automation"),
@@ -300,6 +317,56 @@ function createFixture({ privateAvailable = true, fullGm = true } = {}) {
 }
 
 {
+  const fixture = createFixture({
+    resourceReady: false,
+    resourceMigrationError: new Error(
+      "injected Quartermaster migration failure",
+    ),
+  });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.ok(fixture.trace.includes("merchant-socket"));
+  assert.ok(fixture.trace.includes("resource-overview-service"));
+  assert.ok(fixture.trace.includes("reputation-socket"));
+  assert.ok(fixture.trace.includes("injury-service"));
+  assert.ok(fixture.trace.includes("downtime-service"));
+  assert.equal(
+    fixture.trace.includes("resource-calendar-watcher"),
+    false,
+    "a failed Quartermaster migration delays its one-time ready catch-up",
+  );
+  assert.equal(fixture.timers.length, 1);
+  assert.match(
+    fixture.notifications[0],
+    /Quartermaster setup is still loading/,
+  );
+}
+
+{
+  const incompatible = Object.assign(new Error("future resource config"), {
+    code: "RESOURCE_CONFIG_FUTURE_VERSION",
+    retryable: false,
+    persistedVersionStatus: {
+      state: "blocked",
+      code: "future-version",
+      retryable: false,
+    },
+  });
+  const fixture = createFixture({
+    resourceReady: false,
+    resourceMigrationError: incompatible,
+  });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.ok(fixture.trace.includes("merchant-socket"));
+  assert.equal(fixture.trace.includes("resource-calendar-watcher"), false);
+  assert.equal(fixture.timers.length, 0);
+  assert.match(fixture.notifications[0], /written by a newer or incompatible/);
+}
+
+{
   const fixture = createFixture({ privateAvailable: false, fullGm: true });
   createModuleBootstrap(fixture.bindings).register();
   fixture.trace.length = 0;
@@ -311,6 +378,34 @@ function createFixture({ privateAvailable = true, fullGm = true } = {}) {
   assert.ok(fixture.trace.includes("recovery-timer"));
   assert.equal(fixture.timers.length, 1);
   assert.match(fixture.notifications[0], /retry automatically/);
+}
+
+{
+  const fixture = createFixture({
+    privateAvailable: false,
+    fullGm: true,
+    privateStatus: {
+      state: "blocked",
+      code: "future-schema",
+      retryable: false,
+      supportedSchema: 6,
+      observedSchema: 7,
+    },
+  });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.equal(fixture.trace.includes("merchant-socket"), false);
+  assert.equal(fixture.trace.includes("resource-overview-service"), false);
+  assert.equal(fixture.trace.includes("reputation-socket"), false);
+  assert.equal(fixture.trace.includes("migrate:resource"), false);
+  assert.ok(fixture.trace.includes("downtime-socket"));
+  assert.ok(fixture.trace.includes("resource-socket"));
+  assert.ok(fixture.trace.includes("injury-socket"));
+  assert.equal(fixture.trace.includes("recovery-timer"), false);
+  assert.equal(fixture.timers.length, 0);
+  assert.match(fixture.notifications[0], /schema \(7\)/);
+  assert.match(fixture.notifications[0], /automatic retries are stopped/);
 }
 
 process.stdout.write("module lifecycle validation passed\n");

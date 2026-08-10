@@ -27,6 +27,8 @@ import {
   setCurrentEnvironment,
   setLastSeenDay,
   setLastUpkeepResult,
+  setResourceRule,
+  resetResourceRules,
   resetResourceStoreForTests,
 } from "./resource/store.js";
 import {
@@ -36,6 +38,7 @@ import {
 import {
   initializePrivateState,
   resetPrivateStateForTests,
+  setPrivateState,
 } from "./private-state.js";
 
 /* ------------------------------------------------------------------ *
@@ -96,6 +99,11 @@ import {
 {
   const cfg = normalizeResourceConfig({});
   assert.equal(cfg.version, RESOURCE_CONFIG_VERSION);
+  assert.equal(
+    normalizeResourceConfig({ version: RESOURCE_CONFIG_VERSION + 1 }).version,
+    RESOURCE_CONFIG_VERSION,
+    "the pure config normalizer remains permissive for legacy callers",
+  );
   assert.equal(RESOURCE_CONFIG_VERSION, 5, "current structural schema is v5");
   assert.equal(cfg.forageMode, "each");
   assert.equal(cfg.halfRations, false);
@@ -503,6 +511,14 @@ import {
   assert.equal(fresh.activeUpkeep, null);
   assert.deepEqual(fresh.recentRuns, []);
   assert.equal(RESOURCE_RUN_STATE_VERSION, 4, "current run-state schema is v4");
+  assert.equal(
+    normalizeRunState({
+      version: RESOURCE_RUN_STATE_VERSION + 1,
+      lastSeenDay: 8,
+    }).lastSeenDay,
+    8,
+    "the pure run-state normalizer remains independent of persistence guards",
+  );
 
   const live = normalizeRunState({
     lastSeenDay: 12.9,
@@ -909,7 +925,7 @@ import {
       },
     };
     globalThis.game = {
-      ready: true,
+      ready: false,
       user: { id: "player-a", isGM: false, active: true },
       users: {
         activeGM: { id: "gm-a", isGM: true, active: true },
@@ -923,7 +939,15 @@ import {
 
     assert.throws(
       () => loadResourceConfig(),
-      /PrivateStateUnavailable/,
+      (error) => error?.code === "PRIVATE_STATE_UNAVAILABLE",
+      "pre-ready Foundry never reads legacy Quartermaster data",
+    );
+    globalThis.game.ready = true;
+    assert.throws(
+      () => loadResourceConfig(),
+      (error) =>
+        error?.code === "PRIVATE_STATE_UNAVAILABLE" &&
+        error?.retryable === true,
       "a live client fails closed until private-state initialization completes",
     );
     await initializePrivateState();
@@ -1014,10 +1038,12 @@ import {
     const store = {
       id: "private-resource-store",
       ownership: { default: 0 },
+      updateCalls: [],
       getFlag(scope, key) {
         return scope === "infinity-dnd5e" ? flags[key] : undefined;
       },
       async update(changes) {
+        this.updateCalls.push(structuredClone(changes));
         if (
           blockedRunStateUpdate &&
           Object.hasOwn(changes, "flags.infinity-dnd5e.resourceRunState")
@@ -1109,6 +1135,170 @@ import {
       true,
       "validated config and run state enable automation",
     );
+
+    const currentConfig = structuredClone(flags.resourceConfig);
+    await setPrivateState("resourceConfig", {
+      ...currentConfig,
+      version: RESOURCE_CONFIG_VERSION + 1,
+      futureOnly: { preserve: true },
+    });
+    const configWritesBeforeGuard = store.updateCalls.length;
+    assert.throws(
+      () => loadResourceConfig(),
+      (error) => {
+        assert.equal(error?.code, "RESOURCE_CONFIG_FUTURE_VERSION");
+        assert.equal(error?.retryable, false);
+        assert.deepEqual(error?.persistedVersionStatus, {
+          state: "blocked",
+          code: "future-version",
+          retryable: false,
+          domain: "resource-config",
+          supportedVersion: RESOURCE_CONFIG_VERSION,
+          observedVersion: RESOURCE_CONFIG_VERSION + 1,
+        });
+        return true;
+      },
+    );
+    assert.equal(isResourceAutomationReady(), false);
+    await assert.rejects(
+      saveResourceConfig(currentConfig),
+      (error) => error?.code === "RESOURCE_CONFIG_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      setResourceRule("waterEnabled", false),
+      (error) => error?.code === "RESOURCE_CONFIG_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      migrateResourceConfig(),
+      (error) => error?.code === "RESOURCE_CONFIG_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, configWritesBeforeGuard);
+    assert.equal(flags.resourceConfig.version, RESOURCE_CONFIG_VERSION + 1);
+    assert.deepEqual(flags.resourceConfig.futureOnly, { preserve: true });
+    await setPrivateState("resourceConfig", currentConfig);
+
+    for (const malformedVersion of [[RESOURCE_CONFIG_VERSION], null, ""]) {
+      await setPrivateState("resourceConfig", {
+        ...currentConfig,
+        version: malformedVersion,
+        malformedOnly: { preserve: true },
+      });
+      const malformedWritesBeforeGuard = store.updateCalls.length;
+      assert.equal(isResourceAutomationReady(), false);
+      assert.throws(
+        () => loadResourceConfig(),
+        (error) => error?.code === "RESOURCE_CONFIG_INVALID_VERSION",
+      );
+      await assert.rejects(
+        saveResourceConfig(currentConfig),
+        (error) => error?.code === "RESOURCE_CONFIG_INVALID_VERSION",
+      );
+      assert.equal(store.updateCalls.length, malformedWritesBeforeGuard);
+      assert.deepEqual(flags.resourceConfig.malformedOnly, { preserve: true });
+    }
+    await setPrivateState("resourceConfig", currentConfig);
+
+    const currentRunState = structuredClone(flags.resourceRunState);
+    await setPrivateState("resourceRunState", {
+      ...currentRunState,
+      version: RESOURCE_RUN_STATE_VERSION + 1,
+      futureOnly: { preserve: true },
+    });
+    const runStateWritesBeforeGuard = store.updateCalls.length;
+    assert.throws(
+      () => loadRunState(),
+      (error) => {
+        assert.equal(error?.code, "RESOURCE_RUN_STATE_FUTURE_VERSION");
+        assert.deepEqual(error?.persistedVersionStatus, {
+          state: "blocked",
+          code: "future-version",
+          retryable: false,
+          domain: "resource-run-state",
+          supportedVersion: RESOURCE_RUN_STATE_VERSION,
+          observedVersion: RESOURCE_RUN_STATE_VERSION + 1,
+        });
+        return true;
+      },
+    );
+    assert.equal(isResourceAutomationReady(), false);
+    await assert.rejects(
+      saveRunState({ lastSeenDay: 500 }),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      saveResourceConfig(currentConfig),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      setResourceRule("waterEnabled", false),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      resetResourceRules(),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    await assert.rejects(
+      migrateResourceConfig(),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, runStateWritesBeforeGuard);
+    assert.equal(
+      flags.resourceRunState.version,
+      RESOURCE_RUN_STATE_VERSION + 1,
+    );
+    assert.deepEqual(flags.resourceRunState.futureOnly, { preserve: true });
+
+    await setPrivateState("resourceConfig", {
+      ...currentConfig,
+      version: 1,
+      waterEnabled: false,
+      legacyOnly: { preserve: true },
+    });
+    const migrationWritesBeforePreflight = store.updateCalls.length;
+    await assert.rejects(
+      migrateResourceConfig(),
+      (error) => error?.code === "RESOURCE_RUN_STATE_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, migrationWritesBeforePreflight);
+    assert.equal(flags.resourceConfig.version, 1);
+    assert.deepEqual(flags.resourceConfig.legacyOnly, { preserve: true });
+    await setPrivateState("resourceConfig", currentConfig);
+
+    delete flags.resourceRunState.futureOnly;
+    await setPrivateState("resourceRunState", currentRunState);
+    assert.equal(isResourceAutomationReady(), true);
+
+    for (const malformedVersion of [null, ""]) {
+      await setPrivateState("resourceRunState", {
+        ...currentRunState,
+        version: malformedVersion,
+        malformedOnly: { preserve: true },
+      });
+      const malformedRunStateWritesBeforeGuard = store.updateCalls.length;
+      assert.throws(
+        () => loadRunState(),
+        (error) => error?.code === "RESOURCE_RUN_STATE_INVALID_VERSION",
+      );
+      await assert.rejects(
+        setResourceRule("waterEnabled", false),
+        (error) => error?.code === "RESOURCE_RUN_STATE_INVALID_VERSION",
+      );
+      await assert.rejects(
+        resetResourceRules(),
+        (error) => error?.code === "RESOURCE_RUN_STATE_INVALID_VERSION",
+      );
+      assert.equal(
+        store.updateCalls.length,
+        malformedRunStateWritesBeforeGuard,
+      );
+      assert.deepEqual(flags.resourceRunState.malformedOnly, {
+        preserve: true,
+      });
+    }
+    delete flags.resourceRunState.malformedOnly;
+    await setPrivateState("resourceRunState", currentRunState);
+    assert.equal(isResourceAutomationReady(), true);
+
     flags.schemaVersion = 1;
     assert.equal(
       isResourceAutomationReady(),
@@ -1268,6 +1458,23 @@ import {
     assert.equal(flags.resourceRunState.lastSeenDay, 88);
     assert.equal(Number.isSafeInteger(flags.resourceRunState.revision), true);
     assert.equal(isResourceAutomationReady(), true);
+
+    // A direct config save that begins before cache hydration must still fence
+    // against the canonical version after private-state initialization.
+    flags.resourceConfig = {
+      ...currentConfig,
+      version: RESOURCE_CONFIG_VERSION + 1,
+      futureOnly: { preserve: true },
+    };
+    resetPrivateStateForTests();
+    const writesBeforePreInitGuard = store.updateCalls.length;
+    await assert.rejects(
+      saveResourceConfig(currentConfig),
+      (error) => error?.code === "RESOURCE_CONFIG_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, writesBeforePreInitGuard);
+    assert.equal(flags.resourceConfig.version, RESOURCE_CONFIG_VERSION + 1);
+    assert.deepEqual(flags.resourceConfig.futureOnly, { preserve: true });
   } finally {
     resetResourceStoreForTests();
     resetPrivateStateForTests();

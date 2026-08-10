@@ -5,6 +5,7 @@ import Handlebars from "handlebars";
 const read = (file) => readFileSync(file, "utf8");
 const merchantTemplate = read("templates/merchant-workspace.hbs");
 const merchantStyle = read("styles/merchant-workspace.css");
+const merchantScript = read("scripts/merchant-workspace.js");
 const resourceTemplate = read("templates/resource-manager.hbs");
 const resourceStyle = read("styles/resource-manager.css");
 const reputationTemplate = read("templates/reputation-workspace.hbs");
@@ -120,6 +121,11 @@ assert.doesNotMatch(
 assert.match(merchantStyle, /container-name:\s*merchant-workspace/);
 assert.match(merchantStyle, /@container merchant-workspace/);
 assert.doesNotMatch(merchantStyle, /@media\s*\(max-width/);
+assert.match(
+  merchantScript,
+  /if \(current\.closed\)[\s\S]*?await pushCloseAllMerchantSessions\(\)/,
+  "an already-closed global gate still closes stale merchant windows",
+);
 
 /* Quartermaster: routine, receipts, and setup remain distinct. */
 assertOrdered(

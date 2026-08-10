@@ -4,6 +4,7 @@ import {
   isMerchantAccessClosed,
   loadMerchantAccessState,
   normalizeMerchantAccessState,
+  saveMerchantAccessState,
 } from "./merchant/global-access.js";
 import {
   MERCHANT_EVENTS,
@@ -12,11 +13,13 @@ import {
   pushReopenMerchantSessions,
 } from "./merchant/socket.js";
 import { clearAllSessions, listSessions } from "./merchant/session-state.js";
+import { resetPrivateStateForTests, setPrivateState } from "./private-state.js";
 
 const saved = {
   game: globalThis.game,
   JournalEntry: globalThis.JournalEntry,
   CONST: globalThis.CONST,
+  Hooks: globalThis.Hooks,
 };
 
 try {
@@ -190,6 +193,180 @@ try {
     reopenedLists.every((entry) => entry.payload.globallyClosed === false),
     "connected player shop pickers receive the reopened state",
   );
+
+  // Foundry can import callers before `game.ready`, but that phase is never a
+  // license to read the player-readable legacy setting or assume access is open.
+  clearAllSessions();
+  globalThis.JournalEntry = { create() {} };
+  globalThis.game.ready = false;
+  let legacyAccessReads = 0;
+  globalThis.game.settings.get = (_module, key) => {
+    if (key === "merchantAccess") legacyAccessReads += 1;
+    return { closed: false, suspendedSessions: [] };
+  };
+  assert.deepEqual(loadMerchantAccessState(), {
+    version: 1,
+    closed: true,
+    suspendedSessions: [],
+  });
+  assert.equal(isMerchantAccessClosed(), true);
+  assert.equal(
+    pushOpenSession({ merchant: openShop, targetUserIds: ["p1"] }).length,
+    0,
+    "merchant session callers inherit the locked fallback",
+  );
+  assert.equal(
+    legacyAccessReads,
+    0,
+    "the pre-ready Foundry path never probes the legacy access setting",
+  );
+  globalThis.game.ready = true;
+  assert.equal(
+    loadMerchantAccessState().closed,
+    true,
+    "an unavailable private store remains locked after Foundry is ready",
+  );
+  assert.equal(legacyAccessReads, 0);
+
+  // A save that starts before private-state hydration must re-check the
+  // canonical payload after initialization and preserve incompatible data.
+  resetPrivateStateForTests();
+  let nextHookId = 0;
+  const listeners = new Map();
+  globalThis.Hooks = {
+    on(event, handler) {
+      const id = ++nextHookId;
+      if (!listeners.has(event)) listeners.set(event, new Map());
+      listeners.get(event).set(id, handler);
+      return id;
+    },
+    off(event, id) {
+      listeners.get(event)?.delete(id);
+    },
+    call(event, ...args) {
+      for (const handler of listeners.get(event)?.values() ?? []) {
+        handler(...args);
+      }
+    },
+  };
+  globalThis.CONST = {
+    DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0 },
+    USER_ROLES: { GAMEMASTER: 4 },
+  };
+  const flags = {
+    privateStateStore: true,
+    schemaVersion: 6,
+    merchants: [],
+    merchantAccess: {
+      version: 2,
+      closed: false,
+      futureOnly: { preserve: true },
+    },
+    factions: [],
+    resourceConfig: {},
+    resourceRunState: {},
+    criticalInjuryWorkflow: {},
+    criticalInjuryWorkflowCheckpoint: {},
+    downtimeConfig: {},
+    downtimeWorkflow: {},
+    downtimeWorkflowCheckpoint: {},
+  };
+  const privateStore = {
+    id: "merchant-access-version-store",
+    ownership: { default: 0 },
+    updateCalls: [],
+    getFlag(scope, key) {
+      return scope === "infinity-dnd5e" ? flags[key] : undefined;
+    },
+    async update(changes) {
+      this.updateCalls.push(structuredClone(changes));
+      for (const [path, value] of Object.entries(changes)) {
+        const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
+        if (match) flags[match[1]] = structuredClone(value);
+      }
+      globalThis.Hooks.call("updateJournalEntry", this, changes);
+      return this;
+    },
+  };
+  const versionGm = {
+    id: "gm-version",
+    isGM: true,
+    role: 4,
+    active: true,
+  };
+  globalThis.game = {
+    ready: true,
+    user: versionGm,
+    users: {
+      activeGM: versionGm,
+      get: (id) => (id === versionGm.id ? versionGm : null),
+    },
+    journal: {
+      find: (predicate) => (predicate(privateStore) ? privateStore : null),
+    },
+    settings: {
+      get(_moduleId, key) {
+        if (key === "privateStateStoreId") return privateStore.id;
+        if (key === "merchants" || key === "factions") return [];
+        return {};
+      },
+      async set() {
+        throw new Error("a current canonical store should not write settings");
+      },
+    },
+  };
+  globalThis.JournalEntry = {
+    async create() {
+      throw new Error("the current canonical store should be reused");
+    },
+  };
+
+  await assert.rejects(saveMerchantAccessState({ closed: true }), (error) => {
+    assert.equal(error?.code, "MERCHANT_ACCESS_FUTURE_VERSION");
+    assert.deepEqual(error?.persistedVersionStatus, {
+      state: "blocked",
+      code: "future-version",
+      retryable: false,
+      domain: "merchant-access",
+      supportedVersion: 1,
+      observedVersion: 2,
+    });
+    return true;
+  });
+  assert.equal(privateStore.updateCalls.length, 0);
+  assert.deepEqual(flags.merchantAccess.futureOnly, { preserve: true });
+  assert.deepEqual(loadMerchantAccessState(), {
+    version: 1,
+    closed: true,
+    suspendedSessions: [],
+  });
+  assert.equal(
+    isMerchantAccessClosed(),
+    true,
+    "incompatible access state locks all merchant callers",
+  );
+
+  for (const malformedVersion of [null, ""]) {
+    await setPrivateState("merchantAccess", {
+      version: malformedVersion,
+      closed: false,
+      malformedOnly: { preserve: true },
+    });
+    const writesBeforeMalformedGuard = privateStore.updateCalls.length;
+    assert.deepEqual(loadMerchantAccessState(), {
+      version: 1,
+      closed: true,
+      suspendedSessions: [],
+    });
+    assert.equal(isMerchantAccessClosed(), true);
+    await assert.rejects(
+      saveMerchantAccessState({ closed: false }),
+      (error) => error?.code === "MERCHANT_ACCESS_INVALID_VERSION",
+    );
+    assert.equal(privateStore.updateCalls.length, writesBeforeMalformedGuard);
+    assert.deepEqual(flags.merchantAccess.malformedOnly, { preserve: true });
+  }
+  resetPrivateStateForTests();
 } finally {
   clearAllSessions();
   if (saved.game === undefined) delete globalThis.game;
@@ -198,6 +375,8 @@ try {
   else globalThis.JournalEntry = saved.JournalEntry;
   if (saved.CONST === undefined) delete globalThis.CONST;
   else globalThis.CONST = saved.CONST;
+  if (saved.Hooks === undefined) delete globalThis.Hooks;
+  else globalThis.Hooks = saved.Hooks;
 }
 
 process.stdout.write("merchant-global-access validation passed\n");

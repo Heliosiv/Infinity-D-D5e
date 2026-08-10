@@ -7,6 +7,7 @@
  */
 
 import { getPrivateState, setPrivateState } from "../private-state.js";
+import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_ACCESS_STATE_KEY = "merchantAccess";
@@ -44,12 +45,55 @@ export function normalizeMerchantAccessState(value) {
   };
 }
 
-/** Load the private canonical state, with a settings fallback for Node tests. */
+function isFoundryEnvironment() {
+  return Boolean(globalThis.game && globalThis.JournalEntry?.create);
+}
+
+function lockedMerchantAccessState() {
+  return {
+    version: MERCHANT_ACCESS_STATE_VERSION,
+    closed: true,
+    suspendedSessions: [],
+  };
+}
+
+function assertSupportedMerchantAccessState(value) {
+  if (!isFoundryEnvironment()) return;
+  assertSupportedPersistedVersion(value?.version, {
+    domain: "merchant-access",
+    supportedVersion: MERCHANT_ACCESS_STATE_VERSION,
+    codePrefix: "MERCHANT_ACCESS",
+  });
+}
+
+function assertLiveMerchantAccessWritable() {
+  if (!isFoundryEnvironment()) return true;
+  const persisted = getPrivateState(MERCHANT_ACCESS_STATE_KEY);
+  if (persisted === undefined) return false;
+  assertSupportedMerchantAccessState(persisted);
+  return true;
+}
+
+/**
+ * Load the private canonical state.
+ *
+ * A live Foundry client without a hydrated private store must behave as locked;
+ * only Node harnesses without JournalEntry use the settings fallback.
+ */
 export function loadMerchantAccessState() {
   const privateValue = getPrivateState(MERCHANT_ACCESS_STATE_KEY);
   if (privateValue !== undefined) {
+    try {
+      assertSupportedMerchantAccessState(privateValue);
+    } catch (error) {
+      if (error?.persistedVersionStatus?.state === "blocked") {
+        return lockedMerchantAccessState();
+      }
+      throw error;
+    }
     return normalizeMerchantAccessState(privateValue);
   }
+  if (isFoundryEnvironment()) return lockedMerchantAccessState();
   try {
     return normalizeMerchantAccessState(
       globalThis.game?.settings?.get?.(MODULE_ID, MERCHANT_ACCESS_STATE_KEY),
@@ -69,8 +113,14 @@ let accessWriteChain = Promise.resolve();
 export function saveMerchantAccessState(value) {
   const normalized = normalizeMerchantAccessState(value);
   const result = accessWriteChain.then(
-    () => setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized),
-    () => setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized),
+    () =>
+      setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized, {
+        beforeWrite: assertLiveMerchantAccessWritable,
+      }),
+    () =>
+      setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized, {
+        beforeWrite: assertLiveMerchantAccessWritable,
+      }),
   );
   accessWriteChain = result.catch(() => {});
   return result.then(normalizeMerchantAccessState);

@@ -114,6 +114,19 @@ export function registerResourceCalendarWatcher() {
   void onTimeMaybeChanged("ready-sync");
 }
 
+/**
+ * Re-run the idempotent day reconciliation after this client gains resource
+ * authority. Player clients install the socket/time listeners at startup, so a
+ * later promotion must not depend on registering those listeners a second time.
+ */
+export function reconcileResourceCalendarWatcher(
+  reason = "authority-recovery",
+) {
+  if (!registered || !isAuthoritativeGM()) return false;
+  void onTimeMaybeChanged(String(reason ?? "authority-recovery"));
+  return true;
+}
+
 /** Compute the current absolute day from SC (preferred) or core time. */
 function currentAbsoluteDay() {
   const SC = globalThis.SimpleCalendar;

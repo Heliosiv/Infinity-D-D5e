@@ -1,6 +1,6 @@
 # Merchant Sessions and Global Access
 
-## v0.3.1 interface quick start
+## v0.3.2 interface quick start
 
 Open **Home → Prepare → Merchant Workspace**. Select a merchant in the master list, then work through Basics, Pricing & Bargaining, Stock, Access, and Sessions. The save state and any live-session consequence remain visible. **Add from compendium** searches the full allowlisted library and revalidates the selected item before the existing merchant write runs. Players see their active character, wallet, transaction total, and progress in Shops and Merchant Session.
 
@@ -22,6 +22,10 @@ Choose **Close All** and confirm the prompt. Infinity D&D5e then:
 The lock and the saved session list live in the restricted world state, so a GM
 reload does not accidentally reopen the shops. Choosing **Close All** again is
 safe and does not replace the saved list with an empty snapshot.
+
+If a disconnected or stale player window remains after the global lock is
+already active, **Close Stale** dismisses those remaining windows and refreshes
+the players' Shops view without changing the saved lock or reopening access.
 
 ## Reopen globally
 

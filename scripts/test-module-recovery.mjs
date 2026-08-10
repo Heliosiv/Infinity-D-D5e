@@ -128,4 +128,376 @@ function deferred() {
   assert.equal(timers[0].delay, 5000);
 }
 
+{
+  let status = {
+    state: "pending",
+    code: "store-unavailable",
+    retryable: true,
+  };
+  let initializeResult = false;
+  let initializeCalls = 0;
+  let privateStateCallback = null;
+  let nextTimer = 0;
+  const timers = new Map();
+  const services = [];
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => status,
+    initializePrivateState: async () => {
+      initializeCalls += 1;
+      return initializeResult;
+    },
+    isFullGM: () => true,
+    isAuthoritativeGM: () => false,
+    isResourceAutomationReady: () => false,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    observeResourceAuthorityTransition: () => ({
+      newlyAuthoritative: false,
+    }),
+    onPrivateStateChanged: (callback) => {
+      privateStateCallback = callback;
+    },
+    getHooks: () => ({ on: () => null }),
+    setTimeout: (callback, delay) => {
+      const id = ++nextTimer;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+  });
+
+  controller.registerHooks();
+  controller.markReadyComplete();
+  assert.equal(controller.schedule(), true);
+  assert.equal(timers.size, 1);
+
+  status = {
+    state: "blocked",
+    code: "future-schema",
+    retryable: false,
+  };
+  privateStateCallback({ reason: "schema-blocked", status });
+  assert.equal(timers.size, 0, "a schema block clears the pending timer");
+  assert.equal(await controller.recover(), false);
+  assert.equal(
+    initializeCalls,
+    0,
+    "blocked recovery does not touch private state",
+  );
+
+  status = {
+    state: "pending",
+    code: "store-unavailable",
+    retryable: true,
+  };
+  initializeResult = true;
+  privateStateCallback({ reason: "schema-retry", status });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(initializeCalls, 1);
+  assert.deepEqual(services, [
+    "merchant",
+    "overview",
+    "reputation",
+    "injury",
+    "downtime",
+  ]);
+}
+
+// A store-ready hook can land after the ready hook's initial false result but
+// before ready gating opens. markReadyComplete reconciles the current status so
+// that event is not lost.
+{
+  let status = {
+    state: "pending",
+    code: "store-unavailable",
+    retryable: true,
+  };
+  let privateStateCallback = null;
+  let initializeCalls = 0;
+  const services = [];
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => status,
+    initializePrivateState: async () => {
+      initializeCalls += 1;
+      return true;
+    },
+    isFullGM: () => true,
+    isAuthoritativeGM: () => false,
+    isResourceAutomationReady: () => false,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    observeResourceAuthorityTransition: () => ({ newlyAuthoritative: false }),
+    onPrivateStateChanged: (callback) => {
+      privateStateCallback = callback;
+    },
+    getHooks: () => ({ on: () => null }),
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+  controller.registerHooks();
+  status = { state: "ready", code: "ready", retryable: false };
+  privateStateCallback({ reason: "store-ready", status });
+  assert.equal(
+    initializeCalls,
+    0,
+    "the pre-gate hook is intentionally deferred",
+  );
+
+  controller.markReadyComplete({ privateStateAvailable: false });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(initializeCalls, 1);
+  assert.deepEqual(services, [
+    "merchant",
+    "overview",
+    "reputation",
+    "injury",
+    "downtime",
+  ]);
+}
+
+// A full GM that starts as a secondary authority must not spend the calendar
+// watcher's one-time ready sync while it cannot act. The authority handoff
+// recovery registers the watcher once, after migration makes automation ready.
+{
+  let authoritative = false;
+  let resourceReady = false;
+  let newlyAuthoritative = false;
+  const services = [];
+  const hooks = new Map();
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => ({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+    }),
+    initializePrivateState: async () => true,
+    isFullGM: () => true,
+    isAuthoritativeGM: () => authoritative,
+    migrateResourceConfig: async () => {
+      resourceReady = true;
+    },
+    isResourceAutomationReady: () => resourceReady,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    observeResourceAuthorityTransition: () => {
+      const transition = { newlyAuthoritative };
+      newlyAuthoritative = false;
+      return transition;
+    },
+    onPrivateStateChanged: () => null,
+    getHooks: () => ({
+      on: (name, callback) => hooks.set(name, callback),
+    }),
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+
+  controller.registerHooks();
+  controller.registerPrivateDependentServices();
+  controller.markReadyComplete({ privateStateAvailable: true });
+  assert.deepEqual(services, [
+    "merchant",
+    "overview",
+    "reputation",
+    "injury",
+    "downtime",
+  ]);
+
+  authoritative = true;
+  newlyAuthoritative = true;
+  hooks.get("updateUser")();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(services, [
+    "merchant",
+    "overview",
+    "reputation",
+    "injury",
+    "downtime",
+    "calendar",
+  ]);
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "authority recovery spends the calendar ready-sync exactly once",
+  );
+}
+
+// A player installs the calendar listener for forage/socket participation. If
+// that same client is later promoted into the authoritative GM, recovery must
+// explicitly reconcile the missed day because the listener is already
+// registered and its original ready-sync ran without authority.
+{
+  let fullGM = false;
+  let authoritative = false;
+  let resourceReady = false;
+  let newlyAuthoritative = false;
+  const services = [];
+  const reconciliations = [];
+  const hooks = new Map();
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => ({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+    }),
+    initializePrivateState: async () => true,
+    isFullGM: () => fullGM,
+    isAuthoritativeGM: () => authoritative,
+    migrateResourceConfig: async () => {
+      resourceReady = true;
+    },
+    isResourceAutomationReady: () => resourceReady,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    reconcileResourceCalendarWatcher: () =>
+      reconciliations.push("authority-recovery"),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    observeResourceAuthorityTransition: () => {
+      const transition = { newlyAuthoritative };
+      newlyAuthoritative = false;
+      return transition;
+    },
+    onPrivateStateChanged: () => null,
+    getHooks: () => ({
+      on: (name, callback) => hooks.set(name, callback),
+    }),
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+
+  controller.registerHooks();
+  controller.registerPrivateDependentServices();
+  controller.markReadyComplete({ privateStateAvailable: true });
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "the player installs the calendar listener once",
+  );
+
+  fullGM = true;
+  authoritative = true;
+  newlyAuthoritative = true;
+  hooks.get("updateUser")();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "promotion does not duplicate calendar listeners",
+  );
+  assert.deepEqual(
+    reconciliations,
+    ["authority-recovery"],
+    "promotion explicitly reconciles the missed calendar day",
+  );
+}
+
+// Quartermaster migration failure delays only the one-time calendar watcher.
+// Core private services stay available, and successful recovery starts the
+// watcher exactly once so its ready catch-up can run.
+{
+  let resourceReady = false;
+  let migrationFails = true;
+  const services = [];
+  const timers = new Map();
+  let nextTimer = 0;
+  const service = (name) => () => services.push(name);
+  const controller = createPrivateStateRecovery({
+    moduleId: "infinity-dnd5e",
+    privateStateRetryMs: 5000,
+    logger: { error: () => {} },
+    safeInitializeSubsystem: (_label, callback) => callback(),
+    getPrivateStateStatus: () => ({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+    }),
+    initializePrivateState: async () => true,
+    isFullGM: () => true,
+    isAuthoritativeGM: () => true,
+    migrateResourceConfig: async () => {
+      if (migrationFails) throw new Error("injected migration failure");
+    },
+    isResourceAutomationReady: () => resourceReady,
+    registerMerchantSocket: service("merchant"),
+    registerResourceOverviewService: service("overview"),
+    registerResourceCalendarWatcher: service("calendar"),
+    registerReputationSocket: service("reputation"),
+    registerCriticalInjuryService: service("injury"),
+    registerDowntimeService: service("downtime"),
+    setTimeout: (callback, delay) => {
+      const id = ++nextTimer;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+  });
+
+  assert.equal(await controller.recover(), false);
+  assert.deepEqual(services, [
+    "merchant",
+    "overview",
+    "reputation",
+    "injury",
+    "downtime",
+  ]);
+  assert.equal(timers.size, 1);
+  assert.equal(services.includes("calendar"), false);
+
+  migrationFails = false;
+  resourceReady = true;
+  assert.equal(await controller.recover(), true);
+  assert.equal(
+    services.filter((name) => name === "calendar").length,
+    1,
+    "resource recovery starts the one-time catch-up watcher once",
+  );
+  assert.equal(services.filter((name) => name === "merchant").length, 1);
+  assert.equal(timers.size, 0);
+}
+
 process.stdout.write("module recovery validation passed\n");

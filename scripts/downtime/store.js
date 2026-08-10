@@ -13,7 +13,11 @@ import {
 } from "../private-state.js";
 import { isFullGM } from "../permissions.js";
 import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
-import { persistedValuesEqual } from "../utils/persisted-data.js";
+import {
+  assertSupportedPersistedVersion,
+  persistedValuesEqual,
+  persistedVersionEquals,
+} from "../utils/persisted-data.js";
 import {
   DOWNTIME_CONFIG_VERSION,
   normalizeDowntimeConfig,
@@ -137,16 +141,162 @@ function isLiveFoundrySession() {
   return Boolean(isFoundryEnvironment() && globalThis.game?.ready);
 }
 
+function assertExplicitPersistedVersion(
+  raw,
+  { domain, supportedVersion, codePrefix },
+) {
+  if (!isPlainObject(raw) || !Object.hasOwn(raw, "version")) return;
+  assertSupportedPersistedVersion(
+    raw.version === undefined ? Number.NaN : raw.version,
+    { domain, supportedVersion, codePrefix },
+  );
+}
+
+function assertExplicitPersistedSchema(
+  raw,
+  { domain, supportedVersion, codePrefix },
+) {
+  if (!isPlainObject(raw) || !Object.hasOwn(raw, "schema")) return;
+  assertSupportedPersistedVersion(
+    raw.schema === undefined ? Number.NaN : raw.schema,
+    { domain, supportedVersion, codePrefix },
+  );
+}
+
+function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
+  assertExplicitPersistedVersion(raw, {
+    domain,
+    supportedVersion: DOWNTIME_CONFIG_VERSION,
+    codePrefix,
+  });
+}
+
+function assertSupportedConfigCheckpointVersion(raw, domain, codePrefix) {
+  assertExplicitPersistedVersion(raw, {
+    domain,
+    supportedVersion: CONFIG_CHECKPOINT_VERSION,
+    codePrefix,
+  });
+  if (isPlainObject(raw) && Object.hasOwn(raw, "value")) {
+    assertSupportedDowntimeConfigVersion(
+      raw.value,
+      `${domain}-value`,
+      `${codePrefix}_VALUE`,
+    );
+  }
+}
+
+function assertSupportedDowntimeBlockSchemas(raw, domain, codePrefix) {
+  if (!isPlainObject(raw)) return;
+  assertExplicitPersistedSchema(raw, {
+    domain,
+    supportedVersion: BLOCK_SCHEMA,
+    codePrefix: `${codePrefix}_SCHEMA`,
+  });
+  if (isPlainObject(raw.planningDraft)) {
+    assertExplicitPersistedVersion(raw.planningDraft, {
+      domain: `${domain}-planning-draft`,
+      supportedVersion: PLANNING_DRAFT_VERSION,
+      codePrefix: `${codePrefix}_PLANNING_DRAFT`,
+    });
+  }
+}
+
+function assertSupportedWorkflowEnvelopeVersion(raw, domain, codePrefix) {
+  assertExplicitPersistedVersion(raw, {
+    domain,
+    supportedVersion: STORE_VERSION,
+    codePrefix,
+  });
+  if (isPlainObject(raw) && isPlainObject(raw.configCheckpoint)) {
+    assertSupportedConfigCheckpointVersion(
+      raw.configCheckpoint,
+      `${domain}-config-checkpoint`,
+      `${codePrefix}_CONFIG_CHECKPOINT`,
+    );
+  }
+  if (isPlainObject(raw?.activeBlock)) {
+    assertSupportedDowntimeBlockSchemas(
+      raw.activeBlock,
+      `${domain}-active-block`,
+      `${codePrefix}_ACTIVE_BLOCK`,
+    );
+  }
+  for (const historyBlock of Array.isArray(raw?.history) ? raw.history : []) {
+    assertSupportedDowntimeBlockSchemas(
+      historyBlock,
+      `${domain}-history-block`,
+      `${codePrefix}_HISTORY_BLOCK`,
+    );
+  }
+}
+
+function assertSupportedRawSlotVersion(key, raw) {
+  if (key === CONFIG_KEY) {
+    assertSupportedDowntimeConfigVersion(
+      raw,
+      "downtime-config",
+      "DOWNTIME_CONFIG",
+    );
+    return;
+  }
+  if (key === STORE_KEY) {
+    assertSupportedWorkflowEnvelopeVersion(
+      raw,
+      "downtime-workflow-primary",
+      "DOWNTIME_WORKFLOW_PRIMARY",
+    );
+    return;
+  }
+  const isComposite = Boolean(
+    isPlainObject(raw) &&
+    (Object.hasOwn(raw, "workflow") || Object.hasOwn(raw, "config")),
+  );
+  if (!isComposite) {
+    assertSupportedWorkflowEnvelopeVersion(
+      raw,
+      "downtime-workflow-checkpoint",
+      "DOWNTIME_WORKFLOW_CHECKPOINT",
+    );
+    return;
+  }
+  assertExplicitPersistedVersion(raw, {
+    domain: "downtime-workflow-checkpoint",
+    supportedVersion: CHECKPOINT_VERSION,
+    codePrefix: "DOWNTIME_WORKFLOW_CHECKPOINT",
+  });
+  if (Object.hasOwn(raw, "workflow")) {
+    assertSupportedWorkflowEnvelopeVersion(
+      raw.workflow,
+      "downtime-workflow-checkpoint-workflow",
+      "DOWNTIME_WORKFLOW_CHECKPOINT_WORKFLOW",
+    );
+  }
+  if (Object.hasOwn(raw, "config")) {
+    assertSupportedConfigCheckpointVersion(
+      raw.config,
+      "downtime-workflow-checkpoint-config",
+      "DOWNTIME_WORKFLOW_CHECKPOINT_CONFIG",
+    );
+  }
+}
+
 function readRawSlot(key) {
   const privateValue = getPrivateState(key);
-  if (privateValue !== undefined) return privateValue;
-  if (isLiveFoundrySession())
+  if (privateValue !== undefined) {
+    assertSupportedRawSlotVersion(key, privateValue);
+    return privateValue;
+  }
+  if (isFoundryEnvironment())
     throw new Error("DowntimeWorkflowStoreUnavailable");
+  let raw;
   try {
-    return globalThis.game?.settings?.get?.(MODULE_ID, key) ?? {};
+    raw = globalThis.game?.settings?.get?.(MODULE_ID, key) ?? {};
   } catch {
     return {};
   }
+  assertSupportedRawSlotVersion(key, raw);
+  return raw;
 }
 
 function readRawPrimary() {
@@ -159,6 +309,20 @@ function readRawCheckpoint() {
 
 function readRawConfig() {
   return readRawSlot(CONFIG_KEY);
+}
+
+function readRawReplicas() {
+  return {
+    primary: readRawPrimary(),
+    checkpoint: readRawCheckpoint(),
+    config: readRawConfig(),
+  };
+}
+
+function replicaValueForKey(replicas, key) {
+  if (key === STORE_KEY) return replicas.primary;
+  if (key === CHECKPOINT_KEY) return replicas.checkpoint;
+  return replicas.config;
 }
 
 function isEmptyObject(value) {
@@ -184,11 +348,12 @@ function normalizeStoredDowntimeConfig(raw) {
 function parsePersistedDowntimeConfig(raw) {
   if (!isPlainObject(raw)) return null;
   const current = normalizeStoredDowntimeConfig(raw);
-  const version = Number(raw.version);
   let persistedShape;
-  if (version === DOWNTIME_CONFIG_VERSION) {
+  if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
-  } else if (version === LEGACY_DOWNTIME_CONFIG_VERSION) {
+  } else if (
+    persistedVersionEquals(raw.version, LEGACY_DOWNTIME_CONFIG_VERSION)
+  ) {
     const rawSettlements = Array.isArray(raw.settlements)
       ? raw.settlements
       : [];
@@ -518,7 +683,10 @@ export function normalizeDowntimeWorkflowStore(raw) {
 }
 
 function isPersistedEnvelope(raw) {
-  if (!isPlainObject(raw) || Number(raw.version) !== STORE_VERSION)
+  if (
+    !isPlainObject(raw) ||
+    !persistedVersionEquals(raw.version, STORE_VERSION)
+  )
     return false;
   if (!Number.isSafeInteger(Number(raw.revision)) || Number(raw.revision) < 0) {
     return false;
@@ -667,7 +835,7 @@ function parseRecoveryCheckpoint(raw) {
   }
   if (
     !isPlainObject(raw) ||
-    Number(raw.version) !== CHECKPOINT_VERSION ||
+    !persistedVersionEquals(raw.version, CHECKPOINT_VERSION) ||
     !isPersistedEnvelope(raw.workflow) ||
     !isSupportedConfigCheckpointRecord(raw.config)
   ) {
@@ -927,13 +1095,22 @@ function enqueueWrite(operation) {
 }
 
 async function repairReplica(key, envelope, expected, fence) {
+  readRawReplicas();
   await setPrivateState(key, envelope, {
-    beforeWrite: () =>
-      isAuthorityFenceCurrent(fence) &&
-      persistedValuesEqual(readRawSlot(key), expected),
-    afterWrite: () =>
-      isAuthorityFenceCurrent(fence) &&
-      persistedValuesEqual(readRawSlot(key), envelope),
+    beforeWrite: () => {
+      const current = readRawReplicas();
+      return (
+        isAuthorityFenceCurrent(fence) &&
+        persistedValuesEqual(replicaValueForKey(current, key), expected)
+      );
+    },
+    afterWrite: () => {
+      const current = readRawReplicas();
+      return (
+        isAuthorityFenceCurrent(fence) &&
+        persistedValuesEqual(replicaValueForKey(current, key), envelope)
+      );
+    },
   });
 }
 
@@ -948,10 +1125,11 @@ async function commitEnvelope(
   },
 ) {
   assertAuthorityFence(fence);
+  const replicas = readRawReplicas();
   if (
-    !persistedValuesEqual(readRawPrimary(), expectedPrimary) ||
-    !persistedValuesEqual(readRawCheckpoint(), expectedCheckpoint) ||
-    !persistedValuesEqual(readRawConfig(), expectedConfig)
+    !persistedValuesEqual(replicas.primary, expectedPrimary) ||
+    !persistedValuesEqual(replicas.checkpoint, expectedCheckpoint) ||
+    !persistedValuesEqual(replicas.config, expectedConfig)
   ) {
     throw new Error("DowntimeWorkflowStaleWrite");
   }
@@ -981,10 +1159,11 @@ async function commitEnvelope(
   assertAuthorityFence(fence);
   await repairReplica(STORE_KEY, next, expectedPrimary, fence);
   assertAuthorityFence(fence);
+  const stored = readRawReplicas();
   if (
-    !persistedValuesEqual(readRawPrimary(), next) ||
-    !persistedValuesEqual(readRawCheckpoint(), nextCheckpoint) ||
-    !persistedValuesEqual(readRawConfig(), configCheckpoint.value) ||
+    !persistedValuesEqual(stored.primary, next) ||
+    !persistedValuesEqual(stored.checkpoint, nextCheckpoint) ||
+    !persistedValuesEqual(stored.config, configCheckpoint.value) ||
     !acceptEnvelope(next, fence)
   ) {
     throw new Error("DowntimeWorkflowWriteVerificationFailed");
@@ -1048,9 +1227,10 @@ function markInterruptedOperationsForReview(store, fence) {
 
 async function ensureEnvelopeForFence(fence) {
   assertAuthorityFence(fence);
-  let primary = readRawPrimary();
-  let checkpoint = readRawCheckpoint();
-  let primaryConfig = readRawConfig();
+  const replicas = readRawReplicas();
+  let primary = replicas.primary;
+  let checkpoint = replicas.checkpoint;
+  let primaryConfig = replicas.config;
   let checkpointParts = parseRecoveryCheckpoint(checkpoint);
   const base = selectRecoveryBase(primary, checkpoint, fence);
   const embeddedConfigCheckpoint = parsePersistedConfigCheckpointRecord(
@@ -1079,7 +1259,7 @@ async function ensureEnvelopeForFence(fence) {
       primaryConfig,
       fence,
     );
-    primaryConfig = readRawConfig();
+    primaryConfig = readRawReplicas().config;
   }
 
   const belongsToFence = Boolean(
@@ -1110,18 +1290,19 @@ async function ensureEnvelopeForFence(fence) {
   const desiredCheckpoint = serializeRecoveryCheckpoint(base, configCheckpoint);
   if (!persistedValuesEqual(checkpoint, desiredCheckpoint)) {
     await repairReplica(CHECKPOINT_KEY, desiredCheckpoint, checkpoint, fence);
-    checkpoint = readRawCheckpoint();
+    checkpoint = readRawReplicas().checkpoint;
     checkpointParts = parseRecoveryCheckpoint(checkpoint);
   }
   if (!persistedValuesEqual(primary, base)) {
     await repairReplica(STORE_KEY, base, primary, fence);
-    primary = readRawPrimary();
+    primary = readRawReplicas().primary;
   }
+  const repaired = readRawReplicas();
   if (
     !persistedValuesEqual(primary, base) ||
     !persistedValuesEqual(checkpointParts.workflow, base) ||
     !persistedValuesEqual(checkpointParts.config, configCheckpoint) ||
-    !persistedValuesEqual(readRawConfig(), configCheckpoint.value) ||
+    !persistedValuesEqual(repaired.config, configCheckpoint.value) ||
     !acceptEnvelope(base, fence)
   ) {
     throw new Error("DowntimeWorkflowRepairVerificationFailed");
@@ -1135,9 +1316,10 @@ export function ensureDowntimeWorkflowAuthority() {
 
 export function loadDowntimeWorkflowStore() {
   const fence = captureAuthorityFence();
+  const replicas = readRawReplicas();
   return clone(
     normalizeDowntimeWorkflowStore(
-      selectRecoveryBase(readRawPrimary(), readRawCheckpoint(), fence),
+      selectRecoveryBase(replicas.primary, replicas.checkpoint, fence),
     ),
   );
 }
@@ -1173,9 +1355,10 @@ async function mutateWorkflow(mutator) {
   return enqueueWrite(async (fence) => {
     const ensured = await ensureEnvelopeForFence(fence);
     assertAuthorityFence(fence);
-    const expectedPrimary = readRawPrimary();
-    const expectedCheckpoint = readRawCheckpoint();
-    const expectedConfig = readRawConfig();
+    const replicas = readRawReplicas();
+    const expectedPrimary = replicas.primary;
+    const expectedCheckpoint = replicas.checkpoint;
+    const expectedConfig = replicas.config;
     const checkpointParts = parseRecoveryCheckpoint(expectedCheckpoint);
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
@@ -1875,8 +2058,9 @@ export async function cancelDowntimeBlock(
 }
 
 export function loadDowntimeConfig() {
-  const primary = readRawPrimary();
-  const rawCheckpoint = readRawCheckpoint();
+  const replicas = readRawReplicas();
+  const primary = replicas.primary;
+  const rawCheckpoint = replicas.checkpoint;
   const checkpoint = parseRecoveryCheckpoint(rawCheckpoint);
   const base = selectRecoveryBase(
     primary,
@@ -1890,7 +2074,7 @@ export function loadDowntimeConfig() {
   const accepted = embedded ?? mirrored;
   return clone(
     accepted?.current.value ??
-      normalizeStandaloneDowntimeConfig(readRawConfig()),
+      normalizeStandaloneDowntimeConfig(replicas.config),
   );
 }
 
@@ -1899,9 +2083,10 @@ export async function saveDowntimeConfig(config) {
   return enqueueWrite(async (fence) => {
     const ensured = await ensureEnvelopeForFence(fence);
     assertAuthorityFence(fence);
-    const expectedPrimary = readRawPrimary();
-    const expectedCheckpoint = readRawCheckpoint();
-    const expectedConfig = readRawConfig();
+    const replicas = readRawReplicas();
+    const expectedPrimary = replicas.primary;
+    const expectedCheckpoint = replicas.checkpoint;
+    const expectedConfig = replicas.config;
     const checkpointParts = parseRecoveryCheckpoint(expectedCheckpoint);
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
@@ -1920,17 +2105,26 @@ export async function saveDowntimeConfig(config) {
       fence,
       checkpointParts.config,
     );
+    readRawReplicas();
     await setPrivateState(CONFIG_KEY, normalized, {
-      beforeWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        persistedValuesEqual(readRawPrimary(), expectedPrimary) &&
-        persistedValuesEqual(readRawCheckpoint(), expectedCheckpoint) &&
-        persistedValuesEqual(readRawConfig(), expectedConfig),
-      afterWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        persistedValuesEqual(readRawPrimary(), expectedPrimary) &&
-        persistedValuesEqual(readRawCheckpoint(), expectedCheckpoint) &&
-        persistedValuesEqual(readRawConfig(), normalized),
+      beforeWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          persistedValuesEqual(current.primary, expectedPrimary) &&
+          persistedValuesEqual(current.checkpoint, expectedCheckpoint) &&
+          persistedValuesEqual(current.config, expectedConfig)
+        );
+      },
+      afterWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          persistedValuesEqual(current.primary, expectedPrimary) &&
+          persistedValuesEqual(current.checkpoint, expectedCheckpoint) &&
+          persistedValuesEqual(current.config, normalized)
+        );
+      },
     });
     await commitEnvelope(ensured, {
       fence,
@@ -1960,9 +2154,10 @@ export async function updateDowntimeConfig(mutation) {
   return enqueueWrite(async (fence) => {
     const ensured = await ensureEnvelopeForFence(fence);
     assertAuthorityFence(fence);
-    const expectedPrimary = readRawPrimary();
-    const expectedCheckpoint = readRawCheckpoint();
-    const expectedConfig = readRawConfig();
+    const replicas = readRawReplicas();
+    const expectedPrimary = replicas.primary;
+    const expectedCheckpoint = replicas.checkpoint;
+    const expectedConfig = replicas.config;
     const checkpointParts = parseRecoveryCheckpoint(expectedCheckpoint);
     if (
       !persistedValuesEqual(expectedPrimary, ensured) ||
@@ -1984,17 +2179,26 @@ export async function updateDowntimeConfig(mutation) {
       fence,
       checkpointParts.config,
     );
+    readRawReplicas();
     await setPrivateState(CONFIG_KEY, normalized, {
-      beforeWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        persistedValuesEqual(readRawPrimary(), expectedPrimary) &&
-        persistedValuesEqual(readRawCheckpoint(), expectedCheckpoint) &&
-        persistedValuesEqual(readRawConfig(), expectedConfig),
-      afterWrite: () =>
-        isAuthorityFenceCurrent(fence) &&
-        persistedValuesEqual(readRawPrimary(), expectedPrimary) &&
-        persistedValuesEqual(readRawCheckpoint(), expectedCheckpoint) &&
-        persistedValuesEqual(readRawConfig(), normalized),
+      beforeWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          persistedValuesEqual(current.primary, expectedPrimary) &&
+          persistedValuesEqual(current.checkpoint, expectedCheckpoint) &&
+          persistedValuesEqual(current.config, expectedConfig)
+        );
+      },
+      afterWrite: () => {
+        const current = readRawReplicas();
+        return (
+          isAuthorityFenceCurrent(fence) &&
+          persistedValuesEqual(current.primary, expectedPrimary) &&
+          persistedValuesEqual(current.checkpoint, expectedCheckpoint) &&
+          persistedValuesEqual(current.config, normalized)
+        );
+      },
     });
     await commitEnvelope(ensured, {
       fence,
@@ -2015,14 +2219,15 @@ export function isDowntimeWorkflowReady() {
   try {
     const fence = captureAuthorityFence();
     if (!isAuthorityFenceCurrent(fence)) return false;
-    const primary = readRawPrimary();
-    const checkpoint = parseRecoveryCheckpoint(readRawCheckpoint());
+    const replicas = readRawReplicas();
+    const primary = replicas.primary;
+    const checkpoint = parseRecoveryCheckpoint(replicas.checkpoint);
     return Boolean(
       isPersistedEnvelope(primary) &&
       persistedValuesEqual(primary, checkpoint.workflow) &&
       isCurrentConfigCheckpointRecord(checkpoint.config) &&
       persistedValuesEqual(primary.configCheckpoint, checkpoint.config) &&
-      persistedValuesEqual(readRawConfig(), checkpoint.config.value) &&
+      persistedValuesEqual(replicas.config, checkpoint.config.value) &&
       (!fence.live ||
         (primary.authorityId === fence.userId &&
           primary.authorityEpoch === fence.authorityEpoch &&

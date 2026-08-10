@@ -18,6 +18,7 @@ import {
   getSelfServiceMode,
   isSelfServiceReachable,
   isUserAllowed,
+  loadMerchants,
   promoteSelfServiceMode,
   mergeStockRows,
   sanitizeMerchantForList,
@@ -31,9 +32,15 @@ import {
   resolveStockQty,
   restockAll,
   roundGp,
+  saveMerchants,
   upsertInventoryRow,
   AMMO_STACK_SIZE,
 } from "./merchant/store.js";
+import {
+  initializePrivateState,
+  resetPrivateStateForTests,
+  setPrivateState,
+} from "./private-state.js";
 import { computePassiveBargainPct } from "./merchant/bargain.js";
 import {
   itemBuyCategories,
@@ -47,6 +54,11 @@ import {
   const blank = normalizeMerchant({});
   assert.ok(blank.id, "id assigned");
   assert.equal(blank.name, "Unnamed Merchant");
+  assert.equal(
+    normalizeMerchant({ version: 2 }).version,
+    1,
+    "the pure normalizer remains permissive; live persistence owns the guard",
+  );
   assert.equal(blank.defaultMarkup, 1.0);
   assert.equal(blank.sellRatio, 0.5);
   assert.equal(blank.bargainDC, 15);
@@ -892,6 +904,228 @@ import {
     "pool",
   ]) {
     assert.equal(safe[leaked], undefined, `${leaked} must not leak to players`);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Live private-state boundary
+ * ------------------------------------------------------------------ */
+{
+  const savedGame = globalThis.game;
+  const savedJournalEntry = globalThis.JournalEntry;
+  try {
+    resetPrivateStateForTests();
+    globalThis.JournalEntry = { create() {} };
+    globalThis.game = {
+      ready: false,
+      user: { id: "player-a", isGM: false, active: true },
+      users: {
+        activeGM: { id: "gm-a", isGM: true, active: true },
+      },
+      settings: {
+        get: () => [{ id: "legacy-secret-shop" }],
+      },
+    };
+    assert.throws(
+      () => loadMerchants(),
+      (error) => error?.code === "PRIVATE_STATE_UNAVAILABLE",
+      "a pre-ready Foundry client never reads the legacy merchant setting",
+    );
+    globalThis.game.ready = true;
+    assert.throws(
+      () => loadMerchants(),
+      (error) =>
+        error?.code === "PRIVATE_STATE_UNAVAILABLE" &&
+        error?.retryable === true,
+      "a live merchant read never falls back to legacy private settings",
+    );
+    await initializePrivateState();
+    assert.deepEqual(
+      loadMerchants(),
+      [],
+      "a player receives safe merchant defaults after initialization",
+    );
+  } finally {
+    resetPrivateStateForTests();
+    if (savedGame === undefined) delete globalThis.game;
+    else globalThis.game = savedGame;
+    if (savedJournalEntry === undefined) delete globalThis.JournalEntry;
+    else globalThis.JournalEntry = savedJournalEntry;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Live persisted merchant record version guard
+ * ------------------------------------------------------------------ */
+{
+  const savedGame = globalThis.game;
+  const savedJournalEntry = globalThis.JournalEntry;
+  const savedHooks = globalThis.Hooks;
+  const savedConst = globalThis.CONST;
+  try {
+    resetPrivateStateForTests();
+    let nextHookId = 0;
+    const listeners = new Map();
+    globalThis.Hooks = {
+      on(event, handler) {
+        const id = ++nextHookId;
+        if (!listeners.has(event)) listeners.set(event, new Map());
+        listeners.get(event).set(id, handler);
+        return id;
+      },
+      off(event, id) {
+        listeners.get(event)?.delete(id);
+      },
+      call(event, ...args) {
+        for (const handler of listeners.get(event)?.values() ?? []) {
+          handler(...args);
+        }
+      },
+    };
+    globalThis.CONST = {
+      DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0 },
+      USER_ROLES: { GAMEMASTER: 4 },
+    };
+    const flags = {
+      privateStateStore: true,
+      schemaVersion: 6,
+      merchants: [],
+      merchantAccess: {},
+      factions: [],
+      resourceConfig: {},
+      resourceRunState: {},
+      criticalInjuryWorkflow: {},
+      criticalInjuryWorkflowCheckpoint: {},
+      downtimeConfig: {},
+      downtimeWorkflow: {},
+      downtimeWorkflowCheckpoint: {},
+    };
+    const store = {
+      id: "merchant-version-store",
+      ownership: { default: 0 },
+      updateCalls: [],
+      getFlag(scope, key) {
+        return scope === "infinity-dnd5e" ? flags[key] : undefined;
+      },
+      async update(changes) {
+        this.updateCalls.push(structuredClone(changes));
+        for (const [path, value] of Object.entries(changes)) {
+          const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
+          if (match) flags[match[1]] = structuredClone(value);
+        }
+        globalThis.Hooks.call("updateJournalEntry", this, changes);
+        return this;
+      },
+    };
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    globalThis.game = {
+      ready: true,
+      user: gm,
+      users: {
+        activeGM: gm,
+        get: (id) => (id === gm.id ? gm : null),
+      },
+      journal: {
+        find: (predicate) => (predicate(store) ? store : null),
+      },
+      settings: {
+        get(_moduleId, key) {
+          if (key === "privateStateStoreId") return store.id;
+          if (key === "merchants" || key === "factions") return [];
+          return {};
+        },
+        async set() {
+          throw new Error(
+            "a current canonical store should not write settings",
+          );
+        },
+      },
+    };
+    globalThis.JournalEntry = {
+      async create() {
+        throw new Error("the current canonical store should be reused");
+      },
+    };
+
+    assert.equal(await initializePrivateState(), true);
+    await setPrivateState("merchants", [
+      { id: "future-merchant", version: 2, name: "Keep Intact" },
+    ]);
+    const writesBeforeGuard = store.updateCalls.length;
+    assert.throws(
+      () => loadMerchants(),
+      (error) => {
+        assert.equal(error?.code, "MERCHANT_RECORD_FUTURE_VERSION");
+        assert.equal(error?.retryable, false);
+        assert.equal(Object.isFrozen(error?.persistedVersionStatus), true);
+        assert.deepEqual(error?.persistedVersionStatus, {
+          state: "blocked",
+          code: "future-version",
+          retryable: false,
+          domain: "merchant-record",
+          supportedVersion: 1,
+          observedVersion: 2,
+        });
+        return true;
+      },
+    );
+    await assert.rejects(
+      saveMerchants([{ id: "must-not-replace-future" }]),
+      (error) => error?.code === "MERCHANT_RECORD_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, writesBeforeGuard);
+    assert.equal(flags.merchants[0].id, "future-merchant");
+    assert.equal(flags.merchants[0].version, 2);
+
+    for (const malformedVersion of [null, ""]) {
+      await setPrivateState("merchants", [
+        {
+          id: "malformed-merchant",
+          version: malformedVersion,
+          malformedOnly: { preserve: true },
+        },
+      ]);
+      const writesBeforeMalformedGuard = store.updateCalls.length;
+      assert.throws(
+        () => loadMerchants(),
+        (error) => error?.code === "MERCHANT_RECORD_INVALID_VERSION",
+      );
+      await assert.rejects(
+        saveMerchants([{ id: "must-not-replace-malformed" }]),
+        (error) => error?.code === "MERCHANT_RECORD_INVALID_VERSION",
+      );
+      assert.equal(store.updateCalls.length, writesBeforeMalformedGuard);
+      assert.deepEqual(flags.merchants[0].malformedOnly, { preserve: true });
+    }
+
+    // The first save can begin before the private cache is hydrated. Its
+    // post-initialization fence must still inspect and preserve future data.
+    flags.merchants = [
+      {
+        id: "pre-init-future-merchant",
+        version: 2,
+        futureOnly: { preserve: true },
+      },
+    ];
+    resetPrivateStateForTests();
+    const writesBeforePreInitGuard = store.updateCalls.length;
+    await assert.rejects(
+      saveMerchants([{ id: "must-not-win-pre-init-race" }]),
+      (error) => error?.code === "MERCHANT_RECORD_FUTURE_VERSION",
+    );
+    assert.equal(store.updateCalls.length, writesBeforePreInitGuard);
+    assert.equal(flags.merchants[0].id, "pre-init-future-merchant");
+    assert.deepEqual(flags.merchants[0].futureOnly, { preserve: true });
+  } finally {
+    resetPrivateStateForTests();
+    if (savedGame === undefined) delete globalThis.game;
+    else globalThis.game = savedGame;
+    if (savedJournalEntry === undefined) delete globalThis.JournalEntry;
+    else globalThis.JournalEntry = savedJournalEntry;
+    if (savedHooks === undefined) delete globalThis.Hooks;
+    else globalThis.Hooks = savedHooks;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
   }
 }
 

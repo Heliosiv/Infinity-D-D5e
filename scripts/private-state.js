@@ -17,7 +17,8 @@ import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
-const STORE_SCHEMA = 6;
+export const PRIVATE_STATE_SCHEMA_VERSION = 6;
+const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
 const PRIVATE_STATE_FIELDS = Object.freeze({
@@ -72,8 +73,59 @@ let lastKnownFullGM = null;
 let lastKnownAuthorityId = null;
 let lifecycleGeneration = 0;
 let lastVerifiedStoreSnapshot = null;
+let lastVerifiedStoreId = null;
 let replacementRequired = false;
+let blockedStoreId = null;
+let storeQuarantineStatus = null;
 const retiredStoreIds = new Set();
+let privateStateStatus = createPrivateStateStatus();
+
+function createPrivateStateStatus({
+  state = "pending",
+  code = "not-started",
+  retryable = true,
+  observedSchema = null,
+} = {}) {
+  return Object.freeze({
+    state,
+    code,
+    retryable: retryable === true,
+    supportedSchema: STORE_SCHEMA,
+    observedSchema: Number.isSafeInteger(observedSchema)
+      ? observedSchema
+      : null,
+  });
+}
+
+function setPrivateStateStatus(options) {
+  privateStateStatus = createPrivateStateStatus(options);
+  return privateStateStatus;
+}
+
+/** Read-only initialization/recovery status; contains no private values. */
+export function getPrivateStateStatus() {
+  return privateStateStatus;
+}
+
+/** Build a status-bearing error without exposing any restricted values. */
+export function createPrivateStateUnavailableError(context = "") {
+  const status = getPrivateStateStatus();
+  const suffix = String(context ?? "").trim();
+  const error = new Error(
+    `PrivateStateUnavailable:${status.code}${suffix ? `:${suffix}` : ""}`,
+  );
+  error.code =
+    status.code === "future-schema"
+      ? "PRIVATE_STATE_FUTURE_SCHEMA"
+      : status.code === "invalid-schema"
+        ? "PRIVATE_STATE_INVALID_SCHEMA"
+        : status.code === "corrupt"
+          ? "PRIVATE_STATE_CORRUPT"
+          : "PRIVATE_STATE_UNAVAILABLE";
+  error.retryable = status.retryable;
+  error.privateStateStatus = status;
+  return error;
+}
 
 function clone(value) {
   if (value == null) return value;
@@ -161,6 +213,7 @@ function callPrivateStateChanged(keys, reason) {
   const payload = Object.freeze({
     keys: Object.freeze(changedKeys),
     reason,
+    status: getPrivateStateStatus(),
   });
   if (typeof globalThis.Hooks?.callAll === "function") {
     globalThis.Hooks.callAll(PRIVATE_STATE_CHANGED_HOOK, payload);
@@ -176,6 +229,90 @@ function installSafeDefaults() {
 
 function isStoreDocument(document) {
   return document?.getFlag?.(MODULE_ID, STORE_MARKER) === true;
+}
+
+function classifyStoreSchema(document) {
+  const raw = document?.getFlag?.(MODULE_ID, "schemaVersion");
+  if (raw === undefined) {
+    return { state: "legacy", observedSchema: 0 };
+  }
+  const isCanonicalIntegerString =
+    typeof raw === "string" && /^(0|[1-9]\d*)$/.test(raw);
+  const observedSchema =
+    typeof raw === "number"
+      ? raw
+      : isCanonicalIntegerString
+        ? Number(raw)
+        : Number.NaN;
+  if (!Number.isSafeInteger(observedSchema) || observedSchema < 0) {
+    return { state: "invalid", observedSchema: null };
+  }
+  if (observedSchema > STORE_SCHEMA) {
+    return { state: "future", observedSchema };
+  }
+  if (observedSchema === STORE_SCHEMA) {
+    return { state: "current", observedSchema };
+  }
+  return { state: "legacy", observedSchema };
+}
+
+function schemaBlockStatus(classification) {
+  return {
+    state: "blocked",
+    code:
+      classification.state === "future" ? "future-schema" : "invalid-schema",
+    retryable: false,
+    observedSchema: classification.observedSchema,
+  };
+}
+
+function isSchemaBlocked(classification) {
+  return ["future", "invalid"].includes(classification?.state);
+}
+
+function corruptStoreStatus() {
+  return {
+    state: "blocked",
+    code: "corrupt",
+    retryable: false,
+    observedSchema: STORE_SCHEMA,
+  };
+}
+
+function blockPrivateStore(
+  document,
+  status,
+  { invalidate = false, reason = "schema-blocked" } = {},
+) {
+  storeQuarantineStatus = createPrivateStateStatus(status);
+  blockedStoreId = String(document?.id ?? "").trim() || null;
+  if (isCanonicalStoreDocument(document)) storeDocument = document;
+  if (invalidate) {
+    invalidatePrivilegedStore(reason, {
+      retainDocument: true,
+      retry: false,
+      status: storeQuarantineStatus,
+    });
+  } else {
+    lifecycleGeneration += 1;
+    cache.clear();
+    storeDocument = isCanonicalStoreDocument(document) ? document : null;
+    initialized = false;
+    setPrivateStateStatus(storeQuarantineStatus);
+    callPrivateStateChanged(PRIVATE_STATE_KEYS, reason);
+  }
+  return false;
+}
+
+function blockUnsupportedStoreSchema(
+  document,
+  classification,
+  { invalidate = false } = {},
+) {
+  return blockPrivateStore(document, schemaBlockStatus(classification), {
+    invalidate,
+    reason: "schema-blocked",
+  });
 }
 
 function canonicalStoreIdSetting() {
@@ -230,12 +367,6 @@ function findStoreDocument() {
       ) ?? null
     );
   }
-  if (
-    storeDocument?.id &&
-    documents.some((document) => document?.id === storeDocument.id)
-  ) {
-    return storeDocument;
-  }
   return null;
 }
 
@@ -276,12 +407,86 @@ function hasPrivateOwnership(document) {
 }
 
 function hasCompleteStorePayload(document) {
-  const schemaVersion = Number(document?.getFlag?.(MODULE_ID, "schemaVersion"));
   return Boolean(
     isStoreDocument(document) &&
-    Number.isSafeInteger(schemaVersion) &&
-    schemaVersion >= STORE_SCHEMA &&
+    classifyStoreSchema(document).state === "current" &&
     PRIVATE_STATE_KEYS.every((key) => readDocumentValue(document, key).present),
+  );
+}
+
+function hasCompleteVerifiedSnapshot() {
+  return Boolean(
+    lastVerifiedStoreSnapshot &&
+    PRIVATE_STATE_KEYS.every((key) =>
+      isValidValue(key, lastVerifiedStoreSnapshot[key]),
+    ),
+  );
+}
+
+function canRepairCurrentStoreFromSnapshot(document) {
+  return Boolean(
+    document?.id &&
+    isCanonicalStoreDocument(document) &&
+    String(document.id) === lastVerifiedStoreId &&
+    hasCompleteVerifiedSnapshot(),
+  );
+}
+
+function hasCurrentStoreCorruption(document) {
+  return Boolean(
+    classifyStoreSchema(document).state === "current" &&
+    !hasCompleteStorePayload(document),
+  );
+}
+
+function blockCorruptStore(document, { invalidate = false } = {}) {
+  return blockPrivateStore(document, corruptStoreStatus(), {
+    invalidate,
+    reason: "store-corrupt",
+  });
+}
+
+function ensureStoreCanBeWritten(
+  document,
+  { allowSnapshotRepair = false, invalidate = false } = {},
+) {
+  const classification = classifyStoreSchema(document);
+  if (isSchemaBlocked(classification)) {
+    return blockUnsupportedStoreSchema(document, classification, {
+      invalidate,
+    });
+  }
+  if (
+    hasCurrentStoreCorruption(document) &&
+    !(allowSnapshotRepair && canRepairCurrentStoreFromSnapshot(document))
+  ) {
+    return blockCorruptStore(document, { invalidate });
+  }
+  return true;
+}
+
+function clearStoreQuarantine() {
+  storeQuarantineStatus = null;
+  blockedStoreId = null;
+}
+
+function canExplicitlyResumeStore(document) {
+  const documentId = String(document?.id ?? "");
+  if (!documentId) {
+    return false;
+  }
+  const persistedId = canonicalStoreIdSetting();
+  const canResumeIdentity =
+    isCanonicalStoreDocument(document) ||
+    (!persistedId && documentId === blockedStoreId);
+  if (!canResumeIdentity) {
+    return false;
+  }
+  const classification = classifyStoreSchema(document);
+  if (isSchemaBlocked(classification)) return false;
+  if (!hasCurrentStoreCorruption(document)) return true;
+  return Boolean(
+    isAuthoritativeGM() && canRepairCurrentStoreFromSnapshot(document),
   );
 }
 
@@ -313,6 +518,7 @@ function hydrateCache(document) {
     cache.set(key, value);
   }
   lastVerifiedStoreSnapshot = snapshotStoreValues(document);
+  lastVerifiedStoreId = String(document?.id ?? "") || null;
   return changedKeys;
 }
 
@@ -327,7 +533,22 @@ function requestPrivateStateRetry() {
     .catch(() => {});
 }
 
-function invalidatePrivilegedStore(reason, { retainDocument = true } = {}) {
+function invalidatePrivilegedStore(
+  reason,
+  {
+    retainDocument = true,
+    retry = true,
+    status = {
+      state: "pending",
+      code: "store-unavailable",
+      retryable: true,
+    },
+  } = {},
+) {
+  if (storeQuarantineStatus && status.state !== "blocked") {
+    status = storeQuarantineStatus;
+    retry = false;
+  }
   const shouldRetry = !initializing;
   lifecycleGeneration += 1;
   cache.clear();
@@ -335,8 +556,12 @@ function invalidatePrivilegedStore(reason, { retainDocument = true } = {}) {
   initialized = false;
   initialization = null;
   initializing = false;
+  if (status.state !== "blocked" && !storeQuarantineStatus) {
+    blockedStoreId = null;
+  }
+  setPrivateStateStatus(status);
   callPrivateStateChanged(PRIVATE_STATE_KEYS, reason);
-  if (shouldRetry) requestPrivateStateRetry();
+  if (shouldRetry && retry) requestPrivateStateRetry();
 }
 
 function isCanonicalSettingUpdate(setting) {
@@ -385,8 +610,33 @@ function registerSyncHooks() {
         return;
       }
       if (storeDocument?.id && document?.id !== storeDocument.id) return;
+      const classification = classifyStoreSchema(document);
+      if (isSchemaBlocked(classification)) {
+        blockUnsupportedStoreSchema(document, classification, {
+          invalidate: !initializing,
+        });
+        resolveStoreWaiters(document);
+        return;
+      }
+      if (hasCurrentStoreCorruption(document)) {
+        blockCorruptStore(document, { invalidate: !initializing });
+        resolveStoreWaiters(document);
+        return;
+      }
+      if (storeQuarantineStatus) {
+        if (!canExplicitlyResumeStore(document)) return;
+        clearStoreQuarantine();
+      }
       const changedKeys = hydrateCache(document);
-      if (changedKeys && !initializing) initialized = true;
+      if (changedKeys && !initializing) {
+        initialized = true;
+        setPrivateStateStatus({
+          state: "ready",
+          code: "ready",
+          retryable: false,
+          observedSchema: STORE_SCHEMA,
+        });
+      }
       resolveStoreWaiters(document);
       if (changedKeys) callPrivateStateChanged(changedKeys, "journal-create");
     }),
@@ -398,8 +648,36 @@ function registerSyncHooks() {
       const tracksCurrentStore =
         document?.id &&
         (document.id === storeDocument?.id ||
+          String(document.id) === blockedStoreId ||
           String(document.id) === canonicalStoreIdSetting());
       if (!tracksCurrentStore) return;
+      const classification = classifyStoreSchema(document);
+      if (isSchemaBlocked(classification)) {
+        blockUnsupportedStoreSchema(document, classification, {
+          invalidate: !initializing,
+        });
+        return;
+      }
+      if (
+        hasCurrentStoreCorruption(document) &&
+        !(isAuthoritativeGM() && canRepairCurrentStoreFromSnapshot(document))
+      ) {
+        blockCorruptStore(document, { invalidate: !initializing });
+        return;
+      }
+      if (storeQuarantineStatus) {
+        if (!canExplicitlyResumeStore(document)) {
+          setPrivateStateStatus(storeQuarantineStatus);
+          return;
+        }
+        clearStoreQuarantine();
+      }
+      if (!initializing && privateStateStatus.state === "blocked") {
+        invalidatePrivilegedStore("schema-retry", {
+          retainDocument: true,
+        });
+        return;
+      }
       if (!isVerifiedCanonicalStore(document)) {
         if (initializing) return;
         invalidatePrivilegedStore("journal-invalid", {
@@ -408,7 +686,17 @@ function registerSyncHooks() {
         return;
       }
       const changedKeys = hydrateCache(document);
-      if (changedKeys) callPrivateStateChanged(changedKeys, "journal-update");
+      if (changedKeys) {
+        if (!initializing) {
+          setPrivateStateStatus({
+            state: "ready",
+            code: "ready",
+            retryable: false,
+            observedSchema: STORE_SCHEMA,
+          });
+        }
+        callPrivateStateChanged(changedKeys, "journal-update");
+      }
     }),
   ]);
   syncHookIds.push([
@@ -419,9 +707,24 @@ function registerSyncHooks() {
       const wasCanonical =
         deletedId &&
         (deletedId === String(storeDocument?.id ?? "") ||
+          deletedId === blockedStoreId ||
           deletedId === canonicalStoreIdSetting());
       if (!wasCanonical) return;
       retiredStoreIds.add(deletedId);
+      if (privateStateStatus.state === "blocked") {
+        lifecycleGeneration += 1;
+        cache.clear();
+        storeDocument = null;
+        blockedStoreId = null;
+        initialized = false;
+        initialization = null;
+        initializing = false;
+        if (storeQuarantineStatus) {
+          setPrivateStateStatus(storeQuarantineStatus);
+        }
+        callPrivateStateChanged(PRIVATE_STATE_KEYS, "schema-blocked");
+        return;
+      }
       for (const candidate of findStoreDocuments()) {
         retiredStoreIds.add(String(candidate?.id ?? ""));
       }
@@ -434,11 +737,50 @@ function registerSyncHooks() {
     globalThis.Hooks.on("updateSetting", (setting) => {
       if (!isFullGM() || !isCanonicalSettingUpdate(setting)) return;
       const canonical = findStoreDocument();
+      const classification = canonical ? classifyStoreSchema(canonical) : null;
+      if (canonical && isSchemaBlocked(classification)) {
+        blockUnsupportedStoreSchema(canonical, classification, {
+          invalidate: !initializing,
+        });
+        return;
+      }
+      if (
+        canonical &&
+        hasCurrentStoreCorruption(canonical) &&
+        !(isAuthoritativeGM() && canRepairCurrentStoreFromSnapshot(canonical))
+      ) {
+        blockCorruptStore(canonical, { invalidate: !initializing });
+        return;
+      }
+      if (storeQuarantineStatus) {
+        if (!canonical || !canExplicitlyResumeStore(canonical)) {
+          setPrivateStateStatus(storeQuarantineStatus);
+          resolveStoreWaiters(null);
+          return;
+        }
+        clearStoreQuarantine();
+      }
+      if (
+        canonical &&
+        !initializing &&
+        privateStateStatus.state === "blocked"
+      ) {
+        invalidatePrivilegedStore("schema-retry", {
+          retainDocument: true,
+        });
+        return;
+      }
       if (canonical && isVerifiedCanonicalStore(canonical)) {
         const changedKeys = hydrateCache(canonical);
         if (!initializing) {
           initialized = true;
           initialization = null;
+          setPrivateStateStatus({
+            state: "ready",
+            code: "ready",
+            retryable: false,
+            observedSchema: STORE_SCHEMA,
+          });
         }
         replacementRequired = false;
         resolveStoreWaiters(canonical);
@@ -458,14 +800,30 @@ function resetForRoleTransition({ safeDefaults }) {
   unregisterSyncHooks();
   cache.clear();
   storeDocument = null;
+  if (!storeQuarantineStatus) blockedStoreId = null;
   initialized = false;
   initialization = null;
   initializing = false;
   if (safeDefaults) {
     lastVerifiedStoreSnapshot = null;
+    lastVerifiedStoreId = null;
     replacementRequired = false;
+    storeQuarantineStatus = null;
     installSafeDefaults();
     initialized = true;
+    setPrivateStateStatus({
+      state: "ready",
+      code: "safe-defaults",
+      retryable: false,
+    });
+  } else {
+    setPrivateStateStatus(
+      storeQuarantineStatus ?? {
+        state: "pending",
+        code: "role-promotion",
+        retryable: true,
+      },
+    );
   }
 }
 
@@ -595,6 +953,8 @@ async function createStoreDocument(initial) {
 async function persistCanonicalStoreIdentity(document, isCurrent) {
   const documentId = String(document?.id ?? "").trim();
   if (!documentId || !isCurrent()) return false;
+  if (!ensureStoreCanBeWritten(document)) return false;
+  if (!isCurrent()) return false;
   await globalThis.game.settings.set(
     MODULE_ID,
     SETTING_KEYS.PRIVATE_STATE_STORE_ID,
@@ -609,6 +969,14 @@ async function persistCanonicalStoreIdentity(document, isCurrent) {
 
 async function ensurePrivateStoreOwnership(document, isCurrent) {
   if (hasPrivateOwnership(document)) return true;
+  if (!isCurrent()) return false;
+  if (
+    !ensureStoreCanBeWritten(document, {
+      allowSnapshotRepair: true,
+    })
+  ) {
+    return false;
+  }
   if (!isCurrent()) return false;
   await document.update({ ownership: { default: noneOwnershipLevel() } });
   if (!isCurrent()) return false;
@@ -629,8 +997,10 @@ function legacyNeedsClearing(key, legacy) {
   return !valuesEqual(legacy.raw, defaultValue(key));
 }
 
-async function verifyAndClearLegacy(key, legacy, isCurrent) {
+async function verifyAndClearLegacy(document, key, legacy, isCurrent) {
   if (!legacyNeedsClearing(key, legacy)) return;
+  if (!isCurrent()) return false;
+  if (!ensureStoreCanBeWritten(document)) return false;
   if (!isCurrent()) return false;
   await globalThis.game.settings.set(
     MODULE_ID,
@@ -654,6 +1024,12 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
   const updates = {};
 
   if (!isCurrent()) return false;
+  if (
+    !ensureStoreCanBeWritten(document, {
+      allowSnapshotRepair: true,
+    })
+  )
+    return false;
   if (!(await ensurePrivateStoreOwnership(document, isCurrent))) return false;
   for (const key of PRIVATE_STATE_KEYS) {
     const stored = readDocumentValue(document, key);
@@ -666,13 +1042,17 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
       updates[`flags.${MODULE_ID}.${key}`] = expected[key];
     }
   }
-  const schemaVersion = Math.floor(
-    Number(document?.getFlag?.(MODULE_ID, "schemaVersion")) || 0,
-  );
-  if (schemaVersion < STORE_SCHEMA) {
-    updates[`flags.${MODULE_ID}.schemaVersion`] = STORE_SCHEMA;
+  const schemaVersion = classifyStoreSchema(document).observedSchema ?? 0;
+  if (Object.keys(updates).length > 0) {
+    if (
+      !ensureStoreCanBeWritten(document, {
+        allowSnapshotRepair: true,
+      })
+    )
+      return false;
+    if (!isCurrent()) return false;
+    await document.update(updates);
   }
-  if (Object.keys(updates).length > 0) await document.update(updates);
   if (!isCurrent()) return false;
 
   for (const key of PRIVATE_STATE_KEYS) {
@@ -681,10 +1061,15 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
       throw new Error(`PrivateStateMigrationVerificationFailed:${key}`);
     }
   }
-  const verifiedSchema = Math.floor(
-    Number(document?.getFlag?.(MODULE_ID, "schemaVersion")) || 0,
-  );
-  if (verifiedSchema < STORE_SCHEMA) {
+  if (schemaVersion < STORE_SCHEMA) {
+    if (!ensureStoreCanBeWritten(document)) return false;
+    if (!isCurrent()) return false;
+    await document.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: STORE_SCHEMA,
+    });
+    if (!isCurrent()) return false;
+  }
+  if (classifyStoreSchema(document).state !== "current") {
     throw new Error("PrivateStateMigrationVerificationFailed:schemaVersion");
   }
   if (!hasPrivateOwnership(document)) {
@@ -697,6 +1082,7 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
   }
   for (const key of PRIVATE_STATE_KEYS) {
     const cleared = await verifyAndClearLegacy(
+      document,
       key,
       legacyState[key],
       isCurrent,
@@ -709,15 +1095,34 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
 /** Initialize and migrate the private store before any subsystem reads it. */
 export function initializePrivateState() {
   if (isFoundryEnvironment() && !globalThis.game?.ready) {
+    setPrivateStateStatus({
+      state: "pending",
+      code: "foundry-not-ready",
+      retryable: true,
+    });
     return Promise.resolve(false);
   }
   if (!isFoundryEnvironment()) {
+    setPrivateStateStatus({
+      state: "blocked",
+      code: "not-in-foundry",
+      retryable: false,
+    });
     return Promise.resolve(false);
   }
   if (isLiveFoundry()) registerRoleHook();
   if (initialization) return initialization;
   const generation = lifecycleGeneration;
   initializing = true;
+  if (storeQuarantineStatus) {
+    setPrivateStateStatus(storeQuarantineStatus);
+  } else {
+    setPrivateStateStatus({
+      state: "pending",
+      code: "initializing",
+      retryable: false,
+    });
+  }
   let trackedInitialization;
   trackedInitialization = (async () => {
     if (!isFullGM()) {
@@ -725,6 +1130,11 @@ export function initializePrivateState() {
       storeDocument = null;
       installSafeDefaults();
       initialized = true;
+      setPrivateStateStatus({
+        state: "ready",
+        code: "safe-defaults",
+        retryable: false,
+      });
       return true;
     }
 
@@ -743,6 +1153,24 @@ export function initializePrivateState() {
       startingAuthorityId === currentUserId;
     const legacyState = authoritative ? readLegacyState() : null;
     let document = findStoreDocument();
+    if (storeQuarantineStatus) {
+      if (!document) {
+        setPrivateStateStatus(storeQuarantineStatus);
+        return false;
+      }
+      const quarantinedClassification = classifyStoreSchema(document);
+      if (isSchemaBlocked(quarantinedClassification)) {
+        return blockUnsupportedStoreSchema(document, quarantinedClassification);
+      }
+      if (!canExplicitlyResumeStore(document)) {
+        if (hasCurrentStoreCorruption(document)) {
+          return blockCorruptStore(document);
+        }
+        setPrivateStateStatus(storeQuarantineStatus);
+        return false;
+      }
+      clearStoreQuarantine();
+    }
     const persistedStoreId = canonicalStoreIdSetting();
     if (
       !document &&
@@ -764,6 +1192,10 @@ export function initializePrivateState() {
     if (!document && authoritative && !replacementRequired) {
       document = electStoreDocument();
       if (document) {
+        const classification = classifyStoreSchema(document);
+        if (isSchemaBlocked(classification)) {
+          return blockUnsupportedStoreSchema(document, classification);
+        }
         const persisted = await persistCanonicalStoreIdentity(
           document,
           isCurrent,
@@ -802,6 +1234,12 @@ export function initializePrivateState() {
       return false;
     }
     if (!isCanonicalStoreDocument(document)) return false;
+    if (
+      !ensureStoreCanBeWritten(document, {
+        allowSnapshotRepair: authoritative,
+      })
+    )
+      return false;
     storeDocument = document;
     const isCurrentStore = () =>
       isCurrent() && isCanonicalStoreDocument(document);
@@ -823,13 +1261,29 @@ export function initializePrivateState() {
     }
     if (!changedKeys || !isCurrentStore()) return false;
     initialized = true;
+    clearStoreQuarantine();
+    setPrivateStateStatus({
+      state: "ready",
+      code: "ready",
+      retryable: false,
+      observedSchema: STORE_SCHEMA,
+    });
     callPrivateStateChanged(changedKeys, "store-ready");
     return true;
   })()
     .then((result) => {
       if (initialization === trackedInitialization) {
         initializing = false;
-        if (!result) initialization = null;
+        if (!result) {
+          initialization = null;
+          if (privateStateStatus.state !== "blocked") {
+            setPrivateStateStatus({
+              state: "pending",
+              code: "store-unavailable",
+              retryable: true,
+            });
+          }
+        }
       }
       return result;
     })
@@ -837,6 +1291,15 @@ export function initializePrivateState() {
       if (initialization === trackedInitialization) {
         initializing = false;
         initialization = null;
+        if (storeQuarantineStatus) {
+          setPrivateStateStatus(storeQuarantineStatus);
+        } else {
+          setPrivateStateStatus({
+            state: "pending",
+            code: "initialization-error",
+            retryable: true,
+          });
+        }
       }
       if (generation === lifecycleGeneration) {
         console.error(
@@ -871,7 +1334,12 @@ export async function setPrivateState(
   const definition = fieldDefinition(key);
   const cleaned = cleanValue(key, value);
   if (isFoundryEnvironment() && !globalThis.game?.ready) {
-    throw new Error("PrivateStateUnavailable: Foundry is not ready");
+    setPrivateStateStatus({
+      state: "pending",
+      code: "foundry-not-ready",
+      retryable: true,
+    });
+    throw createPrivateStateUnavailableError(key);
   }
   if (!isFoundryEnvironment()) {
     if (!globalThis.game?.settings?.set) {
@@ -894,15 +1362,25 @@ export async function setPrivateState(
     throw new Error("PermissionDenied: only a full GM may write private state");
   }
   const ready = await initializePrivateState();
-  if (!ready) throw new Error("PrivateStateUnavailable");
+  if (!ready) throw createPrivateStateUnavailableError(key);
   if (!isPrivilegedPrivateStateReady()) {
-    throw new Error("PrivateStateUnavailable");
+    throw createPrivateStateUnavailableError(key);
   }
   const document = storeDocument;
   if (typeof beforeWrite === "function" && beforeWrite() !== true) {
     throw new Error(`PrivateStateWritePreconditionFailed:${key}`);
   }
+  if (
+    !ensureStoreCanBeWritten(document, {
+      invalidate: true,
+    })
+  ) {
+    throw createPrivateStateUnavailableError(key);
+  }
   await document.update({ [`flags.${MODULE_ID}.${key}`]: cleaned });
+  if (privateStateStatus.state === "blocked") {
+    throw createPrivateStateUnavailableError(key);
+  }
   if (
     !isFullGM() ||
     storeDocument !== document ||
@@ -968,6 +1446,10 @@ export function resetPrivateStateForTests() {
   lastKnownFullGM = null;
   lastKnownAuthorityId = null;
   lastVerifiedStoreSnapshot = null;
+  lastVerifiedStoreId = null;
   replacementRequired = false;
+  blockedStoreId = null;
+  storeQuarantineStatus = null;
   retiredStoreIds.clear();
+  privateStateStatus = createPrivateStateStatus();
 }

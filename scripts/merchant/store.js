@@ -5,9 +5,9 @@
  * data in the module's restricted private-state journal; node tests and legacy
  * migrations use the original world setting fallback.
  *
- * Pure data shaping (normalization, defaults, validation) is exported
- * for unit testing. Foundry-touching helpers (`load`, `save`) degrade
- * gracefully when `game.settings` is absent so tests can stub a store.
+ * Pure data shaping (normalization, defaults, validation) is exported for unit
+ * testing. Live reads fail closed while the restricted store is unavailable;
+ * only non-Foundry tests and legacy migrations may use the settings fallback.
  */
 
 import {
@@ -18,7 +18,12 @@ import {
 } from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
 import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
-import { getPrivateState, setPrivateState } from "../private-state.js";
+import {
+  createPrivateStateUnavailableError,
+  getPrivateState,
+  setPrivateState,
+} from "../private-state.js";
+import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_SETTING_KEY = "merchants";
@@ -700,14 +705,21 @@ export function applyPreviewSell(merchant, totalGp) {
 /* ------------------------------------------------------------------ *
  * Foundry-backed CRUD
  *
- * Reads always degrade gracefully (return []). Writes throw if game
- * isn't available so callers learn about misuse early.
+ * Live reads fail closed rather than substituting cleared legacy settings.
+ * Non-Foundry harnesses retain the legacy fallback; writes always use the
+ * private-state boundary.
  * ------------------------------------------------------------------ */
 
 /** Load every merchant record from the world setting. */
 export function loadMerchants() {
   const privateValue = getPrivateState("merchants");
-  if (privateValue !== undefined) return privateValue.map(normalizeMerchant);
+  if (privateValue !== undefined) {
+    assertSupportedMerchantRecords(privateValue);
+    return privateValue.map(normalizeMerchant);
+  }
+  if (isFoundryEnvironment()) {
+    throw createPrivateStateUnavailableError("merchants");
+  }
   try {
     const raw = globalThis.game?.settings?.get?.(
       MODULE_ID,
@@ -718,6 +730,32 @@ export function loadMerchants() {
   } catch {
     return [];
   }
+}
+
+function isFoundryEnvironment() {
+  return Boolean(globalThis.game && globalThis.JournalEntry?.create);
+}
+
+function assertSupportedMerchantRecords(records) {
+  if (!isFoundryEnvironment() || !Array.isArray(records)) return;
+  for (const record of records) {
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      continue;
+    }
+    assertSupportedPersistedVersion(record.version, {
+      domain: "merchant-record",
+      supportedVersion: MERCHANT_RECORD_VERSION,
+      codePrefix: "MERCHANT_RECORD",
+    });
+  }
+}
+
+function assertLiveMerchantStoreWritable() {
+  if (!isFoundryEnvironment()) return true;
+  const persisted = getPrivateState("merchants");
+  if (persisted === undefined) return false;
+  assertSupportedMerchantRecords(persisted);
+  return true;
 }
 
 /** Look up a merchant by id. */
@@ -736,10 +774,13 @@ function runStoreWrite(operation) {
 }
 
 async function writeMerchants(merchants) {
+  assertLiveMerchantStoreWritable();
   const cleaned = (Array.isArray(merchants) ? merchants : []).map(
     normalizeMerchant,
   );
-  await setPrivateState("merchants", cleaned);
+  await setPrivateState("merchants", cleaned, {
+    beforeWrite: assertLiveMerchantStoreWritable,
+  });
   return cleaned;
 }
 

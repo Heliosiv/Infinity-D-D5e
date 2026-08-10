@@ -31,6 +31,7 @@ import {
 } from "../injury/table.js";
 import {
   registerResourceCalendarWatcher,
+  reconcileResourceCalendarWatcher,
   advanceDayNow,
 } from "../resource/calendar-watcher.js";
 import {
@@ -90,6 +91,7 @@ import {
 import { getLootBundleBalanceOptions } from "../loot/category-balance.js";
 import { tierWindow } from "../loot/tag-vocabulary.js";
 import {
+  getPrivateStateStatus,
   initializePrivateState,
   onPrivateStateChanged,
 } from "../private-state.js";
@@ -146,6 +148,7 @@ export const runtimeBindings = Object.freeze({
   CRITICAL_INJURY_TABLE,
   CRITICAL_INJURY_TABLE_VERSION,
   registerResourceCalendarWatcher,
+  reconcileResourceCalendarWatcher,
   advanceDayNow,
   isResourceAutomationReady,
   migrateResourceConfig,
@@ -189,6 +192,7 @@ export const runtimeBindings = Object.freeze({
   getLootBundleBalanceOptions,
   tierWindow,
   initializePrivateState,
+  getPrivateStateStatus,
   onPrivateStateChanged,
   isFullGM,
   runAsFullGM,

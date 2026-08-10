@@ -975,6 +975,194 @@ try {
     issuedRecord.operationId,
     "active issuance proof survives beyond the bounded workflow history window",
   );
+
+  const canonicalVersionGateReplicas = {
+    primary: structuredClone(settings.get("downtimeWorkflow")),
+    checkpoint: structuredClone(settings.get("downtimeWorkflowCheckpoint")),
+    config: structuredClone(settings.get("downtimeConfig")),
+  };
+  const assertVersionBlockedWithoutWrites = async ({
+    primary = canonicalVersionGateReplicas.primary,
+    checkpoint = canonicalVersionGateReplicas.checkpoint,
+    config = canonicalVersionGateReplicas.config,
+    code,
+    domain,
+    supportedVersion,
+    statusCode,
+    observedVersion,
+    label,
+  }) => {
+    settings.set("downtimeWorkflow", structuredClone(primary));
+    settings.set("downtimeWorkflowCheckpoint", structuredClone(checkpoint));
+    settings.set("downtimeConfig", structuredClone(config));
+    workflow.resetDowntimeWorkflowStoreForTests();
+    const before = structuredClone(Object.fromEntries(settings));
+    const writesBefore = settingWrites;
+    await assert.rejects(
+      workflow.ensureDowntimeWorkflowAuthority(),
+      (error) => {
+        assert.equal(error.name, "PersistedDomainVersionError");
+        assert.equal(error.code, code);
+        assert.deepEqual(error.persistedVersionStatus, {
+          state: "blocked",
+          code: statusCode,
+          retryable: false,
+          domain,
+          supportedVersion,
+          observedVersion,
+        });
+        return true;
+      },
+      label,
+    );
+    assert.equal(
+      settingWrites,
+      writesBefore,
+      `${label}: no replica is written`,
+    );
+    assert.deepEqual(
+      Object.fromEntries(settings),
+      before,
+      `${label}: the blocked replica and its current peers remain exact`,
+    );
+  };
+
+  await assertVersionBlockedWithoutWrites({
+    primary: {
+      ...canonicalVersionGateReplicas.primary,
+      version: 2,
+    },
+    code: "DOWNTIME_WORKFLOW_PRIMARY_FUTURE_VERSION",
+    domain: "downtime-workflow-primary",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label: "a future downtime primary blocks before repairing current peers",
+  });
+  await assertVersionBlockedWithoutWrites({
+    checkpoint: {
+      ...canonicalVersionGateReplicas.checkpoint,
+      version: 2,
+    },
+    code: "DOWNTIME_WORKFLOW_CHECKPOINT_FUTURE_VERSION",
+    domain: "downtime-workflow-checkpoint",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label: "a future downtime checkpoint blocks before repairing current peers",
+  });
+  await assertVersionBlockedWithoutWrites({
+    config: {
+      ...canonicalVersionGateReplicas.config,
+      version: DOWNTIME_CONFIG_VERSION + 1,
+    },
+    code: "DOWNTIME_CONFIG_FUTURE_VERSION",
+    domain: "downtime-config",
+    supportedVersion: DOWNTIME_CONFIG_VERSION,
+    statusCode: "future-version",
+    observedVersion: DOWNTIME_CONFIG_VERSION + 1,
+    label: "a future downtime config blocks before repairing workflow peers",
+  });
+  for (const [label, version] of [
+    ["Boolean", true],
+    ["array", []],
+    ["blank string", ""],
+    ["whitespace string", " "],
+    ["null", null],
+  ]) {
+    await assertVersionBlockedWithoutWrites({
+      primary: {
+        ...canonicalVersionGateReplicas.primary,
+        version,
+      },
+      code: "DOWNTIME_WORKFLOW_PRIMARY_INVALID_VERSION",
+      domain: "downtime-workflow-primary",
+      supportedVersion: 1,
+      statusCode: "invalid-version",
+      observedVersion: null,
+      label: `an explicit ${label} downtime version fails closed`,
+    });
+  }
+
+  const futureActiveBlockPrimary = structuredClone(
+    canonicalVersionGateReplicas.primary,
+  );
+  futureActiveBlockPrimary.activeBlock = {
+    ...structuredClone(futureActiveBlockPrimary.history[0]),
+    schema: 2,
+  };
+  await assertVersionBlockedWithoutWrites({
+    primary: futureActiveBlockPrimary,
+    code: "DOWNTIME_WORKFLOW_PRIMARY_ACTIVE_BLOCK_SCHEMA_FUTURE_VERSION",
+    domain: "downtime-workflow-primary-active-block",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future active-block schema blocks before repairing current downtime peers",
+  });
+
+  const futurePlanningCheckpoint = structuredClone(
+    canonicalVersionGateReplicas.checkpoint,
+  );
+  futurePlanningCheckpoint.workflow.history[0].planningDraft = { version: 2 };
+  await assertVersionBlockedWithoutWrites({
+    checkpoint: futurePlanningCheckpoint,
+    code: "DOWNTIME_WORKFLOW_CHECKPOINT_WORKFLOW_HISTORY_BLOCK_PLANNING_DRAFT_FUTURE_VERSION",
+    domain:
+      "downtime-workflow-checkpoint-workflow-history-block-planning-draft",
+    supportedVersion: 1,
+    statusCode: "future-version",
+    observedVersion: 2,
+    label:
+      "a future planning-draft version blocks before repairing the current primary",
+  });
+
+  const malformedHistoryPrimary = structuredClone(
+    canonicalVersionGateReplicas.primary,
+  );
+  malformedHistoryPrimary.history[0].schema = true;
+  await assertVersionBlockedWithoutWrites({
+    primary: malformedHistoryPrimary,
+    code: "DOWNTIME_WORKFLOW_PRIMARY_HISTORY_BLOCK_SCHEMA_INVALID_VERSION",
+    domain: "downtime-workflow-primary-history-block",
+    supportedVersion: 1,
+    statusCode: "invalid-version",
+    observedVersion: null,
+    label:
+      "a malformed history-block schema blocks without changing current peers",
+  });
+  settings.set(
+    "downtimeWorkflow",
+    structuredClone(canonicalVersionGateReplicas.primary),
+  );
+  settings.set(
+    "downtimeWorkflowCheckpoint",
+    structuredClone(canonicalVersionGateReplicas.checkpoint),
+  );
+  settings.set(
+    "downtimeConfig",
+    structuredClone(canonicalVersionGateReplicas.config),
+  );
+  workflow.resetDowntimeWorkflowStoreForTests();
+
+  // The Foundry pre-ready phase is still private: never read the legacy world
+  // settings while the restricted Journal cache is unavailable.
+  let preReadyLegacyReads = 0;
+  const legacySettingsGet = globalThis.game.settings.get;
+  globalThis.game.settings.get = (...args) => {
+    preReadyLegacyReads += 1;
+    return legacySettingsGet(...args);
+  };
+  globalThis.JournalEntry = { create() {} };
+  globalThis.game.ready = false;
+  workflow.resetDowntimeWorkflowStoreForTests();
+  assert.throws(
+    () => workflow.loadDowntimeWorkflowStore(),
+    /DowntimeWorkflowStoreUnavailable/,
+    "pre-ready downtime reads fail closed at the private-store boundary",
+  );
+  assert.equal(preReadyLegacyReads, 0);
 } finally {
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete globalThis[key];

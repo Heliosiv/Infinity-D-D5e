@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   PRIVATE_STATE_CHANGED_HOOK,
   getPrivateState,
+  getPrivateStateStatus,
   initializePrivateState,
   isPrivateStateReady,
   isPrivilegedPrivateStateReady,
@@ -56,10 +57,20 @@ function makeDocument(data) {
     name: data.name,
     ownership: structuredClone(data.ownership),
     getFlag: (scope, key) => flags[scope]?.[key],
+    updateCalls: [],
     ignoreNextUpdate(path) {
       ignoredUpdatePaths.add(path);
     },
+    setFlagDirect(key, value, { notify = true } = {}) {
+      flags[MODULE_ID][key] = structuredClone(value);
+      if (notify) {
+        globalThis.Hooks.call("updateJournalEntry", this, {
+          [`flags.${MODULE_ID}.${key}`]: structuredClone(value),
+        });
+      }
+    },
     async update(changes) {
+      this.updateCalls.push(structuredClone(changes));
       for (const [path, value] of Object.entries(changes)) {
         if (ignoredUpdatePaths.delete(path)) continue;
         if (path === "ownership") {
@@ -301,6 +312,340 @@ try {
       "private resource writes emit a value-free invalidation hook",
     );
     globalThis.Hooks.off(PRIVATE_STATE_CHANGED_HOOK, changeHookId);
+  }
+
+  // A store written by a newer module version is never hydrated, migrated,
+  // repaired, replaced, or selected as canonical by this older schema.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(
+      makeStoreData({
+        schemaVersion: 7,
+        merchants: [{ id: "future-shop", name: "Must remain untouched" }],
+      }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.deepEqual(getPrivateStateStatus(), {
+      state: "blocked",
+      code: "future-schema",
+      retryable: false,
+      supportedSchema: 6,
+      observedSchema: 7,
+    });
+    assert.equal(getPrivateState("merchants"), undefined);
+    assert.equal(createCalls, 0);
+    assert.deepEqual(store.updateCalls, []);
+    assert.deepEqual(state.cleared, []);
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(createCalls, 0, "a repeated probe never replaces the store");
+    assert.deepEqual(store.updateCalls, []);
+    assert.deepEqual(state.cleared, []);
+    await assert.rejects(
+      setPrivateState("merchants", [{ id: "forbidden-write" }]),
+      (error) =>
+        error?.code === "PRIVATE_STATE_FUTURE_SCHEMA" &&
+        error?.retryable === false,
+    );
+    assert.deepEqual(store.updateCalls, []);
+
+    // Simulate an external repair or compatible module restoring the canonical
+    // schema. The existing hook requests one normal initialization pass.
+    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    await waitFor(
+      () => getPrivateStateStatus().state === "ready",
+      "a supported schema did not resume private-state initialization",
+    );
+    assert.equal(getPrivateState("merchants")[0].id, "future-shop");
+    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+  }
+
+  // A present malformed schema is unsupported rather than being rounded down
+  // into a legacy migration that could overwrite unknown data.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(makeStoreData({ schemaVersion: 6.5 }));
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "invalid-schema");
+    assert.equal(getPrivateStateStatus().retryable, false);
+    assert.equal(createCalls, 0);
+    assert.deepEqual(store.updateCalls, []);
+    assert.deepEqual(state.cleared, []);
+  }
+
+  // Present values that merely coerce to integers are malformed. A canonical
+  // integer string remains compatible with older persisted flags.
+  for (const malformedSchema of [null, "", true, false, [5], [], {}, " 6 "]) {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(
+      makeStoreData({ schemaVersion: malformedSchema }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "invalid-schema");
+    assert.deepEqual(store.updateCalls, []);
+    assert.deepEqual(state.cleared, []);
+  }
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const store = activeJournal.insert(makeStoreData({ schemaVersion: "6" }));
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+  }
+
+  // A current-schema store with a missing or invalid required field is
+  // corruption, not a legacy migration source. It is never default-filled or
+  // replaced when no verified snapshot exists.
+  for (const corruption of ["missing", "invalid"]) {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const data = makeStoreData({
+      merchants: [{ id: "must-not-be-emptied" }],
+      factions: [{ id: "must-remain-private" }],
+      resourceConfig: { roster: [{ actorId: "secret-roster" }] },
+    });
+    if (corruption === "missing") {
+      delete data.flags[MODULE_ID].merchants;
+    } else {
+      data.flags[MODULE_ID].merchants = null;
+    }
+    const store = activeJournal.insert(data);
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.deepEqual(getPrivateStateStatus(), {
+      state: "blocked",
+      code: "corrupt",
+      retryable: false,
+      supportedSchema: 6,
+      observedSchema: 6,
+    });
+    assert.equal(getPrivateState("factions"), undefined);
+    assert.equal(createCalls, 0);
+    assert.deepEqual(store.updateCalls, []);
+    assert.deepEqual(state.cleared, []);
+    assert.equal(
+      store.getFlag(MODULE_ID, "factions")[0].id,
+      "must-remain-private",
+    );
+    await assert.rejects(
+      setPrivateState("merchants", [{ id: "empty-replacement" }]),
+      (error) =>
+        error?.code === "PRIVATE_STATE_CORRUPT" && error?.retryable === false,
+    );
+    assert.deepEqual(store.updateCalls, []);
+  }
+
+  // Journal creation is untrusted too. A create result that reports a newer
+  // schema is quarantined before its id can become canonical.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+    });
+    const defaultCreate = globalThis.JournalEntry.create;
+    globalThis.JournalEntry.create = async (data) => {
+      createCalls += 1;
+      const future = structuredClone(data);
+      future.flags[MODULE_ID].schemaVersion = 7;
+      return activeJournal.insert(future);
+    };
+    try {
+      assert.equal(await initializePrivateState(), false);
+      assert.equal(getPrivateStateStatus().code, "future-schema");
+      assert.equal(createCalls, 1);
+      assert.deepEqual(state.cleared, []);
+    } finally {
+      globalThis.JournalEntry.create = defaultCreate;
+    }
+  }
+
+  // Once a verified canonical store is seen at a future schema, canonical-id
+  // replication gaps and deletion cannot turn its old snapshot into an
+  // automatic schema-6 replacement.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(
+      makeStoreData({ merchants: [{ id: "verified-before-upgrade" }] }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const legacy = { privateStateStoreId: store.id };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy,
+    });
+    assert.equal(await initializePrivateState(), true);
+    assert.equal(getPrivateState("merchants")[0].id, "verified-before-upgrade");
+
+    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 7 });
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+    const createCallsAtBlock = createCalls;
+    const settingWritesAtBlock = state.cleared.length;
+
+    legacy.privateStateStoreId = "not-yet-replicated";
+    globalThis.Hooks.call("updateSetting", {
+      key: `${MODULE_ID}.privateStateStoreId`,
+    });
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(createCalls, createCallsAtBlock);
+    assert.equal(state.cleared.length, settingWritesAtBlock);
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+
+    activeJournal.remove(store);
+    legacy.privateStateStoreId = "";
+    globalThis.Hooks.call("updateSetting", {
+      key: `${MODULE_ID}.privateStateStoreId`,
+    });
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(createCalls, createCallsAtBlock);
+    assert.equal(state.cleared.length, settingWritesAtBlock);
+    assert.equal(activeJournal.entries.length, 0);
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+  }
+
+  // A previously blocked document cannot clear quarantine after the canonical
+  // setting moves to a different unresolved id. Downgrading that old document
+  // must not retire it and create a stale replacement while the new canonical
+  // Journal may still be replicating.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const oldStore = activeJournal.insert(
+      makeStoreData({ merchants: [{ id: "verified-old-snapshot" }] }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const legacy = { privateStateStoreId: oldStore.id };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy,
+    });
+    assert.equal(await initializePrivateState(), true);
+
+    await oldStore.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: 7,
+      [`flags.${MODULE_ID}.merchants`]: [{ id: "newer-data-on-old-doc" }],
+    });
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+
+    legacy.privateStateStoreId = "newer-canonical-still-replicating";
+    globalThis.Hooks.call("updateSetting", {
+      key: `${MODULE_ID}.privateStateStoreId`,
+    });
+    const createCallsAtBlock = createCalls;
+    const settingWritesAtBlock = state.cleared.length;
+    const oldStoreWritesAtBlock = oldStore.updateCalls.length;
+
+    await oldStore.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+    assert.equal(createCalls, createCallsAtBlock);
+    assert.equal(state.cleared.length, settingWritesAtBlock);
+    assert.equal(
+      legacy.privateStateStoreId,
+      "newer-canonical-still-replicating",
+    );
+    assert.equal(oldStore.updateCalls.length, oldStoreWritesAtBlock + 1);
+    assert.equal(
+      oldStore.getFlag(MODULE_ID, "merchants")[0].id,
+      "newer-data-on-old-doc",
+    );
+    assert.deepEqual(
+      activeJournal.entries.map((entry) => entry.id),
+      [oldStore.id],
+    );
+  }
+
+  // Clearing the canonical setting is an explicit recovery path. The same
+  // blocked document may then be re-elected once it reports a supported schema,
+  // without creating a replacement or losing the values it now contains.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const store = activeJournal.insert(
+      makeStoreData({ merchants: [{ id: "before-compatible-repair" }] }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const legacy = { privateStateStoreId: store.id };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy,
+    });
+    assert.equal(await initializePrivateState(), true);
+
+    await store.update({
+      [`flags.${MODULE_ID}.schemaVersion`]: 7,
+      [`flags.${MODULE_ID}.merchants`]: [{ id: "after-compatible-repair" }],
+    });
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+
+    legacy.privateStateStoreId = "";
+    globalThis.Hooks.call("updateSetting", {
+      key: `${MODULE_ID}.privateStateStoreId`,
+    });
+    const createCallsAtBlock = createCalls;
+    await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
+    await waitFor(
+      () => getPrivateStateStatus().state === "ready",
+      "a compatible blocked store was not re-elected after clearing its id",
+    );
+
+    assert.equal(legacy.privateStateStoreId, store.id);
+    assert.equal(createCalls, createCallsAtBlock);
+    assert.equal(getPrivateState("merchants")[0].id, "after-compatible-repair");
   }
 
   // A field already present in the private journal is canonical, including an
@@ -742,6 +1087,96 @@ try {
     ]);
     assert.deepEqual(legacy.resourceConfig, {});
     assert.deepEqual(legacy.resourceRunState, {});
+  }
+
+  // A schema flip after an awaited ownership repair fences the remainder of a
+  // legacy migration before any private flags or legacy settings are written.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const data = makeStoreData({
+      schemaVersion: 1,
+      merchants: null,
+      resourceConfig: null,
+    });
+    data.ownership = { default: 2 };
+    const store = activeJournal.insert(data);
+    const baseUpdate = store.update.bind(store);
+    let flipped = false;
+    store.update = async (changes) => {
+      const result = await baseUpdate(changes);
+      if (!flipped && Object.hasOwn(changes, "ownership")) {
+        flipped = true;
+        store.setFlagDirect("schemaVersion", 7);
+        throw new Error("injected failure after schema quarantine");
+      }
+      return result;
+    };
+    const legacy = {
+      merchants: [{ id: "must-survive-mid-migration-flip" }],
+      resourceConfig: { roster: [{ actorId: "secret-roster" }] },
+    };
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy,
+    });
+
+    const failedAfterBlock = await captureConsole("error", () =>
+      assert.rejects(
+        initializePrivateState(),
+        /injected failure after schema quarantine/,
+      ),
+    );
+    assert.equal(
+      failedAfterBlock.messages.length,
+      0,
+      "a cancelled generation does not report a stale initialization failure",
+    );
+    assert.equal(getPrivateStateStatus().code, "future-schema");
+    assert.equal(store.updateCalls.length, 1);
+    assert.deepEqual(Object.keys(store.updateCalls[0]), ["ownership"]);
+    assert.equal(legacy.merchants[0].id, "must-survive-mid-migration-flip");
+    assert.equal(legacy.resourceConfig.roster[0].actorId, "secret-roster");
+    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+  }
+
+  // Reclassify after a caller's write precondition. A synchronous schema flip
+  // there cannot slip a stale schema-6 write into a newly upgraded store.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const store = activeJournal.insert(
+      makeStoreData({ merchants: [{ id: "before-write-original" }] }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+    const updateCount = store.updateCalls.length;
+
+    await assert.rejects(
+      setPrivateState("merchants", [{ id: "must-not-be-written" }], {
+        beforeWrite: () => {
+          store.setFlagDirect("schemaVersion", 7);
+          return true;
+        },
+      }),
+      (error) => error?.code === "PRIVATE_STATE_FUTURE_SCHEMA",
+    );
+    assert.equal(store.updateCalls.length, updateCount);
+    assert.equal(
+      store.getFlag(MODULE_ID, "merchants")[0].id,
+      "before-write-original",
+    );
+    assert.equal(getPrivateStateStatus().code, "future-schema");
   }
 
   // Store writes made before an explicit initialization still await the private
@@ -1196,7 +1631,9 @@ try {
     assert.equal(await initializePrivateState(), false);
     await assert.rejects(
       setPrivateState("merchants", [{ id: "too-early" }]),
-      /Foundry is not ready/,
+      (error) =>
+        error?.code === "PRIVATE_STATE_UNAVAILABLE" &&
+        error?.privateStateStatus?.code === "foundry-not-ready",
     );
     assert.deepEqual(state.cleared, []);
     assert.equal(isPrivateStateReady(), false);

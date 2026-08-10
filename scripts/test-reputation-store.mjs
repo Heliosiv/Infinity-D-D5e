@@ -344,4 +344,37 @@ import { prettyStanding } from "./ui-util.js";
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Pre-ready Foundry reads remain inside the private-state boundary.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  const originalJournalEntry = globalThis.JournalEntry;
+  let legacyReads = 0;
+  globalThis.JournalEntry = { create() {} };
+  globalThis.game = {
+    ready: false,
+    settings: {
+      get: () => {
+        legacyReads += 1;
+        return [{ id: "legacy-secret-faction", gmNotes: "must stay private" }];
+      },
+    },
+  };
+
+  try {
+    assert.throws(
+      () => loadFactions(),
+      (error) => error?.code === "PRIVATE_STATE_UNAVAILABLE",
+      "a pre-ready Foundry client fails closed without reading legacy factions",
+    );
+    assert.equal(legacyReads, 0);
+  } finally {
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalJournalEntry === undefined) delete globalThis.JournalEntry;
+    else globalThis.JournalEntry = originalJournalEntry;
+  }
+}
+
 process.stdout.write("reputation store + standing validation passed\n");
