@@ -193,6 +193,11 @@ try {
   assert.equal(sent.ok, true);
   assert.equal(sent.requestId, "player-submit");
   assert.equal(emitted[0][1].requestId, "player-submit");
+  assert.deepEqual(
+    emitted[0][2],
+    { recipients: [gm.id] },
+    "player downtime submissions are transport-scoped to the authority",
+  );
   assert.equal(emitted.length, 1);
   assert.equal(localSubmissions, 0, "remote requests are not trusted locally");
 

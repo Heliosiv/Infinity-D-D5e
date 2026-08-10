@@ -1,10 +1,8 @@
 /**
  * Infinity D&D5e — Reputation Socket
  *
- * GM → player projection of revealed factions. Shares the module socket
- * name (`module.infinity-dnd5e`) with the merchant + audio handlers; every
- * payload carries a `type`, and each handler ignores types it doesn't own,
- * so the three registrations coexist on one socket.
+ * GM → player projection of revealed factions. The compatibility router owns
+ * the one raw module listener and dispatches these exact event types here.
  *
  * Authority model (mirrors merchant/socket.js):
  * - The GM owns the faction store. A player's view requests the revealed
@@ -16,6 +14,7 @@
 
 import { listRevealedForPlayers } from "./store.js";
 import {
+  authoritativeGMId,
   authenticateSocketPayload,
   isActiveSocketUser,
   isAuthoritativeGM,
@@ -23,9 +22,12 @@ import {
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
 import { isPrivilegedPrivateStateReady } from "../private-state.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "../socket-router.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 
 function isPrivateStateAuthorityReady() {
   const liveFoundry = Boolean(
@@ -83,12 +85,16 @@ function dispatchToListeners(eventType, payload) {
 
 /** Register the reputation socket handler. Idempotent. */
 export function registerReputationSocket() {
-  const socket = globalThis.game?.socket;
-  if (!socket || registered) return registered;
-  if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveReputationPayload(payload, senderUserId),
-  );
+  if (registered) return true;
+  if (
+    !registerModuleSocketRoute({
+      id: "reputation",
+      eventTypes: REPUTATION_TYPES,
+      receive: receiveReputationPayload,
+    })
+  ) {
+    return false;
+  }
   registered = true;
   return true;
 }
@@ -108,10 +114,9 @@ export function emitReputationEvent(type, data = {}) {
     originUserId: globalThis.game?.user?.id ?? null,
     ...data,
   };
-  const socket = globalThis.game?.socket;
-  if (typeof socket?.emit === "function") {
-    socket.emit(SOCKET_NAME, payload);
-  }
+  emitModuleSocketPayload(payload, {
+    recipients: resolveOutgoingRecipients(type, payload),
+  });
   // Always dispatch to local listeners so the originator sees its own
   // payload (the GM's own workspace can react without a round-trip).
   dispatchToListeners(type, payload);
@@ -139,6 +144,13 @@ export function receiveReputationPayload(payload, authenticatedSenderId) {
   // Suppress echo to self — we already dispatched locally on emit.
   const senderId = authenticateSocketPayload(payload, authenticatedSenderId);
   if (!senderId || senderId === globalThis.game?.user?.id) return;
+  const targetUserId = normalizeUserId(payload.targetUserId);
+  if (
+    (payload.type === REPUTATION_EVENTS.LIST_REPLY && !targetUserId) ||
+    (targetUserId && targetUserId !== globalThis.game?.user?.id)
+  ) {
+    return;
+  }
   if (payload.type === REPUTATION_EVENTS.LIST_REQUEST) {
     if (!isPrivateStateAuthorityReady() || !isActiveSocketUser(senderId))
       return;
@@ -160,6 +172,22 @@ export function receiveReputationPayload(payload, authenticatedSenderId) {
       console.error(`${MODULE_ID} | reputation list-request handler`, error);
     }
   }
+}
+
+function resolveOutgoingRecipients(type, payload) {
+  if (type === REPUTATION_EVENTS.LIST_REQUEST) {
+    const gmId = normalizeUserId(authoritativeGMId());
+    return gmId ? [gmId] : [];
+  }
+  if (type === REPUTATION_EVENTS.LIST_REPLY) {
+    const targetUserId = normalizeUserId(payload.targetUserId);
+    return targetUserId ? [targetUserId] : [];
+  }
+  return undefined;
+}
+
+function normalizeUserId(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 /** Reply to a player with the sanitized revealed-faction list, targeted at

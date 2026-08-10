@@ -255,7 +255,7 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
       "broadcast payload derives variants from its event id",
     );
 
-    receiveSoundEventPayload(socketPayloads[0].payload);
+    receiveSoundEventPayload(socketPayloads[0].payload, "user-a");
     assert.equal(
       calls.length,
       1,
@@ -307,13 +307,16 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
     },
   };
   try {
-    receiveSoundEventPayload({
-      type: "sound-event",
-      id: "remote-disabled",
-      eventKey: SOUND_EVENTS.ROLL_START,
-      originUserId: "remote",
-      options: { automation: true, contextKey: "Item.x", cooldownMs: 0 },
-    });
+    receiveSoundEventPayload(
+      {
+        type: "sound-event",
+        id: "remote-disabled",
+        eventKey: SOUND_EVENTS.ROLL_START,
+        originUserId: "remote",
+        options: { automation: true, contextKey: "Item.x", cooldownMs: 0 },
+      },
+      "remote",
+    );
     assert.equal(
       calls.length,
       0,
@@ -323,11 +326,36 @@ for (const [eventKey, entry] of Object.entries(SOUND_REGISTRY)) {
     automationEnabled = true;
     receiveSoundEventPayload({
       type: "sound-event",
-      id: "remote-enabled",
+      id: "unauthenticated-remote",
       eventKey: SOUND_EVENTS.ROLL_START,
       originUserId: "remote",
       options: { automation: true, contextKey: "Item.y", cooldownMs: 0 },
     });
+    receiveSoundEventPayload(
+      {
+        type: "sound-event",
+        id: "forged-remote",
+        eventKey: SOUND_EVENTS.ROLL_START,
+        originUserId: "forged",
+        options: { automation: true, contextKey: "Item.y", cooldownMs: 0 },
+      },
+      "remote",
+    );
+    assert.equal(
+      calls.length,
+      0,
+      "missing and mismatched transport identities cannot play audio",
+    );
+    receiveSoundEventPayload(
+      {
+        type: "sound-event",
+        id: "remote-enabled",
+        eventKey: SOUND_EVENTS.ROLL_START,
+        originUserId: "remote",
+        options: { automation: true, contextKey: "Item.y", cooldownMs: 0 },
+      },
+      "remote",
+    );
     assert.equal(calls.length, 1, "receiving client plays opted-in events");
     assert.equal(
       calls[0].volume,

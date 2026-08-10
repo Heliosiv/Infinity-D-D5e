@@ -4,9 +4,12 @@ import {
   isActiveSocketUser,
   withAuthenticatedOrigin,
 } from "./socket-authority.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "./socket-router.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 const SOUND_DIR = "assets/sounds";
 const MODULE_SOUND_DIR = `modules/${MODULE_ID}/${SOUND_DIR}`;
 const DEFAULT_COOLDOWN_MS = 120;
@@ -84,13 +87,16 @@ const seenSocketSoundEvents = new Set();
 let soundSocketRegistered = false;
 
 export function registerSoundSocket() {
-  const socket = globalThis.game?.socket;
-  if (!socket || soundSocketRegistered) return false;
-  if (typeof socket.on !== "function") return false;
-
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveSoundEventPayload(payload, senderUserId),
-  );
+  if (soundSocketRegistered) return false;
+  if (
+    !registerModuleSocketRoute({
+      id: "audio",
+      eventTypes: [SOUND_SOCKET_TYPE],
+      receive: receiveSoundEventPayload,
+    })
+  ) {
+    return false;
+  }
   soundSocketRegistered = true;
   return true;
 }
@@ -157,16 +163,13 @@ export function playSoundEvent(eventKey, options = {}) {
     ...playbackOptions,
     variantKey: eventId,
   });
-  const socket = globalThis.game?.socket;
-  if (typeof socket?.emit === "function") {
-    socket.emit(SOCKET_NAME, {
-      type: SOUND_SOCKET_TYPE,
-      id: eventId,
-      eventKey,
-      originUserId: globalThis.game?.user?.id ?? null,
-      options: sanitizeSocketSoundOptions(playbackOptions),
-    });
-  }
+  emitModuleSocketPayload({
+    type: SOUND_SOCKET_TYPE,
+    id: eventId,
+    eventKey,
+    originUserId: globalThis.game?.user?.id ?? null,
+    options: sanitizeSocketSoundOptions(playbackOptions),
+  });
   return localResult;
 }
 

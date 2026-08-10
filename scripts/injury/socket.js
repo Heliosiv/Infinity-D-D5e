@@ -7,9 +7,12 @@ import {
   isAuthoritativeGMSender,
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "../socket-router.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 const MAX_ID_LENGTH = 160;
 
 export const CRITICAL_INJURY_EVENTS = Object.freeze({
@@ -72,13 +75,16 @@ function dispatch(payload) {
 }
 
 export function registerCriticalInjurySocket() {
-  const socket = globalThis.game?.socket;
-  if (!socket || registered || typeof socket.on !== "function") {
-    return registered;
+  if (registered) return true;
+  if (
+    !registerModuleSocketRoute({
+      id: "critical-injury",
+      eventTypes: EVENT_TYPES,
+      receive: receiveCriticalInjuryPayload,
+    })
+  ) {
+    return false;
   }
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveCriticalInjuryPayload(payload, senderUserId),
-  );
   registered = true;
   return true;
 }
@@ -238,12 +244,10 @@ export function emitCriticalInjuryEvent(type, data = {}) {
     return null;
   }
 
-  const socket = globalThis.game?.socket;
   const target = String(payload.targetUserId ?? "").trim();
-  if (typeof socket?.emit === "function") {
-    if (target) socket.emit(SOCKET_NAME, payload, { recipients: [target] });
-    else socket.emit(SOCKET_NAME, payload);
-  }
+  emitModuleSocketPayload(payload, {
+    recipients: target ? [target] : [],
+  });
   // The socket relay does not echo to its origin. Local dispatch also lets the
   // authoritative GM roll for an offline/unowned character without a detour.
   dispatch(payload);

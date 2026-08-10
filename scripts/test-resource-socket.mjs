@@ -370,6 +370,35 @@ try {
     "malformed request ids leave a bounded audit record",
   );
 
+  globalThis.game.user = playerA;
+  emitResourceEvent(RESOURCE_EVENTS.OVERVIEW_REQUEST, {
+    requestId: "player-overview-request",
+  });
+  emitResourceEvent(RESOURCE_EVENTS.FORAGE_RESULT, {
+    runId: "run-player-1",
+    actorId: "actor-player-1",
+    skipped: false,
+    rollTotal: 17,
+  });
+  assert.deepEqual(
+    emissions[1][2],
+    { recipients: [gmA.id] },
+    "overview requests go only to the authoritative GM",
+  );
+  assert.deepEqual(
+    emissions[2][2],
+    { recipients: [gmA.id] },
+    "forage rolls go only to the authoritative GM",
+  );
+
+  globalThis.game.user = gmA;
+  emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
+  assert.equal(
+    emissions[3].length,
+    2,
+    "public resource state invalidation remains an intentional broadcast",
+  );
+
   process.stdout.write("resource socket validation passed\n");
 } finally {
   stopRequests();

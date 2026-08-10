@@ -6,10 +6,13 @@ import {
   isAuthoritativeGMSender,
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "../socket-router.js";
 import { normalizeFenceBundleItemIds } from "./catalog.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 const MAX_ID_LENGTH = 160;
 const MAX_QUEUE_LENGTH = 64;
 const MAX_PENDING_LIFECYCLE_EVENTS = 200;
@@ -162,11 +165,16 @@ function dispatch(eventType, payload) {
 }
 
 export function registerDowntimeSocket() {
-  const socket = globalThis.game?.socket;
-  if (registered || typeof socket?.on !== "function") return registered;
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveDowntimePayload(payload, senderUserId),
-  );
+  if (registered) return true;
+  if (
+    !registerModuleSocketRoute({
+      id: "downtime",
+      eventTypes: EVENT_TYPES,
+      receive: receiveDowntimePayload,
+    })
+  ) {
+    return false;
+  }
   registerSharpeningLifecycleRetryHooks();
   ensurePendingSharpeningLifecycleLoaded();
   flushPendingSharpeningLifecycle();
@@ -205,15 +213,9 @@ export function emitDowntimeEvent(type, data = {}) {
     });
     return null;
   }
-  if (typeof globalThis.game?.socket?.emit === "function") {
-    if (targetUserId) {
-      globalThis.game.socket.emit(SOCKET_NAME, payload, {
-        recipients: [targetUserId],
-      });
-    } else {
-      globalThis.game.socket.emit(SOCKET_NAME, payload);
-    }
-  }
+  emitModuleSocketPayload(payload, {
+    recipients: targetUserId ? [targetUserId] : [],
+  });
   if (!targetUserId || targetUserId === currentUserId) {
     dispatch(type, payload);
   }

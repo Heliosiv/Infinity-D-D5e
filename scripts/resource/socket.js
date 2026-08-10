@@ -1,9 +1,8 @@
 /**
  * Infinity D&D5e — Resource Socket
  *
- * GM ↔ player communication for the Quartermaster. Shares the module socket
- * name with the merchant + audio layers; every payload carries a `type` and
- * handlers filter by it, so the three coexist on one `game.socket.on`.
+ * GM ↔ player communication for the Quartermaster. The compatibility router
+ * owns the one raw module listener and dispatches these exact event types here.
  *
  * Authority model (mirrors merchant/socket.js):
  * - The authoritative GM owns day detection, the world settings, and all actor
@@ -13,6 +12,7 @@
  */
 
 import {
+  authoritativeGMId,
   authenticateSocketPayload,
   isActiveSocketUser,
   isAuthoritativeGM as sharedIsAuthoritativeGM,
@@ -20,9 +20,12 @@ import {
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
 import { isResourceAutomationReady } from "./store.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "../socket-router.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 
 export const RESOURCE_EVENTS = Object.freeze({
   // GM → player: a new day; here is the environment + whether foraging is open.
@@ -95,12 +98,16 @@ function dispatchToListeners(eventType, payload) {
 
 /** Register the resource socket handler. Idempotent. */
 export function registerResourceSocket() {
-  const socket = globalThis.game?.socket;
-  if (!socket || registered) return registered;
-  if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveResourcePayload(payload, senderUserId),
-  );
+  if (registered) return true;
+  if (
+    !registerModuleSocketRoute({
+      id: "resource",
+      eventTypes: RESOURCE_TYPES,
+      receive: receiveResourcePayload,
+    })
+  ) {
+    return false;
+  }
   registered = true;
   return true;
 }
@@ -191,25 +198,16 @@ export function emitResourceEvent(type, data = {}) {
     auditInvalidResourcePayload("outgoing", payload, validation.reason);
     return null;
   }
-  const socket = globalThis.game?.socket;
-  if (typeof socket?.emit === "function") {
-    const targetUserId =
-      typeof payload.targetUserId === "string"
-        ? payload.targetUserId.trim()
-        : "";
-    if (targetUserId) {
-      socket.emit(SOCKET_NAME, payload, { recipients: [targetUserId] });
-    } else {
-      socket.emit(SOCKET_NAME, payload);
-    }
-  }
+  emitModuleSocketPayload(payload, {
+    recipients: resolveOutgoingRecipients(type, payload),
+  });
   dispatchToListeners(type, payload);
   return payload;
 }
 
 export function receiveResourcePayload(payload, authenticatedSenderId) {
-  // The module socket is shared with merchant, reputation, and audio events.
-  // Ignore their envelopes before applying the resource protocol validator.
+  // Direct callers may still pass another feature's flat payload. Ignore it
+  // before applying the resource protocol validator.
   if (
     !payload ||
     typeof payload !== "object" ||
@@ -261,6 +259,17 @@ function isBoundedProtocolId(value) {
   if (typeof value !== "string") return false;
   const normalized = value.trim();
   return normalized.length > 0 && normalized.length <= MAX_PROTOCOL_ID_LENGTH;
+}
+
+function resolveOutgoingRecipients(type, payload) {
+  const targetUserId =
+    typeof payload.targetUserId === "string" ? payload.targetUserId.trim() : "";
+  if (TARGETED_TYPES.has(type)) return targetUserId ? [targetUserId] : [];
+  if (PLAYER_TO_GM_TYPES.has(type)) {
+    const gmId = authoritativeGMId();
+    return gmId ? [gmId] : [];
+  }
+  return undefined;
 }
 
 function auditInvalidResourcePayload(

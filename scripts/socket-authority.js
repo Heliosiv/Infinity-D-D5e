@@ -8,8 +8,12 @@
 
 import { isFullGM } from "./permissions.js";
 
+const MAX_SOCKET_USER_ID_LENGTH = 160;
+
 function toId(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return id && id.length <= MAX_SOCKET_USER_ID_LENGTH ? id : null;
 }
 
 function activeUsers(game = globalThis.game) {
@@ -62,9 +66,10 @@ export function isActiveSocketUser(userId, game = globalThis.game) {
 /** Resolve and verify the transport-authenticated socket sender. */
 export function authenticateSocketPayload(payload, authenticatedSenderId) {
   const transportId = toId(authenticatedSenderId);
+  if (!transportId) return null;
   const claimedId = toId(payload?.originUserId);
-  if (transportId && claimedId && transportId !== claimedId) return null;
-  return transportId ?? claimedId;
+  if (claimedId && transportId !== claimedId) return null;
+  return transportId;
 }
 
 /** Clone a payload with the authenticated identity as its canonical origin. */

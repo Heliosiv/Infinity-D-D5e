@@ -1,9 +1,8 @@
 /**
  * Infinity D&D5e — Merchant Socket
  *
- * GM ↔ player communication for the Merchant Workspace. Every payload
- * carries a `type` field — handlers filter by type and ignore the rest
- * (the audio module shares this socket name with its own type).
+ * GM ↔ player communication for the Merchant Workspace. The compatibility
+ * router owns the one raw module listener and dispatches these event types.
  *
  * Authority model:
  * - GM client owns the merchant store and the in-memory session map.
@@ -82,13 +81,16 @@ import {
   isAuthoritativeGMSender,
   withAuthenticatedOrigin,
 } from "../socket-authority.js";
+import {
+  emitModuleSocketPayload,
+  registerModuleSocketRoute,
+} from "../socket-router.js";
 import { isFullGM } from "../permissions.js";
 import { isPrivilegedPrivateStateReady } from "../private-state.js";
 import { loadDowntimeConfig } from "../downtime/store.js";
 import { hasStolenGoodsIssuance } from "../downtime/stolen-ledger.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const SOCKET_NAME = `module.${MODULE_ID}`;
 
 function isPrivateStateAuthorityReady() {
   const liveFoundry = Boolean(
@@ -232,12 +234,16 @@ function dispatchToListeners(eventType, payload) {
 
 /** Register the merchant socket handler. Idempotent. */
 export function registerMerchantSocket() {
-  const socket = globalThis.game?.socket;
-  if (!socket || registered) return registered;
-  if (typeof socket.on !== "function") return false;
-  socket.on(SOCKET_NAME, (payload, senderUserId) =>
-    receiveMerchantPayload(payload, senderUserId),
-  );
+  if (registered) return true;
+  if (
+    !registerModuleSocketRoute({
+      id: "merchant",
+      eventTypes: MERCHANT_TYPES,
+      receive: receiveMerchantPayload,
+    })
+  ) {
+    return false;
+  }
   registered = true;
   return true;
 }
@@ -307,13 +313,12 @@ export function emitMerchantEvent(
     payload,
     explicitRecipients,
   );
-  const socket = globalThis.game?.socket;
   if (
     emitSocket &&
     recipients.length > 0 &&
-    typeof socket?.emit === "function"
+    typeof globalThis.game?.socket?.emit === "function"
   ) {
-    socket.emit(SOCKET_NAME, payload, { recipients });
+    emitModuleSocketPayload(payload, { recipients });
   }
   if (dispatchLocal) {
     // Preserve optimistic/local UI behavior without relying on a server echo.
