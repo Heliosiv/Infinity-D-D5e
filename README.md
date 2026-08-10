@@ -289,7 +289,7 @@ npm run verify
 
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
-`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source` runs formatting, all source checks, all three UI gates, and manifest compatibility. `npm run verify` adds release construction and verifies the local ZIP; `npm run release` invokes that same complete gate and build.
+`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source` runs formatting, all source checks, all three UI gates, and manifest compatibility. `npm run verify` adds release construction and verifies the actual ZIP root, manifest references, release URLs, and SHA-256; `npm run release` invokes that same complete gate and build.
 
 ### Compendium pack
 
@@ -333,12 +333,15 @@ npm run release
 
 `{version}` in `INFINITY_RELEASE_DOWNLOAD_URL` is substituted at build time. The source `module.json` is never modified; injection happens only on the staged copy that goes into `release/module.zip` and `release/module.json`.
 
-For a GitHub-Releases workflow:
+For the GitHub Releases workflow:
 
 1. Read the source version and tag the commit (`$version = (Get-Content package.json | ConvertFrom-Json).version; git tag "v$version"; git push origin "refs/tags/v$version"`).
-2. Run `npm run release` with `INFINITY_RELEASE_REPO` set.
-3. Create a GitHub Release named for that tag and upload `release/module.zip`, `release/module.json`, and `release/module.zip.sha256.txt` as assets.
-4. The `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater picks up future releases automatically.
+2. The tag workflow runs the complete source gate from a clean checkout and requires the tag, `module.json`, `package.json`, and both lockfile version fields to agree exactly.
+3. It builds and independently inspects `module.zip`, verifies the ZIP-root manifest and every declared runtime reference, and confirms `module.zip.sha256.txt` against the archive bytes.
+4. It creates or updates a **draft** GitHub Release and uploads `module.zip`, `module.json`, and the SHA-256 file. The workflow never publishes a release automatically.
+5. Review the draft, complete the installed-world smoke check, and then publish it manually. The packaged `manifest` URL points at `releases/latest/download/module.json`, so Foundry's auto-updater sees it only after publication.
+
+Ordinary branch and pull-request CI runs `npm run verify:source`, then uses a separate clean checkout to build and inspect the same release artifact. Packaging must not modify tracked source files.
 
 ## Tag Schema
 

@@ -30,6 +30,8 @@ import { spawnSync } from "node:child_process";
 
 import AdmZip from "adm-zip";
 
+import { verifyReleaseArtifact } from "./verify-release-artifact.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const releaseDir = path.join(repoRoot, "release");
@@ -497,6 +499,11 @@ async function main() {
   runZip();
   const sha = await writeSha();
   const zipStat = await stat(zipPath);
+
+  // Inspect the archive itself, independently of the staging-tree checks above.
+  // This catches wrapped manifests, non-portable ZIP paths, a stale checksum,
+  // or a reference that did not survive archive construction.
+  await verifyReleaseArtifact({ repoRoot });
 
   console.log("");
   console.log("Done.");

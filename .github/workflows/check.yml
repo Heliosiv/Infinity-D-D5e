@@ -6,15 +6,17 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
-  # Core quality gate: the full bespoke test suite. Blocking.
-  check:
+  source-gate:
+    name: Full source gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history + tags so the manifest release-state gate in
-          # test-manifest-compat.mjs can compare against released tags.
+          # The manifest gate compares source versions with released tags.
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
@@ -23,32 +25,29 @@ jobs:
       - run: npm ci
       - name: Install Chromium for browser-backed source checks
         run: npx --yes playwright install --with-deps chromium
-      - run: npm run check
+      - name: Verify source, UI, accessibility, keyboard, and manifest
+        run: npm run verify:source
 
-  # Prettier formatting. Blocking.
-  format:
+  package:
+    name: Build and inspect clean package
+    needs: source-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm run format:check
-
-  # Headless-Chromium layout, reachability, action-wiring, and accessibility audits. Blocking.
-  ui-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - name: Install Chromium for the UI harness
-        run: npx --yes playwright install --with-deps chromium
-      - run: npm run ui:audit
-      - run: npm run ui:audit:a11y
-      - run: npm run ui:audit:keyboard
+      - name: Confirm clean checkout
+        shell: bash
+        run: test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Build release package
+        run: npm run release:nocheck
+      - name: Independently inspect release package
+        run: node scripts/verify-release-artifact.mjs
+      - name: Confirm packaging did not modify tracked source
+        shell: bash
+        run: test -z "$(git status --porcelain --untracked-files=no)"
