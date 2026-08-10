@@ -142,11 +142,11 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const deliveryId = normalizeDeliveryId(payload?.deliveryId);
     const duplicate = deliveryId ? handledDeliveryIds.has(deliveryId) : false;
-    if (deliveryId && !duplicate) rememberDeliveryId(deliveryId);
 
     if (!duplicate) {
+      let applied = false;
       if (app) {
-        app._onAck(payload);
+        applied = app._onAck(payload) !== false;
       } else {
         app = ForagePromptApp.open({
           runId: payload?.runId,
@@ -158,7 +158,13 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
           forageTarget: payload?.forageTarget,
           initialAck: payload,
         });
+        applied = Boolean(app);
       }
+      // Only remember an acknowledgement after its result was successfully
+      // applied/rendered. A UI exception must leave the durable delivery
+      // replayable instead of confirming an unseen result.
+      if (!applied) return app ?? null;
+      if (deliveryId) rememberDeliveryId(deliveryId);
     }
     confirmAckDelivery(payload);
     return app ?? null;
@@ -463,7 +469,7 @@ export function registerForagePromptAutoOpen() {
 
 /** Ask the authoritative GM to replay this user's outstanding prompt/result. */
 export function requestForagePromptSync() {
-  if (isFullGM()) return null;
+  if (isDrivingFullGM()) return null;
   if (!authoritativeGMId()) return null;
   return emitResourceEvent(RESOURCE_EVENTS.PROMPT_SYNC_REQUEST, {
     requestId: createSyncRequestId(),
@@ -473,13 +479,21 @@ export function requestForagePromptSync() {
 function confirmAckDelivery(payload) {
   const promptId = normalizeProtocolId(payload?.promptId);
   const deliveryId = normalizeDeliveryId(payload?.deliveryId);
-  if (!promptId || !deliveryId || isFullGM()) return null;
+  if (!promptId || !deliveryId || isDrivingFullGM()) return null;
   return emitResourceEvent(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM, {
     runId: payload.runId,
     actorId: payload.actorId,
     promptId,
     deliveryId,
   });
+}
+
+function isDrivingFullGM() {
+  return (
+    isFullGM() &&
+    String(globalThis.game?.user?.id ?? "") ===
+      String(authoritativeGMId() ?? "")
+  );
 }
 
 function ackMatchesPrompt(app, payload) {

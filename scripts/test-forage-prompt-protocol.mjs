@@ -114,6 +114,13 @@ try {
   };
   const actors = new Map([[actor.id, actor]]);
   const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+  const secondaryGm = {
+    id: "gm-b",
+    isGM: true,
+    role: 4,
+    active: true,
+    character: actor,
+  };
   const assistant = {
     id: "assistant-a",
     isGM: true,
@@ -128,7 +135,7 @@ try {
     active: true,
     character: actor,
   };
-  const users = userCollection([gm, assistant, player]);
+  const users = userCollection([gm, secondaryGm, assistant, player]);
   globalThis.game = {
     user: player,
     users,
@@ -286,6 +293,39 @@ try {
     "a duplicate acknowledgement is confirmed again in case the first receipt was lost",
   );
 
+  const flaky = ForagePromptApp.open({
+    runId: "run-render-retry",
+    actorId: actor.id,
+    promptId: "prompt-render-retry",
+  });
+  const flakyAck = {
+    ...reloadedAck,
+    runId: "run-render-retry",
+    promptId: "prompt-render-retry",
+    deliveryId: "delivery-render-retry",
+  };
+  const confirmationsBeforeRenderFailure = framesOf(
+    RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+  ).length;
+  const originalOnAck = flaky._onAck;
+  flaky._onAck = () => {
+    throw new Error("render failed");
+  };
+  assert.throws(() => ForagePromptApp.handleAck(flakyAck), /render failed/);
+  assert.equal(
+    framesOf(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM).length,
+    confirmationsBeforeRenderFailure,
+    "a result that failed to render is not durably confirmed",
+  );
+  flaky._onAck = originalOnAck;
+  ForagePromptApp.handleAck(flakyAck);
+  assert.equal(flaky._state, "done");
+  assert.equal(
+    framesOf(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM).length,
+    confirmationsBeforeRenderFailure + 1,
+    "the same delivery is replayed and confirmed after a successful render",
+  );
+
   const mismatched = ForagePromptApp.open({
     runId: "run-mismatch",
     actorId: actor.id,
@@ -341,6 +381,27 @@ try {
   assert.ok(
     requestForagePromptSync(),
     "an Assistant GM with an assigned character remains a player-side sync client",
+  );
+  globalThis.game.user = secondaryGm;
+  assert.ok(
+    requestForagePromptSync(),
+    "a non-authoritative full GM may synchronize an assigned character prompt",
+  );
+  const secondaryAck = {
+    ...reloadedAck,
+    targetUserId: secondaryGm.id,
+    runId: "run-secondary-gm",
+    promptId: "prompt-secondary-gm",
+    deliveryId: "delivery-secondary-gm",
+  };
+  const confirmationsBeforeSecondaryAck = framesOf(
+    RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+  ).length;
+  ForagePromptApp.handleAck(secondaryAck);
+  assert.equal(
+    framesOf(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM).length,
+    confirmationsBeforeSecondaryAck + 1,
+    "a targeted secondary full GM confirms the durable acknowledgement",
   );
   globalThis.game.user = gm;
   assert.equal(
