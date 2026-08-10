@@ -34,9 +34,12 @@ import {
 } from "./resource/calendar-watcher.js";
 import { buildResourceOverview } from "./resource/overview.js";
 import {
+  createEnvironment,
   duplicateEnvironment,
   findEnvironment,
   isCustomEnvironment,
+  moveCustomEnvironment,
+  removeCustomEnvironment,
   updateEnvironmentFields,
 } from "./resource/environment.js";
 import { presentRecentRuns } from "./resource/history.js";
@@ -104,7 +107,10 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       removeTag: ResourceManagerApp._onRemoveTag,
       addRosterMember: ResourceManagerApp._onAddRosterMember,
       removeRosterMember: ResourceManagerApp._onRemoveRosterMember,
+      createEnvironment: ResourceManagerApp._onCreateEnvironment,
       copyEnvironment: ResourceManagerApp._onCopyEnvironment,
+      moveEnvironment: ResourceManagerApp._onMoveEnvironment,
+      removeEnvironment: ResourceManagerApp._onRemoveEnvironment,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
       selectSection: navigateToAppSection,
@@ -211,6 +217,12 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       optionLabel: environmentDisplayLabel(env),
       selected: env.id === currentEnv?.id,
     }));
+    const customEnvironmentIds = config.environments
+      .filter((environment) => isCustomEnvironment(environment))
+      .map((environment) => environment.id);
+    const currentCustomIndex = currentEnv
+      ? customEnvironmentIds.indexOf(currentEnv.id)
+      : -1;
 
     const roster = getPartyRoster(config);
     const rosterIsImplicit = (config.roster ?? []).length === 0;
@@ -401,6 +413,14 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           }
         : null,
       canCopyEnvironment: isAuthoritative && Boolean(currentEnv),
+      canCreateEnvironment: isAuthoritative,
+      canMoveEnvironmentEarlier: isFullGM() && currentCustomIndex > 0,
+      canMoveEnvironmentLater:
+        isFullGM() &&
+        currentCustomIndex >= 0 &&
+        currentCustomIndex < customEnvironmentIds.length - 1,
+      canRemoveEnvironment:
+        isAuthoritative && Boolean(currentEnv?.id) && currentCustomIndex >= 0,
       currentEnvLabel: currentEnv ? environmentDisplayLabel(currentEnv) : "—",
       currentEnvForageable: currentEnv ? currentEnvForageable : false,
       currentEnvDc: currentEnv?.dc ?? null,
@@ -496,18 +516,9 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     // Environment select.
     const envSelect = root.querySelector("[data-role='environment']");
     if (envSelect) {
-      envSelect.addEventListener("change", async (event) => {
-        if (!isAuthoritativeGM()) {
-          notify(
-            "warn",
-            "only the active GM can change the current environment.",
-          );
-          await this._renderPreservingFocus(event.target);
-          return;
-        }
-        await setCurrentEnvironment(String(event.target.value ?? ""));
-        await this._renderPreservingFocus(event.target);
-      });
+      envSelect.addEventListener("change", (event) =>
+        this._onEnvironmentSelection(event.currentTarget),
+      );
     }
 
     // Generic config-path inputs (toggles + per-resource fields).
@@ -587,6 +598,22 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     await this._renderPreservingFocus(input);
   }
 
+  async _onEnvironmentSelection(input) {
+    const environmentId = String(input?.value ?? "").trim();
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "only the active GM can change the current environment.",
+        );
+        await this._renderPreservingFocus(input);
+        return;
+      }
+      await setCurrentEnvironment(environmentId);
+      await this._renderPreservingFocus(input);
+    });
+  }
+
   async _onEnvironmentInput(input) {
     const environmentId = String(input?.dataset?.environmentId ?? "").trim();
     const field = String(input?.dataset?.environmentField ?? "").trim();
@@ -607,35 +634,42 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
           : String(control.value ?? ""),
       ]),
     );
-    const config = loadResourceConfig();
-    const updated = updateEnvironmentFields(
-      config.environments,
-      environmentId,
-      patch,
-    );
-    if (!updated.ok) {
-      for (const control of controls) {
-        const controlField = String(control.dataset.environmentField);
-        control.setCustomValidity?.(updated.errors?.[controlField] ?? "");
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isFullGM()) {
+        notify("warn", "only a full GM can edit custom environments.");
+        await this._renderPreservingFocus(input);
+        return;
       }
-      const firstInvalid = controls.find(
-        (control) => updated.errors?.[control.dataset.environmentField],
+      const config = loadResourceConfig();
+      const updated = updateEnvironmentFields(
+        config.environments,
+        environmentId,
+        patch,
       );
-      const fallbackMessage =
-        updated.errors?.environment ??
-        updated.errors?.environmentId ??
-        Object.values(updated.errors ?? {})[0] ??
-        "This environment value is not valid.";
-      if (!firstInvalid) input.setCustomValidity?.(fallbackMessage);
-      (firstInvalid ?? input).reportValidity?.();
-      return;
-    }
+      if (!updated.ok) {
+        for (const control of controls) {
+          const controlField = String(control.dataset.environmentField);
+          control.setCustomValidity?.(updated.errors?.[controlField] ?? "");
+        }
+        const firstInvalid = controls.find(
+          (control) => updated.errors?.[control.dataset.environmentField],
+        );
+        const fallbackMessage =
+          updated.errors?.environment ??
+          updated.errors?.environmentId ??
+          Object.values(updated.errors ?? {})[0] ??
+          "This environment value is not valid.";
+        if (!firstInvalid) input.setCustomValidity?.(fallbackMessage);
+        (firstInvalid ?? input).reportValidity?.();
+        return;
+      }
 
-    for (const control of controls) control.setCustomValidity?.("");
-    config.environments = updated.catalog;
-    await saveResourceConfig(config);
-    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
-    await this._renderPreservingFocus(input);
+      for (const control of controls) control.setCustomValidity?.("");
+      config.environments = updated.catalog;
+      await saveResourceConfig(config);
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      await this._renderPreservingFocus(input);
+    });
   }
 
   async _renderPreservingFocus(activeElement) {
@@ -1046,44 +1080,308 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
   }
 
   /** @this {ResourceManagerApp} */
-  static async _onCopyEnvironment() {
-    if (!isAuthoritativeGM()) {
-      notify(
-        "warn",
-        "only the active GM can copy and activate an environment.",
-      );
-      return;
-    }
-    const config = loadResourceConfig();
-    const state = loadRunState();
-    const requestedEnvironmentId =
-      state.currentEnvironmentId ||
-      getSetting(SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT) ||
-      "limited";
-    const sourceEnvironment =
-      findEnvironment(config.environments, requestedEnvironmentId) ??
-      config.environments[0] ??
-      null;
-    const copied = duplicateEnvironment(
-      config.environments,
-      sourceEnvironment?.id,
-    );
-    if (!copied.ok || !copied.environment) {
-      notify(
-        "warn",
-        copied.errors?.environment ??
-          Object.values(copied.errors ?? {})[0] ??
-          "the current environment could not be copied.",
-      );
-      return;
-    }
+  static async _onCreateEnvironment() {
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "only the active GM can create and activate an environment.",
+        );
+        return;
+      }
+      const config = loadResourceConfig();
+      const created = createEnvironment(config.environments);
+      if (!created.ok || !created.environment) {
+        notify(
+          "warn",
+          created.errors?.environment ??
+            Object.values(created.errors ?? {})[0] ??
+            "a custom region could not be created.",
+        );
+        return;
+      }
 
-    config.environments = copied.catalog;
-    await saveResourceConfig(config);
-    await setCurrentEnvironment(copied.environment.id);
-    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
-    notify("info", `created custom region ${copied.environment.label}.`);
-    this.render(false);
+      config.environments = created.catalog;
+      try {
+        await saveResourceConfig(config);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm that the new custom region was saved. Review the environment list before trying again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      try {
+        await setCurrentEnvironment(created.environment.id);
+      } catch {
+        notify(
+          "warn",
+          `saved custom region ${created.environment.label}, but could not confirm it became active. Review the current selection instead of creating another copy.`,
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      notify("info", `created custom region ${created.environment.label}.`);
+      await renderAndFocusEnvironmentControl(
+        this,
+        `[data-environment-id="${cssEscape(created.environment.id)}"][data-environment-field="label"]`,
+      );
+    });
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onCopyEnvironment() {
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "only the active GM can copy and activate an environment.",
+        );
+        return;
+      }
+      const config = loadResourceConfig();
+      const state = loadRunState();
+      const requestedEnvironmentId =
+        state.currentEnvironmentId ||
+        getSetting(SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT) ||
+        "limited";
+      const sourceEnvironment =
+        findEnvironment(config.environments, requestedEnvironmentId) ??
+        config.environments[0] ??
+        null;
+      const copied = duplicateEnvironment(
+        config.environments,
+        sourceEnvironment?.id,
+      );
+      if (!copied.ok || !copied.environment) {
+        notify(
+          "warn",
+          copied.errors?.environment ??
+            Object.values(copied.errors ?? {})[0] ??
+            "the current environment could not be copied.",
+        );
+        return;
+      }
+
+      config.environments = copied.catalog;
+      try {
+        await saveResourceConfig(config);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm that the copied region was saved. Review the environment list before trying again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      try {
+        await setCurrentEnvironment(copied.environment.id);
+      } catch {
+        notify(
+          "warn",
+          `saved custom region ${copied.environment.label}, but could not confirm it became active. Review the current selection instead of creating another copy.`,
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      notify("info", `created custom region ${copied.environment.label}.`);
+      await renderAndFocusEnvironmentControl(
+        this,
+        `[data-environment-id="${cssEscape(copied.environment.id)}"][data-environment-field="label"]`,
+      );
+    });
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onMoveEnvironment(_event, target) {
+    const environmentId = String(target?.dataset?.environmentId ?? "").trim();
+    const direction = String(target?.dataset?.direction ?? "").trim();
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isFullGM()) {
+        notify("warn", "only a full GM can reorder environments.");
+        return;
+      }
+      if (
+        !environmentId ||
+        (direction !== "earlier" && direction !== "later")
+      ) {
+        notify("warn", "choose a custom region and a direction to move it.");
+        return;
+      }
+
+      const config = loadResourceConfig();
+      const moved = moveCustomEnvironment(
+        config.environments,
+        environmentId,
+        direction,
+      );
+      if (!moved.ok) {
+        notify(
+          "warn",
+          moved.errors?.environment ??
+            moved.errors?.direction ??
+            Object.values(moved.errors ?? {})[0] ??
+            "the custom region could not be moved.",
+        );
+        return;
+      }
+
+      config.environments = moved.catalog;
+      try {
+        await saveResourceConfig(config);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm the new custom-region order. Review the environment list before trying again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      await renderAndFocusEnvironmentControl(this, "[data-role='environment']");
+    });
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onRemoveEnvironment(_event, target) {
+    const environmentId = String(target?.dataset?.environmentId ?? "").trim();
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isAuthoritativeGM()) {
+        notify("warn", "only the active GM can remove environments.");
+        return;
+      }
+      const before = loadResourceConfig();
+      const environment = findEnvironment(before.environments, environmentId);
+      const activeEnvironment = resolveCurrentEnvironment(before);
+      if (!environment || !isCustomEnvironment(environment)) {
+        notify("warn", "only a custom region can be removed.");
+        return;
+      }
+      if (activeEnvironment?.id !== environmentId) {
+        notify("warn", "select the custom region before removing it.");
+        return;
+      }
+
+      const preview = removeCustomEnvironment(
+        before.environments,
+        environmentId,
+      );
+      const previewFallback = preview.fallbackId
+        ? findEnvironment(preview.catalog, preview.fallbackId)
+        : null;
+      if (!preview.ok || !previewFallback) {
+        notify(
+          "warn",
+          preview.errors?.environment ??
+            Object.values(preview.errors ?? {})[0] ??
+            "the custom region could not be removed.",
+        );
+        return;
+      }
+      const targetFingerprint = environmentFingerprint(environment);
+      const fallbackFingerprint = environmentFingerprint(previewFallback);
+
+      const confirmed = await confirmDestructive({
+        title: "Remove custom region?",
+        content: `<p>Remove <strong>${escapeHtml(environmentDisplayLabel(environment))}</strong> from the saved environment list? Built-in regions are kept.</p><p>Quartermaster will switch to <strong>${escapeHtml(environmentDisplayLabel(previewFallback))}</strong>.</p>`,
+        icon: "fa-solid fa-trash",
+      });
+      if (!confirmed) return;
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "active GM control changed while the confirmation was open; nothing was removed.",
+        );
+        return;
+      }
+
+      // Re-read every value shown in the confirmation before committing it.
+      const config = loadResourceConfig();
+      const currentTarget = findEnvironment(config.environments, environmentId);
+      const currentActiveEnvironment = resolveCurrentEnvironment(config);
+      const removed = removeCustomEnvironment(
+        config.environments,
+        environmentId,
+      );
+      const currentFallback = removed.fallbackId
+        ? findEnvironment(removed.catalog, removed.fallbackId)
+        : null;
+      const confirmationIsCurrent = Boolean(
+        currentTarget &&
+        isCustomEnvironment(currentTarget) &&
+        currentActiveEnvironment?.id === environmentId &&
+        environmentFingerprint(currentTarget) === targetFingerprint &&
+        removed.ok &&
+        removed.fallbackId === preview.fallbackId &&
+        currentFallback &&
+        environmentFingerprint(currentFallback) === fallbackFingerprint,
+      );
+      if (!confirmationIsCurrent) {
+        notify(
+          "warn",
+          "the active region or removal fallback changed; review the current list and try again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+
+      // Switch first: if run-state persistence fails, the active id still
+      // points at an environment that remains in the saved catalog.
+      try {
+        await setCurrentEnvironment(removed.fallbackId);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm the fallback environment, so the custom region was not removed. Review the current environment before trying again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      config.environments = removed.catalog;
+      try {
+        await saveResourceConfig(config);
+      } catch {
+        notify(
+          "warn",
+          `Quartermaster switched to ${environmentDisplayLabel(currentFallback)}, but could not confirm removal of ${environmentDisplayLabel(environment)}. Review the environment list before trying again.`,
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-role='environment']",
+        );
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      notify(
+        "info",
+        `removed custom region ${environmentDisplayLabel(environment)}.`,
+      );
+      await renderAndFocusEnvironmentControl(this, "[data-role='environment']");
+    });
   }
 
   /** @this {ResourceManagerApp} */
@@ -1127,6 +1425,49 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
+
+function enqueueEnvironmentMutation(app, operation) {
+  const previous = app?._environmentMutationQueue ?? Promise.resolve();
+  const task = previous.catch(() => {}).then(operation);
+  if (app) app._environmentMutationQueue = task;
+  return task.finally(() => {
+    if (app?._environmentMutationQueue === task) {
+      app._environmentMutationQueue = null;
+    }
+  });
+}
+
+function resolveCurrentEnvironment(config) {
+  const requestedId =
+    loadRunState().currentEnvironmentId ||
+    getSetting(SETTING_KEYS.RESOURCE_DEFAULT_ENVIRONMENT) ||
+    "limited";
+  return (
+    findEnvironment(config?.environments, requestedId) ??
+    config?.environments?.[0] ??
+    null
+  );
+}
+
+function environmentFingerprint(environment) {
+  if (!environment) return "";
+  return JSON.stringify({
+    id: environment.id,
+    label: environment.label,
+    dc: environment.dc,
+    foodDc: environment.foodDc,
+    waterDc: environment.waterDc,
+    forageable: environment.forageable,
+    yieldFood: environment.yieldFood,
+    yieldWater: environment.yieldWater,
+    builtIn: environment.builtIn,
+  });
+}
+
+async function renderAndFocusEnvironmentControl(app, selector) {
+  await app?.render?.(false);
+  app?.element?.querySelector?.(selector)?.focus?.();
+}
 
 /** Resolve and persist one exact Item UUID against the latest resource config. */
 async function saveExactItemMatch(resourceId, rawUuid) {

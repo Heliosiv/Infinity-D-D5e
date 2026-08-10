@@ -2388,7 +2388,11 @@ function resourceManagerContext() {
       yieldWater: "1d6",
       isCustom: false,
     },
+    canCreateEnvironment: true,
     canCopyEnvironment: true,
+    canMoveEnvironmentEarlier: false,
+    canMoveEnvironmentLater: false,
+    canRemoveEnvironment: false,
     currentEnvLabel: "Limited",
     currentEnvForageable: true,
     currentEnvDc: 15,
@@ -2784,6 +2788,12 @@ function resourceManagerRecentRunsContext() {
 
 function resourceManagerCustomEnvironmentContext() {
   const context = resourceManagerContext();
+  const earlierCustom = {
+    id: "custom-salt-marsh",
+    label: "Salt Marsh",
+    builtIn: false,
+    isCustom: true,
+  };
   const custom = {
     id: "custom-ashen-march",
     label: "Ashen March",
@@ -2796,6 +2806,12 @@ function resourceManagerCustomEnvironmentContext() {
     yieldWater: "1d6-1",
     isCustom: true,
   };
+  const laterCustom = {
+    id: "custom-windward-pass",
+    label: "Windward Pass",
+    builtIn: false,
+    isCustom: true,
+  };
   return {
     ...context,
     setupExpanded: true,
@@ -2804,9 +2820,14 @@ function resourceManagerCustomEnvironmentContext() {
         ...environment,
         selected: false,
       })),
+      { ...earlierCustom, optionLabel: earlierCustom.label, selected: false },
       { ...custom, optionLabel: custom.label, selected: true },
+      { ...laterCustom, optionLabel: laterCustom.label, selected: false },
     ],
     currentEnvironment: custom,
+    canMoveEnvironmentEarlier: true,
+    canMoveEnvironmentLater: true,
+    canRemoveEnvironment: true,
     currentEnvLabel: custom.label,
     currentEnvDc: custom.dc,
     currentEnvFoodDc: custom.foodDc,

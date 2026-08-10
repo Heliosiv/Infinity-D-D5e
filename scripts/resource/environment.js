@@ -586,6 +586,38 @@ function catalogOperationFailure(catalog, errors) {
   };
 }
 
+/** Create one validated, editable environment with conservative defaults. */
+export function createEnvironment(catalog) {
+  if (!Array.isArray(catalog)) {
+    return catalogOperationFailure(catalog, {
+      catalog: "Environment catalog must be an array.",
+    });
+  }
+
+  const draft = {
+    id: createUniqueEnvironmentId(catalog),
+    label: "New Region",
+    dc: 15,
+    foodDc: 15,
+    waterDc: 15,
+    forageable: true,
+    yieldFood: "1d6",
+    yieldWater: "1d6",
+    builtIn: false,
+  };
+  const validation = validateEnvironmentDraft(draft, { catalog });
+  if (!validation.ok) {
+    return catalogOperationFailure(catalog, validation.errors);
+  }
+
+  return {
+    ok: true,
+    catalog: [...catalog, validation.value],
+    environment: validation.value,
+    errors: {},
+  };
+}
+
 /** Duplicate an existing environment into one validated custom catalog entry. */
 export function duplicateEnvironment(catalog, sourceId) {
   if (!Array.isArray(catalog)) {
@@ -703,6 +735,119 @@ export function updateEnvironmentFields(catalog, environmentId, patch) {
     ok: true,
     catalog: nextCatalog,
     environment: validation.value,
+    errors: {},
+  };
+}
+
+/**
+ * Move a custom environment one custom slot earlier or later. Built-in entries
+ * keep both their catalog positions and object identities, even in an
+ * interleaved legacy catalog.
+ */
+export function moveCustomEnvironment(catalog, environmentId, direction) {
+  if (!Array.isArray(catalog)) {
+    return catalogOperationFailure(catalog, {
+      catalog: "Environment catalog must be an array.",
+    });
+  }
+  if (direction !== "earlier" && direction !== "later") {
+    return catalogOperationFailure(catalog, {
+      direction: "Choose whether to move the environment earlier or later.",
+    });
+  }
+
+  const environmentKey = toStr(environmentId);
+  const index = catalog.findIndex(
+    (environment) => toStr(environment?.id) === environmentKey,
+  );
+  if (index < 0) {
+    return catalogOperationFailure(catalog, {
+      environmentId: "Choose an environment to move.",
+    });
+  }
+  if (!isCustomEnvironment(catalog[index])) {
+    return catalogOperationFailure(catalog, {
+      environmentId: "Built-in environments keep their preset order.",
+    });
+  }
+
+  const customIndexes = catalog
+    .map((environment, catalogIndex) =>
+      isCustomEnvironment(environment) ? catalogIndex : -1,
+    )
+    .filter((catalogIndex) => catalogIndex >= 0);
+  const customIndex = customIndexes.indexOf(index);
+  const targetCustomIndex =
+    direction === "earlier" ? customIndex - 1 : customIndex + 1;
+  if (targetCustomIndex < 0 || targetCustomIndex >= customIndexes.length) {
+    return catalogOperationFailure(catalog, {
+      direction: `That environment is already the ${
+        direction === "earlier" ? "first" : "last"
+      } custom environment.`,
+    });
+  }
+
+  const targetIndex = customIndexes[targetCustomIndex];
+  const nextCatalog = [...catalog];
+  [nextCatalog[index], nextCatalog[targetIndex]] = [
+    nextCatalog[targetIndex],
+    nextCatalog[index],
+  ];
+  return {
+    ok: true,
+    catalog: nextCatalog,
+    environment: nextCatalog[targetIndex],
+    errors: {},
+  };
+}
+
+/**
+ * Remove one custom environment. The fallback is the next valid catalog entry,
+ * or the nearest previous entry when the removed item was last.
+ */
+export function removeCustomEnvironment(catalog, environmentId) {
+  const failure = (errors) => ({
+    ...catalogOperationFailure(catalog, errors),
+    fallbackId: null,
+  });
+  if (!Array.isArray(catalog)) {
+    return failure({ catalog: "Environment catalog must be an array." });
+  }
+
+  const environmentKey = toStr(environmentId);
+  const index = catalog.findIndex(
+    (environment) => toStr(environment?.id) === environmentKey,
+  );
+  if (index < 0) {
+    return failure({
+      environmentId: "Choose an environment to remove.",
+    });
+  }
+  if (!isCustomEnvironment(catalog[index])) {
+    return failure({
+      environmentId: "Built-in environments cannot be removed.",
+    });
+  }
+
+  const removedEnvironment = catalog[index];
+  const nextCatalog = catalog.filter(
+    (_environment, catalogIndex) => catalogIndex !== index,
+  );
+  const fallbackEnvironment = [
+    ...nextCatalog.slice(index),
+    ...nextCatalog.slice(0, index).reverse(),
+  ].find((environment) => Boolean(toStr(environment?.id)));
+  if (!fallbackEnvironment) {
+    return failure({
+      environmentId: "At least one environment must remain in the catalog.",
+    });
+  }
+
+  return {
+    ok: true,
+    catalog: nextCatalog,
+    environment: { ...removedEnvironment },
+    fallbackId: toStr(fallbackEnvironment.id),
     errors: {},
   };
 }

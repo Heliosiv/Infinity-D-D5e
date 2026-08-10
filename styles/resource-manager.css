@@ -722,6 +722,23 @@
   font-size: 0.85rem;
 }
 
+.infinity-dnd5e .rm-environment-setup > .rm-section__head {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .rm-environment-setup__actions,
+.infinity-dnd5e .rm-environment-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.infinity-dnd5e .rm-environment-editor__actions {
+  justify-content: flex-end;
+}
+
 .infinity-dnd5e .rm-environment-editor {
   display: flex;
   flex-direction: column;
@@ -783,6 +800,16 @@
 }
 
 @container quartermaster (max-width: 460px) {
+  .infinity-dnd5e .rm-environment-setup__actions,
+  .infinity-dnd5e .rm-environment-editor__actions {
+    width: 100%;
+  }
+
+  .infinity-dnd5e .rm-environment-setup__actions > .mw-btn,
+  .infinity-dnd5e .rm-environment-editor__actions > .mw-btn {
+    flex: 1 1 auto;
+  }
+
   .infinity-dnd5e .rm-environment-editor__head {
     flex-direction: column;
   }

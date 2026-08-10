@@ -20,7 +20,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.2 — Unreleased** - Quartermaster now offers food, water, or both per selected forager; shows separate food and water DCs; ships forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and riverlands presets; and labels manual consumption **Use Daily Supplies**. Existing worlds receive the missing built-in presets without overwriting custom regions. Home keeps one top Help button and removes the duplicate help panels.
+**v0.3.2 — Unreleased** - Quartermaster now offers food, water, or both per selected forager; shows separate food and water DCs; ships forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and riverlands presets; and labels manual consumption **Use Daily Supplies**. Existing worlds receive the missing built-in presets without overwriting custom regions. GMs can also create, copy, order, and safely remove custom regions while shipped presets remain protected. Home keeps one top Help button and removes the duplicate help panels.
 
 **v0.3.1 — Released 2026-08-09** - Downtime setup now starts with player-owned PCs and adds searchable group, owner, folder, and sort controls for gradually including other characters. Reputation, Merchant, Quartermaster, and Settings section navigation now stays inside the current application window, and Loot preset downloads no longer trigger Foundry's external-link handler.
 
@@ -247,13 +247,17 @@ history is GM-private and fixed-size; it offers inspection only, with no retry,
 replay, rollback, or player-socket projection. An acknowledged interruption is
 recorded as an unknown inventory outcome rather than assuming nothing changed.
 
-Campaign-specific regions can be created directly in Quartermaster: select the
-closest built-in environment, choose **Copy as custom**, then edit its name,
-forage availability, separate food and water Survival DCs, and food/water yield
-formulas. Built-in scarcity tiers remain available alongside forest,
-rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and
-riverlands presets. Built-ins remain unchanged, custom IDs are collision-safe,
-and new yield formulas are validated and bounded before they are saved.
+Campaign-specific regions can be created directly in Quartermaster. Choose
+**New custom** for a fresh baseline, or select the closest existing environment
+and choose **Copy as custom**. Custom regions can be renamed, ordered relative
+to one another, and removed after confirmation. Removing the active custom
+region activates the next catalog entry, or the nearest previous entry when it
+was last. Edit forage availability, separate food and water Survival DCs, and
+food/water yield formulas. Built-in scarcity tiers remain available alongside
+forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra,
+and riverlands presets. Built-ins remain unchanged, custom IDs are
+collision-safe, and new yield formulas are validated and bounded before they
+are saved.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in

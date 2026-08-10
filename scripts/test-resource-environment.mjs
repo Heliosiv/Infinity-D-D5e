@@ -6,6 +6,7 @@ import {
   ENVIRONMENT_ID_MAX_LENGTH,
   LEGACY_BUILT_IN_ENVIRONMENT_IDS,
   YIELD_FORMULA_LIMITS,
+  createEnvironment,
   createUniqueEnvironmentId,
   duplicateEnvironment,
   getDefaultEnvironments,
@@ -13,8 +14,10 @@ import {
   isForageable,
   isCustomEnvironment,
   mergeBuiltInEnvironments,
+  moveCustomEnvironment,
   normalizeEnvironment,
   normalizeEnvironmentCatalog,
+  removeCustomEnvironment,
   updateEnvironmentFields,
   validateEnvironmentDraft,
   validateYieldFormula,
@@ -573,6 +576,232 @@ import {
   });
   assert.equal(missingUpdate.ok, false);
   assert.ok(missingUpdate.errors.environmentId);
+}
+
+/* ------------------------------------------------------------------ *
+ * Custom catalog creation, ordering, and removal
+ * ------------------------------------------------------------------ */
+{
+  const catalog = [
+    ...getDefaultEnvironments(),
+    {
+      id: "custom-environment",
+      label: "Existing Custom",
+      dc: 12,
+      foodDc: 12,
+      waterDc: 12,
+      forageable: true,
+      yieldFood: "1d4",
+      yieldWater: "1d4",
+      builtIn: false,
+    },
+    {
+      id: "CUSTOM-ENVIRONMENT-2",
+      label: "Existing Custom 2",
+      dc: 14,
+      foodDc: 14,
+      waterDc: 14,
+      forageable: true,
+      yieldFood: "1d4",
+      yieldWater: "1d4",
+      builtIn: false,
+    },
+  ];
+  const before = structuredClone(catalog);
+  const created = createEnvironment(catalog);
+  assert.equal(created.ok, true);
+  assert.deepEqual(created.errors, {});
+  assert.deepEqual(created.environment, {
+    id: "custom-environment-3",
+    label: "New Region",
+    dc: 15,
+    foodDc: 15,
+    waterDc: 15,
+    forageable: true,
+    yieldFood: "1d6",
+    yieldWater: "1d6",
+    builtIn: false,
+  });
+  assert.equal(created.catalog.at(-1), created.environment);
+  assert.deepEqual(catalog, before, "creation does not mutate its input");
+  assert.notEqual(created.catalog, catalog);
+
+  const createdAgain = createEnvironment(created.catalog);
+  assert.equal(createdAgain.environment.id, "custom-environment-4");
+  assert.equal(createdAgain.environment.builtIn, false);
+
+  const invalidCreate = createEnvironment(null);
+  assert.equal(invalidCreate.ok, false);
+  assert.ok(invalidCreate.errors.catalog);
+  assert.deepEqual(invalidCreate.catalog, []);
+}
+
+{
+  const builtInA = { ...DEFAULT_ENVIRONMENTS[0] };
+  const builtInB = { ...DEFAULT_ENVIRONMENTS[1] };
+  const customA = {
+    id: "custom-a",
+    label: "Custom A",
+    builtIn: false,
+  };
+  const customB = {
+    id: "custom-b",
+    label: "Custom B",
+    builtIn: false,
+  };
+  const customC = {
+    id: "custom-c",
+    label: "Custom C",
+    builtIn: false,
+  };
+  const catalog = [customA, builtInA, customB, builtInB, customC];
+  const before = structuredClone(catalog);
+
+  const movedEarlier = moveCustomEnvironment(catalog, "custom-c", "earlier");
+  assert.equal(movedEarlier.ok, true);
+  assert.deepEqual(
+    movedEarlier.catalog.map((environment) => environment.id),
+    ["custom-a", "abundant", "custom-c", "limited", "custom-b"],
+  );
+  assert.equal(movedEarlier.environment, customC);
+  assert.equal(movedEarlier.catalog[1], builtInA);
+  assert.equal(movedEarlier.catalog[3], builtInB);
+  assert.deepEqual(catalog, before, "moving does not mutate its input");
+
+  const movedLater = moveCustomEnvironment(
+    movedEarlier.catalog,
+    "custom-a",
+    "later",
+  );
+  assert.equal(movedLater.ok, true);
+  assert.deepEqual(
+    movedLater.catalog.map((environment) => environment.id),
+    ["custom-c", "abundant", "custom-a", "limited", "custom-b"],
+  );
+  assert.equal(movedLater.catalog[1], builtInA);
+  assert.equal(movedLater.catalog[3], builtInB);
+
+  for (const result of [
+    moveCustomEnvironment(catalog, "custom-a", "earlier"),
+    moveCustomEnvironment(catalog, "custom-c", "later"),
+  ]) {
+    assert.equal(result.ok, false);
+    assert.match(result.errors.direction, /already/i);
+    assert.deepEqual(result.catalog, catalog);
+  }
+
+  const builtInMove = moveCustomEnvironment(catalog, "abundant", "later");
+  assert.equal(builtInMove.ok, false);
+  assert.match(builtInMove.errors.environmentId, /built-in/i);
+  assert.deepEqual(builtInMove.catalog, catalog);
+
+  const missingMove = moveCustomEnvironment(catalog, "missing", "earlier");
+  assert.equal(missingMove.ok, false);
+  assert.ok(missingMove.errors.environmentId);
+
+  const invalidDirection = moveCustomEnvironment(catalog, "custom-b", "up");
+  assert.equal(invalidDirection.ok, false);
+  assert.ok(invalidDirection.errors.direction);
+
+  const invalidCatalog = moveCustomEnvironment(null, "custom-a", "earlier");
+  assert.equal(invalidCatalog.ok, false);
+  assert.ok(invalidCatalog.errors.catalog);
+}
+
+{
+  const builtInA = { ...DEFAULT_ENVIRONMENTS[0] };
+  const builtInB = { ...DEFAULT_ENVIRONMENTS[1] };
+  const customA = {
+    id: "custom-a",
+    label: "Custom A",
+    builtIn: false,
+  };
+  const customB = {
+    id: "custom-b",
+    label: "Custom B",
+    builtIn: false,
+  };
+  const catalog = [builtInA, customA, builtInB, customB];
+  const before = structuredClone(catalog);
+
+  const removedMiddle = removeCustomEnvironment(catalog, "custom-a");
+  assert.equal(removedMiddle.ok, true);
+  assert.deepEqual(
+    removedMiddle.catalog.map((environment) => environment.id),
+    ["abundant", "limited", "custom-b"],
+  );
+  assert.equal(removedMiddle.fallbackId, "limited");
+  assert.deepEqual(removedMiddle.environment, customA);
+  assert.notEqual(removedMiddle.environment, customA);
+  assert.equal(removedMiddle.catalog[0], builtInA);
+  assert.equal(removedMiddle.catalog[1], builtInB);
+  assert.deepEqual(catalog, before, "removal does not mutate its input");
+
+  const removedLast = removeCustomEnvironment(catalog, "custom-b");
+  assert.equal(removedLast.ok, true);
+  assert.equal(removedLast.fallbackId, "limited");
+  assert.deepEqual(
+    removedLast.catalog.map((environment) => environment.id),
+    ["abundant", "custom-a", "limited"],
+  );
+
+  const builtInRemove = removeCustomEnvironment(catalog, "abundant");
+  assert.equal(builtInRemove.ok, false);
+  assert.equal(builtInRemove.fallbackId, null);
+  assert.match(builtInRemove.errors.environmentId, /built-in/i);
+  assert.deepEqual(builtInRemove.catalog, catalog);
+
+  const missingRemove = removeCustomEnvironment(catalog, "missing");
+  assert.equal(missingRemove.ok, false);
+  assert.equal(missingRemove.fallbackId, null);
+  assert.ok(missingRemove.errors.environmentId);
+
+  const onlyEnvironment = [customA];
+  const removeOnly = removeCustomEnvironment(onlyEnvironment, "custom-a");
+  assert.equal(removeOnly.ok, false);
+  assert.equal(removeOnly.fallbackId, null);
+  assert.match(removeOnly.errors.environmentId, /at least one/i);
+  assert.deepEqual(removeOnly.catalog, onlyEnvironment);
+
+  const invalidCatalog = removeCustomEnvironment(null, "custom-a");
+  assert.equal(invalidCatalog.ok, false);
+  assert.equal(invalidCatalog.fallbackId, null);
+  assert.ok(invalidCatalog.errors.catalog);
+}
+
+/* ------------------------------------------------------------------ *
+ * Removed custom preset collisions restore shipped provenance
+ * ------------------------------------------------------------------ */
+{
+  const customCollision = {
+    id: "BIOME-FOREST",
+    label: "Campaign Forest Override",
+    dc: 18,
+    foodDc: 18,
+    waterDc: 18,
+    forageable: true,
+    yieldFood: "1d4",
+    yieldWater: "1d4",
+    builtIn: false,
+  };
+  const catalog = [{ ...DEFAULT_ENVIRONMENTS[0] }, customCollision];
+  assert.equal(isCustomEnvironment(customCollision), true);
+
+  const removed = removeCustomEnvironment(catalog, "BIOME-FOREST");
+  assert.equal(removed.ok, true);
+  assert.equal(removed.environment.builtIn, false);
+  assert.equal(removed.fallbackId, "abundant");
+
+  const restored = normalizeEnvironmentCatalog(
+    mergeBuiltInEnvironments(removed.catalog),
+  );
+  const forestEntries = restored.filter(
+    (environment) => environment.id.toLowerCase() === "biome-forest",
+  );
+  assert.equal(forestEntries.length, 1);
+  assert.equal(forestEntries[0].id, "biome-forest");
+  assert.equal(forestEntries[0].builtIn, true);
+  assert.equal(isCustomEnvironment(forestEntries[0]), false);
 }
 
 process.stdout.write("resource-environment validation passed\n");

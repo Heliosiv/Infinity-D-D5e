@@ -68,10 +68,13 @@ status remains bounded by the release gates below.
   and riverlands travel. The legacy scarcity tiers follow the established
   foraging DCs; biome presets are module starting points, not claimed
   as additional core rules.
-- The active environment can be copied into a collision-safe custom region and
-  edited in Quartermaster. Custom names, forage availability, separate food and
-  water Survival DCs, and bounded food/water yield formulas are validated before persistence;
-  built-in presets remain immutable.
+- The environment catalog can create a fresh custom region or copy the active
+  environment into a collision-safe custom region. Custom regions can be
+  renamed, ordered relative to one another, and removed after confirmation.
+  Removing the active entry deterministically activates the next catalog entry,
+  or the nearest previous entry when it was last. Custom forage availability,
+  separate food and water Survival DCs, and bounded food/water yield formulas
+  are validated before persistence; built-in presets remain immutable.
 - The GM can change the current environment, use one day of supplies without
   moving the world clock, or start a forage-only drive.
 - Automatic upkeep can react to Simple Calendar or core world-time day changes.
@@ -131,9 +134,9 @@ status remains bounded by the release gates below.
 - The player Supplies surface and its synthetic responsive fixtures are
   implemented in source, but the milestone still needs installed-world,
   multi-client acceptance proof before it is treated as release-complete.
-- The environment catalog now supports the first editor slice: copy and safely
-  edit a custom region. Creating a blank region, reordering or removing regions,
-  previewing presets, and versioned import/export are not implemented yet.
+- The environment catalog now supports safe custom-region creation, copying,
+  editing, ordering, and removal. Preset previews and versioned import/export
+  are not implemented yet.
 - Active forage runs live in client memory. A reload, GM handoff, or disconnect
   can lose the pending run even though actor or world state remains.
 - The fixed Recent Runs history is inspection-only. It has no operation ledger,
@@ -481,10 +484,12 @@ and `npm run ui:audit` pass.
 
 ### Milestone 2 - Environment editor and presets
 
-The first vertical slice is implemented in source: a GM can copy the current
-preset or custom region, immediately activate the copy, and safely edit its
-name, forage availability, separate food and water DCs, and food/water yields. The remaining deliverables
-below cover full catalog management, preset previews, and portable files.
+The first two vertical slices are implemented in source. A GM can create a
+fresh custom region or copy the current preset or custom region, immediately
+activate it, and safely edit its name, forage availability, separate food and
+water DCs, and food/water yields. Custom entries can be ordered relative to one
+another and removed with a deterministic replacement. The remaining
+deliverables below cover preset previews and portable files.
 
 #### Deliverables
 
