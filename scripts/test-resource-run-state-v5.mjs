@@ -23,6 +23,7 @@ import {
   preflightResourceOperationClaimV5,
   preflightResourceOperationCompletionV5,
   prepareResourceRunStateV5,
+  rebindEmptyResourceRunStateAuthorityV5,
 } from "./resource/run-state-v5.js";
 import {
   createResourceInventoryOperation,
@@ -578,6 +579,69 @@ function expectCode(code, callback) {
     updatedRecord: deliveredTerminal,
   });
   assert.deepEqual(drained.operationOutbox, []);
+}
+
+/* Idle-envelope authority handoff is explicit, exact, and separate from claim. */
+{
+  const idle = normalizeResourceRunStateV5({
+    ...empty({ revision: 7 }),
+    lastSeenDay: 42,
+    currentEnvironmentId: environment.id,
+    lastUpkeepResult: { runId: "prior-run", status: "complete" },
+  });
+  const rebound = rebindEmptyResourceRunStateAuthorityV5(idle, {
+    nextGuard,
+    revision: 8,
+  });
+  assert.deepEqual(
+    {
+      lastSeenDay: rebound.lastSeenDay,
+      currentEnvironmentId: rebound.currentEnvironmentId,
+      lastUpkeepResult: rebound.lastUpkeepResult,
+      recentRuns: rebound.recentRuns,
+    },
+    {
+      lastSeenDay: idle.lastSeenDay,
+      currentEnvironmentId: idle.currentEnvironmentId,
+      lastUpkeepResult: idle.lastUpkeepResult,
+      recentRuns: idle.recentRuns,
+    },
+  );
+  assert.equal(rebound.revision, 8);
+  assert.equal(rebound.authorityId, nextGuard.authorityId);
+  assert.equal(rebound.authorityEpoch, nextGuard.authorityEpoch);
+  assert.equal(rebound.activeOperation, null);
+  assert.deepEqual(rebound.operationOutbox, []);
+
+  const noOp = rebindEmptyResourceRunStateAuthorityV5(rebound, {
+    nextGuard,
+    revision: 99,
+  });
+  assert.deepEqual(noOp, rebound, "a current idle envelope is not rewritten");
+
+  const active = claimResourceOperationV5(
+    empty(),
+    prepared({ operationId: "rebind-active" }),
+  );
+  expectCode("RESOURCE_RUN_STATE_V5_ADOPTION_REQUIRED", () =>
+    rebindEmptyResourceRunStateAuthorityV5(active, { nextGuard }),
+  );
+  const backlogSource = prepared({ operationId: "rebind-backlog" });
+  const backlog = completeResourceOperationV5(
+    checkpointActiveResourceOperationV5(
+      claimResourceOperationV5(empty(), backlogSource),
+      planned(backlogSource),
+    ),
+    terminal(backlogSource),
+  );
+  expectCode("RESOURCE_RUN_STATE_V5_ADOPTION_REQUIRED", () =>
+    rebindEmptyResourceRunStateAuthorityV5(backlog, { nextGuard }),
+  );
+  expectCode("RESOURCE_RUN_STATE_V5_MALFORMED", () =>
+    rebindEmptyResourceRunStateAuthorityV5(idle, {
+      nextGuard: { ...nextGuard, extra: true },
+    }),
+  );
 }
 
 /* Active checkpoints are append-only and cannot roll back prompts/plans/writes. */

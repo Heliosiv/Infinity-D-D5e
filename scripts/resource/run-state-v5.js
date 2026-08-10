@@ -88,6 +88,11 @@ const OPERATION_IDENTITY_FIELDS = Object.freeze([
 ]);
 const FORAGE_TARGETS = new Set(["food-water", "food", "water"]);
 const TRIGGERS = new Set(["manual", "calendar", "forage"]);
+const GUARD_KEYS = Object.freeze([
+  "authorityId",
+  "authorityEpoch",
+  "leadershipGeneration",
+]);
 const REPORT_DELIVERY_FIELD = "chatDelivery";
 const MAX_ID_LENGTH = 256;
 const MAX_JSON_DEPTH = 20;
@@ -682,6 +687,50 @@ export function adoptResourceOperationAuthorityV5(
   return location === "active"
     ? checkpointActiveResourceOperationV5(current, adopted, options)
     : checkpointOutboxResourceOperationV5(current, adopted, options);
+}
+
+/**
+ * Explicitly rebind an otherwise idle envelope after an authority handoff.
+ * This is deliberately separate from claim: callers must persist and verify
+ * the new outer fence before installing a prepared operation.
+ */
+export function rebindEmptyResourceRunStateAuthorityV5(
+  state,
+  { nextGuard, revision } = {},
+) {
+  const current = normalizeResourceRunStateV5(state);
+  assertPlainObject(nextGuard, "nextGuard");
+  assertExactKeys(nextGuard, GUARD_KEYS, "nextGuard");
+  const authorityId = strictId(nextGuard.authorityId, "nextGuard.authorityId");
+  const authorityEpoch = strictId(
+    nextGuard.authorityEpoch,
+    "nextGuard.authorityEpoch",
+  );
+  safeInteger(
+    nextGuard.leadershipGeneration,
+    "nextGuard.leadershipGeneration",
+    { min: 0 },
+  );
+  if (current.activeOperation || current.operationOutbox.length > 0) {
+    fail(
+      "RESOURCE_RUN_STATE_V5_ADOPTION_REQUIRED",
+      "Operation records must be adopted individually before rebinding the envelope",
+      current.activeOperation
+        ? "state.activeOperation"
+        : "state.operationOutbox",
+    );
+  }
+  if (
+    current.authorityId === authorityId &&
+    current.authorityEpoch === authorityEpoch
+  ) {
+    return current;
+  }
+  return replaceState(current, {
+    revision: nextRevision(current, revision),
+    authorityId,
+    authorityEpoch,
+  });
 }
 
 /** Validate the exact atomic terminal move without changing state. */

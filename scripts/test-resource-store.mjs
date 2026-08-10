@@ -14,6 +14,7 @@ import {
   claimUpkeepRun,
   clearUpkeepClaim,
   completeUpkeepRun,
+  createResourceOperationStoreV5Adapter,
   observeResourceAuthorityTransition,
   createDefaultResourceConfig,
   isCanonicalPerCharacterResource,
@@ -40,6 +41,17 @@ import {
   resetPrivateStateForTests,
   setPrivateState,
 } from "./private-state.js";
+import {
+  createEmptyResourceRunStateV5,
+  normalizeResourceRunStateV5,
+} from "./resource/run-state-v5.js";
+import {
+  createResourceInventoryOperation,
+  createResourceOperationContext,
+  createResourceTerminalDeliveries,
+  markResourceDeliveryDelivered,
+  transitionResourceOperation,
+} from "./resource/operation-ledger.js";
 
 /* ------------------------------------------------------------------ *
  * normalizeResource — defaults + drop malformed
@@ -2302,6 +2314,945 @@ import {
   } finally {
     if (originalGame === undefined) delete globalThis.game;
     else globalThis.game = originalGame;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Dormant v5 operation adapter: exact-version gating, queued CAS, canonical
+ * readback, full-record FIFO backlog, and idempotent guard fencing.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  try {
+    resetResourceStoreForTests();
+    const environment = {
+      id: "forest",
+      label: "Forest",
+      dc: 12,
+      foodDc: 12,
+      waterDc: 10,
+    };
+    const context = createResourceOperationContext({
+      rules: { forageMode: "each", waterEnabled: true },
+      roster: [{ actorId: "actor-1", drawFromId: "actor-1" }],
+    });
+    let stored = {
+      version: RESOURCE_RUN_STATE_VERSION,
+      revision: 0,
+      authorityId: "node-test",
+      authorityEpoch: "node-test:0",
+      lastSeenDay: null,
+      currentEnvironmentId: null,
+      lastUpkeepResult: null,
+      activeUpkeep: null,
+      recentRuns: [],
+    };
+    let readCount = 0;
+    let driftAtRead = null;
+    let throwAfterApply = false;
+    const writes = [];
+    globalThis.game = {
+      settings: {
+        get(moduleId, key) {
+          assert.equal(moduleId, "infinity-dnd5e");
+          if (key !== "resourceRunState") return undefined;
+          readCount += 1;
+          if (readCount === driftAtRead) {
+            driftAtRead = null;
+            stored = {
+              ...stored,
+              revision: stored.revision + 1,
+              currentEnvironmentId: "concurrent-drift",
+            };
+          }
+          return stored;
+        },
+        async set(moduleId, key, value) {
+          assert.equal(moduleId, "infinity-dnd5e");
+          assert.equal(key, "resourceRunState");
+          const next = structuredClone(value);
+          writes.push(next);
+          stored = next;
+          if (throwAfterApply) {
+            throwAfterApply = false;
+            throw new Error("synthetic apply-then-throw");
+          }
+          return value;
+        },
+      },
+    };
+
+    const adapter = createResourceOperationStoreV5Adapter();
+    assert.deepEqual(Object.keys(adapter), [
+      "currentGuard",
+      "claimResourceOperation",
+      "loadActiveResourceOperation",
+      "transitionResourceOperation",
+      "recordResourcePromptResponse",
+      "recordResourcePromptTimeout",
+      "markResourceInventoryOperationApplied",
+      "adoptResourceOperationAuthority",
+      "assertResourceOperationCurrent",
+      "completeResourceOperation",
+      "listPendingResourceDeliveries",
+      "markResourceOperationDeliveryDelivered",
+      "ensureResourceOperationAuthority",
+    ]);
+
+    await assert.rejects(
+      adapter.loadActiveResourceOperation(),
+      (error) =>
+        error?.code === "RESOURCE_RUN_STATE_V5_ADAPTER_INACTIVE" &&
+        error.zeroWrite === true,
+    );
+    assert.equal(writes.length, 0, "current v4 is never migrated implicitly");
+
+    stored = {
+      ...createEmptyResourceRunStateV5({
+        authorityId: "node-test",
+        authorityEpoch: "node-test:0",
+      }),
+      version: 6,
+    };
+    await assert.rejects(
+      adapter.listPendingResourceDeliveries(),
+      (error) => error?.zeroWrite === true,
+    );
+    stored = {
+      ...createEmptyResourceRunStateV5({
+        authorityId: "node-test",
+        authorityEpoch: "node-test:0",
+      }),
+      unexpected: true,
+    };
+    await assert.rejects(
+      adapter.loadActiveResourceOperation(),
+      (error) => error?.zeroWrite === true,
+    );
+    assert.equal(
+      writes.length,
+      0,
+      "future and corrupt v5 states are zero-write",
+    );
+
+    stored = createEmptyResourceRunStateV5({
+      authorityId: "node-test",
+      authorityEpoch: "node-test:0",
+    });
+    assert.equal(
+      (await adapter.ensureResourceOperationAuthority()).revision,
+      0,
+    );
+    assert.equal(writes.length, 0, "current authority ensure is a no-op");
+
+    const operationInput = (id, createdAt) => ({
+      operationId: id,
+      runId: id,
+      trigger: "manual",
+      context,
+      day: 50,
+      days: 1,
+      environment,
+      initiator: { userId: "gm-1", name: "GM" },
+      actors: [
+        {
+          actorId: "actor-1",
+          name: "Ranger",
+          role: "participant",
+          forageTarget: null,
+        },
+      ],
+      createdAt,
+    });
+    const terminalRecord = (record, at) => {
+      const report = {
+        version: 1,
+        runId: record.runId,
+        trigger: record.trigger,
+        day: record.day,
+        days: record.days,
+        status: "complete",
+      };
+      const receipt = buildUpkeepRunReceipt({
+        result: {
+          runId: record.runId,
+          trigger: record.trigger,
+          day: record.day,
+          days: record.days,
+          startedAt: record.timestamps.createdAt,
+          resourceSnapshot: [],
+          perActor: [],
+          party: {},
+          suggestions: [],
+          hasErrors: false,
+        },
+        environment,
+        recordedAt: at,
+      });
+      return {
+        report,
+        receipt,
+        terminal: transitionResourceOperation(record, "terminal", {
+          guard: record.guard,
+          at,
+          report,
+          receipt,
+          deliveries: createResourceTerminalDeliveries(record, { report }),
+        }),
+      };
+    };
+
+    const claimed = await adapter.claimResourceOperation(
+      operationInput("adapter-run-1", 100),
+    );
+    assert.equal(claimed.phase, "prepared");
+    assert.equal(stored.revision, 1);
+    assert.deepEqual(claimed.guard, {
+      authorityId: "node-test",
+      authorityEpoch: "node-test:0",
+      leadershipGeneration: 0,
+    });
+    const inventory = createResourceInventoryOperation({
+      runId: claimed.runId,
+      sequence: 0,
+      action: "update",
+      actorId: "actor-1",
+      itemId: "item-1",
+      resourceId: "food",
+      beforeQuantity: 2,
+      afterQuantity: 1,
+    });
+    const planned = await adapter.transitionResourceOperation(
+      claimed.runId,
+      "planned",
+      {
+        guard: claimed.guard,
+        at: 110,
+        yields: [],
+        operations: [inventory],
+      },
+    );
+    const applying = await adapter.transitionResourceOperation(
+      claimed.runId,
+      "applying",
+      { guard: claimed.guard, at: 111 },
+    );
+    const marked = await adapter.markResourceInventoryOperationApplied(
+      claimed.runId,
+      inventory.opId,
+      {
+        guard: claimed.guard,
+        at: 112,
+        observed: { exists: true, quantity: 1, matchesResource: true },
+      },
+    );
+    assert.deepEqual(marked.appliedOperationIds, [inventory.opId]);
+    const writesBeforeIdempotent = writes.length;
+    const markedAgain = await adapter.markResourceInventoryOperationApplied(
+      claimed.runId,
+      inventory.opId,
+      {
+        guard: claimed.guard,
+        at: 113,
+        observed: { exists: true, quantity: 1, matchesResource: true },
+      },
+    );
+    assert.deepEqual(markedAgain, marked);
+    assert.equal(writes.length, writesBeforeIdempotent);
+    await assert.rejects(
+      adapter.transitionResourceOperation(claimed.runId, "applying", {
+        guard: { ...claimed.guard, leadershipGeneration: 1 },
+        at: 114,
+      }),
+      (error) => error?.code === "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+    );
+    assert.equal(
+      writes.length,
+      writesBeforeIdempotent,
+      "a stale guard cannot pass through a same-phase no-op",
+    );
+
+    const firstArtifacts = terminalRecord(marked, 120);
+    const firstTerminal = await adapter.completeResourceOperation({
+      operationId: claimed.operationId,
+      runId: claimed.runId,
+      guard: claimed.guard,
+      at: 120,
+      terminalRecord: firstArtifacts.terminal,
+      result: firstArtifacts.report,
+      receipt: firstArtifacts.receipt,
+    });
+    assert.equal(firstTerminal.phase, "terminal");
+    assert.equal(stored.activeOperation, null);
+
+    const second = await adapter.claimResourceOperation({
+      ...operationInput("adapter-run-2", 200),
+      actors: [
+        {
+          actorId: "actor-1",
+          name: "Ranger",
+          role: "participant",
+          forageTarget: "food",
+        },
+      ],
+    });
+    await adapter.transitionResourceOperation(second.runId, "prompting", {
+      guard: second.guard,
+      at: 205,
+      assignments: [
+        {
+          promptId: "adapter-prompt-2",
+          actorId: "actor-1",
+          userId: "player-1",
+          forageTarget: "food",
+          dc: 12,
+          foodDc: 12,
+          waterDc: 10,
+          assignedAt: 205,
+          deadlineAt: 209,
+        },
+      ],
+    });
+    const secondTimedOut = await adapter.recordResourcePromptTimeout(
+      second.runId,
+      "adapter-prompt-2",
+      { guard: second.guard, at: 209 },
+    );
+    const writesBeforeDuplicateTimeout = writes.length;
+    await assert.rejects(
+      adapter.recordResourcePromptTimeout(second.runId, "adapter-prompt-2", {
+        guard: { ...second.guard, leadershipGeneration: 1 },
+        at: 999,
+      }),
+      (error) => error?.code === "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+    );
+    assert.equal(writes.length, writesBeforeDuplicateTimeout);
+    assert.equal(secondTimedOut.prompts.timeouts.length, 1);
+    const secondPlanned = await adapter.transitionResourceOperation(
+      second.runId,
+      "planned",
+      {
+        guard: second.guard,
+        at: 210,
+        yields: [
+          {
+            actorId: "actor-1",
+            forageTarget: "food",
+            rollTotal: null,
+            wisMod: null,
+            food: 0,
+            water: 0,
+            foodSuccess: false,
+            waterSuccess: false,
+            suppressedFood: false,
+            suppressedWater: false,
+          },
+        ],
+        operations: [],
+      },
+    );
+    const secondArtifacts = terminalRecord(secondPlanned, 220);
+    await adapter.completeResourceOperation({
+      operationId: second.operationId,
+      runId: second.runId,
+      guard: second.guard,
+      at: 220,
+      terminalRecord: secondArtifacts.terminal,
+      result: secondArtifacts.report,
+      receipt: secondArtifacts.receipt,
+    });
+    const backlog = await adapter.listPendingResourceDeliveries();
+    assert.deepEqual(
+      backlog.map((record) => record.runId),
+      [claimed.runId, second.runId],
+      "the adapter returns full terminal records in completion FIFO order",
+    );
+    assert.equal(backlog[0].phase, "terminal");
+    assert.ok(backlog[0].outbox.entries.length > 0);
+    const writesBeforeLaterHead = writes.length;
+    await assert.rejects(
+      adapter.adoptResourceOperationAuthority({
+        location: "outbox",
+        operationId: second.operationId,
+        runId: second.runId,
+        nextGuard: second.guard,
+        at: 221,
+      }),
+      (error) => error?.code === "RESOURCE_RUN_STATE_V5_FIFO_CONFLICT",
+    );
+    const laterDelivery = backlog[1].outbox.entries[0];
+    const laterUpdated = markResourceDeliveryDelivered(
+      backlog[1],
+      laterDelivery.deliveryId,
+      { guard: second.guard, at: 222, confirmed: true },
+    );
+    await assert.rejects(
+      adapter.markResourceOperationDeliveryDelivered({
+        operationId: second.operationId,
+        runId: second.runId,
+        deliveryId: laterDelivery.deliveryId,
+        guard: second.guard,
+        updatedRecord: laterUpdated,
+      }),
+      (error) => error?.code === "RESOURCE_RUN_STATE_V5_FIFO_CONFLICT",
+    );
+    assert.equal(writes.length, writesBeforeLaterHead);
+
+    const firstDelivery = backlog[0].outbox.entries[0];
+    const firstUpdated = markResourceDeliveryDelivered(
+      backlog[0],
+      firstDelivery.deliveryId,
+      { guard: claimed.guard, at: 223, confirmed: true },
+    );
+    await adapter.markResourceOperationDeliveryDelivered({
+      operationId: claimed.operationId,
+      runId: claimed.runId,
+      deliveryId: firstDelivery.deliveryId,
+      guard: claimed.guard,
+      updatedRecord: firstUpdated,
+    });
+    assert.deepEqual(
+      (await adapter.listPendingResourceDeliveries()).map(
+        (record) => record.runId,
+      ),
+      [second.runId],
+    );
+
+    const head = (await adapter.listPendingResourceDeliveries())[0];
+    const headDelivery = head.outbox.entries.find(
+      (entry) => entry.state === "pending",
+    );
+    const headUpdated = markResourceDeliveryDelivered(
+      head,
+      headDelivery.deliveryId,
+      { guard: second.guard, at: 224, confirmed: true },
+    );
+    throwAfterApply = true;
+    const acceptedAfterThrow =
+      await adapter.markResourceOperationDeliveryDelivered({
+        operationId: second.operationId,
+        runId: second.runId,
+        deliveryId: headDelivery.deliveryId,
+        guard: second.guard,
+        updatedRecord: headUpdated,
+      });
+    assert.deepEqual(acceptedAfterThrow, headUpdated);
+    const retainedAfterReport = (
+      await adapter.listPendingResourceDeliveries()
+    )[0];
+    assert.deepEqual(retainedAfterReport, headUpdated);
+    const acknowledgement = retainedAfterReport.outbox.entries.find(
+      (entry) => entry.state === "pending",
+    );
+    assert.equal(acknowledgement.kind, "prompt-ack");
+    const allDelivered = markResourceDeliveryDelivered(
+      retainedAfterReport,
+      acknowledgement.deliveryId,
+      { guard: second.guard, at: 225, confirmed: true },
+    );
+    const writesBeforeDeliveredReplay = writes.length;
+    const replayedReport = await adapter.markResourceOperationDeliveryDelivered(
+      {
+        operationId: second.operationId,
+        runId: second.runId,
+        deliveryId: headDelivery.deliveryId,
+        guard: second.guard,
+        updatedRecord: allDelivered,
+      },
+    );
+    assert.deepEqual(
+      replayedReport,
+      retainedAfterReport,
+      "a delivered replay returns the authoritative retained head",
+    );
+    assert.equal(writes.length, writesBeforeDeliveredReplay);
+    assert.equal(
+      (await adapter.listPendingResourceDeliveries())[0].outbox.entries[1]
+        .state,
+      "pending",
+      "a replay cannot falsely report a later delivery as persisted",
+    );
+    const finalDelivery = await adapter.markResourceOperationDeliveryDelivered({
+      operationId: second.operationId,
+      runId: second.runId,
+      deliveryId: acknowledgement.deliveryId,
+      guard: second.guard,
+      updatedRecord: allDelivered,
+    });
+    assert.deepEqual(finalDelivery, allDelivered);
+    assert.deepEqual(await adapter.listPendingResourceDeliveries(), []);
+
+    const writesBeforeCas = writes.length;
+    driftAtRead = readCount + 3;
+    await assert.rejects(
+      adapter.claimResourceOperation(operationInput("cas-loser", 300)),
+      (error) =>
+        error?.code === "RESOURCE_RUN_STATE_V5_WRITE_REJECTED" &&
+        error.zeroWrite === true,
+    );
+    assert.equal(
+      writes.length,
+      writesBeforeCas,
+      "a failed exact CAS performs no adapter write",
+    );
+    assert.equal(stored.currentEnvironmentId, "concurrent-drift");
+    const recovered = await adapter.claimResourceOperation(
+      operationInput("cas-recovered", 301),
+    );
+    assert.equal(recovered.runId, "cas-recovered");
+    assert.equal(stored.revision, normalizeResourceRunStateV5(stored).revision);
+    assert.equal(planned.phase, "planned");
+    assert.equal(applying.phase, "applying");
+  } finally {
+    resetResourceStoreForTests();
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Live v5 adapter authority generations: explicit empty rebind, known-applied
+ * stale write recovery, queued zero-write rejection, and active/outbox adoption.
+ * ------------------------------------------------------------------ */
+{
+  const originalGame = globalThis.game;
+  const originalJournalEntry = globalThis.JournalEntry;
+  const originalHooks = globalThis.Hooks;
+  const originalConst = globalThis.CONST;
+  const leadershipState = { active: true, generation: 1 };
+  let ensureLeadershipCalls = 0;
+  const leadership = {
+    ensureLeadership() {
+      ensureLeadershipCalls += 1;
+      return leadershipState.active;
+    },
+    hasLeadership() {
+      return leadershipState.active;
+    },
+    getStatus() {
+      return {
+        state: leadershipState.active ? "leader" : "waiting",
+        leader: leadershipState.active,
+        generation: leadershipState.generation,
+      };
+    },
+  };
+  try {
+    resetPrivateStateForTests();
+    resetResourceStoreForTests({ leadership });
+    let nextHookId = 0;
+    const listeners = new Map();
+    globalThis.Hooks = {
+      on(event, handler) {
+        const id = ++nextHookId;
+        if (!listeners.has(event)) listeners.set(event, new Map());
+        listeners.get(event).set(id, handler);
+        return id;
+      },
+      off(event, id) {
+        listeners.get(event)?.delete(id);
+      },
+      call(event, ...args) {
+        for (const handler of listeners.get(event)?.values() ?? []) {
+          handler(...args);
+        }
+      },
+    };
+    globalThis.CONST = {
+      DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0 },
+      USER_ROLES: { GAMEMASTER: 4 },
+    };
+
+    const environment = {
+      id: "forest",
+      label: "Forest",
+      dc: 12,
+      foodDc: 12,
+      waterDc: 10,
+    };
+    const contextSnapshot = {
+      rules: { forageMode: "each", waterEnabled: true },
+      roster: [{ actorId: "actor-live", drawFromId: "actor-live" }],
+    };
+    const context = createResourceOperationContext(contextSnapshot);
+    const flags = {
+      privateStateStore: true,
+      schemaVersion: 2,
+      merchants: [],
+      factions: [],
+      resourceConfig: serializeResourceConfig(createDefaultResourceConfig()),
+      resourceRunState: createEmptyResourceRunStateV5({
+        authorityId: "bootstrap-gm",
+        authorityEpoch: "bootstrap-epoch",
+      }),
+      criticalInjuryWorkflow: {},
+      criticalInjuryWorkflowCheckpoint: {},
+    };
+    let blockedRunStateWrite = null;
+    let throwAfterRunStateApply = false;
+    const store = {
+      id: "resource-v5-live-store",
+      ownership: { default: 0 },
+      updateCalls: [],
+      getFlag(scope, key) {
+        return scope === "infinity-dnd5e" ? flags[key] : undefined;
+      },
+      async update(changes) {
+        this.updateCalls.push(structuredClone(changes));
+        if (
+          blockedRunStateWrite &&
+          Object.hasOwn(changes, "flags.infinity-dnd5e.resourceRunState")
+        ) {
+          const blocked = blockedRunStateWrite;
+          blockedRunStateWrite = null;
+          blocked.markStarted();
+          await blocked.wait;
+        }
+        for (const [path, value] of Object.entries(changes)) {
+          const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
+          if (match) flags[match[1]] = structuredClone(value);
+        }
+        globalThis.Hooks.call("updateJournalEntry", this, changes);
+        if (
+          throwAfterRunStateApply &&
+          Object.hasOwn(changes, "flags.infinity-dnd5e.resourceRunState")
+        ) {
+          throwAfterRunStateApply = false;
+          throw new Error("synthetic live apply-then-throw");
+        }
+        return this;
+      },
+      blockNextRunStateWrite() {
+        let release;
+        let markStarted;
+        const wait = new Promise((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise((resolve) => {
+          markStarted = resolve;
+        });
+        blockedRunStateWrite = { wait, markStarted };
+        return { release, started };
+      },
+    };
+    const settingValues = new Map();
+    const gm = { id: "gm-live", isGM: true, role: 4, active: true };
+    globalThis.game = {
+      ready: true,
+      user: gm,
+      users: { activeGM: gm },
+      journal: {
+        find(predicate) {
+          return predicate(store) ? store : null;
+        },
+      },
+      settings: {
+        get(_moduleId, key) {
+          if (key === "privateStateStoreId") return store.id;
+          if (key === "merchants" || key === "factions") return [];
+          return settingValues.get(key) ?? {};
+        },
+        async set(_moduleId, key, value) {
+          settingValues.set(key, structuredClone(value));
+          return value;
+        },
+      },
+    };
+    globalThis.JournalEntry = {
+      async create() {
+        throw new Error("existing v5 private store should be reused");
+      },
+    };
+
+    await initializePrivateState();
+    const initialAuthority = observeResourceAuthorityTransition();
+    const initialGuard = {
+      authorityId: gm.id,
+      authorityEpoch: initialAuthority.authorityEpoch,
+      leadershipGeneration: leadershipState.generation,
+    };
+    await setPrivateState(
+      "resourceRunState",
+      createEmptyResourceRunStateV5({
+        authorityId: initialGuard.authorityId,
+        authorityEpoch: initialGuard.authorityEpoch,
+      }),
+    );
+    store.updateCalls.length = 0;
+
+    const adapter = createResourceOperationStoreV5Adapter();
+    assert.deepEqual(await adapter.currentGuard(), initialGuard);
+    assert.equal(
+      (await adapter.ensureResourceOperationAuthority()).revision,
+      0,
+    );
+    assert.equal(store.updateCalls.length, 0);
+
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    leadershipState.active = true;
+    leadershipState.generation = 2;
+    const secondAuthority = observeResourceAuthorityTransition();
+    const secondGuard = {
+      authorityId: gm.id,
+      authorityEpoch: secondAuthority.authorityEpoch,
+      leadershipGeneration: 2,
+    };
+    assert.deepEqual(await adapter.currentGuard(), secondGuard);
+    throwAfterRunStateApply = true;
+    const rebound = await adapter.ensureResourceOperationAuthority();
+    assert.equal(rebound.revision, 1);
+    assert.equal(
+      flags.resourceRunState.authorityEpoch,
+      secondGuard.authorityEpoch,
+    );
+    assert.equal(
+      store.updateCalls.length,
+      1,
+      "an exact apply-then-throw rebind is accepted once",
+    );
+
+    const operationInput = (id, createdAt) => ({
+      operationId: id,
+      runId: id,
+      trigger: "manual",
+      context,
+      day: 60,
+      days: 1,
+      environment,
+      initiator: { userId: gm.id, name: "Live GM" },
+      actors: [
+        {
+          actorId: "actor-live",
+          name: "Ranger",
+          role: "participant",
+          forageTarget: null,
+        },
+      ],
+      createdAt,
+    });
+    const writesBeforeBlocked = store.updateCalls.length;
+    const blocked = store.blockNextRunStateWrite();
+    const firstClaim = adapter.claimResourceOperation(
+      operationInput("live-run", 1000),
+    );
+    await blocked.started;
+    const ensureCallsBeforeQueued = ensureLeadershipCalls;
+    const queuedClaim = adapter.claimResourceOperation(
+      operationInput("queued-old-generation", 1001),
+    );
+    while (ensureLeadershipCalls === ensureCallsBeforeQueued) {
+      await Promise.resolve();
+    }
+    await Promise.resolve();
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    blocked.release();
+    await assert.rejects(
+      firstClaim,
+      (error) =>
+        error?.code === "RESOURCE_RUN_STATE_V5_AUTHORITY_LOST_AFTER_WRITE" &&
+        error.zeroWrite === false &&
+        error.writeApplied === true &&
+        error.outcomeUnknown !== true,
+    );
+    await assert.rejects(
+      queuedClaim,
+      (error) =>
+        error?.code === "RESOURCE_RUN_STATE_V5_AUTHORITY_CHANGED" &&
+        error.zeroWrite === true,
+    );
+    assert.equal(
+      store.updateCalls.length,
+      writesBeforeBlocked + 1,
+      "queued work from the retired generation performs no Journal write",
+    );
+    assert.equal(flags.resourceRunState.activeOperation.runId, "live-run");
+
+    leadershipState.active = true;
+    leadershipState.generation = 3;
+    const thirdAuthority = observeResourceAuthorityTransition();
+    const thirdGuard = {
+      authorityId: gm.id,
+      authorityEpoch: thirdAuthority.authorityEpoch,
+      leadershipGeneration: 3,
+    };
+    assert.deepEqual(await adapter.currentGuard(), thirdGuard);
+    const adoptedActive = await adapter.adoptResourceOperationAuthority({
+      location: "active",
+      operationId: "live-run",
+      runId: "live-run",
+      nextGuard: thirdGuard,
+      contextSnapshot,
+      observations: [],
+      at: 1010,
+    });
+    assert.deepEqual(adoptedActive.guard, thirdGuard);
+    assert.equal(
+      flags.resourceRunState.authorityEpoch,
+      thirdGuard.authorityEpoch,
+    );
+
+    const planned = await adapter.transitionResourceOperation(
+      "live-run",
+      "planned",
+      { guard: thirdGuard, at: 1020, yields: [], operations: [] },
+    );
+    const report = {
+      version: 1,
+      runId: planned.runId,
+      trigger: planned.trigger,
+      day: planned.day,
+      days: planned.days,
+      status: "complete",
+    };
+    const receipt = buildUpkeepRunReceipt({
+      result: {
+        runId: planned.runId,
+        trigger: planned.trigger,
+        day: planned.day,
+        days: planned.days,
+        startedAt: planned.timestamps.createdAt,
+        resourceSnapshot: [],
+        perActor: [],
+        party: {},
+        suggestions: [],
+        hasErrors: false,
+      },
+      environment,
+      recordedAt: 1030,
+    });
+    const terminal = transitionResourceOperation(planned, "terminal", {
+      guard: thirdGuard,
+      at: 1030,
+      report,
+      receipt,
+      deliveries: createResourceTerminalDeliveries(planned, { report }),
+    });
+    await adapter.completeResourceOperation({
+      operationId: planned.operationId,
+      runId: planned.runId,
+      guard: thirdGuard,
+      at: 1030,
+      terminalRecord: terminal,
+      result: report,
+      receipt,
+    });
+
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    leadershipState.active = true;
+    leadershipState.generation = 4;
+    const fourthAuthority = observeResourceAuthorityTransition();
+    const fourthGuard = {
+      authorityId: gm.id,
+      authorityEpoch: fourthAuthority.authorityEpoch,
+      leadershipGeneration: 4,
+    };
+    const adoptedOutbox = await adapter.adoptResourceOperationAuthority({
+      location: "outbox",
+      operationId: terminal.operationId,
+      runId: terminal.runId,
+      nextGuard: fourthGuard,
+      at: 1040,
+    });
+    assert.deepEqual(adoptedOutbox.guard, fourthGuard);
+    assert.equal(
+      (await adapter.listPendingResourceDeliveries())[0].runId,
+      "live-run",
+    );
+
+    const conflict = await adapter.claimResourceOperation(
+      operationInput("adoption-conflict", 1100),
+    );
+    const conflictInventory = createResourceInventoryOperation({
+      runId: conflict.runId,
+      sequence: 0,
+      action: "update",
+      actorId: "actor-live",
+      itemId: "item-live",
+      resourceId: "food",
+      beforeQuantity: 2,
+      afterQuantity: 1,
+    });
+    await adapter.transitionResourceOperation(conflict.runId, "planned", {
+      guard: fourthGuard,
+      at: 1110,
+      yields: [],
+      operations: [conflictInventory],
+    });
+    await adapter.transitionResourceOperation(conflict.runId, "applying", {
+      guard: fourthGuard,
+      at: 1120,
+    });
+    assert.equal(
+      adapter.assertResourceOperationCurrent(conflict.runId, fourthGuard),
+      true,
+    );
+
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    leadershipState.active = true;
+    leadershipState.generation = 5;
+    const fifthAuthority = observeResourceAuthorityTransition();
+    const fifthGuard = {
+      authorityId: gm.id,
+      authorityEpoch: fifthAuthority.authorityEpoch,
+      leadershipGeneration: 5,
+    };
+    const needsReview = await adapter.adoptResourceOperationAuthority({
+      location: "active",
+      operationId: conflict.operationId,
+      runId: conflict.runId,
+      nextGuard: fifthGuard,
+      contextSnapshot,
+      observations: [
+        {
+          actorId: "actor-live",
+          itemId: "item-live",
+          exists: true,
+          quantity: 999,
+          matchesResource: true,
+        },
+      ],
+      at: 1130,
+    });
+    assert.deepEqual(needsReview, {
+      action: "needs-review",
+      reason: "Canonical inventory does not match a safe authority checkpoint",
+      operationId: conflictInventory.opId,
+      runId: conflict.runId,
+    });
+    assert.equal(flags.resourceRunState.activeOperation.phase, "needs-review");
+    assert.equal(
+      flags.resourceRunState.activeOperation.review.code,
+      "RESOURCE_OPERATION_ADOPTION_CONFLICT",
+    );
+    assert.deepEqual(await adapter.currentGuard(), fifthGuard);
+
+    leadershipState.active = false;
+    observeResourceAuthorityTransition();
+    const writesBeforeFollower = store.updateCalls.length;
+    await assert.rejects(
+      adapter.currentGuard(),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    await assert.rejects(
+      adapter.ensureResourceOperationAuthority(),
+      (error) => error?.code === "RESOURCE_CAMPAIGN_AUTHORITY_UNAVAILABLE",
+    );
+    assert.equal(store.updateCalls.length, writesBeforeFollower);
+  } finally {
+    resetResourceStoreForTests();
+    resetPrivateStateForTests();
+    if (originalGame === undefined) delete globalThis.game;
+    else globalThis.game = originalGame;
+    if (originalJournalEntry === undefined) delete globalThis.JournalEntry;
+    else globalThis.JournalEntry = originalJournalEntry;
+    if (originalHooks === undefined) delete globalThis.Hooks;
+    else globalThis.Hooks = originalHooks;
+    if (originalConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = originalConst;
   }
 }
 

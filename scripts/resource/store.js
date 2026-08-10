@@ -55,6 +55,27 @@ import {
   normalizeRunInitiatorSnapshot,
   normalizeRunReceipt,
 } from "./history.js";
+import {
+  createResourceOperation as createResourceOperationRecord,
+  markResourceInventoryOperationApplied as markResourceInventoryOperationAppliedRecord,
+  normalizeResourceOperation,
+  recordResourcePromptResponse as recordResourcePromptResponseRecord,
+  recordResourcePromptTimeout as recordResourcePromptTimeoutRecord,
+  resourceOperationGuardMatches,
+  transitionResourceOperation as transitionResourceOperationRecord,
+} from "./operation-ledger.js";
+import {
+  RESOURCE_RUN_STATE_V5_VERSION,
+  adoptResourceOperationAuthorityV5,
+  assertResourceOperationCurrentV5,
+  checkpointActiveResourceOperationV5,
+  claimResourceOperationV5,
+  completeResourceOperationV5,
+  confirmResourceOperationDeliveryV5,
+  listPendingResourceOperationsV5,
+  normalizeResourceRunStateV5,
+  rebindEmptyResourceRunStateAuthorityV5,
+} from "./run-state-v5.js";
 
 export const RESOURCE_CONFIG_VERSION = 5;
 export const RESOURCE_RUN_STATE_VERSION = 4;
@@ -779,6 +800,8 @@ let runStateAuthorityEpoch = 0;
 let observedAuthorityEpoch = null;
 let highestObservedRunStateRevision = -1;
 let lastAcceptedRunStateSnapshot = null;
+let highestObservedRunStateV5Revision = -1;
+let lastAcceptedRunStateV5Snapshot = null;
 const retiredAuthorityEpochs = new Set();
 
 function createAuthorityEpoch(authorityId) {
@@ -1066,11 +1089,15 @@ function nextRunStateWriteIdentity(fence, raw, ...additionalSnapshots) {
   return rotateRunStateAuthorityForRevisionOverflow(fence, raw);
 }
 
-function readRawRunState() {
-  const raw = readPrivateResourceValue(
+function readRawRunStateValue() {
+  return readPrivateResourceValue(
     SETTING_KEYS.RESOURCE_RUNSTATE,
     SETTING_KEYS.RESOURCE_RUNSTATE,
   );
+}
+
+function readRawRunState() {
+  const raw = readRawRunStateValue();
   if (isFoundryEnvironment()) {
     assertSupportedPersistedVersion(raw?.version, {
       domain: "resource-run-state",
@@ -1103,6 +1130,595 @@ function enqueueRunStateOperation(operation) {
   );
   runStatePatchQueue = pending.catch(() => {});
   return pending;
+}
+
+/* ------------------------------------------------------------------ *
+ * Dormant resource-operation v5 adapter
+ * ------------------------------------------------------------------ */
+
+function resourceRunStateV5StoreError(
+  code,
+  message,
+  {
+    cause = null,
+    zeroWrite = true,
+    outcomeUnknown = false,
+    writeApplied = false,
+  } = {},
+) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  error.name = "ResourceRunStateV5StoreError";
+  error.code = code;
+  error.retryable = false;
+  error.zeroWrite = zeroWrite;
+  if (outcomeUnknown) error.outcomeUnknown = true;
+  if (writeApplied) error.writeApplied = true;
+  return error;
+}
+
+function readPersistedDataProperty(value, key) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor && "value" in descriptor ? descriptor.value : undefined;
+}
+
+function readExactResourceRunStateV5() {
+  const raw = readRawRunStateValue();
+  const rawVersion = readPersistedDataProperty(raw, "version");
+  if (
+    RESOURCE_RUN_STATE_VERSION !== RESOURCE_RUN_STATE_V5_VERSION &&
+    rawVersion === RESOURCE_RUN_STATE_VERSION
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_ADAPTER_INACTIVE",
+      "Resource operation storage remains inactive until run-state v5 is explicitly activated",
+    );
+  }
+  const state = normalizeResourceRunStateV5(raw);
+  const revision = state.revision;
+  if (revision < highestObservedRunStateV5Revision) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_REVISION_REGRESSION",
+      "Resource run-state v5 revision regressed",
+    );
+  }
+  if (
+    revision === highestObservedRunStateV5Revision &&
+    lastAcceptedRunStateV5Snapshot &&
+    !rawRunStatesEqual(state, lastAcceptedRunStateV5Snapshot)
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_REVISION_DIVERGENCE",
+      "Resource run-state v5 changed without advancing its revision",
+    );
+  }
+  if (revision > highestObservedRunStateV5Revision) {
+    highestObservedRunStateV5Revision = revision;
+    lastAcceptedRunStateV5Snapshot = clonePersistedRunState(state);
+  }
+  return { raw, state };
+}
+
+function guardForResourceRunStateV5(state, fence) {
+  return {
+    authorityId: fence.live ? fence.userId : state.authorityId,
+    authorityEpoch: fence.live ? fence.authorityEpoch : state.authorityEpoch,
+    leadershipGeneration: fence.live ? fence.leadershipGeneration : 0,
+  };
+}
+
+function assertResourceRunStateV5StoreFence(fence) {
+  try {
+    assertRunStateAuthorityFence(fence);
+  } catch (error) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_AUTHORITY_CHANGED",
+      "Resource authority changed before the v5 store operation could write",
+      { cause: error, zeroWrite: true },
+    );
+  }
+  return true;
+}
+
+function assertResourceRunStateV5EnvelopeCurrent(state, fence) {
+  assertRunStateAuthorityFence(fence);
+  if (
+    fence.live &&
+    (state.authorityId !== fence.userId ||
+      state.authorityEpoch !== fence.authorityEpoch)
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_AUTHORITY_MISMATCH",
+      "Resource run-state v5 is bound to a different authority generation",
+    );
+  }
+  return true;
+}
+
+function activeResourceOperationV5(state, runId) {
+  if (
+    typeof runId !== "string" ||
+    !runId ||
+    state.activeOperation?.runId !== runId
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+      "The requested Resource operation is no longer active",
+    );
+  }
+  return state.activeOperation;
+}
+
+function assertResourceOperationGuardCurrentV5(state, operation, guard, fence) {
+  assertResourceRunStateV5EnvelopeCurrent(state, fence);
+  const expected = guardForResourceRunStateV5(state, fence);
+  if (
+    operation.guard.authorityId !== state.authorityId ||
+    operation.guard.authorityEpoch !== state.authorityEpoch ||
+    !resourceOperationGuardMatches(operation, guard) ||
+    !persistedValuesEqual(guard, expected)
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+      "The Resource operation guard is no longer current",
+    );
+  }
+  return true;
+}
+
+function assertNextResourceOperationGuardCurrentV5(state, nextGuard, fence) {
+  assertRunStateAuthorityFence(fence);
+  const expected = guardForResourceRunStateV5(state, fence);
+  if (!persistedValuesEqual(nextGuard, expected)) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+      "The replacement Resource operation guard is not the current authority",
+    );
+  }
+  return true;
+}
+
+async function commitResourceRunStateV5(
+  nextState,
+  { fence, expectedRaw, authorityMode = "current" },
+) {
+  assertRunStateAuthorityFence(fence);
+  const next = normalizeResourceRunStateV5(nextState);
+  const before = readRawRunStateValue();
+  if (!rawRunStatesEqual(before, expectedRaw)) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_STALE_WRITE",
+      "Resource run-state v5 changed before persistence",
+    );
+  }
+  const current = normalizeResourceRunStateV5(before);
+  if (authorityMode === "current") {
+    assertResourceRunStateV5EnvelopeCurrent(current, fence);
+  }
+  if (authorityMode === "pinned-needs-review") {
+    if (
+      !next.activeOperation ||
+      next.activeOperation.phase !== "needs-review" ||
+      next.authorityId !== current.authorityId ||
+      next.authorityEpoch !== current.authorityEpoch
+    ) {
+      throw resourceRunStateV5StoreError(
+        "RESOURCE_RUN_STATE_V5_AUTHORITY_MISMATCH",
+        "Only a pinned needs-review checkpoint may retain stale envelope authority",
+      );
+    }
+  } else {
+    assertResourceRunStateV5EnvelopeCurrent(next, fence);
+  }
+  if (next.revision !== current.revision + 1) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_REVISION_CONFLICT",
+      "Resource run-state v5 writes must advance the revision exactly once",
+    );
+  }
+
+  const beforeWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunStateValue(), expectedRaw);
+  const afterWrite = () =>
+    isRunStateAuthorityFenceCurrent(fence) &&
+    rawRunStatesEqual(readRawRunStateValue(), next);
+  let writeError = null;
+  try {
+    await setPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE, next, {
+      beforeWrite,
+      afterWrite,
+    });
+  } catch (error) {
+    writeError = error;
+  }
+
+  let storedRaw;
+  try {
+    storedRaw = readRawRunStateValue();
+  } catch (error) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_WRITE_OUTCOME_UNKNOWN",
+      "Resource run-state v5 could not be read back after persistence",
+      {
+        cause: writeError ?? error,
+        zeroWrite: false,
+        outcomeUnknown: true,
+      },
+    );
+  }
+  const candidateApplied = rawRunStatesEqual(storedRaw, next);
+  const originalUnchanged = rawRunStatesEqual(storedRaw, expectedRaw);
+  const prewriteRejected = String(writeError?.message ?? "").startsWith(
+    "PrivateStateWritePreconditionFailed:",
+  );
+  try {
+    assertRunStateAuthorityFence(fence);
+  } catch (error) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_AUTHORITY_LOST_AFTER_WRITE",
+      "Resource authority changed while the v5 write was in flight",
+      {
+        cause: error,
+        zeroWrite: originalUnchanged || prewriteRejected,
+        outcomeUnknown:
+          !candidateApplied && !originalUnchanged && !prewriteRejected,
+        writeApplied: candidateApplied,
+      },
+    );
+  }
+  let stored = null;
+  try {
+    stored = normalizeResourceRunStateV5(storedRaw);
+  } catch (error) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_WRITE_OUTCOME_UNKNOWN",
+      "Resource run-state v5 readback was not canonical",
+      {
+        cause: writeError ?? error,
+        zeroWrite: originalUnchanged || prewriteRejected,
+        outcomeUnknown: !originalUnchanged && !prewriteRejected,
+      },
+    );
+  }
+  if (!candidateApplied) {
+    throw resourceRunStateV5StoreError(
+      originalUnchanged || prewriteRejected
+        ? "RESOURCE_RUN_STATE_V5_WRITE_REJECTED"
+        : "RESOURCE_RUN_STATE_V5_WRITE_OUTCOME_UNKNOWN",
+      "Resource run-state v5 canonical readback did not match the candidate",
+      {
+        cause: writeError,
+        zeroWrite: originalUnchanged || prewriteRejected,
+        outcomeUnknown: !originalUnchanged && !prewriteRejected,
+      },
+    );
+  }
+  if (authorityMode !== "pinned-needs-review") {
+    assertResourceRunStateV5EnvelopeCurrent(stored, fence);
+  }
+  if (
+    stored.revision < highestObservedRunStateV5Revision ||
+    (stored.revision === highestObservedRunStateV5Revision &&
+      lastAcceptedRunStateV5Snapshot &&
+      !rawRunStatesEqual(stored, lastAcceptedRunStateV5Snapshot))
+  ) {
+    throw resourceRunStateV5StoreError(
+      "RESOURCE_RUN_STATE_V5_REVISION_REGRESSION",
+      "Resource run-state v5 readback failed the accepted revision fence",
+      { zeroWrite: false, outcomeUnknown: true },
+    );
+  }
+  highestObservedRunStateV5Revision = stored.revision;
+  lastAcceptedRunStateV5Snapshot = clonePersistedRunState(stored);
+  return stored;
+}
+
+function enqueueResourceRunStateV5Update(
+  mutate,
+  { authorityMode = "current" } = {},
+) {
+  return enqueueRunStateOperation(async (fence) => {
+    assertResourceRunStateV5StoreFence(fence);
+    const { raw, state } = readExactResourceRunStateV5();
+    if (authorityMode === "current") {
+      assertResourceRunStateV5EnvelopeCurrent(state, fence);
+    }
+    const outcome = mutate(state, {
+      fence,
+      guard: guardForResourceRunStateV5(state, fence),
+    });
+    const next = normalizeResourceRunStateV5(outcome.state);
+    if (rawRunStatesEqual(next, state)) {
+      assertResourceRunStateV5StoreFence(fence);
+      assertResourceRunStateV5EnvelopeCurrent(next, fence);
+      return outcome.value;
+    }
+    await commitResourceRunStateV5(next, {
+      fence,
+      expectedRaw: raw,
+      authorityMode: outcome.authorityMode ?? authorityMode,
+    });
+    return outcome.value;
+  });
+}
+
+function enqueueResourceRunStateV5Read(select) {
+  return enqueueRunStateOperation(async (fence) => {
+    assertResourceRunStateV5StoreFence(fence);
+    const { state } = readExactResourceRunStateV5();
+    const value = select(state, fence);
+    assertResourceRunStateV5StoreFence(fence);
+    return value;
+  });
+}
+
+/**
+ * Build the dormant exact-v5 store boundary expected by the operation
+ * coordinator. Nothing calls this factory until the run-state v5 cutover.
+ */
+export function createResourceOperationStoreV5Adapter() {
+  return Object.freeze({
+    currentGuard() {
+      return enqueueResourceRunStateV5Read((state, fence) =>
+        Object.freeze(guardForResourceRunStateV5(state, fence)),
+      );
+    },
+
+    claimResourceOperation(input = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence, guard }) => {
+        const operation = createResourceOperationRecord({
+          ...input,
+          guard,
+        });
+        const next = claimResourceOperationV5(state, operation);
+        assertResourceOperationGuardCurrentV5(
+          next,
+          next.activeOperation,
+          guard,
+          fence,
+        );
+        return { state: next, value: next.activeOperation };
+      });
+    },
+
+    loadActiveResourceOperation() {
+      return enqueueResourceRunStateV5Read((state) => state.activeOperation);
+    },
+
+    transitionResourceOperation(runId, phase, options = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const active = activeResourceOperationV5(state, runId);
+        assertResourceOperationGuardCurrentV5(
+          state,
+          active,
+          options.guard,
+          fence,
+        );
+        const operation = transitionResourceOperationRecord(
+          active,
+          phase,
+          options,
+        );
+        const next = checkpointActiveResourceOperationV5(state, operation);
+        return { state: next, value: operation };
+      });
+    },
+
+    recordResourcePromptResponse(runId, response, options = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const active = activeResourceOperationV5(state, runId);
+        assertResourceOperationGuardCurrentV5(
+          state,
+          active,
+          options.guard,
+          fence,
+        );
+        const operation = recordResourcePromptResponseRecord(
+          active,
+          response,
+          options,
+        );
+        const next = checkpointActiveResourceOperationV5(state, operation);
+        return { state: next, value: operation };
+      });
+    },
+
+    recordResourcePromptTimeout(runId, promptId, options = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const active = activeResourceOperationV5(state, runId);
+        assertResourceOperationGuardCurrentV5(
+          state,
+          active,
+          options.guard,
+          fence,
+        );
+        const operation = recordResourcePromptTimeoutRecord(
+          active,
+          promptId,
+          options,
+        );
+        const next = checkpointActiveResourceOperationV5(state, operation);
+        return { state: next, value: operation };
+      });
+    },
+
+    markResourceInventoryOperationApplied(runId, operationId, options = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const active = activeResourceOperationV5(state, runId);
+        assertResourceOperationGuardCurrentV5(
+          state,
+          active,
+          options.guard,
+          fence,
+        );
+        const operation = markResourceInventoryOperationAppliedRecord(
+          active,
+          operationId,
+          options,
+        );
+        const next = checkpointActiveResourceOperationV5(state, operation);
+        return { state: next, value: operation };
+      });
+    },
+
+    adoptResourceOperationAuthority(payload = {}) {
+      return enqueueResourceRunStateV5Update(
+        (state, { fence }) => {
+          assertNextResourceOperationGuardCurrentV5(
+            state,
+            payload.nextGuard,
+            fence,
+          );
+          if (payload.location === "outbox") {
+            const head = state.operationOutbox[0];
+            if (
+              !head ||
+              head.operationId !== payload.operationId ||
+              head.runId !== payload.runId
+            ) {
+              throw resourceRunStateV5StoreError(
+                "RESOURCE_RUN_STATE_V5_FIFO_CONFLICT",
+                "Only the FIFO Resource delivery head may be adopted",
+              );
+            }
+          }
+          let next;
+          try {
+            next = adoptResourceOperationAuthorityV5(state, payload);
+          } catch (error) {
+            if (
+              payload.location !== "active" ||
+              error?.code !== "RESOURCE_OPERATION_ADOPTION_CONFLICT"
+            ) {
+              throw error;
+            }
+            const active = activeResourceOperationV5(state, payload.runId);
+            const blockedOperationId =
+              active.plan[active.appliedOperationIds.length]?.opId ?? null;
+            const operation = transitionResourceOperationRecord(
+              active,
+              "needs-review",
+              {
+                at: payload.at,
+                code: error.code,
+                reason: error.message,
+                operationId: blockedOperationId,
+                evidence: {
+                  path: typeof error.path === "string" ? error.path : "",
+                },
+              },
+            );
+            next = checkpointActiveResourceOperationV5(state, operation);
+            return {
+              state: next,
+              authorityMode: "pinned-needs-review",
+              value: Object.freeze({
+                action: "needs-review",
+                reason: error.message,
+                operationId: blockedOperationId,
+                runId: active.runId,
+              }),
+            };
+          }
+          const operation =
+            payload.location === "active"
+              ? next.activeOperation
+              : next.operationOutbox[0];
+          if (
+            !operation ||
+            !resourceOperationGuardMatches(operation, payload.nextGuard)
+          ) {
+            throw resourceRunStateV5StoreError(
+              "RESOURCE_RUN_STATE_V5_FENCE_LOST",
+              "Resource operation adoption did not bind the current guard",
+            );
+          }
+          return { state: next, value: operation };
+        },
+        { authorityMode: "adoption" },
+      );
+    },
+
+    assertResourceOperationCurrent(runId, guard) {
+      const fence = captureRunStateAuthorityFence();
+      assertResourceRunStateV5StoreFence(fence);
+      const { state } = readExactResourceRunStateV5();
+      const operation = assertResourceOperationCurrentV5(state, runId, guard);
+      assertResourceOperationGuardCurrentV5(state, operation, guard, fence);
+      assertResourceRunStateV5StoreFence(fence);
+      return true;
+    },
+
+    completeResourceOperation({ terminalRecord, ...options } = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const active = activeResourceOperationV5(state, options.runId);
+        assertResourceOperationGuardCurrentV5(
+          state,
+          active,
+          options.guard,
+          fence,
+        );
+        const terminal = normalizeResourceOperation(terminalRecord);
+        const next = completeResourceOperationV5(state, terminal, options);
+        return { state: next, value: terminal };
+      });
+    },
+
+    listPendingResourceDeliveries() {
+      return enqueueResourceRunStateV5Read((state) =>
+        listPendingResourceOperationsV5(state),
+      );
+    },
+
+    markResourceOperationDeliveryDelivered(payload = {}) {
+      return enqueueResourceRunStateV5Update((state, { fence }) => {
+        const head = state.operationOutbox[0];
+        if (
+          !head ||
+          head.operationId !== payload.operationId ||
+          head.runId !== payload.runId
+        ) {
+          throw resourceRunStateV5StoreError(
+            "RESOURCE_RUN_STATE_V5_FIFO_CONFLICT",
+            "Only the FIFO Resource delivery head may be confirmed",
+          );
+        }
+        assertResourceOperationGuardCurrentV5(
+          state,
+          head,
+          payload.guard,
+          fence,
+        );
+        const updatedRecord = normalizeResourceOperation(payload.updatedRecord);
+        const next = confirmResourceOperationDeliveryV5(state, payload);
+        const retained = next.operationOutbox[0];
+        return {
+          state: next,
+          value:
+            retained?.operationId === payload.operationId &&
+            retained.runId === payload.runId
+              ? retained
+              : updatedRecord,
+        };
+      });
+    },
+
+    ensureResourceOperationAuthority() {
+      return enqueueResourceRunStateV5Update(
+        (state, { fence, guard }) => {
+          assertNextResourceOperationGuardCurrentV5(state, guard, fence);
+          const next = rebindEmptyResourceRunStateAuthorityV5(state, {
+            nextGuard: guard,
+          });
+          return { state: next, value: next };
+        },
+        { authorityMode: "adoption" },
+      );
+    },
+  });
 }
 
 async function commitRunState(
@@ -1530,5 +2146,7 @@ export function resetResourceStoreForTests({ leadership = null } = {}) {
   runStateAuthorityEpoch = 0;
   highestObservedRunStateRevision = -1;
   lastAcceptedRunStateSnapshot = null;
+  highestObservedRunStateV5Revision = -1;
+  lastAcceptedRunStateV5Snapshot = null;
   retiredAuthorityEpochs.clear();
 }
