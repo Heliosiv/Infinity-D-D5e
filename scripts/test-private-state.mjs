@@ -2,12 +2,19 @@ import assert from "node:assert/strict";
 
 import {
   PRIVATE_STATE_CHANGED_HOOK,
+  applyEmptyPrivateStateReplacement,
+  applyPrivateStateCandidateAdoption,
+  applyPrivateStateSnapshotRecovery,
   getPrivateState,
+  getPrivateStateRecoveryOverview,
   getPrivateStateStatus,
   initializePrivateState,
   isPrivateStateReady,
   isPrivilegedPrivateStateReady,
   onPrivateStateChanged,
+  previewEmptyPrivateStateReplacement,
+  previewPrivateStateCandidateAdoption,
+  previewPrivateStateSnapshotRecovery,
   resetPrivateStateForTests,
   setPrivateState,
 } from "./private-state.js";
@@ -95,9 +102,10 @@ function makeJournal() {
       find: (predicate) => entries.find(predicate) ?? null,
       forEach: (callback) => entries.forEach(callback),
     },
-    insert(data, { createdTime = null } = {}) {
+    insert(data, { createdTime = null, id = null } = {}) {
       const document = makeDocument(data);
       if (createdTime !== null) document._stats.createdTime = createdTime;
+      if (id !== null) document.id = id;
       entries.push(document);
       globalThis.Hooks.call("createJournalEntry", document);
       return document;
@@ -183,24 +191,20 @@ function makeStoreData({
   };
 }
 
-function configureGame({
-  user,
-  users,
-  journal,
-  legacy = {
+function configureGame({ user, users, journal, legacy = null }) {
+  legacy ??= {
     merchants: [],
     factions: [],
     resourceConfig: {},
     resourceRunState: {},
-    privateStateStoreId: "",
-  },
-}) {
+  };
   if (!Object.hasOwn(legacy, "merchants")) legacy.merchants = [];
   if (!Object.hasOwn(legacy, "factions")) legacy.factions = [];
   if (!Object.hasOwn(legacy, "resourceConfig")) legacy.resourceConfig = {};
   if (!Object.hasOwn(legacy, "resourceRunState")) legacy.resourceRunState = {};
   if (!Object.hasOwn(legacy, "privateStateStoreId")) {
-    legacy.privateStateStoreId = "";
+    legacy.privateStateStoreId =
+      journal.entries.length === 1 ? journal.entries[0].id : "";
   }
   const cleared = [];
   globalThis.game = {
@@ -314,6 +318,170 @@ try {
     globalThis.Hooks.off(PRIVATE_STATE_CHANGED_HOOK, changeHookId);
   }
 
+  // A blank canonical id with an existing marked Journal requires explicit
+  // candidate review. Adoption retains the document and its values exactly,
+  // while the safe overview and preview never project those values.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const candidateStore = activeJournal.insert(
+      makeStoreData({
+        merchants: [{ id: "candidate-private-id" }],
+        resourceConfig: {
+          roster: [{ actorId: "candidate-private-actor" }],
+        },
+      }),
+    );
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: "" },
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "candidate-review-required");
+    assert.equal(createCalls, 0);
+    assert.deepEqual(state.cleared, []);
+    assert.deepEqual(candidateStore.updateCalls, []);
+
+    const overview = await getPrivateStateRecoveryOverview();
+    assert.equal(overview.canMutate, true);
+    assert.equal(overview.candidates.length, 1);
+    assert.equal(overview.candidates[0].id, candidateStore.id);
+    assert.equal(overview.candidates[0].eligible, true);
+    assert.doesNotMatch(JSON.stringify(overview), /candidate-private/u);
+
+    const preview = await previewPrivateStateCandidateAdoption(
+      candidateStore.id,
+    );
+    assert.doesNotMatch(JSON.stringify(preview), /candidate-private/u);
+    const adopted = await applyPrivateStateCandidateAdoption({
+      token: preview.token,
+    });
+    assert.equal(adopted.ok, true);
+    assert.equal(adopted.kind, "candidate-adoption");
+    assert.equal(adopted.canonicalId, candidateStore.id);
+    assert.equal(isPrivilegedPrivateStateReady(), true);
+    assert.equal(getPrivateState("merchants")[0].id, "candidate-private-id");
+    assert.equal(
+      getPrivateState("resourceConfig").roster[0].actorId,
+      "candidate-private-actor",
+    );
+    assert.equal(activeJournal.entries.length, 1);
+    assert.deepEqual(candidateStore.updateCalls, []);
+    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+  }
+
+  // An unresolved id with no local document blocks without creating an empty
+  // campaign. Explicit empty replacement is separately previewed, confirmed,
+  // created with typed defaults, and read back as the new canonical store.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: "unresolved-store" },
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "missing-store");
+    assert.equal(createCalls, 0);
+    assert.equal(activeJournal.entries.length, 0);
+    assert.deepEqual(state.cleared, []);
+
+    const overview = await getPrivateStateRecoveryOverview();
+    assert.equal(overview.snapshotAvailable, false);
+    assert.equal(overview.canRecoverSnapshot, false);
+    assert.equal(overview.canCreateEmpty, true);
+    const preview = await previewEmptyPrivateStateReplacement();
+    const replacement = await applyEmptyPrivateStateReplacement({
+      token: preview.token,
+      confirmationToken: preview.confirmationToken,
+    });
+    assert.equal(replacement.ok, true);
+    assert.equal(replacement.kind, "empty-replacement");
+    assert.equal(isPrivilegedPrivateStateReady(), true);
+    assert.equal(activeJournal.entries.length, 1);
+    assert.deepEqual(getPrivateState("merchants"), []);
+    assert.deepEqual(getPrivateState("merchantAccess"), {});
+    assert.equal(
+      activeJournal.entries[0].getFlag(MODULE_ID, "privateStateRecoverySource")
+        .kind,
+      "empty-replacement",
+    );
+    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+  }
+
+  // A supported legacy or schema-less document that replicates after its exact
+  // canonical id was reported missing must run the authoritative migration.
+  // Create and update hooks both schedule initialization; neither hydrates a
+  // legacy document directly or creates a replacement.
+  for (const replica of [
+    { label: "create-missing", event: "create", schemaVersion: undefined },
+    { label: "create-legacy", event: "create", schemaVersion: 1 },
+    { label: "update-legacy", event: "update", schemaVersion: 1 },
+  ]) {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    createCalls = 0;
+    const canonicalId = `late-${replica.label}-canonical`;
+    const lateCanonicalData = makeStoreData({
+      schemaVersion: replica.schemaVersion ?? 6,
+      merchants: [{ id: `late-${replica.label}-merchant` }],
+    });
+    if (replica.schemaVersion === undefined) {
+      delete lateCanonicalData.flags[MODULE_ID].schemaVersion;
+    }
+    const lateCanonical = makeDocument(lateCanonicalData);
+    lateCanonical.id = canonicalId;
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const state = configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: canonicalId },
+    });
+
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "missing-store");
+    assert.equal(getPrivateState("merchants"), undefined);
+    assert.equal(createCalls, 0);
+    assert.deepEqual(state.cleared, []);
+
+    activeJournal.entries.push(lateCanonical);
+    globalThis.Hooks.call(
+      replica.event === "create" ? "createJournalEntry" : "updateJournalEntry",
+      lateCanonical,
+      {
+        [`flags.${MODULE_ID}.schemaVersion`]: replica.schemaVersion,
+      },
+    );
+    await waitFor(
+      () =>
+        isPrivilegedPrivateStateReady() &&
+        getPrivateState("merchants")?.[0]?.id ===
+          `late-${replica.label}-merchant`,
+      `late ${replica.label} replica did not run its schema migration`,
+    );
+
+    assert.equal(getPrivateStateStatus().code, "ready");
+    assert.equal(lateCanonical.getFlag(MODULE_ID, "schemaVersion"), 6);
+    assert.equal(state.legacy.privateStateStoreId, canonicalId);
+    assert.equal(createCalls, 0);
+    assert.deepEqual(state.cleared, []);
+    assert.equal(activeJournal.entries.length, 1);
+    assert.deepEqual(lateCanonical.updateCalls, [
+      { [`flags.${MODULE_ID}.schemaVersion`]: 6 },
+    ]);
+  }
+
   // A store written by a newer module version is never hydrated, migrated,
   // repaired, replaced, or selected as canonical by this older schema.
   {
@@ -366,7 +534,11 @@ try {
       "a supported schema did not resume private-state initialization",
     );
     assert.equal(getPrivateState("merchants")[0].id, "future-shop");
-    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+    assert.deepEqual(
+      state.cleared,
+      [],
+      "repairing the selected store does not rewrite its canonical identity",
+    );
   }
 
   // A present malformed schema is unsupported rather than being rounded down
@@ -548,7 +720,11 @@ try {
     assert.equal(createCalls, createCallsAtBlock);
     assert.equal(state.cleared.length, settingWritesAtBlock);
     assert.equal(activeJournal.entries.length, 0);
-    assert.equal(getPrivateStateStatus().code, "future-schema");
+    assert.equal(
+      getPrivateStateStatus().code,
+      "missing-store",
+      "deleting the blocked canonical store requires explicit recovery",
+    );
   }
 
   // A previously blocked document cannot clear quarantine after the canonical
@@ -606,9 +782,10 @@ try {
     );
   }
 
-  // Clearing the canonical setting is an explicit recovery path. The same
-  // blocked document may then be re-elected once it reports a supported schema,
-  // without creating a replacement or losing the values it now contains.
+  // Clearing the canonical setting is not an implicit recovery approval. Even
+  // after the old document reports a supported schema again, it remains
+  // quarantined for explicit candidate review and is never re-elected or
+  // rewritten automatically.
   {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
@@ -637,15 +814,18 @@ try {
       key: `${MODULE_ID}.privateStateStoreId`,
     });
     const createCallsAtBlock = createCalls;
+    const settingWritesAtBlock = legacy.privateStateStoreId;
     await store.update({ [`flags.${MODULE_ID}.schemaVersion`]: 6 });
-    await waitFor(
-      () => getPrivateStateStatus().state === "ready",
-      "a compatible blocked store was not re-elected after clearing its id",
-    );
+    assert.equal(await initializePrivateState(), false);
 
-    assert.equal(legacy.privateStateStoreId, store.id);
+    assert.equal(getPrivateStateStatus().code, "candidate-review-required");
+    assert.equal(legacy.privateStateStoreId, settingWritesAtBlock);
     assert.equal(createCalls, createCallsAtBlock);
-    assert.equal(getPrivateState("merchants")[0].id, "after-compatible-repair");
+    assert.equal(getPrivateState("merchants"), undefined);
+    assert.equal(
+      store.getFlag(MODULE_ID, "merchants")[0].id,
+      "after-compatible-repair",
+    );
   }
 
   // A field already present in the private journal is canonical, including an
@@ -695,7 +875,6 @@ try {
     assert.deepEqual(state.cleared.sort(), [
       "factions",
       "merchants",
-      "privateStateStoreId",
       "resourceConfig",
       "resourceRunState",
     ]);
@@ -781,9 +960,9 @@ try {
     assert.equal(getPrivateState("merchants"), undefined);
   }
 
-  // The persisted canonical identity is sticky. A duplicate cannot displace it,
-  // and canonical deletion recreates the last verified snapshot instead of
-  // silently promoting possibly stale duplicate data.
+  // The persisted canonical identity is sticky. A duplicate cannot displace
+  // it, and canonical deletion blocks until the authoritative GM explicitly
+  // restores the last verified snapshot. Old candidates remain untouched.
   {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
@@ -798,6 +977,7 @@ try {
       user: gm,
       users: makeUsers("gm-a", [gm]),
       journal: activeJournal,
+      legacy: { privateStateStoreId: canonical.id },
     });
 
     assert.equal(await initializePrivateState(), true);
@@ -822,10 +1002,18 @@ try {
 
     activeJournal.remove(canonical);
     assert.equal(isPrivateStateReady(), false);
-    await waitFor(
-      () => isPrivilegedPrivateStateReady(),
-      "authoritative GM did not recreate a deleted canonical store",
-    );
+    assert.equal(getPrivateStateStatus().code, "missing-store");
+    assert.equal(activeJournal.entries.length, 2);
+
+    const preview = await previewPrivateStateSnapshotRecovery();
+    assert.equal(preview.sourceId, canonical.id);
+    const recovery = await applyPrivateStateSnapshotRecovery({
+      token: preview.token,
+      confirmationToken: preview.confirmationToken,
+    });
+    assert.equal(recovery.ok, true);
+    assert.equal(recovery.kind, "snapshot-recovery");
+    assert.equal(isPrivilegedPrivateStateReady(), true);
     assert.equal(
       getPrivateState("merchants")[0].id,
       "canonical",
@@ -840,8 +1028,9 @@ try {
     assert.equal(
       activeJournal.entries.length,
       3,
-      "stale duplicates remain quarantined beside one fresh canonical store",
+      "stale candidates remain beside one explicit recovery store",
     );
+    assert.equal(state.legacy.privateStateStoreId, recovery.canonicalId);
   }
 
   // Authority is fenced across the asynchronous create/migrate boundary. If a
@@ -1037,7 +1226,7 @@ try {
       /private state initialization failed/,
     );
     assert.equal(isPrivateStateReady(), false);
-    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+    assert.deepEqual(state.cleared, []);
     assert.equal(
       legacy.resourceConfig.roster[0].actorId,
       "must-survive-failed-copy",
@@ -1081,7 +1270,6 @@ try {
       "the schema migration installs the redundant downtime checkpoint",
     );
     assert.deepEqual(state.cleared.sort(), [
-      "privateStateStoreId",
       "resourceConfig",
       "resourceRunState",
     ]);
@@ -1141,7 +1329,7 @@ try {
     assert.deepEqual(Object.keys(store.updateCalls[0]), ["ownership"]);
     assert.equal(legacy.merchants[0].id, "must-survive-mid-migration-flip");
     assert.equal(legacy.resourceConfig.roster[0].actorId, "secret-roster");
-    assert.deepEqual(state.cleared, ["privateStateStoreId"]);
+    assert.deepEqual(state.cleared, []);
   }
 
   // Reclassify after a caller's write precondition. A synchronous schema flip
@@ -1203,7 +1391,7 @@ try {
     assert.equal(store.getFlag(MODULE_ID, "factions")[0].id, "private-faction");
     assert.deepEqual(
       state.cleared,
-      ["privateStateStoreId"],
+      [],
       "live writes never touch legacy world settings",
     );
   }
@@ -1517,10 +1705,8 @@ try {
       initializePrivateState(),
     );
     assert.equal(unavailable.result, false);
-    assert.match(
-      String(unavailable.messages[0]?.[0] ?? ""),
-      /persisted private state store .* is unresolved/,
-    );
+    assert.deepEqual(unavailable.messages, []);
+    assert.equal(getPrivateStateStatus().code, "missing-store");
     assert.equal(isPrivateStateReady(), false);
     assert.equal(isPrivilegedPrivateStateReady(), false);
     assert.equal(createCalls, createCallsBefore);

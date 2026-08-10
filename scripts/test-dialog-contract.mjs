@@ -120,6 +120,7 @@ try {
 const callerSources = new Map();
 for (const file of [
   "ui-util.js",
+  "dashboard.js",
   "downtime-workspace.js",
   "merchant-session.js",
   "merchant-workspace.js",

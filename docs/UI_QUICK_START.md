@@ -56,6 +56,13 @@ Change density and other personal preferences in **Infinity Settings → Appeara
 
 Status messages answer three questions: what happened, whether anything changed, and what to do next.
 
+Full GMs can open **Home > Campaign data** to inspect the private campaign store even when the other campaign tools are locked. Secondary full GMs can inspect the same value-free status and Journal metadata, but only the active Game Master can confirm a recovery action.
+
+- **Adopt a Journal** reviews an existing complete, privately owned current or known-legacy store before selecting it. Supported legacy data follows the normal migration path after adoption. Other Journals remain untouched.
+- **Recover the verified snapshot** reviews the last complete snapshot available to this client before creating a verified recovery store. Other Journals remain untouched.
+- **Start empty** creates a new canonical store without copying private merchant, faction, resource, downtime, or critical-injury data. This always requires a separate confirmation, and old Journals are not deleted.
+- Closing or cancelling a recovery dialog changes nothing. If the review expires or active-GM control changes, refresh Campaign data and review the current state again.
+
 - **Loading or busy:** wait for the current authoritative request; duplicate actions stay disabled.
 - **GM offline:** no campaign write was attempted. Reconnect or ask a full GM to sign in, then retry.
 - **Interrupted or uncertain:** do not repeat the action blindly. The window requests canonical state and exposes the existing recovery path when one is available.

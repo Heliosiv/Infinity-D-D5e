@@ -14,8 +14,23 @@ import {
   PLAYER_SURFACE_LABELS,
   PLAYER_SURFACES,
 } from "./player-surface.js";
-import { promptInfinityDialog } from "./dialog-contract.js";
+import {
+  confirmInfinityDialog,
+  promptInfinityDialog,
+} from "./dialog-contract.js";
+import {
+  applyEmptyPrivateStateReplacement,
+  applyPrivateStateCandidateAdoption,
+  applyPrivateStateSnapshotRecovery,
+  getPrivateStateRecoveryOverview,
+  onPrivateStateChanged,
+  previewEmptyPrivateStateReplacement,
+  previewPrivateStateCandidateAdoption,
+  previewPrivateStateSnapshotRecovery,
+  PRIVATE_STATE_CHANGED_HOOK,
+} from "./private-state.js";
 import * as settingsApi from "./settings.js";
+import { isAuthoritativeGM } from "./socket-authority.js";
 import { getTool, getTools, TOOL_INTENTS } from "./tool-registry.js";
 import { escapeHtml, prettyCategory, notify } from "./ui-util.js";
 import { bindFullGmWindowGuard, openSingleton } from "./infinity-app.js";
@@ -25,6 +40,60 @@ const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/dashboard.hbs`;
 const { SETTING_KEYS, getSetting, setSetting } = settingsApi;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+const PRIVATE_STATE_RECOVERY_SERVICE = Object.freeze({
+  getOverview: getPrivateStateRecoveryOverview,
+  previewCandidate: previewPrivateStateCandidateAdoption,
+  applyCandidate: applyPrivateStateCandidateAdoption,
+  previewSnapshot: previewPrivateStateSnapshotRecovery,
+  applySnapshot: applyPrivateStateSnapshotRecovery,
+  previewEmpty: previewEmptyPrivateStateReplacement,
+  applyEmpty: applyEmptyPrivateStateReplacement,
+});
+
+const PRIVATE_STATE_REASON_LABELS = Object.freeze({
+  "candidate-review-required":
+    "A marked store is available, but a Game Master must review it before making it canonical.",
+  "authoritative-gm-required":
+    "Only the active Game Master can confirm campaign-data recovery actions.",
+  corrupt:
+    "The selected store is incomplete or corrupt, so campaign tools remain locked.",
+  "future-schema":
+    "The selected store was written by a newer module version and cannot be opened safely.",
+  "full-gm-required":
+    "Only a full Game Master can inspect campaign-data recovery status.",
+  "initialization-error":
+    "Campaign data could not be verified. Refresh this status before choosing a recovery action.",
+  "invalid-schema":
+    "The selected store has an invalid schema marker and cannot be opened safely.",
+  "missing-store":
+    "The selected private-state Journal is not currently available in this world.",
+  "not-started": "Campaign data has not finished its first verification.",
+  "role-promotion":
+    "Campaign data is being verified for the new Game Master role.",
+  "store-missing":
+    "The selected private-state Journal is not currently available in this world.",
+  "store-unavailable":
+    "The selected private-state Journal is still unavailable or loading.",
+  "unsafe-ownership":
+    "This Journal is not restricted to full Game Masters and cannot be adopted safely.",
+});
+
+const CANDIDATE_REASON_LABELS = Object.freeze({
+  "already-canonical": "This is already the selected campaign-data store.",
+  canonical: "This is already the selected campaign-data store.",
+  corrupt: "This candidate is incomplete or corrupt.",
+  "future-schema": "This candidate was written by a newer module version.",
+  "incomplete-payload": "This candidate does not contain every required field.",
+  "invalid-schema": "This candidate has an invalid schema marker.",
+  "invalid-payload": "This candidate does not have a valid data shape.",
+  "legacy-schema":
+    "This candidate uses an older supported schema and will follow normal migration after adoption.",
+  "not-private-state-store":
+    "This Journal is not marked as an Infinity private-state store.",
+  "unsupported-schema": "This candidate uses an unsupported schema marker.",
+  "unsafe-ownership": "This candidate is not restricted to full Game Masters.",
+});
 
 const HOME_INTENTS = Object.freeze([
   {
@@ -139,6 +208,12 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       launch: InfinityDashboardApp._onLaunch,
       openSettings: InfinityDashboardApp._onOpenSettings,
       help: InfinityDashboardApp._onHelp,
+      refreshPrivateState: InfinityDashboardApp._onRefreshPrivateState,
+      reviewPrivateStateCandidate:
+        InfinityDashboardApp._onReviewPrivateStateCandidate,
+      recoverPrivateStateSnapshot:
+        InfinityDashboardApp._onRecoverPrivateStateSnapshot,
+      createEmptyPrivateState: InfinityDashboardApp._onCreateEmptyPrivateState,
     },
   };
 
@@ -160,11 +235,23 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   constructor(options = {}) {
     super(options);
+    this._privateStateRecoveryService =
+      options.privateStateRecoveryService ?? PRIVATE_STATE_RECOVERY_SERVICE;
+    this._privateStateRecoveryInFlight = false;
+    this._privateStateRecoveryMessage = "";
+    this._privateStateRecoveryTone = "neutral";
+    this._privateStateHookId = null;
     // A Home opened with privileged GM tiles closes on demotion so those tiles
     // never remain in the DOM. Reopening immediately yields the player Home.
     this._unbindFullGmWindowGuard = isFullGM()
       ? bindFullGmWindowGuard(this)
       : bindPlayerHomePromotionGuard(this);
+    if (isFullGM()) {
+      this._privateStateHookId = onPrivateStateChanged(() => {
+        if (!this.rendered || this._privateStateRecoveryInFlight) return;
+        void this.render(false);
+      });
+    }
   }
 
   async _prepareContext() {
@@ -180,6 +267,9 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       : buildPlayerHomeActions();
     const groups = groupHomeActionsByIntent(actions);
     const recentActions = resolveRecentActions(actions);
+    const privateStateRecovery = fullGm
+      ? await preparePrivateStateRecoveryContext(this)
+      : null;
 
     return {
       moduleId: MODULE_ID,
@@ -198,6 +288,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       groups,
       recentTools: recentActions,
       hasRecentTools: recentActions.length > 0,
+      privateStateRecovery,
 
       // Compatibility context for existing harnesses and extensions that still
       // call this surface a dashboard.
@@ -209,6 +300,13 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
+    if (this._privateStateHookId != null) {
+      globalThis.Hooks?.off?.(
+        PRIVATE_STATE_CHANGED_HOOK,
+        this._privateStateHookId,
+      );
+    }
+    this._privateStateHookId = null;
     this._unbindFullGmWindowGuard?.();
     this._unbindFullGmWindowGuard = null;
     InfinityDashboardApp._instance = null;
@@ -259,6 +357,90 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
         callback: () => true,
       },
       rejectClose: false,
+    });
+  }
+
+  /** @this {InfinityDashboardApp} */
+  static async _onRefreshPrivateState() {
+    this._privateStateRecoveryMessage = "Campaign data status refreshed.";
+    this._privateStateRecoveryTone = "neutral";
+    await this.render(false);
+  }
+
+  /** @this {InfinityDashboardApp} */
+  static async _onReviewPrivateStateCandidate(_event, target) {
+    const candidateId = String(target?.dataset?.candidateId ?? "").trim();
+    if (!candidateId) return;
+    await runPrivateStateRecoveryAction(this, async (service) => {
+      const preview = await service.previewCandidate(candidateId);
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: "Adopt this campaign-data store?",
+          icon: "fa-solid fa-link",
+        },
+        content: buildCandidateAdoptionConfirmation(preview),
+        yes: {
+          label: "Adopt this store",
+          icon: "fa-solid fa-link",
+        },
+        no: { label: "Cancel", icon: "fa-solid fa-xmark" },
+        rejectClose: false,
+      });
+      if (!confirmed) return null;
+      assertRecoveryMutationAuthority();
+      return service.applyCandidate({ token: preview?.token });
+    });
+  }
+
+  /** @this {InfinityDashboardApp} */
+  static async _onRecoverPrivateStateSnapshot() {
+    await runPrivateStateRecoveryAction(this, async (service) => {
+      const preview = await service.previewSnapshot();
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: "Recover the verified campaign-data snapshot?",
+          icon: "fa-solid fa-clock-rotate-left",
+        },
+        content: buildSnapshotRecoveryConfirmation(preview),
+        yes: {
+          label: "Recover snapshot",
+          icon: "fa-solid fa-clock-rotate-left",
+        },
+        no: { label: "Cancel", icon: "fa-solid fa-xmark" },
+        rejectClose: false,
+      });
+      if (!confirmed) return null;
+      assertRecoveryMutationAuthority();
+      return service.applySnapshot({
+        token: preview?.token,
+        confirmationToken: preview?.confirmationToken,
+      });
+    });
+  }
+
+  /** @this {InfinityDashboardApp} */
+  static async _onCreateEmptyPrivateState() {
+    await runPrivateStateRecoveryAction(this, async (service) => {
+      const preview = await service.previewEmpty();
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: "Start with empty campaign data?",
+          icon: "fa-solid fa-triangle-exclamation",
+        },
+        content: buildEmptyReplacementConfirmation(preview),
+        yes: {
+          label: "Create empty store",
+          icon: "fa-solid fa-file-circle-plus",
+        },
+        no: { label: "Cancel", icon: "fa-solid fa-xmark" },
+        rejectClose: false,
+      });
+      if (!confirmed) return null;
+      assertRecoveryMutationAuthority();
+      return service.applyEmpty({
+        token: preview?.token,
+        confirmationToken: preview?.confirmationToken,
+      });
     });
   }
 
@@ -328,6 +510,369 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     InfinityDashboardApp._recordRecent(`surface:${surface}`);
     void this.render(false);
   }
+}
+
+async function preparePrivateStateRecoveryContext(application) {
+  try {
+    const overview =
+      await application._privateStateRecoveryService.getOverview();
+    if (!isFullGM() || overview?.fullGm !== true) {
+      return presentPrivateStateRecoveryOverview({
+        status: {
+          state: "pending",
+          code: "full-gm-required",
+          supportedSchema: null,
+          observedSchema: null,
+        },
+        fullGm: false,
+        authoritative: false,
+        canonicalId: "",
+        candidates: [],
+        canMutate: false,
+        blockedReason: "full-gm-required",
+      });
+    }
+    return presentPrivateStateRecoveryOverview(overview, {
+      busy: application._privateStateRecoveryInFlight,
+      message: application._privateStateRecoveryMessage,
+      messageTone: application._privateStateRecoveryTone,
+    });
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | campaign-data status could not be read (${safeRecoveryErrorCode(error)})`,
+    );
+    return presentPrivateStateRecoveryOverview(
+      {
+        status: {
+          state: "pending",
+          code: "store-unavailable",
+          supportedSchema: null,
+          observedSchema: null,
+        },
+        authoritative: false,
+        candidates: [],
+        canMutate: false,
+        blockedReason: "store-unavailable",
+      },
+      {
+        busy: false,
+        message:
+          "Campaign data status could not be read. Refresh after startup completes.",
+        messageTone: "danger",
+      },
+    );
+  }
+}
+
+/** Convert the value-free service projection into stable, plain-language Home data. */
+export function presentPrivateStateRecoveryOverview(raw = {}, uiState = {}) {
+  const status =
+    raw?.status && typeof raw.status === "object" ? raw.status : {};
+  const state = ["ready", "blocked"].includes(status.state)
+    ? status.state
+    : "pending";
+  const busy = uiState.busy === true;
+  const authoritative = raw.authoritative === true;
+  const recoveryNeeded = state !== "ready";
+  const canMutate =
+    raw.canMutate === true && authoritative && recoveryNeeded && !busy;
+  const mutationReason = busy
+    ? "A campaign-data action is already being checked."
+    : !authoritative
+      ? "Only the active Game Master can change campaign data."
+      : state === "pending"
+        ? "Campaign data is still being checked. Recovery actions are not available yet."
+        : state === "ready"
+          ? "Campaign data is verified; recovery actions are not available."
+          : "Recovery actions are not available for the current state.";
+  const candidates = (Array.isArray(raw.candidates) ? raw.candidates : []).map(
+    (candidate, index) => {
+      const eligible = candidate?.eligible === true;
+      return {
+        id: String(candidate?.id ?? "").trim() || "Unknown Journal",
+        domId: `infinity-home-campaign-candidate-${index}`,
+        canonical: candidate?.canonical === true,
+        canonicalLabel:
+          candidate?.canonical === true ? "Selected" : "Candidate",
+        createdLabel: formatRecoveryTimestamp(candidate?.createdTime),
+        modifiedLabel: formatRecoveryTimestamp(candidate?.modifiedTime),
+        schemaLabel: recoverySchemaLabel(
+          candidate?.schemaState,
+          candidate?.observedSchema,
+        ),
+        payloadLabel: recoveryPayloadLabel(candidate?.payloadState),
+        ownershipLabel: recoveryOwnershipLabel(candidate?.ownershipState),
+        eligible,
+        canAdopt: eligible && canMutate,
+        reason: eligible
+          ? canMutate
+            ? "Ready for review."
+            : mutationReason
+          : candidateReason(candidate?.reason),
+      };
+    },
+  );
+  const tone =
+    state === "ready" ? "success" : state === "blocked" ? "danger" : "warning";
+  const stateLabel =
+    state === "ready"
+      ? "Ready"
+      : state === "blocked"
+        ? "Recovery needed"
+        : "Loading";
+  const stateTitle =
+    state === "ready"
+      ? "Campaign data is verified"
+      : state === "blocked"
+        ? "Campaign tools are safely locked"
+        : "Campaign data is still being checked";
+  const reason = recoveryReason(
+    state === "ready" ? status.code : (raw.blockedReason ?? status.code),
+    state,
+  );
+  const canonicalId = String(raw.canonicalId ?? "").trim();
+  const snapshotAvailable = raw.snapshotAvailable === true;
+
+  return {
+    open: state !== "ready",
+    state,
+    stateLabel,
+    stateTitle,
+    statusRole: state === "blocked" ? "alert" : "status",
+    statusClass: `infinity-banner--${tone}`,
+    statusIcon:
+      state === "ready"
+        ? "fa-solid fa-circle-check"
+        : state === "blocked"
+          ? "fa-solid fa-triangle-exclamation"
+          : "fa-solid fa-spinner",
+    reason,
+    canonicalId: canonicalId || "Not selected",
+    canonicalStateLabel: canonicalStateLabel(raw.canonicalState),
+    supportedSchema: Number.isSafeInteger(status.supportedSchema)
+      ? status.supportedSchema
+      : "Unknown",
+    observedSchema: Number.isSafeInteger(status.observedSchema)
+      ? status.observedSchema
+      : "Not available",
+    authoritative,
+    authorityLabel: authoritative
+      ? "This client is the active Game Master."
+      : "Inspection only — the active Game Master must confirm recovery actions.",
+    canMutate,
+    mutationReason,
+    candidates,
+    hasCandidates: candidates.length > 0,
+    snapshotAvailable,
+    canRecoverSnapshot:
+      snapshotAvailable && raw.canRecoverSnapshot === true && canMutate,
+    snapshotReason: !authoritative
+      ? mutationReason
+      : snapshotAvailable
+        ? raw.canRecoverSnapshot === true && canMutate
+          ? "Ready for review."
+          : raw.canRecoverSnapshot === true
+            ? mutationReason
+            : "The verified snapshot cannot be recovered in the current state."
+        : "No verified snapshot is available on this client.",
+    canCreateEmpty: raw.canCreateEmpty === true && canMutate,
+    emptyReason: !authoritative
+      ? mutationReason
+      : raw.canCreateEmpty === true && canMutate
+        ? "Ready for review."
+        : raw.canCreateEmpty === true
+          ? mutationReason
+          : "An empty replacement is not available in the current state.",
+    busy,
+    message: String(uiState.message ?? "").trim(),
+    messageTone: safeMessageTone(uiState.messageTone),
+  };
+}
+
+async function runPrivateStateRecoveryAction(application, operation) {
+  if (application._privateStateRecoveryInFlight) {
+    notify("info", "a campaign-data action is already being checked.");
+    return null;
+  }
+  application._privateStateRecoveryInFlight = true;
+  try {
+    assertRecoveryMutationAuthority();
+    const result = await operation(application._privateStateRecoveryService);
+    if (result?.ok === true) {
+      application._privateStateRecoveryMessage =
+        "Campaign data recovery completed and the selected store was verified.";
+      application._privateStateRecoveryTone = "success";
+      playModuleSound(SOUND_EVENTS.DEPOSIT);
+      notify("info", "campaign data recovery completed and was verified.");
+    } else {
+      application._privateStateRecoveryMessage = "No campaign data changed.";
+      application._privateStateRecoveryTone = "neutral";
+    }
+    return result ?? null;
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | campaign-data recovery action stopped (${safeRecoveryErrorCode(error)})`,
+    );
+    const message = recoveryActionErrorMessage(error);
+    application._privateStateRecoveryMessage = message;
+    application._privateStateRecoveryTone = "danger";
+    notify("warn", message);
+    return null;
+  } finally {
+    application._privateStateRecoveryInFlight = false;
+    await application.render?.(false);
+  }
+}
+
+function assertRecoveryMutationAuthority() {
+  if (!isFullGM() || !isAuthoritativeGM()) {
+    const error = new Error("PrivateStateRecoveryAuthorityChanged");
+    error.code = "PRIVATE_STATE_RECOVERY_PREFLIGHT_AUTHORITY_CHANGED";
+    throw error;
+  }
+}
+
+export function buildCandidateAdoptionConfirmation(preview = {}) {
+  const candidate = preview?.candidate ?? {};
+  const candidateId = escapeHtml(String(candidate.id ?? "Unknown Journal"));
+  const canonicalId = escapeHtml(
+    String(preview?.canonicalId ?? "No selected store"),
+  );
+  return `<div class="infinity-dnd5e infinity-ui">
+    <p>Make <strong>${candidateId}</strong> the selected campaign-data store?</p>
+    <p>It will replace the current selection <strong>${canonicalId}</strong>. A supported older store will follow the normal migration path after selection.</p>
+    <p><strong>Other Journals remain untouched.</strong> Nothing is deleted.</p>
+  </div>`;
+}
+
+export function buildSnapshotRecoveryConfirmation(preview = {}) {
+  const sourceId = escapeHtml(
+    String(preview?.sourceId ?? "the last verified store"),
+  );
+  const canonicalId = escapeHtml(
+    String(preview?.canonicalId ?? "No selected store"),
+  );
+  return `<div class="infinity-dnd5e infinity-ui">
+    <p>Recover the last verified snapshot from <strong>${sourceId}</strong> into a new restricted store?</p>
+    <p>The current selection is <strong>${canonicalId}</strong>. The service will re-check this review before changing it.</p>
+    <p><strong>Old Journals remain untouched.</strong> Nothing is deleted or overwritten.</p>
+  </div>`;
+}
+
+export function buildEmptyReplacementConfirmation(preview = {}) {
+  const canonicalId = escapeHtml(
+    String(preview?.canonicalId ?? "No selected store"),
+  );
+  return `<div class="infinity-dnd5e infinity-ui">
+    <p>Create a new empty restricted store and replace the current selection <strong>${canonicalId}</strong>?</p>
+    <p><strong>The new canonical store starts empty.</strong> Private merchant, faction, resource, downtime, and critical-injury data will not be copied into it.</p>
+    <p>Old Journals remain untouched. Nothing is deleted or overwritten, but campaign tools will use the new empty store.</p>
+  </div>`;
+}
+
+function recoveryReason(code, state) {
+  const key = String(code ?? "").trim();
+  if (PRIVATE_STATE_REASON_LABELS[key]) return PRIVATE_STATE_REASON_LABELS[key];
+  if (state === "ready")
+    return "The selected store passed its privacy and schema checks.";
+  if (state === "blocked") {
+    return "Campaign data could not be verified safely. Review the available recovery choices.";
+  }
+  return "Campaign data is still loading. Refresh this status after startup completes.";
+}
+
+function candidateReason(code) {
+  const key = String(code ?? "").trim();
+  return (
+    CANDIDATE_REASON_LABELS[key] ??
+    "This candidate cannot be adopted safely with the current module."
+  );
+}
+
+function canonicalStateLabel(value) {
+  const labels = {
+    current: "Selected store verified",
+    missing: "Selected store missing",
+    resolved: "Selected store found",
+    unset: "No selected store",
+    unresolved: "Selected store unresolved",
+    blocked: "Selected store blocked",
+    none: "No selected store",
+  };
+  return labels[String(value ?? "").trim()] ?? "Selection not verified";
+}
+
+function recoverySchemaLabel(state, observed) {
+  const label = {
+    current: "Current schema",
+    legacy: "Older schema",
+    future: "Newer schema",
+    invalid: "Invalid schema",
+    missing: "Schema not recorded",
+  }[String(state ?? "").trim()];
+  return Number.isSafeInteger(observed)
+    ? `${label ?? "Schema"} (${observed})`
+    : (label ?? "Schema not available");
+}
+
+function recoveryPayloadLabel(state) {
+  return (
+    {
+      complete: "Required fields complete",
+      incomplete: "Required fields incomplete",
+      invalid: "Required fields invalid",
+      unknown: "Required fields not verified",
+    }[String(state ?? "").trim()] ?? "Required fields not verified"
+  );
+}
+
+function recoveryOwnershipLabel(state) {
+  return (
+    {
+      private: "Restricted to full Game Masters",
+      restricted: "Restricted to full Game Masters",
+      unsafe: "Ownership is not private",
+      unknown: "Ownership not verified",
+    }[String(state ?? "").trim()] ?? "Ownership not verified"
+  );
+}
+
+function formatRecoveryTimestamp(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "Not recorded";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(numeric));
+  } catch {
+    return "Recorded time unavailable";
+  }
+}
+
+function safeMessageTone(value) {
+  return ["neutral", "success", "danger", "warning"].includes(value)
+    ? value
+    : "neutral";
+}
+
+function recoveryActionErrorMessage(error) {
+  const code = String(error?.code ?? "").trim();
+  if (code === "PRIVATE_STATE_RECOVERY_PREFLIGHT_AUTHORITY_CHANGED") {
+    return "Active Game Master control changed. Nothing was changed; review the current status again.";
+  }
+  if (code.includes("EXPIRED") || code.includes("STALE")) {
+    return "That recovery review is no longer current. Nothing was changed; review it again.";
+  }
+  return "Could not confirm the recovery result. Review the current selection before trying another action.";
+}
+
+function safeRecoveryErrorCode(error) {
+  const code = String(error?.code ?? "unknown")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 80);
+  return code || "unknown";
 }
 
 /** Public role-aware opener; module.js exposes this as api.openHub(). */

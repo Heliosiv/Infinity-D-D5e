@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  90,
+  92,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -118,6 +118,8 @@ for (const friendlyLabel of [
 }
 for (const expectedId of [
   "dashboard",
+  "home-recovery-blocked-authority",
+  "home-recovery-blocked-secondary",
   "home-player",
   "settings-gm",
   "settings-player",
@@ -302,6 +304,73 @@ for (const id of [
 const dashboardView = views.find((view) => view.id === "dashboard");
 assert.ok(dashboardView, "harness includes the GM dashboard");
 assert.match(dashboardView.html, /Downtime Workspace/);
+
+const recoveryAuthorityView = views.find(
+  (view) => view.id === "home-recovery-blocked-authority",
+);
+assert.ok(
+  recoveryAuthorityView,
+  "harness includes campaign-data recovery for the active GM",
+);
+assert.match(
+  recoveryAuthorityView.html,
+  /<details\b[^>]*data-campaign-data-recovery[^>]*open/,
+  "blocked campaign data opens the recovery disclosure",
+);
+assert.match(
+  recoveryAuthorityView.html,
+  /role="alert"[^>]*aria-live="polite"/,
+  "blocked campaign data announces the recovery lock",
+);
+assert.match(recoveryAuthorityView.html, /candidate-store-2/);
+assert.match(recoveryAuthorityView.html, /future-store-7/);
+for (const action of [
+  "reviewPrivateStateCandidate",
+  "recoverPrivateStateSnapshot",
+  "createEmptyPrivateState",
+]) {
+  const button =
+    recoveryAuthorityView.html.match(
+      new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*>`),
+    )?.[0] ?? "";
+  assert.ok(button, `active-GM recovery exposes ${action}`);
+  assert.doesNotMatch(
+    button,
+    /\bdisabled\b/,
+    `active-GM recovery enables ${action}`,
+  );
+}
+
+const recoverySecondaryView = views.find(
+  (view) => view.id === "home-recovery-blocked-secondary",
+);
+assert.ok(
+  recoverySecondaryView,
+  "harness includes inspect-only campaign-data recovery for a secondary GM",
+);
+assert.match(recoverySecondaryView.html, /candidate-store-2/);
+assert.match(recoverySecondaryView.html, /Only the active Game Master/i);
+for (const action of [
+  "reviewPrivateStateCandidate",
+  "recoverPrivateStateSnapshot",
+  "createEmptyPrivateState",
+]) {
+  assert.match(
+    recoverySecondaryView.html.match(
+      new RegExp(`<button\\b[^>]*data-action="${action}"[^>]*>`),
+    )?.[0] ?? "",
+    /\bdisabled\b/,
+    `secondary-GM recovery disables ${action}`,
+  );
+}
+
+const playerHomeView = views.find((view) => view.id === "home-player");
+assert.ok(playerHomeView, "harness includes the player Home");
+assert.doesNotMatch(
+  playerHomeView.html,
+  /Campaign data|candidate-store-2|future-store-7/,
+  "player Home receives no private-store recovery metadata",
+);
 
 const merchantWorkspaceView = views.find(
   (view) => view.id === "merchant-workspace",

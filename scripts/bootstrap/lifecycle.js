@@ -226,10 +226,17 @@ export function createModuleBootstrap(bindings) {
       if (!privateStateAvailable && bindings.isFullGM()) {
         if (privateStateStatus.state === "blocked") {
           const corrupt = privateStateStatus.code === "corrupt";
+          const missing = [
+            "candidate-review-required",
+            "missing-store",
+            "store-missing",
+          ].includes(privateStateStatus.code);
           const observed = privateStateStatus.observedSchema;
-          const message = corrupt
-            ? "Campaign tools are locked because the current private-state store is incomplete or corrupt. No campaign data was changed and automatic retries are stopped. Restore the store from a verified backup or use a compatible recovery tool before continuing."
-            : `Campaign tools are locked because the private-state schema (${observed == null ? "invalid" : String(observed)}) is newer than or incompatible with this module (supports ${privateStateStatus.supportedSchema}). No campaign data was changed and automatic retries are stopped. Install a compatible module version before continuing.`;
+          const message = missing
+            ? "Campaign tools are locked because the selected private-state Journal is missing or needs review. No campaign data was changed and automatic replacement is disabled. Open Home > Campaign data to inspect the available recovery choices."
+            : corrupt
+              ? "Campaign tools are locked because the current private-state store is incomplete or corrupt. No campaign data was changed and automatic retries are stopped. Open Home > Campaign data to inspect the available recovery choices."
+              : `Campaign tools are locked because the private-state schema (${observed == null ? "invalid" : String(observed)}) is newer than or incompatible with this module (supports ${privateStateStatus.supportedSchema}). No campaign data was changed and automatic retries are stopped. Install a compatible module version, or open Home > Campaign data to inspect non-destructive recovery choices.`;
           bindings.getUi?.()?.notifications?.error?.(message);
         } else {
           bindings

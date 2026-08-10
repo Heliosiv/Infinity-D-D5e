@@ -11,12 +11,17 @@
  */
 
 import { isFullGM } from "./permissions.js";
+import {
+  configurePrivateStateRecoveryService,
+  resetPrivateStateRecoveryServiceForTests,
+} from "./private-state-recovery-service.js";
 import { SETTING_KEYS } from "./settings.js";
 import { authoritativeGMId, isAuthoritativeGM } from "./socket-authority.js";
 import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
+const RECOVERY_SOURCE_FLAG = "privateStateRecoverySource";
 export const PRIVATE_STATE_SCHEMA_VERSION = 6;
 const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
@@ -74,11 +79,21 @@ let lastKnownAuthorityId = null;
 let lifecycleGeneration = 0;
 let lastVerifiedStoreSnapshot = null;
 let lastVerifiedStoreId = null;
-let replacementRequired = false;
+let recoveryEvidenceObserved = false;
 let blockedStoreId = null;
 let storeQuarantineStatus = null;
-const retiredStoreIds = new Set();
+let manualRecoveryTargetId = null;
 let privateStateStatus = createPrivateStateStatus();
+
+export {
+  applyEmptyPrivateStateReplacement,
+  applyPrivateStateCandidateAdoption,
+  applyPrivateStateSnapshotRecovery,
+  getPrivateStateRecoveryOverview,
+  previewEmptyPrivateStateReplacement,
+  previewPrivateStateCandidateAdoption,
+  previewPrivateStateSnapshotRecovery,
+} from "./private-state-recovery-service.js";
 
 function createPrivateStateStatus({
   state = "pending",
@@ -121,7 +136,11 @@ export function createPrivateStateUnavailableError(context = "") {
         ? "PRIVATE_STATE_INVALID_SCHEMA"
         : status.code === "corrupt"
           ? "PRIVATE_STATE_CORRUPT"
-          : "PRIVATE_STATE_UNAVAILABLE";
+          : status.code === "missing-store"
+            ? "PRIVATE_STATE_MISSING_STORE"
+            : status.code === "candidate-review-required"
+              ? "PRIVATE_STATE_CANDIDATE_REVIEW_REQUIRED"
+              : "PRIVATE_STATE_UNAVAILABLE";
   error.retryable = status.retryable;
   error.privateStateStatus = status;
   return error;
@@ -279,6 +298,38 @@ function corruptStoreStatus() {
   };
 }
 
+function recoveryRequiredStatus(code) {
+  return {
+    state: "blocked",
+    code,
+    retryable: false,
+    observedSchema: null,
+  };
+}
+
+function blockRecoveryRequired(code, reason = code) {
+  recoveryEvidenceObserved = true;
+  storeQuarantineStatus = createPrivateStateStatus(
+    recoveryRequiredStatus(code),
+  );
+  blockedStoreId = null;
+  if (!initializing) {
+    invalidatePrivilegedStore(reason, {
+      retainDocument: false,
+      retry: false,
+      status: storeQuarantineStatus,
+    });
+  } else {
+    lifecycleGeneration += 1;
+    cache.clear();
+    storeDocument = null;
+    initialized = false;
+    setPrivateStateStatus(storeQuarantineStatus);
+    callPrivateStateChanged(PRIVATE_STATE_KEYS, reason);
+  }
+  return false;
+}
+
 function blockPrivateStore(
   document,
   status,
@@ -352,9 +403,7 @@ function findStoreDocuments() {
     const entry = collection?.find?.((candidate) => isStoreDocument(candidate));
     if (entry) documents.push(entry);
   }
-  return documents
-    .filter((document) => !retiredStoreIds.has(String(document?.id ?? "")))
-    .sort(compareStoreDocuments);
+  return documents.sort(compareStoreDocuments);
 }
 
 function findStoreDocument() {
@@ -370,17 +419,10 @@ function findStoreDocument() {
   return null;
 }
 
-function electStoreDocument() {
-  return findStoreDocuments()[0] ?? null;
-}
-
 function isCanonicalStoreDocument(document) {
   const persistedId = canonicalStoreIdSetting();
   return Boolean(
-    document?.id &&
-    persistedId &&
-    String(document.id) === persistedId &&
-    !retiredStoreIds.has(String(document.id)),
+    document?.id && persistedId && String(document.id) === persistedId,
   );
 }
 
@@ -519,6 +561,7 @@ function hydrateCache(document) {
   }
   lastVerifiedStoreSnapshot = snapshotStoreValues(document);
   lastVerifiedStoreId = String(document?.id ?? "") || null;
+  recoveryEvidenceObserved = true;
   return changedKeys;
 }
 
@@ -601,7 +644,6 @@ function registerSyncHooks() {
     globalThis.Hooks.on("createJournalEntry", (document) => {
       if (!isFullGM()) return;
       if (!isStoreDocument(document)) return;
-      if (retiredStoreIds.has(String(document?.id ?? ""))) return;
       const canonical = findStoreDocument();
       if (!canonical || canonical?.id !== document?.id) {
         console.warn(
@@ -625,6 +667,21 @@ function registerSyncHooks() {
       }
       if (storeQuarantineStatus) {
         if (!canExplicitlyResumeStore(document)) return;
+        if (!isVerifiedCanonicalStore(document)) {
+          if (!isAuthoritativeGM()) {
+            setPrivateStateStatus(storeQuarantineStatus);
+            resolveStoreWaiters(document);
+            return;
+          }
+          clearStoreQuarantine();
+          resolveStoreWaiters(document);
+          invalidatePrivilegedStore("canonical-replica-ready", {
+            retainDocument: true,
+            retry: false,
+          });
+          requestPrivateStateRetry();
+          return;
+        }
         clearStoreQuarantine();
       }
       const changedKeys = hydrateCache(document);
@@ -710,26 +767,7 @@ function registerSyncHooks() {
           deletedId === blockedStoreId ||
           deletedId === canonicalStoreIdSetting());
       if (!wasCanonical) return;
-      retiredStoreIds.add(deletedId);
-      if (privateStateStatus.state === "blocked") {
-        lifecycleGeneration += 1;
-        cache.clear();
-        storeDocument = null;
-        blockedStoreId = null;
-        initialized = false;
-        initialization = null;
-        initializing = false;
-        if (storeQuarantineStatus) {
-          setPrivateStateStatus(storeQuarantineStatus);
-        }
-        callPrivateStateChanged(PRIVATE_STATE_KEYS, "schema-blocked");
-        return;
-      }
-      for (const candidate of findStoreDocuments()) {
-        retiredStoreIds.add(String(candidate?.id ?? ""));
-      }
-      replacementRequired = true;
-      invalidatePrivilegedStore("journal-delete", { retainDocument: false });
+      blockRecoveryRequired("missing-store", "journal-delete");
     }),
   ]);
   syncHookIds.push([
@@ -753,6 +791,22 @@ function registerSyncHooks() {
         return;
       }
       if (storeQuarantineStatus) {
+        const canonicalId = String(canonical?.id ?? "");
+        const requiresManualSelection = [
+          "missing-store",
+          "candidate-review-required",
+        ].includes(storeQuarantineStatus.code);
+        const selectsDifferentBlockedStore = Boolean(
+          blockedStoreId && canonicalId && canonicalId !== blockedStoreId,
+        );
+        if (
+          (requiresManualSelection || selectsDifferentBlockedStore) &&
+          manualRecoveryTargetId !== canonicalId
+        ) {
+          setPrivateStateStatus(storeQuarantineStatus);
+          resolveStoreWaiters(null);
+          return;
+        }
         if (!canonical || !canExplicitlyResumeStore(canonical)) {
           setPrivateStateStatus(storeQuarantineStatus);
           resolveStoreWaiters(null);
@@ -782,7 +836,6 @@ function registerSyncHooks() {
             observedSchema: STORE_SCHEMA,
           });
         }
-        replacementRequired = false;
         resolveStoreWaiters(canonical);
         if (changedKeys) {
           callPrivateStateChanged(changedKeys, "canonical-identity");
@@ -807,8 +860,10 @@ function resetForRoleTransition({ safeDefaults }) {
   if (safeDefaults) {
     lastVerifiedStoreSnapshot = null;
     lastVerifiedStoreId = null;
-    replacementRequired = false;
+    recoveryEvidenceObserved = false;
     storeQuarantineStatus = null;
+    manualRecoveryTargetId = null;
+    resetPrivateStateRecoveryServiceForTests();
     installSafeDefaults();
     initialized = true;
     setPrivateStateStatus({
@@ -929,7 +984,7 @@ function waitForStoreDocument() {
   });
 }
 
-async function createStoreDocument(initial) {
+async function createStoreDocument(initial, { recoverySource = null } = {}) {
   const none = noneOwnershipLevel();
   const values = Object.fromEntries(
     PRIVATE_STATE_KEYS.map((key) => [key, cleanValue(key, initial[key])]),
@@ -943,6 +998,9 @@ async function createStoreDocument(initial) {
           [STORE_MARKER]: true,
           schemaVersion: STORE_SCHEMA,
           ...values,
+          ...(recoverySource
+            ? { [RECOVERY_SOURCE_FLAG]: clone(recoverySource) }
+            : {}),
         },
       },
     },
@@ -1162,7 +1220,16 @@ export function initializePrivateState() {
       if (isSchemaBlocked(quarantinedClassification)) {
         return blockUnsupportedStoreSchema(document, quarantinedClassification);
       }
-      if (!canExplicitlyResumeStore(document)) {
+      const manualRecovery =
+        manualRecoveryTargetId === String(document?.id ?? "");
+      const requiresManualSelection = [
+        "missing-store",
+        "candidate-review-required",
+      ].includes(storeQuarantineStatus.code);
+      if (
+        (requiresManualSelection && !manualRecovery) ||
+        (!manualRecovery && !canExplicitlyResumeStore(document))
+      ) {
         if (hasCurrentStoreCorruption(document)) {
           return blockCorruptStore(document);
         }
@@ -1172,45 +1239,24 @@ export function initializePrivateState() {
       clearStoreQuarantine();
     }
     const persistedStoreId = canonicalStoreIdSetting();
-    if (
-      !document &&
-      persistedStoreId &&
-      authoritative &&
-      !replacementRequired
-    ) {
-      if (!lastVerifiedStoreSnapshot) {
-        console.warn(
-          `${MODULE_ID} | persisted private state store (${persistedStoreId}) is unresolved; refusing automatic replacement without a verified snapshot`,
-        );
-        return false;
-      }
-      for (const candidate of findStoreDocuments()) {
-        retiredStoreIds.add(String(candidate?.id ?? ""));
-      }
-      replacementRequired = true;
+    const candidates = findStoreDocuments();
+    if (!document && persistedStoreId) {
+      return blockRecoveryRequired("missing-store", "canonical-unresolved");
     }
-    if (!document && authoritative && !replacementRequired) {
-      document = electStoreDocument();
-      if (document) {
-        const classification = classifyStoreSchema(document);
-        if (isSchemaBlocked(classification)) {
-          return blockUnsupportedStoreSchema(document, classification);
-        }
-        const persisted = await persistCanonicalStoreIdentity(
-          document,
-          isCurrent,
-        );
-        if (!persisted) return false;
-      }
+    if (!document && !persistedStoreId && candidates.length > 0) {
+      return blockRecoveryRequired(
+        "candidate-review-required",
+        "candidate-review-required",
+      );
     }
     if (!document && authoritative) {
-      const recoveryInitial =
-        replacementRequired && lastVerifiedStoreSnapshot
-          ? lastVerifiedStoreSnapshot
-          : Object.fromEntries(
-              PRIVATE_STATE_KEYS.map((key) => [key, legacyState[key].value]),
-            );
-      const created = await createStoreDocument(recoveryInitial);
+      if (recoveryEvidenceObserved || lastVerifiedStoreSnapshot) {
+        return blockRecoveryRequired("missing-store", "recovery-required");
+      }
+      const initial = Object.fromEntries(
+        PRIVATE_STATE_KEYS.map((key) => [key, legacyState[key].value]),
+      );
+      const created = await createStoreDocument(initial);
       if (!isCurrent()) return false;
       if (!created?.id) {
         console.warn(
@@ -1221,7 +1267,6 @@ export function initializePrivateState() {
       const persisted = await persistCanonicalStoreIdentity(created, isCurrent);
       if (!persisted) return false;
       document = findStoreDocument() ?? created;
-      replacementRequired = false;
     } else if (!document) {
       document = await waitForStoreDocument();
     }
@@ -1425,6 +1470,229 @@ export function isPrivilegedPrivateStateReady() {
   );
 }
 
+function recoveryPayload(document) {
+  return Object.fromEntries(
+    PRIVATE_STATE_KEYS.map((key) => [
+      key,
+      clone(document?.getFlag?.(MODULE_ID, key)),
+    ]),
+  );
+}
+
+function recoveryPayloadState(document) {
+  let incomplete = false;
+  let invalid = false;
+  for (const key of PRIVATE_STATE_KEYS) {
+    const raw = document?.getFlag?.(MODULE_ID, key);
+    if (raw === undefined) incomplete = true;
+    else if (!isValidValue(key, raw)) invalid = true;
+  }
+  if (invalid) return "invalid";
+  return incomplete ? "incomplete" : "complete";
+}
+
+function recoveryOwnershipState(document) {
+  const ownership = document?.ownership;
+  if (!ownership || typeof ownership !== "object") return "unknown";
+  if (!hasPrivateOwnership(document)) return "unsafe";
+  const none = noneOwnershipLevel();
+  const hasExplicitFullGmGrant = Object.entries(ownership).some(
+    ([userId, rawLevel]) =>
+      userId !== "default" &&
+      Number(rawLevel) > none &&
+      isFullGM(userById(userId)),
+  );
+  return hasExplicitFullGmGrant ? "restricted" : "private";
+}
+
+function recoveryCandidateDescriptor(document) {
+  const id = String(document?.id ?? "").trim();
+  const rawSchema = document?.getFlag?.(MODULE_ID, "schemaVersion");
+  const classification = classifyStoreSchema(document);
+  const rawRecoverySource = document?.getFlag?.(
+    MODULE_ID,
+    RECOVERY_SOURCE_FLAG,
+  );
+  const payload = recoveryPayload(document);
+  return {
+    id,
+    createdTime: storeCreatedTime(document),
+    modifiedTime: Number.isFinite(Number(document?._stats?.modifiedTime))
+      ? Number(document._stats.modifiedTime)
+      : null,
+    marker: isStoreDocument(document),
+    schemaState: rawSchema === undefined ? "missing" : classification.state,
+    observedSchema: classification.observedSchema,
+    payloadState: recoveryPayloadState(document),
+    ownershipState: recoveryOwnershipState(document),
+    payload,
+    fingerprintInput: {
+      id,
+      marker: {
+        present: document?.getFlag?.(MODULE_ID, STORE_MARKER) !== undefined,
+        value: clone(document?.getFlag?.(MODULE_ID, STORE_MARKER)),
+      },
+      schemaVersion: {
+        present: rawSchema !== undefined,
+        value: clone(rawSchema),
+      },
+      ownership: clone(document?.ownership),
+      fields: Object.fromEntries(
+        PRIVATE_STATE_KEYS.map((key) => {
+          const raw = document?.getFlag?.(MODULE_ID, key);
+          return [key, { present: raw !== undefined, value: clone(raw) }];
+        }),
+      ),
+      recoverySource: {
+        present: rawRecoverySource !== undefined,
+        value: clone(rawRecoverySource),
+      },
+    },
+  };
+}
+
+function isRecoveryCandidateEligible(
+  document,
+  { requireCurrent = false } = {},
+) {
+  const candidate = recoveryCandidateDescriptor(document);
+  const supportedSchema = requireCurrent
+    ? candidate.schemaState === "current"
+    : ["current", "legacy", "missing"].includes(candidate.schemaState);
+  return Boolean(
+    candidate.id &&
+    candidate.marker &&
+    supportedSchema &&
+    candidate.payloadState === "complete" &&
+    ["private", "restricted"].includes(candidate.ownershipState),
+  );
+}
+
+function capturePrivateStateRecoveryState() {
+  const fullGm = isFullGM();
+  const authoritative = fullGm && isAuthoritativeGM();
+  const candidates = fullGm
+    ? findStoreDocuments().map(recoveryCandidateDescriptor)
+    : [];
+  const snapshotAvailable = Boolean(fullGm && hasCompleteVerifiedSnapshot());
+  return {
+    authority: {
+      fullGm,
+      authoritative,
+      userId:
+        fullGm && globalThis.game?.user?.id
+          ? String(globalThis.game.user.id)
+          : null,
+    },
+    status: getPrivateStateStatus(),
+    canonicalId: fullGm ? canonicalStoreIdSetting() : "",
+    candidates,
+    snapshot: snapshotAvailable
+      ? {
+          complete: true,
+          sourceId: lastVerifiedStoreId,
+          payload: clone(lastVerifiedStoreSnapshot),
+        }
+      : null,
+  };
+}
+
+function assertRecoveryAuthority() {
+  if (!isFullGM() || !isAuthoritativeGM()) {
+    throw new Error("PrivateStateRecoveryAuthorityRequired");
+  }
+}
+
+async function setRecoveryCanonicalId(candidateId) {
+  assertRecoveryAuthority();
+  const id = String(candidateId ?? "").trim();
+  const candidate = findStoreDocuments().find(
+    (document) => String(document?.id ?? "") === id,
+  );
+  if (!candidate || !isRecoveryCandidateEligible(candidate)) {
+    throw new Error("PrivateStateRecoveryCandidateIneligible");
+  }
+  await globalThis.game.settings.set(
+    MODULE_ID,
+    SETTING_KEYS.PRIVATE_STATE_STORE_ID,
+    id,
+  );
+  if (canonicalStoreIdSetting() !== id) {
+    throw new Error("PrivateStateRecoveryCanonicalReadbackFailed");
+  }
+  return true;
+}
+
+async function createRecoveryStoreDocument({ payload, recoverySource }) {
+  assertRecoveryAuthority();
+  const created = await createStoreDocument(payload, { recoverySource });
+  if (
+    !created?.id ||
+    !isRecoveryCandidateEligible(created, { requireCurrent: true })
+  ) {
+    throw new Error("PrivateStateRecoveryCreateVerificationFailed");
+  }
+  return String(created.id);
+}
+
+async function hydrateRecoveryCanonical(candidateId) {
+  assertRecoveryAuthority();
+  const id = String(candidateId ?? "").trim();
+  const candidate = findStoreDocument();
+  if (
+    !id ||
+    canonicalStoreIdSetting() !== id ||
+    String(candidate?.id ?? "") !== id ||
+    manualRecoveryTargetId !== id ||
+    !isRecoveryCandidateEligible(candidate)
+  ) {
+    throw new Error("PrivateStateRecoveryCandidateChanged");
+  }
+  lifecycleGeneration += 1;
+  cache.clear();
+  storeDocument = null;
+  initialized = false;
+  initialization = null;
+  initializing = false;
+  clearStoreQuarantine();
+  setPrivateStateStatus({
+    state: "pending",
+    code: "manual-recovery",
+    retryable: false,
+  });
+  const ready = await initializePrivateState();
+  if (!ready || !isPrivilegedPrivateStateReady()) {
+    throw createPrivateStateUnavailableError("manual-recovery");
+  }
+  if (
+    canonicalStoreIdSetting() !== id ||
+    String(storeDocument?.id ?? "") !== id ||
+    !isVerifiedCanonicalStore(storeDocument)
+  ) {
+    throw new Error("PrivateStateRecoveryReadbackFailed");
+  }
+  return true;
+}
+
+configurePrivateStateRecoveryService({
+  captureState: capturePrivateStateRecoveryState,
+  typedDefaults: () =>
+    Object.fromEntries(
+      PRIVATE_STATE_KEYS.map((key) => [key, defaultValue(key)]),
+    ),
+  setManualRecoveryTarget(candidateId) {
+    manualRecoveryTargetId = String(candidateId ?? "").trim() || null;
+  },
+  clearManualRecoveryTarget(candidateId) {
+    if (manualRecoveryTargetId === String(candidateId ?? "")) {
+      manualRecoveryTargetId = null;
+    }
+  },
+  setCanonicalId: setRecoveryCanonicalId,
+  createRecoveryDocument: createRecoveryStoreDocument,
+  hydrateCanonical: hydrateRecoveryCanonical,
+});
+
 /** Test-only reset; harmless when imported by the Foundry runtime. */
 export function resetPrivateStateForTests() {
   lifecycleGeneration += 1;
@@ -1447,9 +1715,10 @@ export function resetPrivateStateForTests() {
   lastKnownAuthorityId = null;
   lastVerifiedStoreSnapshot = null;
   lastVerifiedStoreId = null;
-  replacementRequired = false;
+  recoveryEvidenceObserved = false;
   blockedStoreId = null;
   storeQuarantineStatus = null;
-  retiredStoreIds.clear();
+  manualRecoveryTargetId = null;
+  resetPrivateStateRecoveryServiceForTests();
   privateStateStatus = createPrivateStateStatus();
 }

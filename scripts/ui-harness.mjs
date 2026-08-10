@@ -91,6 +91,26 @@ export function buildHarnessViews() {
       },
     ),
     view(
+      "home-recovery-blocked-authority",
+      "Home campaign-data recovery (active GM)",
+      "infinity-dashboard",
+      "templates/dashboard.hbs",
+      dashboardContext({
+        privateStateRecovery: recoveryHarnessContext({ authoritative: true }),
+      }),
+      { width: 720, height: 760 },
+    ),
+    view(
+      "home-recovery-blocked-secondary",
+      "Home campaign-data recovery (secondary GM)",
+      "infinity-dashboard",
+      "templates/dashboard.hbs",
+      dashboardContext({
+        privateStateRecovery: recoveryHarnessContext({ authoritative: false }),
+      }),
+      { width: 720, height: 760 },
+    ),
+    view(
       "home-player",
       "Home (player)",
       "infinity-dashboard",
@@ -1149,7 +1169,9 @@ function renderTemplate(templatePath, context) {
   return `${studio(context)}${body}`;
 }
 
-function dashboardContext() {
+function dashboardContext({
+  privateStateRecovery = readyRecoveryHarnessContext(),
+} = {}) {
   const tools = [
     {
       id: "per-encounter-loot",
@@ -1223,6 +1245,7 @@ function dashboardContext() {
   }));
   return {
     moduleVersion: MODULE_VERSION,
+    isFullGm: true,
     roleLabel: "Game Master Home",
     headingHint:
       "Prepare the session, run active workflows, and track what changes.",
@@ -1230,6 +1253,7 @@ function dashboardContext() {
     hasTools: true,
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
+    privateStateRecovery,
     categories: [
       {
         category: "loot",
@@ -1247,6 +1271,100 @@ function dashboardContext() {
         tools: decorated.filter((tool) => tool.category === "party"),
       },
     ],
+  };
+}
+
+function readyRecoveryHarnessContext() {
+  return {
+    open: false,
+    state: "ready",
+    stateLabel: "Ready",
+    stateTitle: "Campaign data is verified",
+    statusRole: "status",
+    statusClass: "infinity-banner--success",
+    statusIcon: "fa-solid fa-circle-check",
+    reason: "The selected store passed its privacy and schema checks.",
+    canonicalId: "private-store-current",
+    canonicalStateLabel: "Selected store verified",
+    supportedSchema: 6,
+    observedSchema: 6,
+    authoritative: true,
+    authorityLabel: "This client is the active Game Master.",
+    canMutate: false,
+    candidates: [],
+    hasCandidates: false,
+    snapshotAvailable: true,
+    canRecoverSnapshot: false,
+    snapshotReason:
+      "Campaign data must be blocked or pending before recovery can change its canonical store.",
+    canCreateEmpty: false,
+    emptyReason: "An empty replacement is not available in the current state.",
+    message: "",
+    messageTone: "neutral",
+  };
+}
+
+function recoveryHarnessContext({ authoritative }) {
+  const mutationReason = authoritative
+    ? "Campaign data must be reviewed before it changes."
+    : "Only the active Game Master can change campaign data.";
+  return {
+    open: true,
+    state: "blocked",
+    stateLabel: "Recovery needed",
+    stateTitle: "Campaign tools are safely locked",
+    statusRole: "alert",
+    statusClass: "infinity-banner--danger",
+    statusIcon: "fa-solid fa-triangle-exclamation",
+    reason:
+      "The selected private-state Journal is not currently available in this world.",
+    canonicalId: "missing-canonical-store",
+    canonicalStateLabel: "Selected store missing",
+    supportedSchema: 6,
+    observedSchema: "Not available",
+    authoritative,
+    authorityLabel: authoritative
+      ? "This client is the active Game Master."
+      : "Inspection only — the active Game Master must confirm recovery actions.",
+    canMutate: authoritative,
+    candidates: [
+      {
+        id: "candidate-store-2",
+        domId: "harness-campaign-candidate-0",
+        canonical: false,
+        canonicalLabel: "Candidate",
+        createdLabel: "Aug 8, 2026, 9:30 AM",
+        modifiedLabel: "Aug 9, 2026, 11:15 AM",
+        schemaLabel: "Current schema (6)",
+        payloadLabel: "Required fields complete",
+        ownershipLabel: "Restricted to full Game Masters",
+        eligible: true,
+        canAdopt: authoritative,
+        reason: authoritative ? "Ready for review." : mutationReason,
+      },
+      {
+        id: "future-store-7",
+        domId: "harness-campaign-candidate-1",
+        canonical: false,
+        canonicalLabel: "Candidate",
+        createdLabel: "Aug 9, 2026, 10:00 AM",
+        modifiedLabel: "Aug 9, 2026, 10:30 AM",
+        schemaLabel: "Newer schema (7)",
+        payloadLabel: "Required fields not verified",
+        ownershipLabel: "Restricted to full Game Masters",
+        eligible: false,
+        canAdopt: false,
+        reason: "This candidate was written by a newer module version.",
+      },
+    ],
+    hasCandidates: true,
+    snapshotAvailable: true,
+    canRecoverSnapshot: authoritative,
+    snapshotReason: authoritative ? "Ready for review." : mutationReason,
+    canCreateEmpty: authoritative,
+    emptyReason: authoritative ? "Ready for review." : mutationReason,
+    message: "No campaign data changed.",
+    messageTone: "neutral",
   };
 }
 

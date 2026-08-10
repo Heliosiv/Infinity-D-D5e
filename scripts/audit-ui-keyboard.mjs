@@ -60,6 +60,12 @@ async function main() {
     await openFixture(page, harnessUrl, "downtime-activities-available");
     await auditQueueKeyboardActions(page);
 
+    await openFixture(page, harnessUrl, "home-recovery-blocked-authority");
+    await auditCampaignDataRecoveryJourney(page);
+
+    await openFixture(page, harnessUrl, "home-recovery-blocked-secondary");
+    await auditCampaignDataRecoveryInspection(page);
+
     await openFixture(page, harnessUrl, "critical-injury-hud");
     await auditEscapeJourney(page);
   } finally {
@@ -233,6 +239,73 @@ async function auditQueueKeyboardActions(page) {
     ["moveActivityDown", "moveActivityUp"],
     "queue reordering has Enter and Space keyboard alternatives",
   );
+}
+
+async function auditCampaignDataRecoveryJourney(page) {
+  const disclosure = page.locator("[data-campaign-data-recovery]");
+  const summary = disclosure.locator("summary");
+  assert.equal(
+    await disclosure.getAttribute("open"),
+    "",
+    "blocked recovery opens",
+  );
+
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(
+    await disclosure.getAttribute("open"),
+    null,
+    "Enter closes the native campaign-data disclosure",
+  );
+  await page.keyboard.press("Space");
+  assert.equal(
+    await disclosure.getAttribute("open"),
+    "",
+    "Space reopens the native campaign-data disclosure",
+  );
+
+  const adopt = disclosure
+    .locator(
+      'button[data-action="reviewPrivateStateCandidate"]:not([disabled])',
+    )
+    .first();
+  const snapshot = disclosure.locator(
+    'button[data-action="recoverPrivateStateSnapshot"]:not([disabled])',
+  );
+  await adopt.focus();
+  await page.keyboard.press("Enter");
+  await snapshot.focus();
+  await page.keyboard.press("Space");
+  assert.deepEqual(
+    await clickedActions(page),
+    ["reviewPrivateStateCandidate", "recoverPrivateStateSnapshot"],
+    "recovery reviews expose native Enter and Space activation",
+  );
+}
+
+async function auditCampaignDataRecoveryInspection(page) {
+  const disclosure = page.locator("[data-campaign-data-recovery]");
+  assert.equal(
+    await disclosure
+      .locator('button[data-action="refreshPrivateState"]')
+      .isEnabled(),
+    true,
+    "secondary GMs can refresh campaign-data inspection",
+  );
+  for (const action of [
+    "reviewPrivateStateCandidate",
+    "recoverPrivateStateSnapshot",
+    "createEmptyPrivateState",
+  ]) {
+    assert.equal(
+      await disclosure
+        .locator(`button[data-action="${action}"]`)
+        .first()
+        .isDisabled(),
+      true,
+      `secondary GM cannot activate ${action}`,
+    );
+  }
 }
 
 async function auditEscapeJourney(page) {

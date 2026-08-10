@@ -406,6 +406,28 @@ function createFixture({
   assert.equal(fixture.timers.length, 0);
   assert.match(fixture.notifications[0], /schema \(7\)/);
   assert.match(fixture.notifications[0], /automatic retries are stopped/);
+  assert.match(fixture.notifications[0], /Home > Campaign data/);
+}
+
+{
+  const fixture = createFixture({
+    privateAvailable: false,
+    fullGm: true,
+    privateStatus: {
+      state: "blocked",
+      code: "missing-store",
+      retryable: false,
+      supportedSchema: 6,
+      observedSchema: null,
+    },
+  });
+  createModuleBootstrap(fixture.bindings).register();
+  fixture.trace.length = 0;
+  await fixture.hooks.onceCallbacks.get("ready")();
+  assert.equal(fixture.trace.includes("recovery-timer"), false);
+  assert.equal(fixture.timers.length, 0);
+  assert.match(fixture.notifications[0], /automatic replacement is disabled/);
+  assert.match(fixture.notifications[0], /Home > Campaign data/);
 }
 
 process.stdout.write("module lifecycle validation passed\n");

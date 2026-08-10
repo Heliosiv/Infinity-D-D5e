@@ -3,12 +3,20 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
 let helpDialogOptions = null;
+let recoveryDialogOptions = null;
+let recoveryDialogResult = false;
+let recoveryDialogHook = null;
 globalThis.foundry = {
   applications: {
     api: {
       ApplicationV2: class {},
       HandlebarsApplicationMixin: (Base) => class extends Base {},
       DialogV2: {
+        confirm(options) {
+          recoveryDialogOptions = options;
+          recoveryDialogHook?.();
+          return recoveryDialogResult;
+        },
         prompt(options) {
           helpDialogOptions = options;
           return null;
@@ -18,7 +26,20 @@ globalThis.foundry = {
   },
 };
 globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
-globalThis.Hooks = { on: () => 1, off: () => {} };
+let nextHookId = 1;
+const hookListeners = new Map();
+const removedHooks = [];
+globalThis.Hooks = {
+  on(name, callback) {
+    const id = nextHookId++;
+    hookListeners.set(id, { name, callback });
+    return id;
+  },
+  off(name, id) {
+    removedHooks.push([name, id]);
+    hookListeners.delete(id);
+  },
+};
 
 const notifications = [];
 globalThis.ui = {
@@ -57,8 +78,12 @@ const modules = new Map([
 ]);
 
 const fullGm = { id: "gm-secret-id", active: true, isGM: true, role: 4 };
+const users = [fullGm];
+users.activeGM = fullGm;
+users.get = (id) => users.find((user) => user.id === id) ?? null;
 globalThis.game = {
   user: fullGm,
+  users,
   modules,
   version: "13.351",
   release: { version: "13.351" },
@@ -78,6 +103,7 @@ const {
   groupHomeActionsByIntent,
   InfinityDashboardApp,
   openHub,
+  presentPrivateStateRecoveryOverview,
 } = await import("./dashboard.js");
 const { clearTools, registerTool, TOOL_INTENTS } =
   await import("./tool-registry.js");
@@ -115,6 +141,82 @@ registerTool({
 InfinityDashboardApp._recentsHydrated = false;
 InfinityDashboardApp._recentToolIds = [];
 const app = Object.create(InfinityDashboardApp.prototype);
+const recoveryCalls = [];
+let recoveryOverview = {
+  status: {
+    state: "blocked",
+    code: "missing-store",
+    supportedSchema: 6,
+    observedSchema: null,
+  },
+  fullGm: true,
+  authoritative: true,
+  canonicalId: "missing-canonical-id",
+  canonicalState: "unresolved",
+  candidates: [
+    {
+      id: "candidate-journal-id",
+      canonical: false,
+      createdTime: 1_720_000_000_000,
+      modifiedTime: 1_720_000_100_000,
+      schemaState: "current",
+      observedSchema: 6,
+      payloadState: "complete",
+      ownershipState: "private",
+      eligible: true,
+      reason: null,
+    },
+  ],
+  snapshotAvailable: true,
+  canMutate: true,
+  canRecoverSnapshot: true,
+  canCreateEmpty: true,
+  blockedReason: "missing-store",
+};
+app._privateStateRecoveryService = {
+  getOverview: () => structuredClone(recoveryOverview),
+  previewCandidate: async (id) => {
+    recoveryCalls.push(["preview-candidate", id]);
+    return {
+      token: "candidate-token",
+      candidate: { id },
+      canonicalId: recoveryOverview.canonicalId,
+    };
+  },
+  applyCandidate: async (payload) => {
+    recoveryCalls.push(["apply-candidate", payload]);
+    return { ok: true, kind: "candidate", canonicalId: "candidate-journal-id" };
+  },
+  previewSnapshot: async () => {
+    recoveryCalls.push(["preview-snapshot"]);
+    return {
+      token: "snapshot-token",
+      confirmationToken: "snapshot-confirmation",
+      sourceId: "verified-source-id",
+      canonicalId: recoveryOverview.canonicalId,
+    };
+  },
+  applySnapshot: async (payload) => {
+    recoveryCalls.push(["apply-snapshot", payload]);
+    return { ok: true, kind: "snapshot", canonicalId: "recovered-store-id" };
+  },
+  previewEmpty: async () => {
+    recoveryCalls.push(["preview-empty"]);
+    return {
+      token: "empty-token",
+      confirmationToken: "empty-confirmation",
+      canonicalId: recoveryOverview.canonicalId,
+    };
+  },
+  applyEmpty: async (payload) => {
+    recoveryCalls.push(["apply-empty", payload]);
+    return { ok: true, kind: "empty", canonicalId: "empty-store-id" };
+  },
+};
+app._privateStateRecoveryInFlight = false;
+app._privateStateRecoveryMessage = "";
+app._privateStateRecoveryTone = "neutral";
+app.render = async () => {};
 const gmContext = await app._prepareContext();
 assert.equal(gmContext.isFullGm, true);
 assert.deepEqual(
@@ -126,6 +228,51 @@ assert.deepEqual(
   ["merchant-workspace", "per-encounter-loot", "reputation"],
   "full GM Home contains only registered GM tools grouped by intent",
 );
+assert.equal(gmContext.privateStateRecovery.open, true);
+assert.equal(gmContext.privateStateRecovery.stateLabel, "Recovery needed");
+assert.equal(gmContext.privateStateRecovery.statusRole, "alert");
+assert.equal(gmContext.privateStateRecovery.canMutate, true);
+assert.equal(gmContext.privateStateRecovery.candidates[0].canAdopt, true);
+assert.equal(
+  gmContext.privateStateRecovery.canonicalStateLabel,
+  "Selected store unresolved",
+);
+assert.equal(
+  presentPrivateStateRecoveryOverview({
+    status: { state: "blocked", code: "opaque-secret-reason" },
+    blockedReason: "opaque-secret-reason",
+  }).reason.includes("opaque-secret-reason"),
+  false,
+  "unknown service reasons never reach Home verbatim",
+);
+const readyRecovery = presentPrivateStateRecoveryOverview({
+  ...recoveryOverview,
+  status: { ...recoveryOverview.status, state: "ready", code: "ready" },
+  canonicalState: "resolved",
+  canRecoverSnapshot: false,
+  canCreateEmpty: false,
+  blockedReason: null,
+});
+assert.equal(readyRecovery.open, false);
+assert.equal(readyRecovery.statusRole, "status");
+assert.equal(readyRecovery.canMutate, false);
+assert.equal(
+  readyRecovery.candidates[0].canAdopt,
+  false,
+  "verified campaign data exposes no recovery mutation",
+);
+assert.match(readyRecovery.reason, /passed its privacy and schema checks/);
+const pendingRecovery = presentPrivateStateRecoveryOverview({
+  ...recoveryOverview,
+  status: {
+    ...recoveryOverview.status,
+    state: "pending",
+    code: "initializing",
+  },
+  canMutate: false,
+});
+assert.equal(pendingRecovery.canMutate, false);
+assert.match(pendingRecovery.mutationReason, /still being checked/);
 const renderHome = Handlebars.compile(
   readFileSync("templates/dashboard.hbs", "utf8"),
 );
@@ -145,6 +292,11 @@ assert.match(gmHtml, /Merchant Workspace/);
 assert.match(gmHtml, /Per-Encounter Loot/);
 assert.match(gmHtml, /Reputation &amp; Factions/);
 assert.match(gmHtml, /data-action="help"/);
+assert.match(gmHtml, /Campaign data/);
+assert.match(gmHtml, /candidate-journal-id/);
+assert.match(gmHtml, /Review snapshot recovery/);
+assert.match(gmHtml, /Review empty replacement/);
+assert.match(gmHtml, /data-campaign-data-recovery open/);
 assert.match(gmHtml, /aria-haspopup="dialog"/);
 assert.doesNotMatch(gmHtml, /aria-controls="infinity-home-help"/);
 assert.doesNotMatch(
@@ -158,6 +310,167 @@ assert.match(helpDialogOptions.content, /Prepare:/);
 assert.match(helpDialogOptions.content, /Shift\+I/);
 assert.equal(helpDialogOptions.ok.label, "Close");
 assert.doesNotMatch(buildHomeHelpDialogContent(), /Prepare:/);
+
+const subscribedApp = new InfinityDashboardApp({
+  privateStateRecoveryService: app._privateStateRecoveryService,
+});
+let recoveryRenders = 0;
+subscribedApp.rendered = true;
+subscribedApp.render = async () => {
+  recoveryRenders += 1;
+};
+const privateStateHook = [...hookListeners.entries()].find(
+  ([, entry]) => entry.name === "infinity-dnd5e.privateStateChanged",
+);
+assert.ok(privateStateHook, "full-GM Home subscribes to private-state changes");
+privateStateHook[1].callback({ reason: "recovery-status" });
+assert.equal(
+  recoveryRenders,
+  1,
+  "private-state status changes refresh open Home",
+);
+subscribedApp._onClose();
+assert.ok(
+  removedHooks.some(
+    ([name, id]) =>
+      name === "infinity-dnd5e.privateStateChanged" &&
+      id === privateStateHook[0],
+  ),
+  "closing Home removes the private-state listener",
+);
+
+recoveryDialogResult = false;
+await InfinityDashboardApp._onReviewPrivateStateCandidate.call(app, null, {
+  dataset: { candidateId: "candidate-journal-id" },
+});
+assert.deepEqual(recoveryCalls, [
+  ["preview-candidate", "candidate-journal-id"],
+]);
+assert.match(recoveryDialogOptions.content, /normal migration path/);
+assert.match(recoveryDialogOptions.content, /Other Journals remain untouched/);
+
+recoveryDialogResult = true;
+await InfinityDashboardApp._onReviewPrivateStateCandidate.call(app, null, {
+  dataset: { candidateId: "candidate-journal-id" },
+});
+assert.deepEqual(recoveryCalls.slice(-2), [
+  ["preview-candidate", "candidate-journal-id"],
+  ["apply-candidate", { token: "candidate-token" }],
+]);
+
+await InfinityDashboardApp._onRecoverPrivateStateSnapshot.call(app);
+assert.deepEqual(recoveryCalls.slice(-2), [
+  ["preview-snapshot"],
+  [
+    "apply-snapshot",
+    {
+      token: "snapshot-token",
+      confirmationToken: "snapshot-confirmation",
+    },
+  ],
+]);
+assert.match(recoveryDialogOptions.content, /Old Journals remain untouched/);
+
+await InfinityDashboardApp._onCreateEmptyPrivateState.call(app);
+assert.deepEqual(recoveryCalls.slice(-2), [
+  ["preview-empty"],
+  [
+    "apply-empty",
+    { token: "empty-token", confirmationToken: "empty-confirmation" },
+  ],
+]);
+assert.match(
+  recoveryDialogOptions.content,
+  /merchant, faction, resource, downtime, and critical-injury data will not be copied/,
+);
+
+const applyCandidate = app._privateStateRecoveryService.applyCandidate;
+app._privateStateRecoveryService.applyCandidate = async () => {
+  const error = new Error("authority changed during readback");
+  error.code = "PRIVATE_STATE_RECOVERY_AUTHORITY_CHANGED";
+  throw error;
+};
+await InfinityDashboardApp._onReviewPrivateStateCandidate.call(app, null, {
+  dataset: { candidateId: "candidate-journal-id" },
+});
+app._privateStateRecoveryService.applyCandidate = applyCandidate;
+assert.match(notifications.at(-1), /Could not confirm the recovery result/);
+assert.doesNotMatch(
+  notifications.at(-1),
+  /Nothing was changed/,
+  "a post-write authority failure is reported as uncertain",
+);
+
+const callsBeforeAuthorityLoss = recoveryCalls.length;
+recoveryDialogHook = () => {
+  users.activeGM = {
+    id: "other-full-gm",
+    active: true,
+    isGM: true,
+    role: 4,
+  };
+};
+await InfinityDashboardApp._onReviewPrivateStateCandidate.call(app, null, {
+  dataset: { candidateId: "candidate-journal-id" },
+});
+recoveryDialogHook = null;
+users.activeGM = fullGm;
+assert.equal(
+  recoveryCalls.filter(([name]) => name === "apply-candidate").length,
+  1,
+  "authority loss while confirmation is open performs no apply",
+);
+assert.equal(recoveryCalls.length, callsBeforeAuthorityLoss + 1);
+assert.match(notifications.at(-1), /Active Game Master control changed/);
+
+const callsBeforeBusy = recoveryCalls.length;
+app._privateStateRecoveryInFlight = true;
+await InfinityDashboardApp._onCreateEmptyPrivateState.call(app);
+app._privateStateRecoveryInFlight = false;
+assert.equal(recoveryCalls.length, callsBeforeBusy);
+assert.match(notifications.at(-1), /already being checked/);
+
+const secondaryFullGm = {
+  id: "secondary-full-gm",
+  active: true,
+  isGM: true,
+  role: 4,
+};
+globalThis.game.user = secondaryFullGm;
+recoveryOverview = {
+  ...recoveryOverview,
+  authoritative: false,
+  canMutate: false,
+  canRecoverSnapshot: false,
+  canCreateEmpty: false,
+};
+const secondaryContext = await app._prepareContext();
+assert.equal(secondaryContext.isFullGm, true);
+assert.equal(secondaryContext.privateStateRecovery.canMutate, false);
+assert.equal(
+  secondaryContext.privateStateRecovery.candidates[0].canAdopt,
+  false,
+);
+const secondaryHtml = renderHome(secondaryContext);
+assert.match(secondaryHtml, /candidate-journal-id/);
+assert.match(secondaryHtml, /active Game Master must confirm/);
+assert.equal(
+  secondaryContext.privateStateRecovery.snapshotReason,
+  "Only the active Game Master can change campaign data.",
+);
+assert.match(
+  secondaryHtml,
+  /data-action="reviewPrivateStateCandidate"[\s\S]*?disabled/,
+);
+
+globalThis.game.user = fullGm;
+recoveryOverview = {
+  ...recoveryOverview,
+  authoritative: true,
+  canMutate: true,
+  canRecoverSnapshot: true,
+  canCreateEmpty: true,
+};
 
 let settingsOpenCalls = 0;
 moduleApi.openSettings = () => {
@@ -202,6 +515,7 @@ const assistantContext = await app._prepareContext();
 assert.equal(assistantContext.isFullGm, false);
 assert.equal(assistantContext.isAssistantGm, true);
 assert.equal(assistantContext.roleLabel, "Assistant GM Home");
+assert.equal(assistantContext.privateStateRecovery, null);
 const assistantActions = assistantContext.groups.flatMap(
   (group) => group.actions,
 );
@@ -246,7 +560,7 @@ assert.doesNotMatch(playerHelp, /assistant-secret-id|gm-secret-id/);
 const assistantHtml = renderHome(assistantContext);
 assert.doesNotMatch(
   assistantHtml,
-  /Merchant Workspace|Per-Encounter Loot/,
+  /Merchant Workspace|Per-Encounter Loot|candidate-journal-id|Campaign data/,
   "player markup does not contain privileged GM destinations",
 );
 assert.match(assistantHtml, /Shops/);
