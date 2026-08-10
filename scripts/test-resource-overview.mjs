@@ -160,6 +160,50 @@ function roster({ shared = false } = {}) {
   );
 }
 
+/* Split forage DCs survive both the GM model and sanitized player payload. */
+{
+  const overview = buildResourceOverview({
+    config: { resources: [FOOD, WATER], waterEnabled: true },
+    environment: {
+      id: "rainforest",
+      label: "Rainforest",
+      forageable: true,
+      dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+      yieldFood: "private-die",
+    },
+    roster: roster(),
+  });
+  assert.deepEqual(overview.environment, {
+    id: "rainforest",
+    label: "Rainforest",
+    forageable: true,
+    dc: 15,
+    foodDc: 10,
+    waterDc: 15,
+  });
+  assert.deepEqual(sanitizeResourceOverview(overview).environment, {
+    id: "rainforest",
+    label: "Rainforest",
+    forageable: true,
+    dc: 15,
+    foodDc: 10,
+    waterDc: 15,
+  });
+
+  const legacy = buildResourceOverview({
+    environment: {
+      id: "legacy",
+      label: "Legacy",
+      forageable: true,
+      dc: 12,
+    },
+  });
+  assert.equal(legacy.environment.foodDc, 12);
+  assert.equal(legacy.environment.waterDc, 12);
+}
+
 /* A nominated stash is counted once and its demand includes every consumer. */
 {
   const overview = buildResourceOverview({

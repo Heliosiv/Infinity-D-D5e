@@ -903,6 +903,29 @@ assert.match(
 assert.match(forageDriveDialog.html, /Food only/);
 assert.match(forageDriveDialog.html, /Water only/);
 
+const partySupplies = views.find((view) => view.id === "resource-overview");
+assert.ok(partySupplies, "harness includes the player Party Supplies view");
+assert.match(partySupplies.html, /Food DC 10/);
+assert.match(partySupplies.html, /Water DC 15/);
+const partySuppliesFixture = buildHarnessViews().find(
+  (view) => view.id === "resource-overview",
+);
+const foodOnlySupplies = renderFixture(partySuppliesFixture, {
+  environment: {
+    id: "desert",
+    label: "Desert",
+    forageable: true,
+    dc: 15,
+    foodDc: 10,
+    waterDc: null,
+    hasDc: true,
+    dcsDiffer: false,
+    dcLabel: "Food DC 10",
+  },
+});
+assert.match(foodOnlySupplies, /Food DC 10/);
+assert.doesNotMatch(foodOnlySupplies, /Water DC/);
+
 // Availability edge states are not part of the visual gallery's normal-result
 // fixtures, so render them directly and assert the primary-button contract.
 const lootFixtures = new Map(

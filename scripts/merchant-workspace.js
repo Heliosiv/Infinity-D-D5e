@@ -51,7 +51,6 @@ import {
   prettyLootType,
   prettyRarity,
   notify,
-  isInteractiveKeyboardTarget,
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
@@ -73,7 +72,6 @@ import {
   wireBackgroundImageFallback,
 } from "./loot/loot-app-shared.js";
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
-import { SETTING_KEYS, getSetting } from "./settings.js";
 import { pickSearchOption } from "./search-picker.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
 import {
@@ -439,21 +437,6 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._wireInventoryInputs();
     this._wireDropZone();
     this._wireInventorySearch();
-
-    // Enter = primary action (Generate Stock — a safe, deduped append), matching
-    // the loot tools' Enter/R. Bound once; skips form fields + honors the setting.
-    if (this.element && this.element.dataset.idxKeydownBound !== "true") {
-      this.element.dataset.idxKeydownBound = "true";
-      this.element.addEventListener("keydown", (event) => {
-        if (getSetting(SETTING_KEYS.KEYBOARD_SHORTCUTS) === false) return;
-        if (event.key !== "Enter" || event.defaultPrevented) return;
-        if (isInteractiveKeyboardTarget(event.target)) return;
-        const tag = event.target?.tagName?.toLowerCase();
-        if (tag === "input" || tag === "select" || tag === "textarea") return;
-        event.preventDefault();
-        void this.constructor._onGenerateStock.call(this);
-      });
-    }
 
     if (this.element) {
       // Recover broken inventory thumbnails (background-image, no onerror).

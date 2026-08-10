@@ -68,7 +68,7 @@
           {{#if environment}}
           <strong>{{environment.label}}</strong>
           {{#if environment.forageable}}
-          <span class="ro-context__meta"><i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open{{#if environment.dc}} - DC {{environment.dc}}{{/if}}</span>
+          <span class="ro-context__meta"><i class="fa-solid fa-leaf" aria-hidden="true"></i> Foraging open{{#if environment.hasDc}} - {{environment.dcLabel}}{{/if}}</span>
           {{else}}
           <span class="ro-context__meta"><i class="fa-solid fa-ban" aria-hidden="true"></i> No foraging</span>
           {{/if}}

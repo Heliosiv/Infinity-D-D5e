@@ -230,7 +230,7 @@ export const SETTINGS = Object.freeze([
   {
     key: SETTING_KEYS.KEYBOARD_SHORTCUTS,
     name: "Keyboard Shortcuts",
-    hint: "Enable Enter / R to trigger Generate inside the window.",
+    hint: "Enable Enter / R to trigger Generate in Loot Studio.",
     scope: "client",
     config: true,
     type: Boolean,

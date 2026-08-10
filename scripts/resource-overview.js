@@ -215,6 +215,9 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       isCritical: resource.status === "critical",
       isStable: resource.status === "stable",
     }));
+    const environment = presentEnvironment(overview?.environment, {
+      waterEnabled: overview?.waterEnabled !== false,
+    });
     const lastUpkeep = overview?.lastUpkeep
       ? {
           ...overview.lastUpkeep,
@@ -248,7 +251,7 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       partySize: overview?.partySize ?? 0,
       autoTrigger: overview?.autoTrigger !== false,
       halfRations: overview?.halfRations === true,
-      environment: overview?.environment ?? null,
+      environment,
       updatedLabel: formatUpdatedLabel(overview?.generatedAt),
       resources,
       hasResources: resources.length > 0,
@@ -278,6 +281,43 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     this._lastFullGM = current;
     return transitioned;
   }
+}
+
+export function presentEnvironment(environment, { waterEnabled = true } = {}) {
+  if (!environment || typeof environment !== "object") return null;
+  const dc = finiteDisplayNumber(environment.dc);
+  const foodDc = finiteDisplayNumber(environment.foodDc) ?? dc;
+  const waterDc = waterEnabled
+    ? (finiteDisplayNumber(environment.waterDc) ?? dc)
+    : null;
+  const hasFoodDc = foodDc !== null;
+  const hasWaterDc = waterDc !== null;
+  const dcsDiffer = hasFoodDc && hasWaterDc && foodDc !== waterDc;
+  const commonDc = foodDc ?? waterDc ?? dc;
+  return {
+    id: String(environment.id ?? "").trim(),
+    label: String(environment.label ?? "Unknown").trim() || "Unknown",
+    forageable: environment.forageable !== false,
+    dc,
+    foodDc,
+    waterDc,
+    hasDc: commonDc !== null,
+    dcsDiffer,
+    dcLabel:
+      !waterEnabled && foodDc !== null
+        ? `Food DC ${foodDc}`
+        : dcsDiffer
+          ? `Food DC ${foodDc} · Water DC ${waterDc}`
+          : commonDc !== null
+            ? `DC ${commonDc}`
+            : "",
+  };
+}
+
+function finiteDisplayNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function resourceIcon(id) {

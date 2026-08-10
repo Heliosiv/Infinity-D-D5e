@@ -8,6 +8,7 @@ const merchantStyle = read("styles/merchant-workspace.css");
 const merchantScript = read("scripts/merchant-workspace.js");
 const resourceTemplate = read("templates/resource-manager.hbs");
 const resourceStyle = read("styles/resource-manager.css");
+const resourceScript = read("scripts/resource-manager.js");
 const reputationTemplate = read("templates/reputation-workspace.hbs");
 const reputationStyle = read("styles/reputation-workspace.css");
 const reputationScript = read("scripts/reputation-workspace.js");
@@ -126,6 +127,11 @@ assert.match(
   /if \(current\.closed\)[\s\S]*?await pushCloseAllMerchantSessions\(\)/,
   "an already-closed global gate still closes stale merchant windows",
 );
+assert.doesNotMatch(
+  merchantScript,
+  /idxKeydownBound|\.key\s*!==\s*["']Enter["'][\s\S]*?_onGenerateStock/,
+  "Merchant stock generation requires an explicit button action",
+);
 
 /* Quartermaster: routine, receipts, and setup remain distinct. */
 assertOrdered(
@@ -173,6 +179,11 @@ assert.ok(
 assert.match(resourceStyle, /container-name:\s*quartermaster/);
 assert.match(resourceStyle, /@container quartermaster/);
 assert.doesNotMatch(resourceStyle, /@media\s*\(max-width/);
+assert.doesNotMatch(
+  resourceScript,
+  /idxKeydownBound|\.key\s*!==\s*["']Enter["'][\s\S]*?_onAdvanceDay/,
+  "Quartermaster consumption requires an explicit button action",
+);
 
 /* Reputation: one visible value+reason flow, same authoritative write. */
 assertOrdered(

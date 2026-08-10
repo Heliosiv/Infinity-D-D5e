@@ -85,7 +85,58 @@ try {
     },
   };
 
-  const { ResourceOverviewApp } = await import("./resource-overview.js");
+  const { ResourceOverviewApp, presentEnvironment } =
+    await import("./resource-overview.js");
+  assert.deepEqual(
+    presentEnvironment({
+      id: "rainforest",
+      label: "Rainforest",
+      forageable: true,
+      dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+      yieldFood: "private-die",
+    }),
+    {
+      id: "rainforest",
+      label: "Rainforest",
+      forageable: true,
+      dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+      hasDc: true,
+      dcsDiffer: true,
+      dcLabel: "Food DC 10 · Water DC 15",
+    },
+  );
+  assert.equal(
+    presentEnvironment({ dc: 0, foodDc: 0, waterDc: 0 }).dcLabel,
+    "DC 0",
+    "a valid zero DC is not hidden by Handlebars truthiness",
+  );
+  assert.equal(
+    "yieldFood" in presentEnvironment({ dc: 15, yieldFood: "private-die" }),
+    false,
+    "presentation retains only the sanitized environment contract",
+  );
+  assert.deepEqual(
+    presentEnvironment(
+      { dc: 15, foodDc: 10, waterDc: 15 },
+      { waterEnabled: false },
+    ),
+    {
+      id: "",
+      label: "Unknown",
+      forageable: true,
+      dc: 15,
+      foodDc: 10,
+      waterDc: null,
+      hasDc: true,
+      dcsDiffer: false,
+      dcLabel: "Food DC 10",
+    },
+    "disabled water does not advertise an unavailable forage channel",
+  );
   const app = new ResourceOverviewApp();
   assert.ok(app._overview, "a full GM starts with a local sanitized preview");
   assert.equal(app._requestId, null);

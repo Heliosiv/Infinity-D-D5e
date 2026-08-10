@@ -98,14 +98,7 @@ export function buildResourceOverview({
     autoTrigger: autoTrigger !== false,
     halfRations: config.halfRations === true,
     waterEnabled: config.waterEnabled !== false,
-    environment: environment
-      ? {
-          id: text(environment.id),
-          label: text(environment.label, "Unknown"),
-          forageable: environment.forageable !== false,
-          dc: finiteOrNull(environment.dc),
-        }
-      : null,
+    environment: environment ? projectEnvironment(environment) : null,
     resources: resourceRows,
     members: memberRows,
     lastUpkeep: buildLastUpkeep(state.lastUpkeepResult, resources),
@@ -146,12 +139,7 @@ export function sanitizeResourceOverview(
     halfRations: source.halfRations === true,
     waterEnabled: source.waterEnabled !== false,
     environment: source.environment
-      ? {
-          id: text(source.environment.id),
-          label: text(source.environment.label, "Unknown"),
-          forageable: source.environment.forageable !== false,
-          dc: finiteOrNull(source.environment.dc),
-        }
+      ? projectEnvironment(source.environment)
       : null,
     resources: (Array.isArray(source.resources) ? source.resources : []).map(
       (resource) => ({
@@ -603,6 +591,18 @@ function normalizeStatus(value) {
 function text(value, fallback = "") {
   const result = String(value ?? "").trim();
   return result || fallback;
+}
+
+function projectEnvironment(environment) {
+  const dc = finiteOrNull(environment?.dc);
+  return {
+    id: text(environment?.id),
+    label: text(environment?.label, "Unknown"),
+    forageable: environment?.forageable !== false,
+    dc,
+    foodDc: finiteOrNull(environment?.foodDc) ?? dc,
+    waterDc: finiteOrNull(environment?.waterDc) ?? dc,
+  };
 }
 
 function nonNegativeNumber(value) {

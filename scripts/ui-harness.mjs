@@ -3031,6 +3031,11 @@ function resourceOverviewContext() {
       label: "Limited",
       forageable: true,
       dc: 15,
+      foodDc: 10,
+      waterDc: 15,
+      hasDc: true,
+      dcsDiffer: true,
+      dcLabel: "Food DC 10 · Water DC 15",
     },
     hasResources: true,
     resources: [
