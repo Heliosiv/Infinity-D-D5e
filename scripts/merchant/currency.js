@@ -228,7 +228,11 @@ export function planCurrencyDeduction(wallet, gpAmount) {
  *
  * Throws nothing — caller decides how to surface failures.
  */
-export async function deductCurrency(actor, gpAmount) {
+export async function deductCurrency(
+  actor,
+  gpAmount,
+  { authorizeWrite = null } = {},
+) {
   if (!actor || typeof actor.update !== "function") {
     return { ok: false, reason: "no-actor" };
   }
@@ -249,12 +253,12 @@ export async function deductCurrency(actor, gpAmount) {
   const after = planCurrencyDeduction(before, gpAmount);
   if (!after) return { ok: false, reason: "insufficient", before, gpAmount };
 
-  const update = await updateCurrencyVerified(actor, after);
+  const update = await updateCurrencyVerified(actor, after, { authorizeWrite });
   if (!update.ok) {
     if (update.error) {
       console.error(`${MODULE_ID} | currency deduction failed`, update.error);
     }
-    return {
+    const failure = {
       ok: false,
       reason: update.reason,
       error: update.error,
@@ -263,6 +267,10 @@ export async function deductCurrency(actor, gpAmount) {
       expectedAfter: after,
       gpAmount,
     };
+    if (update.reason === "authority-lost") {
+      failure.provenUnapplied = update.provenUnapplied === true;
+    }
+    return failure;
   }
   return { ok: true, before, after: update.actual, gpAmount };
 }

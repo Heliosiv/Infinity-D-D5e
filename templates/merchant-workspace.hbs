@@ -29,10 +29,17 @@
         {{#if suspendedSessionCount}}({{suspendedSessionCount}}){{/if}}
       </button>
       {{else}}
+      {{#if merchantReopenInterrupted}}
+      <button type="button" class="mw-btn mw-btn--primary" data-action="reopenSessions" title="Continue restoring the saved player sessions before starting another global close">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i> Resume restoring
+        ({{suspendedSessionCount}})
+      </button>
+      {{else}}
       <button type="button" class="mw-btn mw-btn--danger" data-action="closeAllSessions" title="Close every player merchant window and block all shop access">
         <i class="fa-solid fa-shop-lock" aria-hidden="true"></i> Close All
         {{#if globalActiveSessionCount}}({{globalActiveSessionCount}}){{/if}}
       </button>
+      {{/if}}
       {{/if}}
       <button type="button" class="mw-btn mw-btn--primary" data-action="newMerchant" title="Create a new merchant">
         <i class="fa-solid fa-plus" aria-hidden="true"></i> New Merchant
@@ -40,11 +47,58 @@
     </div>
   </header>
 
+  {{#unless canManageMerchants}}
+  <div class="mw-global-notice" role="status">
+    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+    <span>{{merchantAuthorityReason}}</span>
+  </div>
+  {{/unless}}
+
   {{#if merchantAccessClosed}}
   <div class="mw-global-notice" role="status">
     <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
     <span>Players cannot open any shop or complete a merchant transaction. Per-shop Open, Knock, and Off settings are preserved.{{#if globalActiveSessionCount}} Close Stale dismisses the {{globalActiveSessionCount}} remaining player window{{#unless globalActiveSessionCountIsOne}}s{{/unless}} without changing this lock.{{/if}} Reopen All restores access and the {{suspendedSessionCount}} saved session{{#unless suspendedSessionCountIsOne}}s{{/unless}}.</span>
   </div>
+  {{/if}}
+
+  {{#if hasTransactionReviews}}
+  <section class="mw-review-panel" aria-labelledby="mw-review-heading">
+    <div class="mw-review-panel__head">
+      <div>
+        <p class="mw-workspace-section__eyebrow">Protected recovery</p>
+        <h3 id="mw-review-heading">Transactions needing review</h3>
+      </div>
+      <p>These trades remain pinned until exact campaign data proves a safe checkpoint.</p>
+    </div>
+    <div class="mw-review-list">
+      {{#each transactionReviews}}
+      <article class="mw-review-card">
+        <div class="mw-review-card__summary">
+          <strong>{{sideLabel}}: {{qty}}x {{itemName}}</strong>
+          <span>{{merchantLabel}} · {{actorLabel}} · {{totalGp}} gp · {{playerLabel}}</span>
+        </div>
+        <p class="mw-review-card__reason">{{reasonLabel}}</p>
+        <dl class="mw-review-card__states">
+          <div><dt>Actor</dt><dd>{{actorStateLabel}}</dd></div>
+          <div><dt>Merchant</dt><dd>{{merchantStateLabel}}</dd></div>
+          <div><dt>Last checked</dt><dd>{{checkedAtLabel}}</dd></div>
+        </dl>
+        <dl class="mw-review-card__checkpoints">
+          <div><dt>Actor wallet, saved</dt><dd>{{actorWalletPlanLabel}}</dd></div>
+          <div><dt>Actor item, saved</dt><dd>{{actorItemPlanLabel}}</dd></div>
+          <div><dt>Actor now</dt><dd>{{actorCurrentLabel}}</dd></div>
+          <div><dt>Merchant gold, saved</dt><dd>{{merchantGoldPlanLabel}}</dd></div>
+          <div><dt>Merchant stock, saved</dt><dd>{{merchantStockPlanLabel}}</dd></div>
+          <div><dt>Merchant now</dt><dd>{{merchantCurrentLabel}}</dd></div>
+        </dl>
+        <p class="mw-review-card__guidance">If either state does not match a checkpoint, correct the campaign data manually. Do not reset, delete, or force-complete this record.</p>
+        <button type="button" class="mw-btn mw-btn--primary" data-action="recheckTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Read the Actor and Merchant again, then continue only from an exact safe checkpoint">
+          <i class="fa-solid fa-rotate" aria-hidden="true"></i> Recheck
+        </button>
+      </article>
+      {{/each}}
+    </div>
+  </section>
   {{/if}}
 
   <div class="mw-body">

@@ -420,7 +420,7 @@ try {
       authorityId: "gm-a",
       authorityEpoch: "gm-a:epoch-1",
       writeToken: "write-1",
-      records: [{ commitId: "commit-1", stage: "prepared" }],
+      records: [],
     };
     const written = await setPrivateStates({
       merchants: [{ id: "atomic-shop", goldOnHand: 75 }],
@@ -463,7 +463,7 @@ try {
     const nextTransactions = {
       ...emptyMerchantTransactions(),
       revision: 1,
-      records: [{ commitId: "must-not-succeed" }],
+      records: [],
     };
 
     await assert.rejects(
@@ -826,6 +826,7 @@ try {
     "merchants-invalid",
     "transactions-missing",
     "transactions-invalid",
+    "transactions-record-invalid",
   ]) {
     resetPrivateStateForTests();
     activeJournal = makeJournal();
@@ -841,10 +842,15 @@ try {
       data.flags[MODULE_ID].merchants = null;
     } else if (corruption === "transactions-missing") {
       delete data.flags[MODULE_ID].merchantTransactions;
-    } else {
+    } else if (corruption === "transactions-invalid") {
       data.flags[MODULE_ID].merchantTransactions = {
         ...emptyMerchantTransactions(),
         revision: -1,
+      };
+    } else {
+      data.flags[MODULE_ID].merchantTransactions = {
+        ...emptyMerchantTransactions(),
+        records: [{}],
       };
     }
     const store = activeJournal.insert(data);

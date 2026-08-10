@@ -10,8 +10,12 @@
 import assert from "node:assert/strict";
 
 import {
+  applyDurableMerchantActorPlan,
   executeBuy,
   executeSell,
+  planDurableBuyActorTransaction,
+  planDurableSellActorTransaction,
+  readMerchantActorBoundary,
   rollbackBuyTransaction,
   rollbackSellTransaction,
 } from "./merchant/transaction.js";
@@ -295,6 +299,34 @@ function actorState(actor) {
       .map((item) => item.toObject())
       .sort((left, right) => documentId(left).localeCompare(documentId(right))),
   };
+}
+
+function makeDurableBuyPlan(actor, overrides = {}) {
+  return planDurableBuyActorTransaction({
+    actor,
+    merchant,
+    row: buyRow(),
+    item: catalogItem(),
+    qty: 2,
+    operationId: "durable-buy",
+    ...overrides,
+  });
+}
+
+function makeDurableSellPlan(actor, ownedItem, overrides = {}) {
+  return planDurableSellActorTransaction({
+    actor,
+    merchant,
+    ownedItem,
+    qty: 1,
+    ...overrides,
+  });
+}
+
+function setDurableBoundary(actor, boundary) {
+  actor.system.currency = clone(boundary.wallet);
+  actor.items.clear();
+  if (boundary.item) actor.seedItem(boundary.item);
 }
 
 /* Normal buys confirm both writes and preserve the post-create wallet boundary. */
@@ -882,6 +914,330 @@ for (const [label, firstWrite] of [
     wallet({ gp: 105 }),
     "failed rollback returns to completed payout state",
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Durable Actor plans and forward-only recovery
+ * ------------------------------------------------------------------ */
+
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor);
+  assert.equal(plan.ok, true);
+  assert.equal(Object.isFrozen(plan), true);
+  assert.equal(Object.isFrozen(plan.actor.before), true);
+  assert.equal(plan.actor.itemId, merchantItemId("durable-buy"));
+  assert.equal(plan.actor.before.item, null);
+  assert.equal(plan.actor.after.item._id, plan.actor.itemId);
+  assert.equal(plan.actor.after.item.system.quantity, 2);
+  assert.deepEqual(plan.actor.before.wallet, wallet());
+  assert.deepEqual(plan.actor.after.wallet, wallet({ gp: 80 }));
+  const observed = readMerchantActorBoundary(actor, plan.actor.itemId);
+  assert.equal(observed.ok, true);
+  assert.deepEqual(observed.boundary, plan.actor.before);
+}
+
+/* Durable buy snapshots keep failure-tier Infinity bounds out of JSON state. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    seal: {
+      sealId: "failure-seal",
+      tier: { id: "failure", minMargin: -Infinity, deltaPct: 10 },
+      deltaPct: 10,
+    },
+  });
+  assert.equal(plan.ok, true);
+  assert.deepEqual(
+    plan.actor.after.item.flags["infinity-dnd5e"].purchasedFromMerchant
+      .bargainTier,
+    { id: "failure" },
+  );
+}
+
+{
+  const actor = makeActor();
+  assert.equal(
+    makeDurableBuyPlan(actor, { row: buyRow({ qty: 1 }) }).reason,
+    "out-of-stock",
+  );
+  const stolen = ownedItemSource({
+    id: "durable-stolen",
+    flags: { ["infinity-dnd5e"]: { stolen: { operationId: "theft" } } },
+  });
+  const seller = makeActor({ items: [stolen] });
+  assert.equal(
+    makeDurableSellPlan(seller, seller.items.get(stolen._id)).reason,
+    "stolen-requires-fence",
+  );
+}
+
+/* Buy: both components before are applied item-first, then wallet. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-all-before",
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "applied");
+  assert.deepEqual(result.writes, ["item", "wallet"]);
+  assert.equal(actor._calls.creates.length, 1);
+  assert.equal(actor._calls.currencyWrites.length, 1);
+  assert.deepEqual(
+    readMerchantActorBoundary(actor, plan.actor.itemId).boundary,
+    plan.actor.after,
+  );
+}
+
+/* Buy: item-after hybrid skips create and drives only the wallet. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-item-after",
+  });
+  setDurableBoundary(actor, {
+    wallet: plan.actor.before.wallet,
+    item: plan.actor.after.item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan.actor);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["wallet"]);
+  assert.equal(actor._calls.creates.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 1);
+}
+
+/* Buy: wallet-after hybrid creates only the deterministic item. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-wallet-after",
+  });
+  setDurableBoundary(actor, {
+    wallet: plan.actor.after.wallet,
+    item: plan.actor.before.item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["item"]);
+  assert.equal(actor._calls.creates.length, 1);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Buy: all-after is an idempotent no-write success. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-all-after",
+  });
+  setDurableBoundary(actor, plan.actor.after);
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, []);
+  assert.equal(actor._calls.creates.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Buy: a true wallet third-state is quarantined before either write. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-third-state",
+  });
+  actor.system.currency.gp = 99;
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, false);
+  assert.equal(result.action, "needs-review");
+  assert.equal(result.reason, "third-state");
+  assert.equal(result.walletState, "third-state");
+  assert.equal(actor._calls.creates.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Buy: pre-write authority loss is proven unapplied and writes nothing. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-authority-pre",
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan, {
+    authorizeWrite: () => false,
+  });
+  assert.equal(result.action, "reconcile");
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.deepEqual(result.writes, []);
+  assert.equal(actor._calls.creates.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Buy: apply-then-authority-loss stops before wallet and never compensates. */
+{
+  let authorized = true;
+  const actor = makeActor({
+    faults: {
+      creates: [
+        {
+          afterApply() {
+            authorized = false;
+          },
+        },
+      ],
+    },
+  });
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-authority-post",
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan, {
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.action, "reconcile");
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.deepEqual(result.writes, ["item"]);
+  assert.equal(actor._calls.creates.length, 1);
+  assert.equal(actor._calls.deletes.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+  assert.ok(actor.items.has(plan.actor.itemId));
+}
+
+/* A sell planner freezes a reduced item, or null for the whole stack. */
+{
+  const source = ownedItemSource({ id: "durable-sell-plan", quantity: 3 });
+  const actor = makeActor({ items: [source] });
+  const partial = makeDurableSellPlan(actor, actor.items.get(source._id));
+  assert.equal(partial.ok, true);
+  assert.equal(partial.actor.before.item.system.quantity, 3);
+  assert.equal(partial.actor.after.item.system.quantity, 2);
+  assert.deepEqual(partial.actor.after.wallet, wallet({ gp: 105 }));
+
+  const whole = makeDurableSellPlan(actor, actor.items.get(source._id), {
+    qty: 3,
+  });
+  assert.equal(whole.ok, true);
+  assert.equal(whole.actor.after.item, null);
+}
+
+/* Sell: both components before are driven to the exact reduced state. */
+{
+  const source = ownedItemSource({
+    id: "durable-sell-all-before",
+    quantity: 3,
+  });
+  const actor = makeActor({ items: [source] });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["item", "wallet"]);
+  assert.equal(actor._calls.quantityWrites.length, 1);
+  assert.equal(actor._calls.currencyWrites.length, 1);
+  assert.deepEqual(
+    readMerchantActorBoundary(actor, plan.actor.itemId).boundary,
+    plan.actor.after,
+  );
+}
+
+/* Sell: item-after hybrid skips removal and applies only payout. */
+{
+  const source = ownedItemSource({
+    id: "durable-sell-item-after",
+    quantity: 3,
+  });
+  const actor = makeActor({ items: [source] });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  setDurableBoundary(actor, {
+    wallet: plan.actor.before.wallet,
+    item: plan.actor.after.item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["wallet"]);
+  assert.equal(actor._calls.quantityWrites.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 1);
+}
+
+/* Sell: wallet-after hybrid reduces only the item. */
+{
+  const source = ownedItemSource({
+    id: "durable-sell-wallet-after",
+    quantity: 3,
+  });
+  const actor = makeActor({ items: [source] });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  setDurableBoundary(actor, {
+    wallet: plan.actor.after.wallet,
+    item: plan.actor.before.item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["item"]);
+  assert.equal(actor._calls.quantityWrites.length, 1);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Sell: all-after is an idempotent no-write success. */
+{
+  const source = ownedItemSource({ id: "durable-sell-all-after", quantity: 3 });
+  const actor = makeActor({ items: [source] });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  setDurableBoundary(actor, plan.actor.after);
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, []);
+  assert.equal(actor._calls.quantityWrites.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Sell: a true item third-state is quarantined with zero writes. */
+{
+  const source = ownedItemSource({
+    id: "durable-sell-third-state",
+    quantity: 3,
+  });
+  const actor = makeActor({ items: [source] });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  actor.items.get(source._id).system.quantity = 99;
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.action, "needs-review");
+  assert.equal(result.reason, "third-state");
+  assert.equal(result.itemState, "third-state");
+  assert.equal(actor._calls.quantityWrites.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 0);
+}
+
+/* Sell: payout apply-then-authority-loss is returned for reconciliation. */
+{
+  let authorized = true;
+  const source = ownedItemSource({
+    id: "durable-sell-authority-post",
+    quantity: 3,
+  });
+  const actor = makeActor({
+    items: [source],
+    faults: {
+      currencyWrites: [
+        {
+          afterApply() {
+            authorized = false;
+          },
+        },
+      ],
+    },
+  });
+  const plan = makeDurableSellPlan(actor, actor.items.get(source._id));
+  setDurableBoundary(actor, {
+    wallet: plan.actor.before.wallet,
+    item: plan.actor.after.item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan, {
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.action, "reconcile");
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.component, "wallet");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(actor._calls.quantityWrites.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 1);
 }
 
 process.stdout.write("merchant-transaction validation passed\n");

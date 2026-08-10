@@ -152,6 +152,35 @@ export function findActorItem(actor, itemId) {
   return actorItems(actor).find((item) => documentId(item) === id) ?? null;
 }
 
+function actorWriteAuthorized(authorizeWrite) {
+  if (authorizeWrite == null) return true;
+  if (typeof authorizeWrite !== "function") return false;
+  try {
+    return authorizeWrite() === true;
+  } catch {
+    return false;
+  }
+}
+
+function actorItemAuthorityLostResult(
+  actor,
+  itemId,
+  { expectedQuantity = null, provenUnapplied = false, error = null } = {},
+) {
+  const id = String(itemId ?? "").trim();
+  const canonical = findActorItem(actor, id);
+  return {
+    ok: false,
+    reason: "authority-lost",
+    ...(error ? { error } : {}),
+    itemId: id,
+    itemIds: canonical ? [id] : [],
+    expectedQuantity,
+    actualQuantity: canonical ? itemQuantity(canonical) : null,
+    provenUnapplied: provenUnapplied === true,
+  };
+}
+
 /**
  * Create one exact embedded Item id and confirm its returned document,
  * identity, quantity, and canonical Actor collection state.
@@ -162,6 +191,7 @@ export async function createActorItemVerified(
   {
     expectedQuantity = itemQuantity(snapshot),
     expectedItemId = documentId(snapshot),
+    authorizeWrite = null,
   } = {},
 ) {
   const itemId = String(expectedItemId ?? "").trim();
@@ -186,11 +216,28 @@ export async function createActorItemVerified(
   let returned;
   let error = null;
   try {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+        provenUnapplied: true,
+      });
+    }
     returned = await actor.createEmbeddedDocuments("Item", [snapshot], {
       keepId: true,
       keepEmbeddedIds: true,
     });
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+      });
+    }
   } catch (caught) {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+        error: caught,
+      });
+    }
     error = caught;
   }
 
@@ -227,7 +274,7 @@ export async function createActorItemVerified(
 export async function deleteActorItemVerified(
   actor,
   itemId,
-  { expectedBeforeQuantity = null } = {},
+  { expectedBeforeQuantity = null, authorizeWrite = null } = {},
 ) {
   const id = String(itemId ?? "").trim();
   const before = findActorItem(actor, id);
@@ -256,8 +303,25 @@ export async function deleteActorItemVerified(
   let returned;
   let error = null;
   try {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, id, {
+        expectedQuantity: expectedBeforeQuantity,
+        provenUnapplied: true,
+      });
+    }
     returned = await actor.deleteEmbeddedDocuments("Item", [id]);
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, id, {
+        expectedQuantity: expectedBeforeQuantity,
+      });
+    }
   } catch (caught) {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, id, {
+        expectedQuantity: expectedBeforeQuantity,
+        error: caught,
+      });
+    }
     error = caught;
   }
   const confirmedIds = (Array.isArray(returned) ? returned : [])
@@ -284,7 +348,7 @@ export async function updateActorItemQuantityVerified(
   actor,
   item,
   quantity,
-  { expectedBeforeQuantity = null } = {},
+  { expectedBeforeQuantity = null, authorizeWrite = null } = {},
 ) {
   const itemId = documentId(item);
   const expectedQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
@@ -319,10 +383,27 @@ export async function updateActorItemQuantityVerified(
   let returned;
   let error = null;
   try {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+        provenUnapplied: true,
+      });
+    }
     returned = await canonicalBefore.update({
       "system.quantity": expectedQuantity,
     });
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+      });
+    }
   } catch (caught) {
+    if (!actorWriteAuthorized(authorizeWrite)) {
+      return actorItemAuthorityLostResult(actor, itemId, {
+        expectedQuantity,
+        error: caught,
+      });
+    }
     error = caught;
   }
   const canonical = findActorItem(actor, itemId);

@@ -194,6 +194,75 @@ try {
     "connected player shop pickers receive the reopened state",
   );
 
+  // An authority handoff can leave the gate open while its saved restore list
+  // is still present. Close must preserve that list, and Reopen must resume it.
+  clearAllSessions();
+  await saveMerchantAccessState({
+    closed: false,
+    suspendedSessions: [{ merchantId: "m-open", viewerUserId: "p1" }],
+  });
+  const reclosedInterruptedRestore = await pushCloseAllMerchantSessions();
+  assert.equal(reclosedInterruptedRestore.suspendedCount, 1);
+  assert.deepEqual(loadMerchantAccessState().suspendedSessions, [
+    { merchantId: "m-open", viewerUserId: "p1" },
+  ]);
+  const resumedInterruptedRestore = await pushReopenMerchantSessions();
+  assert.deepEqual(resumedInterruptedRestore, {
+    alreadyOpen: false,
+    openedCount: 1,
+    skippedCount: 0,
+  });
+  assert.deepEqual(loadMerchantAccessState().suspendedSessions, []);
+
+  // Close/Reopen are one serialized service operation, not merely a series of
+  // individually queued state writes. A later Close All must win even when it
+  // begins after Reopen's first durable checkpoint but before its final clear.
+  clearAllSessions();
+  await saveMerchantAccessState({
+    closed: true,
+    suspendedSessions: [{ merchantId: "m-open", viewerUserId: "p1" }],
+  });
+  const originalSet = globalThis.game.settings.set;
+  let signalFirstReopenWrite;
+  let releaseFirstReopenWrite;
+  const firstReopenWrite = new Promise((resolve) => {
+    signalFirstReopenWrite = resolve;
+  });
+  const reopenWriteGate = new Promise((resolve) => {
+    releaseFirstReopenWrite = resolve;
+  });
+  let firstReopenWriteSeen = false;
+  globalThis.game.settings.set = async (_module, key, value) => {
+    values.set(key, structuredClone(value));
+    if (
+      key === "merchantAccess" &&
+      value?.closed === false &&
+      value?.suspendedSessions?.length > 0 &&
+      !firstReopenWriteSeen
+    ) {
+      firstReopenWriteSeen = true;
+      signalFirstReopenWrite();
+      await reopenWriteGate;
+    }
+  };
+  const racingReopen = pushReopenMerchantSessions();
+  await firstReopenWrite;
+  const laterClose = pushCloseAllMerchantSessions();
+  releaseFirstReopenWrite();
+  await racingReopen;
+  const laterCloseResult = await laterClose;
+  globalThis.game.settings.set = originalSet;
+  assert.equal(laterCloseResult.alreadyClosed, false);
+  assert.equal(loadMerchantAccessState().closed, true);
+  assert.deepEqual(loadMerchantAccessState().suspendedSessions, [
+    { merchantId: "m-open", viewerUserId: "p1" },
+  ]);
+  assert.equal(
+    listSessions().length,
+    0,
+    "the later close wins without the older reopen clearing its snapshot",
+  );
+
   // Foundry can import callers before `game.ready`, but that phase is never a
   // license to read the player-readable legacy setting or assume access is open.
   clearAllSessions();
@@ -375,6 +444,39 @@ try {
     assert.equal(privateStore.updateCalls.length, writesBeforeMalformedGuard);
     assert.deepEqual(flags.merchantAccess.malformedOnly, { preserve: true });
   }
+
+  flags.merchantAccess = {
+    version: 1,
+    closed: false,
+    suspendedSessions: [],
+  };
+  const secondaryGm = {
+    id: "gm-secondary",
+    isGM: true,
+    role: 4,
+    active: true,
+  };
+  globalThis.game.users.activeGM = secondaryGm;
+  globalThis.game.users.get = (id) =>
+    id === versionGm.id
+      ? versionGm
+      : id === secondaryGm.id
+        ? secondaryGm
+        : null;
+  const writesBeforeSecondaryAttempt = privateStore.updateCalls.length;
+  await assert.rejects(
+    saveMerchantAccessState({ closed: true }),
+    (error) => error?.code === "MERCHANT_ACCESS_AUTHORITY_UNAVAILABLE",
+  );
+  assert.equal(
+    privateStore.updateCalls.length,
+    writesBeforeSecondaryAttempt,
+    "a secondary full GM cannot mutate the global access gate",
+  );
+  assert.throws(
+    () => pushOpenSession({ merchant: openShop, targetUserIds: ["p1"] }),
+    (error) => error?.code === "MERCHANT_SESSION_AUTHORITY_UNAVAILABLE",
+  );
   resetPrivateStateForTests();
 } finally {
   clearAllSessions();

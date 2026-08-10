@@ -37,11 +37,21 @@ import {
 import {
   executeBuy,
   executeSell,
+  planDurableBuyActorTransaction,
+  planDurableSellActorTransaction,
   resolveUnitBuyPrice,
   resolveUnitSellPrice,
   rollbackBuyTransaction,
   rollbackSellTransaction,
 } from "./transaction.js";
+import {
+  merchantCommitRequestFingerprint,
+  parseMerchantCommitId,
+  planMerchantBuyTransaction,
+  planMerchantSellTransaction,
+} from "./transaction-ledger.js";
+import { merchantTransactionCoordinator } from "./transaction-coordinator.js";
+import { hasMerchantTabLeadership } from "./tab-leadership.js";
 import { isSafeGpAmount } from "./currency.js";
 import {
   computeBargainOutcome,
@@ -50,6 +60,7 @@ import {
 } from "./bargain.js";
 import {
   closeSession,
+  consumeReservedSeal,
   consumeSeal,
   findSessionFor,
   getBargain,
@@ -59,6 +70,8 @@ import {
   openSession,
   recordBargain,
   recordCommitResult,
+  releaseSealReservation,
+  reserveSealForCommit,
   runWithMerchantActorMutex,
   runWithMerchantMutex,
 } from "./session-state.js";
@@ -97,8 +110,24 @@ function isPrivateStateAuthorityReady() {
     globalThis.game?.ready && globalThis.JournalEntry?.create,
   );
   return Boolean(
-    isAuthoritativeGM() && (!liveFoundry || isPrivilegedPrivateStateReady()),
+    isAuthoritativeGM() &&
+    (!liveFoundry ||
+      (isPrivilegedPrivateStateReady() && hasMerchantTabLeadership())),
   );
+}
+
+function assertMerchantSessionWriteAuthority() {
+  const liveFoundry = Boolean(
+    globalThis.game && globalThis.JournalEntry?.create,
+  );
+  if (liveFoundry && (!isAuthoritativeGM() || !hasMerchantTabLeadership())) {
+    const error = new Error(
+      "Merchant sessions can only be changed by the active Merchant tab.",
+    );
+    error.code = "MERCHANT_SESSION_AUTHORITY_UNAVAILABLE";
+    throw error;
+  }
+  return true;
 }
 
 export const MERCHANT_EVENTS = Object.freeze({
@@ -113,6 +142,7 @@ export const MERCHANT_EVENTS = Object.freeze({
   BARGAIN_SEAL: "merchant:bargain-seal",
   COMMIT_PURCHASE: "merchant:commit-purchase",
   COMMIT_SALE: "merchant:commit-sale",
+  COMMIT_STATUS_REQUEST: "merchant:commit-status-request",
   // GM→player acknowledgement of a commit. Lets the buyer/seller know the trade
   // was actually recorded (or wasn't, e.g. the session was gone after a GM
   // reload) instead of the actor mutating while the shop silently never updates.
@@ -135,6 +165,7 @@ const PLAYER_TO_GM_TYPES = new Set([
   MERCHANT_EVENTS.BARGAIN_RESULT,
   MERCHANT_EVENTS.COMMIT_PURCHASE,
   MERCHANT_EVENTS.COMMIT_SALE,
+  MERCHANT_EVENTS.COMMIT_STATUS_REQUEST,
   MERCHANT_EVENTS.SHOP_LIST_REQUEST,
   MERCHANT_EVENTS.SHOP_REQUEST,
 ]);
@@ -158,13 +189,21 @@ const PAYLOAD_RULES = Object.freeze({
   [MERCHANT_EVENTS.COMMIT_PURCHASE]: {
     req: ["sessionId", "itemUuid", "commitId"],
     num: ["qty", "totalGp"],
+    optString: ["actorId", "sealId"],
   },
   [MERCHANT_EVENTS.COMMIT_SALE]: {
     req: ["sessionId", "itemUuid", "commitId"],
     num: ["qty", "totalGp"],
+    optString: ["actorId", "sealId"],
+  },
+  [MERCHANT_EVENTS.COMMIT_STATUS_REQUEST]: {
+    req: ["commitId"],
+    longString: ["requestFingerprint"],
   },
   [MERCHANT_EVENTS.BARGAIN_RESULT]: {
-    req: ["sessionId", "itemUuid", "side"],
+    req: ["sessionId", "itemUuid", "side", "skillId"],
+    optString: ["actorId"],
+    enums: { side: ["buy", "sell"] },
     num: ["rollTotal"],
   },
   [MERCHANT_EVENTS.SESSION_CLOSE]: { req: ["sessionId"], num: [] },
@@ -172,6 +211,123 @@ const PAYLOAD_RULES = Object.freeze({
 });
 
 const MAX_FIELD_LEN = 200;
+const MAX_FINGERPRINT_LEN = 8192;
+
+// Durable commits survive reloads, so an authenticated player must not be able
+// to fill the private ledger simply by minting an unbounded stream of IDs. The
+// limiter is deliberately per authenticated origin: one noisy player cannot
+// prevent another player's trade from being prepared or replayed.
+const DURABLE_COMMIT_BURST_LIMIT = 10;
+const DURABLE_COMMIT_BURST_WINDOW_MS = 10_000;
+const DURABLE_COMMIT_SUSTAINED_LIMIT = 30;
+const DURABLE_COMMIT_SUSTAINED_WINDOW_MS = 60_000;
+const DURABLE_COMMIT_INGRESS_BURST_LIMIT = 40;
+const DURABLE_COMMIT_INGRESS_BURST_WINDOW_MS = 10_000;
+const DURABLE_COMMIT_INGRESS_SUSTAINED_LIMIT = 120;
+const DURABLE_COMMIT_INGRESS_SUSTAINED_WINDOW_MS = 60_000;
+const BARGAIN_BURST_LIMIT = 5;
+const BARGAIN_BURST_WINDOW_MS = 10_000;
+const BARGAIN_SUSTAINED_LIMIT = 20;
+const BARGAIN_SUSTAINED_WINDOW_MS = 60_000;
+const CONTROL_PLANE_BURST_LIMIT = 20;
+const CONTROL_PLANE_BURST_WINDOW_MS = 10_000;
+const CONTROL_PLANE_SUSTAINED_LIMIT = 60;
+const CONTROL_PLANE_SUSTAINED_WINDOW_MS = 60_000;
+const CONTROL_PLANE_TYPES = new Set([
+  MERCHANT_EVENTS.BARGAIN_RESULT,
+  MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+  MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+  MERCHANT_EVENTS.SHOP_REQUEST,
+]);
+const DURABLE_COMMIT_BLOCK_REASONS = new Set([
+  "ledger-capacity",
+  "unresolved-origin-cap",
+  "unresolved-transaction-collision",
+]);
+const durableCommitAttempts = new Map();
+const durableCommitIngress = new Map();
+const bargainAttempts = new Map();
+const controlPlaneIngress = new Map();
+const malformedCloseAudit = new Map();
+let merchantAccessOperationTail = Promise.resolve();
+
+function consumeSlidingWindowLimit(
+  store,
+  originUserId,
+  now,
+  { burstLimit, burstWindowMs, sustainedLimit, sustainedWindowMs },
+) {
+  const userId = String(originUserId ?? "").trim();
+  if (!userId) return false;
+  const cutoff = now - sustainedWindowMs;
+  const recent = (store.get(userId) ?? []).filter(
+    (timestamp) => timestamp > cutoff,
+  );
+  const burstCutoff = now - burstWindowMs;
+  const burstCount = recent.filter(
+    (timestamp) => timestamp > burstCutoff,
+  ).length;
+  if (recent.length >= sustainedLimit || burstCount >= burstLimit) {
+    store.set(userId, recent);
+    return false;
+  }
+  recent.push(now);
+  store.set(userId, recent);
+  return true;
+}
+
+function consumeDurableCommitIngressLimit(originUserId, now = Date.now()) {
+  return consumeSlidingWindowLimit(durableCommitIngress, originUserId, now, {
+    burstLimit: DURABLE_COMMIT_INGRESS_BURST_LIMIT,
+    burstWindowMs: DURABLE_COMMIT_INGRESS_BURST_WINDOW_MS,
+    sustainedLimit: DURABLE_COMMIT_INGRESS_SUSTAINED_LIMIT,
+    sustainedWindowMs: DURABLE_COMMIT_INGRESS_SUSTAINED_WINDOW_MS,
+  });
+}
+
+function consumeBargainRateLimit(originUserId, now = Date.now()) {
+  return consumeSlidingWindowLimit(bargainAttempts, originUserId, now, {
+    burstLimit: BARGAIN_BURST_LIMIT,
+    burstWindowMs: BARGAIN_BURST_WINDOW_MS,
+    sustainedLimit: BARGAIN_SUSTAINED_LIMIT,
+    sustainedWindowMs: BARGAIN_SUSTAINED_WINDOW_MS,
+  });
+}
+
+function consumeControlPlaneIngressLimit(originUserId, now = Date.now()) {
+  return consumeSlidingWindowLimit(controlPlaneIngress, originUserId, now, {
+    burstLimit: CONTROL_PLANE_BURST_LIMIT,
+    burstWindowMs: CONTROL_PLANE_BURST_WINDOW_MS,
+    sustainedLimit: CONTROL_PLANE_SUSTAINED_LIMIT,
+    sustainedWindowMs: CONTROL_PLANE_SUSTAINED_WINDOW_MS,
+  });
+}
+
+function consumeMalformedCloseAuditLimit(originUserId, now = Date.now()) {
+  return consumeSlidingWindowLimit(malformedCloseAudit, originUserId, now, {
+    burstLimit: CONTROL_PLANE_BURST_LIMIT,
+    burstWindowMs: CONTROL_PLANE_BURST_WINDOW_MS,
+    sustainedLimit: CONTROL_PLANE_SUSTAINED_LIMIT,
+    sustainedWindowMs: CONTROL_PLANE_SUSTAINED_WINDOW_MS,
+  });
+}
+
+function runMerchantAccessOperation(operation) {
+  const next = merchantAccessOperationTail
+    .catch(() => undefined)
+    .then(operation);
+  merchantAccessOperationTail = next.catch(() => undefined);
+  return next;
+}
+
+function consumeDurableCommitRateLimit(originUserId, now = Date.now()) {
+  return consumeSlidingWindowLimit(durableCommitAttempts, originUserId, now, {
+    burstLimit: DURABLE_COMMIT_BURST_LIMIT,
+    burstWindowMs: DURABLE_COMMIT_BURST_WINDOW_MS,
+    sustainedLimit: DURABLE_COMMIT_SUSTAINED_LIMIT,
+    sustainedWindowMs: DURABLE_COMMIT_SUSTAINED_WINDOW_MS,
+  });
+}
 
 /** Validate an inbound payload's shape against PAYLOAD_RULES. */
 function isValidPayload(payload) {
@@ -187,7 +343,31 @@ function isValidPayload(payload) {
       return false;
     }
   }
-  for (const key of rule.num) {
+  for (const key of rule.optString ?? []) {
+    const value = payload[key];
+    if (value == null) continue;
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_FIELD_LEN
+    ) {
+      return false;
+    }
+  }
+  for (const key of rule.longString ?? []) {
+    const value = payload[key];
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_FINGERPRINT_LEN
+    ) {
+      return false;
+    }
+  }
+  for (const [key, allowed] of Object.entries(rule.enums ?? {})) {
+    if (!allowed.includes(payload[key])) return false;
+  }
+  for (const key of rule.num ?? []) {
     if (key in payload && !Number.isFinite(Number(payload[key]))) return false;
   }
   return true;
@@ -245,6 +425,14 @@ export function registerMerchantSocket() {
     return false;
   }
   registered = true;
+  Promise.resolve(merchantTransactionCoordinator.register())
+    .then(notifyDurableRecoveryReviews)
+    .catch((error) =>
+      console.error(
+        `${MODULE_ID} | Merchant transaction recovery failed`,
+        error,
+      ),
+    );
   return true;
 }
 
@@ -335,7 +523,29 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   if (!payload || typeof payload !== "object") return;
   if (!MERCHANT_TYPES.has(payload.type)) return;
   if (!isValidPayload(payload)) {
-    console.warn(`${MODULE_ID} | dropped malformed ${payload.type} frame`);
+    const commitFrame =
+      payload.type === MERCHANT_EVENTS.COMMIT_PURCHASE ||
+      payload.type === MERCHANT_EVENTS.COMMIT_SALE;
+    const controlFrame = CONTROL_PLANE_TYPES.has(payload.type);
+    const statusFrame = payload.type === MERCHANT_EVENTS.COMMIT_STATUS_REQUEST;
+    const closeFrame = payload.type === MERCHANT_EVENTS.SESSION_CLOSE;
+    const senderId =
+      typeof authenticatedSenderId === "string"
+        ? authenticatedSenderId.trim()
+        : "";
+    const shouldWarn =
+      statusFrame && senderId
+        ? consumeDurableCommitIngressLimit(senderId)
+        : closeFrame && senderId
+          ? consumeMalformedCloseAuditLimit(senderId)
+          : controlFrame && senderId
+            ? consumeControlPlaneIngressLimit(senderId)
+            : !commitFrame ||
+              !senderId ||
+              consumeDurableCommitRateLimit(senderId);
+    if (shouldWarn) {
+      console.warn(`${MODULE_ID} | dropped malformed ${payload.type} frame`);
+    }
     return;
   }
 
@@ -394,6 +604,16 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
   }
   payload = withAuthenticatedOrigin(payload, senderId);
 
+  // Bound authenticated control-plane work before local dispatch or any
+  // response-producing handler. Durable commits/status have their own replay-
+  // aware ingress bucket, and SESSION_CLOSE must always remain deliverable.
+  if (
+    CONTROL_PLANE_TYPES.has(payload.type) &&
+    !consumeControlPlaneIngressLimit(senderId)
+  ) {
+    return;
+  }
+
   dispatchToListeners(payload.type, payload);
 
   // GM-authority routes:
@@ -423,6 +643,11 @@ export async function receiveMerchantPayload(payload, authenticatedSenderId) {
         } catch (error) {
           console.error(`${MODULE_ID} | commit-sale handler`, error);
         }
+      }
+      break;
+    case MERCHANT_EVENTS.COMMIT_STATUS_REQUEST:
+      if (isPrivateStateAuthorityReady()) {
+        handleDurableCommitStatusRequest(payload);
       }
       break;
     case MERCHANT_EVENTS.SESSION_CLOSE:
@@ -483,12 +708,37 @@ async function handleBargainResult(payload) {
     return;
   }
   if (session.viewerUserId !== payload.originUserId) return;
-  const merchant = findMerchant(session.merchantId);
-  if (!merchant) return;
+  const merchant = authorizedSessionMerchant(session);
+  if (!merchant) {
+    closeUnauthorizedSession(session);
+    emitBargainFailure(payload, session, "no-session");
+    return;
+  }
   if (!merchant.allowedSkills?.includes?.(skillId)) return;
   const actor = resolveSessionActor(session, payload.actorId);
   if (!actor) {
     emitBargainFailure(payload, session, "no-actor");
+    return;
+  }
+  const existingSeal = getBargain(sessionId, itemUuid, side);
+  if (existingSeal) {
+    emitMerchantEvent(MERCHANT_EVENTS.BARGAIN_SEAL, {
+      ok: true,
+      sessionId,
+      itemUuid,
+      side,
+      sealId: existingSeal.sealId,
+      tier: existingSeal.tier?.id ? { id: existingSeal.tier.id } : null,
+      deltaPct: existingSeal.deltaPct,
+      skillId,
+      rollTotal: null,
+      dc: merchant.bargainDC,
+      targetUserId: session.viewerUserId,
+    });
+    return;
+  }
+  if (!consumeBargainRateLimit(payload.originUserId)) {
+    emitBargainFailure(payload, session, "rate-limited");
     return;
   }
   const tiers = buildMerchantBargainTiers(merchant);
@@ -500,14 +750,39 @@ async function handleBargainResult(payload) {
     advantage: merchant.bargainAdvantage,
     chatMessage: true,
   });
-  if (!rolled.ok) {
-    emitBargainFailure(payload, session, rolled.reason ?? "skill-roll-failed");
+  if (!isPrivateStateAuthorityReady()) return;
+  const currentSession = getSession(payload.sessionId);
+  const currentMerchant = currentSession
+    ? authorizedSessionMerchant(currentSession)
+    : null;
+  const currentActor = currentSession
+    ? resolveSessionActor(currentSession, payload.actorId)
+    : null;
+  if (
+    !currentSession ||
+    currentSession.viewerUserId !== payload.originUserId ||
+    currentSession.merchantId !== merchant.id ||
+    !currentMerchant ||
+    !currentMerchant.allowedSkills?.includes?.(skillId) ||
+    !currentActor ||
+    currentActor.id !== actor.id ||
+    isMerchantAccessClosed()
+  ) {
     return;
   }
+  if (!rolled.ok) {
+    emitBargainFailure(
+      payload,
+      currentSession,
+      rolled.reason ?? "skill-roll-failed",
+    );
+    return;
+  }
+  const currentTiers = buildMerchantBargainTiers(currentMerchant);
   const outcome = computeBargainOutcome(
     rolled.rollTotal,
-    Number(merchant.bargainDC) || 0,
-    tiers,
+    Number(currentMerchant.bargainDC) || 0,
+    currentTiers,
   );
   const seal = recordBargain(sessionId, {
     itemUuid,
@@ -522,12 +797,12 @@ async function handleBargainResult(payload) {
     itemUuid,
     side,
     sealId: seal.sealId,
-    tier: seal.tier,
+    tier: seal.tier?.id ? { id: seal.tier.id } : null,
     deltaPct: seal.deltaPct,
     skillId,
     rollTotal: rolled.rollTotal,
-    dc: merchant.bargainDC,
-    targetUserId: session.viewerUserId,
+    dc: currentMerchant.bargainDC,
+    targetUserId: currentSession.viewerUserId,
   });
 }
 
@@ -542,7 +817,552 @@ function emitBargainFailure(payload, session, reason) {
   });
 }
 
+function durableCommitIdentity(payload) {
+  return {
+    originUserId: payload.originUserId,
+    commitId: payload.commitId,
+    requestFingerprint: merchantCommitRequestFingerprint(payload),
+  };
+}
+
+function durableSealClaim(
+  payload,
+  side,
+  identity = durableCommitIdentity(payload),
+) {
+  if (!payload.sealId) return null;
+  return {
+    itemUuid: payload.itemUuid,
+    side,
+    originUserId: identity.originUserId,
+    commitId: identity.commitId,
+    requestFingerprint: identity.requestFingerprint,
+  };
+}
+
+function outcomeContainsExactSeal(outcome, payload, identity) {
+  const record = outcome?.record;
+  if (
+    !record ||
+    record.originUserId !== identity.originUserId ||
+    record.commitId !== identity.commitId ||
+    record.requestFingerprint !== identity.requestFingerprint
+  ) {
+    return false;
+  }
+  const recordedSealId =
+    record.request?.sealId ?? record.result?.sealId ?? null;
+  return Boolean(payload.sealId && recordedSealId === payload.sealId);
+}
+
+function consumeDurableSealClaim(payload, side, identity, outcome) {
+  const claim = durableSealClaim(payload, side, identity);
+  if (!claim || !outcomeContainsExactSeal(outcome, payload, identity)) {
+    return false;
+  }
+  return Boolean(consumeReservedSeal(payload.sessionId, payload.sealId, claim));
+}
+
+function releaseDefiniteUnusedSealClaim(payload, side, identity, outcome) {
+  const claim = durableSealClaim(payload, side, identity);
+  if (!claim) return false;
+  if (
+    outcome?.status === "error" ||
+    outcome?.status === "authority-lost" ||
+    outcome?.status === "unavailable" ||
+    outcomeContainsExactSeal(outcome, payload, identity)
+  ) {
+    return false;
+  }
+  const canonical = merchantTransactionCoordinator.lookup(identity);
+  if (outcomeContainsExactSeal(canonical, payload, identity)) return false;
+  if (!["missing", "conflict"].includes(canonical.status)) {
+    return false;
+  }
+  return releaseSealReservation(payload.sessionId, payload.sealId, claim);
+}
+
+function handleDurableCommitStatusRequest(payload) {
+  if (!consumeDurableCommitIngressLimit(payload.originUserId)) return false;
+  try {
+    parseMerchantCommitId(payload.commitId);
+  } catch {
+    return false;
+  }
+  const outcome = merchantTransactionCoordinator.lookup({
+    originUserId: payload.originUserId,
+    commitId: payload.commitId,
+    requestFingerprint: payload.requestFingerprint,
+  });
+  if (outcome.status !== "terminal") return false;
+  void deliverDurableMerchantTerminalResult(outcome);
+  return true;
+}
+
+const durableReviewNotices = new Set();
+
+function notifyDurableRecoveryReviews(outcome) {
+  if (!outcome || typeof outcome !== "object") return;
+  if (outcome.status === "needs-review") {
+    notifyDurableMerchantReview(outcome);
+  }
+  for (const result of outcome.results ?? []) {
+    notifyDurableRecoveryReviews(result);
+  }
+}
+
+function notifyDurableMerchantReview(outcome) {
+  const record = outcome?.record;
+  if (!outcome?.pinned || record?.stage !== "needs-review") return;
+  if (durableReviewNotices.has(record.key)) return;
+  durableReviewNotices.add(record.key);
+  const merchantId = record.merchant?.merchantId ?? "unknown merchant";
+  const actorId = record.actor?.actorId ?? "unknown actor";
+  const itemId = record.request?.itemUuid ?? "unknown item";
+  globalThis.ui?.notifications?.error?.(
+    `Merchant transaction needs review (${merchantId}, ${actorId}, ${itemId}). Do not retry or edit these records until the transaction is reviewed.`,
+    { permanent: true },
+  );
+}
+
+async function resolveDurableCommitOutcome(
+  payload,
+  outcome,
+  { drivePending = true } = {},
+) {
+  if (!outcome || outcome.status === "missing") return false;
+  if (outcome.status === "terminal") {
+    return deliverDurableMerchantTerminalResult(outcome);
+  }
+  if (outcome.status === "conflict") {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "commit-id-conflict"),
+    );
+    return true;
+  }
+  if (outcome.status === "compacted") {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "transaction-history-expired"),
+    );
+    return true;
+  }
+  if (outcome.status === "needs-review") {
+    notifyDurableMerchantReview(outcome);
+    if (outcome.pinned && outcome.record?.stage === "needs-review") {
+      emitMerchantEvent(
+        MERCHANT_EVENTS.COMMIT_RESULT,
+        buildCommitResult(payload, false, "transaction-needs-review"),
+      );
+    }
+    return true;
+  }
+  if (outcome.status === "blocked") {
+    if (outcome.record) return true;
+    const safeReason = DURABLE_COMMIT_BLOCK_REASONS.has(outcome.reason)
+      ? outcome.reason
+      : "transaction-busy";
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, safeReason),
+    );
+    return true;
+  }
+  if (outcome.status === "prepared" || outcome.status === "pending") {
+    if (!drivePending) return true;
+    const driven = await merchantTransactionCoordinator.drive(
+      durableCommitIdentity(payload),
+    );
+    return resolveDurableCommitOutcome(payload, driven, {
+      drivePending: false,
+    });
+  }
+  // Unavailable private state, a lost authority fence, or a transient write
+  // error is intentionally left unacknowledged. The player's exact persisted
+  // request remains pending and can be reconciled safely.
+  if (outcome.status === "error") {
+    console.error(`${MODULE_ID} | durable Merchant transaction`, outcome.error);
+  }
+  return true;
+}
+
+/** Deliver an already-durable terminal result without driving or rewriting it. */
+export async function deliverDurableMerchantTerminalResult(outcome) {
+  if (outcome?.status !== "terminal" || !outcome.result) return false;
+  if (outcome.merchant) {
+    await broadcastStateBestEffort(outcome.merchant, "durable transaction");
+  }
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, outcome.result);
+  return true;
+}
+
+function revalidateDurableCommitContext(
+  payload,
+  expectedMerchantId,
+  expectedActorId,
+) {
+  if (!isPrivateStateAuthorityReady()) {
+    return { ok: false, reason: "authority-lost" };
+  }
+  const session = getSession(payload.sessionId);
+  if (
+    isMerchantAccessClosed() ||
+    !session ||
+    session.merchantId !== expectedMerchantId ||
+    session.viewerUserId !== payload.originUserId
+  ) {
+    return { ok: false, reason: "no-session" };
+  }
+  const merchant = authorizedSessionMerchant(session);
+  if (!merchant || merchant.id !== expectedMerchantId) {
+    closeUnauthorizedSession(session);
+    return { ok: false, reason: "no-session" };
+  }
+  const actor = resolveSessionActor(session, payload.actorId);
+  if (!actor || actor.id !== expectedActorId) {
+    return { ok: false, reason: "no-actor" };
+  }
+  return { ok: true, session, actor, merchant };
+}
+
+async function buildDurableBuyRecord(
+  payload,
+  expectedMerchantId,
+  expectedActorId,
+  requestFingerprint,
+) {
+  const context = revalidateDurableCommitContext(
+    payload,
+    expectedMerchantId,
+    expectedActorId,
+  );
+  if (!context.ok) return context;
+  let { session, actor } = context;
+  const merchant = findMerchant(expectedMerchantId);
+  if (!merchant) return { ok: false, reason: "merchant-gone" };
+  const row = merchant.items.find((entry) => entry.uuid === payload.itemUuid);
+  if (!row) return { ok: false, reason: "item-unavailable" };
+  const candidateSeal = payload.sealId
+    ? getBargain(payload.sessionId, payload.itemUuid, "buy")
+    : null;
+  const seal = candidateSeal?.sealId === payload.sealId ? candidateSeal : null;
+  if (payload.sealId && !seal) {
+    return { ok: false, reason: "bargain-expired" };
+  }
+  let item;
+  let actorPlan;
+  try {
+    const itemDocument = await globalThis.fromUuid?.(payload.itemUuid);
+    item = itemDocument?.toObject?.() ?? itemDocument ?? null;
+    const refreshed = revalidateDurableCommitContext(
+      payload,
+      expectedMerchantId,
+      expectedActorId,
+    );
+    if (!refreshed.ok) return refreshed;
+    ({ session, actor } = refreshed);
+    actorPlan = planDurableBuyActorTransaction({
+      actor,
+      merchant,
+      row,
+      item,
+      qty: Number(payload.qty),
+      seal,
+      passivePct: computePassiveBargainPct(merchant, actor),
+      operationId: `${session.sessionId}:${payload.commitId}:${actor.uuid ?? actor.id}:buy`,
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | durable purchase planning failed`, error);
+    return { ok: false, reason: "no-price" };
+  }
+  if (!actorPlan.ok) return actorPlan;
+  const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
+  if (Math.abs(actorPlan.totalGp - clientTotalGp) > 0.01) {
+    return { ok: false, reason: "price-changed" };
+  }
+  let merchantAfter = merchant;
+  if (!row.unlimited) {
+    merchantAfter = decrementInventory(
+      merchantAfter,
+      payload.itemUuid,
+      actorPlan.qty,
+    );
+  }
+  merchantAfter = adjustMerchantGold(merchantAfter, actorPlan.totalGp);
+  const record = planMerchantBuyTransaction({
+    originUserId: payload.originUserId,
+    commitId: payload.commitId,
+    requestFingerprint,
+    request: {
+      sessionId: payload.sessionId,
+      actorId: actor.id,
+      merchantId: merchant.id,
+      itemUuid: payload.itemUuid,
+      qty: actorPlan.qty,
+      unitGp: actorPlan.unitGp,
+      totalGp: actorPlan.totalGp,
+      sealId: seal?.sealId ?? null,
+    },
+    actor: actorPlan.actor,
+    merchant: {
+      merchantId: merchant.id,
+      before: merchant,
+      after: merchantAfter,
+    },
+    itemName: actorPlan.itemName,
+  });
+  return { ok: true, record, seal };
+}
+
+function buildDurableSaleRecord(
+  payload,
+  expectedMerchantId,
+  expectedActorId,
+  requestFingerprint,
+) {
+  const context = revalidateDurableCommitContext(
+    payload,
+    expectedMerchantId,
+    expectedActorId,
+  );
+  if (!context.ok) return context;
+  const { actor } = context;
+  const merchant = findMerchant(expectedMerchantId);
+  if (!merchant) return { ok: false, reason: "merchant-gone" };
+  const ownedItem = actor.items?.get?.(payload.itemUuid) ?? null;
+  if (!ownedItem) return { ok: false, reason: "no-target" };
+  const candidateSeal = payload.sealId
+    ? getBargain(payload.sessionId, payload.itemUuid, "sell")
+    : null;
+  const seal = candidateSeal?.sealId === payload.sealId ? candidateSeal : null;
+  if (payload.sealId && !seal) {
+    return { ok: false, reason: "bargain-expired" };
+  }
+  let actorPlan;
+  try {
+    actorPlan = planDurableSellActorTransaction({
+      actor,
+      merchant,
+      ownedItem,
+      qty: Number(payload.qty),
+      seal,
+      passivePct: computePassiveBargainPct(merchant, actor),
+      requiresFencing: hasStolenGoodsIssuance(
+        loadDowntimeConfig(),
+        actor.id,
+        ownedItem.id,
+      ),
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | durable sale planning failed`, error);
+    return { ok: false, reason: "no-price" };
+  }
+  if (!actorPlan.ok) return actorPlan;
+  if (!merchantCanAfford(merchant, actorPlan.totalGp)) {
+    return { ok: false, reason: "merchant-cannot-afford" };
+  }
+  const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
+  if (Math.abs(actorPlan.totalGp - clientTotalGp) > 0.01) {
+    return { ok: false, reason: "price-changed" };
+  }
+  const merchantAfter = adjustMerchantGold(merchant, -actorPlan.totalGp);
+  const record = planMerchantSellTransaction({
+    originUserId: payload.originUserId,
+    commitId: payload.commitId,
+    requestFingerprint,
+    request: {
+      sessionId: payload.sessionId,
+      actorId: actor.id,
+      merchantId: merchant.id,
+      itemUuid: payload.itemUuid,
+      qty: actorPlan.qty,
+      unitGp: actorPlan.unitGp,
+      totalGp: actorPlan.totalGp,
+      sealId: seal?.sealId ?? null,
+    },
+    actor: actorPlan.actor,
+    merchant: {
+      merchantId: merchant.id,
+      before: merchant,
+      after: merchantAfter,
+    },
+    itemName: actorPlan.itemName,
+  });
+  return { ok: true, record, seal };
+}
+
+async function handleDurableMerchantCommit(payload, side) {
+  // Bound even lookup/replay work. Over-limit frames are intentionally left
+  // unacknowledged so an exact saved replay is never falsely declined; the
+  // client retains it and can retry after the short ingress window.
+  if (!consumeDurableCommitIngressLimit(payload.originUserId)) return;
+  const identity = durableCommitIdentity(payload);
+  const existing = merchantTransactionCoordinator.lookup(identity);
+  if (existing.status === "compacted") {
+    const claim = durableSealClaim(payload, side, identity);
+    if (claim) consumeReservedSeal(payload.sessionId, payload.sealId, claim);
+  }
+  consumeDurableSealClaim(payload, side, identity, existing);
+  if (await resolveDurableCommitOutcome(payload, existing)) return;
+
+  // Only a genuinely new tuple consumes rate-limit budget. Replays and crash
+  // recovery always remain available, even during a noisy-client burst.
+  if (!consumeDurableCommitRateLimit(payload.originUserId)) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "rate-limited"),
+    );
+    return;
+  }
+
+  const session = getSession(payload.sessionId);
+  if (!session || isMerchantAccessClosed()) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "no-session"),
+    );
+    return;
+  }
+  if (session.viewerUserId !== payload.originUserId) return;
+  if (!authorizedSessionMerchant(session)) {
+    closeUnauthorizedSession(session);
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "no-session"),
+    );
+    return;
+  }
+  const requested = Number(payload.qty);
+  if (!Number.isInteger(requested) || requested < 1 || requested > 9999) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "invalid-quantity"),
+    );
+    return;
+  }
+  const actor = resolveSessionActor(session, payload.actorId);
+  if (!actor) {
+    emitMerchantEvent(
+      MERCHANT_EVENTS.COMMIT_RESULT,
+      buildCommitResult(payload, false, "no-actor"),
+    );
+    return;
+  }
+
+  let replayWhileLocked = null;
+  const prepared = await runWithMerchantActorMutex(
+    session.merchantId,
+    actor.id,
+    async () => {
+      // A duplicate can arrive while waiting for the lock. Look it up again
+      // before touching the transient session, and let the durable record win.
+      const replay = merchantTransactionCoordinator.lookup(identity);
+      if (replay.status !== "missing") {
+        consumeDurableSealClaim(payload, side, identity, replay);
+        replayWhileLocked =
+          replay.status === "pending"
+            ? await merchantTransactionCoordinator.drivePendingLocked(identity)
+            : replay;
+        return replayWhileLocked;
+      }
+      const planned =
+        side === "buy"
+          ? await buildDurableBuyRecord(
+              payload,
+              session.merchantId,
+              actor.id,
+              identity.requestFingerprint,
+            )
+          : buildDurableSaleRecord(
+              payload,
+              session.merchantId,
+              actor.id,
+              identity.requestFingerprint,
+            );
+      if (!planned?.ok) {
+        return {
+          status: "rejected",
+          reason: planned?.reason ?? "transaction-plan-rejected",
+          planningResult: planned,
+        };
+      }
+      if (planned.seal) {
+        const reserved = reserveSealForCommit(
+          payload.sessionId,
+          planned.seal.sealId,
+          durableSealClaim(payload, side, identity),
+        );
+        if (!reserved.ok) {
+          return {
+            status: "rejected",
+            reason: reserved.reason ?? "bargain-expired",
+          };
+        }
+      }
+      const persisted =
+        await merchantTransactionCoordinator.persistPreparedAndDriveLocked(
+          planned.record,
+        );
+      if (planned.seal) {
+        const canonical = merchantTransactionCoordinator.lookup(identity);
+        if (
+          !consumeDurableSealClaim(payload, side, identity, persisted) &&
+          !consumeDurableSealClaim(payload, side, identity, canonical)
+        ) {
+          releaseDefiniteUnusedSealClaim(payload, side, identity, persisted);
+        }
+      }
+      return persisted;
+    },
+  );
+  if (replayWhileLocked) {
+    await resolveDurableCommitOutcome(payload, replayWhileLocked, {
+      drivePending: false,
+    });
+    return;
+  }
+  if (prepared.status === "rejected") {
+    if (prepared.reason !== "authority-lost") {
+      emitMerchantEvent(
+        MERCHANT_EVENTS.COMMIT_RESULT,
+        buildCommitResult(
+          payload,
+          false,
+          prepared.reason ?? "transaction-plan-rejected",
+        ),
+      );
+    }
+    return;
+  }
+  // Fresh plans already performed their first bounded drive while the existing
+  // merchant+actor lock was held. Do not release and immediately reacquire the
+  // same lock, which would let a queued GM edit interleave with that drive.
+  await resolveDurableCommitOutcome(payload, prepared, { drivePending: false });
+}
+
+function isDurableMerchantCommitId(commitId) {
+  try {
+    parseMerchantCommitId(commitId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleCommitPurchase(payload) {
+  if (!isDurableMerchantCommitId(payload.commitId)) {
+    if (!globalThis.JournalEntry?.create) {
+      await handleLegacyCommitPurchase(payload);
+      return;
+    }
+    emitCommitResult(payload, false, "invalid-commit-id");
+    return;
+  }
+  await handleDurableMerchantCommit(payload, "buy");
+}
+
+async function handleLegacyCommitPurchase(payload) {
   const { sessionId, itemUuid, qty, sealId } = payload;
   let session = getSession(sessionId);
   if (!session || isMerchantAccessClosed()) {
@@ -552,6 +1372,11 @@ async function handleCommitPurchase(payload) {
     return;
   }
   if (session.viewerUserId !== payload.originUserId) return;
+  if (!authorizedSessionMerchant(session)) {
+    closeUnauthorizedSession(session);
+    emitCommitResult(payload, false, "no-session");
+    return;
+  }
   if (emitCachedCommitResult(payload)) return;
   const requested = Number(qty);
   if (!Number.isInteger(requested) || requested < 1 || requested > 9999) {
@@ -586,6 +1411,12 @@ async function handleCommitPurchase(payload) {
       return;
     }
     session = liveSession;
+    const merchant = authorizedSessionMerchant(session);
+    if (!merchant) {
+      closeUnauthorizedSession(session);
+      emitCommitResult(payload, false, "no-session");
+      return;
+    }
     const liveActor = resolveSessionActor(session, payload.actorId);
     if (!liveActor || liveActor.id !== actor.id) {
       emitCommitResult(payload, false, "no-actor");
@@ -594,14 +1425,6 @@ async function handleCommitPurchase(payload) {
     actor = liveActor;
 
     if (emitCachedCommitResult(payload)) {
-      return;
-    }
-    const merchant = findMerchant(session.merchantId);
-    if (!merchant) {
-      console.warn(
-        `${MODULE_ID} | commit-purchase: merchant ${session.merchantId} is gone`,
-      );
-      emitCommitResult(payload, false, "merchant-gone");
       return;
     }
     const row = merchant.items.find((r) => r.uuid === itemUuid);
@@ -752,6 +1575,18 @@ async function handleCommitPurchase(payload) {
 }
 
 async function handleCommitSale(payload) {
+  if (!isDurableMerchantCommitId(payload.commitId)) {
+    if (!globalThis.JournalEntry?.create) {
+      await handleLegacyCommitSale(payload);
+      return;
+    }
+    emitCommitResult(payload, false, "invalid-commit-id");
+    return;
+  }
+  await handleDurableMerchantCommit(payload, "sell");
+}
+
+async function handleLegacyCommitSale(payload) {
   const { sessionId, sealId, itemUuid } = payload;
   let session = getSession(sessionId);
   if (!session || isMerchantAccessClosed()) {
@@ -759,6 +1594,11 @@ async function handleCommitSale(payload) {
     return;
   }
   if (session.viewerUserId !== payload.originUserId) return;
+  if (!authorizedSessionMerchant(session)) {
+    closeUnauthorizedSession(session);
+    emitCommitResult(payload, false, "no-session");
+    return;
+  }
   if (emitCachedCommitResult(payload)) return;
   const clientTotalGp = Math.max(0, Number(payload.totalGp) || 0);
   const requested = Number(payload.qty);
@@ -792,6 +1632,12 @@ async function handleCommitSale(payload) {
       return;
     }
     session = liveSession;
+    const merchant = authorizedSessionMerchant(session);
+    if (!merchant) {
+      closeUnauthorizedSession(session);
+      emitCommitResult(payload, false, "no-session");
+      return;
+    }
     const liveActor = resolveSessionActor(session, payload.actorId);
     if (!liveActor || liveActor.id !== actor.id) {
       emitCommitResult(payload, false, "no-actor");
@@ -805,14 +1651,6 @@ async function handleCommitSale(payload) {
     const ownedItem = actor.items?.get?.(itemUuid) ?? null;
     if (!ownedItem) {
       emitCommitResult(payload, false, "no-target");
-      return;
-    }
-    const merchant = findMerchant(session.merchantId);
-    if (!merchant) {
-      console.warn(
-        `${MODULE_ID} | commit-sale: merchant ${session.merchantId} is gone`,
-      );
-      emitCommitResult(payload, false, "merchant-gone");
       return;
     }
     const candidateSeal = sealId
@@ -942,6 +1780,31 @@ async function handleCommitSale(payload) {
  * client's `resolvePlayerActor` (assigned character, else first owned
  * character) so the GM can re-derive the same passive haggle nudge.
  */
+/**
+ * Resolve the canonical merchant only while the recorded viewer remains on its
+ * current allow-list. Assistant GMs may shop when explicitly allowed; full GMs
+ * use Preview and never inherit a player session.
+ */
+function authorizedSessionMerchant(session) {
+  if (!session?.merchantId || !session?.viewerUserId) return null;
+  const merchant = findMerchant(session.merchantId);
+  const user = globalThis.game?.users?.get?.(session.viewerUserId);
+  const allowed = Array.isArray(merchant?.allowedUserIds)
+    ? merchant.allowedUserIds
+    : [];
+  if (!merchant || !user || isFullGM(user)) return null;
+  return allowed.includes(session.viewerUserId) ? merchant : null;
+}
+
+function closeUnauthorizedSession(session) {
+  if (!session?.sessionId) return false;
+  try {
+    return pushCloseSession(session.sessionId);
+  } catch {
+    return Boolean(closeSession(session.sessionId));
+  }
+}
+
 function resolveSessionActor(session, requestedActorId = null) {
   const userId = session?.viewerUserId;
   if (!userId) return null;
@@ -976,9 +1839,6 @@ function userOwnsSessionActor(user, actor) {
   if (Object.hasOwn(ownership, user.id)) {
     return Number(ownership[user.id]) >= Number(ownerLevel);
   }
-  const assignedId =
-    typeof user.character === "string" ? user.character : user.character?.id;
-  if (assignedId && String(assignedId) === String(actor.id)) return true;
   if (user.isGM === true) return false;
   if (Object.hasOwn(ownership, "default")) {
     return Number(ownership.default) >= Number(ownerLevel);
@@ -988,6 +1848,15 @@ function userOwnsSessionActor(user, actor) {
 
 async function broadcastState(merchant) {
   if (!merchant) return;
+
+  // Saving access changes revokes stale live sessions immediately. Every
+  // transaction boundary repeats this check, so a missed notification can
+  // never preserve authorization.
+  for (const session of [...listSessions()]) {
+    if (session.merchantId !== merchant.id) continue;
+    if (!authorizedSessionMerchant(session)) closeUnauthorizedSession(session);
+  }
+
   const projected = projectMerchantForSession(merchant);
   const basePayload = {
     merchantId: merchant.id,
@@ -1065,37 +1934,6 @@ export async function commitMerchantWrite(
   });
 }
 
-/**
- * Bind an idempotency key to the complete mutation request. Fixed property
- * order plus normalized numbers makes this stable across transport retries
- * without relying on payload insertion order.
- */
-function commitRequestFingerprint(commitPayload) {
-  const rawQuantity = commitPayload.qty;
-  const numericQuantity = Number(rawQuantity);
-  const validQuantity =
-    Number.isInteger(numericQuantity) &&
-    numericQuantity >= 1 &&
-    numericQuantity <= 9999;
-  return JSON.stringify({
-    version: 1,
-    type: commitPayload.type ?? "",
-    sessionId: commitPayload.sessionId ?? "",
-    originUserId: commitPayload.originUserId ?? "",
-    actorId: commitPayload.actorId ?? "",
-    itemUuid: commitPayload.itemUuid ?? "",
-    qty: validQuantity
-      ? { valid: true, value: numericQuantity }
-      : {
-          valid: false,
-          type: typeof rawQuantity,
-          value: String(rawQuantity),
-        },
-    totalGp: Number(commitPayload.totalGp),
-    sealId: commitPayload.sealId ?? "",
-  });
-}
-
 function buildCommitResult(commitPayload, ok, reason = "", details = {}) {
   return {
     targetUserId: commitPayload.originUserId,
@@ -1104,7 +1942,7 @@ function buildCommitResult(commitPayload, ok, reason = "", details = {}) {
     side: commitPayload.type === MERCHANT_EVENTS.COMMIT_SALE ? "sell" : "buy",
     ok: ok === true,
     reason,
-    requestFingerprint: commitRequestFingerprint(commitPayload),
+    requestFingerprint: merchantCommitRequestFingerprint(commitPayload),
     ...details,
   };
 }
@@ -1130,7 +1968,9 @@ function emitCachedCommitResult(commitPayload) {
     commitPayload.commitId,
   );
   if (!prior) return false;
-  if (prior.requestFingerprint !== commitRequestFingerprint(commitPayload)) {
+  if (
+    prior.requestFingerprint !== merchantCommitRequestFingerprint(commitPayload)
+  ) {
     emitMerchantEvent(
       MERCHANT_EVENTS.COMMIT_RESULT,
       buildCommitResult(commitPayload, false, "commit-id-conflict"),
@@ -1346,6 +2186,9 @@ async function requestKnockApproval(merchant, userId) {
   } finally {
     knockPending.delete(pendingKey);
   }
+  // A prompt may outlive this tab's authority. The former leader must not
+  // approve, deny, or create a session after another tab/GM takes over.
+  if (!isPrivateStateAuthorityReady()) return;
   if (!approved) {
     globalThis.ui?.notifications?.info?.(
       `Turned ${who} away from ${merchant.name}. No shop session opened.`,
@@ -1385,9 +2228,9 @@ function handleSessionResumeRequest(payload) {
   let resumed = 0;
   for (const session of listSessions()) {
     if (session.viewerUserId !== userId) continue;
-    const merchant = findMerchant(session.merchantId);
+    const merchant = authorizedSessionMerchant(session);
     if (!merchant) {
-      closeSession(session.sessionId);
+      closeUnauthorizedSession(session);
       continue;
     }
     emitMerchantEvent(MERCHANT_EVENTS.SESSION_OPEN, {
@@ -1418,6 +2261,7 @@ function handleSessionResumeRequest(payload) {
  * buy/sell window opens.
  */
 export function pushOpenSession({ merchant, targetUserIds }) {
+  assertMerchantSessionWriteAuthority();
   if (!merchant) throw new Error("pushOpenSession needs merchant");
   if (isMerchantAccessClosed()) return [];
   const ids = Array.isArray(targetUserIds) ? targetUserIds : [];
@@ -1479,6 +2323,7 @@ export function requestMerchantSessionResume() {
 
 /** Close a session and notify the player. */
 export function pushCloseSession(sessionId) {
+  assertMerchantSessionWriteAuthority();
   const session = getSession(sessionId);
   if (!session) return false;
   emitMerchantEvent(MERCHANT_EVENTS.SESSION_CLOSE, {
@@ -1491,6 +2336,7 @@ export function pushCloseSession(sessionId) {
 
 /** Close every session for a given merchant (GM "End all sessions"). */
 export function pushCloseAllSessionsFor(merchantId) {
+  assertMerchantSessionWriteAuthority();
   let closed = 0;
   for (const session of [...findAllSessionsFor(merchantId)]) {
     if (pushCloseSession(session.sessionId)) closed++;
@@ -1523,7 +2369,12 @@ export function pushMerchantAccessRefresh() {
  * live merchant/viewer pair for a later restore. Repeating the operation while
  * already closed never overwrites the original snapshot with an empty list.
  */
-export async function pushCloseAllMerchantSessions() {
+export function pushCloseAllMerchantSessions() {
+  return runMerchantAccessOperation(closeAllMerchantSessionsLocked);
+}
+
+async function closeAllMerchantSessionsLocked() {
+  assertMerchantSessionWriteAuthority();
   const current = loadMerchantAccessState();
   if (current.closed) {
     let closedCount = 0;
@@ -1538,14 +2389,25 @@ export async function pushCloseAllMerchantSessions() {
     };
   }
 
-  const sessionPairs = listSessions().map(({ merchantId, viewerUserId }) => ({
-    merchantId,
-    viewerUserId,
-  }));
+  const sessionPairs = [
+    ...current.suspendedSessions,
+    ...listSessions().map(({ merchantId, viewerUserId }) => ({
+      merchantId,
+      viewerUserId,
+    })),
+  ].filter(
+    (row, index, rows) =>
+      rows.findIndex(
+        (candidate) =>
+          candidate.merchantId === row.merchantId &&
+          candidate.viewerUserId === row.viewerUserId,
+      ) === index,
+  );
   let saved = await saveMerchantAccessState({
     closed: true,
     suspendedSessions: sessionPairs,
   });
+  assertMerchantSessionWriteAuthority();
 
   // A session could have opened while the first private-state write awaited.
   // Once that write lands, the gate blocks new opens; merge any such session
@@ -1565,6 +2427,7 @@ export async function pushCloseAllMerchantSessions() {
       closed: true,
       suspendedSessions: mergedPairs,
     });
+    assertMerchantSessionWriteAuthority();
   }
 
   let closedCount = 0;
@@ -1581,9 +2444,16 @@ export async function pushCloseAllMerchantSessions() {
 
 /** Lift the global gate and recreate only the merchant/viewer pairs captured by
  * the matching close. Per-shop Open/Knock/Off modes were never changed. */
-export async function pushReopenMerchantSessions() {
+export function pushReopenMerchantSessions() {
+  return runMerchantAccessOperation(reopenMerchantSessionsLocked);
+}
+
+async function reopenMerchantSessionsLocked() {
+  assertMerchantSessionWriteAuthority();
   const current = loadMerchantAccessState();
-  if (!current.closed) {
+  const interruptedReopen =
+    current.closed === false && current.suspendedSessions.length > 0;
+  if (!current.closed && !interruptedReopen) {
     return { alreadyOpen: true, openedCount: 0, skippedCount: 0 };
   }
 
@@ -1593,10 +2463,13 @@ export async function pushReopenMerchantSessions() {
   try {
     // Keep the snapshot until every restore attempt finishes. If the GM client
     // fails mid-restore, the private record still explains what was suspended.
-    await saveMerchantAccessState({
-      closed: false,
-      suspendedSessions: current.suspendedSessions,
-    });
+    if (current.closed) {
+      await saveMerchantAccessState({
+        closed: false,
+        suspendedSessions: current.suspendedSessions,
+      });
+      assertMerchantSessionWriteAuthority();
+    }
 
     for (const pair of current.suspendedSessions) {
       const merchant = findMerchant(pair.merchantId);
@@ -1617,16 +2490,23 @@ export async function pushReopenMerchantSessions() {
     }
 
     await saveMerchantAccessState({ closed: false, suspendedSessions: [] });
+    assertMerchantSessionWriteAuthority();
   } catch (error) {
     // Do not leave a partially restored set of windows after a failed durable
     // state write. Best-effort rollback returns to the same closed snapshot.
-    for (const sessionId of restoredSessionIds) pushCloseSession(sessionId);
-    try {
-      await saveMerchantAccessState({
-        closed: true,
-        suspendedSessions: current.suspendedSessions,
-      });
-    } catch {}
+    if (isAuthoritativeGM() && hasMerchantTabLeadership()) {
+      for (const sessionId of restoredSessionIds) {
+        try {
+          pushCloseSession(sessionId);
+        } catch {}
+      }
+      try {
+        await saveMerchantAccessState({
+          closed: true,
+          suspendedSessions: current.suspendedSessions,
+        });
+      } catch {}
+    }
     pushMerchantAccessRefresh();
     throw error;
   }

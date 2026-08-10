@@ -82,6 +82,7 @@ assertActions(
     "reopenSessions",
     "invRemove",
     "openInventoryItem",
+    "recheckTransaction",
     "selectSection",
   ],
   "merchant workspace",
@@ -109,6 +110,40 @@ for (const field of [
 assert.match(merchantTemplate, /data-save-status/);
 assert.match(merchantTemplate, /Live shoppers use the canonical saved stock/);
 assert.match(merchantTemplate, /Open Session is unavailable:/);
+assert.match(
+  merchantTemplate,
+  /unless canManageMerchants[\s\S]*?merchantAuthorityReason/,
+  "secondary full GMs see an explicit read-only Merchant notice",
+);
+assert.match(merchantTemplate, /Transactions needing review/);
+assert.match(merchantTemplate, /Actor wallet, saved/);
+assert.match(merchantTemplate, /Merchant stock, saved/);
+assert.match(merchantTemplate, /data-action="recheckTransaction"/);
+assert.match(
+  merchantScript,
+  /recheckDurableMerchantTransaction[\s\S]*?deliverDurableMerchantTerminalResult/,
+  "safe review completion is delivered through the durable result path",
+);
+assert.match(
+  merchantTemplate,
+  /merchantReopenInterrupted[\s\S]*?Resume restoring/,
+  "an interrupted global reopen remains resumable instead of offering Close All",
+);
+assert.match(
+  merchantScript,
+  /!current\.closed && current\.suspendedSessions\.length === 0/,
+  "open access with saved sessions continues the restore path",
+);
+assert.match(
+  merchantScript,
+  /requireMerchantWriteAuthority[\s\S]*?active full GM window/,
+  "every Merchant workspace mutation is authority-gated",
+);
+assert.match(
+  merchantScript,
+  /MERCHANT_WRITE_ACTIONS[\s\S]*?control\.disabled = true/,
+  "secondary full GMs receive disabled Merchant mutation controls",
+);
 assert.match(
   merchantTemplate,
   /<input(?=[^>]*name="poolBudgetGp")(?=[^>]*aria-label="Stock value budget in gold pieces")[^>]*>/,

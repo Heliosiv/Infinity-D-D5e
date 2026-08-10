@@ -181,6 +181,22 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "not-stackable": "That item can only be purchased one at a time.",
   "commit-id-conflict":
     "That transaction ID was already used for a different request.",
+  "invalid-commit-id":
+    "That saved transaction request is invalid. Close and reopen the shop before trying again.",
+  "rate-limited":
+    "Too many new trades arrived at once. Wait a moment, then try again.",
+  "price-changed":
+    "The shop price changed before the trade was recorded. Review the new total and confirm again.",
+  "bargain-expired":
+    "That bargain is no longer available. Bargain again or use the current shop price.",
+  "ledger-capacity":
+    "The Merchant transaction queue needs GM review before another trade can start.",
+  "unresolved-origin-cap":
+    "You already have too many unresolved trades. Ask the GM to review them before starting another.",
+  "unresolved-transaction-collision":
+    "Another unresolved trade already owns that character or merchant operation.",
+  "transaction-busy":
+    "The Merchant transaction queue is busy. Wait for the current trade to finish.",
   "insufficient-funds": "You can't afford that.",
   "not-sellable": "That item can't be sold.",
   "stolen-requires-fence":

@@ -21,9 +21,17 @@ import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   createPrivateStateUnavailableError,
   getPrivateState,
+  initializePrivateState,
   setPrivateState,
+  setPrivateStates,
 } from "../private-state.js";
 import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
+import { isAuthoritativeGM } from "../socket-authority.js";
+import { normalizeMerchantTransactionLedger } from "./transaction-ledger.js";
+import {
+  ensureMerchantTabLeadership,
+  hasMerchantTabLeadership,
+} from "./tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_SETTING_KEY = "merchants";
@@ -592,24 +600,27 @@ export function removeInventoryRow(merchant, uuid) {
   return m;
 }
 
-/** True when `userId` resolves to a GM user. Lazy game read; false in node. */
-function isUserIdGM(userId) {
+/** True when `userId` resolves to a full role-4 Game Master. */
+function isUserIdFullGM(userId) {
   try {
-    return globalThis.game?.users?.get?.(userId)?.isGM === true;
+    const user = globalThis.game?.users?.get?.(userId);
+    const fullGmRole = Number(globalThis.CONST?.USER_ROLES?.GAMEMASTER ?? 4);
+    return Number(user?.role) === fullGmRole;
   } catch {
     return false;
   }
 }
 
 /**
- * Whether a given user id may open a *player* session for this merchant. GMs
- * are never "allowed" players — they use the GM Preview path, not the live
- * player session — so a stray GM id in `allowedUserIds` can't auto-open a
- * real (data-mutating) session on the GM's own client.
+ * Whether a given user id may open a *player* session for this merchant. Full
+ * role-4 GMs use the GM Preview path, not the live player session, so a stray
+ * full-GM id in `allowedUserIds` cannot auto-open a real (data-mutating)
+ * session on the GM's own client. Role-3 Assistants remain eligible here; the
+ * transaction boundary separately enforces Actor ownership.
  */
 export function isUserAllowed(merchant, userId) {
   if (!merchant || !userId) return false;
-  if (isUserIdGM(userId)) return false;
+  if (isUserIdFullGM(userId)) return false;
   const list = Array.isArray(merchant.allowedUserIds)
     ? merchant.allowedUserIds
     : [];
@@ -634,8 +645,10 @@ export function isSelfServiceReachable(merchant) {
 /**
  * The single authority gate for player-initiated shop access — used by BOTH
  * the Shops list reply and an inbound shop-open request. A user may self-open a
- * shop only if they are an allowed (non-GM) player AND the shop is self-service
- * reachable (open or knock). Never trust the client; the GM re-checks this.
+ * shop only if they are allowed here and the shop is self-service reachable
+ * (open or knock). Full role-4 GMs are excluded; role-3 Assistants continue to
+ * the transaction boundary's Actor-ownership check. Never trust the client;
+ * the authoritative GM re-checks this policy.
  */
 export function canSelfOpen(merchant, userId) {
   return isUserAllowed(merchant, userId) && isSelfServiceReachable(merchant);
@@ -758,6 +771,27 @@ function assertLiveMerchantStoreWritable() {
   return true;
 }
 
+function cloneStoreValue(value) {
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assertLiveMerchantTransactionStoreWritable() {
+  if (!isFoundryEnvironment()) return true;
+  const persisted = getPrivateState("merchantTransactions");
+  return persisted !== undefined;
+}
+
+function assertLiveMerchantPrivateStateWritable() {
+  return (
+    (!isFoundryEnvironment() ||
+      (isAuthoritativeGM() && hasMerchantTabLeadership())) &&
+    assertLiveMerchantStoreWritable() === true &&
+    assertLiveMerchantTransactionStoreWritable() === true
+  );
+}
+
 /** Look up a merchant by id. */
 export function findMerchant(id) {
   const want = toStr(id);
@@ -773,15 +807,144 @@ function runStoreWrite(operation) {
   return result;
 }
 
-async function writeMerchants(merchants) {
-  assertLiveMerchantStoreWritable();
+/**
+ * Mutate Merchant records and their durable transaction ledger inside the same
+ * process-wide write lane. The callback receives fresh canonical snapshots and
+ * must return both next values. One private Journal update becomes the commit
+ * point, so a workspace edit cannot interleave between a ledger checkpoint and
+ * its merchant state.
+ */
+export function updateMerchantPrivateState(
+  mutation,
+  { authorizeWrite = null } = {},
+) {
+  if (typeof mutation !== "function") return Promise.resolve(null);
+  return runStoreWrite(async () => {
+    if (
+      isFoundryEnvironment() &&
+      (await ensureMerchantTabLeadership()) !== true
+    ) {
+      throw new Error("MerchantTabAuthorityUnavailable");
+    }
+    if (isFoundryEnvironment() && !isAuthoritativeGM()) {
+      throw new Error("MerchantWriteAuthorityLost");
+    }
+    if (assertLiveMerchantPrivateStateWritable() !== true) {
+      throw createPrivateStateUnavailableError("merchantTransactions");
+    }
+    const currentTransactions = getPrivateState("merchantTransactions");
+    if (currentTransactions === undefined) {
+      throw createPrivateStateUnavailableError("merchantTransactions");
+    }
+    const current = {
+      merchants: loadMerchants(),
+      merchantTransactions: cloneStoreValue(currentTransactions),
+    };
+    const proposal = await mutation(cloneStoreValue(current));
+    if (proposal == null) return null;
+    if (
+      typeof proposal !== "object" ||
+      Array.isArray(proposal) ||
+      !Array.isArray(proposal.merchants) ||
+      !proposal.merchantTransactions ||
+      typeof proposal.merchantTransactions !== "object" ||
+      Array.isArray(proposal.merchantTransactions)
+    ) {
+      throw new TypeError(
+        "Merchant private-state mutation must return merchants and merchantTransactions",
+      );
+    }
+    const merchants = proposal.merchants.map(normalizeMerchant);
+    // The private-state boundary deliberately validates only the envelope's
+    // top-level storage shape. Validate the complete ledger here so no caller
+    // can atomically commit a record that recovery can never reopen.
+    const merchantTransactions = normalizeMerchantTransactionLedger(
+      cloneStoreValue(proposal.merchantTransactions),
+    );
+    const writeAuthorized = () => {
+      if (assertLiveMerchantPrivateStateWritable() !== true) return false;
+      if (typeof authorizeWrite !== "function") return true;
+      return authorizeWrite() === true;
+    };
+    if (writeAuthorized() !== true) {
+      throw new Error("MerchantWriteAuthorityLost");
+    }
+    const persisted = await setPrivateStates(
+      { merchants, merchantTransactions },
+      {
+        beforeWrite: writeAuthorized,
+        afterWrite: writeAuthorized,
+      },
+    );
+    return {
+      merchants: persisted.merchants,
+      merchantTransactions: persisted.merchantTransactions,
+      result: proposal.result,
+    };
+  });
+}
+
+async function writeMerchants(merchants, { authorizeWrite = null } = {}) {
+  if (
+    isFoundryEnvironment() &&
+    (await ensureMerchantTabLeadership()) !== true
+  ) {
+    throw new Error("MerchantTabAuthorityUnavailable");
+  }
+  if (isFoundryEnvironment() && !isAuthoritativeGM()) {
+    throw new Error("MerchantWriteAuthorityLost");
+  }
+  if (
+    isFoundryEnvironment() &&
+    (getPrivateState("merchants") === undefined ||
+      getPrivateState("merchantTransactions") === undefined)
+  ) {
+    await initializePrivateState();
+  }
+  if (assertLiveMerchantStoreWritable() !== true) {
+    throw createPrivateStateUnavailableError("merchants");
+  }
   const cleaned = (Array.isArray(merchants) ? merchants : []).map(
     normalizeMerchant,
   );
-  await setPrivateState("merchants", cleaned, {
-    beforeWrite: assertLiveMerchantStoreWritable,
+  if (!isFoundryEnvironment()) {
+    await setPrivateState("merchants", cleaned, {
+      beforeWrite: assertLiveMerchantStoreWritable,
+    });
+    return cleaned;
+  }
+  const currentLedger = normalizeMerchantTransactionLedger(
+    getPrivateState("merchantTransactions"),
+  );
+  if (currentLedger.revision >= Number.MAX_SAFE_INTEGER) {
+    throw new Error("MerchantTransactionRevisionOverflow");
+  }
+  const merchantTransactions = normalizeMerchantTransactionLedger({
+    ...currentLedger,
+    revision: currentLedger.revision + 1,
+    writeToken: createMerchantWriteFenceToken(),
   });
+  const writeAuthorized = () => {
+    if (assertLiveMerchantPrivateStateWritable() !== true) return false;
+    if (typeof authorizeWrite !== "function") return true;
+    return authorizeWrite() === true;
+  };
+  await setPrivateStates(
+    { merchants: cleaned, merchantTransactions },
+    { beforeWrite: writeAuthorized, afterWrite: writeAuthorized },
+  );
   return cleaned;
+}
+
+function createMerchantWriteFenceToken() {
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues !== "function") {
+    throw new Error("MerchantWriteFenceRandomUnavailable");
+  }
+  globalThis.crypto.getRandomValues(bytes);
+  return `mtw.${[...bytes]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /** Persist the full merchant list through the process-wide write queue. */
@@ -826,7 +989,7 @@ export function updateMerchant(id, mutation, { authorizeWrite = null } = {}) {
     if (typeof authorizeWrite === "function" && authorizeWrite() !== true) {
       throw new Error("MerchantWriteAuthorityLost");
     }
-    await writeMerchants(list);
+    await writeMerchants(list, { authorizeWrite });
     return next;
   });
 }

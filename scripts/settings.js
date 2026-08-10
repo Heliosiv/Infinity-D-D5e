@@ -42,6 +42,10 @@ export const SETTING_KEYS = Object.freeze({
   MERCHANT_BARGAIN_TIERS: "merchantBargainTiers",
   MERCHANT_CHAT_MODE: "merchantChatMode",
   MERCHANT_CONFIRM_TRANSACTIONS: "merchantConfirmTransactions",
+  // Reload-safe client queue for unresolved buy/sell requests, partitioned by
+  // World because Foundry client settings span every World in one browser.
+  // This stays out of the UI and is managed by merchant/client-pending.js.
+  MERCHANT_PENDING_COMMITS: "merchantPendingCommits",
   // Opaque identity of the one canonical restricted private-state Journal.
   PRIVATE_STATE_STORE_ID: "privateStateStoreId",
   // Quartermaster / party-resource feature.
@@ -365,6 +369,15 @@ export const SETTINGS = Object.freeze([
     config: true,
     type: Boolean,
     default: false,
+  },
+  {
+    key: SETTING_KEYS.MERCHANT_PENDING_COMMITS,
+    name: "Pending Merchant Commits",
+    hint: "Internal client store for merchant requests awaiting a final GM result.",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: { version: 3, records: [] },
   },
   {
     key: SETTING_KEYS.RESOURCE_AUTO_TRIGGER,

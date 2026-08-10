@@ -165,8 +165,10 @@ try {
     { id: "other", isGM: false },
   ];
   globalThis.game = {
+    world: { id: "world-a" },
     user: users[1],
     users,
+    messages: { contents: messages },
     settings: { get: () => mode },
   };
   globalThis.ChatMessage = {
@@ -205,6 +207,37 @@ try {
     Object.prototype.hasOwnProperty.call(messages[2], "whisper"),
     false,
     "public receipts still omit the whisper field",
+  );
+
+  mode = "whisper-gm-buyer";
+  await postTransactionReceipt({ ...receipt, originUserId: "other" });
+  assert.deepEqual(
+    messages[3].whisper,
+    ["gm", "other"],
+    "a shared Actor receipt targets the exact transaction origin",
+  );
+
+  const durableReceipt = {
+    ...receipt,
+    originUserId: "buyer",
+    commitId: "m1.abc.00000000000000000000000000000001",
+    worldId: "world-a",
+  };
+  await postTransactionReceipt(durableReceipt);
+  await postTransactionReceipt(durableReceipt);
+  assert.equal(
+    messages.length,
+    5,
+    "an exact durable receipt identity is idempotent on retry",
+  );
+  assert.deepEqual(
+    messages[4].flags["infinity-dnd5e"].merchantTransactionReceipt,
+    {
+      version: 1,
+      worldId: "world-a",
+      originUserId: "buyer",
+      commitId: durableReceipt.commitId,
+    },
   );
 } finally {
   restoreGlobal("game", previousGame);

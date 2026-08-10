@@ -78,6 +78,52 @@
   background: var(--lf-bg-alt, rgba(0, 0, 0, 0.2));
 }
 
+.infinity-shop-picker .sp-review {
+  padding: 10px;
+  border: 1px solid var(--lf-warn, #f2bd61);
+  border-radius: var(--lf-radius-sm, 6px);
+  background: color-mix(in srgb, var(--lf-warn, #f2bd61) 10%, transparent);
+}
+
+.infinity-shop-picker .sp-review__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.infinity-shop-picker .sp-review__head h3,
+.infinity-shop-picker .sp-review__head p {
+  margin: 0;
+}
+
+.infinity-shop-picker .sp-review__head p,
+.infinity-shop-picker .sp-review__list span,
+.infinity-shop-picker .sp-review__list small {
+  color: var(--lf-muted, #aeb8d1);
+  font-size: 0.78rem;
+}
+
+.infinity-shop-picker .sp-review__list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infinity-shop-picker .sp-review__list li {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--lf-warn, #f2bd61) 35%, transparent);
+}
+
+.infinity-shop-picker .sp-review__list .sp-btn {
+  margin-top: 4px;
+  justify-self: start;
+}
+
 .infinity-shop-picker .sp-context > i {
   color: var(--lf-accent, #f0a55f);
 }

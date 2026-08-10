@@ -7,7 +7,12 @@
  */
 
 import { getPrivateState, setPrivateState } from "../private-state.js";
+import { isAuthoritativeGM } from "../socket-authority.js";
 import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
+import {
+  ensureMerchantTabLeadership,
+  hasMerchantTabLeadership,
+} from "./tab-leadership.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const MERCHANT_ACCESS_STATE_KEY = "merchantAccess";
@@ -68,6 +73,7 @@ function assertSupportedMerchantAccessState(value) {
 
 function assertLiveMerchantAccessWritable() {
   if (!isFoundryEnvironment()) return true;
+  if (!isAuthoritativeGM() || !hasMerchantTabLeadership()) return false;
   const persisted = getPrivateState(MERCHANT_ACCESS_STATE_KEY);
   if (persisted === undefined) return false;
   assertSupportedMerchantAccessState(persisted);
@@ -109,18 +115,35 @@ export function isMerchantAccessClosed() {
 
 let accessWriteChain = Promise.resolve();
 
+function merchantAccessAuthorityError() {
+  const error = new Error(
+    "Merchant access can only be changed by the active Merchant tab.",
+  );
+  error.code = "MERCHANT_ACCESS_AUTHORITY_UNAVAILABLE";
+  return error;
+}
+
+async function saveMerchantAccessStateAuthorized(normalized) {
+  if (
+    isFoundryEnvironment() &&
+    (!isAuthoritativeGM() ||
+      (await ensureMerchantTabLeadership()) !== true ||
+      !hasMerchantTabLeadership())
+  ) {
+    throw merchantAccessAuthorityError();
+  }
+  return await setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized, {
+    beforeWrite: assertLiveMerchantAccessWritable,
+    afterWrite: assertLiveMerchantAccessWritable,
+  });
+}
+
 /** Persist global access through the same restricted store as merchant data. */
 export function saveMerchantAccessState(value) {
   const normalized = normalizeMerchantAccessState(value);
   const result = accessWriteChain.then(
-    () =>
-      setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized, {
-        beforeWrite: assertLiveMerchantAccessWritable,
-      }),
-    () =>
-      setPrivateState(MERCHANT_ACCESS_STATE_KEY, normalized, {
-        beforeWrite: assertLiveMerchantAccessWritable,
-      }),
+    () => saveMerchantAccessStateAuthorized(normalized),
+    () => saveMerchantAccessStateAuthorized(normalized),
   );
   accessWriteChain = result.catch(() => {});
   return result.then(normalizeMerchantAccessState);

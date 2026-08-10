@@ -979,6 +979,95 @@
   font-size: 0.86rem;
 }
 
+.mw-review-panel {
+  margin: 0 14px 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--lf-danger) 55%, transparent);
+  border-radius: var(--lf-radius-md);
+  background: color-mix(in srgb, var(--lf-danger) 9%, var(--lf-surface));
+}
+.mw-review-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mw-review-panel__head h3,
+.mw-review-panel__head p,
+.mw-review-card p,
+.mw-review-card dl {
+  margin: 0;
+}
+.mw-review-panel__head > p {
+  max-width: 42rem;
+  color: var(--lf-muted);
+  font-size: 0.82rem;
+}
+.mw-review-list {
+  display: grid;
+  gap: 8px;
+}
+.mw-review-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  align-items: center;
+  padding: 10px;
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+.mw-review-card__summary,
+.mw-review-card__states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.mw-review-card__summary,
+.mw-review-card__reason,
+.mw-review-card__states,
+.mw-review-card__checkpoints,
+.mw-review-card__guidance {
+  grid-column: 1;
+}
+.mw-review-card__summary span,
+.mw-review-card__reason,
+.mw-review-card__guidance,
+.mw-review-card__states,
+.mw-review-card__checkpoints {
+  color: var(--lf-muted);
+  font-size: 0.8rem;
+}
+.mw-review-card__states div {
+  display: flex;
+  gap: 4px;
+}
+.mw-review-card__states dt {
+  font-weight: 700;
+}
+.mw-review-card__states dd {
+  margin: 0;
+}
+.mw-review-card__checkpoints {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+.mw-review-card__checkpoints div {
+  min-width: 0;
+}
+.mw-review-card__checkpoints dt {
+  font-weight: 700;
+}
+.mw-review-card__checkpoints dd {
+  margin: 1px 0 0;
+  overflow-wrap: anywhere;
+}
+.mw-review-card > .mw-btn {
+  grid-column: 2;
+  grid-row: 1 / span 5;
+}
+
 /* Animation toggle parity with loot-forge */
 .mw-no-anim .mw-btn,
 .mw-no-anim .mw-chip,
@@ -1031,6 +1120,7 @@
     grid-template-columns: 1fr;
   }
   .mw-workspace-section__head,
+  .mw-review-panel__head,
   .mw-editor-status {
     align-items: flex-start;
     flex-direction: column;
@@ -1070,6 +1160,14 @@
   .mw-inv__row > .mw-toggle,
   .mw-inv__row > .mw-btn {
     min-width: 0;
+    width: 100%;
+  }
+  .mw-review-card {
+    grid-template-columns: 1fr;
+  }
+  .mw-review-card > .mw-btn {
+    grid-column: 1;
+    grid-row: auto;
     width: 100%;
   }
 }

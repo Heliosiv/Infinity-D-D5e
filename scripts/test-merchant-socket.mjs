@@ -14,6 +14,7 @@ import {
   getSession,
   clearAllSessions,
 } from "./merchant/session-state.js";
+import { formatMerchantCommitId } from "./merchant/transaction-ledger.js";
 import { normalizeDowntimeConfig } from "./downtime/settlements.js";
 
 /**
@@ -445,6 +446,331 @@ try {
     clearAllSessions();
   }
 
+  /* Authenticated shop/session control frames share one generous ingress
+     budget before listener dispatch or response-producing work. Durable
+     status/replay and SESSION_CLOSE remain available after that budget fills. */
+  {
+    clearAllSessions();
+    const savedInner = globalThis.game;
+    const savedConst = globalThis.CONST;
+    globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
+    const savedNow = Date.now;
+    let now = 50_000;
+    Date.now = () => now;
+    const merchants = [
+      {
+        id: "m-control",
+        name: "Control Shop",
+        allowedUserIds: ["control-player", "control-peer"],
+        selfServiceMode: "open",
+        items: [],
+      },
+    ];
+    globalThis.game = {
+      user: { id: "gm", isGM: true, role: 4 },
+      users: {
+        activeGM: { id: "gm", isGM: true, role: 4 },
+        get: (id) => ({
+          id,
+          active: true,
+          isGM: false,
+          role: 1,
+          name: id,
+        }),
+      },
+      settings: {
+        get: (_moduleId, key) => (key === "merchants" ? merchants : undefined),
+      },
+      socket: { emit() {}, on() {} },
+    };
+
+    const savedWarn = console.warn;
+    let malformedWarnings = 0;
+    let malformedStatusWarnings = 0;
+    let malformedCloseWarnings = 0;
+    console.warn = (...args) => {
+      const message = String(args[0] ?? "");
+      if (message.includes("dropped malformed merchant:shop-request")) {
+        malformedWarnings += 1;
+        return;
+      }
+      if (
+        message.includes("dropped malformed merchant:commit-status-request")
+      ) {
+        malformedStatusWarnings += 1;
+        return;
+      }
+      if (message.includes("dropped malformed merchant:session-close")) {
+        malformedCloseWarnings += 1;
+        return;
+      }
+      savedWarn(...args);
+    };
+    for (let index = 0; index < 25; index++) {
+      await receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.SHOP_REQUEST,
+          originUserId: "malformed-control",
+          merchantId: "x".repeat(201),
+        },
+        "malformed-control",
+      );
+    }
+    for (let index = 0; index < 45; index++) {
+      await receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.COMMIT_STATUS_REQUEST,
+          originUserId: "malformed-status",
+          commitId: "missing-fingerprint",
+        },
+        "malformed-status",
+      );
+      await receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.SESSION_CLOSE,
+          originUserId: "malformed-close",
+          targetUserId: "malformed-close",
+          sessionId: "x".repeat(201),
+        },
+        "malformed-close",
+      );
+    }
+    console.warn = savedWarn;
+    assert.equal(
+      malformedWarnings,
+      20,
+      "malformed control frames share the bounded audit budget",
+    );
+    assert.equal(malformedStatusWarnings, 40);
+    assert.equal(malformedCloseWarnings, 20);
+
+    const seenControl = [];
+    const offList = subscribe(MERCHANT_EVENTS.SHOP_LIST_REQUEST, (payload) =>
+      seenControl.push(payload),
+    );
+    const offResume = subscribe(
+      MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+      (payload) => seenControl.push(payload),
+    );
+    for (let index = 0; index < 19; index++) {
+      await receiveMerchantPayload(
+        {
+          type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+          originUserId: "control-player",
+        },
+        "control-player",
+      );
+    }
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_RESUME_REQUEST,
+        originUserId: "control-player",
+      },
+      "control-player",
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+        originUserId: "control-player",
+      },
+      "control-player",
+    );
+    assert.equal(
+      seenControl.length,
+      20,
+      "mixed control routes share one burst budget and the next frame is dropped before dispatch",
+    );
+
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+        originUserId: "control-peer",
+      },
+      "control-peer",
+    );
+    assert.equal(
+      seenControl.length,
+      21,
+      "one player's control burst does not affect another player",
+    );
+
+    const statusSeen = [];
+    const offStatus = subscribe(
+      MERCHANT_EVENTS.COMMIT_STATUS_REQUEST,
+      (payload) => statusSeen.push(payload),
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_STATUS_REQUEST,
+        originUserId: "control-player",
+        commitId: formatMerchantCommitId(
+          50_000,
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ),
+        requestFingerprint: "control-status",
+      },
+      "control-player",
+    );
+    assert.equal(
+      statusSeen.length,
+      1,
+      "durable status recovery is independent of the shop control budget",
+    );
+
+    const closeable = openSession({
+      merchantId: "m-control",
+      viewerUserId: "control-player",
+    });
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SESSION_CLOSE,
+        originUserId: "control-player",
+        targetUserId: "control-player",
+        sessionId: closeable.sessionId,
+      },
+      "control-player",
+    );
+    assert.equal(
+      getSession(closeable.sessionId),
+      null,
+      "SESSION_CLOSE remains deliverable after control throttling",
+    );
+
+    now += 10_001;
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+        originUserId: "control-player",
+      },
+      "control-player",
+    );
+    assert.equal(
+      seenControl.length,
+      22,
+      "the same player can retry after the short burst window",
+    );
+
+    offList();
+    offResume();
+    offStatus();
+    Date.now = savedNow;
+    globalThis.game = savedInner;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
+    clearAllSessions();
+  }
+
+  /* Foundry marks role-3 Assistants as isGM, but only full role-4 GMs are
+     preview-only. An explicitly allowed Assistant sees and opens the player
+     shop; a full GM does neither. */
+  {
+    clearAllSessions();
+    const savedInner = globalThis.game;
+    const savedConst = globalThis.CONST;
+    globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
+    const assistant = {
+      id: "assistant-shop",
+      active: true,
+      isGM: true,
+      role: 3,
+      name: "Assistant",
+    };
+    const fullGm = {
+      id: "full-shop",
+      active: true,
+      isGM: true,
+      role: 4,
+      name: "Full GM",
+    };
+    const authority = {
+      id: "gm",
+      active: true,
+      isGM: true,
+      role: 4,
+      name: "Authority",
+    };
+    const usersById = new Map([
+      [assistant.id, assistant],
+      [fullGm.id, fullGm],
+      [authority.id, authority],
+    ]);
+    const shops = [
+      {
+        id: "assistant-shop-merchant",
+        name: "Assistant Shop",
+        allowedUserIds: [assistant.id, fullGm.id],
+        selfServiceMode: "open",
+        items: [],
+      },
+    ];
+    globalThis.game = {
+      user: authority,
+      users: {
+        activeGM: authority,
+        get: (id) => usersById.get(id) ?? null,
+      },
+      settings: {
+        get: (_moduleId, key) => (key === "merchants" ? shops : undefined),
+      },
+      socket: { emit() {}, on() {} },
+    };
+    const listReplies = [];
+    const sessionOpens = [];
+    const offLists = subscribe(MERCHANT_EVENTS.SHOP_LIST_REPLY, (payload) =>
+      listReplies.push(payload),
+    );
+    const offOpens = subscribe(MERCHANT_EVENTS.SESSION_OPEN, (payload) =>
+      sessionOpens.push(payload),
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+        originUserId: assistant.id,
+      },
+      assistant.id,
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_REQUEST,
+        originUserId: assistant.id,
+        merchantId: shops[0].id,
+      },
+      assistant.id,
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_LIST_REQUEST,
+        originUserId: fullGm.id,
+      },
+      fullGm.id,
+    );
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.SHOP_REQUEST,
+        originUserId: fullGm.id,
+        merchantId: shops[0].id,
+      },
+      fullGm.id,
+    );
+    offLists();
+    offOpens();
+    assert.deepEqual(
+      listReplies.map((reply) => reply.targetUserId),
+      [assistant.id],
+      "the allowed Assistant receives a player shop list while a full GM does not",
+    );
+    assert.equal(listReplies[0].shops.length, 1);
+    assert.deepEqual(
+      sessionOpens.map((frame) => frame.targetUserId),
+      [assistant.id],
+      "the allowed Assistant can self-open while a full GM remains preview-only",
+    );
+    globalThis.game = savedInner;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
+    clearAllSessions();
+  }
+
   /* COMMIT ack: a buy/sell whose session is gone (e.g. the GM reloaded the world
      and the in-memory session map was wiped) must tell the buyer via COMMIT_RESULT
      ok:false — not silently swallow it, leaving the actor changed but the shop not. */
@@ -736,6 +1062,20 @@ try {
       },
       "player1",
     );
+    actor.ownership = { default: 0 };
+    actor.testUserPermission = () => false;
+    await receiveMerchantPayload(
+      {
+        type: MERCHANT_EVENTS.COMMIT_SALE,
+        originUserId: "player1",
+        sessionId: rec.sessionId,
+        commitId: "assigned-default-none-sale",
+        itemUuid: "stale-owned-item",
+        qty: 1,
+        totalGp: 5,
+      },
+      "player1",
+    );
     off();
     assert.ok(
       acks.some(
@@ -747,6 +1087,15 @@ try {
     );
     assert.ok(actor.items.get("stale-owned-item"));
     assert.equal(savedList[0].goldOnHand, 100);
+    assert.ok(
+      acks.some(
+        (ack) =>
+          ack.commitId === "assigned-default-none-sale" &&
+          ack.ok === false &&
+          ack.reason === "no-actor",
+      ),
+      "an assigned-character pointer does not override default NONE ownership",
+    );
     globalThis.game = savedInner;
     clearAllSessions();
   }

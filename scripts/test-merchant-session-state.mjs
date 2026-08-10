@@ -10,6 +10,7 @@ import {
   clearAllSessions,
   closeSession,
   closeViewerSessions,
+  consumeReservedSeal,
   consumeSeal,
   findSessionFor,
   getBargain,
@@ -19,6 +20,8 @@ import {
   openSession,
   recordBargain,
   recordCommitResult,
+  releaseSealReservation,
+  reserveSealForCommit,
   runWithActorMutex,
   runWithMerchantMutex,
 } from "./merchant/session-state.js";
@@ -131,6 +134,179 @@ clearAllSessions();
   // Unknown session / seal → null, never throws.
   assert.equal(consumeSeal("nope", "x"), null);
   assert.equal(recordBargain("nope", { itemUuid: "i", side: "buy" }), null);
+}
+
+/* ------------------------------------------------------------------ *
+ * Bargain reservations - one exact durable commit owns the seal
+ * ------------------------------------------------------------------ */
+{
+  clearAllSessions();
+  const session = openSession({ merchantId: "m", viewerUserId: "u" });
+  const seal = recordBargain(session.sessionId, {
+    itemUuid: "Item.stock",
+    side: "buy",
+    tier: { id: "success" },
+    deltaPct: -10,
+  });
+  const claim = {
+    itemUuid: "Item.stock",
+    side: "buy",
+    originUserId: "player-1",
+    commitId: "m1-commit-1",
+    requestFingerprint: "fingerprint-1",
+  };
+
+  assert.deepEqual(
+    reserveSealForCommit(session.sessionId, seal.sealId, claim),
+    { ok: true, seal, replay: false },
+    "the first exact claim reserves the seal",
+  );
+  assert.deepEqual(seal.reservedFor, {
+    originUserId: "player-1",
+    commitId: "m1-commit-1",
+    requestFingerprint: "fingerprint-1",
+  });
+  assert.deepEqual(
+    reserveSealForCommit(session.sessionId, seal.sealId, claim),
+    { ok: true, seal, replay: true },
+    "an exact retry replays the existing reservation",
+  );
+
+  for (const conflictingClaim of [
+    { ...claim, originUserId: "player-2" },
+    { ...claim, commitId: "m1-commit-2" },
+    { ...claim, requestFingerprint: "fingerprint-2" },
+  ]) {
+    assert.deepEqual(
+      reserveSealForCommit(session.sessionId, seal.sealId, conflictingClaim),
+      { ok: false, reason: "bargain-expired" },
+      "a competing commit cannot claim the reserved seal",
+    );
+  }
+
+  for (const invalidScope of [
+    { sessionId: "missing-session", sealId: seal.sealId, claim },
+    { sessionId: session.sessionId, sealId: "missing-seal", claim },
+    {
+      sessionId: session.sessionId,
+      sealId: seal.sealId,
+      claim: { ...claim, itemUuid: "Item.other" },
+    },
+    {
+      sessionId: session.sessionId,
+      sealId: seal.sealId,
+      claim: { ...claim, side: "sell" },
+    },
+    {
+      sessionId: session.sessionId,
+      sealId: seal.sealId,
+      claim: { ...claim, requestFingerprint: "" },
+    },
+  ]) {
+    assert.deepEqual(
+      reserveSealForCommit(
+        invalidScope.sessionId,
+        invalidScope.sealId,
+        invalidScope.claim,
+      ),
+      { ok: false, reason: "bargain-expired" },
+      "missing or mismatched reservation scope fails closed",
+    );
+  }
+
+  assert.equal(
+    consumeReservedSeal(session.sessionId, seal.sealId, {
+      ...claim,
+      commitId: "m1-commit-2",
+    }),
+    null,
+    "a competing commit cannot consume the reservation",
+  );
+  assert.equal(
+    getBargain(session.sessionId, claim.itemUuid, claim.side),
+    seal,
+    "a failed consume leaves the reservation intact",
+  );
+  assert.equal(
+    consumeReservedSeal(session.sessionId, seal.sealId, claim),
+    seal,
+    "the exact owner can consume the reservation",
+  );
+  assert.equal(
+    getBargain(session.sessionId, claim.itemUuid, claim.side),
+    null,
+    "consuming the reservation burns the bargain seal",
+  );
+  assert.equal(
+    consumeReservedSeal(session.sessionId, seal.sealId, claim),
+    null,
+    "a consumed reservation cannot be replayed from transient state",
+  );
+}
+
+{
+  clearAllSessions();
+  const session = openSession({ merchantId: "m", viewerUserId: "u" });
+  const seal = recordBargain(session.sessionId, {
+    itemUuid: "Item.stock",
+    side: "sell",
+    tier: { id: "success" },
+    deltaPct: 10,
+  });
+  const claim = {
+    itemUuid: "Item.stock",
+    side: "sell",
+    originUserId: "player-1",
+    commitId: "m1-commit-3",
+    requestFingerprint: "fingerprint-3",
+  };
+  reserveSealForCommit(session.sessionId, seal.sealId, claim);
+
+  assert.equal(
+    releaseSealReservation(session.sessionId, seal.sealId, {
+      ...claim,
+      originUserId: "player-2",
+    }),
+    false,
+    "a competing identity cannot release the reservation",
+  );
+  assert.equal(
+    releaseSealReservation(session.sessionId, seal.sealId, claim),
+    true,
+    "the exact owner can release the reservation",
+  );
+  assert.equal(
+    getBargain(session.sessionId, claim.itemUuid, claim.side),
+    seal,
+    "releasing the reservation keeps the bargain seal",
+  );
+  assert.equal(seal.reservedFor, undefined);
+  assert.equal(
+    releaseSealReservation(session.sessionId, seal.sealId, claim),
+    false,
+    "an unreserved seal has no exact claim to release",
+  );
+
+  const nextClaim = {
+    ...claim,
+    commitId: "m1-commit-4",
+    requestFingerprint: "fingerprint-4",
+  };
+  assert.deepEqual(
+    reserveSealForCommit(session.sessionId, seal.sealId, nextClaim),
+    { ok: true, seal, replay: false },
+    "a released seal can be reserved by a new commit",
+  );
+
+  const legacyConsume = consumeSeal(session.sessionId, seal.sealId, {
+    itemUuid: claim.itemUuid,
+    side: claim.side,
+  });
+  assert.equal(
+    legacyConsume,
+    seal,
+    "the existing consumeSeal API retains its one-shot behavior",
+  );
 }
 
 /* ------------------------------------------------------------------ *

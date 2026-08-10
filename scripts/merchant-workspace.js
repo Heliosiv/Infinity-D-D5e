@@ -54,6 +54,7 @@ import {
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
+  deliverDurableMerchantTerminalResult,
   MERCHANT_EVENTS,
   pushCloseAllMerchantSessions,
   pushCloseAllSessionsFor,
@@ -62,7 +63,12 @@ import {
   pushReopenMerchantSessions,
   subscribe,
 } from "./merchant/socket.js";
+import {
+  listDurableMerchantTransactionsNeedingReview,
+  recheckDurableMerchantTransaction,
+} from "./merchant/transaction-coordinator.js";
 import { listSessions } from "./merchant/session-state.js";
+import { readMerchantActorBoundary } from "./merchant/transaction.js";
 import { loadMerchantAccessState } from "./merchant/global-access.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
@@ -82,6 +88,11 @@ import {
 } from "./infinity-app.js";
 import { runAsFullGM } from "./permissions.js";
 import { isAuthoritativeGM } from "./socket-authority.js";
+import {
+  ensureMerchantTabLeadership,
+  hasMerchantTabLeadership,
+  MERCHANT_TAB_LEADERSHIP_HOOK,
+} from "./merchant/tab-leadership.js";
 import {
   PRIVATE_STATE_CHANGED_HOOK,
   onPrivateStateChanged,
@@ -105,6 +116,54 @@ const SCROLL_TARGETS = [
   { key: "list", selector: ".mw-list" },
   { key: "edit", selector: ".mw-edit" },
 ];
+const MERCHANT_WRITE_ACTIONS = new Set([
+  "newMerchant",
+  "save",
+  "deleteMerchant",
+  "duplicateMerchant",
+  "addFromPack",
+  "marketTier",
+  "generateStock",
+  "regenerateStock",
+  "copyStockToBuyFilter",
+  "clearInventory",
+  "restock",
+  "pickArt",
+  "openSession",
+  "closeSession",
+  "closeAllSessions",
+  "reopenSessions",
+  "invRemove",
+  "recheckTransaction",
+]);
+
+function requireMerchantWriteAuthority(action) {
+  return function (...args) {
+    if (!isAuthoritativeGM() || !hasMerchantTabLeadership()) {
+      globalThis.ui?.notifications?.warn?.(
+        "This Merchant workspace is read-only here. Use the active full GM window to make changes.",
+      );
+      if (this?.rendered) this.render(false);
+      return null;
+    }
+    return action.apply(this, args);
+  };
+}
+
+async function confirmMerchantWriteAuthority(app) {
+  if (
+    !isAuthoritativeGM() ||
+    (await ensureMerchantTabLeadership()) !== true ||
+    !hasMerchantTabLeadership()
+  ) {
+    globalThis.ui?.notifications?.warn?.(
+      "Merchant control moved to another GM window while this prompt was open. Nothing changed here.",
+    );
+    if (app?.rendered) app.render(false);
+    return false;
+  }
+  return true;
+}
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -124,26 +183,57 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     },
     position: { width: 1000, height: 720 },
     actions: {
-      newMerchant: MerchantWorkspaceApp._onNewMerchant,
+      newMerchant: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onNewMerchant,
+      ),
       selectMerchant: MerchantWorkspaceApp._onSelectMerchant,
-      save: MerchantWorkspaceApp._onSave,
-      deleteMerchant: MerchantWorkspaceApp._onDeleteMerchant,
-      duplicateMerchant: MerchantWorkspaceApp._onDuplicateMerchant,
-      addFromPack: MerchantWorkspaceApp._onAddFromPack,
-      marketTier: MerchantWorkspaceApp._onMarketTier,
-      generateStock: MerchantWorkspaceApp._onGenerateStock,
-      regenerateStock: MerchantWorkspaceApp._onRegenerateStock,
-      copyStockToBuyFilter: MerchantWorkspaceApp._onCopyStockToBuyFilter,
-      clearInventory: MerchantWorkspaceApp._onClearInventory,
-      restock: MerchantWorkspaceApp._onRestock,
-      pickArt: MerchantWorkspaceApp._onPickArt,
+      save: requireMerchantWriteAuthority(MerchantWorkspaceApp._onSave),
+      deleteMerchant: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onDeleteMerchant,
+      ),
+      duplicateMerchant: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onDuplicateMerchant,
+      ),
+      addFromPack: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onAddFromPack,
+      ),
+      marketTier: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onMarketTier,
+      ),
+      generateStock: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onGenerateStock,
+      ),
+      regenerateStock: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onRegenerateStock,
+      ),
+      copyStockToBuyFilter: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onCopyStockToBuyFilter,
+      ),
+      clearInventory: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onClearInventory,
+      ),
+      restock: requireMerchantWriteAuthority(MerchantWorkspaceApp._onRestock),
+      pickArt: requireMerchantWriteAuthority(MerchantWorkspaceApp._onPickArt),
       previewSession: MerchantWorkspaceApp._onPreviewSession,
-      openSession: MerchantWorkspaceApp._onOpenSession,
-      closeSession: MerchantWorkspaceApp._onCloseSession,
-      closeAllSessions: MerchantWorkspaceApp._onCloseAllSessions,
-      reopenSessions: MerchantWorkspaceApp._onReopenSessions,
-      invRemove: MerchantWorkspaceApp._onInvRemove,
+      openSession: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onOpenSession,
+      ),
+      closeSession: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onCloseSession,
+      ),
+      closeAllSessions: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onCloseAllSessions,
+      ),
+      reopenSessions: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onReopenSessions,
+      ),
+      invRemove: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onInvRemove,
+      ),
       openInventoryItem: MerchantWorkspaceApp._onOpenInventoryItem,
+      recheckTransaction: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onRecheckTransaction,
+      ),
       selectSection: navigateToAppSection,
     },
   };
@@ -167,6 +257,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._selectedId = null;
     this._saveStatus = "All changes saved";
+    this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
     // Re-render on stock changes AND on session open/close so the "Active
     // Sessions" list stays accurate even when a player closes their own window.
@@ -176,9 +267,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       subscribe(MERCHANT_EVENTS.SESSION_CLOSE, () => this.render(false)),
     ];
     this._privateStateHookId = onPrivateStateChanged((payload) => {
-      if (!payload?.keys?.includes?.("merchantAccess")) return;
+      if (
+        !payload?.keys?.includes?.("merchantAccess") &&
+        !payload?.keys?.includes?.("merchantTransactions")
+      ) {
+        return;
+      }
       if (this.rendered) this.render(false);
     });
+    this._tabLeadershipHookId = globalThis.Hooks?.on?.(
+      MERCHANT_TAB_LEADERSHIP_HOOK,
+      () => {
+        if (this.rendered) this.render(false);
+      },
+    );
   }
 
   _onClose(options) {
@@ -198,12 +300,20 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       );
       this._privateStateHookId = null;
     }
+    if (this._tabLeadershipHookId != null) {
+      globalThis.Hooks?.off?.(
+        MERCHANT_TAB_LEADERSHIP_HOOK,
+        this._tabLeadershipHookId,
+      );
+      this._tabLeadershipHookId = null;
+    }
     MerchantWorkspaceApp._instance = null;
   }
 
   /* -------------------- context -------------------- */
 
   async _prepareContext() {
+    await ensureMerchantTabLeadership();
     const merchants = loadMerchants();
     const merchantAccess = loadMerchantAccessState();
     const allActiveSessions = listSessions();
@@ -323,6 +433,52 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
           }))
       : [];
 
+    const canManageMerchants =
+      isAuthoritativeGM() && hasMerchantTabLeadership();
+    this._reviewIdentities.clear();
+    const transactionReviews =
+      listDurableMerchantTransactionsNeedingReview().map((record, index) => {
+        const actionId = `review-${index}`;
+        this._reviewIdentities.set(actionId, {
+          originUserId: record.originUserId,
+          commitId: record.commitId,
+          requestFingerprint: record.requestFingerprint,
+        });
+        const actor = globalThis.game?.actors?.get?.(record.actor.actorId);
+        const currentMerchant = findMerchant(record.merchant.merchantId);
+        const actorRead = readMerchantActorBoundary(actor, record.actor.itemId);
+        const merchantName =
+          currentMerchant?.name ??
+          record.merchant.before?.name ??
+          record.merchant.merchantId;
+        return {
+          actionId,
+          sideLabel: record.side === "sell" ? "Sale" : "Purchase",
+          itemName: record.receipt.itemName,
+          qty: record.receipt.qty,
+          totalGp: Number(record.receipt.totalGp).toFixed(2),
+          playerLabel: lookupUserName(record.originUserId),
+          actorLabel: actor?.name ?? record.actor.actorId,
+          merchantLabel: merchantName,
+          reasonLabel: merchantReviewReasonLabel(record.review.reason),
+          actorStateLabel: merchantReviewStateLabel(record.review.actorState),
+          merchantStateLabel: merchantReviewStateLabel(
+            record.review.merchantState,
+          ),
+          checkedAtLabel: formatReviewTimestamp(record.review.at),
+          actorWalletPlanLabel: `${formatReviewWallet(record.actor.before.wallet)} → ${formatReviewWallet(record.actor.after.wallet)}`,
+          actorItemPlanLabel: `${formatReviewItem(record.actor.before.item)} → ${formatReviewItem(record.actor.after.item)}`,
+          actorCurrentLabel: actorRead?.ok
+            ? `${formatReviewWallet(actorRead.boundary.wallet)}; ${formatReviewItem(actorRead.boundary.item)}`
+            : "unavailable",
+          merchantGoldPlanLabel: `${formatReviewGold(record.merchant.before)} → ${formatReviewGold(record.merchant.after)}`,
+          merchantStockPlanLabel: `${formatReviewStock(record.merchant.before, record.request.itemUuid)} → ${formatReviewStock(record.merchant.after, record.request.itemUuid)}`,
+          merchantCurrentLabel: currentMerchant
+            ? `${formatReviewGold(currentMerchant)}; ${formatReviewStock(currentMerchant, record.request.itemUuid)}`
+            : "unavailable",
+          canRecheck: canManageMerchants,
+        };
+      });
     return {
       moduleId: MODULE_ID,
       hasMerchants: merchants.length > 0,
@@ -355,6 +511,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       buysAnything,
       inventoryRows,
       activeSessions,
+      transactionReviews,
+      hasTransactionReviews: transactionReviews.length > 0,
+      canManageMerchants,
+      merchantAuthorityReason: canManageMerchants
+        ? ""
+        : isAuthoritativeGM()
+          ? "This window is read-only because another tab for this GM account owns Merchant changes. Close the other tab or wait for leadership to transfer."
+          : "This window is read-only. Make Merchant changes from the active full GM window.",
       merchantAccessClosed: merchantAccess.closed,
       merchantAccessOpen: !merchantAccess.closed,
       merchantAccessStatusClass: merchantAccess.closed
@@ -370,12 +534,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       globalActiveSessionCountIsOne: allActiveSessions.length === 1,
       suspendedSessionCount: merchantAccess.suspendedSessions.length,
       suspendedSessionCountIsOne: merchantAccess.suspendedSessions.length === 1,
+      merchantReopenInterrupted:
+        !merchantAccess.closed && merchantAccess.suspendedSessions.length > 0,
       canOpenSession:
         Boolean(selected) &&
         !merchantAccess.closed &&
         selected.allowedUserIds.length > 0 &&
         Boolean(globalThis.game?.users?.activeGM) &&
-        isAuthoritativeGM(),
+        canManageMerchants,
       // Why the Open Session button is disabled, so the button can say so.
       openSessionReason: !selected
         ? "Select a merchant first."
@@ -385,7 +551,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
             ? "Add at least one Allowed Player to open a session."
             : !globalThis.game?.users?.activeGM
               ? "An active GM must be online to host."
-              : !isAuthoritativeGM()
+              : !canManageMerchants
                 ? "Only the active full GM can host a live session."
                 : "",
       saveStatus: this._saveStatus,
@@ -433,9 +599,23 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     // Honor the existing animation + rarity-glow client settings.
     applyVisualPrefs(this.element, "mw-");
 
-    this._wireFormChange();
-    this._wireInventoryInputs();
-    this._wireDropZone();
+    if (context?.canManageMerchants) {
+      this._wireFormChange();
+      this._wireInventoryInputs();
+      this._wireDropZone();
+    } else {
+      for (const control of this.element?.querySelectorAll?.(
+        '[data-form="merchant-edit"] input, [data-form="merchant-edit"] textarea, [data-form="merchant-edit"] select',
+      ) ?? []) {
+        control.disabled = true;
+      }
+      for (const control of this.element?.querySelectorAll?.("[data-action]") ??
+        []) {
+        if (MERCHANT_WRITE_ACTIONS.has(control.dataset?.action)) {
+          control.disabled = true;
+        }
+      }
+    }
     this._wireInventorySearch();
 
     if (this.element) {
@@ -722,6 +902,46 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
     this.render(false);
   }
 
+  static async _onRecheckTransaction(_event, target) {
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    const identity = this._reviewIdentities.get(
+      String(target?.dataset?.reviewActionId ?? ""),
+    );
+    if (!identity) {
+      notify(
+        "warn",
+        "That recovery card is stale. The Merchant workspace has been refreshed.",
+      );
+      this.render(false);
+      return;
+    }
+    const outcome = await recheckDurableMerchantTransaction(identity);
+    if (outcome?.status === "terminal") {
+      await deliverDurableMerchantTerminalResult(outcome);
+      notify(
+        "info",
+        "The transaction matched a safe checkpoint and finished normally.",
+      );
+    } else if (outcome?.status === "needs-review") {
+      notify(
+        "warn",
+        outcome.guidance ??
+          "The canonical data still does not match a safe checkpoint. Correct it manually, then Recheck again.",
+      );
+    } else if (outcome?.status === "authority-lost") {
+      notify(
+        "warn",
+        "Merchant control moved before the recheck finished. Nothing was forced; use the active Merchant window.",
+      );
+    } else {
+      notify(
+        "warn",
+        "The transaction could not be safely rechecked yet. Its review record remains pinned.",
+      );
+    }
+    this.render(false);
+  }
+
   static async _onDuplicateMerchant() {
     if (!this._selectedId) return;
     const merchant = findMerchant(this._selectedId);
@@ -771,8 +991,10 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       rejectClose: false,
     });
     if (!confirmed) return;
-    pushCloseAllSessionsFor(this._selectedId);
-    await deleteMerchant(this._selectedId);
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    const deletedId = this._selectedId;
+    await deleteMerchant(deletedId);
+    pushCloseAllSessionsFor(deletedId);
     this._selectedId = null;
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     this.render(false);
@@ -1089,6 +1311,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         ? [merchant.allowedUserIds[0]]
         : await promptPlayerPicker(merchant);
     if (!picked || picked.length === 0) return;
+    if (!(await confirmMerchantWriteAuthority(this))) return;
     // A picker can remain open while another GM edits this merchant. Reload the
     // canonical record before opening anything so a revoked player never gets a
     // session (or a stale merchant projection) from the pre-picker snapshot.
@@ -1170,6 +1393,13 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       this.render(false);
       return;
     }
+    if (current.suspendedSessions.length > 0) {
+      ui.notifications?.warn(
+        "Finish restoring the saved Merchant sessions before closing all shops again.",
+      );
+      this.render(false);
+      return;
+    }
 
     const activeCount = listSessions().length;
     const confirmed = await confirmInfinityDialog({
@@ -1181,6 +1411,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
       rejectClose: false,
     });
     if (!confirmed) return;
+    if (!(await confirmMerchantWriteAuthority(this))) return;
 
     try {
       const result = await pushCloseAllMerchantSessions();
@@ -1202,13 +1433,14 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
 
   static async _onReopenSessions() {
     const current = loadMerchantAccessState();
-    if (!current.closed) {
+    if (!current.closed && current.suspendedSessions.length === 0) {
       ui.notifications?.info("Merchant access is already open.");
       this.render(false);
       return;
     }
 
     try {
+      if (!(await confirmMerchantWriteAuthority(this))) return;
       const result = await pushReopenMerchantSessions();
       playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
       const skipped = result.skippedCount
@@ -1291,6 +1523,76 @@ function lookupUserName(userId) {
   return (
     globalThis.game?.users?.get?.(userId)?.name ?? userId ?? "Unknown User"
   );
+}
+
+function merchantReviewStateLabel(state) {
+  return (
+    {
+      before: "planned before state",
+      after: "planned after state",
+      partial: "partly applied",
+      both: "unchanged in this plan",
+      "third-state": "does not match either checkpoint",
+    }[state] ?? "unknown state"
+  );
+}
+
+function merchantReviewReasonLabel(reason) {
+  return (
+    {
+      "canonical-state-mismatch":
+        "Campaign data does not match the saved before or after checkpoint.",
+      "impossible-write-order":
+        "The Actor and Merchant changes appear in an unsafe order.",
+      "actor-state-regressed":
+        "The Actor no longer matches the checkpoint already recorded.",
+      "malformed-observation":
+        "The canonical Actor or Merchant data could not be read safely.",
+    }[reason] ?? `Recovery is pinned: ${String(reason || "unknown reason")}.`
+  );
+}
+
+function formatReviewTimestamp(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value < 1) return "time unavailable";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return "time unavailable";
+  }
+}
+
+function formatReviewWallet(wallet) {
+  const parts = ["pp", "gp", "ep", "sp", "cp"]
+    .map((denomination) => [denomination, Number(wallet?.[denomination]) || 0])
+    .filter(([, amount]) => amount > 0)
+    .map(([denomination, amount]) => `${amount} ${denomination}`);
+  return parts.length > 0 ? parts.join(", ") : "0 coins";
+}
+
+function formatReviewItem(item) {
+  if (!item) return "item absent";
+  const quantity = Number(item.system?.quantity);
+  return Number.isFinite(quantity)
+    ? `item present (qty ${quantity})`
+    : "item present";
+}
+
+function formatReviewGold(merchant) {
+  const value = merchant?.goldOnHand;
+  return value == null || value === ""
+    ? "unlimited merchant gold"
+    : `${Number(value).toFixed(2)} gp merchant gold`;
+}
+
+function formatReviewStock(merchant, itemUuid) {
+  const row = merchant?.items?.find?.(
+    (candidate) => String(candidate?.uuid ?? "") === String(itemUuid ?? ""),
+  );
+  if (!row) return "stock row absent";
+  return row.unlimited
+    ? "stock unlimited"
+    : `stock qty ${Math.max(0, Number(row.qty) || 0)}`;
 }
 
 function readFormFields(form) {

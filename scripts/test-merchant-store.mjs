@@ -6,6 +6,7 @@ import {
   applyPreviewBuy,
   applyPreviewSell,
   buildMerchantBargainTiers,
+  canSelfOpen,
   clearInventory,
   computeBuyPriceGp,
   computeSellPriceGp,
@@ -33,6 +34,7 @@ import {
   restockAll,
   roundGp,
   saveMerchants,
+  updateMerchantPrivateState,
   upsertInventoryRow,
   AMMO_STACK_SIZE,
 } from "./merchant/store.js";
@@ -497,24 +499,48 @@ import {
 }
 
 /* ------------------------------------------------------------------ *
- * isUserAllowed — GMs are never "allowed" players
+ * Merchant access — only full role-4 GMs are excluded
  * ------------------------------------------------------------------ */
 {
-  const merchant = normalizeMerchant({ allowedUserIds: ["alice", "gm-1"] });
-  // No game stubbed → can't resolve GM, falls back to list membership.
+  const merchant = normalizeMerchant({
+    allowedUserIds: ["alice", "assistant-1", "gm-1"],
+    selfServiceMode: "open",
+  });
+  // No game stubbed → can't resolve a full GM, so list membership applies.
   assert.equal(isUserAllowed(merchant, "alice"), true);
 
   const savedGame = globalThis.game;
+  const savedConst = globalThis.CONST;
+  globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
   globalThis.game = {
     users: {
-      get: (id) => (id === "gm-1" ? { isGM: true } : { isGM: false }),
+      get: (id) => {
+        if (id === "gm-1") return { isGM: true, role: 4 };
+        if (id === "assistant-1") return { isGM: true, role: 3 };
+        return { isGM: false, role: 1 };
+      },
     },
   };
   try {
     assert.equal(
       isUserAllowed(merchant, "gm-1"),
       false,
-      "a GM id is rejected even when listed in allowedUserIds",
+      "a full role-4 GM is rejected even when listed in allowedUserIds",
+    );
+    assert.equal(
+      canSelfOpen(merchant, "gm-1"),
+      false,
+      "a full role-4 GM cannot self-open an otherwise reachable shop",
+    );
+    assert.equal(
+      isUserAllowed(merchant, "assistant-1"),
+      true,
+      "an allowed role-3 Assistant is not mistaken for a full GM",
+    );
+    assert.equal(
+      canSelfOpen(merchant, "assistant-1"),
+      true,
+      "an allowed role-3 Assistant remains eligible for downstream ownership checks",
     );
     assert.equal(
       isUserAllowed(merchant, "alice"),
@@ -524,6 +550,8 @@ import {
   } finally {
     if (savedGame === undefined) delete globalThis.game;
     else globalThis.game = savedGame;
+    if (savedConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = savedConst;
   }
 }
 
@@ -1027,12 +1055,19 @@ import {
       },
     };
     const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    const secondaryGm = {
+      id: "gm-b",
+      isGM: true,
+      role: 4,
+      active: true,
+    };
     globalThis.game = {
       ready: true,
       user: gm,
       users: {
         activeGM: gm,
-        get: (id) => (id === gm.id ? gm : null),
+        get: (id) =>
+          id === gm.id ? gm : id === secondaryGm.id ? secondaryGm : null,
       },
       journal: {
         find: (predicate) => (predicate(store) ? store : null),
@@ -1057,6 +1092,105 @@ import {
     };
 
     assert.equal(await initializePrivateState(), true);
+    const writesBeforeAtomicState = store.updateCalls.length;
+    const atomicState = await updateMerchantPrivateState(
+      ({ merchants, merchantTransactions }) => ({
+        merchants: [
+          ...merchants,
+          { id: "atomic-merchant", name: "Atomic Merchant" },
+        ],
+        merchantTransactions: {
+          ...merchantTransactions,
+          revision: merchantTransactions.revision + 1,
+        },
+        result: "atomic-result",
+      }),
+      { authorizeWrite: () => true },
+    );
+    assert.equal(atomicState.result, "atomic-result");
+    assert.equal(
+      store.updateCalls.length,
+      writesBeforeAtomicState + 1,
+      "merchant and ledger state share one Journal update",
+    );
+    const atomicWrite = store.updateCalls.at(-1);
+    assert.ok(Array.isArray(atomicWrite["flags.infinity-dnd5e.merchants"]));
+    assert.deepEqual(
+      atomicWrite["flags.infinity-dnd5e.merchantTransactions"].records,
+      [],
+    );
+    assert.equal(flags.merchants[0].id, "atomic-merchant");
+    assert.equal(flags.merchantTransactions.revision, 1);
+
+    const writesBeforeMalformedLedger = store.updateCalls.length;
+    await assert.rejects(
+      updateMerchantPrivateState(({ merchants, merchantTransactions }) => ({
+        merchants,
+        merchantTransactions: {
+          ...merchantTransactions,
+          revision: merchantTransactions.revision + 1,
+          records: [{ key: "not-a-complete-ledger-record" }],
+        },
+      })),
+      (error) => error?.code === "MERCHANT_LEDGER_MALFORMED",
+    );
+    assert.equal(store.updateCalls.length, writesBeforeMalformedLedger);
+
+    const writesBeforeAuthorityGuard = store.updateCalls.length;
+    await assert.rejects(
+      updateMerchantPrivateState(
+        ({ merchants, merchantTransactions }) => ({
+          merchants,
+          merchantTransactions,
+        }),
+        { authorizeWrite: () => false },
+      ),
+      /MerchantWriteAuthorityLost/,
+    );
+    assert.equal(store.updateCalls.length, writesBeforeAuthorityGuard);
+
+    const ledgerBeforeOrdinaryWrite = structuredClone(
+      flags.merchantTransactions,
+    );
+    const writesBeforeOrdinaryWrite = store.updateCalls.length;
+    await saveMerchants(flags.merchants);
+    assert.equal(store.updateCalls.length, writesBeforeOrdinaryWrite + 1);
+    assert.equal(
+      flags.merchantTransactions.revision,
+      ledgerBeforeOrdinaryWrite.revision + 1,
+    );
+    assert.notEqual(
+      flags.merchantTransactions.writeToken,
+      ledgerBeforeOrdinaryWrite.writeToken,
+      "ordinary Merchant edits rotate the durable transaction fence",
+    );
+    assert.ok(
+      Object.hasOwn(
+        store.updateCalls.at(-1),
+        "flags.infinity-dnd5e.merchantTransactions",
+      ),
+    );
+
+    const writesBeforeSecondaryGm = store.updateCalls.length;
+    globalThis.game.user = secondaryGm;
+    await assert.rejects(
+      saveMerchants(flags.merchants),
+      /MerchantWriteAuthorityLost/,
+    );
+    await assert.rejects(
+      updateMerchantPrivateState(({ merchants, merchantTransactions }) => ({
+        merchants,
+        merchantTransactions,
+      })),
+      /MerchantWriteAuthorityLost|merchantTransactions/,
+    );
+    assert.equal(
+      store.updateCalls.length,
+      writesBeforeSecondaryGm,
+      "a secondary full GM cannot mutate Merchant records or the ledger",
+    );
+    globalThis.game.user = gm;
+
     await setPrivateState("merchants", [
       { id: "future-merchant", version: 2, name: "Keep Intact" },
     ]);

@@ -2018,6 +2018,8 @@ function merchantWorkspaceContext() {
       },
     ],
     activeSessions: [{ sessionId: "s-1", userLabel: "Alice" }],
+    canManageMerchants: true,
+    merchantAuthorityReason: "",
     merchantAccessClosed: false,
     merchantAccessOpen: true,
     merchantAccessStatusClass: "is-open",

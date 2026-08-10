@@ -257,6 +257,51 @@ function purchaseSource(operationId, quantity = 2) {
   );
 }
 
+{
+  const actor = makeActor();
+  const snapshot = purchaseSource("session-a:create-authority-pre");
+  const result = await createActorItemVerified(actor, snapshot, {
+    authorizeWrite: () => "true",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(
+    actor.createCalls.length,
+    0,
+    "only an exact true authority result permits item creation",
+  );
+  assert.equal(findActorItem(actor, snapshot._id), null);
+}
+
+{
+  const actor = makeActor();
+  const snapshot = purchaseSource("session-a:create-authority-post");
+  let authorized = true;
+  const create = actor.createEmbeddedDocuments.bind(actor);
+  actor.createEmbeddedDocuments = async (...args) => {
+    const returned = await create(...args);
+    authorized = false;
+    return returned;
+  };
+  const result = await createActorItemVerified(actor, snapshot, {
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(actor.createCalls.length, 1);
+  assert.equal(
+    actor.deleteCalls.length,
+    0,
+    "post-write authority loss never attempts an unguarded delete",
+  );
+  assert.ok(
+    findActorItem(actor, snapshot._id),
+    "the possibly applied create remains available for durable reconciliation",
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Verified deletes
  * ------------------------------------------------------------------ */
@@ -325,6 +370,48 @@ function purchaseSource(operationId, quantity = 2) {
   assert.equal(result.reason, "delete-precondition-failed");
   assert.equal(actor.deleteCalls.length, 0);
   assert.ok(findActorItem(actor, source._id));
+}
+
+{
+  const actor = makeActor();
+  const source = itemSource({ id: "delete-authority-pre", quantity: 4 });
+  actor.seed(source);
+  const result = await deleteActorItemVerified(actor, source._id, {
+    expectedBeforeQuantity: 4,
+    authorizeWrite: () => false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(actor.deleteCalls.length, 0);
+  assert.ok(findActorItem(actor, source._id));
+}
+
+{
+  const actor = makeActor();
+  const source = itemSource({ id: "delete-authority-post", quantity: 4 });
+  actor.seed(source);
+  let authorized = true;
+  const remove = actor.deleteEmbeddedDocuments.bind(actor);
+  actor.deleteEmbeddedDocuments = async (...args) => {
+    const returned = await remove(...args);
+    authorized = false;
+    return returned;
+  };
+  const result = await deleteActorItemVerified(actor, source._id, {
+    expectedBeforeQuantity: 4,
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(actor.deleteCalls.length, 1);
+  assert.equal(
+    actor.createCalls.length,
+    0,
+    "post-write authority loss never attempts an unguarded recreate",
+  );
+  assert.equal(findActorItem(actor, source._id), null);
 }
 
 /* ------------------------------------------------------------------ *
@@ -396,6 +483,47 @@ function purchaseSource(operationId, quantity = 2) {
   assert.equal(result.reason, "quantity-precondition-failed");
   assert.equal(item.updateCalls.length, 0);
   assert.equal(item.system.quantity, 4);
+}
+
+{
+  const actor = makeActor();
+  const item = actor.seed(
+    itemSource({ id: "quantity-authority-pre", quantity: 5 }),
+  );
+  const result = await updateActorItemQuantityVerified(actor, item, 3, {
+    expectedBeforeQuantity: 5,
+    authorizeWrite: () => false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(item.updateCalls.length, 0);
+  assert.equal(item.system.quantity, 5);
+}
+
+{
+  const actor = makeActor();
+  const item = actor.seed(
+    itemSource({ id: "quantity-authority-post", quantity: 5 }),
+  );
+  let authorized = true;
+  const update = item.update.bind(item);
+  item.update = async (...args) => {
+    const returned = await update(...args);
+    authorized = false;
+    return returned;
+  };
+  const result = await updateActorItemQuantityVerified(actor, item, 3, {
+    expectedBeforeQuantity: 5,
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(item.updateCalls.length, 1);
+  assert.equal(actor.createCalls.length, 0);
+  assert.equal(actor.deleteCalls.length, 0);
+  assert.equal(item.system.quantity, 3);
 }
 
 /* ------------------------------------------------------------------ *

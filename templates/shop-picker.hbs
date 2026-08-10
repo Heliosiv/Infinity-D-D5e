@@ -30,6 +30,30 @@
     </div>
   </section>
 
+  {{#if hasSavedTradeReviews}}
+  <section class="sp-review" aria-labelledby="sp-review-heading">
+    <div class="sp-review__head">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+      <div>
+        <h3 id="sp-review-heading">Saved trade warnings</h3>
+        <p>These exact trades are not being retried. Keep each warning until you have reviewed it with the GM.</p>
+      </div>
+    </div>
+    <ul class="sp-review__list">
+      {{#each savedTradeReviews}}
+      <li>
+        <strong>{{summary}}</strong>
+        <span>{{reason}}</span>
+        <small>Received {{receivedAt}}</small>
+        <button type="button" class="sp-btn" data-action="clearReviewedTrade" data-review-action-id="{{actionId}}">
+          <i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Reviewed with GM…
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/if}}
+
   <p class="sp-sr-status" role="status" aria-live="polite" aria-atomic="true">
     {{#if noGm}}Shops are offline. Nothing changed. Retry after a GM reconnects.{{else if loading}}Loading open shops.{{else if requestFailed}}{{else if globallyClosed}}All shops are temporarily closed.{{else if hasPending}}A shop request is waiting for the GM.{{else}}{{shops.length}} shops are available.{{/if}}
   </p>

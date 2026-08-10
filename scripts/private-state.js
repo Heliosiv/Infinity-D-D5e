@@ -17,6 +17,7 @@ import {
 } from "./private-state-recovery-service.js";
 import { SETTING_KEYS } from "./settings.js";
 import { authoritativeGMId, isAuthoritativeGM } from "./socket-authority.js";
+import { normalizeMerchantTransactionLedger } from "./merchant/transaction-ledger.js";
 import { persistedValuesEqual } from "./utils/persisted-data.js";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -26,15 +27,6 @@ export const PRIVATE_STATE_SCHEMA_VERSION = 7;
 const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
-const MERCHANT_TRANSACTION_KEYS = Object.freeze([
-  "version",
-  "revision",
-  "authorityId",
-  "authorityEpoch",
-  "writeToken",
-  "replayFloors",
-  "records",
-]);
 const EMPTY_MERCHANT_TRANSACTIONS = Object.freeze({
   version: 1,
   revision: 0,
@@ -209,37 +201,13 @@ function isValidValue(key, value) {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function isPersistedRecord(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function isValidMerchantTransactions(value) {
+  try {
+    normalizeMerchantTransactionLedger(value);
+    return true;
+  } catch {
     return false;
   }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function isNullablePersistedId(value) {
-  return (
-    value === null ||
-    (typeof value === "string" && value.length > 0 && value.trim() === value)
-  );
-}
-
-function isValidMerchantTransactions(value) {
-  return Boolean(
-    isPersistedRecord(value) &&
-    Reflect.ownKeys(value).length === MERCHANT_TRANSACTION_KEYS.length &&
-    MERCHANT_TRANSACTION_KEYS.every((key) => Object.hasOwn(value, key)) &&
-    value.version === 1 &&
-    Number.isSafeInteger(value.revision) &&
-    value.revision >= 0 &&
-    isNullablePersistedId(value.authorityId) &&
-    isNullablePersistedId(value.authorityEpoch) &&
-    isNullablePersistedId(value.writeToken) &&
-    Array.isArray(value.replayFloors) &&
-    value.replayFloors.every(isPersistedRecord) &&
-    Array.isArray(value.records) &&
-    value.records.every(isPersistedRecord),
-  );
 }
 
 function cleanValue(key, value) {

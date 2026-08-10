@@ -328,6 +328,11 @@ for (const [label, wallet] of [
     4,
     "a post-await authority loss reports the possibly applied canonical state",
   );
+  assert.equal(
+    actor.updateCalls.length,
+    1,
+    "post-write authority loss never attempts an unguarded second write",
+  );
 }
 
 {
@@ -363,6 +368,41 @@ for (const wallet of [{ gp: -1 }, { gp: 1.5 }, { gp: Number.NaN }]) {
   assert.equal(result.ok, true);
   assert.equal(result.before.gp, 10);
   assert.equal(result.after.gp, 7);
+}
+
+{
+  const actor = makeCurrencyActor({ wallet: { gp: 10 } });
+  const result = await deductCurrency(actor, 3, {
+    authorizeWrite: () => false,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, true);
+  assert.equal(actor.updateCalls.length, 0);
+  assert.equal(actor.system.currency.gp, 10);
+}
+
+{
+  const actor = makeCurrencyActor({ wallet: { gp: 10 } });
+  let authorized = true;
+  const update = actor.update.bind(actor);
+  actor.update = async (...args) => {
+    const returned = await update(...args);
+    authorized = false;
+    return returned;
+  };
+  const result = await deductCurrency(actor, 3, {
+    authorizeWrite: () => authorized,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "authority-lost");
+  assert.equal(result.provenUnapplied, false);
+  assert.equal(actor.system.currency.gp, 7);
+  assert.equal(
+    actor.updateCalls.length,
+    1,
+    "deduction authority loss never attempts an unguarded second write",
+  );
 }
 
 for (const amount of [Number.POSITIVE_INFINITY, Number.MAX_VALUE, 0.001]) {

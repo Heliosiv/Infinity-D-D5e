@@ -26,7 +26,7 @@ The main scenario, tier, party or roster, estimated outcome, and **Generate** ac
 
 ## Use GM workspaces
 
-- **Merchant Workspace** separates Basics, Pricing & Bargaining, Stock, Access, and Sessions. The current save state and live-session consequence remain visible. Search the full allowlisted compendium rather than paging through a capped list.
+- **Merchant Workspace** separates Basics, Pricing & Bargaining, Stock, Access, and Sessions. The active full GM can edit and host live trades; other full-GM windows are clearly read-only and may use Preview. Player trade requests and the GM's exact write plan survive reloads, with ambiguous outcomes pinned for review instead of retried blindly. Search the full allowlisted compendium rather than paging through a capped list.
 - **Quartermaster** starts with Today, the recommended next action, supply outlook, and safety warnings. Use Recent Runs for read-only receipts and Setup & Rules for configuration, including creating, copying, ordering, and removing custom regions. Exact resource matches default to a searchable item picker; **Paste an Item UUID** remains available for items from other world or compendium sources.
 - **Downtime Workspace** follows Create, Collect, Lock, Preview, Apply, and Complete. Recovery appears as a separate branch when the authoritative result is uncertain.
 - **Reputation** uses a faction list and detail workspace. Standing changes require the new standing and a reason before the existing authoritative write runs.
@@ -66,6 +66,7 @@ Full GMs can open **Home > Campaign data** to inspect the private campaign store
 - **Loading or busy:** wait for the current authoritative request; duplicate actions stay disabled.
 - **GM offline:** no campaign write was attempted. Reconnect or ask a full GM to sign in, then retry.
 - **Interrupted or uncertain:** do not repeat the action blindly. The window requests canonical state and exposes the existing recovery path when one is available.
+- **Merchant trade review:** the active GM uses the Merchant Workspace card to compare saved and current wallet, item, gold, and stock values, then chooses **Recheck** only after data matches an exact checkpoint. Players keep the warning in **Shops** until it has been reviewed with the GM; clearing that warning changes no campaign data and does not retry the trade.
 - **Validation error:** nothing changed. Correct the named field and submit again.
 - **Success:** the message names the confirmed result and the next available action.
 

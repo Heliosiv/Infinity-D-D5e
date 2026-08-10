@@ -187,6 +187,7 @@ function makeActor(ownerId) {
     },
     testUserPermission: (user) => user?.id === ownerId,
     async rollSkill() {
+      this.rollCalls = (this.rollCalls ?? 0) + 1;
       return { total: 25 };
     },
     async update(changes) {
@@ -788,6 +789,16 @@ try {
       seal.deltaPct,
       -10,
       "success seal lowers the buy price by 10%",
+    );
+    const bargainActor = gm.game.actors.get("actor-p1");
+    assert.equal(bargainActor.rollCalls, 1);
+    await receiveMerchantPayload(bargainFrame, "p1");
+    const replayedSeal = lastOf(player.inbox, MERCHANT_EVENTS.BARGAIN_SEAL);
+    assert.equal(replayedSeal.sealId, seal.sealId);
+    assert.equal(
+      bargainActor.rollCalls,
+      1,
+      "a duplicate bargain frame replays its seal without another roll/chat",
     );
 
     // Player commits the purchase WITH the seal → pays 90, not 100.

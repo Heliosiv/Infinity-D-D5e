@@ -24,6 +24,12 @@ import { openSingleton } from "./infinity-app.js";
 import { isFullGM } from "./permissions.js";
 import { authoritativeGMId } from "./socket-authority.js";
 import {
+  clearMerchantPendingReview,
+  listMerchantPendingReviews,
+} from "./merchant/client-pending.js";
+import { confirmInfinityDialog } from "./dialog-contract.js";
+import { escapeHtml } from "./ui-util.js";
+import {
   getControlledMerchantActors,
   getPreferredMerchantActorId,
   setPreferredMerchantActorId,
@@ -51,6 +57,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     actions: {
       openShop: ShopPickerApp._onOpenShop,
       refresh: ShopPickerApp._onRefresh,
+      clearReviewedTrade: ShopPickerApp._onClearReviewedTrade,
     },
   };
 
@@ -80,6 +87,7 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._query = "";
     this._loadTimer = null; // watchdog so the loading spinner can't hang forever
     this._pending = new Set(); // merchantIds the player is waiting on (knock/entering)
+    this._reviewIdentities = new Map();
     this._unsubs = [
       subscribe(MERCHANT_EVENTS.SHOP_LIST_REPLY, (payload) =>
         this._onShopList(payload),
@@ -221,6 +229,29 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       pending: this._pending.has(s.id),
       actorRequired: !actor,
     }));
+    this._reviewIdentities.clear();
+    let reviewRecords = [];
+    try {
+      reviewRecords = listMerchantPendingReviews();
+    } catch {
+      // A malformed/unavailable client setting stays untouched and invisible;
+      // its storage layer already fails closed rather than guessing.
+    }
+    const savedTradeReviews = reviewRecords.map((record, index) => {
+      const actionId = `saved-review-${index}`;
+      const summary = `${record.context.side === "sell" ? "Sale" : "Purchase"} of ${record.context.qty}x ${record.context.itemName} at ${record.context.merchantName} for quoted ${Number(record.context.totalGp).toFixed(2)} gp`;
+      this._reviewIdentities.set(actionId, {
+        originUserId: record.originUserId,
+        commitId: record.commitId,
+        summary,
+      });
+      return {
+        actionId,
+        summary,
+        receivedAt: formatSavedReviewTime(record.review.receivedAt),
+        reason: savedReviewReason(record.review.reason),
+      };
+    });
     return {
       noGm,
       loading: this._loading && !noGm,
@@ -239,6 +270,8 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         selected: String(candidate.id ?? "") === String(actor?.id ?? ""),
       })),
       query: this._query,
+      savedTradeReviews,
+      hasSavedTradeReviews: savedTradeReviews.length > 0,
     };
   }
 
@@ -334,6 +367,60 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._requestList({ clearPending: true });
     this.render(false);
   }
+
+  static async _onClearReviewedTrade(_event, target) {
+    const identity = this._reviewIdentities.get(
+      String(target?.dataset?.reviewActionId ?? ""),
+    );
+    if (!identity) {
+      ui.notifications?.warn("That saved trade warning is no longer current.");
+      this.render(false);
+      return;
+    }
+    const confirmed = await confirmInfinityDialog({
+      window: {
+        title: "Reviewed with the GM?",
+        icon: "fa-solid fa-clipboard-check",
+      },
+      content: `<p><strong>${escapeHtml(identity.summary)}</strong></p><p>This only removes this device's saved warning. It changes no Actor, inventory, wallet, or shop data, and this trade will not be retried.</p><p>Clear it only after you and the GM have reviewed the campaign state.</p>`,
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    try {
+      const cleared = await clearMerchantPendingReview(
+        identity.originUserId,
+        identity.commitId,
+      );
+      const stillStored = listMerchantPendingReviews().some(
+        (record) =>
+          record.originUserId === identity.originUserId &&
+          record.commitId === identity.commitId,
+      );
+      if (cleared !== true || stillStored) {
+        throw new Error("MerchantReviewClearNotConfirmed");
+      }
+      ui.notifications?.info(
+        "The reviewed warning was removed from this device. Campaign data was not changed.",
+      );
+    } catch {
+      ui.notifications?.warn(
+        "The saved warning could not be removed safely. It remains on this device.",
+      );
+    }
+    this.render(false);
+  }
+}
+
+function formatSavedReviewTime(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value < 1) return "time unavailable";
+  return new Date(value).toLocaleString();
+}
+
+function savedReviewReason(reason) {
+  return reason === "transaction-history-expired"
+    ? "The GM's retained history can no longer prove whether this old trade completed."
+    : "The GM pinned this trade because it may have partially completed.";
 }
 
 /** Resolve only a character this user may legitimately act through. Foundry's

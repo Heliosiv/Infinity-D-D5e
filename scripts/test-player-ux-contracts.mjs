@@ -35,6 +35,23 @@ assert.match(
 );
 assert.match(shopTemplate, /Shopping as/);
 assert.match(shopTemplate, /Nothing changed/);
+assert.match(shopTemplate, /Saved trade warnings/);
+assert.match(shopTemplate, /Reviewed with GM…/);
+assert.match(shopTemplate, /\{\{summary\}\}/);
+assert.match(
+  shopScript,
+  /for quoted \$\{Number\(record\.context\.totalGp\)\.toFixed\(2\)\} gp/,
+);
+assert.match(
+  shopScript,
+  /clearMerchantPendingReview[\s\S]*?stillStored[\s\S]*?Campaign data was not changed/,
+  "saved review clearing is confirmed by exact client readback",
+);
+assert.match(
+  shopScript,
+  /only removes this device's saved warning[\s\S]*?changes no Actor[\s\S]*?will not be retried/,
+  "review confirmation explains its client-only effect",
+);
 assert.match(
   shopScript,
   /emitMerchantEvent\(MERCHANT_EVENTS\.SHOP_REQUEST, \{ merchantId \}\)/,

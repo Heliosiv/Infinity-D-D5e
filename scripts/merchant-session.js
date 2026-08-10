@@ -30,6 +30,7 @@ import {
   subscribe,
   requestMerchantSessionResume,
 } from "./merchant/socket.js";
+import { merchantCommitRequestFingerprint } from "./merchant/transaction-ledger.js";
 import {
   computeBargainOutcome,
   computePassiveBargainPct,
@@ -37,6 +38,16 @@ import {
 } from "./merchant/bargain.js";
 import { itemMatchesBuyFilter } from "./merchant/buy-filter.js";
 import { totalWalletGp, sanitizeWallet } from "./merchant/currency.js";
+import {
+  listMerchantPendingCommits,
+  listMerchantPendingReviews,
+  listMerchantPendingTerminalOutbox,
+  newMerchantCommitId,
+  presentMerchantPendingTerminalOutbox,
+  persistMerchantPendingCommit,
+  resendMerchantPendingCommits,
+  settleMerchantPendingCommitResult,
+} from "./merchant/client-pending.js";
 import { formatCoinBreakdown } from "./loot/hoard-budget.js";
 import { getItemRarity } from "./loot/tag-vocabulary.js";
 import {
@@ -82,14 +93,13 @@ const BARGAIN_SEAL_TIMEOUT_MS = 15000;
 // How long to wait for the GM's commit acknowledgement before warning the player
 // that a buy/sell may not have been recorded (e.g. the GM reloaded mid-trade).
 const COMMIT_ACK_TIMEOUT_MS = 12000;
+const terminalHandlingPromises = new Map();
+const TERMINAL_SETTLEMENT_MEMORY = 100;
+const PERSISTED_REVIEW_STATUS_WINDOW_MS = 750;
+const surfacedPersistedReviewKeys = new Set();
+let persistedReviewSurfaceTimer = null;
 
-let commitCounterSeed = 0;
 let preferredMerchantActorId = "";
-/** A short, unique id correlating a commit emit with its GM acknowledgement. */
-function newCommitId() {
-  commitCounterSeed += 1;
-  return `c${commitCounterSeed}-${Math.random().toString(36).slice(2, 8)}`;
-}
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
@@ -100,6 +110,18 @@ const SCROLL_TARGETS = [
 function isStolenForFencing(item) {
   const data = item?.toObject?.() ?? item;
   return Boolean(data?.flags?.[MODULE_ID]?.stolen);
+}
+
+/** Keep only receipt-needed, JSON-safe bargain data in the reload queue. */
+function pendingSealSnapshot(seal) {
+  if (!seal) return null;
+  return {
+    sealId: seal.sealId,
+    tier: seal.tier?.id ? { id: String(seal.tier.id) } : null,
+    deltaPct: seal.deltaPct,
+    rollTotal: seal.rollTotal,
+    dc: seal.dc,
+  };
 }
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -171,6 +193,8 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       // sandbox has no socket, so force a re-render to reflect the new pick.
       if (previewMode) {
         app._previewActor = previewActor ?? app._previewActor;
+      } else {
+        app._rehydratePendingCommits();
       }
     }
     if (app.rendered) {
@@ -216,6 +240,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this._bargainPending = new Set();
     this._bargainTimers = new Map(); // sealKey → timeout id (seal-wait watchdog)
     this._pendingCommits = new Map(); // commitId → tracked request + watchdog
+    this._pendingPersistenceBlocked = false;
     this._closingFromExternal = false;
     this._userConnectionHook =
       globalThis.Hooks?.on?.("userConnected", (user) => {
@@ -240,11 +265,6 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         ),
       );
       this._unsubscribers.push(
-        subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) =>
-          this._onCommitResult(payload),
-        ),
-      );
-      this._unsubscribers.push(
         subscribe(MERCHANT_EVENTS.SESSION_CLOSE, (payload) => {
           if (payload?.sessionId !== this._sessionId) return;
           if (
@@ -258,6 +278,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         }),
       );
     }
+    if (!this._previewMode) this._rehydratePendingCommits();
   }
 
   get title() {
@@ -379,33 +400,96 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
     this.render(false);
   }
 
-  /**
-   * GM acknowledged (or couldn't record) a buy/sell. On an explicit failure or a
-   * timeout the player is told plainly, so a trade can't half-complete silently
-   * (their sheet changed, the shop didn't). We deliberately do NOT auto-undo the
-   * actor mutation: a merely-slow ack would otherwise double-revert. The GM and
-   * player reconcile manually — rare (mostly a GM reload mid-trade).
-   */
-  async _onCommitResult(payload) {
-    if (!payload || payload.sessionId !== this._sessionId) return;
-    if (
-      payload.targetUserId &&
-      payload.targetUserId !== globalThis.game?.user?.id
-    ) {
-      return;
-    }
-    const ctx = this._pendingCommits.get(payload.commitId);
-    if (!ctx) return;
-    globalThis.clearTimeout?.(ctx.timer);
-    this._pendingCommits.delete(payload.commitId);
-    if (payload.ok) {
-      const totalGp = roundGp(Number(payload.totalGp) || 0);
-      const qty = Math.max(1, Math.floor(Number(payload.qty) || ctx.qty || 1));
-      const unitGp = roundGp(
-        Number(payload.unitGp) || totalGp / Math.max(1, qty),
+  /** Restore this session's unresolved requests from the client setting. */
+  _rehydratePendingCommits() {
+    let records;
+    try {
+      records = listMerchantPendingCommits();
+    } catch {
+      this._pendingPersistenceBlocked = true;
+      ui.notifications?.warn(
+        "Saved merchant requests could not be checked. New trades will not be sent until this browser can read them safely.",
       );
-      const itemName = payload.itemName || ctx.itemName || "item";
-      if (ctx.side === "sell") {
+      return false;
+    }
+    this._pendingPersistenceBlocked = false;
+    const controlledActors = getControlledMerchantActors();
+    for (const record of records) {
+      if (record.payload.sessionId !== this._sessionId) continue;
+      if (this._pendingCommits.has(record.commitId)) continue;
+      const actor = resolvePlayerActor(
+        record.payload.actorId,
+        controlledActors,
+      );
+      this._trackCommit(record.commitId, {
+        ...record.context,
+        eventType: record.eventType,
+        payload: record.payload,
+        actor,
+      });
+    }
+    return true;
+  }
+
+  /** Present one already-persisted terminal result owned by this exact app. */
+  async _presentTerminalCommit(record, payload) {
+    if (!record || payload?.sessionId !== this._sessionId) return false;
+    const ctx = this._pendingCommits.get(record.commitId);
+    if (!ctx) return false;
+    globalThis.clearTimeout?.(ctx.timer);
+    this._pendingCommits.delete(record.commitId);
+
+    if (payload.ok === true) {
+      const totalGp = roundGp(
+        Number.isFinite(Number(payload.totalGp))
+          ? Number(payload.totalGp)
+          : record.context.totalGp,
+      );
+      const qty = Math.max(
+        1,
+        Math.floor(Number(payload.qty) || record.context.qty || 1),
+      );
+      const unitGp = roundGp(
+        Number.isFinite(Number(payload.unitGp))
+          ? Number(payload.unitGp)
+          : totalGp / Math.max(1, qty),
+      );
+      const itemName = payload.itemName || record.context.itemName || "item";
+      const acceptedSeal =
+        payload.sealId && payload.sealId === record.payload.sealId
+          ? record.context.seal
+          : null;
+      const receipt = await postTransactionReceipt({
+        side: record.context.side,
+        actor: ctx.actor,
+        merchant: {
+          id: record.context.merchantId,
+          name: record.context.merchantName,
+        },
+        itemName,
+        qty,
+        unitGp,
+        totalGp,
+        bargainTier: acceptedSeal?.tier ?? null,
+        rollTotal: acceptedSeal?.rollTotal ?? null,
+        dc: acceptedSeal?.dc ?? null,
+        worldId: record.worldId,
+        originUserId: record.originUserId,
+        commitId: record.commitId,
+      });
+      if (!receipt) {
+        playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+        this._appendLog(
+          "pending",
+          `The ${record.context.side === "sell" ? "sale" : "purchase"} completed, but its receipt is still saved for retry.`,
+        );
+        ui.notifications?.warn(
+          "The trade completed, but its receipt could not be posted. The receipt remains saved and will retry safely.",
+        );
+        if (this.rendered) this.render(false);
+        return false;
+      }
+      if (record.context.side === "sell") {
         this._earnedGp = roundGp(this._earnedGp + totalGp);
         playModuleSound(SOUND_EVENTS.MERCHANT_SALE);
         this._appendLog(
@@ -421,32 +505,102 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
         );
       }
       if (ctx.sealKey) this._seals.delete(ctx.sealKey);
-      await postTransactionReceipt({
-        side: ctx.side,
-        actor: ctx.actor,
-        merchant: this._merchant,
-        itemName,
-        qty,
-        unitGp,
-        totalGp,
-        bargainTier: ctx.seal?.tier ?? null,
-        rollTotal: ctx.seal?.rollTotal ?? null,
-        dc: ctx.seal?.dc ?? null,
-      });
       if (this.rendered) this.render(false);
-      return;
+      return true;
     }
+
     playModuleSound(SOUND_EVENTS.WARNING_MUTED);
-    const verb = ctx.side === "sell" ? "sale" : "purchase";
+    if (payload.reason === "bargain-expired" && ctx.sealKey) {
+      this._seals.delete(ctx.sealKey);
+    }
+    const verb = record.context.side === "sell" ? "sale" : "purchase";
     const reason = friendlyTransactionError(payload.reason);
     this._appendLog(
       "fail",
-      `The shop declined your ${verb} of ${ctx.itemName}: ${reason}`,
+      `The shop declined your ${verb} of ${record.context.itemName}: ${reason}`,
     );
     ui.notifications?.warn(
       `The trade was not completed: ${reason} Review the message, then try again when ready.`,
     );
     if (this.rendered) this.render(false);
+    return true;
+  }
+
+  /** Move one uncertain request out of live retry UI while retaining it. */
+  _presentCommitReview(record, review) {
+    if (!record || record.payload.sessionId !== this._sessionId) return false;
+    const ctx = this._pendingCommits.get(record.commitId);
+    if (!ctx) return false;
+    globalThis.clearTimeout?.(ctx.timer);
+    this._pendingCommits.delete(record.commitId);
+    if (ctx.sealKey) this._seals.delete(ctx.sealKey);
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+    const detail = merchantReviewDetail(record);
+    this._appendLog(
+      "fail",
+      `${detail} is uncertain and saved for explicit GM review. Do not retry it.`,
+    );
+    ui.notifications?.warn(merchantReviewWarning(record, review));
+    if (this.rendered) this.render(false);
+    return true;
+  }
+
+  /**
+   * Another tab may win the shared client-setting settlement and present the
+   * one receipt. An exact authenticated result still clears this tab's local
+   * watchdog, but never posts a second receipt or changes campaign data.
+   */
+  _clearCommitHandledElsewhere(payload) {
+    if (payload?.sessionId !== this._sessionId) return false;
+    const ctx = this._pendingCommits.get(payload.commitId);
+    if (!ctx) return false;
+    const expectedFingerprint = merchantCommitRequestFingerprint({
+      type: ctx.eventType,
+      originUserId: payload.targetUserId,
+      ...ctx.payload,
+    });
+    if (payload.requestFingerprint !== expectedFingerprint) return false;
+    globalThis.clearTimeout?.(ctx.timer);
+    this._pendingCommits.delete(payload.commitId);
+    if (
+      (payload.ok === true || payload.reason === "bargain-expired") &&
+      ctx.sealKey
+    ) {
+      this._seals.delete(ctx.sealKey);
+    }
+    this._appendLog(
+      payload.ok === true ? "pending" : "fail",
+      "This trade result was already handled in another open tab.",
+    );
+    if (this.rendered) this.render(false);
+    return true;
+  }
+
+  /** Save and verify an exact retry record before any commit leaves the client. */
+  async _persistCommitRequest(eventType, payload, context) {
+    try {
+      const commitId = newMerchantCommitId();
+      return await persistMerchantPendingCommit({
+        worldId: globalThis.game?.world?.id,
+        originUserId: globalThis.game?.user?.id,
+        commitId,
+        eventType,
+        payload: { ...payload, commitId },
+        context,
+      });
+    } catch {
+      this._pendingPersistenceBlocked = true;
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      this._appendLog(
+        "fail",
+        "Trade not sent — this browser could not save a safe retry record.",
+      );
+      ui.notifications?.warn(
+        "The trade was not sent because this browser could not save it safely. Nothing changed; retry after local storage is available.",
+      );
+      if (this.rendered) this.render(false);
+      return null;
+    }
   }
 
   /** Register before emission so even a synchronous acknowledgement can find
@@ -1135,9 +1289,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ok: unitGp > 0,
       reason: unitGp > 0 ? "" : "no-price",
       itemName: itemObj.name ?? "item",
-      qty: Math.max(1, qty),
+      qty: Math.max(1, Math.floor(Number(qty) || 1)),
       unitGp,
-      totalGp: roundGp(unitGp * Math.max(1, qty)),
+      totalGp: roundGp(unitGp * Math.max(1, Math.floor(Number(qty) || 1))),
       sealId: seal?.sealId ?? null,
     };
     if (!result.ok) {
@@ -1148,36 +1302,44 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this.render(false);
       return;
     }
-    // Tell the GM to update stock + burn seal, and watch for the acknowledgement
-    // so a trade can't silently half-complete if the GM didn't record it.
-    const commitId = newCommitId();
-    const payload = {
-      sessionId: this._sessionId,
-      itemUuid: uuid,
-      qty,
-      sealId: result.sealId,
-      totalGp: result.totalGp,
-      commitId,
-      actorId: actor.id,
-    };
+    // Save the exact retry frame before it can leave this client. A reload can
+    // then resend the same id and payload without creating a second trade.
+    const pending = await this._persistCommitRequest(
+      MERCHANT_EVENTS.COMMIT_PURCHASE,
+      {
+        sessionId: this._sessionId,
+        itemUuid: uuid,
+        qty: result.qty,
+        sealId: result.sealId,
+        totalGp: result.totalGp,
+        actorId: actor.id,
+      },
+      {
+        side: "buy",
+        merchantId: this._merchant.id,
+        merchantName: this._merchant.name,
+        refId: uuid,
+        itemName: result.itemName,
+        qty: result.qty,
+        unitGp: result.unitGp,
+        totalGp: result.totalGp,
+        sealKey,
+        seal: pendingSealSnapshot(seal),
+      },
+    );
+    if (!pending) return;
+    this._pendingPersistenceBlocked = false;
     this._appendLog(
       "pending",
       `Purchase requested: ${result.qty}x ${result.itemName}`,
     );
-    this._trackCommit(commitId, {
-      side: "buy",
-      refId: uuid,
-      eventType: MERCHANT_EVENTS.COMMIT_PURCHASE,
-      payload,
-      itemName: result.itemName,
-      qty: result.qty,
-      unitGp: result.unitGp,
-      totalGp: result.totalGp,
+    this._trackCommit(pending.commitId, {
+      ...pending.context,
+      eventType: pending.eventType,
+      payload: pending.payload,
       actor,
-      seal,
-      sealKey,
     });
-    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_PURCHASE, payload);
+    emitMerchantEvent(pending.eventType, pending.payload);
     this.render(false);
   }
 
@@ -1240,9 +1402,9 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       ok: unitGp > 0,
       reason: unitGp > 0 ? "" : "no-value",
       itemName: ownedItem.name ?? "item",
-      qty: Math.max(1, qty),
+      qty: Math.max(1, Math.floor(Number(qty) || 1)),
       unitGp,
-      totalGp: roundGp(unitGp * Math.max(1, qty)),
+      totalGp: roundGp(unitGp * Math.max(1, Math.floor(Number(qty) || 1))),
       sealId: seal?.sealId ?? null,
     };
     if (!result.ok) {
@@ -1253,34 +1415,42 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       this.render(false);
       return;
     }
-    const commitId = newCommitId();
-    const payload = {
-      sessionId: this._sessionId,
-      itemUuid: itemId,
-      qty,
-      sealId: result.sealId,
-      totalGp: result.totalGp,
-      commitId,
-      actorId: actor.id,
-    };
+    const pending = await this._persistCommitRequest(
+      MERCHANT_EVENTS.COMMIT_SALE,
+      {
+        sessionId: this._sessionId,
+        itemUuid: itemId,
+        qty: result.qty,
+        sealId: result.sealId,
+        totalGp: result.totalGp,
+        actorId: actor.id,
+      },
+      {
+        side: "sell",
+        merchantId: this._merchant.id,
+        merchantName: this._merchant.name,
+        refId: itemId,
+        itemName: result.itemName,
+        qty: result.qty,
+        unitGp: result.unitGp,
+        totalGp: result.totalGp,
+        sealKey,
+        seal: pendingSealSnapshot(seal),
+      },
+    );
+    if (!pending) return;
+    this._pendingPersistenceBlocked = false;
     this._appendLog(
       "pending",
       `Sale requested: ${result.qty}x ${result.itemName}`,
     );
-    this._trackCommit(commitId, {
-      side: "sell",
-      refId: itemId,
-      eventType: MERCHANT_EVENTS.COMMIT_SALE,
-      payload,
-      itemName: result.itemName,
-      qty: result.qty,
-      unitGp: result.unitGp,
-      totalGp: result.totalGp,
+    this._trackCommit(pending.commitId, {
+      ...pending.context,
+      eventType: pending.eventType,
+      payload: pending.payload,
       actor,
-      seal,
-      sealKey,
     });
-    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_SALE, payload);
+    emitMerchantEvent(pending.eventType, pending.payload);
     this.render(false);
   }
 
@@ -1493,6 +1663,287 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
 let autoOpenRegistered = false;
 
+function merchantReviewDetail(record) {
+  const side = record.context.side === "sell" ? "sale" : "purchase";
+  const qty = Math.max(1, Math.floor(Number(record.context.qty) || 1));
+  return `${side} of ${qty}x ${record.context.itemName} at ${record.context.merchantName} for ${Number(record.context.totalGp).toFixed(2)} gp (actor ${record.payload.actorId})`;
+}
+
+function merchantReviewWarning(record, review) {
+  const prefix =
+    review?.reason === "transaction-history-expired"
+      ? "The GM's detailed history no longer proves whether this old trade completed"
+      : "This trade may have partially completed and is pinned for GM review";
+  return `${prefix}: ${merchantReviewDetail(record)}. The exact request is saved for review and will not be retried. Do not repeat it.`;
+}
+
+function exactCommitApp(record) {
+  const app = instances.get(record?.payload?.sessionId);
+  return app?._pendingCommits?.has?.(record?.commitId) ? app : null;
+}
+
+function presentPersistedReview(record, review) {
+  const key = persistedReviewKey(record);
+  if (surfacedPersistedReviewKeys.has(key)) return true;
+  surfacedPersistedReviewKeys.add(key);
+  while (surfacedPersistedReviewKeys.size > TERMINAL_SETTLEMENT_MEMORY) {
+    surfacedPersistedReviewKeys.delete(
+      surfacedPersistedReviewKeys.values().next().value,
+    );
+  }
+  const app = exactCommitApp(record);
+  if (app?._presentCommitReview(record, review)) return true;
+  playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+  ui.notifications?.warn(merchantReviewWarning(record, review));
+  return true;
+}
+
+async function presentHeadlessTerminalCommit(record, payload) {
+  if (payload.ok !== true) {
+    ui.notifications?.warn(
+      `A saved ${record.context.side === "sell" ? "sale" : "purchase"} was declined: ${friendlyTransactionError(payload.reason)}`,
+    );
+    return true;
+  }
+  const qty = Math.max(
+    1,
+    Math.floor(Number(payload.qty) || record.context.qty),
+  );
+  const totalGp = roundGp(
+    Number.isFinite(Number(payload.totalGp))
+      ? Number(payload.totalGp)
+      : record.context.totalGp,
+  );
+  const unitGp = roundGp(
+    Number.isFinite(Number(payload.unitGp))
+      ? Number(payload.unitGp)
+      : totalGp / Math.max(1, qty),
+  );
+  const acceptedSeal =
+    payload.sealId && payload.sealId === record.payload.sealId
+      ? record.context.seal
+      : null;
+  const actor = globalThis.game?.actors?.get?.(record.payload.actorId) ?? null;
+  const receipt = await postTransactionReceipt({
+    side: record.context.side,
+    actor,
+    merchant: {
+      id: record.context.merchantId,
+      name: record.context.merchantName,
+    },
+    itemName: payload.itemName || record.context.itemName,
+    qty,
+    unitGp,
+    totalGp,
+    bargainTier: acceptedSeal?.tier ?? null,
+    rollTotal: acceptedSeal?.rollTotal ?? null,
+    dc: acceptedSeal?.dc ?? null,
+    worldId: record.worldId,
+    originUserId: record.originUserId,
+    commitId: record.commitId,
+  });
+  if (!receipt) {
+    ui.notifications?.warn(
+      "A completed trade receipt could not be posted. It remains saved and will retry safely.",
+    );
+    return false;
+  }
+  ui.notifications?.info(
+    `${record.context.merchantName} completed the saved ${record.context.side === "sell" ? "sale" : "purchase"}.`,
+  );
+  return true;
+}
+
+async function presentTerminalOutboxEntry({ record, terminal }) {
+  const payload = terminal.result;
+  const app = exactCommitApp(record);
+  if (app) return app._presentTerminalCommit(record, payload);
+  return presentHeadlessTerminalCommit(record, payload);
+}
+
+async function presentExactTerminalOutbox(record) {
+  return presentMerchantPendingTerminalOutbox(
+    record.originUserId,
+    record.commitId,
+    { present: presentTerminalOutboxEntry },
+  );
+}
+
+async function handlePersistedCommitResult(payload) {
+  if (
+    !payload?.commitId ||
+    payload.targetUserId !== globalThis.game?.user?.id
+  ) {
+    return false;
+  }
+  const key = `${String(globalThis.game?.world?.id ?? "")}:${payload.targetUserId}:${payload.commitId}`;
+  const existing = terminalHandlingPromises.get(key);
+  if (existing) return existing;
+
+  let operation;
+  operation = (async () => {
+    try {
+      const settlement = await settleMerchantPendingCommitResult(payload);
+      if (settlement.status === "mismatch") {
+        ui.notifications?.warn(
+          "A merchant result did not match its saved trade. The request remains stored for a safe retry.",
+        );
+        return false;
+      }
+      if (
+        settlement.status === "quarantined" ||
+        settlement.status === "review"
+      ) {
+        return presentPersistedReview(settlement.record, settlement.review);
+      }
+      if (
+        settlement.status !== "terminal-outbox" &&
+        settlement.status !== "missing"
+      ) {
+        return false;
+      }
+      if (settlement.status === "missing") {
+        return (
+          instances
+            .get(payload.sessionId)
+            ?._clearCommitHandledElsewhere(payload) ?? false
+        );
+      }
+      const candidate = settlement.record ?? {
+        originUserId: payload.targetUserId,
+        commitId: payload.commitId,
+      };
+      const presented = await presentExactTerminalOutbox(candidate);
+      return presented.status === "presented";
+    } catch {
+      ui.notifications?.warn(
+        "The GM answered, but this browser could not safely store or present the result. The exact trade remains saved for recovery.",
+      );
+      return false;
+    }
+  })().finally(() => {
+    if (terminalHandlingPromises.get(key) === operation) {
+      terminalHandlingPromises.delete(key);
+    }
+  });
+  terminalHandlingPromises.set(key, operation);
+  while (terminalHandlingPromises.size > TERMINAL_SETTLEMENT_MEMORY) {
+    terminalHandlingPromises.delete(
+      terminalHandlingPromises.keys().next().value,
+    );
+  }
+  return operation;
+}
+
+export async function drainPersistedMerchantTerminalOutbox() {
+  let records;
+  try {
+    records = listMerchantPendingTerminalOutbox();
+  } catch {
+    return false;
+  }
+  for (const record of records) {
+    try {
+      await presentExactTerminalOutbox(record);
+    } catch {
+      // The exact outbox entry remains durable for the next reload/reconnect.
+    }
+  }
+  return true;
+}
+
+function persistedReviewKey(record) {
+  return `${record.worldId}:${record.originUserId}:${record.commitId}:${merchantCommitRequestFingerprint(
+    {
+      type: record.eventType,
+      originUserId: record.originUserId,
+      ...record.payload,
+    },
+  )}`;
+}
+
+async function surfacePersistedMerchantReviews() {
+  let reviews;
+  try {
+    reviews = listMerchantPendingReviews();
+  } catch {
+    return false;
+  }
+
+  // A status result can be durably settling while this short window expires.
+  // Wait for that exact settlement, then re-read instead of flashing an old
+  // permanent warning immediately before its success receipt.
+  const settlements = reviews
+    .map((record) =>
+      terminalHandlingPromises.get(
+        `${record.worldId}:${record.originUserId}:${record.commitId}`,
+      ),
+    )
+    .filter(Boolean);
+  if (settlements.length > 0) {
+    await Promise.allSettled(settlements);
+    try {
+      reviews = listMerchantPendingReviews();
+    } catch {
+      return false;
+    }
+  }
+
+  for (const record of reviews) {
+    presentPersistedReview(record, record.review);
+  }
+  return true;
+}
+
+function deferPersistedMerchantReviewSurface() {
+  if (persistedReviewSurfaceTimer != null) {
+    globalThis.clearTimeout?.(persistedReviewSurfaceTimer);
+  }
+  persistedReviewSurfaceTimer = globalThis.setTimeout?.(() => {
+    persistedReviewSurfaceTimer = null;
+    void surfacePersistedMerchantReviews();
+  }, PERSISTED_REVIEW_STATUS_WINDOW_MS);
+}
+
+/** Ask only for the exact durable status of inert review records. */
+function probePersistedMerchantReviews() {
+  let reviews;
+  try {
+    reviews = listMerchantPendingReviews();
+  } catch {
+    return false;
+  }
+  for (const record of reviews) {
+    emitMerchantEvent(MERCHANT_EVENTS.COMMIT_STATUS_REQUEST, {
+      commitId: record.commitId,
+      requestFingerprint: merchantCommitRequestFingerprint({
+        type: record.eventType,
+        originUserId: record.originUserId,
+        ...record.payload,
+      }),
+    });
+  }
+  return true;
+}
+
+/** Replay exact saved requests, optionally narrowed to one restored session. */
+async function resendPersistedMerchantCommits(sessionId = null) {
+  try {
+    await resendMerchantPendingCommits({
+      send(eventType, payload) {
+        if (sessionId && payload.sessionId !== sessionId) return;
+        emitMerchantEvent(eventType, payload);
+      },
+    });
+    return true;
+  } catch {
+    ui.notifications?.warn(
+      "Saved merchant requests could not be retried yet. They remain safely stored in this browser.",
+    );
+    return false;
+  }
+}
+
 /**
  * Subscribe to SESSION_OPEN events for this client. When the GM opens
  * a session targeted at this user, open the session window
@@ -1501,6 +1952,9 @@ let autoOpenRegistered = false;
 export function registerMerchantSessionAutoOpen() {
   if (autoOpenRegistered) return;
   autoOpenRegistered = true;
+  subscribe(MERCHANT_EVENTS.COMMIT_RESULT, (payload) => {
+    void handlePersistedCommitResult(payload);
+  });
   subscribe(MERCHANT_EVENTS.SESSION_OPEN, (payload) => {
     if (!payload) return;
     // Open only on the client the GM explicitly targeted. Keying purely on the
@@ -1523,6 +1977,7 @@ export function registerMerchantSessionAutoOpen() {
       sessionId: payload.sessionId,
       merchant: payload.merchant,
     });
+    void resendPersistedMerchantCommits(payload.sessionId);
     // Chime only for a genuinely new GM push — not a resume re-pop on reload/relog.
     if (!wasOpen && !payload.resume) {
       playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
@@ -1533,9 +1988,20 @@ export function registerMerchantSessionAutoOpen() {
   // subscriber above is bound, ask the GM to re-send anything still open for us
   // (race-free). If no GM was online to answer (player loaded first), re-ask
   // when a GM connects — requestMerchantSessionResume self-guards on activeGM.
+  probePersistedMerchantReviews();
+  deferPersistedMerchantReviewSurface();
+  void drainPersistedMerchantTerminalOutbox();
+  void resendPersistedMerchantCommits();
   requestMerchantSessionResume();
   globalThis.Hooks?.on?.("userConnected", (user, connected) => {
-    if (connected && user?.isGM) requestMerchantSessionResume();
+    if (!connected || !user?.isGM) return;
+    requestMerchantSessionResume();
+    if (user.id === authoritativeGMId()) {
+      void drainPersistedMerchantTerminalOutbox();
+      void resendPersistedMerchantCommits();
+      probePersistedMerchantReviews();
+      deferPersistedMerchantReviewSurface();
+    }
   });
 }
 
