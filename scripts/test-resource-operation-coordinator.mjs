@@ -133,6 +133,7 @@ function makeHarness({
   delayLoads = false,
   onEmitPrompt = null,
   onLoadActive = null,
+  now = null,
   maxSteps = undefined,
 } = {}) {
   const trace = [];
@@ -150,6 +151,9 @@ function makeHarness({
     loadDepth: 0,
     maxLoadDepth: 0,
     promptEmissionFailure: null,
+    promptAssignmentTimes: [],
+    completionRequests: [],
+    terminalPersistResult: undefined,
   };
 
   const store = {
@@ -268,6 +272,7 @@ function makeHarness({
       runId,
       terminalRecord,
       receipt,
+      persistResult,
     }) {
       assert.equal(state.active?.runId, runId);
       assert.equal(state.active?.operationId, operationId);
@@ -280,6 +285,11 @@ function makeHarness({
       state.recentRuns.push(structuredClone(receipt));
       state.outbox.push(terminal);
       state.active = null;
+      state.completionRequests.push({
+        operationId,
+        runId,
+        persistResult,
+      });
       trace.push(`store:complete:${runId}`);
       return terminal;
     },
@@ -318,7 +328,8 @@ function makeHarness({
       return structuredClone(record.context.snapshot);
     },
 
-    async buildPromptAssignments(record) {
+    async buildPromptAssignments(record, { assignedAt } = {}) {
+      state.promptAssignmentTimes.push(assignedAt);
       return record.context.snapshot.prompts.map((prompt) => ({
         promptId: prompt.promptId,
         actorId: prompt.actorId,
@@ -328,7 +339,10 @@ function makeHarness({
         foodDc: 12,
         waterDc: 12,
         assignedAt: 0,
-        deadlineAt: prompt.deadlineAt,
+        deadlineAt:
+          prompt.timeoutMs == null
+            ? prompt.deadlineAt
+            : assignedAt + prompt.timeoutMs,
       }));
     },
 
@@ -412,7 +426,7 @@ function makeHarness({
         runId: record.runId,
         status: "complete",
       };
-      return {
+      const artifacts = {
         report,
         result: report,
         receipt,
@@ -422,6 +436,10 @@ function makeHarness({
           whisper: null,
         },
       };
+      if (state.terminalPersistResult !== undefined) {
+        artifacts.persistResult = state.terminalPersistResult;
+      }
+      return artifacts;
     },
 
     async resolveActors() {
@@ -439,7 +457,7 @@ function makeHarness({
     store,
     domain,
     currentGuard: () => structuredClone(state.guard),
-    now: () => state.clock,
+    now: () => (typeof now === "function" ? now(state) : state.clock),
     maxSteps,
     emitPrompt: async (payload) => {
       promptFrames.push(structuredClone(payload));
@@ -662,6 +680,47 @@ function ackConfirmation(record, userId) {
   );
 }
 
+/* One prompting timestamp survives an incrementing clock; timeout zero is exact. */
+{
+  let observedClock = 6999;
+  const harness = makeHarness({
+    now: () => ++observedClock,
+  });
+  harness.state.clock = 7000;
+  harness.state.terminalPersistResult = false;
+  const started = await harness.coordinator.startOperation(
+    operationInput({
+      runId: "zero-timeout-forage",
+      clock: 7000,
+      scenario: "zero-timeout",
+      prompts: [
+        {
+          promptId: "prompt-zero-timeout",
+          actorId: "forager-a",
+          userId: "player-a",
+          forageTarget: "food",
+          timeoutMs: 0,
+        },
+      ],
+    }),
+  );
+  assert.equal(started.active.action, "wait-for-prompts");
+  assert.deepEqual(harness.state.promptAssignmentTimes, [7000]);
+  assert.equal(harness.state.active.timestamps.promptingAt, 7000);
+  assert.equal(harness.state.active.prompts.assignments[0].assignedAt, 7000);
+  assert.equal(harness.state.active.prompts.assignments[0].deadlineAt, 7000);
+
+  const resumed = await harness.coordinator.resume("timeout-zero");
+  assert.equal(resumed.active.action, "completed");
+  assert.equal(harness.state.active, null);
+  assert.equal(harness.state.completionRequests.length, 1);
+  assert.equal(
+    harness.state.completionRequests[0].persistResult,
+    false,
+    "forage terminal artifacts preserve the latest upkeep result",
+  );
+}
+
 /* Rejected prompt sends remain durably replayable on an ordinary resume. */
 for (const [index, failure] of ["null", "throw", "mismatch"].entries()) {
   const harness = makeHarness();
@@ -819,6 +878,47 @@ for (const [index, failure] of ["null", "throw", "mismatch"].entries()) {
   assert.equal(harness.state.active.phase, "needs-review");
   assert.equal(harness.state.active.review.code, "canonical-third-state");
   assert.equal(harness.state.recentRuns.length, 0);
+  assert.equal(
+    harness.trace.some((entry) => entry.startsWith("effect:report:")),
+    false,
+  );
+}
+
+/* Missing canonical Actor/Resource bindings pin review before any Actor write. */
+for (const missing of ["actor", "resource"]) {
+  const harness = makeHarness();
+  harness.state.clock = missing === "actor" ? 4200 : 4300;
+  if (missing === "actor") {
+    harness.domain.resolveActors = async () => new Map();
+  } else {
+    harness.domain.resolveResources = async () => [];
+  }
+  const outcome = await harness.coordinator.startOperation(
+    operationInput({
+      runId: `missing-${missing}`,
+      clock: harness.state.clock,
+      consumeAmount: 2,
+    }),
+  );
+  assert.equal(outcome.active.action, "needs-review");
+  assert.equal(harness.state.active.phase, "needs-review");
+  assert.equal(
+    harness.state.active.review.code,
+    "resource-inventory-observe-before-write-failed",
+  );
+  assert.equal(
+    harness.state.active.review.evidence.error.code,
+    missing === "actor"
+      ? "RESOURCE_INVENTORY_ACTOR_MISSING"
+      : "RESOURCE_INVENTORY_RESOURCE_MISSING",
+  );
+  assert.ok(harness.state.active.review.reason.length <= 1600);
+  assert.ok(harness.state.active.review.evidence.error.message.length <= 1000);
+  assert.equal(harness.actor.writes, 0);
+  assert.equal(
+    harness.trace.some((entry) => entry.startsWith("effect:inventory:")),
+    false,
+  );
   assert.equal(
     harness.trace.some((entry) => entry.startsWith("effect:report:")),
     false,

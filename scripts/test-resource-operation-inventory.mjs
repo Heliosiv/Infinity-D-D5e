@@ -5,6 +5,7 @@ import {
   buildResourceInventoryPlan,
   executeResourceInventoryOperation,
   observeResourceInventoryOperation,
+  summarizeResourceInventoryPlan,
 } from "./resource/operation-inventory.js";
 import {
   createResourceInventoryOperation,
@@ -56,6 +57,80 @@ const resources = [
     matching: { flagTag: "food", nameKeywords: [] },
   },
 ];
+
+function durablePlanRecord({
+  runId,
+  operations,
+  roster,
+  yields = [],
+  partyStashId = "",
+  days = 1,
+} = {}) {
+  const targetByActor = new Map(
+    yields.map((entry) => [entry.actorId, entry.forageTarget]),
+  );
+  const createdAt = 2000;
+  return transitionResourceOperation(
+    createResourceOperation({
+      operationId: `operation:${runId}`,
+      runId,
+      kind: "upkeep",
+      trigger: "calendar",
+      guard,
+      context: createResourceOperationContext({
+        rules: { partyStashId },
+      }),
+      day: 1,
+      days,
+      environment: {
+        id: "limited",
+        label: "Limited",
+        dc: 12,
+        foodDc: 12,
+        waterDc: 12,
+      },
+      initiator: { userId: "gm-1", name: "GM" },
+      actors: roster.map((entry) => ({
+        actorId: entry.actorId,
+        name: entry.name ?? entry.actorId,
+        role: targetByActor.has(entry.actorId)
+          ? "participant-inventory"
+          : "inventory",
+        forageTarget: targetByActor.get(entry.actorId) ?? null,
+      })),
+      createdAt,
+    }),
+    "planned",
+    {
+      guard,
+      at: createdAt + 1,
+      yields,
+      operations,
+    },
+  );
+}
+
+function resolvedYield({
+  actorId,
+  forageTarget = "food-water",
+  food = 0,
+  water = 0,
+  foodSuccess = food > 0,
+  waterSuccess = water > 0,
+} = {}) {
+  return {
+    actorId,
+    forageTarget,
+    rollTotal: 15,
+    wisMod: 2,
+    food,
+    water,
+    foodSuccess,
+    waterSuccess,
+    suppressedFood: false,
+    suppressedWater: false,
+  };
+}
 
 /* One immutable global plan: forage first, then configured Resource order. */
 {
@@ -192,45 +267,31 @@ const resources = [
     "same snapshots reserve the same ids and exact ledger boundaries",
   );
 
-  const durable = transitionResourceOperation(
-    createResourceOperation({
-      operationId: "global-plan-ledger",
-      runId: "global-order",
-      kind: "upkeep",
-      trigger: "manual",
-      guard,
-      context: createResourceOperationContext({ rules: "global-order" }),
-      day: 1,
-      days: 1,
-      environment: {
-        id: "limited",
-        label: "Limited",
-        dc: 12,
-        foodDc: 12,
-        waterDc: 12,
-      },
-      initiator: { userId: "gm-1", name: "GM" },
-      actors: ["A", "B", "S"].map((actorId) => ({
-        actorId,
-        name: actorId,
-        role: "inventory",
-        forageTarget: null,
-      })),
-      createdAt: 2000,
-    }),
-    "planned",
-    {
-      guard,
-      at: 2001,
-      yields: [],
-      operations: planned.operations,
-    },
-  );
+  const durable = durablePlanRecord({
+    runId: "global-order",
+    operations: planned.operations,
+    roster: input.roster,
+    partyStashId: "S",
+    yields: [
+      resolvedYield({ actorId: "A", food: 1, water: 2 }),
+      resolvedYield({ actorId: "B", food: 1, water: 2 }),
+    ],
+  });
   assert.equal(
     durable.plan.length,
     8,
     "the whole repeated-Item boundary chain is accepted by the ledger",
   );
+  const summary = summarizeResourceInventoryPlan({
+    record: durable,
+    roster: input.roster.map(({ items: _items, ...entry }) => entry),
+    resources,
+    halfRations: false,
+    waterEnabled: true,
+  });
+  assert.equal(summary.depositOperationCount, 2);
+  assert.deepEqual(summary.forage, { food: 2, water: 4 });
+  assert.deepEqual(summary.accounting, planned.accounting);
 }
 
 /* Shared per-character draws deplete in roster order. */
@@ -268,6 +329,158 @@ const resources = [
     planned.accounting.perActor.map((row) => row.shortfalls.food),
     [0, 1],
   );
+  const summary = summarizeResourceInventoryPlan({
+    record: durablePlanRecord({
+      runId: "shared-shortfall",
+      operations: planned.operations,
+      roster: [
+        {
+          actorId: "A",
+          name: "First",
+          consumes: true,
+          drawFromId: "S",
+        },
+        {
+          actorId: "B",
+          name: "Second",
+          consumes: true,
+          drawFromId: "S",
+        },
+        {
+          actorId: "S",
+          name: "Shared",
+          consumes: false,
+          isStash: true,
+        },
+      ],
+    }),
+    roster: [
+      {
+        actorId: "A",
+        name: "First",
+        consumes: true,
+        drawFromId: "S",
+      },
+      {
+        actorId: "B",
+        name: "Second",
+        consumes: true,
+        drawFromId: "S",
+      },
+      {
+        actorId: "S",
+        name: "Shared",
+        consumes: false,
+        isStash: true,
+      },
+    ],
+    resources: [resources[2]],
+  });
+  assert.deepEqual(summary.accounting, planned.accounting);
+}
+
+/* A forage deposit can be consumed in the same plan and still report shortage. */
+{
+  const roster = [
+    {
+      actorId: "A",
+      name: "Solo",
+      consumes: true,
+      drawFromId: "A",
+      items: [],
+    },
+  ];
+  const yields = [
+    resolvedYield({
+      actorId: "A",
+      forageTarget: "food",
+      food: 1,
+      water: 0,
+      foodSuccess: true,
+      waterSuccess: false,
+    }),
+  ];
+  const foodAtTwoPerDay = { ...resources[2], perDay: 2 };
+  const planned = await buildResourceInventoryPlan({
+    runId: "self-deposit-consume",
+    roster,
+    resources: [foodAtTwoPerDay],
+    forage: {
+      selectedIds: ["A"],
+      foraged: [
+        {
+          actorId: "A",
+          forageTarget: "food",
+          success: true,
+          foodSuccess: true,
+          waterSuccess: false,
+          food: 1,
+          water: 0,
+        },
+      ],
+      forageTargets: { A: "food" },
+    },
+  });
+  assert.deepEqual(
+    planned.operations.map((entry) => entry.action),
+    ["create", "delete"],
+  );
+  const summary = summarizeResourceInventoryPlan({
+    record: durablePlanRecord({
+      runId: "self-deposit-consume",
+      operations: planned.operations,
+      roster,
+      yields,
+    }),
+    roster: roster.map(({ items: _items, ...entry }) => entry),
+    resources: [foodAtTwoPerDay],
+  });
+  assert.equal(summary.depositOperationCount, 1);
+  assert.deepEqual(summary.forage, { food: 1, water: 0 });
+  assert.deepEqual(summary.accounting, planned.accounting);
+  assert.equal(summary.accounting.perActor[0].consumed.food, 1);
+  assert.equal(summary.accounting.perActor[0].shortfalls.food, 1);
+}
+
+/* A party Resource with no Item writes remains a durable full shortfall. */
+{
+  const roster = [
+    {
+      actorId: "A",
+      name: "Scout",
+      consumes: true,
+      drawFromId: "A",
+      items: [],
+    },
+    {
+      actorId: "S",
+      name: "Empty Stash",
+      consumes: false,
+      isStash: true,
+      items: [],
+    },
+  ];
+  const planned = await buildResourceInventoryPlan({
+    runId: "party-no-write-shortfall",
+    roster,
+    resources: [resources[1]],
+  });
+  assert.equal(planned.operations.length, 0);
+  const summary = summarizeResourceInventoryPlan({
+    record: durablePlanRecord({
+      runId: "party-no-write-shortfall",
+      operations: planned.operations,
+      roster,
+    }),
+    roster: roster.map(({ items: _items, ...entry }) => entry),
+    resources: [resources[1]],
+  });
+  assert.deepEqual(summary.accounting, planned.accounting);
+  assert.deepEqual(summary.accounting.party.light, {
+    consumed: 0,
+    shortfall: 3,
+    error: "",
+  });
 }
 
 /* Stable ids include tuple boundaries and avoid a deterministic collision. */
@@ -356,6 +569,117 @@ function operation(action, overrides = {}) {
       taggedItem(common.itemId, common.resourceId, common.afterQuantity);
   }
   return createResourceInventoryOperation({ ...common, ...overrides });
+}
+
+/* Semantically reordered but ledger-canonical plans cannot forge a summary. */
+{
+  const runId = "late-forage-deposit";
+  const roster = [
+    {
+      actorId: "A",
+      name: "Consumer",
+      consumes: true,
+      drawFromId: "A",
+    },
+    {
+      actorId: "B",
+      name: "Forager",
+      consumes: false,
+      drawFromId: "B",
+    },
+  ];
+  const yields = [
+    resolvedYield({
+      actorId: "B",
+      forageTarget: "food",
+      food: 1,
+      water: 0,
+      foodSuccess: true,
+      waterSuccess: false,
+    }),
+  ];
+  const reordered = [
+    operation("update", {
+      runId,
+      sequence: 0,
+      actorId: "A",
+      itemId: "a-food",
+      resourceId: "food",
+      beforeQuantity: 2,
+      afterQuantity: 1,
+    }),
+    operation("create", {
+      runId,
+      sequence: 1,
+      actorId: "B",
+      itemId: "b-food",
+      resourceId: "food",
+      beforeQuantity: 0,
+      afterQuantity: 1,
+      itemSnapshot: taggedItem("b-food", "food", 1),
+    }),
+  ];
+  const record = durablePlanRecord({
+    runId,
+    operations: reordered,
+    roster,
+    yields,
+  });
+  assert.throws(
+    () =>
+      summarizeResourceInventoryPlan({
+        record,
+        roster,
+        resources: [resources[2]],
+      }),
+    (error) => error?.code === "RESOURCE_INVENTORY_PLAN_SUMMARY_CONFLICT",
+  );
+}
+
+{
+  const runId = "resource-order-conflict";
+  const roster = [
+    {
+      actorId: "A",
+      name: "Consumer",
+      consumes: true,
+      drawFromId: "A",
+    },
+  ];
+  const reordered = [
+    operation("update", {
+      runId,
+      sequence: 0,
+      actorId: "A",
+      itemId: "food-stack",
+      resourceId: "food",
+      beforeQuantity: 2,
+      afterQuantity: 1,
+    }),
+    operation("update", {
+      runId,
+      sequence: 1,
+      actorId: "A",
+      itemId: "water-stack",
+      resourceId: "water",
+      beforeQuantity: 2,
+      afterQuantity: 1,
+    }),
+  ];
+  const record = durablePlanRecord({
+    runId,
+    operations: reordered,
+    roster,
+  });
+  assert.throws(
+    () =>
+      summarizeResourceInventoryPlan({
+        record,
+        roster,
+        resources: [resources[0], resources[2]],
+      }),
+    (error) => error?.code === "RESOURCE_INVENTORY_PLAN_SUMMARY_CONFLICT",
+  );
 }
 
 function applyingRecord(inventoryOperation) {

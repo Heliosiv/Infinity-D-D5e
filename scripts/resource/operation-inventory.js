@@ -219,6 +219,111 @@ export async function buildResourceInventoryPlan({
   });
 }
 
+/**
+ * Rebuild terminal accounting from the immutable ledger plan alone.
+ *
+ * The plan already contains every exact before/after boundary, so recovery
+ * must not consult post-write Actor quantities or an in-memory planning cache.
+ * Forage deposits are the additive prefix; consumption then follows the same
+ * configured Resource, roster, and stash order as buildResourceInventoryPlan.
+ */
+export function summarizeResourceInventoryPlan({
+  record,
+  roster = [],
+  resources = [],
+  halfRations = false,
+  waterEnabled = true,
+} = {}) {
+  const current = normalizeResourceOperation(record);
+  const normalizedResources = normalizeResources(resources);
+  const partyStashId = persistedPartyStashId(current.context.snapshot);
+  const actors = normalizeRoster(roster, partyStashId);
+  const accounting = createAccounting(actors);
+  const deposits = summarizeForageDepositPrefix(
+    current,
+    actors,
+    normalizedResources,
+    partyStashId,
+    waterEnabled,
+  );
+  let cursor = deposits.operationCount;
+
+  if (current.kind === "upkeep") {
+    const actorById = new Map(actors.map((actor) => [actor.actorId, actor]));
+    const consumers = actors.filter((actor) => actor.consumes !== false);
+    const elapsedDays = Math.max(1, Math.floor(Number(current.days) || 1));
+
+    for (const resource of normalizedResources) {
+      if (
+        waterEnabled === false &&
+        (resource.id === "water" || resource.forageYields === "water")
+      ) {
+        continue;
+      }
+      const base = Math.max(0, Number(resource.perDay) * elapsedDays || 0);
+      const isFood = resource.id === "food" || resource.forageYields === "food";
+      const amount =
+        isFood && halfRations === true ? Math.ceil(base / 2) : Math.round(base);
+      if (amount <= 0) continue;
+
+      if (resource.scope === "party") {
+        let remaining = amount;
+        for (const actor of stashFirstActors(actors)) {
+          if (remaining <= 0) break;
+          const consumed = consumePersistedPlanAmount(current.plan, cursor, {
+            actorId: actor.actorId,
+            resourceId: resource.id,
+            maximum: remaining,
+          });
+          cursor = consumed.cursor;
+          remaining -= consumed.amount;
+        }
+        accounting.party[resource.id] = {
+          consumed: amount - remaining,
+          shortfall: remaining,
+          error: "",
+        };
+        continue;
+      }
+
+      for (const consumer of consumers) {
+        const source =
+          actorById.get(consumer.drawFromId) ??
+          actorById.get(consumer.actorId) ??
+          consumer;
+        const consumed = consumePersistedPlanAmount(current.plan, cursor, {
+          actorId: source.actorId,
+          resourceId: resource.id,
+          maximum: amount,
+        });
+        cursor = consumed.cursor;
+        const row = accounting.perActor.find(
+          (entry) => entry.actorId === consumer.actorId,
+        );
+        recordAccounting(row, resource, {
+          consumed: consumed.amount,
+          shortfall: amount - consumed.amount,
+        });
+      }
+    }
+    addLegacyAccountingAliases(accounting, normalizedResources);
+  }
+
+  if (cursor !== current.plan.length) {
+    const operation = current.plan[cursor];
+    summaryConflict(
+      `Inventory operation ${operation?.opId ?? cursor} is outside canonical forage/consumption order`,
+    );
+  }
+
+  return deepFreeze({
+    depositOperationCount: deposits.operationCount,
+    deposits: deposits.byResource,
+    forage: deposits.forage,
+    accounting,
+  });
+}
+
 /** A stable, Foundry-compatible 16-character embedded Item id. */
 export function buildDeterministicResourceItemId({
   runId,
@@ -442,6 +547,154 @@ function planConsumptionOperations({
       recordAccounting(row, resource, result);
     }
   }
+}
+
+function summarizeForageDepositPrefix(
+  record,
+  actors,
+  resources,
+  partyStashId,
+  waterEnabled,
+) {
+  const foodResource = resources.find(
+    (resource) => resource.forageYields === "food",
+  );
+  const waterResource = resources.find(
+    (resource) => resource.forageYields === "water",
+  );
+  const forageActors = record.actors.filter((actor) => actor.forageTarget);
+  const foragePlan = planForageDriveDeposits({
+    roster: actors.map(rosterPlannerSnapshot),
+    selectedIds: forageActors.map((actor) => actor.actorId),
+    foraged: record.yields.map((entry) => ({
+      ...entry,
+      success: entry.foodSuccess || entry.waterSuccess,
+      foodSuppressed: entry.suppressedFood,
+      waterSuppressed: entry.suppressedWater,
+      suppressed:
+        entry.suppressedFood === true && entry.suppressedWater === true,
+    })),
+    forageTargets: Object.fromEntries(
+      forageActors.map((actor) => [actor.actorId, actor.forageTarget]),
+    ),
+    partyStashId,
+    foodEnabled: Boolean(foodResource),
+    waterEnabled: waterEnabled !== false && Boolean(waterResource),
+  });
+  const expected = [];
+  for (const deposit of foragePlan.deposits) {
+    for (const resource of resources) {
+      if (resource !== foodResource && resource !== waterResource) continue;
+      const amount = wholeAmount(deposit[resource.forageYields]);
+      if (amount > 0) {
+        expected.push({
+          actorId: deposit.actorId,
+          resourceId: resource.id,
+          amount,
+        });
+      }
+    }
+  }
+
+  const actual = new Map(
+    [foodResource, waterResource]
+      .filter(Boolean)
+      .map((resource) => [resource.id, 0]),
+  );
+  for (
+    let operationCount = 0;
+    operationCount < expected.length;
+    operationCount += 1
+  ) {
+    const operation = record.plan[operationCount];
+    const deposit = expected[operationCount];
+    const amount = operation ? forageDepositAmount(operation) : null;
+    if (
+      amount !== deposit.amount ||
+      operation?.actorId !== deposit.actorId ||
+      operation?.resourceId !== deposit.resourceId
+    ) {
+      summaryConflict(
+        `Inventory operation ${operation?.opId ?? operationCount} does not match canonical forage deposit ${deposit.actorId}/${deposit.resourceId}/${deposit.amount}`,
+      );
+    }
+    actual.set(deposit.resourceId, actual.get(deposit.resourceId) + amount);
+  }
+  const operationCount = expected.length;
+  if (
+    operationCount < record.plan.length &&
+    forageDepositAmount(record.plan[operationCount]) !== null
+  ) {
+    summaryConflict("Inventory plan contains an unexpected additive operation");
+  }
+
+  return {
+    operationCount,
+    byResource: Object.fromEntries(actual),
+    forage: {
+      food: foodResource ? (actual.get(foodResource.id) ?? 0) : 0,
+      water: waterResource ? (actual.get(waterResource.id) ?? 0) : 0,
+    },
+  };
+}
+
+function forageDepositAmount(operation) {
+  if (operation.action === "create") return operation.afterQuantity;
+  if (
+    operation.action === "update" &&
+    operation.afterQuantity > operation.beforeQuantity
+  ) {
+    return operation.afterQuantity - operation.beforeQuantity;
+  }
+  return null;
+}
+
+function consumePersistedPlanAmount(
+  plan,
+  initialCursor,
+  { actorId, resourceId, maximum },
+) {
+  let cursor = initialCursor;
+  let amount = 0;
+  while (cursor < plan.length && amount < maximum) {
+    const operation = plan[cursor];
+    if (operation.actorId !== actorId || operation.resourceId !== resourceId) {
+      break;
+    }
+    const consumed = consumptionAmount(operation);
+    if (consumed > maximum - amount) {
+      summaryConflict(
+        `Inventory operation ${operation.opId} consumes beyond its canonical request boundary`,
+      );
+    }
+    amount += consumed;
+    cursor += 1;
+  }
+  return { cursor, amount };
+}
+
+function consumptionAmount(operation) {
+  if (
+    (operation.action !== "update" && operation.action !== "delete") ||
+    operation.afterQuantity >= operation.beforeQuantity
+  ) {
+    summaryConflict(
+      `Inventory operation ${operation.opId} is not a canonical consumption boundary`,
+    );
+  }
+  return operation.beforeQuantity - operation.afterQuantity;
+}
+
+function persistedPartyStashId(snapshot) {
+  const rules = plainObject(snapshot?.rules) ? snapshot.rules : null;
+  return String(rules?.partyStashId ?? "").trim();
+}
+
+function summaryConflict(message) {
+  throw new ResourceOperationInventoryError(
+    "RESOURCE_INVENTORY_PLAN_SUMMARY_CONFLICT",
+    message,
+  );
 }
 
 function appendActorConsumption(actor, resource, amount, append) {

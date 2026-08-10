@@ -166,9 +166,12 @@ async function driveActiveOperation(runtime, { reason, replayPrompts }) {
     }
 
     if (decision.action === "prompt-or-plan") {
+      const promptingAt = checkpointTime(runtime, record);
       const assignments = stampPromptAssignments(
-        await runtime.domain.buildPromptAssignments(record),
-        checkpointTime(runtime, record),
+        await runtime.domain.buildPromptAssignments(record, {
+          assignedAt: promptingAt,
+        }),
+        promptingAt,
       );
       if (assignments.length > 0) {
         const prompting = await checkpointTransition(
@@ -177,6 +180,7 @@ async function driveActiveOperation(runtime, { reason, replayPrompts }) {
           "prompting",
           {
             assignments,
+            at: promptingAt,
           },
         );
         const emitted = await emitAssignments(runtime, prompting, assignments, {
@@ -258,6 +262,7 @@ async function driveActiveOperation(runtime, { reason, replayPrompts }) {
         terminalRecord,
         result: artifacts.result ?? artifacts.report,
         receipt: artifacts.receipt,
+        persistResult: artifacts.persistResult !== false,
       });
       return result("completed", {
         reason: "terminal-record-persisted-before-delivery",
@@ -478,8 +483,41 @@ async function executeNextInventoryOperation(
   operationId,
   guard,
 ) {
-  const actors = await runtime.domain.resolveActors(record);
-  const resources = await runtime.domain.resolveResources(record);
+  let actors;
+  try {
+    actors = await runtime.domain.resolveActors(record);
+  } catch (error) {
+    return checkpointApplyingBoundaryFailure(runtime, record, operationId, {
+      guard,
+      stage: "resolve-actors",
+      error,
+    });
+  }
+  let resources;
+  try {
+    resources = await runtime.domain.resolveResources(record);
+  } catch (error) {
+    return checkpointApplyingBoundaryFailure(runtime, record, operationId, {
+      guard,
+      stage: "resolve-resources",
+      error,
+    });
+  }
+  const operation = record.plan.find((entry) => entry.opId === operationId);
+  try {
+    await runtime.invoke(() =>
+      observeResourceInventoryOperation(operation, {
+        actors,
+        resources,
+      }),
+    );
+  } catch (error) {
+    return checkpointApplyingBoundaryFailure(runtime, record, operationId, {
+      guard,
+      stage: "observe-before-write",
+      error,
+    });
+  }
   const executed = await runtime.invoke(() =>
     executeResourceInventoryOperation({
       record,
@@ -549,6 +587,56 @@ async function executeNextInventoryOperation(
     "RESOURCE_COORDINATOR_UNSUPPORTED_INVENTORY_RESULT",
     `Unsupported inventory result ${executed.action}`,
   );
+}
+
+async function checkpointApplyingBoundaryFailure(
+  runtime,
+  record,
+  operationId,
+  { guard, stage, error },
+) {
+  const failure = boundedApplyingBoundaryFailure(stage, error);
+  await checkpointTransition(runtime, record, "needs-review", {
+    guard,
+    code: failure.code,
+    reason: failure.reason,
+    operationId,
+    evidence: failure.evidence,
+  });
+  return result("needs-review", {
+    reason: failure.reason,
+    code: failure.code,
+    runId: record.runId,
+    operationId,
+  });
+}
+
+function boundedApplyingBoundaryFailure(stage, error) {
+  const normalizedStage = boundedText(stage, 80, "unknown");
+  const errorCode = boundedText(error?.code, 160, null);
+  const errorName = boundedText(error?.name, 160, null);
+  const message = boundedText(
+    error instanceof Error ? error.message : error,
+    1000,
+    "Unknown inventory boundary failure",
+  );
+  const code = `resource-inventory-${normalizedStage}-failed`.slice(0, 160);
+  return Object.freeze({
+    code,
+    reason:
+      `Resource inventory ${normalizedStage} failed before any Actor write: ${message}`.slice(
+        0,
+        1600,
+      ),
+    evidence: Object.freeze({
+      stage: normalizedStage,
+      error: Object.freeze({
+        name: errorName,
+        code: errorCode,
+        message,
+      }),
+    }),
+  });
 }
 
 async function drainDeliveryBacklog(runtime) {
@@ -974,6 +1062,15 @@ function boundedReason(value) {
       .trim()
       .slice(0, 160) || "resume"
   );
+}
+
+function boundedText(value, maximum, fallback) {
+  try {
+    const normalized = String(value ?? "").trim();
+    return normalized ? normalized.slice(0, maximum) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function errorMessage(error) {
