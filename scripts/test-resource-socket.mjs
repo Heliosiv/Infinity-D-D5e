@@ -241,6 +241,42 @@ try {
     true,
     "durable forage acknowledgements carry bounded prompt and delivery ids",
   );
+  const ledgerSizedDeliveryId = JSON.stringify([
+    "resource-delivery-v1",
+    "run-1234567890abcdef",
+    "prompt-ack",
+    "user",
+    "player-1234567890abcdef",
+    "prompt-1234567890abcdef",
+    "resource-delivery-payload-v1-0123456789abcdef0123456789abcdef",
+  ]);
+  assert.ok(
+    ledgerSizedDeliveryId.length > 160,
+    "the regression delivery id exceeds the generic protocol-id bound",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.FORAGE_ACK,
+      targetUserId: "player-a",
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      deliveryId: ledgerSizedDeliveryId,
+    }).ok,
+    true,
+    "ledger-derived delivery ids use their own bounded wire limit",
+  );
+  assert.equal(
+    validateResourcePayloadShape({
+      type: RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+      runId: "run-1",
+      actorId: "actor-a",
+      promptId: "prompt-1",
+      deliveryId: "x".repeat(2049),
+    }).ok,
+    false,
+    "delivery ids remain bounded against oversized frames",
+  );
   assert.equal(
     validateResourcePayloadShape({
       type: RESOURCE_EVENTS.FORAGE_ACK,

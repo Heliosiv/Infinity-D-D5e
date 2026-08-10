@@ -73,6 +73,7 @@ const FORAGE_ACTOR_TYPES = new Set([
   RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
 ]);
 const MAX_PROTOCOL_ID_LENGTH = 160;
+const MAX_DELIVERY_ID_LENGTH = 2048;
 const MIN_FORAGE_ROLL_TOTAL = -50;
 const MAX_FORAGE_ROLL_TOTAL = 100;
 
@@ -191,7 +192,7 @@ export function validateResourcePayloadShape(payload) {
     payload.type === RESOURCE_EVENTS.FORAGE_ACK &&
     Object.hasOwn(payload, "deliveryId")
   ) {
-    if (!isBoundedProtocolId(payload.deliveryId)) {
+    if (!isBoundedDeliveryId(payload.deliveryId)) {
       return { ok: false, reason: "invalid-delivery-id" };
     }
     if (!isBoundedProtocolId(payload.promptId)) {
@@ -202,7 +203,7 @@ export function validateResourcePayloadShape(payload) {
     if (!isBoundedProtocolId(payload.promptId)) {
       return { ok: false, reason: "missing-or-invalid-prompt-id" };
     }
-    if (!isBoundedProtocolId(payload.deliveryId)) {
+    if (!isBoundedDeliveryId(payload.deliveryId)) {
       return { ok: false, reason: "missing-or-invalid-delivery-id" };
     }
   }
@@ -315,6 +316,12 @@ function isBoundedProtocolId(value) {
   if (typeof value !== "string") return false;
   const normalized = value.trim();
   return normalized.length > 0 && normalized.length <= MAX_PROTOCOL_ID_LENGTH;
+}
+
+function isBoundedDeliveryId(value) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim();
+  return normalized.length > 0 && normalized.length <= MAX_DELIVERY_ID_LENGTH;
 }
 
 function resolveOutgoingRecipients(type, payload) {

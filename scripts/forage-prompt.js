@@ -32,6 +32,7 @@ import { isFullGM } from "./permissions.js";
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
 const MAX_PROTOCOL_ID_LENGTH = 160;
+const MAX_DELIVERY_ID_LENGTH = 2048;
 const HANDLED_DELIVERY_LIMIT = 256;
 const WAIT_FOR_ACK_MS = 130000;
 
@@ -139,7 +140,7 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
       instances.get(String(payload?.runId));
     if (!ackMatchesPrompt(app, payload)) return app ?? null;
 
-    const deliveryId = normalizeProtocolId(payload?.deliveryId);
+    const deliveryId = normalizeDeliveryId(payload?.deliveryId);
     const duplicate = deliveryId ? handledDeliveryIds.has(deliveryId) : false;
     if (deliveryId && !duplicate) rememberDeliveryId(deliveryId);
 
@@ -471,7 +472,7 @@ export function requestForagePromptSync() {
 
 function confirmAckDelivery(payload) {
   const promptId = normalizeProtocolId(payload?.promptId);
-  const deliveryId = normalizeProtocolId(payload?.deliveryId);
+  const deliveryId = normalizeDeliveryId(payload?.deliveryId);
   if (!promptId || !deliveryId || isFullGM()) return null;
   return emitResourceEvent(RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM, {
     runId: payload.runId,
@@ -520,6 +521,14 @@ function normalizeProtocolId(value) {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized && normalized.length <= MAX_PROTOCOL_ID_LENGTH
+    ? normalized
+    : null;
+}
+
+function normalizeDeliveryId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= MAX_DELIVERY_ID_LENGTH
     ? normalized
     : null;
 }
