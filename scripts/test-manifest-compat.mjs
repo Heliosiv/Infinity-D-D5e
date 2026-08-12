@@ -81,13 +81,21 @@ if (tagResult.status === 0 && tagResult.stdout.trim()) {
         { encoding: "utf8" },
       );
       if (headResult.status === 0 && tagCommitResult.status === 0) {
-        assert.equal(
-          headResult.stdout.trim(),
-          tagCommitResult.stdout.trim(),
-          `manifest version ${manifest.version} is already released as ` +
-            `${latest.name}, but HEAD contains unreleased work. Bump the ` +
-            `package and manifest versions before building a release.`,
-        );
+        const atReleasedTag =
+          headResult.stdout.trim() === tagCommitResult.stdout.trim();
+        if (process.env.INFINITY_REQUIRE_RELEASE_VERSION === "1") {
+          assert.ok(
+            atReleasedTag,
+            `manifest version ${manifest.version} is already released as ` +
+              `${latest.name}, but HEAD contains unreleased work. Bump the ` +
+              `package and manifest versions before building a release.`,
+          );
+        } else if (!atReleasedTag) {
+          process.stdout.write(
+            "  (development branch uses the current released version; " +
+              "the exact-tag check runs for release builds)\n",
+          );
+        }
       } else {
         process.stdout.write(
           "  (exact HEAD-to-tag check skipped: git history unavailable)\n",

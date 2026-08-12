@@ -101,23 +101,33 @@ async function main() {
   try {
     const fileUrl = pathToFileURL(outFile).href;
     const summary = [];
-    const requestedScenario = String(
-      process.env.INFINITY_UI_AUDIT_SCENARIO ?? "",
-    ).trim();
-    const scenarios = requestedScenario
-      ? SCENARIOS.filter((scenario) => scenario.name === requestedScenario)
-      : SCENARIOS;
+    const requestedScenarios = splitSelection(
+      process.env.INFINITY_UI_AUDIT_SCENARIO,
+    );
+    const scenarios =
+      requestedScenarios.length > 0
+        ? SCENARIOS.filter((scenario) =>
+            requestedScenarios.includes(scenario.name),
+          )
+        : SCENARIOS;
     if (scenarios.length === 0) {
-      throw new Error(`Unknown UI audit scenario: ${requestedScenario}`);
+      throw new Error(
+        `Unknown UI audit scenario: ${requestedScenarios.join(", ")}`,
+      );
     }
-    const requestedFixture = String(
-      process.env.INFINITY_UI_AUDIT_FIXTURE ?? "",
-    ).trim();
-    const fixtures = requestedFixture
-      ? buildHarnessViews().filter((fixture) => fixture.id === requestedFixture)
-      : buildHarnessViews();
+    const requestedFixtures = splitSelection(
+      process.env.INFINITY_UI_AUDIT_FIXTURE,
+    );
+    const fixtures =
+      requestedFixtures.length > 0
+        ? buildHarnessViews().filter((fixture) =>
+            requestedFixtures.includes(fixture.id),
+          )
+        : buildHarnessViews();
     if (fixtures.length === 0) {
-      throw new Error(`Unknown UI audit fixture: ${requestedFixture}`);
+      throw new Error(
+        `Unknown UI audit fixture: ${requestedFixtures.join(", ")}`,
+      );
     }
     for (const scenario of scenarios) {
       const context = await browser.newContext({
@@ -222,6 +232,13 @@ async function main() {
   } finally {
     await browser.close();
   }
+}
+
+function splitSelection(value) {
+  return String(value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 async function auditPage(scenario) {

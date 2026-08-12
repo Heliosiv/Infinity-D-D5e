@@ -31,8 +31,8 @@ jobs:
       - run: npm ci
       - name: Install Chromium for browser-backed source checks
         run: npx --yes playwright install --with-deps chromium
-      - name: Run the full source gate from the tagged commit
-        run: npm run verify:source
+      - name: Run the strict full source gate from the tagged commit
+        run: npm run verify:release-source
       - name: Confirm clean tagged checkout
         shell: bash
         run: test -z "$(git status --porcelain --untracked-files=no)"

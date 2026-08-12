@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   source-gate:
-    name: Full source gate
+    name: Fast source gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -25,8 +25,17 @@ jobs:
       - run: npm ci
       - name: Install Chromium for browser-backed source checks
         run: npx --yes playwright install --with-deps chromium
-      - name: Verify source, UI, accessibility, keyboard, and manifest
-        run: npm run verify:source
+      - name: Select the changed UI audit scope
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INFINITY_UI_AUDIT_BASE=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+          else
+            echo "INFINITY_UI_AUDIT_BASE=${{ github.event.before }}" >> "$GITHUB_ENV"
+          fi
+          echo "INFINITY_UI_AUDIT_HEAD=${{ github.sha }}" >> "$GITHUB_ENV"
+      - name: Verify source and changed UI surfaces
+        run: npm run verify:source:fast
 
   package:
     name: Build and inspect clean package
