@@ -541,6 +541,31 @@
   color: var(--lf-text-strong);
 }
 
+/* A compact, non-mutating workflow guide for GM preparation windows. */
+.infinity-dnd5e .infinity-workspace-context {
+  display: flex;
+  gap: var(--lf-space-2);
+  align-items: flex-start;
+  min-inline-size: 0;
+  padding: var(--lf-space-2) var(--lf-space-3);
+  color: var(--lf-muted);
+  background: color-mix(in srgb, var(--lf-accent) 7%, var(--lf-surface-sunken));
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  font-size: var(--lf-text-sm);
+  line-height: 1.4;
+}
+
+.infinity-dnd5e .infinity-workspace-context > i {
+  flex: 0 0 auto;
+  margin-block-start: 0.15em;
+  color: var(--lf-accent);
+}
+
+.infinity-dnd5e .infinity-workspace-context strong {
+  color: var(--lf-text-strong);
+}
+
 .infinity-dnd5e .infinity-master-detail {
   display: grid;
   grid-template-columns: minmax(13rem, 0.34fr) minmax(0, 1fr);

@@ -12,11 +12,17 @@ const resourceScript = read("scripts/resource-manager.js");
 const reputationTemplate = read("templates/reputation-workspace.hbs");
 const reputationStyle = read("styles/reputation-workspace.css");
 const reputationScript = read("scripts/reputation-workspace.js");
+const lootStudioTemplate = read("templates/loot-studio.hbs");
+const downtimeTemplate = read("templates/downtime-workspace.hbs");
+const settingsTemplate = read("templates/settings.hbs");
 
 for (const [name, template] of [
   ["merchant", merchantTemplate],
   ["quartermaster", resourceTemplate],
   ["reputation", reputationTemplate],
+  ["loot studio", lootStudioTemplate],
+  ["downtime", downtimeTemplate],
+  ["settings", settingsTemplate],
 ]) {
   assert.doesNotThrow(
     () => Handlebars.precompile(template),
@@ -108,6 +114,7 @@ for (const field of [
   );
 }
 assert.match(merchantTemplate, /data-save-status/);
+assert.match(merchantTemplate, /Workspace guide:/);
 assert.match(merchantTemplate, /Live shoppers use the canonical saved stock/);
 assert.match(merchantTemplate, /Open Session is unavailable:/);
 assert.match(
@@ -195,6 +202,7 @@ assertActions(
   "Quartermaster",
 );
 assert.match(resourceTemplate, /Recommended next action/);
+assert.match(resourceTemplate, /Workspace guide:/);
 assert.match(resourceTemplate, /First setup/);
 assert.match(resourceTemplate, /Campaign readiness/);
 assert.match(resourceTemplate, /rm-resource-write-reason/);
@@ -286,6 +294,15 @@ assert.equal(
   "one visible standing-change submission",
 );
 assert.doesNotMatch(reputationTemplate, /Legacy (?:lower|raise|set)/);
+assert.match(reputationTemplate, /Workspace guide:/);
+assert.match(lootStudioTemplate, /infinity-workspace-context/);
+assert.match(lootStudioTemplate, /mode is active/);
+assert.match(
+  downtimeTemplate,
+  /dt-next-action infinity-workspace-context/,
+  "Downtime keeps its lifecycle next action as the shared workspace guide",
+);
+assert.match(settingsTemplate, /Settings state:/);
 
 const changeStart = reputationScript.indexOf("static async _onChangeStanding");
 const changeEnd = reputationScript.indexOf("/** Log a note", changeStart);

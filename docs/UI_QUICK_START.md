@@ -16,6 +16,8 @@ Home groups destinations by intent:
 
 Home keeps its short guide and keyboard shortcuts behind the **Help** button in the header. Workspace-specific quick-start cards, such as Downtime's, can still be dismissed and restored from **Infinity Settings**.
 
+Home also foregrounds one role-safe **Session focus** destination: it continues your most recent available workspace, or selects the next available session tool. Opening it never changes campaign data.
+
 ## Use Loot Studio
 
 Full GMs open **Loot Studio** from Home. Choose Encounter, Hoard, or Creature with the mode tabs. Left/Right Arrow moves between tabs; Home/End selects the first or last mode.
@@ -31,6 +33,8 @@ The main scenario, tier, party or roster, estimated outcome, and **Generate** ac
 - **Downtime Workspace** follows Create, Collect, Lock, Preview, Apply, and Complete. Recovery appears as a separate branch when the authoritative result is uncertain.
 - **Reputation** uses a faction list and detail workspace. Standing changes require the new standing and a reason before the existing authoritative write runs.
 
+GM workspaces include a compact **Workspace guide** at the top. It identifies the active mode, selected record, authority state, or pending save/review before you work in the detailed sections.
+
 ## Player context and shortcuts
 
 Actor-dependent windows identify the active character and wallet or inventory context. A character switcher, when shown, lists only legitimately controlled characters.
@@ -42,6 +46,8 @@ Actor-dependent windows identify the active character and wallet or inventory co
 - `Shift+J`: Critical Injuries
 
 Primary actions remain visible in sticky action areas. On narrow layouts, long queues and lists become contained drawers or stacked sections rather than forcing horizontal scrolling.
+
+Player windows begin with a compact **Safe next step** or read-only context. It explains whether to wait, refresh, select a controlled character, or use the next available action; it never retries a request for you.
 
 ## Keyboard, touch, and accessibility
 

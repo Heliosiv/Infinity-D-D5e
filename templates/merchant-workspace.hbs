@@ -47,6 +47,17 @@
     </div>
   </header>
 
+  <p class="infinity-workspace-context" role="note">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Workspace guide:</strong>
+      {{#if hasTransactionReviews}}review each pinned transaction before changing the same merchant or character state.
+      {{else if merchantAccessClosed}}global shop access is closed; reopening restores only the saved player sessions.
+      {{else if canManageMerchants}}select a merchant to edit its stock and access, then open a player session only when the saved plan is ready.
+      {{else}}this window is inspection-only; use the active full GM window for campaign changes.
+      {{/if}}
+    </span>
+  </p>
+
   {{#unless canManageMerchants}}
   <div class="mw-global-notice" role="status">
     <i class="fa-solid fa-eye" aria-hidden="true"></i>

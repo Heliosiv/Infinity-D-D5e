@@ -16,6 +16,15 @@
     </div>
   </header>
 
+  <p class="infinity-workspace-context" role="note">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Workspace guide:</strong>
+      {{#if isAuthoritative}}start on Today, resolve any visible safety lock, then use Setup &amp; Rules only when the roster or resource rules need changes.
+      {{else}}this tab is read-only because another GM client is authoritative; review receipts here or use the active GM client for writes.
+      {{/if}}
+    </span>
+  </p>
+
   <nav class="rm-section-nav" aria-label="Quartermaster sections">
     <button type="button" data-action="selectSection" data-section-target="rm-today" aria-controls="rm-today"><i class="fa-solid fa-sun" aria-hidden="true"></i> Today</button>
     <button type="button" data-action="selectSection" data-section-target="rm-runs" aria-controls="rm-runs"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent Runs</button>

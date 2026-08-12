@@ -28,6 +28,10 @@
       {{/each}}
     </div>
   </nav>
+  <p class="infinity-workspace-context" role="note">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>{{lootStudio.activeLabel}} mode is active.</strong> Its form, result, history, and undo state stay separate while you switch modes.</span>
+  </p>
   {{#each lootStudio.tabs}}
   {{#unless active}}
   <div

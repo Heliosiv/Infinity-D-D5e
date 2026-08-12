@@ -18,6 +18,15 @@
     </div>
   </header>
 
+  <p class="infinity-workspace-context" role="note">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Workspace guide:</strong>
+      {{#if selected}}edit the selected faction in Overview, review player visibility separately, then record a reasoned standing change or note in History.
+      {{else}}select a faction to review it, or create one after the party meets it.
+      {{/if}}
+    </span>
+  </p>
+
   <div class="rw-body">
     <aside class="rw-list" aria-label="Factions">
       {{#if hasFactions}}

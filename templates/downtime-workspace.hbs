@@ -82,7 +82,7 @@
             </div>
           </aside>
         </div>
-        <p id="dt-next-action" class="dt-next-action {{#unless primaryAction.hasAction}}is-waiting{{/unless}}" role="status">
+        <p id="dt-next-action" class="dt-next-action infinity-workspace-context {{#unless primaryAction.hasAction}}is-waiting{{/unless}}" role="status">
           <i class="fa-solid {{#if primaryAction.hasAction}}fa-arrow-right{{else}}fa-clock{{/if}}" aria-hidden="true"></i>
           <span><strong>{{#if primaryAction.hasAction}}Next valid action: {{primaryAction.label}}{{else}}{{primaryAction.label}}{{/if}}</strong> {{primaryAction.description}}</span>
         </p>
