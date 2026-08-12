@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.4 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.5 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -20,7 +20,9 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.4 — Released 2026-08-12** - Adds a guided downtime handoff: the GM assigns a location, hours, characters, and applicable activity templates; each player picks one activity; the GM selects and can edit an illustrated result report before applying its configured reward. It also adds the durable Critical Injury triage workspace and a faster changed-surface UI validation path, while preserving the complete release gate.
+**v0.3.5 — Released 2026-08-12** - Fixes short-viewport Merchant Workspace navigation so every merchant row remains reachable in the stacked layout.
+
+**v0.3.4 — Unreleased** - Adds a guided downtime handoff: the GM assigns a location, hours, characters, and applicable activity templates; each player picks one activity; the GM selects and can edit an illustrated result report before applying its configured reward. It also adds the durable Critical Injury triage workspace and a faster changed-surface UI validation path, while preserving the complete release gate.
 
 **v0.3.3 — Released 2026-08-11** - Refines session-facing recovery guidance across player requests, transactions, downtime, party supplies, reputation, and Critical Injury HUD treatment. Loot Studio now names its generation readiness state, while GM workspaces and Settings make their next safe action clearer after loading, no-match, draft, and partial-save states. These clarity improvements preserve gameplay, campaign data, permissions, privacy boundaries, GM authority, settings contracts, and macro behavior.
 

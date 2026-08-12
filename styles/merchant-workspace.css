@@ -1081,6 +1081,11 @@
 @container merchant-workspace (max-width: 720px) {
   .mw-body {
     grid-template-columns: 1fr;
+    /* The stacked rail and editor otherwise use implicit content-sized rows.
+       On short Chromium viewports that can clip later merchant rows inside the
+       rail, leaving the aside itself on top of its buttons. Give both panes a
+       bounded share of the available height; each pane already owns scrolling. */
+    grid-template-rows: minmax(12rem, 0.42fr) minmax(0, 1fr);
   }
   /* In the stacked layout the editor pane can be quite short. Let its
      navigation and save guidance scroll with the form so they cannot consume

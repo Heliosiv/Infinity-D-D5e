@@ -165,6 +165,11 @@ assert.doesNotMatch(
 );
 assert.match(merchantStyle, /container-name:\s*merchant-workspace/);
 assert.match(merchantStyle, /@container merchant-workspace/);
+assert.match(
+  merchantStyle,
+  /@container merchant-workspace \(max-width: 720px\) \{[\s\S]*?\.mw-body \{[\s\S]*?grid-template-rows:\s*minmax\(12rem, 0\.42fr\) minmax\(0, 1fr\)/,
+  "stacked Merchant Workspace keeps a bounded, scrollable rail above the editor",
+);
 assert.doesNotMatch(merchantStyle, /@media\s*\(max-width/);
 assert.match(
   merchantScript,
