@@ -186,6 +186,14 @@
                 <li>
                   <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
                   <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
+                  {{#if hasOutcomeOptions}}
+                  <div class="dt-chip-grid" data-operation-id="{{id}}" aria-label="Choose result for {{label}}">
+                    {{#each outcomeOptions}}
+                    <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
+                    {{/each}}
+                    <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report rows="3" maxlength="800" aria-label="Player report for {{label}}">{{report}}</textarea></label>
+                  </div>
+                  {{/if}}
                 </li>
                 {{/each}}
               </ol>
@@ -226,17 +234,9 @@
         {{/if}}
         <form class="dt-form" data-form="new-block">
           <label class="dt-field">
-            <span>Settlement (optional)</span>
-            <select name="settlementId" {{#if busy}}disabled{{/if}}>
-              <option value="">No settlement · camp, wilderness, or elsewhere</option>
-              {{#each settlements}}<option value="{{id}}">{{name}} · {{wealthLabel}} / {{securityLabel}}</option>{{/each}}
-            </select>
-            <small>Selecting a settlement enables its market, crime, merchant, fencing, and local Heat activities.</small>
-          </label>
-          <label class="dt-field">
-            <span>Other location</span>
-            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Other downtime location" {{#if busy}}disabled{{/if}} />
-            <small>Used only when no settlement is selected; defaults to Camp or wilderness.</small>
+            <span>Location</span>
+            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Downtime location" {{#if busy}}disabled{{/if}} />
+            <small>This is player-facing context for the downtime report.</small>
           </label>
           <div class="dt-field">
             <span id="dt-new-block-hours-label">Productive hours per character</span>
@@ -355,6 +355,19 @@
             </div>
             {{else}}
             <p class="dt-inline-empty" id="dt-actor-selector-help">No character Actors are available. Add a character Actor in Foundry, then refresh this workspace.</p>
+            {{/if}}
+          </fieldset>
+          <fieldset class="dt-fieldset" aria-describedby="dt-template-help">
+            <legend>Applicable activities</legend>
+            <p id="dt-template-help">Players choose one of these saved activity templates. Settlement, faction, Heat, and escalation rules are not part of this guided flow.</p>
+            {{#if hasGuidedTemplates}}
+            <div class="dt-chip-grid">
+              {{#each guidedTemplates}}
+              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" checked {{#if ../busy}}disabled{{/if}} /><span>{{name}}</span></label>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="dt-inline-empty">No guided activity templates are available.</p>
             {{/if}}
           </fieldset>
           {{#if createBlockReason}}<p class="dt-form-reason">{{createBlockReason}}</p>{{/if}}

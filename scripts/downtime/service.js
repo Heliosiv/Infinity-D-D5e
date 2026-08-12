@@ -21,6 +21,12 @@ import {
   setDowntimeHeat,
 } from "./settlements.js";
 import {
+  GUIDED_DOWNTIME_MODE,
+  guidedTemplateById,
+  normalizeGuidedDowntimeSelection,
+  projectGuidedDowntimeTemplate,
+} from "./dispatch.js";
+import {
   beginDowntimeApplication,
   cancelDowntimeBlock,
   claimDowntimeOperation,
@@ -44,6 +50,7 @@ import {
   claimDowntimePlanningRoll,
   updateDowntimeConfig,
   updateCollectingDowntimeBlock,
+  updateGuidedDowntimePlan,
 } from "./store.js";
 import {
   applyAmmoCraftOperation,
@@ -693,11 +700,22 @@ export async function openDowntimeBlock({
   locationName,
   hours,
   actorIds,
+  mode = "",
+  templateIds = [],
 } = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
     await ensureDowntimeWorkflowAuthority();
     const config = loadDowntimeConfig();
+    if (mode === GUIDED_DOWNTIME_MODE) {
+      return openGuidedDowntimeBlock({
+        config,
+        locationName,
+        hours,
+        actorIds,
+        templateIds,
+      });
+    }
     const requestedSettlementId = String(settlementId ?? "").trim();
     const savedSettlement = config.settlements.find(
       (entry) => entry.id === requestedSettlementId,
@@ -751,6 +769,63 @@ export async function openDowntimeBlock({
     await broadcastPlayerState(block);
     return block;
   });
+}
+
+async function openGuidedDowntimeBlock({
+  config,
+  locationName,
+  hours,
+  actorIds,
+  templateIds,
+}) {
+  const budgetHours = Math.floor(Number(hours));
+  if (
+    !Number.isSafeInteger(budgetHours) ||
+    budgetHours < 1 ||
+    budgetHours > MAX_BLOCK_HOURS
+  ) {
+    throw new Error(`Downtime must be between 1 and ${MAX_BLOCK_HOURS} hours.`);
+  }
+  const selectedIds = [
+    ...new Set(Array.isArray(templateIds) ? templateIds.map(String) : []),
+  ];
+  const templates = selectedIds
+    .map((templateId) => guidedTemplateById(config.guidedTemplates, templateId))
+    .filter(Boolean);
+  if (templates.length === 0)
+    throw new Error("Choose at least one activity template.");
+  const eligible = [...new Set(Array.isArray(actorIds) ? actorIds : [])]
+    .map(actorById)
+    .filter((actor) => actor?.type === "character");
+  if (eligible.length === 0) throw new Error("Choose at least one character.");
+  const createdAt = now();
+  const block = await createDowntimeBlock({
+    id: newId("downtime"),
+    mode: GUIDED_DOWNTIME_MODE,
+    locationName: cleanGuidedLocation(locationName),
+    settlementName: cleanGuidedLocation(locationName),
+    settlementId: "guided-downtime",
+    hasSettlement: false,
+    budgetHours,
+    hours: budgetHours,
+    guidedTemplates: templates,
+    participants: eligible.map((actor) => ({
+      actorId: String(actor.id),
+      actorName: String(actor.name ?? "Character"),
+      actorImg: String(actor.img ?? "icons/svg/mystery-man.svg"),
+      userIds: ownerUserIds(actor),
+      budgetHours,
+      queue: [],
+      submitted: false,
+      submittedAt: 0,
+      submittedBy: null,
+    })),
+    requests: {},
+    createdAt,
+  });
+  notifyServiceChanged("guided-block-create");
+  await broadcastPlayerState(block);
+  return block;
 }
 
 export async function openBlockForPlayers(blockId) {
@@ -907,6 +982,9 @@ export async function planActiveDowntimeBlock(blockId) {
     if (block.state === "planned" && block.plan) return block;
     if (block.state !== "locked") {
       throw new Error("Lock submissions before generating the preview.");
+    }
+    if (block.mode === GUIDED_DOWNTIME_MODE) {
+      return planGuidedDowntimeBlock(block);
     }
     if (block.plan) return block;
     const config = loadDowntimeConfig();
@@ -1116,6 +1194,142 @@ export async function planActiveDowntimeBlock(blockId) {
     notifyServiceChanged("block-plan");
     await broadcastPlayerState(planned);
     return planned;
+  });
+}
+
+async function planGuidedDowntimeBlock(block) {
+  const createdAt = now();
+  const operations = [];
+  const characters = [];
+  for (const participant of block.participants ?? []) {
+    const actor = actorById(participant.actorId);
+    const selection = normalizeGuidedDowntimeSelection(
+      participant.guidedSelection,
+      block.guidedTemplates,
+    );
+    if (!actor || !selection) {
+      throw new Error(
+        `${participant.actorName}'s activity choice is missing or invalid.`,
+      );
+    }
+    const template = guidedTemplateById(
+      block.guidedTemplates,
+      selection.templateId,
+    );
+    const roll = selection.skill
+      ? await rollSkillTotal(actor, selection.skill, {
+          chatMessage: false,
+          fastForward: true,
+        })
+      : { ok: true, total: 0, roll: null };
+    if (!roll?.ok)
+      throw new Error(
+        `${participant.actorName}'s activity roll did not complete.`,
+      );
+    const selectedOutcomeIndex = guidedOutcomeIndex(
+      roll.total,
+      template.outcomes.length,
+    );
+    const operation = buildGuidedDowntimeOperation({
+      block,
+      actor,
+      template,
+      skill: selection.skill,
+      roll,
+      selectedOutcomeIndex,
+      createdAt,
+    });
+    operations.push(operation);
+    characters.push({
+      actorId: actor.id,
+      actorName: actor.name,
+      usedHours: block.budgetHours,
+      remainingHours: 0,
+      operations: [operation],
+    });
+  }
+  const planned = await persistDowntimePlan(
+    block.id,
+    {
+      id: newId("guided-plan"),
+      blockId: block.id,
+      mode: GUIDED_DOWNTIME_MODE,
+      createdAt,
+      characters,
+      operations,
+    },
+    { at: createdAt },
+  );
+  notifyServiceChanged("guided-block-plan");
+  await broadcastPlayerState(planned);
+  return planned;
+}
+
+export async function chooseGuidedDowntimeOutcome({
+  blockId,
+  operationId,
+  outcomeIndex,
+  report = "",
+} = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      block.state !== "planned"
+    ) {
+      throw new Error(
+        "Choose a result before applying this guided downtime block.",
+      );
+    }
+    const index = Math.floor(Number(outcomeIndex));
+    const operations = (block.plan?.operations ?? []).map((operation) => {
+      if (operation.operationId !== String(operationId)) return operation;
+      const template = guidedTemplateById(
+        block.guidedTemplates,
+        operation.activityId,
+      );
+      if (!template || index < 0 || index >= template.outcomes.length) {
+        throw new Error("Choose one of this activity's available results.");
+      }
+      const actor = actorById(operation.actorId);
+      if (!actor) throw new Error("That character is no longer available.");
+      return buildGuidedDowntimeOperation({
+        block,
+        actor,
+        template,
+        skill: operation.check?.skill ?? "",
+        roll: { ok: true, total: operation.check?.total ?? 0, roll: null },
+        selectedOutcomeIndex: index,
+        createdAt: operation.createdAt ?? now(),
+        operationId: operation.operationId,
+        reportOverride: cleanGuidedReport(report) || operation.report,
+      });
+    });
+    if (
+      !operations.some(
+        (operation) => operation.operationId === String(operationId),
+      )
+    ) {
+      throw new Error("That downtime result no longer exists.");
+    }
+    const byActor = new Map(
+      operations.map((operation) => [operation.actorId, operation]),
+    );
+    const plan = {
+      ...block.plan,
+      operations,
+      characters: (block.plan.characters ?? []).map((character) => ({
+        ...character,
+        operations: [byActor.get(character.actorId)].filter(Boolean),
+      })),
+    };
+    const updated = await updateGuidedDowntimePlan(block.id, plan);
+    notifyServiceChanged("guided-outcome-select");
+    await broadcastPlayerState(updated);
+    return updated;
   });
 }
 
@@ -1441,6 +1655,78 @@ async function buildPickpocketReward({
     timestamp: createdAt,
     valueCp,
   });
+}
+
+function buildGuidedDowntimeOperation({
+  block,
+  actor,
+  template,
+  skill,
+  roll,
+  selectedOutcomeIndex,
+  createdAt,
+  operationId = "",
+  reportOverride = "",
+}) {
+  const outcome = template.outcomes[selectedOutcomeIndex];
+  const report = cleanGuidedReport(reportOverride) || outcome.report;
+  const walletRead = readWalletStrict(actor.system?.currency);
+  if (!walletRead.ok)
+    throw new Error(`${actor.name}'s currency could not be verified.`);
+  const currencyDeltaCp = Math.round(outcome.rewardGp * 100);
+  const walletAfter = planWalletDeltaCp(walletRead.wallet, currencyDeltaCp);
+  if (!walletAfter)
+    throw new Error(`${actor.name}'s reward could not be prepared.`);
+  const total = Number(roll?.total) || 0;
+  return {
+    operationId: operationId || `guided-${block.id}-${actor.id}`,
+    kind: "currency",
+    mode: GUIDED_DOWNTIME_MODE,
+    actorId: actor.id,
+    settlementId: "guided-downtime",
+    activityId: template.id,
+    activityLabel: template.name,
+    activityImage: template.image,
+    hours: block.budgetHours,
+    createdAt,
+    selectedOutcomeIndex,
+    outcomeLabel: outcome.label,
+    report,
+    currencyDeltaCp,
+    walletBefore: walletRead.wallet,
+    walletAfter,
+    summary: `${outcome.label}: ${report}${currencyDeltaCp > 0 ? ` ${formatCp(currencyDeltaCp)} was added to ${actor.name}.` : ""}`,
+    check: {
+      skill,
+      total,
+      formula: String(roll?.roll?.formula ?? ""),
+      outcomeTier: "neutral",
+    },
+  };
+}
+
+function guidedOutcomeIndex(total, count) {
+  if (count <= 1) return 0;
+  if (total >= 20) return count - 1;
+  if (total >= 12) return Math.min(count - 1, 1);
+  return 0;
+}
+
+function cleanGuidedLocation(value) {
+  const location = String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return location || "Downtime";
+}
+
+function cleanGuidedReport(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 800);
 }
 
 export async function applyActiveDowntimeBlock(blockId) {
@@ -2860,6 +3146,12 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     workflowStatus: active?.state ?? "idle",
     workflow: active ? projectWorkspaceBlock(active) : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
+    guidedTemplates: config.guidedTemplates.map((template) => ({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      image: template.image,
+    })),
     selectedSettlement: selected
       ? projectSettlementForWorkspace(selected)
       : null,
@@ -2928,6 +3220,7 @@ function projectWorkspaceBlock(block) {
     block.state === "locked" && block.planningDraft?.state === "needs-review";
   return {
     ...block,
+    guided: block.mode === GUIDED_DOWNTIME_MODE,
     status: block.state,
     participants: (block.participants ?? []).map((participant) => {
       const plan = byActor.get(participant.actorId);
@@ -2956,10 +3249,31 @@ function projectWorkspaceBlock(block) {
               label: operation.activityLabel,
               hours: operation.hours,
               rollLabel: operation.check
-                ? `${operation.check.total} vs DC ${operation.check.dc}`
+                ? operation.mode === GUIDED_DOWNTIME_MODE
+                  ? `${title(operation.check.skill)} roll: ${operation.check.total}`
+                  : `${operation.check.total} vs DC ${operation.check.dc}`
                 : "",
               outcome: operation.summary,
+              report: operation.report ?? "",
               tone: operation.check?.outcomeTier ?? "neutral",
+              outcomeOptions:
+                block.mode === GUIDED_DOWNTIME_MODE
+                  ? (
+                      guidedTemplateById(
+                        block.guidedTemplates,
+                        operation.activityId,
+                      )?.outcomes ?? []
+                    ).map((outcome, index) => ({
+                      index,
+                      label: outcome.label,
+                      report: outcome.report,
+                      rewardLabel:
+                        outcome.rewardGp > 0
+                          ? `${outcome.rewardGp} gp`
+                          : "No currency",
+                      selected: index === operation.selectedOutcomeIndex,
+                    }))
+                  : [],
             })),
           })),
         }
@@ -3018,6 +3332,37 @@ export async function getPlayerProjectionForUser({
     eligible.find((participant) => participant.actorId === actorId) ??
     eligible[0];
   const actor = actorById(selected.actorId);
+  if (active.mode === GUIDED_DOWNTIME_MODE) {
+    const queue = selected.queue ?? [];
+    return {
+      status: active.state,
+      mode: GUIDED_DOWNTIME_MODE,
+      hasActiveBlock: true,
+      settlementName: active.locationName,
+      locationName: active.locationName,
+      hasSettlement: false,
+      blockId: active.id,
+      actors: eligible.map((participant) => ({
+        id: participant.actorId,
+        name: participant.actorName,
+        img: actorById(participant.actorId)?.img ?? participant.actorImg,
+        eligible: true,
+      })),
+      budgetHours: active.budgetHours,
+      usedHours: sumHours(queue),
+      remainingHours: Math.max(0, active.budgetHours - sumHours(queue)),
+      activities: active.guidedTemplates.map((template) =>
+        projectGuidedActivity(template, active.budgetHours),
+      ),
+      queue: decorateGuidedQueue(queue, active.guidedTemplates),
+      rawQueue: queue,
+      submitted: selected.submitted === true,
+      canSubmit: active.state === "collecting" && selected.submitted !== true,
+      canRecall: active.state === "collecting" && selected.submitted === true,
+      needsRecovery: active.state === "needs-review",
+      receipt: active.result?.playerReceipts?.[selected.actorId] ?? null,
+    };
+  }
   const settlement = settlementForBlock(active, config);
   const context = await buildActorDowntimeContext({
     block: active,
@@ -3179,6 +3524,16 @@ export async function submitQueueAuthoritatively({
       if (!actor || !participant || !userOwnsDowntimeActor(user, actor)) {
         throw new Error("You do not own that eligible character.");
       }
+      if (block.mode === GUIDED_DOWNTIME_MODE) {
+        return submitGuidedDowntimeChoice({
+          block,
+          actor,
+          userId,
+          requestId,
+          queue,
+          revision,
+        });
+      }
       const canonical = canonicalizeDowntimeQueueSubmission(queue);
       if (!canonical.ok) {
         throw new Error(
@@ -3273,6 +3628,95 @@ export async function submitQueueAuthoritatively({
     }
     throw new Error("The queue changed concurrently; refresh and retry.");
   });
+}
+
+async function submitGuidedDowntimeChoice({
+  block,
+  actor,
+  userId,
+  requestId,
+  queue,
+  revision,
+}) {
+  const source = Array.isArray(queue) ? queue : [];
+  if (source.length !== 1) {
+    throw new Error("Choose exactly one activity for this downtime block.");
+  }
+  const entry = source[0] ?? {};
+  const selection = normalizeGuidedDowntimeSelection(
+    {
+      templateId: entry.activityId,
+      skill: entry.skill,
+    },
+    block.guidedTemplates,
+  );
+  if (!selection || Number(entry.hours) !== Number(block.budgetHours)) {
+    throw new Error(
+      "Choose one available activity and use the assigned downtime.",
+    );
+  }
+  const digest = queueDigest([
+    {
+      id: "guided-choice",
+      activityId: selection.templateId,
+      hours: block.budgetHours,
+      skill: selection.skill,
+    },
+  ]);
+  const prior = block.requests?.[requestId];
+  if (prior) {
+    if (
+      prior.kind !== "submit" ||
+      prior.digest !== digest ||
+      prior.actorId !== actor.id ||
+      prior.userId !== userId
+    ) {
+      throw new Error(
+        "That request ID was already used for another submission.",
+      );
+    }
+    return block;
+  }
+  const template = guidedTemplateById(
+    block.guidedTemplates,
+    selection.templateId,
+  );
+  const participants = block.participants.map((entry) =>
+    entry.actorId === actor.id
+      ? {
+          ...entry,
+          guidedSelection: selection,
+          queue: [
+            {
+              id: "guided-choice",
+              activityId: template.id,
+              hours: block.budgetHours,
+              skill: selection.skill,
+            },
+          ],
+          submitted: true,
+          submittedAt: now(),
+          submittedBy: userId,
+        }
+      : entry,
+  );
+  const updated = await updateCollectingDowntimeBlock(
+    block.id,
+    {
+      participants,
+      requests: boundedRequests(block.requests, requestId, {
+        actorId: actor.id,
+        userId,
+        digest,
+        kind: "submit",
+        at: now(),
+      }),
+    },
+    { expectedRevision: revision },
+  );
+  notifyServiceChanged("guided-choice-submit");
+  await broadcastPlayerState(updated);
+  return updated;
 }
 
 export async function recallSubmissionAuthoritatively({
@@ -3643,12 +4087,21 @@ function buildCompletedResult(block) {
       label: operation.activityLabel ?? "Activity",
       summary: operation.summary,
       tone: operation.check?.outcomeTier ?? "neutral",
+      image: operation.activityImage ?? "",
+      report: operation.report ?? "",
+      rewardLabel:
+        Number(operation.currencyDeltaCp) > 0
+          ? `${formatCp(operation.currencyDeltaCp)} added to your character.`
+          : "No currency was added.",
     }));
     playerReceipts[character.actorId] = {
       settlementName: block.settlementName,
       completedAt,
       activities,
-      summary: `${activities.length} downtime ${activities.length === 1 ? "activity" : "activities"} resolved without advancing campaign time.`,
+      summary:
+        block.mode === GUIDED_DOWNTIME_MODE
+          ? "Your GM has delivered your downtime report. Campaign time was not advanced."
+          : `${activities.length} downtime ${activities.length === 1 ? "activity" : "activities"} resolved without advancing campaign time.`,
     };
   }
   return {
@@ -3656,6 +4109,37 @@ function buildCompletedResult(block) {
     playerReceipts,
     summary: `${Object.keys(playerReceipts).length} character ${Object.keys(playerReceipts).length === 1 ? "queue" : "queues"} resolved. Campaign time was not advanced.`,
   };
+}
+
+function projectGuidedActivity(template, hours) {
+  return {
+    id: template.id,
+    label: template.name,
+    description: template.description,
+    category: "guided",
+    icon: "fa-solid fa-compass",
+    available: true,
+    fixedHours: hours,
+    skills: template.skills.map((skill) => ({
+      id: skill,
+      label: title(skill),
+      selected: false,
+    })),
+    hasSkills: template.skills.length > 0,
+    image: template.image,
+  };
+}
+
+function decorateGuidedQueue(queue, templates) {
+  return (queue ?? []).map((entry) => {
+    const template = guidedTemplateById(templates, entry.activityId);
+    return {
+      ...entry,
+      label: template?.name ?? "Activity",
+      icon: "fa-solid fa-compass",
+      detail: entry.skill ? title(entry.skill) : "",
+    };
+  });
 }
 
 function sumHours(queue) {
@@ -3752,6 +4236,7 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   openForPlayers: ({ blockId }) => openBlockForPlayers(blockId),
   lockBlock: ({ blockId }) => lockActiveDowntimeBlock(blockId),
   planBlock: ({ blockId }) => planActiveDowntimeBlock(blockId),
+  chooseGuidedOutcome: (payload) => chooseGuidedDowntimeOutcome(payload),
   applyBlock: ({ blockId }) => applyActiveDowntimeBlock(blockId),
   cancelBlock: ({ blockId }) => cancelActiveDowntimeBlock(blockId),
   recoverBlock: ({ blockId }) => recoverActiveDowntimeBlock(blockId),

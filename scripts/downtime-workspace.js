@@ -148,6 +148,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
       lockBlock: DowntimeWorkspaceApp._onLockBlock,
       planBlock: DowntimeWorkspaceApp._onPlanBlock,
+      chooseGuidedOutcome: DowntimeWorkspaceApp._onChooseGuidedOutcome,
       applyBlock: DowntimeWorkspaceApp._onApplyBlock,
       cancelBlock: DowntimeWorkspaceApp._onCancelBlock,
       recoverBlock: DowntimeWorkspaceApp._onRecoverBlock,
@@ -652,6 +653,11 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
         )
         .map((input) => cleanId(input.value))
         .filter(Boolean),
+      mode: "guided",
+      templateIds:
+        typeof data.getAll === "function"
+          ? data.getAll("templateIds").map(cleanId).filter(Boolean)
+          : [],
     };
     const result = await this._runCommand("createBlock", payload, {
       pending: "Creating downtime block...",
@@ -717,6 +723,26 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
         pending: "Applying the saved downtime plan...",
         success: "Downtime application finished.",
         focus: '[data-action="refresh"]',
+      },
+    );
+  }
+
+  static async _onChooseGuidedOutcome(_event, target) {
+    const operationId = cleanId(target?.dataset?.operationId);
+    const outcomeIndex = positiveInteger(target?.dataset?.outcomeIndex, -1);
+    if (!operationId || outcomeIndex < 0) return;
+    const report = String(
+      target
+        ?.closest?.("[data-operation-id]")
+        ?.querySelector?.("[data-guided-report]")?.value ?? "",
+    );
+    await this._runCommand(
+      "chooseGuidedOutcome",
+      { blockId: this._currentBlockId(), operationId, outcomeIndex, report },
+      {
+        pending: "Updating the GM-selected result...",
+        success: "Result selected. Apply when the reports are ready.",
+        focus: `[data-operation-id="${cssEscape(operationId)}"]`,
       },
     );
   }
@@ -858,6 +884,14 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     workflow?.status ?? source.workflowStatus ?? "idle",
   );
   const settlements = array(source.settlements).map(normalizeSettlementListRow);
+  const guidedTemplates = array(source.guidedTemplates)
+    .map((template) => ({
+      id: cleanId(template?.id),
+      name: String(template?.name ?? "Activity"),
+      description: String(template?.description ?? ""),
+      image: String(template?.image ?? "icons/svg/d20.svg"),
+    }))
+    .filter((template) => template.id);
   let selectedSettlementId = cleanId(uiState.selectedSettlementId);
   if (!selectedSettlementId && !uiState.creatingSettlement) {
     selectedSettlementId = cleanId(
@@ -925,6 +959,8 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     lifecycleRecovery: lifecycle.recovery,
     primaryAction: lifecycle.primaryAction,
     settlements,
+    guidedTemplates,
+    hasGuidedTemplates: guidedTemplates.length > 0,
     hasSettlements: settlements.length > 0,
     selectedSettlement,
     hasSelectedSettlement: Boolean(selectedSettlement),
@@ -1409,6 +1445,15 @@ function normalizeCurrentBlock(workflow, root) {
             "",
         ),
         tone: cleanTone(operation?.tone ?? operation?.outcomeTier),
+        outcomeOptions: array(operation?.outcomeOptions).map((option) => ({
+          index: positiveInteger(option?.index, 0),
+          label: String(option?.label ?? "Result"),
+          report: String(option?.report ?? ""),
+          rewardLabel: String(option?.rewardLabel ?? ""),
+          selected: option?.selected === true,
+        })),
+        hasOutcomeOptions: array(operation?.outcomeOptions).length > 0,
+        report: String(operation?.report ?? ""),
       }),
     ),
   }));

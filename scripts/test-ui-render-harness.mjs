@@ -69,7 +69,6 @@ for (const action of [
   );
 }
 for (const control of [
-  'name="settlementId"',
   'name="locationName"',
   'name="hours"',
   "data-actor-query",
@@ -557,8 +556,11 @@ assert.ok(downtimeEmptyView, "harness includes empty GM downtime state");
 assert.match(downtimeEmptyView.html, /Open a downtime block/);
 assert.match(downtimeEmptyView.html, /data-action="createBlock"/);
 assert.match(downtimeEmptyView.html, /8 productive hours per day/);
-assert.match(downtimeEmptyView.html, /Settlement \(optional\)/);
-assert.match(downtimeEmptyView.html, /No settlement · camp, wilderness/);
+assert.match(downtimeEmptyView.html, /Applicable activities/);
+assert.match(
+  downtimeEmptyView.html,
+  /Settlement, faction, Heat, and escalation rules/,
+);
 assert.match(downtimeEmptyView.html, /name="locationName"/);
 
 const downtimeLoadErrorView = views.find(

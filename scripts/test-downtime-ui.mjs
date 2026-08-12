@@ -225,8 +225,8 @@ try {
   );
   assert.match(
     workspaceTemplateSource,
-    /<input(?=[^>]*name="locationName")(?=[^>]*aria-label="Other downtime location")[^>]*>/,
-    "the optional non-settlement location retains an explicit accessible name",
+    /<input(?=[^>]*name="locationName")(?=[^>]*aria-label="Downtime location")[^>]*>/,
+    "the guided downtime location retains an explicit accessible name",
   );
   assert.match(
     workspaceTemplateSource,

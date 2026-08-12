@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>Spend only the hours you want. Your queue resolves from top to bottom after the GM locks it.</p>
+      <p>Choose one activity for the downtime the GM assigned. Your GM will review the roll and send your report.</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -269,7 +269,7 @@
     {{#if receipt.hasActivities}}
     <ul>
       {{#each receipt.activities}}
-      <li class="dt-result-row dt-result-row--{{tone}}"><strong>{{label}}</strong><span>{{summary}}</span></li>
+      <li class="dt-result-row dt-result-row--{{tone}}">{{#if hasImage}}<img src="{{image}}" alt="" />{{/if}}<strong>{{label}}</strong><span>{{#if report}}{{report}}{{else}}{{summary}}{{/if}}{{#if rewardLabel}} {{rewardLabel}}{{/if}}</span></li>
       {{/each}}
     </ul>
     {{/if}}

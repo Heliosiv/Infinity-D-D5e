@@ -556,6 +556,8 @@ try {
       settlementId: "haven",
       locationName: "Ignored when settled",
       hours: 16,
+      mode: "guided",
+      templateIds: [],
       actorIds: ["borin", "aria", "cass"],
     },
     "visual sorting never changes the canonical Actor order submitted to the service",

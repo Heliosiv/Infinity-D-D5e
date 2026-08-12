@@ -429,6 +429,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
 
   return {
     status,
+    guided: cleanId(source.mode) === "guided",
     statusLabel: playerStatusLabel(status, submitted),
     statusTone: playerStatusTone(status),
     hasActiveBlock,
@@ -605,6 +606,10 @@ function normalizeReceipt(receipt) {
       label: String(entry?.label ?? entry?.activityLabel ?? "Activity"),
       summary: String(entry?.summary ?? entry?.outcome ?? ""),
       tone: safeReceiptTone(entry?.tone ?? entry?.outcomeTier),
+      image: String(entry?.image ?? ""),
+      hasImage: Boolean(entry?.image),
+      report: String(entry?.report ?? ""),
+      rewardLabel: String(entry?.rewardLabel ?? ""),
     }),
   );
   return {

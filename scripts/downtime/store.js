@@ -37,6 +37,7 @@ const STORE_VERSION = 1;
 const CHECKPOINT_VERSION = 1;
 const CONFIG_CHECKPOINT_VERSION = 1;
 const LEGACY_DOWNTIME_CONFIG_VERSION = 2;
+const PREVIOUS_DOWNTIME_CONFIG_VERSION = 3;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -164,6 +165,16 @@ function assertExplicitPersistedSchema(
 }
 
 function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
+  if (
+    isPlainObject(raw) &&
+    [
+      LEGACY_DOWNTIME_CONFIG_VERSION,
+      PREVIOUS_DOWNTIME_CONFIG_VERSION,
+      DOWNTIME_CONFIG_VERSION,
+    ].includes(Number(raw.version))
+  ) {
+    return;
+  }
   assertExplicitPersistedVersion(raw, {
     domain,
     supportedVersion: DOWNTIME_CONFIG_VERSION,
@@ -352,6 +363,14 @@ function parsePersistedDowntimeConfig(raw) {
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
   } else if (
+    persistedVersionEquals(raw.version, PREVIOUS_DOWNTIME_CONFIG_VERSION)
+  ) {
+    const { guidedTemplates: _guidedTemplates, ...previousShape } = current;
+    persistedShape = {
+      ...previousShape,
+      version: PREVIOUS_DOWNTIME_CONFIG_VERSION,
+    };
+  } else if (
     persistedVersionEquals(raw.version, LEGACY_DOWNTIME_CONFIG_VERSION)
   ) {
     const rawSettlements = Array.isArray(raw.settlements)
@@ -373,6 +392,7 @@ function parsePersistedDowntimeConfig(raw) {
         return legacySettlement;
       }),
     };
+    delete persistedShape.guidedTemplates;
   } else {
     return null;
   }
@@ -1523,6 +1543,57 @@ export async function persistDowntimePlan(blockId, plan, options = {}) {
       at: options.at ?? currentTimestamp(),
       by: options.by ?? fence.userId,
     });
+    return { store, mapResult: (committed) => committed.activeBlock };
+  });
+}
+
+/**
+ * Guided downtime deliberately leaves outcome selection with the GM after a
+ * roll. Before application begins, replace the saved plan only when it has
+ * the identical operation ledger shape; this preserves recovery identity
+ * while allowing the selected report/reward to change.
+ */
+export async function updateGuidedDowntimePlan(blockId, plan) {
+  const id = toId(blockId);
+  if (!id || !isPlainObject(plan)) {
+    throw new Error("DowntimeGuidedPlanInvalid");
+  }
+  const normalizedPlan = sanitizeJson(plan);
+  return mutateWorkflow((store, fence) => {
+    const current = store.activeBlock;
+    if (
+      !current ||
+      current.id !== id ||
+      current.state !== "planned" ||
+      current.mode !== "guided" ||
+      !current.plan
+    ) {
+      throw new Error("DowntimeGuidedPlanNotEditable");
+    }
+    const currentIds = plannedOperations(current.plan)
+      .map((operation) => operation.operationId)
+      .sort();
+    const nextIds = plannedOperations(normalizedPlan)
+      .map((operation) => operation.operationId)
+      .sort();
+    if (!persistedValuesEqual(currentIds, nextIds)) {
+      throw new Error("DowntimeGuidedPlanOperationMismatch");
+    }
+    if (
+      Object.values(current.operationLedger ?? {}).some(
+        (record) => record.state !== "pending",
+      )
+    ) {
+      throw new Error("DowntimeGuidedPlanAlreadyApplying");
+    }
+    const next = normalizeDowntimeBlock({
+      ...current,
+      plan: normalizedPlan,
+      updatedAt: currentTimestamp(),
+      updatedBy: fence.userId,
+    });
+    if (!next) throw new Error("DowntimeGuidedPlanInvalid");
+    store.activeBlock = next;
     return { store, mapResult: (committed) => committed.activeBlock };
   });
 }

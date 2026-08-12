@@ -299,6 +299,9 @@ function sanitizeReceipt(raw) {
         ),
         summary: cleanText(entry?.summary ?? entry?.outcome, 1_000),
         tone: cleanId(entry?.tone ?? entry?.outcomeTier) || "neutral",
+        image: cleanText(entry?.image, 500),
+        report: cleanText(entry?.report, 1_000),
+        rewardLabel: cleanText(entry?.rewardLabel, 300),
       })),
   };
 }
@@ -328,6 +331,7 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
   );
   return {
     status: cleanId(source.status ?? source.workflowStatus) || "idle",
+    mode: cleanId(source.mode),
     hasActiveBlock: Boolean(source.hasActiveBlock),
     noGm: source.noGm === true,
     settlementName: cleanText(source.settlementName ?? "Settlement", 200),

@@ -43,6 +43,42 @@ import {
   normalizeSettlementProfile,
   setDowntimeHeat,
 } from "./downtime/settlements.js";
+import {
+  defaultGuidedDowntimeTemplates,
+  normalizeGuidedDowntimeSelection,
+  normalizeGuidedDowntimeTemplates,
+} from "./downtime/dispatch.js";
+
+/* Guided downtime templates remain bounded and player choices only name a
+   configured template and skill. */
+{
+  const templates = defaultGuidedDowntimeTemplates();
+  assert.equal(templates.length, 3);
+  assert.equal(
+    templates.every((template) => template.outcomes.length >= 3),
+    true,
+  );
+  assert.equal(
+    normalizeGuidedDowntimeSelection(
+      { templateId: templates[0].id, skill: templates[0].skills[0] },
+      templates,
+    ).templateId,
+    templates[0].id,
+  );
+  assert.equal(
+    normalizeGuidedDowntimeSelection(
+      { templateId: "unknown", skill: "per" },
+      templates,
+    ),
+    null,
+  );
+  assert.equal(
+    normalizeGuidedDowntimeTemplates([
+      { id: "invalid", name: "Invalid", outcomes: [] },
+    ]).length,
+    3,
+  );
+}
 
 /* Catalog contains every built-in with exact legal durations. */
 {

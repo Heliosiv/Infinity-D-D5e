@@ -1,4 +1,25 @@
-# Downtime, Locations, City Actions, and Theft
+# Downtime
+
+## Guided downtime (default)
+
+The default GM flow is intentionally small and has no settlement, faction,
+Heat, theft, or escalation data. Open **Home → Run the Session → Downtime
+Workspace**, enter a location and a productive-hour budget, choose the player
+characters, then tick the saved activity templates that apply. Each player
+chooses exactly one activity and an applicable skill; the assigned hours are
+used as one downtime activity.
+
+After locking submissions, the GM sees each private roll and a small set of
+three possible report outcomes. Choose an outcome, optionally rewrite the
+player report, then apply the plan. A configured coin reward is deposited into
+the character's currency and verified before the player receives an updated
+Downtime Activities report with the activity art, narrative, and award.
+
+The shipped templates are **Paid Work**, **Research & Rumors**, and
+**Thievery**. They are intentionally a safe starting set. No campaign time is
+advanced by this workflow.
+
+---
 
 ## v0.3.1 interface quick start
 
