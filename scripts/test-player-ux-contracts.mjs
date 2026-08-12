@@ -117,6 +117,11 @@ for (const path of stateTemplates) {
   assert.match(source, /Nothing changed/i);
   assert.match(source, /Try again/);
 }
+const resourceOverviewTemplate = read("templates/resource-overview.hbs");
+assert.match(resourceOverviewTemplate, /else if noGm/);
+assert.match(resourceOverviewTemplate, /else if loading/);
+assert.match(resourceOverviewTemplate, /else if requestFailed/);
+assert.match(resourceOverviewTemplate, /else if hasOverview/);
 
 const forageScript = read("scripts/forage-prompt.js");
 const forageTemplate = read("templates/forage-prompt.hbs");

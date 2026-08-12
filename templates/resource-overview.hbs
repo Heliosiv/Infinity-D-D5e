@@ -23,7 +23,16 @@
 
   <p class="infinity-session-context" role="status">
     <i class="fa-solid fa-eye" aria-hidden="true"></i>
-    <span><strong>Read-only party outlook:</strong> refresh requests the latest player-safe snapshot. It never consumes supplies or changes the party record.</span>
+    <span><strong>Read-only party outlook:</strong>
+      {{#if disabled}}ask the GM to enable Party Supplies sharing. No player snapshot is available while sharing is off.
+      {{else if sharingDisabled}}this GM preview uses the player-safe snapshot. Enable sharing in Module Settings before players can request it.
+      {{else if noGm}}reconnect, then refresh for the latest player-safe snapshot. Refresh never consumes supplies or changes the party record.
+      {{else if loading}}wait for the latest player-safe snapshot before relying on this outlook.
+      {{else if requestFailed}}check your connection, then use Try again to request the same snapshot. No supplies changed.
+      {{else if hasOverview}}review this player-safe snapshot. Refresh only requests newer information; it never changes party supplies.
+      {{else}}ask the GM to open Quartermaster and refresh Party Supplies. No supplies changed.
+      {{/if}}
+    </span>
   </p>
 
   {{#if sharingDisabled}}

@@ -772,6 +772,46 @@ const suppliesOfflineView = views.find(
 );
 assert.ok(suppliesOfflineView, "harness includes Party Supplies offline state");
 assert.match(suppliesOfflineView.html, /No full GM is online/);
+assert.match(
+  suppliesOfflineView.html,
+  /reconnect, then refresh for the latest player-safe snapshot/i,
+);
+
+const suppliesLoadingView = views.find(
+  (view) => view.id === "resource-overview-loading",
+);
+assert.ok(suppliesLoadingView, "harness includes Party Supplies loading state");
+assert.match(
+  suppliesLoadingView.html,
+  /wait for the latest player-safe snapshot before relying on this outlook/i,
+);
+
+const suppliesErrorView = views.find(
+  (view) => view.id === "resource-overview-error",
+);
+assert.ok(suppliesErrorView, "harness includes Party Supplies failed refresh");
+assert.match(
+  suppliesErrorView.html,
+  /use Try again to request the same snapshot. No supplies changed/i,
+);
+
+const suppliesEmptyView = views.find(
+  (view) => view.id === "resource-overview-empty",
+);
+assert.ok(suppliesEmptyView, "harness includes Party Supplies empty state");
+assert.match(
+  suppliesEmptyView.html,
+  /ask the GM to open Quartermaster and refresh Party Supplies. No supplies changed/i,
+);
+
+const suppliesDisabledView = views.find(
+  (view) => view.id === "resource-overview-disabled",
+);
+assert.ok(suppliesDisabledView, "harness includes disabled Party Supplies");
+assert.match(
+  suppliesDisabledView.html,
+  /ask the GM to enable Party Supplies sharing. No player snapshot is available while sharing is off/i,
+);
 
 const routineManagerView = views.find((view) => view.id === "resource-manager");
 assert.ok(
