@@ -4550,6 +4550,8 @@ function criticalInjuryTriageContext() {
     pendingCount: 1,
     hasPlayerCharacters: true,
     hasPlayerUsers: true,
+    canMutate: true,
+    actionInFlight: false,
     message: "A new recovery is ready for GM review.",
     tone: "ready",
     playerCharacters: [
@@ -4573,6 +4575,8 @@ function criticalInjuryTriageContext() {
         createdLabel: "12 Eleasis, 1492 DR",
         hasInjuries: false,
         injuries: [],
+        canMutate: true,
+        actionInFlight: false,
       },
       {
         pendingId: "pending-player-bryn",
@@ -4591,6 +4595,8 @@ function criticalInjuryTriageContext() {
             permanent: false,
           },
         ],
+        canMutate: true,
+        actionInFlight: false,
       },
     ],
     partyRows: [

@@ -501,6 +501,17 @@ export async function sendCriticalInjuryReview(pendingId) {
     }
     return approved;
   } catch (error) {
+    const projectionCleared = await removePendingProjection(
+      actor,
+      review.pendingId,
+    );
+    if (!projectionCleared) {
+      console.warn(
+        `${MODULE_ID} | preserved Critical Injury approval after its projection could not be cleared`,
+        error,
+      );
+      throw error;
+    }
     await reopenCriticalInjuryReview(review.pendingId).catch((reopenError) =>
       console.warn(
         `${MODULE_ID} | could not return an unprojected injury approval to GM review`,
@@ -941,11 +952,13 @@ async function removePendingProjection(actor, pendingId) {
   try {
     assertCriticalInjuryAuthority();
     await removePendingInjury(actor, pendingId);
+    return true;
   } catch (error) {
     console.warn(
       `${MODULE_ID} | could not clear the completed injury prompt projection`,
       error,
     );
+    return false;
   }
 }
 

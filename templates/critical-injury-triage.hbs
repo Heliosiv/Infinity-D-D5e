@@ -15,6 +15,7 @@
     <p class="ci-notice ci-notice--danger" role="alert">This workspace is available to full Game Masters only.</p>
   {{else}}
     <p class="ci-status ci-status--{{tone}}" role="status" aria-live="polite">{{message}}</p>
+    {{#unless canMutate}}<p class="ci-notice ci-notice--warning" role="status">This is a read-only view. The active GM controls injury review actions; this window refreshes when authority changes.</p>{{/unless}}
     <p class="infinity-session-context"><i class="fa-solid fa-compass" aria-hidden="true"></i><span><strong>Safe next step:</strong> review newly recovered characters, then send their private d100 prompt when ready. Active injuries remain governed by the existing recovery and treatment rules.</span></p>
 
     <form class="ci-triage-start" aria-label="Start a manual injury review">
@@ -22,9 +23,9 @@
         <p class="ci-eyebrow">Exceptional case</p>
         <h3>Start an injury review</h3>
       </div>
-      <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
-      <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
-      <button type="button" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}}><i class="fa-solid fa-plus" aria-hidden="true"></i> Start review</button>
+      <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+      <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+      <button type="button" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-plus" aria-hidden="true"></i> Start review</button>
     </form>
 
     <section class="ci-triage-list" aria-labelledby="ci-triage-list-heading">
@@ -37,7 +38,7 @@
               {{#if hasInjuries}}<ul class="ci-triage-injuries">{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}{{#if permanent}} <span>Permanent</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No active injury has been applied from this item yet.</p>{{/if}}
             </div>
             <div class="ci-triage-row__actions">
-              {{#unless sent}}<button type="button" class="ci-primary" data-action="sendReview" data-pending-id="{{pendingId}}"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send roll</button><button type="button" data-action="dismissReview" data-pending-id="{{pendingId}}"><i class="fa-solid fa-xmark" aria-hidden="true"></i> No injury</button>{{else}}<span class="ci-triage-muted">{{stateLabel}}</span>{{/unless}}
+              {{#unless sent}}<button type="button" class="ci-primary" data-action="sendReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send roll</button><button type="button" data-action="dismissReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-xmark" aria-hidden="true"></i> No injury</button>{{else}}<span class="ci-triage-muted">{{stateLabel}}</span>{{/unless}}
             </div>
           </article>
         {{/each}}

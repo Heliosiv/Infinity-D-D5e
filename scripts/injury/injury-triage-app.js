@@ -1,6 +1,8 @@
 /** GM-only Critical Injury review and party-status workspace. */
 
 import { isFullGM } from "../permissions.js";
+import { PRIVATE_STATE_CHANGED_HOOK } from "../private-state.js";
+import { isAuthoritativeGM } from "../socket-authority.js";
 import {
   bindFullGmWindowGuard,
   bindFocusRestoration,
@@ -67,6 +69,7 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
     bindFocusRestoration(this);
     this._message = "";
     this._tone = "ready";
+    this._actionInFlight = false;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._refreshHookIds = [
       [
@@ -86,10 +89,14 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
         globalThis.Hooks?.on?.("deleteActiveEffect", () => this._refresh()),
       ],
       [
-        "infinityDnd5ePrivateStateChanged",
-        globalThis.Hooks?.on?.("infinityDnd5ePrivateStateChanged", () =>
+        PRIVATE_STATE_CHANGED_HOOK,
+        globalThis.Hooks?.on?.(PRIVATE_STATE_CHANGED_HOOK, () =>
           this._refresh(),
         ),
+      ],
+      [
+        "updateUser",
+        globalThis.Hooks?.on?.("updateUser", () => this._refresh()),
       ],
     ].filter(([, id]) => id != null);
   }
@@ -105,9 +112,19 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     if (!isFullGM()) return { accessDenied: true };
+    const canMutate = isAuthoritativeGM();
     const records = getCriticalInjuryTriageRecords();
     const rows = records
-      .map((record) => buildTriageRow(record))
+      .map((record) => {
+        const row = buildTriageRow(record);
+        return row
+          ? {
+              ...row,
+              canMutate,
+              actionInFlight: this._actionInFlight,
+            }
+          : null;
+      })
       .filter(Boolean)
       .sort(compareTriageRows);
     const playerCharacters = (globalThis.game?.actors?.contents ?? [])
@@ -152,12 +169,17 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       playerUsers,
       hasPlayerUsers: playerUsers.length > 0,
       partyRows: playerCharacters,
+      canMutate,
+      actionInFlight: this._actionInFlight,
       message: this._message,
       tone: this._tone,
     };
   }
 
   async _run(action, successMessage) {
+    if (this._actionInFlight) return;
+    this._actionInFlight = true;
+    void this.render(false);
     try {
       await action();
       this._message = successMessage;
@@ -167,6 +189,8 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
         error?.message ?? "The injury action could not be completed.",
       );
       this._tone = "warning";
+    } finally {
+      this._actionInFlight = false;
     }
     await this.render(false);
   }

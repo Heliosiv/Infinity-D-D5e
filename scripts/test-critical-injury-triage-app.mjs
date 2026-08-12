@@ -8,9 +8,42 @@ globalThis.foundry = {
     },
   },
 };
+const registeredHooks = [];
+const removedHooks = [];
+globalThis.Hooks = {
+  on(event, callback) {
+    registeredHooks.push({ event, callback });
+    return registeredHooks.length;
+  },
+  off(event, id) {
+    removedHooks.push({ event, id });
+  },
+};
 
 const { CriticalInjuryTriageApp } =
   await import("./injury/injury-triage-app.js");
+
+const app = new CriticalInjuryTriageApp();
+assert.ok(
+  registeredHooks.some(
+    (entry) => entry.event === "infinity-dnd5e.privateStateChanged",
+  ),
+  "triage refreshes after private workflow state changes",
+);
+assert.equal(
+  registeredHooks.some(
+    (entry) => entry.event === "infinityDnd5ePrivateStateChanged",
+  ),
+  false,
+  "triage does not subscribe to the obsolete private-state hook name",
+);
+app._onClose();
+assert.ok(
+  removedHooks.some(
+    (entry) => entry.event === "infinity-dnd5e.privateStateChanged",
+  ),
+  "triage removes its private workflow refresh listener on close",
+);
 
 const actorSelect = createSelect("actor-a", []);
 const recipientSelect = createSelect("player-b", [
@@ -44,6 +77,7 @@ assert.equal(recipientSelect.options[0].disabled, true);
 assert.equal(recipientSelect.options[1].disabled, false);
 
 delete globalThis.foundry;
+delete globalThis.Hooks;
 process.stdout.write("critical injury triage recipient validation passed\n");
 
 function createSelect(value, options) {
