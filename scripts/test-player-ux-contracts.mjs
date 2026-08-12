@@ -166,7 +166,11 @@ assert.match(injuryHudTemplate, /class="ci-hud-actor"/);
 assert.match(injuryHudTemplate, /data-action="pinRegion"/);
 assert.match(injuryHudTemplate, /data-action="closeRegion"/);
 assert.match(injuryHudTemplate, /Safe next step:/);
-assert.match(injuryHudTemplate, /do not repeat the request/);
+assert.match(
+  injuryHudTemplate,
+  /review the Actor and chat receipt with the GM/,
+);
+assert.match(injuryHudTemplate, /do not repeat treatment/);
 
 const containerStyles = [
   ["styles/shop-picker.css", "shop-picker"],

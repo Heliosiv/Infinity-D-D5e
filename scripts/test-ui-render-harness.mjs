@@ -777,6 +777,18 @@ assert.match(
 );
 assert.match(injuryHudView.html, /Lost Limb/);
 assert.match(injuryHudView.html, /Permanent/);
+
+const injuryHudUncertainView = views.find(
+  (view) => view.id === "critical-injury-hud-uncertain",
+);
+assert.ok(
+  injuryHudUncertainView,
+  "harness includes the uncertain player injury body HUD",
+);
+assert.match(
+  injuryHudUncertainView.html,
+  /reconnect, then review the Actor and chat\s+receipt with the GM; do not repeat treatment/i,
+);
 assert.match(
   documentHtml,
   /class="ui-harness__overlay-stage"[\s\S]*?data-harness-window="critical-injury-hud"/,
