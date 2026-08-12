@@ -133,6 +133,8 @@ const downtimeTemplate = read("templates/downtime-activities.hbs");
 const downtimeCss = read("styles/downtime.css");
 assert.match(downtimeTemplate, /Active character/);
 assert.match(downtimeTemplate, /Safe next step:/);
+assert.match(downtimeTemplate, /else if hasError/);
+assert.match(downtimeTemplate, /Refresh saved queue/);
 assert.match(downtimeTemplate, /class="dt-queue__drawer" open/);
 assert.match(downtimeTemplate, /data-action="moveActivityUp"/);
 assert.match(downtimeTemplate, /data-action="moveActivityDown"/);

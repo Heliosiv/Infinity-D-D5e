@@ -22,6 +22,7 @@
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Safe next step:</strong>
       {{#if busy}}wait for the current request to finish before changing the queue.
+      {{else if hasError}}refresh the saved queue before choosing whether to make a new change; the failed request was not retried.
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
       {{else if hasActiveBlock}}{{#if actor}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{else}}choose an eligible character when the GM has assigned one.{{/if}}
@@ -34,7 +35,7 @@
   <div class="dt-notice dt-notice--danger" role="alert">
     <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
     <span>{{errorMessage}}</span>
-    <button type="button" class="dt-button" data-action="refresh" {{#if busy}}disabled{{/if}}>Try again</button>
+    <button type="button" class="dt-button" data-action="refresh" {{#if busy}}disabled{{/if}}>Refresh saved queue</button>
   </div>
   {{/if}}
 

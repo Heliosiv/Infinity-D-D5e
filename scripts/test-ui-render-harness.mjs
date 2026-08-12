@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  92,
+  93,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -690,6 +690,16 @@ assert.match(downtimeNoGmView.html, /No full GM is online/);
 assert.match(downtimeNoGmView.html, /Latest Results/);
 assert.match(downtimeNoGmView.html, /Spent 5 sp and added 20 arrows/);
 assert.doesNotMatch(downtimeNoGmView.html, /Character downtime summary/);
+
+const downtimeErrorView = views.find(
+  (view) => view.id === "downtime-activities-error",
+);
+assert.ok(downtimeErrorView, "harness includes failed player downtime edits");
+assert.match(
+  downtimeErrorView.html,
+  /refresh the saved queue before choosing whether to make a new change; the failed request was not retried/i,
+);
+assert.match(downtimeErrorView.html, />Refresh saved queue</);
 
 const suppliesView = views.find((view) => view.id === "resource-overview");
 assert.ok(suppliesView, "harness includes the player Party Supplies view");

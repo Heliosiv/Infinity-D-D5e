@@ -706,6 +706,14 @@ export function buildHarnessViews() {
       { width: 620, height: 500 },
     ),
     view(
+      "downtime-activities-error",
+      "Downtime Activities (failed edit)",
+      "infinity-downtime-activities",
+      "templates/downtime-activities.hbs",
+      downtimeActivitiesErrorContext(),
+      { width: 780, height: 650 },
+    ),
+    view(
       "forage-prompt",
       "Forage Prompt (player)",
       "infinity-forage-prompt",
@@ -4086,6 +4094,19 @@ function downtimeActivitiesNoGmContext() {
     progressPercent: 0,
     receipt: downtimeReceiptContext(),
     hasReceipt: true,
+  });
+}
+
+function downtimeActivitiesErrorContext() {
+  return downtimeActivitiesBaseContext({
+    hasError: true,
+    errorMessage:
+      "The GM could not accept that change. Your prior queue is unchanged.",
+    statusMessage: "Downtime was not changed.",
+    activities: downtimeActivityCards(),
+    hasActivities: true,
+    editable: true,
+    canSubmit: true,
   });
 }
 
