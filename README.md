@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.2 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.3 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -19,6 +19,8 @@ Full GMs see campaign-management workspaces. Players and Assistant GMs see only 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.3 — Released 2026-08-11** - Refines session-facing recovery guidance across player requests, transactions, downtime, party supplies, reputation, and Critical Injury HUD treatment. Loot Studio now names its generation readiness state, while GM workspaces and Settings make their next safe action clearer after loading, no-match, draft, and partial-save states. These clarity improvements preserve gameplay, campaign data, permissions, privacy boundaries, GM authority, settings contracts, and macro behavior.
 
 **v0.3.2 — Released 2026-08-10** - Quartermaster now offers food, water, or both per selected forager; shows separate food and water DCs; ships forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra, and riverlands presets; and labels manual consumption **Use Daily Supplies**. Existing worlds receive the missing built-in presets without overwriting custom regions. GMs can also create, copy, order, and safely remove custom regions while shipped presets remain protected. Merchant purchases and sales now use durable client requests and a private authoritative ledger, campaign data has an explicit fail-closed recovery workflow, same-account GM tabs share one campaign-mutation leader, and module sockets use one authenticated router. Home keeps one top Help button and removes the duplicate help panels.
 

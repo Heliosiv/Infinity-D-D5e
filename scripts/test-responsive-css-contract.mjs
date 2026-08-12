@@ -33,6 +33,21 @@ try {
     "32px",
     "fine-pointer compact density remains compact",
   );
+  assert.equal(
+    await computedProperty(
+      finePage,
+      "dashboard",
+      ".id-session-focus",
+      "flexDirection",
+    ),
+    "column",
+    "narrow Home stacks the session-focus action beside its guidance",
+  );
+  assert.equal(
+    await horizontalOverflow(finePage, "dashboard", ".id-session-focus"),
+    false,
+    "narrow Home session focus has no horizontal overflow",
+  );
 
   await applyScenario(finePage, { width: 380, density: "comfortable" });
   const inventoryButtonWidths = await finePage
@@ -127,4 +142,10 @@ async function computedProperty(page, fixture, selector, property) {
       (element, propertyName) => getComputedStyle(element)[propertyName],
       property,
     );
+}
+
+async function horizontalOverflow(page, fixture, selector) {
+  return page
+    .locator(`[data-harness-window="${fixture}"] ${selector}`)
+    .evaluate((element) => element.scrollWidth > element.clientWidth + 2);
 }

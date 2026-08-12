@@ -145,6 +145,10 @@
   border-radius: var(--lf-radius);
 }
 
+.id-session-focus > div {
+  min-width: 0;
+}
+
 .id-session-focus__eyebrow {
   margin: 0 0 var(--lf-space-1, 4px);
   color: var(--lf-accent);
@@ -458,7 +462,8 @@
 
 @container infinity-home (max-width: 520px) {
   .id-head,
-  .id-foot {
+  .id-foot,
+  .id-session-focus {
     align-items: stretch;
     flex-direction: column;
   }
@@ -468,6 +473,10 @@
   }
 
   .id-foot .id-button {
+    width: 100%;
+  }
+
+  .id-button--focus {
     width: 100%;
   }
 }
