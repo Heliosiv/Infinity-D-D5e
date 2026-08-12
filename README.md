@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.5 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.6 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -20,7 +20,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**Unreleased** - Guided downtime now has each player click and submit their own character check. The GM reviews the recorded total, chooses or edits the narrative outcome, and then applies each character's approved reward and receipt. GMs can also define long-term projects, include them in a block, and track concurrent character work from durable completed receipts.
+**v0.3.6 — Released 2026-08-12** - Guided downtime now has each player click and submit their own character check. The GM reviews the recorded total, chooses or edits the narrative outcome, and then applies each character's approved reward and receipt independently. GMs can also define long-term projects, include them in a block, and track concurrent character work in a durable cumulative ledger. Project progress survives history rotation, compensated work is excluded, and all 18 D&D5e skills are available with correct labels.
 
 **v0.3.5 — Released 2026-08-12** - Fixes short-viewport Merchant Workspace navigation so every merchant row remains reachable in the stacked layout.
 
