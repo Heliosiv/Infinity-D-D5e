@@ -700,6 +700,11 @@ assert.match(injuryHudView.html, /data-action="closeRegion"/);
 assert.match(injuryHudView.html, /data-action="openInjuries"/);
 assert.match(injuryHudView.html, /data-action="requestTreatment"/);
 assert.match(injuryHudView.html, /Treat with Healer's Kit/);
+assert.match(injuryHudView.html, /Safe next step:/);
+assert.match(
+  injuryHudView.html,
+  /Treatment remains an explicit request to the active GM/,
+);
 assert.match(injuryHudView.html, /Lost Limb/);
 assert.match(injuryHudView.html, /Permanent/);
 assert.match(

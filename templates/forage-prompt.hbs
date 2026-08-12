@@ -18,6 +18,18 @@
     <div><span>Gathering</span><strong>{{#if forageTargetBoth}}Food and water{{else if forageTargetFood}}Food{{else}}Water{{/if}}</strong></div>
   </section>
 
+  <p class="infinity-session-context" role="status">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Safe next step:</strong>
+      {{#if isWaiting}}wait for the Quartermaster's confirmed tally; do not roll again.
+      {{else if offline}}reconnect and verify the day with the GM before repeating any uncertain roll.
+      {{else if noActor}}ask the GM to assign a controlled character; no forage request was sent.
+      {{else if isPrompt}}choose Roll Survival or Skip foraging. Either choice is recorded once by the active GM.
+      {{else}}review the confirmed outcome, then close this prompt when ready.
+      {{/if}}
+    </span>
+  </p>
+
   {{#if offline}}
   <div class="fp-offline" role="status">
     <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>

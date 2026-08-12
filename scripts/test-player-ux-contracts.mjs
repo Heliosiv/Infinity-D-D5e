@@ -36,6 +36,8 @@ assert.match(
 assert.match(shopTemplate, /Shopping as/);
 assert.match(shopTemplate, /Nothing changed/);
 assert.match(shopTemplate, /Saved trade warnings/);
+assert.match(shopTemplate, /Safe next step:/);
+assert.match(shopTemplate, /it does not buy or sell anything by itself/);
 assert.match(shopTemplate, /Reviewed with GM…/);
 assert.match(shopTemplate, /\{\{summary\}\}/);
 assert.match(
@@ -119,6 +121,8 @@ const forageTemplate = read("templates/forage-prompt.hbs");
 assert.match(forageTemplate, /class="fp-context"/);
 assert.match(forageTemplate, /Foraging is offline/);
 assert.match(forageTemplate, /do not roll again/i);
+assert.match(forageTemplate, /Safe next step:/);
+assert.match(forageTemplate, /Either choice is recorded once by the active GM/);
 assert.match(forageScript, /retryConnection/);
 assert.match(forageScript, /authoritativeGMId/);
 assert.doesNotMatch(forageScript, /users\?\.activeGM/);
@@ -146,6 +150,8 @@ assert.match(injuryTemplate, /Injury actions are offline/);
 assert.match(injuryHudTemplate, /class="ci-hud-actor"/);
 assert.match(injuryHudTemplate, /data-action="pinRegion"/);
 assert.match(injuryHudTemplate, /data-action="closeRegion"/);
+assert.match(injuryHudTemplate, /Safe next step:/);
+assert.match(injuryHudTemplate, /do not repeat the request/);
 
 const containerStyles = [
   ["styles/shop-picker.css", "shop-picker"],

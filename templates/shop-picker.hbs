@@ -30,6 +30,19 @@
     </div>
   </section>
 
+  <p class="infinity-session-context" role="status">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Safe next step:</strong>
+      {{#if hasSavedTradeReviews}}review the saved trade warning with the GM before starting another trade for the same character.
+      {{else if loading}}wait for the player-safe shop list to finish loading.
+      {{else if noGm}}reconnect, then refresh this list; no shop request was sent.
+      {{else if globallyClosed}}wait for the GM to reopen merchant access, then refresh this list.
+      {{else if hasActor}}choose an open shop. Entering requests a session; it does not buy or sell anything by itself.
+      {{else}}choose a controlled character before entering a shop.
+      {{/if}}
+    </span>
+  </p>
+
   {{#if hasSavedTradeReviews}}
   <section class="sp-review" aria-labelledby="sp-review-heading">
     <div class="sp-review__head">

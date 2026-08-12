@@ -334,6 +334,11 @@
   margin: 0;
 }
 
+.infinity-critical-injury-hud .ci-hud-next-step {
+  margin-block: 10px;
+  font-size: 0.76rem;
+}
+
 .infinity-critical-injury-hud .ci-hud-card h2 {
   font-size: 1.1rem;
 }
