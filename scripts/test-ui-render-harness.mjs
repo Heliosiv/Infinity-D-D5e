@@ -428,6 +428,22 @@ assert.ok(
 );
 assert.match(closedShopPickerView.html, /GM has paused merchant access/);
 
+const pendingShopPickerView = views.find((view) => view.id === "shop-picker");
+assert.ok(pendingShopPickerView, "harness includes the pending shop state");
+assert.match(
+  pendingShopPickerView.html,
+  /wait for the GM to respond to the outstanding shop request; do not request another session/i,
+);
+
+const failedShopPickerView = views.find(
+  (view) => view.id === "shop-picker-error",
+);
+assert.ok(failedShopPickerView, "harness includes failed shop-list refresh");
+assert.match(
+  failedShopPickerView.html,
+  /retry the same list refresh; no shop session was opened/i,
+);
+
 const merchantSellView = views.find(
   (view) => view.id === "merchant-session-sell",
 );
@@ -596,6 +612,13 @@ assert.match(downtimeAvailableView.html, /data-action="submitQueue"/);
 assert.match(downtimeAvailableView.html, /name="targetIds" multiple/);
 assert.match(downtimeAvailableView.html, /Ctrl or Cmd/);
 assert.match(downtimeAvailableView.html, /name="stakeGp" min="0\.01"/);
+
+const forageTimeoutView = views.find((view) => view.id === "forage-timeout");
+assert.ok(forageTimeoutView, "harness includes the uncertain forage outcome");
+assert.match(
+  forageTimeoutView.html,
+  /check Party Supplies or the chat log, then ask the GM to verify the day; do not roll again/i,
+);
 
 const downtimeCampView = views.find(
   (view) => view.id === "downtime-activities-camp",

@@ -22,7 +22,9 @@
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Safe next step:</strong>
       {{#if isWaiting}}wait for the Quartermaster's confirmed tally; do not roll again.
-      {{else if offline}}reconnect and verify the day with the GM before repeating any uncertain roll.
+      {{else if result.timedOut}}check Party Supplies or the chat log, then ask the GM to verify the day; do not roll again.
+      {{else if result.noResponse}}check the chat log for the day's result; this prompt did not submit a roll.
+      {{else if offline}}{{#if isPrompt}}wait for the GM to reconnect; no roll was sent from this prompt.{{else}}review the shown result, then verify the day with the GM if anything is unclear.{{/if}}
       {{else if noActor}}ask the GM to assign a controlled character; no forage request was sent.
       {{else if isPrompt}}choose Roll Survival or Skip foraging. Either choice is recorded once by the active GM.
       {{else}}review the confirmed outcome, then close this prompt when ready.

@@ -36,9 +36,11 @@
       {{#if hasSavedTradeReviews}}review the saved trade warning with the GM before starting another trade for the same character.
       {{else if loading}}wait for the player-safe shop list to finish loading.
       {{else if noGm}}reconnect, then refresh this list; no shop request was sent.
+      {{else if requestFailed}}check your connection, then retry the same list refresh; no shop session was opened.
       {{else if globallyClosed}}wait for the GM to reopen merchant access, then refresh this list.
-      {{else if hasActor}}choose an open shop. Entering requests a session; it does not buy or sell anything by itself.
-      {{else}}choose a controlled character before entering a shop.
+      {{else if hasPending}}wait for the GM to respond to the outstanding shop request; do not request another session.
+      {{else if hasShops}}{{#if hasActor}}choose an open shop. Entering requests a session; it does not buy or sell anything by itself.{{else}}choose a controlled character before entering a shop.{{/if}}
+      {{else}}ask the GM to open a shop or allow self-service; this list updates automatically when one is available.
       {{/if}}
     </span>
   </p>
