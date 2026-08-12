@@ -282,6 +282,11 @@ for (const id of [
   const html = views.find((view) => view.id === id)?.html ?? "";
   assert.match(html, /Loading items/i, `${id}: exposes item-library loading`);
   assert.match(
+    html,
+    /wait for the item library to finish loading\. No loot has been generated/i,
+    `${id}: gives a safe loading next step`,
+  );
+  assert.match(
     html.match(/<button\b[^>]*data-action="generate"[^>]*>/)?.[0] ?? "",
     /\bdisabled\b[\s\S]*aria-busy="true"|aria-busy="true"[\s\S]*\bdisabled\b/,
     `${id}: disables and marks Generate busy while items load`,
@@ -298,6 +303,11 @@ for (const id of [
     html,
     /No items are available for the current filters/i,
     `${id}: explains why generation is unavailable`,
+  );
+  assert.match(
+    html,
+    /adjust the named filters, then generate when matching items are available/i,
+    `${id}: gives a safe no-match next step`,
   );
   assert.match(
     html.match(/<button\b[^>]*data-action="generate"[^>]*>/)?.[0] ?? "",

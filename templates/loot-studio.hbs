@@ -30,7 +30,12 @@
   </nav>
   <p class="infinity-workspace-context" role="note">
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
-    <span><strong>{{lootStudio.activeLabel}} mode is active.</strong> Its form, result, history, and undo state stay separate while you switch modes.</span>
+    <span><strong>{{lootStudio.activeLabel}} mode is active.</strong>
+      {{#if lootStudio.loadingItems}}wait for the item library to finish loading. No loot has been generated.
+      {{else if lootStudio.generationBlocked}}adjust the named filters, then generate when matching items are available. {{lootStudio.generationBlockReason}} No loot has been generated.
+      {{else}}configure this mode, then generate. Its form, result, history, and undo state stay separate while you switch modes.
+      {{/if}}
+    </span>
   </p>
   {{#each lootStudio.tabs}}
   {{#unless active}}

@@ -13,6 +13,7 @@ const reputationTemplate = read("templates/reputation-workspace.hbs");
 const reputationStyle = read("styles/reputation-workspace.css");
 const reputationScript = read("scripts/reputation-workspace.js");
 const lootStudioTemplate = read("templates/loot-studio.hbs");
+const lootStudioScript = read("scripts/loot/loot-app-base.js");
 const downtimeTemplate = read("templates/downtime-workspace.hbs");
 const settingsTemplate = read("templates/settings.hbs");
 
@@ -297,6 +298,13 @@ assert.doesNotMatch(reputationTemplate, /Legacy (?:lower|raise|set)/);
 assert.match(reputationTemplate, /Workspace guide:/);
 assert.match(lootStudioTemplate, /infinity-workspace-context/);
 assert.match(lootStudioTemplate, /mode is active/);
+assert.match(lootStudioTemplate, /lootStudio\.loadingItems/);
+assert.match(lootStudioTemplate, /lootStudio\.generationBlocked/);
+assert.match(lootStudioTemplate, /No loot has been generated/);
+assert.match(
+  lootStudioScript,
+  /generationBlocked: generation\.disabled && !generation\.loading/,
+);
 assert.match(
   downtimeTemplate,
   /dt-next-action infinity-workspace-context/,

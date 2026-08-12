@@ -1624,6 +1624,9 @@ function menuContext(mode) {
       panelId: `loot-studio-panel-${mode}`,
       tabId: `loot-studio-tab-${mode}`,
       advancedOpen: false,
+      loadingItems: false,
+      generationBlocked: false,
+      generationBlockReason: "",
       tabs: modes.map(([id, label, icon]) => ({
         id,
         label,
@@ -1857,6 +1860,10 @@ function perCreatureContext() {
 function lootLoadingContext(context) {
   return {
     ...context,
+    lootStudio: {
+      ...context.lootStudio,
+      loadingItems: true,
+    },
     loadingItems: true,
     hasResult: false,
     generateDisabled: true,
@@ -1867,6 +1874,12 @@ function lootLoadingContext(context) {
 function lootUnavailableContext(context) {
   return {
     ...context,
+    lootStudio: {
+      ...context.lootStudio,
+      generationBlocked: true,
+      generationBlockReason:
+        "No available items match the current filters. Review the filters and try again.",
+    },
     loadingItems: false,
     hasResult: false,
     candidateLabel: "No items are available for the current filters",

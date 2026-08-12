@@ -1674,6 +1674,7 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.constructor.LOOT_STUDIO_MODE,
       LOOT_STUDIO_DEFAULT_MODE,
     );
+    const generation = this._primaryGenerationState();
     const presets = listPresets(toolId).map((preset) => ({
       id: preset.id,
       name: preset.name,
@@ -1696,6 +1697,9 @@ export class BaseLootApp extends HandlebarsApplicationMixin(ApplicationV2) {
         panelId: `loot-studio-panel-${mode}`,
         tabId: `loot-studio-tab-${mode}`,
         advancedOpen: this._lootStudioAdvancedOpen === true,
+        loadingItems: generation.loading,
+        generationBlocked: generation.disabled && !generation.loading,
+        generationBlockReason: generation.disabled ? generation.reason : "",
         tabs: LOOT_STUDIO_MODES.map((entry) => ({
           ...entry,
           active: entry.id === mode,

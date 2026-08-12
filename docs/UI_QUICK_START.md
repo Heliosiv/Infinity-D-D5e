@@ -26,6 +26,8 @@ Each mode keeps its own form, result, undo stack, presets, and history. The comm
 
 The main scenario, tier, party or roster, estimated outcome, and **Generate** action stay visible. Open **Advanced** for exact budgets, rarity/type/value filters, weighting, art options, presets, import/export, and history.
 
+If the item library is loading, wait before generating. If current filters have no matching items, adjust those filters first; neither state creates loot.
+
 ## Use GM workspaces
 
 - **Merchant Workspace** separates Basics, Pricing & Bargaining, Stock, Access, and Sessions. The active full GM can edit and host live trades; other full-GM windows are clearly read-only and may use Preview. Player trade requests and the GM's exact write plan survive reloads, with ambiguous outcomes pinned for review instead of retried blindly. Search the full allowlisted compendium rather than paging through a capped list.
