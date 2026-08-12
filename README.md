@@ -20,6 +20,8 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
+**Unreleased** - Guided downtime now has each player click and submit their own character check. The GM reviews the recorded total, chooses or edits the narrative outcome, and then applies each character's approved reward and receipt.
+
 **v0.3.5 — Released 2026-08-12** - Fixes short-viewport Merchant Workspace navigation so every merchant row remains reachable in the stacked layout.
 
 **v0.3.4 — Unreleased** - Adds a guided downtime handoff: the GM assigns a location, hours, characters, and applicable activity templates; each player picks one activity; the GM selects and can edit an illustrated result report before applying its configured reward. It also adds the durable Critical Injury triage workspace and a faster changed-surface UI validation path, while preserving the complete release gate.
@@ -157,6 +159,11 @@ ammunition crafting, weapon sharpening, market trading, pickpocketing, finite-st
 shoplifting, fencing stolen goods, and laying low. Routine activities repeat in
 fixed batches; commerce and crime offer bounded extra time where the rules
 allow it.
+
+For a guided downtime block, a player selects the one available activity and
+clicks **Roll & submit**. Their controlled Actor makes the visible Foundry
+check; its recorded total is what the GM reviews before choosing the report and
+approved reward.
 
 When submissions are ready, the GM locks the block and generates a durable,
 immutable preview. All hidden checks, DCs, consequences, rewards, operation

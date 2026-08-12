@@ -21,6 +21,7 @@ const QUEUE_ENTRY_KEYS = new Set([
   "activityId",
   "hours",
   "skill",
+  "guidedRoll",
   "stakeCp",
   "targetId",
   "targetIds",
@@ -412,7 +413,23 @@ function validateQueueEntry(entry) {
     const stake = Number(entry.stakeCp);
     if (!Number.isSafeInteger(stake) || stake < 0) return false;
   }
+  if (entry.guidedRoll != null && !validateGuidedRoll(entry.guidedRoll)) {
+    return false;
+  }
   return true;
+}
+
+function validateGuidedRoll(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (Object.keys(value).some((key) => !["total", "formula"].includes(key))) {
+    return false;
+  }
+  const total = Number(value.total);
+  if (!Number.isFinite(total) || total < -100 || total > 1_000) return false;
+  return (
+    value.formula == null ||
+    (typeof value.formula === "string" && value.formula.length <= 160)
+  );
 }
 
 function boundedId(value) {

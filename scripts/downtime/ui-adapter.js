@@ -21,6 +21,7 @@ import {
   submitDowntimeQueue,
   subscribeDowntime,
 } from "./socket.js";
+import { rollSkillTotal } from "../dnd5e-roll.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const MAX_ID_LENGTH = 160;
@@ -246,11 +247,23 @@ function sanitizeCanonicalEntry(raw, index = 0) {
   const targetId = cleanId(raw.targetId ?? raw.target);
   const targetIds = sanitizeTargetIds(raw.targetIds);
   const stakeCp = safeInteger(raw.stakeCp ?? raw.stake, 0);
+  const guidedRoll = sanitizeGuidedRoll(raw.guidedRoll);
   if (skill) entry.skill = skill;
   if (targetId) entry.targetId = targetId;
   if (targetIds.length > 0) entry.targetIds = targetIds;
   if (stakeCp > 0) entry.stakeCp = stakeCp;
+  if (guidedRoll) entry.guidedRoll = guidedRoll;
   return entry;
+}
+
+function sanitizeGuidedRoll(raw) {
+  if (!plainObject(raw)) return null;
+  const total = Number(raw.total);
+  if (!Number.isFinite(total) || total < -100 || total > 1_000) return null;
+  return {
+    total: Math.round(total * 100) / 100,
+    formula: cleanText(raw.formula, 160),
+  };
 }
 
 export function sanitizeDowntimeSubmissionQueue(rawQueue) {
@@ -389,6 +402,10 @@ export class DowntimePlayerAdapter {
       options.recallDirect ?? recallSubmissionAuthoritatively;
     this._requestIdFactory = options.requestIdFactory ?? newDowntimeRequestId;
     this._getCurrentUserId = options.getCurrentUserId ?? currentUserId;
+    this._getActor =
+      options.getActor ??
+      ((actorId) => globalThis.game?.actors?.get?.(actorId));
+    this._rollSkill = options.rollSkill ?? rollSkillTotal;
     this._setTimeout = options.setTimeout ?? globalThis.setTimeout;
     this._clearTimeout = options.clearTimeout ?? globalThis.clearTimeout;
     const requestedTimeout = Number(options.requestTimeoutMs);
@@ -618,6 +635,14 @@ export class DowntimePlayerAdapter {
       projection.rawQueue,
     );
     const queue = sanitizeDowntimeSubmissionQueue(draft.queue);
+    const submittedQueue =
+      projection.mode === "guided"
+        ? await this._preparePlayerClickedGuidedRoll({
+            projection,
+            actorId: actor,
+            queue,
+          })
+        : queue;
     const requestId = cleanId(this._requestIdFactory("submit"));
     if (this._isAuthority()) {
       await this._submitDirect({
@@ -625,7 +650,7 @@ export class DowntimePlayerAdapter {
         requestId,
         blockId: projection.blockId,
         actorId: actor,
-        queue,
+        queue: submittedQueue,
       });
       const fresh = await this._getDirectProjection({
         userId: this._getCurrentUserId(),
@@ -642,10 +667,40 @@ export class DowntimePlayerAdapter {
           requestId,
           blockId: projection.blockId,
           actorId: actor,
-          queue,
+          queue: submittedQueue,
         }),
     );
     return this._projectDraft(actor, result.projection);
+  }
+
+  async _preparePlayerClickedGuidedRoll({ projection, actorId, queue }) {
+    if (projection.mode !== "guided") return queue;
+    if (queue.length !== 1) {
+      throw new Error("Choose exactly one activity before rolling.");
+    }
+    const entry = queue[0];
+    if (!entry.skill) return queue;
+    const actor = this._getActor(actorId);
+    if (!actor)
+      throw new Error("Your assigned character is no longer available.");
+    const result = await this._rollSkill(actor, entry.skill, {
+      chatMessage: true,
+      fastForward: false,
+    });
+    if (!result?.ok) {
+      throw new Error(
+        "Your downtime check was cancelled. Choose Roll & submit to try again.",
+      );
+    }
+    return [
+      {
+        ...entry,
+        guidedRoll: {
+          total: Number(result.total),
+          formula: cleanText(result.roll?.formula, 160),
+        },
+      },
+    ];
   }
 
   async recallSubmission({ actorId = "" } = {}) {

@@ -6,14 +6,16 @@ The default GM flow is intentionally small and has no settlement, faction,
 Heat, theft, or escalation data. Open **Home → Run the Session → Downtime
 Workspace**, enter a location and a productive-hour budget, choose the player
 characters, then tick the saved activity templates that apply. Each player
-chooses exactly one activity and an applicable skill; the assigned hours are
-used as one downtime activity.
+chooses exactly one activity and an applicable skill, then clicks **Roll &
+submit**. This makes the check on the player's controlled Actor and records its
+total with the submission; the assigned hours are used as one downtime
+activity.
 
-After locking submissions, the GM sees each private roll and a small set of
-three possible report outcomes. Choose an outcome, optionally rewrite the
-player report, then apply the plan. A configured coin reward is deposited into
-the character's currency and verified before the player receives an updated
-Downtime Activities report with the activity art, narrative, and award.
+After locking submissions, the GM sees each recorded player roll and a small
+set of three possible report outcomes. The GM chooses an outcome, can rewrite
+the player report, then applies the plan. A configured coin reward is deposited
+into the character's currency and verified before the player receives an
+updated Downtime Activities report with the activity art, narrative, and award.
 
 The shipped templates are **Paid Work**, **Research & Rumors**, and
 **Thievery**. They are intentionally a safe starting set. No campaign time is
@@ -49,6 +51,12 @@ Foundry world time and Quartermaster upkeep.
    rolls and exact results; it cannot be rerolled or edited.
 7. Apply the preview. Review each character's receipt or use recovery if an
    external write was interrupted.
+
+Guided blocks use the same lifecycle, but each player chooses one allowed
+activity and clicks **Roll & submit** instead of building a queue. The player's
+normal Foundry skill roll is recorded with that submission; the GM does not
+roll it again during preview. The GM still selects the final outcome, narrative,
+and reward before application.
 
 A full GM may cancel a block while it is collecting submissions, locked, or
 showing its immutable preview. Once application begins, cancellation is closed;

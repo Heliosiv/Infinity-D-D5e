@@ -579,6 +579,61 @@ try {
   campBlock = await service.applyActiveDowntimeBlock(campBlock.id);
   assert.equal(campBlock.state, "completed");
 
+  actor.rollSkill = async () => {
+    throw new Error("guided planning must not reroll a player check");
+  };
+  let guidedBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationName: "The Lantern District",
+    hours: 8,
+    actorIds: [actor.id],
+    templateIds: ["guided-labor"],
+  });
+  await assert.rejects(
+    service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-missing-roll",
+      blockId: guidedBlock.id,
+      actorId: actor.id,
+      queue: [
+        {
+          id: "guided-choice",
+          activityId: "guided-labor",
+          hours: 8,
+          skill: "ath",
+        },
+      ],
+    }),
+    /roll the selected downtime check/i,
+  );
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "guided-player-roll",
+    blockId: guidedBlock.id,
+    actorId: actor.id,
+    queue: [
+      {
+        id: "guided-choice",
+        activityId: "guided-labor",
+        hours: 8,
+        skill: "ath",
+        guidedRoll: { total: 17, formula: "1d20 + 5" },
+      },
+    ],
+  });
+  guidedBlock = await service.lockActiveDowntimeBlock(guidedBlock.id);
+  guidedBlock = await service.planActiveDowntimeBlock(guidedBlock.id);
+  assert.equal(guidedBlock.plan.operations[0].check.total, 17);
+  assert.equal(guidedBlock.plan.operations[0].check.formula, "1d20 + 5");
+  assert.equal(
+    guidedBlock.plan.operations[0].selectedOutcomeIndex,
+    1,
+    "the GM preview uses the player-clicked check as its suggested result",
+  );
+  guidedBlock = await service.applyActiveDowntimeBlock(guidedBlock.id);
+  assert.equal(guidedBlock.state, "completed");
+  delete actor.rollSkill;
+
   const reusableRollActor = makeActor({ id: "reusable-roll-actor" });
   reusableRollActor.name = "Reusable Roll Hero";
   actors.set(reusableRollActor.id, reusableRollActor);

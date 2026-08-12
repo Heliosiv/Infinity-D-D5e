@@ -55,6 +55,46 @@ try {
     }),
     { ok: true, reason: null },
   );
+  assert.equal(
+    socket.validateDowntimePayload({
+      type: socket.DOWNTIME_EVENTS.SUBMIT_QUEUE,
+      requestId: "guided-player-roll",
+      targetUserId: gm.id,
+      blockId: "block-1",
+      actorId: "actor-1",
+      queue: [
+        {
+          id: "guided-labor",
+          activityId: "guided-labor",
+          hours: 8,
+          skill: "ath",
+          guidedRoll: { total: 17, formula: "1d20 + 5" },
+        },
+      ],
+    }).ok,
+    true,
+    "a player's bounded guided roll total may accompany their owned submission",
+  );
+  assert.equal(
+    socket.validateDowntimePayload({
+      type: socket.DOWNTIME_EVENTS.SUBMIT_QUEUE,
+      requestId: "invalid-guided-player-roll",
+      targetUserId: gm.id,
+      blockId: "block-1",
+      actorId: "actor-1",
+      queue: [
+        {
+          id: "guided-labor",
+          activityId: "guided-labor",
+          hours: 8,
+          skill: "ath",
+          guidedRoll: { formula: "1d20 + 5" },
+        },
+      ],
+    }).reason,
+    "invalid-queue-entry",
+    "guided rolls remain bounded structured data",
+  );
   const fenceQueue = [
     {
       id: "fence-1",

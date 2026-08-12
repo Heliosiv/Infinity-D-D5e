@@ -326,8 +326,9 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       "submitQueue",
       { actorId: this._actorId },
       {
-        pending: "Submitting your downtime queue...",
-        success: "Downtime submitted. The GM can now lock the block.",
+        pending: "Rolling and submitting your downtime activity...",
+        success:
+          "Your activity and player roll are submitted. The GM can now review the result.",
         focus: '[data-action="recallSubmission"]',
       },
     );

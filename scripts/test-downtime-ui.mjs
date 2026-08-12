@@ -243,6 +243,11 @@ try {
     /<div(?=[^>]*class="dt-heat__pips")(?=[^>]*role="img")(?=[^>]*aria-label="Heat \{\{heat\}\} out of 5")[^>]*>/,
     "the visual Heat meter exposes a valid image label",
   );
+  assert.match(
+    activitiesTemplateSource,
+    /\{\{#if guided\}\}Roll &amp; submit\{\{else\}\}Submit queue\{\{\/if\}\}/,
+    "guided downtime names the player-clicked roll action",
+  );
 
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {

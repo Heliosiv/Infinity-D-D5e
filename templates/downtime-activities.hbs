@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>Choose one activity for the downtime the GM assigned. Your GM will review the roll and send your report.</p>
+      <p>Choose one activity for the downtime the GM assigned, then click Roll &amp; submit. Your GM will review the result and send your report.</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -237,7 +237,7 @@
               {{/if}}
             {{else}}
             <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Submit queue
+              <i class="fa-solid {{#if guided}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if guided}}Roll &amp; submit{{else}}Submit queue{{/if}}
             </button>
             {{/if}}
           </footer>

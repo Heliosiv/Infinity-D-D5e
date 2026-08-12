@@ -1217,15 +1217,11 @@ async function planGuidedDowntimeBlock(block) {
       selection.templateId,
     );
     const roll = selection.skill
-      ? await rollSkillTotal(actor, selection.skill, {
-          chatMessage: false,
-          fastForward: true,
-        })
-      : { ok: true, total: 0, roll: null };
-    if (!roll?.ok)
-      throw new Error(
-        `${participant.actorName}'s activity roll did not complete.`,
-      );
+      ? normalizeGuidedPlayerRoll(participant.guidedRoll)
+      : { ok: true, total: 0, formula: "" };
+    if (!roll.ok) {
+      throw new Error(`${participant.actorName}'s player check is missing.`);
+    }
     const selectedOutcomeIndex = guidedOutcomeIndex(
       roll.total,
       template.outcomes.length,
@@ -1301,7 +1297,11 @@ export async function chooseGuidedDowntimeOutcome({
         actor,
         template,
         skill: operation.check?.skill ?? "",
-        roll: { ok: true, total: operation.check?.total ?? 0, roll: null },
+        roll: {
+          ok: true,
+          total: operation.check?.total ?? 0,
+          formula: operation.check?.formula ?? "",
+        },
         selectedOutcomeIndex: index,
         createdAt: operation.createdAt ?? now(),
         operationId: operation.operationId,
@@ -1699,7 +1699,7 @@ function buildGuidedDowntimeOperation({
     check: {
       skill,
       total,
-      formula: String(roll?.roll?.formula ?? ""),
+      formula: String(roll?.formula ?? roll?.roll?.formula ?? ""),
       outcomeTier: "neutral",
     },
   };
@@ -1710,6 +1710,21 @@ function guidedOutcomeIndex(total, count) {
   if (total >= 20) return count - 1;
   if (total >= 12) return Math.min(count - 1, 1);
   return 0;
+}
+
+function normalizeGuidedPlayerRoll(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false };
+  }
+  const total = Number(raw.total);
+  if (!Number.isFinite(total) || total < -100 || total > 1_000) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    total,
+    formula: String(raw.formula ?? "").slice(0, 160),
+  };
 }
 
 function cleanGuidedLocation(value) {
@@ -3655,12 +3670,21 @@ async function submitGuidedDowntimeChoice({
       "Choose one available activity and use the assigned downtime.",
     );
   }
+  const guidedRoll = selection.skill
+    ? normalizeGuidedPlayerRoll(entry.guidedRoll)
+    : { ok: true, total: 0, formula: "" };
+  if (!guidedRoll.ok) {
+    throw new Error("Roll the selected downtime check before submitting.");
+  }
   const digest = queueDigest([
     {
       id: "guided-choice",
       activityId: selection.templateId,
       hours: block.budgetHours,
       skill: selection.skill,
+      guidedRoll: selection.skill
+        ? { total: guidedRoll.total, formula: guidedRoll.formula }
+        : undefined,
     },
   ]);
   const prior = block.requests?.[requestId];
@@ -3686,12 +3710,18 @@ async function submitGuidedDowntimeChoice({
       ? {
           ...entry,
           guidedSelection: selection,
+          guidedRoll: selection.skill
+            ? { total: guidedRoll.total, formula: guidedRoll.formula }
+            : null,
           queue: [
             {
               id: "guided-choice",
               activityId: template.id,
               hours: block.budgetHours,
               skill: selection.skill,
+              guidedRoll: selection.skill
+                ? { total: guidedRoll.total, formula: guidedRoll.formula }
+                : undefined,
             },
           ],
           submitted: true,

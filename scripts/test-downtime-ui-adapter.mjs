@@ -363,6 +363,72 @@ try {
   assert.ok(adapterNotifications > 0);
   adapter.destroy();
 
+  const guidedBus = makeBus();
+  let guidedSubmission = null;
+  let guidedRollCalls = 0;
+  const guidedProjection = (overrides = {}) =>
+    projection({
+      mode: "guided",
+      hasSettlement: false,
+      locationName: "The Lantern District",
+      activities: [
+        {
+          id: "guided-labor",
+          label: "Paid Work",
+          category: "guided",
+          icon: "fa-solid fa-compass",
+          available: true,
+          fixedHours: 8,
+          skills: [{ id: "ath", label: "Athletics" }],
+        },
+      ],
+      ...overrides,
+    });
+  const guidedAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: guidedBus.subscribe,
+    registerSocket: () => true,
+    requestIdFactory: (prefix) => `guided-${prefix}`,
+    requestSnapshot: () => ({ ok: true }),
+    submitTransport: (payload) => {
+      guidedSubmission = structuredClone(payload);
+      return { ok: true, requestId: payload.requestId };
+    },
+    getActor: () => ({ id: "actor-1" }),
+    rollSkill: async (_actor, skill, options) => {
+      guidedRollCalls += 1;
+      assert.equal(skill, "ath");
+      assert.deepEqual(options, { chatMessage: true, fastForward: false });
+      return { ok: true, total: 17, roll: { formula: "1d20 + 5" } };
+    },
+  });
+  guidedAdapter._cacheProjection(guidedProjection(), "actor-1");
+  await guidedAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  assert.equal(guidedRollCalls, 0, "choosing an activity does not roll it");
+  const guidedSubmitPromise = guidedAdapter.submitQueue({ actorId: "actor-1" });
+  for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
+  assert.equal(guidedRollCalls, 1, "the player click creates the check");
+  assert.deepEqual(guidedSubmission.queue[0].guidedRoll, {
+    total: 17,
+    formula: "1d20 + 5",
+  });
+  guidedBus.emit(DOWNTIME_EVENTS.SUBMIT_RESULT, {
+    requestId: guidedSubmission.requestId,
+    ok: true,
+    projection: guidedProjection({
+      rawQueue: guidedSubmission.queue,
+      queue: guidedSubmission.queue,
+      submitted: true,
+      canSubmit: false,
+    }),
+  });
+  assert.equal((await guidedSubmitPromise).submitted, true);
+  guidedAdapter.destroy();
+
   const noGmAdapter = createDowntimePlayerAdapter({
     subscribeSocket: makeBus().subscribe,
     registerSocket: () => true,
