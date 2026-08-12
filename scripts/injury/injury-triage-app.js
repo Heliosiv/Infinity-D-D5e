@@ -98,6 +98,11 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
     if (this.rendered) void this.render(false);
   }
 
+  _onRender(context, options) {
+    super._onRender?.(context, options);
+    this._wireManualRecipient(this.element);
+  }
+
   async _prepareContext() {
     if (!isFullGM()) return { accessDenied: true };
     const records = getCriticalInjuryTriageRecords();
@@ -124,6 +129,12 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       }))
       .filter((actor) => actor.id && actor.owners.length > 0)
       .sort((left, right) => left.name.localeCompare(right.name));
+    this._manualOwnersByActor = new Map(
+      playerCharacters.map((actor) => [
+        actor.id,
+        new Set(actor.owners.map((owner) => owner.id)),
+      ]),
+    );
     const playerUsers = (globalThis.game?.users?.contents ?? [])
       .filter((user) => user?.active && !user?.isGM)
       .map((user) => ({
@@ -158,6 +169,31 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       this._tone = "warning";
     }
     await this.render(false);
+  }
+
+  _wireManualRecipient(root) {
+    const form = root?.querySelector?.(".ci-triage-start");
+    const actorSelect = form?.elements?.actorId;
+    const recipientSelect = form?.elements?.targetUserId;
+    if (!actorSelect || !recipientSelect) return;
+    const syncRecipient = () => {
+      const ownerIds =
+        this._manualOwnersByActor?.get(String(actorSelect.value ?? "")) ??
+        new Set();
+      for (const option of recipientSelect.options) {
+        const eligible = ownerIds.has(String(option.value ?? ""));
+        option.disabled = !eligible;
+        option.hidden = !eligible;
+      }
+      if (!ownerIds.has(String(recipientSelect.value ?? ""))) {
+        const firstEligible = [...recipientSelect.options].find(
+          (option) => !option.disabled,
+        );
+        if (firstEligible) recipientSelect.value = firstEligible.value;
+      }
+    };
+    actorSelect.addEventListener("change", syncRecipient);
+    syncRecipient();
   }
 
   /** @this {CriticalInjuryTriageApp} */

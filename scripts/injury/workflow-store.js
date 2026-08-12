@@ -2025,6 +2025,29 @@ export async function approveCriticalInjuryReview(pendingId) {
   });
 }
 
+/**
+ * Return an approval to GM review when its owner-writable projection could not
+ * be persisted. The action is deliberately limited to an unclaimed approval,
+ * so an in-flight or resolved roll can never be reopened.
+ */
+export async function reopenCriticalInjuryReview(pendingId) {
+  const id = toId(pendingId);
+  const authority = toId(authoritativeGMId());
+  if (!id || !authority) throw new Error("CriticalInjuryReviewReopenInvalid");
+  return mutateStore((store) => {
+    const record = store.records.find((entry) => entry.pendingId === id);
+    if (!record) throw new Error("CriticalInjuryReviewNotFound");
+    if (
+      record.state === "approved" &&
+      !record.resolution &&
+      !normalizeApplicationLease(record.applicationLease)
+    ) {
+      record.state = "review";
+    }
+    return { store, pendingId: id };
+  });
+}
+
 /** Discard only a not-yet-sent GM review item. */
 export async function discardCriticalInjuryReview(pendingId) {
   const id = toId(pendingId);

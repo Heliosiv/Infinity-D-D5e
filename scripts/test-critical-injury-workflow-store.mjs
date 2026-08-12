@@ -60,6 +60,7 @@ try {
     loadCriticalInjuryWorkflowStore,
     normalizeCriticalInjuryWorkflowStore,
     persistCriticalInjuryResolution,
+    reopenCriticalInjuryReview,
     renewCriticalInjuryApplication,
     resetCriticalInjuryWorkflowStoreForTests,
     retargetCriticalInjuryWorkflow,
@@ -105,6 +106,13 @@ try {
     "approved",
     "sending a review promotes it into the existing approval state",
   );
+  await reopenCriticalInjuryReview("review-1");
+  assert.equal(
+    getCriticalInjuryWorkflowRecord("review-1").state,
+    "review",
+    "a failed player projection can safely return an unclaimed approval to review",
+  );
+  await approveCriticalInjuryReview("review-1");
   await discardCriticalInjuryApproval("review-1");
   const discarded = await createCriticalInjuryReview({
     pendingId: "review-dismissed",

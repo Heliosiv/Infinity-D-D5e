@@ -82,6 +82,7 @@ import {
   renewCriticalInjuryTreatmentApplication,
   renewCriticalInjuryRestApplication,
   registerCriticalInjuryWorkflowObserver,
+  reopenCriticalInjuryReview,
   retargetCriticalInjuryWorkflow,
 } from "./workflow-store.js";
 import { persistedValuesEqual } from "../utils/persisted-data.js";
@@ -471,22 +472,43 @@ export async function sendCriticalInjuryReview(pendingId) {
   }
   const actor = globalThis.game?.actors?.get?.(record.actorId);
   if (!actor) throw new Error("CriticalInjuryReviewActorMissing");
-  await approveCriticalInjuryReview(record.pendingId);
-  const approved = getCriticalInjuryWorkflowRecord(record.pendingId);
-  if (!approved || approved.state !== "approved") {
-    throw new Error("CriticalInjuryReviewApprovalFailed");
+  let review = record;
+  if (!userCanOperateActor(actor, review.targetUserId)) {
+    const fallbackUserId =
+      resolveInjuryRollerUserId(actor) ?? authoritativeGMId() ?? game.user?.id;
+    if (!fallbackUserId)
+      throw new Error("CriticalInjuryReviewRecipientMissing");
+    review = await retargetCriticalInjuryWorkflow(
+      review.pendingId,
+      fallbackUserId,
+    );
   }
-  assertCriticalInjuryAuthority();
-  await appendPendingInjury(
-    actor,
-    buildPendingProjectionFromWorkflow(actor, approved),
-  );
-  emitCriticalInjuryPrompt(actor, approved, approved.targetUserId);
-  const gmTargetUserId = String(authoritativeGMId() ?? "");
-  if (gmTargetUserId && gmTargetUserId !== approved.targetUserId) {
-    emitCriticalInjuryPrompt(actor, approved, gmTargetUserId);
+  try {
+    await approveCriticalInjuryReview(review.pendingId);
+    const approved = getCriticalInjuryWorkflowRecord(review.pendingId);
+    if (!approved || approved.state !== "approved") {
+      throw new Error("CriticalInjuryReviewApprovalFailed");
+    }
+    assertCriticalInjuryAuthority();
+    await appendPendingInjury(
+      actor,
+      buildPendingProjectionFromWorkflow(actor, approved),
+    );
+    emitCriticalInjuryPrompt(actor, approved, approved.targetUserId);
+    const gmTargetUserId = String(authoritativeGMId() ?? "");
+    if (gmTargetUserId && gmTargetUserId !== approved.targetUserId) {
+      emitCriticalInjuryPrompt(actor, approved, gmTargetUserId);
+    }
+    return approved;
+  } catch (error) {
+    await reopenCriticalInjuryReview(review.pendingId).catch((reopenError) =>
+      console.warn(
+        `${MODULE_ID} | could not return an unprojected injury approval to GM review`,
+        reopenError,
+      ),
+    );
+    throw error;
   }
-  return approved;
 }
 
 /** Dismiss a not-yet-sent review without changing the Actor. */
