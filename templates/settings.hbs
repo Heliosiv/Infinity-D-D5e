@@ -11,7 +11,8 @@
   <p class="infinity-workspace-context" role="note">
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Settings state:</strong>
-      {{#if dirty}}changes are waiting locally; review the affected section, then use Save changes once.
+      {{#if hasPartialSaveError}}review the settings named below, then use Save changes once. Any settings that already saved remain active.
+      {{else if dirty}}changes are waiting locally; review the affected section, then use Save changes once.
       {{else if fullGm}}client and campaign settings are current. Choose a section to change a specific behavior.
       {{else}}personal settings are current. Campaign settings stay hidden for this role.
       {{/if}}

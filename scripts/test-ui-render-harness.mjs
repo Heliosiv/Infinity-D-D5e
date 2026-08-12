@@ -253,6 +253,10 @@ assert.match(
 
 const dirtySettingsView = views.find((view) => view.id === "settings-dirty");
 assert.match(dirtySettingsView.html, /Changes are ready to save/);
+assert.match(
+  dirtySettingsView.html,
+  /changes are waiting locally; review the affected section, then use Save changes once/i,
+);
 assert.doesNotMatch(
   dirtySettingsView.html.match(/<button\b[^>]*data-action="save"[^>]*>/)?.[0] ??
     "",
@@ -265,6 +269,10 @@ assert.match(
 assert.match(
   views.find((view) => view.id === "settings-save-error").html,
   /Some changes were not saved[\s\S]*try again/i,
+);
+assert.match(
+  views.find((view) => view.id === "settings-save-error").html,
+  /review the settings named below, then use Save changes once\. Any settings that already saved remain active/i,
 );
 
 const encounterView = views.find((view) => view.id === "per-encounter");

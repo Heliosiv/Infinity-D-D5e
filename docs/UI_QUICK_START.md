@@ -60,6 +60,8 @@ Player windows begin with a compact **Safe next step** or read-only context. It 
 
 Change density and other personal preferences in **Infinity Settings → Appearance & Accessibility**.
 
+If only some settings save, the status names them. Review those settings, then save once; settings that already saved remain active.
+
 ## Understand status and recovery messages
 
 Status messages answer three questions: what happened, whether anything changed, and what to do next.

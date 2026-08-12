@@ -1543,6 +1543,7 @@ function settingsContext({ fullGm }) {
     status: "No unsaved changes.",
     statusTone: "neutral",
     dirty: false,
+    hasPartialSaveError: false,
   };
 }
 
@@ -1552,6 +1553,7 @@ function settingsStatusContext({ fullGm, dirty, statusTone, status }) {
     dirty: Boolean(dirty),
     statusTone: String(statusTone),
     status: String(status),
+    hasPartialSaveError: Boolean(dirty) && statusTone === "danger",
   };
 }
 

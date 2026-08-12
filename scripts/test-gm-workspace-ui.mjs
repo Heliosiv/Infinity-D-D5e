@@ -16,6 +16,7 @@ const lootStudioTemplate = read("templates/loot-studio.hbs");
 const lootStudioScript = read("scripts/loot/loot-app-base.js");
 const downtimeTemplate = read("templates/downtime-workspace.hbs");
 const settingsTemplate = read("templates/settings.hbs");
+const settingsAppScript = read("scripts/settings-app.js");
 
 for (const [name, template] of [
   ["merchant", merchantTemplate],
@@ -311,6 +312,11 @@ assert.match(
   "Downtime keeps its lifecycle next action as the shared workspace guide",
 );
 assert.match(settingsTemplate, /Settings state:/);
+assert.match(settingsTemplate, /hasPartialSaveError/);
+assert.match(
+  settingsAppScript,
+  /hasPartialSaveError: this\._dirty && this\._statusTone === "danger"/,
+);
 
 const changeStart = reputationScript.indexOf("static async _onChangeStanding");
 const changeEnd = reputationScript.indexOf("/** Log a note", changeStart);

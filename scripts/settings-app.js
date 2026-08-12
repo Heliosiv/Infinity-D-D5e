@@ -175,6 +175,7 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
       status: this._status,
       statusTone: this._statusTone,
       dirty: this._dirty,
+      hasPartialSaveError: this._dirty && this._statusTone === "danger",
     };
   }
 
