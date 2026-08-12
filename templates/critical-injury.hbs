@@ -77,10 +77,16 @@
     <p class="infinity-session-context" role="status">
       <i class="fa-solid fa-compass" aria-hidden="true"></i>
       <span><strong>Safe next step:</strong>
-        {{#if waitingForRoll}}wait for the active GM's confirmed injury result before requesting anything else.
-        {{else if offline}}reconnect, then refresh this character's saved injury state; do not repeat an interrupted request.
-        {{else if hasPending}}use the approved roll when ready; the active GM securely applies the result.
-        {{else}}review this character's recovery and treatment status. Nothing changes until you use an available action.
+        {{#if waitingForRoll}}wait for the active GM's confirmed injury result
+          before requesting anything else.
+        {{else if outcomeUncertain}}reconnect, then review the Actor and chat
+          receipt with the GM; do not repeat the injury action.
+        {{else if offline}}reconnect, then refresh this character's saved injury
+          state; do not repeat an interrupted request.
+        {{else if hasPending}}use the approved roll when ready; the active GM
+          securely applies the result.
+        {{else}}review this character's recovery and treatment status. Nothing
+          changes until you use an available action.
         {{/if}}
       </span>
     </p>

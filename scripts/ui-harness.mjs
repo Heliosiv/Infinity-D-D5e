@@ -2239,6 +2239,7 @@ function merchantSessionCompletedContext() {
 
 function merchantSessionUncertainContext() {
   const context = merchantSessionContext("buy");
+  context.hasUncertainTransaction = true;
   context.transactionTone = "uncertain";
   context.actorSwitchLocked = true;
   context.transactionTitle = "A trade is not yet confirmed";

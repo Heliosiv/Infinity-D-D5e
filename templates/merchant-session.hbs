@@ -55,6 +55,7 @@
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Safe next step:</strong>
       {{#if transactionBusy}}wait for the active GM's confirmed result before starting another trade.
+      {{else if hasUncertainTransaction}}{{#if offline}}wait for the GM to reconnect, then verify the saved trade before using any retry control.{{else}}use Retry confirmation once on the same item action; do not start a new trade.{{/if}}
       {{else if offline}}reconnect, then refresh this shop; do not repeat an interrupted trade.
       {{else if noActor}}choose a controlled character before buying or selling.
       {{else if buyActive}}select an item and quantity, then review the exact total before buying.

@@ -461,6 +461,15 @@ assert.match(
   /wallet, inventory, and the shop stock/i,
 );
 
+const merchantUncertainView = views.find(
+  (view) => view.id === "merchant-session-uncertain",
+);
+assert.ok(merchantUncertainView, "harness includes an uncertain trade");
+assert.match(
+  merchantUncertainView.html,
+  /use Retry confirmation once on the same item action; do not start a new trade/i,
+);
+
 const resourceLoadingView = views.find(
   (view) => view.id === "resource-overview-loading",
 );
@@ -712,6 +721,18 @@ assert.match(injuryView.html, /active GM securely rolls and applies/i);
 assert.match(injuryView.html, /data-action="requestTreatment"/);
 assert.match(injuryView.html, /Shattered Knee/);
 assert.match(injuryView.html, /12 Eleasis, 1492 DR/);
+
+const injuryUncertainView = views.find(
+  (view) => view.id === "critical-injury-uncertain",
+);
+assert.ok(
+  injuryUncertainView,
+  "harness includes the player injury uncertainty view",
+);
+assert.match(
+  injuryUncertainView.html,
+  /review the Actor and chat\s+receipt with the GM; do not repeat the injury action/i,
+);
 
 const injuryHudView = views.find((view) => view.id === "critical-injury-hud");
 assert.ok(injuryHudView, "harness includes the player injury body HUD");

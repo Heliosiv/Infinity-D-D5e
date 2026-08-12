@@ -835,6 +835,7 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       })),
       offline,
       transactionBusy: waiting.length > 0,
+      hasUncertainTransaction: uncertain.length > 0,
       transactionTone,
       transactionTitle,
       transactionMessage,
