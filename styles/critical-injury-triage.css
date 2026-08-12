@@ -1,0 +1,187 @@
+.infinity-critical-injury-triage .window-content {
+  container: critical-injury-triage / inline-size;
+}
+.ci-triage-shell,
+.ci-triage-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+}
+.ci-triage-hero,
+.ci-triage-start,
+.ci-triage-row,
+.ci-triage-row__heading,
+.ci-triage-row__actions,
+.ci-triage-counts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ci-triage-hero,
+.ci-triage-start,
+.ci-triage-row {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--lf-border, rgba(255, 255, 255, 0.14));
+  border-radius: var(--lf-radius, 10px);
+  background: var(--lf-surface, rgba(35, 42, 58, 0.68));
+}
+.ci-triage-hero {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.ci-triage-hero h2,
+.ci-triage-hero p,
+.ci-triage-row p,
+.ci-triage-row h4 {
+  margin: 0;
+}
+.ci-triage-counts {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ci-triage-counts span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+.ci-triage-start {
+  align-items: end;
+  flex-wrap: wrap;
+}
+.ci-triage-start > div {
+  flex: 1 1 180px;
+}
+.ci-triage-start h3 {
+  margin: 2px 0 0;
+}
+.ci-triage-start label {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.8rem;
+}
+.ci-triage-start select,
+.ci-triage-start button,
+.ci-triage-row__actions button {
+  min-height: var(--lf-control-size, 44px);
+}
+.ci-triage-row {
+  align-items: flex-start;
+}
+.ci-triage-row--review {
+  border-left: 4px solid var(--lf-warn, #f2bd61);
+}
+.ci-triage-row--approved {
+  border-left: 4px solid var(--lf-danger, #ef6f74);
+}
+.ci-triage-row img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.ci-triage-row__main {
+  flex: 1 1 260px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.ci-triage-row__heading {
+  flex-wrap: wrap;
+}
+.ci-triage-row__heading h4 {
+  overflow-wrap: anywhere;
+}
+.ci-triage-row__actions {
+  flex: 0 0 auto;
+  align-items: stretch;
+  flex-direction: column;
+  min-width: 136px;
+}
+.ci-triage-row__actions .ci-triage-muted {
+  font-size: 0.8rem;
+  text-align: right;
+}
+.ci-triage-injuries {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+.ci-triage-injuries span {
+  color: var(--lf-danger, #ef6f74);
+  font-weight: 700;
+}
+.ci-triage-muted {
+  color: var(--lf-muted, #b8b3aa);
+  font-size: 0.85rem;
+}
+.ci-triage-party-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.ci-triage-party-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--lf-border, rgba(255, 255, 255, 0.14));
+  border-radius: var(--lf-radius-sm, 6px);
+}
+.ci-triage-party-card img {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.ci-triage-party-card > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ci-triage-party-card h4,
+.ci-triage-party-card p,
+.ci-triage-party-card ul {
+  margin: 0;
+}
+.ci-triage-party-card ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 16px;
+  font-size: 0.82rem;
+}
+@container critical-injury-triage (max-width: 620px) {
+  .ci-triage-hero,
+  .ci-triage-row,
+  .ci-triage-start {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ci-triage-row,
+  .ci-triage-row__actions {
+    width: 100%;
+  }
+  .ci-triage-row__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .ci-triage-row__actions .ci-triage-muted {
+    text-align: left;
+  }
+  .ci-triage-counts {
+    justify-content: flex-start;
+  }
+  .ci-triage-start > div,
+  .ci-triage-start label,
+  .ci-triage-start button {
+    width: 100%;
+    min-width: 0;
+  }
+}

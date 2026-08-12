@@ -103,6 +103,11 @@ const CHECKS = [
     script: "./injury/injury-app.js",
   },
   {
+    name: "critical injury triage",
+    template: "templates/critical-injury-triage.hbs",
+    script: "./injury/injury-triage-app.js",
+  },
+  {
     name: "critical injury body HUD",
     template: "templates/critical-injury-hud.hbs",
     script: "./injury/injury-hud.js",

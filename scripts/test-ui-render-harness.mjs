@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  93,
+  94,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -203,6 +203,7 @@ for (const expectedId of [
   "critical-injury-treatment-outcome",
   "critical-injury-uncertain",
   "critical-injury-character-unavailable",
+  "critical-injury-triage",
   "critical-injury-hud",
   "critical-injury-hud-offline",
   "critical-injury-hud-uncertain",
@@ -765,6 +766,20 @@ assert.match(injuryView.html, /active GM securely rolls and applies/i);
 assert.match(injuryView.html, /data-action="requestTreatment"/);
 assert.match(injuryView.html, /Shattered Knee/);
 assert.match(injuryView.html, /12 Eleasis, 1492 DR/);
+
+const injuryTriageView = views.find(
+  (view) => view.id === "critical-injury-triage",
+);
+assert.ok(
+  injuryTriageView,
+  "harness includes the GM Critical Injury triage view",
+);
+assert.match(injuryTriageView.html, /GM control surface/);
+assert.match(injuryTriageView.html, /Needs GM review/);
+assert.match(injuryTriageView.html, /data-action="sendReview"/);
+assert.match(injuryTriageView.html, /data-action="dismissReview"/);
+assert.match(injuryTriageView.html, /data-action="startReview"/);
+assert.match(injuryTriageView.html, /Character recovery/);
 
 const injuryUncertainView = views.find(
   (view) => view.id === "critical-injury-uncertain",

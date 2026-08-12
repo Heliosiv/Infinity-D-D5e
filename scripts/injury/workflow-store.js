@@ -36,7 +36,10 @@ const MAX_DETAILED_COMPLETED_RESTS = 200;
 const DEFAULT_APPLICATION_LEASE_MS = 60_000;
 const MIN_APPLICATION_LEASE_MS = 5_000;
 const MAX_APPLICATION_LEASE_MS = 300_000;
-const VALID_STATES = new Set(["approved", "resolving", "completed"]);
+// "review" is intentionally kept in the same durable record as the existing
+// approval receipt.  It is GM-only and has no Actor-flag projection until the
+// GM explicitly sends the player roll prompt.
+const VALID_STATES = new Set(["review", "approved", "resolving", "completed"]);
 const VALID_TREATMENT_STATES = new Set(["requested", "resolving", "completed"]);
 const VALID_REST_STATES = new Set(["requested", "resolving", "completed"]);
 
@@ -571,7 +574,7 @@ function normalizeRecord(raw) {
   const result = normalizeResult(raw.result);
   const completedBy = toId(raw.completedBy);
   const completedAt = finiteTimestamp(raw.completedAt);
-  if (state !== "approved" && !resolution) state = "approved";
+  if (state === "resolving" && !resolution) state = "approved";
   if (
     state === "completed" &&
     (!result || !completedBy || completedAt == null)
@@ -587,7 +590,7 @@ function normalizeRecord(raw) {
     approvedBy,
     approvedAt,
     state,
-    resolution: state === "approved" ? null : resolution,
+    resolution: ["review", "approved"].includes(state) ? null : resolution,
     applicationLease: state === "completed" ? null : applicationLease,
     result: state === "completed" ? result : null,
     effectId: state === "completed" ? toId(raw.effectId) : "",
@@ -1963,6 +1966,74 @@ export async function createCriticalInjuryApproval({
     }
     store.records.push(draft);
     return { store, pendingId: draft.pendingId };
+  });
+}
+
+/**
+ * Persist a GM-only review item. Unlike an approval, this does not authorize a
+ * player roll and therefore must not be projected to owner-writable Actor
+ * flags until `approveCriticalInjuryReview` succeeds.
+ */
+export async function createCriticalInjuryReview({
+  pendingId,
+  actorId,
+  targetUserId,
+  approvedAt = Date.now(),
+} = {}) {
+  const authority = toId(authoritativeGMId());
+  const draft = normalizeRecord({
+    pendingId,
+    actorId,
+    targetUserId,
+    approvedBy: authority,
+    approvedAt,
+    state: "review",
+  });
+  if (!authority || !draft) throw new Error("CriticalInjuryReviewInvalid");
+  return mutateStore((store) => {
+    const existing = store.records.find(
+      (record) => record.pendingId === draft.pendingId,
+    );
+    if (existing) {
+      if (
+        existing.actorId !== draft.actorId ||
+        existing.targetUserId !== draft.targetUserId
+      ) {
+        throw new Error("CriticalInjuryReviewCollision");
+      }
+      return { store, pendingId: existing.pendingId };
+    }
+    store.records.push(draft);
+    return { store, pendingId: draft.pendingId };
+  });
+}
+
+/** Promote a reviewed item into the existing durable approval workflow. */
+export async function approveCriticalInjuryReview(pendingId) {
+  const id = toId(pendingId);
+  const authority = toId(authoritativeGMId());
+  if (!id || !authority) throw new Error("CriticalInjuryReviewApprovalInvalid");
+  return mutateStore((store) => {
+    const record = store.records.find((entry) => entry.pendingId === id);
+    if (!record) throw new Error("CriticalInjuryReviewNotFound");
+    if (record.state === "review") {
+      record.state = "approved";
+      record.approvedBy = authority;
+      record.approvedAt = getCriticalInjuryWorkflowLeaseTimestamp();
+    }
+    return { store, pendingId: id };
+  });
+}
+
+/** Discard only a not-yet-sent GM review item. */
+export async function discardCriticalInjuryReview(pendingId) {
+  const id = toId(pendingId);
+  if (!id) return null;
+  return mutateStore((store) => {
+    store.records = store.records.filter(
+      (record) => record.pendingId !== id || record.state !== "review",
+    );
+    return { store, pendingId: "" };
   });
 }
 

@@ -29,6 +29,20 @@ assert.deepEqual(selectUiAuditScope(["styles/dashboard.css"]), {
   scenarios: ["comfortable-380", "compact-380", "short-720"],
   reason: "Home",
 });
+assert.deepEqual(selectUiAuditScope(["templates/critical-injury-triage.hbs"]), {
+  kind: "targeted",
+  fixtures: [
+    "critical-injury",
+    "critical-injury-offline",
+    "critical-injury-uncertain",
+    "critical-injury-triage",
+    "critical-injury-hud",
+    "critical-injury-hud-offline",
+    "critical-injury-hud-uncertain",
+  ],
+  scenarios: ["comfortable-380", "compact-380", "short-720"],
+  reason: "Critical Injuries",
+});
 assert.deepEqual(selectUiAuditScope(["styles/ui-system.css"]), {
   kind: "full",
   reason: "shared UI foundation changed",

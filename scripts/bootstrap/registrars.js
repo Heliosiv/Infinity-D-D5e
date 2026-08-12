@@ -144,6 +144,16 @@ export function createModuleRegistrars(bindings) {
       status: "available",
       open: () => bindings.ReputationWorkspaceApp.open(),
     });
+    bindings.registerTool({
+      id: "critical-injury-triage",
+      title: "Critical Injury Triage",
+      description:
+        "Review recovered characters, send private injury rolls, and track active party recovery.",
+      icon: "fa-solid fa-heart-pulse",
+      category: "party",
+      status: "available",
+      open: () => bindings.CriticalInjuryTriageApp.open(),
+    });
     return true;
   }
 

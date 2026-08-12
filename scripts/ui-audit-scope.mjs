@@ -84,11 +84,12 @@ const TARGETS = Object.freeze([
   {
     name: "Critical Injuries",
     match:
-      /^(?:templates\/critical-injury(?:-hud)?\.hbs|styles\/critical-injury(?:-hud)?\.css|scripts\/injury\/)/,
+      /^(?:templates\/critical-injury(?:-hud|-triage)?\.hbs|styles\/critical-injury(?:-hud|-triage)?\.css|scripts\/injury\/)/,
     fixtures: [
       "critical-injury",
       "critical-injury-offline",
       "critical-injury-uncertain",
+      "critical-injury-triage",
       "critical-injury-hud",
       "critical-injury-hud-offline",
       "critical-injury-hud-uncertain",

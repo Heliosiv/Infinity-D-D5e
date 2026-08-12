@@ -68,6 +68,9 @@ async function main() {
 
     await openFixture(page, harnessUrl, "critical-injury-hud");
     await auditEscapeJourney(page);
+
+    await openFixture(page, harnessUrl, "critical-injury-triage");
+    await auditCriticalInjuryTriageKeyboardActions(page);
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
@@ -238,6 +241,34 @@ async function auditQueueKeyboardActions(page) {
     await clickedActions(page),
     ["moveActivityDown", "moveActivityUp"],
     "queue reordering has Enter and Space keyboard alternatives",
+  );
+}
+
+async function auditCriticalInjuryTriageKeyboardActions(page) {
+  const start = page.locator('button[data-action="startReview"]');
+  const send = page.locator('button[data-action="sendReview"]');
+  const dismiss = page.locator('button[data-action="dismissReview"]');
+  assert.equal(await start.isEnabled(), true, "GM triage can start a review");
+  assert.equal(
+    await send.isEnabled(),
+    true,
+    "GM triage can send a private roll",
+  );
+  assert.equal(
+    await dismiss.isEnabled(),
+    true,
+    "GM triage can dismiss an unsent review",
+  );
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await send.focus();
+  await page.keyboard.press("Space");
+  await dismiss.focus();
+  await page.keyboard.press("Enter");
+  assert.deepEqual(
+    await clickedActions(page),
+    ["startReview", "sendReview", "dismissReview"],
+    "GM triage actions have native keyboard activation",
   );
 }
 

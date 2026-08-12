@@ -48,8 +48,11 @@ try {
   const {
     authorizeCriticalInjuryWorkflowRequest,
     claimCriticalInjuryApplication,
+    approveCriticalInjuryReview,
     completeCriticalInjuryWorkflow,
     createCriticalInjuryApproval,
+    createCriticalInjuryReview,
+    discardCriticalInjuryReview,
     discardCriticalInjuryApproval,
     ensureCriticalInjuryWorkflowAuthority,
     getCriticalInjuryWorkflowLeaseTimestamp,
@@ -83,6 +86,35 @@ try {
     0,
     "malformed or player-fabricated data is not accepted as an approval",
   );
+
+  const review = await createCriticalInjuryReview({
+    pendingId: "review-1",
+    actorId: "actor-1",
+    targetUserId: player.id,
+    approvedAt: 900,
+  });
+  assert.equal(review.pendingId, "review-1");
+  assert.equal(
+    getCriticalInjuryWorkflowRecord("review-1").state,
+    "review",
+    "a GM review is durable but does not authorize a player roll yet",
+  );
+  await approveCriticalInjuryReview("review-1");
+  assert.equal(
+    getCriticalInjuryWorkflowRecord("review-1").state,
+    "approved",
+    "sending a review promotes it into the existing approval state",
+  );
+  await discardCriticalInjuryApproval("review-1");
+  const discarded = await createCriticalInjuryReview({
+    pendingId: "review-dismissed",
+    actorId: "actor-1",
+    targetUserId: player.id,
+    approvedAt: 901,
+  });
+  assert.equal(discarded.pendingId, "review-dismissed");
+  await discardCriticalInjuryReview("review-dismissed");
+  assert.equal(getCriticalInjuryWorkflowRecord("review-dismissed"), null);
 
   const approval = await createCriticalInjuryApproval({
     pendingId: "pending-1",

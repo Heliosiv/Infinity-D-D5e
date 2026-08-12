@@ -34,6 +34,7 @@ If the item library is loading, wait before generating. If current filters have 
 - **Quartermaster** starts with Today, the recommended next action, supply outlook, and safety warnings. Use Recent Runs for read-only receipts and Setup & Rules for configuration, including creating, copying, ordering, and removing custom regions. Only the active GM browser tab can change setup or run upkeep; other full-GM tabs stay read-only. Exact resource matches default to a searchable item picker; **Paste an Item UUID** remains available for items from other world or compendium sources.
 - **Downtime Workspace** follows Create, Collect, Lock, Preview, Apply, and Complete. Recovery appears as a separate branch when the authoritative result is uncertain.
 - **Reputation** uses a faction list and detail workspace. Standing changes require the new standing and a reason before the existing authoritative write runs.
+- **Critical Injury Triage** lists every player character's active recovery alongside unsent reviews and player-roll work. A recovery from 0 HP or the dead state appears as **Needs GM review** instead of interrupting the session with a dialog. Use **Send roll** to privately prompt the selected owner, **No injury** to dismiss it without changing the character, or **Start review** for an exceptional case. The triage board never edits or removes injuries; the existing authoritative roll, treatment, and recovery workflow remains in control.
 
 GM workspaces include a compact **Workspace guide** at the top. It identifies the active mode, selected record, authority state, or pending save/review before you work in the detailed sections.
 
@@ -50,6 +51,8 @@ Actor-dependent windows identify the active character and wallet or inventory co
 Primary actions remain visible in sticky action areas. On narrow layouts, long queues and lists become contained drawers or stacked sections rather than forcing horizontal scrolling.
 
 Player windows begin with a compact **Safe next step** or read-only context. It explains whether to wait, refresh, select a controlled character, or use the next available action; it never retries a request for you.
+
+When a controlled character has an active Critical Injury, the compact body HUD stays visible by default. Select a body marker for the affected region and treatment context, or use **Open Critical Injuries** to reach the full private window. The HUD can be disabled in **Infinity Settings â†’ Automation & Injuries**.
 
 ## Keyboard, touch, and accessibility
 

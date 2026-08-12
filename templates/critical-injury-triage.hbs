@@ -1,0 +1,53 @@
+<div class="ci-triage-shell">
+  <header class="ci-triage-hero">
+    <div>
+      <p class="ci-eyebrow">GM control surface</p>
+      <h2>Critical Injury Triage</h2>
+      <p>Review recoveries, send private player rolls, and track party recovery.</p>
+    </div>
+    <div class="ci-triage-counts" aria-label="Triage summary">
+      <span><strong>{{reviewCount}}</strong> review</span>
+      <span><strong>{{pendingCount}}</strong> pending</span>
+    </div>
+  </header>
+
+  {{#if accessDenied}}
+    <p class="ci-notice ci-notice--danger" role="alert">This workspace is available to full Game Masters only.</p>
+  {{else}}
+    <p class="ci-status ci-status--{{tone}}" role="status" aria-live="polite">{{message}}</p>
+    <p class="infinity-session-context"><i class="fa-solid fa-compass" aria-hidden="true"></i><span><strong>Safe next step:</strong> review newly recovered characters, then send their private d100 prompt when ready. Active injuries remain governed by the existing recovery and treatment rules.</span></p>
+
+    <form class="ci-triage-start" aria-label="Start a manual injury review">
+      <div>
+        <p class="ci-eyebrow">Exceptional case</p>
+        <h3>Start an injury review</h3>
+      </div>
+      <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+      <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+      <button type="button" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}}><i class="fa-solid fa-plus" aria-hidden="true"></i> Start review</button>
+    </form>
+
+    <section class="ci-triage-list" aria-labelledby="ci-triage-list-heading">
+      <div class="ci-section-heading"><div><p class="ci-eyebrow">Party status</p><h3 id="ci-triage-list-heading">Open injury work</h3></div><button type="button" data-action="refresh"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh</button></div>
+      {{#if hasRows}}
+        {{#each rows}}
+          <article class="ci-triage-row ci-triage-row--{{state}}">
+            <img src="{{actorImg}}" alt="" />
+            <div class="ci-triage-row__main"><div class="ci-triage-row__heading"><h4>{{actorName}}</h4><span class="ci-tag {{#if sent}}ci-tag--success{{else}}ci-tag--danger{{/if}}">{{stateLabel}}</span></div><p><strong>Roll recipient:</strong> {{targetName}} · created {{createdLabel}}</p>
+              {{#if hasInjuries}}<ul class="ci-triage-injuries">{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}{{#if permanent}} <span>Permanent</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No active injury has been applied from this item yet.</p>{{/if}}
+            </div>
+            <div class="ci-triage-row__actions">
+              {{#unless sent}}<button type="button" class="ci-primary" data-action="sendReview" data-pending-id="{{pendingId}}"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send roll</button><button type="button" data-action="dismissReview" data-pending-id="{{pendingId}}"><i class="fa-solid fa-xmark" aria-hidden="true"></i> No injury</button>{{else}}<span class="ci-triage-muted">{{stateLabel}}</span>{{/unless}}
+            </div>
+          </article>
+        {{/each}}
+      {{else}}
+        <div class="ci-empty"><i class="fa-solid fa-shield-heart" aria-hidden="true"></i><p>No Critical Injury reviews or player rolls are open.</p></div>
+      {{/if}}
+    </section>
+    <section class="ci-triage-list" aria-labelledby="ci-triage-party-heading">
+      <div class="ci-section-heading"><div><p class="ci-eyebrow">Visible party status</p><h3 id="ci-triage-party-heading">Character recovery</h3></div></div>
+      <div class="ci-triage-party-grid">{{#each partyRows}}<article class="ci-triage-party-card"><img src="{{img}}" alt="" /><div><h4>{{name}}</h4>{{#if injuries.length}}<ul>{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No active critical injuries.</p>{{/if}}</div></article>{{/each}}</div>
+    </section>
+  {{/if}}
+</div>

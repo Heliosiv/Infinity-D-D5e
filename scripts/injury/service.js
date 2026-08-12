@@ -57,10 +57,11 @@ import {
   completeCriticalInjuryWorkflow,
   completeCriticalInjuryTreatmentWorkflow,
   completeCriticalInjuryRestWorkflow,
-  createCriticalInjuryApproval,
+  approveCriticalInjuryReview,
+  createCriticalInjuryReview,
   createCriticalInjuryRestRequest,
   createCriticalInjuryTreatmentRequest,
-  discardCriticalInjuryApproval,
+  discardCriticalInjuryReview,
   ensureCriticalInjuryWorkflowAuthority,
   getCriticalInjuryTreatmentRecord,
   getCriticalInjuryRestRecord,
@@ -223,6 +224,7 @@ export async function reconcileCriticalInjuryPendingProjections() {
         const record = records.get(String(entry.id ?? ""));
         const valid = Boolean(
           record &&
+          record.state !== "review" &&
           record.state !== "completed" &&
           record.actorId === String(actor?.id ?? "") &&
           record.targetUserId === String(entry.targetUserId ?? ""),
@@ -248,7 +250,7 @@ export async function reconcileCriticalInjuryPendingProjections() {
   }
 
   for (const initialRecord of records.values()) {
-    if (initialRecord.state === "completed") continue;
+    if (["review", "completed"].includes(initialRecord.state)) continue;
     try {
       const actor = globalThis.game?.actors?.get?.(initialRecord.actorId);
       if (!actor) continue;
@@ -406,65 +408,12 @@ async function considerRecoveryForInjury(actor, recovery) {
   }
   promptInFlight.add(actorId);
   try {
-    const approved = await requestGmInjuryApproval(actor, recovery);
     recentRecovery.set(actorId, Date.now());
-    if (!approved || !isAuthoritativeGM()) return false;
-
-    const targetUserId =
-      resolveInjuryRollerUserId(actor) ?? authoritativeGMId() ?? game.user?.id;
-    if (!targetUserId) return false;
-    const pending = {
-      id: generatePendingId(),
-      actorId,
-      actorName: String(actor.name ?? "Character"),
-      targetUserId,
-      createdAt: Date.now(),
-      approvedBy: String(game.user?.id ?? ""),
-      cause: String(recovery?.cause ?? "recovery"),
-      previousHp: Number(recovery?.previousHp ?? 0),
-      nextHp: Number(recovery?.nextHp ?? 1),
-    };
-    await createCriticalInjuryApproval({
-      pendingId: pending.id,
-      actorId,
-      targetUserId,
-      approvedAt: pending.createdAt,
-    });
-    try {
-      assertCriticalInjuryAuthority();
-      await appendPendingInjury(actor, pending);
-    } catch (error) {
-      await discardCriticalInjuryApproval(pending.id).catch((cleanupError) =>
-        console.warn(
-          `${MODULE_ID} | could not discard an unprojected critical injury approval`,
-          cleanupError,
-        ),
-      );
-      throw error;
-    }
-    emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.PROMPT, {
-      actorId,
-      pendingId: pending.id,
-      targetUserId,
-      actorName: pending.actorName,
-      rollFormula: "1d100",
-    });
-    const gmTargetUserId = String(authoritativeGMId() ?? "");
-    if (gmTargetUserId && gmTargetUserId !== String(targetUserId)) {
-      emitCriticalInjuryEvent(CRITICAL_INJURY_EVENTS.PROMPT, {
-        actorId,
-        pendingId: pending.id,
-        targetUserId: gmTargetUserId,
-        actorName: pending.actorName,
-        rollFormula: "1d100",
-      });
-    }
-    if (targetUserId === game.user?.id) {
-      ui.notifications?.info?.(
-        `${actor.name} has no available player owner; the GM can roll the critical injury.`,
-      );
-    }
-    return true;
+    const review = await createCriticalInjuryReviewItem({ actor, recovery });
+    globalThis.ui?.notifications?.info?.(
+      `${actor.name} recovered. Review the new Critical Injury item from Home.`,
+    );
+    return Boolean(review);
   } catch (error) {
     console.error(
       `${MODULE_ID} | critical injury recovery prompt failed`,
@@ -474,6 +423,106 @@ async function considerRecoveryForInjury(actor, recovery) {
   } finally {
     promptInFlight.delete(actorId);
   }
+}
+
+/** GM-only rows for the triage app. No player path reads this projection. */
+export function getCriticalInjuryTriageRecords() {
+  if (!isFullGM()) return [];
+  return loadCriticalInjuryWorkflowStore().records.filter((record) =>
+    ["review", "approved", "resolving"].includes(record.state),
+  );
+}
+
+/** Queue an exceptional GM-started injury through the normal player-roll flow. */
+export async function startCriticalInjuryReview({
+  actorId,
+  targetUserId,
+} = {}) {
+  if (!isAuthoritativeGM())
+    throw new Error("CriticalInjuryReviewRequiresAuthority");
+  await ensureCriticalInjuryWorkflowAuthority();
+  const actor = globalThis.game?.actors?.get?.(String(actorId ?? ""));
+  if (!isEligiblePlayerCharacter(actor)) {
+    throw new Error("CriticalInjuryReviewActorInvalid");
+  }
+  const selectedUserId = String(targetUserId ?? "");
+  if (!selectedUserId || !userCanOperateActor(actor, selectedUserId)) {
+    throw new Error("CriticalInjuryReviewRecipientInvalid");
+  }
+  return await createCriticalInjuryReviewItem({
+    actor,
+    recovery: {
+      cause: "manual",
+      previousHp: Number(actor.system?.attributes?.hp?.value ?? 0),
+      nextHp: Number(actor.system?.attributes?.hp?.value ?? 1),
+    },
+    targetUserId: selectedUserId,
+  });
+}
+
+/** Promote a GM review and deliver the normal private player roll prompt. */
+export async function sendCriticalInjuryReview(pendingId) {
+  if (!isAuthoritativeGM())
+    throw new Error("CriticalInjuryReviewRequiresAuthority");
+  await ensureCriticalInjuryWorkflowAuthority();
+  const record = getCriticalInjuryWorkflowRecord(pendingId);
+  if (!record || record.state !== "review") {
+    throw new Error("CriticalInjuryReviewNotPending");
+  }
+  const actor = globalThis.game?.actors?.get?.(record.actorId);
+  if (!actor) throw new Error("CriticalInjuryReviewActorMissing");
+  await approveCriticalInjuryReview(record.pendingId);
+  const approved = getCriticalInjuryWorkflowRecord(record.pendingId);
+  if (!approved || approved.state !== "approved") {
+    throw new Error("CriticalInjuryReviewApprovalFailed");
+  }
+  assertCriticalInjuryAuthority();
+  await appendPendingInjury(
+    actor,
+    buildPendingProjectionFromWorkflow(actor, approved),
+  );
+  emitCriticalInjuryPrompt(actor, approved, approved.targetUserId);
+  const gmTargetUserId = String(authoritativeGMId() ?? "");
+  if (gmTargetUserId && gmTargetUserId !== approved.targetUserId) {
+    emitCriticalInjuryPrompt(actor, approved, gmTargetUserId);
+  }
+  return approved;
+}
+
+/** Dismiss a not-yet-sent review without changing the Actor. */
+export async function dismissCriticalInjuryReview(pendingId) {
+  if (!isAuthoritativeGM())
+    throw new Error("CriticalInjuryReviewRequiresAuthority");
+  await ensureCriticalInjuryWorkflowAuthority();
+  const record = getCriticalInjuryWorkflowRecord(pendingId);
+  if (!record || record.state !== "review") return false;
+  await discardCriticalInjuryReview(record.pendingId);
+  return true;
+}
+
+async function createCriticalInjuryReviewItem({
+  actor,
+  recovery,
+  targetUserId,
+} = {}) {
+  assertCriticalInjuryAuthority();
+  const recipient =
+    String(targetUserId ?? "") ||
+    (resolveInjuryRollerUserId(actor) ?? authoritativeGMId() ?? game.user?.id);
+  if (!recipient) return null;
+  const pending = {
+    id: generatePendingId(),
+    actorId: String(actor?.id ?? ""),
+    targetUserId: String(recipient),
+    createdAt: Date.now(),
+  };
+  await createCriticalInjuryReview({
+    pendingId: pending.id,
+    actorId: pending.actorId,
+    targetUserId: pending.targetUserId,
+    approvedAt: pending.createdAt,
+  });
+  return pending;
 }
 
 async function handleCriticalInjuryRollRequest(payload) {

@@ -93,6 +93,7 @@ function createFixture({
       openForCurrentUser: record("injuries:open"),
     },
     CriticalInjuryHudApp: { reconcile: record("injury-hud:reconcile") },
+    CriticalInjuryTriageApp: app("injury-triage"),
     ReputationWorkspaceApp: app("reputation-workspace"),
     ReputationViewApp: app("reputation-view"),
     DowntimeWorkspaceApp: {
@@ -257,6 +258,7 @@ function createFixture({
     "tool:resource-manager",
     "tool:downtime-workspace",
     "tool:reputation",
+    "tool:critical-injury-triage",
     "downtime-workspace:configure",
     "downtime-activities:configure",
   ]);

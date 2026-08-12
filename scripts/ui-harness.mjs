@@ -33,6 +33,7 @@ const CSS_FILES = [
   "styles/resource-overview.css",
   "styles/forage-prompt.css",
   "styles/critical-injury.css",
+  "styles/critical-injury-triage.css",
   "styles/critical-injury-hud.css",
   "styles/reputation-workspace.css",
   "styles/reputation-view.css",
@@ -800,6 +801,14 @@ export function buildHarnessViews() {
       "templates/critical-injury.hbs",
       criticalInjuryCharacterUnavailableContext(),
       { width: 520, height: 460 },
+    ),
+    view(
+      "critical-injury-triage",
+      "Critical Injury Triage (GM)",
+      "infinity-critical-injury-triage",
+      "templates/critical-injury-triage.hbs",
+      criticalInjuryTriageContext(),
+      { width: 760, height: 720 },
     ),
     view(
       "critical-injury-hud",
@@ -4531,6 +4540,71 @@ function forageOfflineContext() {
   return {
     ...foragePromptContext(),
     offline: true,
+  };
+}
+
+function criticalInjuryTriageContext() {
+  return {
+    accessDenied: false,
+    reviewCount: 1,
+    pendingCount: 1,
+    hasPlayerCharacters: true,
+    hasPlayerUsers: true,
+    message: "A new recovery is ready for GM review.",
+    tone: "ready",
+    playerCharacters: [
+      { id: "actor-aric", name: "Aric", owners: [{ id: "player-aric" }] },
+      { id: "actor-bryn", name: "Bryn", owners: [{ id: "player-bryn" }] },
+    ],
+    playerUsers: [
+      { id: "player-aric", name: "Aric's player" },
+      { id: "player-bryn", name: "Bryn's player" },
+    ],
+    hasRows: true,
+    rows: [
+      {
+        pendingId: "pending-review-aric",
+        actorName: "Aric",
+        actorImg: "icons/svg/mystery-man.svg",
+        state: "review",
+        stateLabel: "Needs GM review",
+        sent: false,
+        targetName: "Aric's player",
+        createdLabel: "12 Eleasis, 1492 DR",
+        hasInjuries: false,
+        injuries: [],
+      },
+      {
+        pendingId: "pending-player-bryn",
+        actorName: "Bryn",
+        actorImg: "icons/svg/mystery-man.svg",
+        state: "approved",
+        stateLabel: "Player roll pending",
+        sent: true,
+        targetName: "Bryn's player",
+        createdLabel: "12 Eleasis, 1492 DR",
+        hasInjuries: true,
+        injuries: [
+          {
+            name: "Shattered Knee",
+            recovery: "7 day(s) remaining",
+            permanent: false,
+          },
+        ],
+      },
+    ],
+    partyRows: [
+      {
+        name: "Aric",
+        img: "icons/svg/mystery-man.svg",
+        injuries: [],
+      },
+      {
+        name: "Bryn",
+        img: "icons/svg/mystery-man.svg",
+        injuries: [{ name: "Shattered Knee", recovery: "7 day(s) remaining" }],
+      },
+    ],
   };
 }
 

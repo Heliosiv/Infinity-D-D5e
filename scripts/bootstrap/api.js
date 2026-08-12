@@ -19,6 +19,7 @@ export function createModuleApi(bindings) {
     ForagePromptApp,
     CriticalInjuryApp,
     CriticalInjuryHudApp,
+    CriticalInjuryTriageApp,
     ReputationWorkspaceApp,
     ReputationViewApp,
     DowntimeWorkspaceApp,
@@ -64,6 +65,8 @@ export function createModuleApi(bindings) {
     openPartySupplies: () => ResourceOverviewApp.open(),
     openCriticalInjuries: () => CriticalInjuryApp.openForCurrentUser(),
     openCriticalInjuryHud: () => CriticalInjuryHudApp.reconcile(),
+    openCriticalInjuryTriage: () =>
+      runAsFullGM(() => CriticalInjuryTriageApp.open()),
     openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
     openReputationView: () => ReputationViewApp.open(),
     openDowntimeWorkspace: () => runAsFullGM(() => DowntimeWorkspaceApp.open()),
@@ -80,6 +83,7 @@ export function createModuleApi(bindings) {
     ForagePromptApp,
     CriticalInjuryApp,
     CriticalInjuryHudApp,
+    CriticalInjuryTriageApp,
     criticalInjuries: {
       tableVersion: CRITICAL_INJURY_TABLE_VERSION,
       table: CRITICAL_INJURY_TABLE,
