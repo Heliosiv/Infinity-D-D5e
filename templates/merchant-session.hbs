@@ -51,6 +51,18 @@
     </dl>
   </section>
 
+  <p class="infinity-session-context" role="status">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Safe next step:</strong>
+      {{#if transactionBusy}}wait for the active GM's confirmed result before starting another trade.
+      {{else if offline}}reconnect, then refresh this shop; do not repeat an interrupted trade.
+      {{else if noActor}}choose a controlled character before buying or selling.
+      {{else if buyActive}}select an item and quantity, then review the exact total before buying.
+      {{else}}select one of your items, then review the exact total before selling.
+      {{/if}}
+    </span>
+  </p>
+
   {{#if noActor}}
   <div class="ms-context-warning" role="alert">
     <i class="fa-solid fa-user-clock" aria-hidden="true"></i>

@@ -1253,6 +1253,12 @@ function dashboardContext({
     hasTools: true,
     recentTools: decorated.slice(0, 2),
     hasRecentTools: true,
+    sessionFocus: {
+      ...decorated[0],
+      label: "Continue with Per-Encounter Loot",
+      description:
+        "Resume a workspace you recently used. Its current state and next safe action stay inside that window.",
+    },
     privateStateRecovery,
     categories: [
       {

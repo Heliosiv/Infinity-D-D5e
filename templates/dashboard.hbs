@@ -20,6 +20,26 @@
     </div>
   </header>
 
+  {{#if sessionFocus}}
+  <section class="id-session-focus" aria-labelledby="infinity-home-focus-title">
+    <div>
+      <p class="id-session-focus__eyebrow">Session focus</p>
+      <h3 id="infinity-home-focus-title">{{sessionFocus.title}}</h3>
+      <p>{{sessionFocus.description}}</p>
+    </div>
+    <button
+      type="button"
+      class="id-button id-button--focus"
+      data-action="launch"
+      data-launch-kind="{{sessionFocus.launchKind}}"
+      data-launch-id="{{sessionFocus.launchId}}"
+    >
+      <i class="{{sessionFocus.icon}}" aria-hidden="true"></i>
+      <span>{{sessionFocus.label}}</span>
+    </button>
+  </section>
+  {{/if}}
+
   {{#if isFullGm}}
   <details class="infinity-disclosure" data-campaign-data-recovery {{#if privateStateRecovery.open}}open{{/if}}>
     <summary>

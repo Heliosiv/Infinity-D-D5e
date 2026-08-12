@@ -133,6 +133,52 @@
   font-variant-numeric: tabular-nums;
 }
 
+.id-session-focus {
+  display: flex;
+  gap: var(--lf-space-4, 16px);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--lf-space-4, 16px);
+  color: var(--lf-text);
+  background: color-mix(in srgb, var(--lf-accent) 11%, var(--lf-bg-alt));
+  border: 1px solid color-mix(in srgb, var(--lf-accent) 46%, var(--lf-border));
+  border-radius: var(--lf-radius);
+}
+
+.id-session-focus__eyebrow {
+  margin: 0 0 var(--lf-space-1, 4px);
+  color: var(--lf-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.id-session-focus h3,
+.id-session-focus p {
+  margin: 0;
+}
+
+.id-session-focus h3 {
+  color: var(--lf-text-strong);
+  font-size: 1rem;
+}
+
+.id-session-focus h3 + p {
+  max-width: 68ch;
+  margin-top: var(--lf-space-1, 4px);
+  color: var(--lf-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.id-button--focus {
+  flex: 0 0 auto;
+  color: var(--lf-text-strong);
+  background: var(--lf-surface-elev);
+  border-color: var(--lf-accent);
+}
+
 .id-section__icon,
 .id-tile__icon {
   display: inline-flex;

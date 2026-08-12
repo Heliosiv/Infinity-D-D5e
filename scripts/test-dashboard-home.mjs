@@ -104,6 +104,7 @@ const {
   InfinityDashboardApp,
   openHub,
   presentPrivateStateRecoveryOverview,
+  resolveSessionFocus,
 } = await import("./dashboard.js");
 const { clearTools, registerTool, TOOL_INTENTS } =
   await import("./tool-registry.js");
@@ -223,6 +224,7 @@ assert.deepEqual(
   gmContext.groups.map((group) => group.label),
   ["Prepare", "Run the Session", "Track the Campaign"],
 );
+
 assert.deepEqual(
   gmContext.groups.flatMap((group) => group.actions.map((action) => action.id)),
   ["merchant-workspace", "per-encounter-loot", "reputation"],
@@ -501,6 +503,21 @@ assert.ok(playerActions.every((action) => action.launchKind === "surface"));
 assert.deepEqual(
   groupHomeActionsByIntent(playerActions).map((group) => group.id),
   [TOOL_INTENTS.PREPARE, TOOL_INTENTS.RUN_SESSION, TOOL_INTENTS.TRACK_CAMPAIGN],
+);
+
+const focusedSessionAction = resolveSessionFocus(playerActions, [
+  playerActions.find((action) => action.surface === "shops"),
+]);
+assert.equal(
+  focusedSessionAction.title,
+  "Shops",
+  "Home foregrounds a recent role-safe destination",
+);
+assert.match(focusedSessionAction.label, /^Continue with /);
+assert.equal(
+  resolveSessionFocus([], []),
+  null,
+  "Home leaves the focus card out when no destination is available",
 );
 
 globalThis.game.user = {

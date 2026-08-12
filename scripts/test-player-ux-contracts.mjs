@@ -69,6 +69,7 @@ assert.match(
 assert.match(merchantTemplate, /\{\{actorName\}\}/);
 assert.match(merchantTemplate, /ms-transaction--\{\{transactionTone\}\}/);
 assert.match(merchantTemplate, /Session totals/);
+assert.match(merchantTemplate, /Safe next step:/);
 assert.match(merchantTemplate, /data-role="merchant-actor"/);
 assert.match(merchantScript, /getControlledMerchantActors/);
 assert.match(merchantScript, /setPreferredMerchantActorId/);
@@ -125,6 +126,7 @@ assert.doesNotMatch(forageScript, /users\?\.activeGM/);
 const downtimeTemplate = read("templates/downtime-activities.hbs");
 const downtimeCss = read("styles/downtime.css");
 assert.match(downtimeTemplate, /Active character/);
+assert.match(downtimeTemplate, /Safe next step:/);
 assert.match(downtimeTemplate, /class="dt-queue__drawer" open/);
 assert.match(downtimeTemplate, /data-action="moveActivityUp"/);
 assert.match(downtimeTemplate, /data-action="moveActivityDown"/);

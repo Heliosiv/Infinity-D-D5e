@@ -267,6 +267,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       : buildPlayerHomeActions();
     const groups = groupHomeActionsByIntent(actions);
     const recentActions = resolveRecentActions(actions);
+    const sessionFocus = resolveSessionFocus(actions, recentActions);
     const privateStateRecovery = fullGm
       ? await preparePrivateStateRecoveryContext(this)
       : null;
@@ -288,6 +289,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       groups,
       recentTools: recentActions,
       hasRecentTools: recentActions.length > 0,
+      sessionFocus,
       privateStateRecovery,
 
       // Compatibility context for existing harnesses and extensions that still
@@ -914,6 +916,33 @@ export function groupHomeActionsByIntent(actions) {
     ...intent,
     actions: actions.filter((action) => action.intent === intent.id),
   })).filter((group) => group.actions.length > 0);
+}
+
+/**
+ * Pick one role-safe destination to foreground when Home opens. Recent work
+ * wins, then an available in-session tool, then any other available tool.
+ * This is presentation-only: it never probes campaign state or changes what
+ * Home is allowed to expose.
+ */
+export function resolveSessionFocus(actions = [], recentActions = []) {
+  const available = actions.filter((action) => action?.isAvailable);
+  const recent = recentActions.find((action) => action?.isAvailable);
+  const inSession = available.find(
+    (action) => action.intent === TOOL_INTENTS.RUN_SESSION,
+  );
+  const action = recent ?? inSession ?? available[0];
+  if (!action) return null;
+
+  const continuing = action === recent;
+  return Object.freeze({
+    ...action,
+    label: continuing
+      ? `Continue with ${action.title}`
+      : `Open ${action.title}`,
+    description: continuing
+      ? "Resume a workspace you recently used. Its current state and next safe action stay inside that window."
+      : "This is the next available destination for the current role. Home does not change campaign data.",
+  });
 }
 
 /** Build the concise, role-aware content opened by the Home header Help button. */

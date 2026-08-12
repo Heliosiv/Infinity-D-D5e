@@ -86,6 +86,11 @@ for (const control of [
 }
 
 const documentHtml = buildUiHarnessDocument();
+assert.match(
+  documentHtml,
+  /Session focus[\s\S]*?Continue with Per-Encounter Loot/,
+  "Home foregrounds one role-safe session destination",
+);
 assert.ok(
   !/>Loot\./i.test(documentHtml),
   "rendered chip labels should not leak raw loot.* keys",
