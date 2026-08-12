@@ -45,17 +45,17 @@ const DEFAULT_TEMPLATES = Object.freeze([
       {
         label: "A lean day",
         report: "The work was scarce, but you made a useful contact.",
-        rewardGp: 2,
+        rewardGp: 1,
       },
       {
         label: "Solid wages",
         report: "You completed the job cleanly and were paid fairly.",
-        rewardGp: 5,
+        rewardGp: 2,
       },
       {
         label: "In demand",
         report: "Your work stood out and the foreman paid a premium.",
-        rewardGp: 10,
+        rewardGp: 4,
       },
     ],
   },
@@ -75,12 +75,12 @@ const DEFAULT_TEMPLATES = Object.freeze([
       {
         label: "Useful lead",
         report: "Your research produced a clear lead for the party to pursue.",
-        rewardGp: 2,
+        rewardGp: 0,
       },
       {
         label: "Breakthrough",
         report: "You uncovered a valuable connection the GM can build on.",
-        rewardGp: 5,
+        rewardGp: 0,
       },
     ],
   },
@@ -100,12 +100,12 @@ const DEFAULT_TEMPLATES = Object.freeze([
       {
         label: "Quiet score",
         report: "You came away with a small, unremarkable score.",
-        rewardGp: 4,
+        rewardGp: 2,
       },
       {
         label: "Clean haul",
         report: "A bold but controlled play paid off handsomely.",
-        rewardGp: 12,
+        rewardGp: 6,
       },
     ],
   },
@@ -192,6 +192,10 @@ export function projectGuidedDowntimeTemplate(template) {
 }
 
 function normalizeSkills(raw) {
+  return normalizeGuidedDowntimeSkills(raw);
+}
+
+export function normalizeGuidedDowntimeSkills(raw) {
   if (!Array.isArray(raw)) return [];
   return [...new Set(raw.map(idValue).filter((skill) => SKILL_IDS.has(skill)))];
 }

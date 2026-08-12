@@ -558,6 +558,7 @@ try {
       hours: 16,
       mode: "guided",
       templateIds: [],
+      projectIds: [],
       actorIds: ["borin", "aria", "cass"],
     },
     "visual sorting never changes the canonical Actor order submitted to the service",

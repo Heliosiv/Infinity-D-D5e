@@ -112,6 +112,29 @@ try {
   assert.equal(campWorkspace.canCreateBlock, true);
   assert.equal(campWorkspace.createBlockReason, "");
 
+  const projectsWorkspace = workspaceModule.normalizeWorkspaceProjection(
+    {
+      guidedProjects: [
+        {
+          id: "project-learn-draconic",
+          name: "Learn Draconic",
+          description: "Study the language together.",
+          requiredHours: 160,
+          progressHours: 32,
+          remainingHours: 128,
+          progressLabel: "32 / 160 hours",
+        },
+      ],
+    },
+    { view: "projects" },
+  );
+  assert.equal(projectsWorkspace.viewProjects, true);
+  assert.equal(
+    projectsWorkspace.guidedProjects[0].progressLabel,
+    "32 / 160 hours",
+  );
+  assert.equal(projectsWorkspace.projectSkillOptions.length > 0, true);
+
   const workspaceAppState = {
     _adapter: {
       getWorkspaceProjection: async () => {
@@ -176,6 +199,7 @@ try {
     "newSettlement",
     "saveSettlement",
     "deleteSettlement",
+    "saveGuidedProject",
   ]) {
     assert.doesNotMatch(
       loadErrorHtml,
@@ -232,6 +256,16 @@ try {
     workspaceTemplateSource,
     /<input(?=[^>]*name="hours")(?=[^>]*aria-labelledby="dt-new-block-hours-label")[^>]*>/,
     "the productive-hours input references its visible label",
+  );
+  assert.match(
+    workspaceTemplateSource,
+    /name="projectIds"/,
+    "guided blocks can include selected long-term projects",
+  );
+  assert.match(
+    workspaceTemplateSource,
+    /data-form="guided-project"/,
+    "the GM has a dedicated project creation form",
   );
 
   const activitiesTemplateSource = readFileSync(

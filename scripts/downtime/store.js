@@ -37,7 +37,8 @@ const STORE_VERSION = 1;
 const CHECKPOINT_VERSION = 1;
 const CONFIG_CHECKPOINT_VERSION = 1;
 const LEGACY_DOWNTIME_CONFIG_VERSION = 2;
-const PREVIOUS_DOWNTIME_CONFIG_VERSION = 3;
+const GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION = 3;
+const PREVIOUS_DOWNTIME_CONFIG_VERSION = 4;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -169,6 +170,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
     isPlainObject(raw) &&
     [
       LEGACY_DOWNTIME_CONFIG_VERSION,
+      GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION,
       PREVIOUS_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
@@ -365,10 +367,22 @@ function parsePersistedDowntimeConfig(raw) {
   } else if (
     persistedVersionEquals(raw.version, PREVIOUS_DOWNTIME_CONFIG_VERSION)
   ) {
-    const { guidedTemplates: _guidedTemplates, ...previousShape } = current;
+    const { guidedProjects: _guidedProjects, ...previousShape } = current;
     persistedShape = {
       ...previousShape,
       version: PREVIOUS_DOWNTIME_CONFIG_VERSION,
+    };
+  } else if (
+    persistedVersionEquals(raw.version, GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION)
+  ) {
+    const {
+      guidedTemplates: _guidedTemplates,
+      guidedProjects: _guidedProjects,
+      ...previousShape
+    } = current;
+    persistedShape = {
+      ...previousShape,
+      version: GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION,
     };
   } else if (
     persistedVersionEquals(raw.version, LEGACY_DOWNTIME_CONFIG_VERSION)
@@ -393,6 +407,7 @@ function parsePersistedDowntimeConfig(raw) {
       }),
     };
     delete persistedShape.guidedTemplates;
+    delete persistedShape.guidedProjects;
   } else {
     return null;
   }

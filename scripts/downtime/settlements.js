@@ -5,8 +5,9 @@ import {
 import { normalizeSharpeningLifecycle } from "./sharpening-lifecycle.js";
 import { normalizeStolenGoodsLedger } from "./stolen-ledger.js";
 import { normalizeGuidedDowntimeTemplates } from "./dispatch.js";
+import { normalizeGuidedDowntimeProjects } from "./projects.js";
 
-export const DOWNTIME_CONFIG_VERSION = 4;
+export const DOWNTIME_CONFIG_VERSION = 5;
 export const NON_SETTLEMENT_DOWNTIME_CONTEXT_ID =
   "downtime-away-from-settlement";
 export const DEFAULT_NON_SETTLEMENT_LOCATION_NAME = "Camp or wilderness";
@@ -145,6 +146,7 @@ export function normalizeDowntimeConfig(raw = {}) {
       source.sharpeningLifecycle,
     ),
     guidedTemplates: normalizeGuidedDowntimeTemplates(source.guidedTemplates),
+    guidedProjects: normalizeGuidedDowntimeProjects(source.guidedProjects),
     history: Array.isArray(source.history)
       ? source.history.filter(isPlainObject).map(clonePlainRecord)
       : [],

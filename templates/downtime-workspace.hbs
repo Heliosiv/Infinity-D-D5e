@@ -18,6 +18,9 @@
     <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block
     </button>
+    <button type="button" data-action="setView" data-view="projects" {{#if viewProjects}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
+      <i class="fa-solid fa-diagram-project" aria-hidden="true"></i> Projects
+    </button>
     <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements
     </button>
@@ -370,6 +373,22 @@
             <p class="dt-inline-empty">No guided activity templates are available.</p>
             {{/if}}
           </fieldset>
+          <fieldset class="dt-fieldset" aria-describedby="dt-project-help">
+            <legend>Long-term projects</legend>
+            <p id="dt-project-help">Any selected character can spend this block on the same project. Each assigned hour counts once after the GM applies the block.</p>
+            {{#if hasGuidedProjects}}
+            <div class="dt-chip-grid">
+              {{#each guidedProjects}}
+              <label class="dt-chip {{#if complete}}is-disabled{{/if}}" title="{{progressLabel}}">
+                <input type="checkbox" name="projectIds" value="{{id}}" {{#if complete}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} />
+                <span>{{name}} <small>{{progressLabel}}</small></span>
+              </label>
+              {{/each}}
+            </div>
+            {{else}}
+            <p class="dt-inline-empty">No long-term projects yet. Create one in the Projects tab.</p>
+            {{/if}}
+          </fieldset>
           {{#if createBlockReason}}<p class="dt-form-reason">{{createBlockReason}}</p>{{/if}}
           <footer class="dt-form__actions">
             <button type="button" class="dt-button" data-action="setView" data-view="settlements" {{#if busy}}disabled{{/if}}>
@@ -382,6 +401,38 @@
         </form>
       </section>
       {{/if}}
+    {{/if}}
+
+    {{#if viewProjects}}
+    <section class="dt-settlement-layout" aria-labelledby="dt-projects-heading">
+      <aside class="dt-rail">
+        <div class="dt-rail__head">
+          <div><p class="dt-eyebrow">Shared long-term work</p><h3 id="dt-projects-heading">Projects</h3></div>
+        </div>
+        {{#if hasGuidedProjects}}
+        <ol class="dt-rail__list">
+          {{#each guidedProjects}}
+          <li class="dt-rail__item {{#if complete}}is-muted{{/if}}">
+            <span><strong>{{name}}</strong><small>{{progressLabel}}{{#if complete}} · Complete{{/if}}</small></span>
+          </li>
+          {{/each}}
+        </ol>
+        {{else}}
+        <p class="dt-inline-empty">Create a project, then include it in a guided downtime block.</p>
+        {{/if}}
+      </aside>
+      <form class="dt-form" data-form="guided-project" aria-labelledby="dt-project-create-heading">
+        <div class="dt-form__head">
+          <div><p class="dt-eyebrow">New project</p><h3 id="dt-project-create-heading">Track shared progress</h3></div>
+          <p>Project pacing is one productive hour of progress per character. Rolls shape the GM report, not the number of hours earned.</p>
+        </div>
+        <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
+        <label class="dt-field dt-field--wide"><span>Project description</span><textarea name="description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}></textarea></label>
+        <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" min="1" max="10000" step="1" value="160" required {{#if busy}}disabled{{/if}} /><small>160 hours is 20 eight-hour days; set the pace that fits your campaign.</small></label>
+        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one, then click Roll &amp; submit.</p><div class="dt-chip-grid">{{#each projectSkillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save project</button></footer>
+      </form>
+    </section>
     {{/if}}
 
     {{#if viewSettlements}}

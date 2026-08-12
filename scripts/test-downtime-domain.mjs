@@ -54,6 +54,20 @@ import {
 {
   const templates = defaultGuidedDowntimeTemplates();
   assert.equal(templates.length, 3);
+  assert.deepEqual(
+    Object.fromEntries(
+      templates.map((template) => [
+        template.id,
+        template.outcomes.map((outcome) => outcome.rewardGp),
+      ]),
+    ),
+    {
+      "guided-labor": [1, 2, 4],
+      "guided-research": [0, 0, 0],
+      "guided-thievery": [0, 2, 6],
+    },
+    "the shipped guided rewards stay within the modest one-day balance budget",
+  );
   assert.equal(
     templates.every((template) => template.outcomes.length >= 3),
     true,

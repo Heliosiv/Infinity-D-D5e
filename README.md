@@ -20,7 +20,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**Unreleased** - Guided downtime now has each player click and submit their own character check. The GM reviews the recorded total, chooses or edits the narrative outcome, and then applies each character's approved reward and receipt.
+**Unreleased** - Guided downtime now has each player click and submit their own character check. The GM reviews the recorded total, chooses or edits the narrative outcome, and then applies each character's approved reward and receipt. GMs can also define long-term projects, include them in a block, and track concurrent character work from durable completed receipts.
 
 **v0.3.5 — Released 2026-08-12** - Fixes short-viewport Merchant Workspace navigation so every merchant row remains reachable in the stacked layout.
 
@@ -164,6 +164,12 @@ For a guided downtime block, a player selects the one available activity and
 clicks **Roll & submit**. Their controlled Actor makes the visible Foundry
 check; its recorded total is what the GM reviews before choosing the report and
 approved reward.
+
+The **Projects** tab lets the GM define a shared long-term goal—such as learning
+Draconic or rebuilding a watchtower—with a total productive-hour target and
+applicable skills. Include that project when opening a guided block; any number
+of selected characters can choose it, and each of their assigned hours advances
+the same durable total when the GM applies the block.
 
 When submissions are ready, the GM locks the block and generates a durable,
 immutable preview. All hidden checks, DCs, consequences, rewards, operation

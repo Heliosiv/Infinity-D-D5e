@@ -634,6 +634,121 @@ try {
   assert.equal(guidedBlock.state, "completed");
   delete actor.rollSkill;
 
+  const projectPartner = makeActor({ id: "project-partner" });
+  projectPartner.name = "Project Partner";
+  actors.set(projectPartner.id, projectPartner);
+  const languageProject = await service.saveGuidedDowntimeProject({
+    name: "Learn Draconic",
+    description: "Study the language together between adventures.",
+    requiredHours: 16,
+    skills: ["arc", "his"],
+  });
+  let projectBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationName: "The Lantern District",
+    hours: 8,
+    actorIds: [actor.id, projectPartner.id],
+    projectIds: [languageProject.id],
+  });
+  const projectPlayerProjection = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.deepEqual(
+    projectPlayerProjection.activities.find(
+      (activity) => activity.id === languageProject.id,
+    ),
+    {
+      id: languageProject.id,
+      label: "Learn Draconic",
+      description:
+        "Study the language together between adventures. 0 / 16 hours complete.",
+      category: "project",
+      icon: "fa-solid fa-compass",
+      available: true,
+      fixedHours: 8,
+      skills: [
+        { id: "arc", label: "Arc", selected: false },
+        { id: "his", label: "His", selected: false },
+      ],
+      hasSkills: true,
+      image: languageProject.image,
+      project: true,
+    },
+    "players receive a rollable project activity with the current shared progress",
+  );
+  for (const [index, projectActor] of [actor, projectPartner].entries()) {
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: `project-contributor-${index}`,
+      blockId: projectBlock.id,
+      actorId: projectActor.id,
+      queue: [
+        {
+          id: "guided-choice",
+          activityId: languageProject.id,
+          hours: 8,
+          skill: "arc",
+          guidedRoll: { total: 14 + index, formula: "1d20 + 4" },
+        },
+      ],
+    });
+  }
+  projectBlock = await service.lockActiveDowntimeBlock(projectBlock.id);
+  projectBlock = await service.planActiveDowntimeBlock(projectBlock.id);
+  assert.deepEqual(
+    projectBlock.plan.operations.map((operation) => operation.project),
+    [
+      {
+        id: languageProject.id,
+        name: "Learn Draconic",
+        requiredHours: 16,
+        progressBeforeHours: 0,
+        contributedHours: 8,
+        progressAfterHours: 8,
+        completed: false,
+      },
+      {
+        id: languageProject.id,
+        name: "Learn Draconic",
+        requiredHours: 16,
+        progressBeforeHours: 8,
+        contributedHours: 8,
+        progressAfterHours: 16,
+        completed: true,
+      },
+    ],
+    "two characters can contribute concurrently to one long-term project",
+  );
+  projectBlock = await service.applyActiveDowntimeBlock(projectBlock.id);
+  assert.equal(projectBlock.state, "completed");
+  const projectWorkspace = await service.getWorkspaceProjection();
+  assert.deepEqual(
+    projectWorkspace.guidedProjects.find(
+      (project) => project.id === languageProject.id,
+    ),
+    {
+      ...languageProject,
+      progressHours: 16,
+      remainingHours: 0,
+      complete: true,
+      progressLabel: "16 / 16 hours",
+    },
+    "completed project work is derived from durable operation receipts",
+  );
+  await assert.rejects(
+    service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "The Lantern District",
+      hours: 8,
+      actorIds: [actor.id],
+      projectIds: [languageProject.id],
+    }),
+    /choose at least one activity/i,
+    "a completed project cannot be reopened accidentally",
+  );
+  actors.delete(projectPartner.id);
+
   const reusableRollActor = makeActor({ id: "reusable-roll-actor" });
   reusableRollActor.name = "Reusable Roll Hero";
   actors.set(reusableRollActor.id, reusableRollActor);

@@ -21,6 +21,33 @@ The shipped templates are **Paid Work**, **Research & Rumors**, and
 **Thievery**. They are intentionally a safe starting set. No campaign time is
 advanced by this workflow.
 
+## Long-term projects
+
+Use **Downtime Workspace → Projects** to name a project, set its total
+productive-hour target, and choose the skills players may use. A good campaign
+baseline is 160 hours (20 eight-hour days) for learning a language; choose a
+smaller or larger target to suit the task and pace of the campaign. For actual
+automatic ammunition delivery, use the standard **Craft Ammunition** activity;
+a project can instead track a larger commission or other multi-block goal.
+
+When opening a guided block, select any unfinished projects that characters may
+work on. Each character can choose the same project, so concurrent effort is
+added together. One assigned productive hour always adds one project-work hour;
+the player roll and the GM-selected result shape the report, rather than making
+the completion pace swing unpredictably. Progress is calculated from completed
+operation receipts, so it remains accurate after reloads and does not count a
+cancelled or interrupted block.
+
+## Baseline reward balance
+
+The built-in 8-hour templates are intentionally modest: **Paid Work** awards
+1/2/4 gp, **Research & Rumors** awards information rather than currency, and
+**Thievery** awards 0/2/6 gp before any GM story consequences. This keeps a
+normal downtime day comparable to ordinary skilled work instead of becoming a
+primary source of adventure-scale treasure. GMs can still set the selected
+outcome and narrative, while custom templates remain the place for campaign-
+specific rewards.
+
 ---
 
 ## v0.3.1 interface quick start
@@ -236,12 +263,13 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-Only the active full GM can optionally configure settlements, create or
-transition a block, roll hidden checks, or apply results. A player can view and
-submit only directly owned or assigned eligible Actors. Socket requests are authenticated,
-targeted to the active GM, and re-derived from IDs, hours, skill choice, stake,
-and target IDs; player-supplied DCs, rolls, modifiers, costs, and rewards are
-ignored.
+Only the active full GM can optionally configure settlements, create projects,
+create or transition a block, roll hidden checks, or apply results. A player can
+view and submit only directly owned or assigned eligible Actors. Socket requests
+are authenticated and targeted to the active GM. Player-supplied DCs,
+modifiers, costs, and rewards are ignored. In a guided block, the player's
+bounded visible Foundry roll total/formula accompanies their owned activity
+submission for GM review; the GM remains the outcome and reward approval gate.
 
 Player projections contain their eligible Actors, location, safe opportunity
 labels, prerequisite explanations, own queue and (when a settlement is

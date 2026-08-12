@@ -27,6 +27,11 @@ import {
   projectGuidedDowntimeTemplate,
 } from "./dispatch.js";
 import {
+  guidedProjectById,
+  normalizeGuidedDowntimeProject,
+  projectGuidedDowntimeProject,
+} from "./projects.js";
+import {
   beginDowntimeApplication,
   cancelDowntimeBlock,
   claimDowntimeOperation,
@@ -93,6 +98,21 @@ import {
   stolenGoodsRecord,
   stolenGoodsRecordsEqual,
 } from "./stolen-ledger.js";
+
+const GUIDED_PROJECT_OUTCOMES = Object.freeze([
+  {
+    label: "Steady work",
+    report: "You made careful, useful progress on the project.",
+  },
+  {
+    label: "Focused progress",
+    report: "Your focused work moved the project forward cleanly.",
+  },
+  {
+    label: "Breakthrough",
+    report: "A breakthrough clarified the next stage of the project.",
+  },
+]);
 import { rollSkillTotal } from "../dnd5e-roll.js";
 import {
   readWalletStrict,
@@ -695,6 +715,29 @@ export async function deleteSettlementProfile(settlementId) {
   });
 }
 
+export async function saveGuidedDowntimeProject(payload = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const project = normalizeGuidedDowntimeProject(payload, {
+      fallbackId: payload.id || newId("project"),
+    });
+    if (!project || project.skills.length === 0) {
+      throw new Error(
+        "Enter a project name, total work hours, and at least one applicable skill.",
+      );
+    }
+    await updateDowntimeConfig((current) => {
+      const projects = [...current.guidedProjects];
+      const index = projects.findIndex((entry) => entry.id === project.id);
+      if (index >= 0) projects[index] = project;
+      else projects.push(project);
+      return { ...current, guidedProjects: projects };
+    });
+    notifyServiceChanged("guided-project-save");
+    return project;
+  });
+}
+
 export async function openDowntimeBlock({
   settlementId,
   locationName,
@@ -702,6 +745,7 @@ export async function openDowntimeBlock({
   actorIds,
   mode = "",
   templateIds = [],
+  projectIds = [],
 } = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
@@ -714,6 +758,7 @@ export async function openDowntimeBlock({
         hours,
         actorIds,
         templateIds,
+        projectIds,
       });
     }
     const requestedSettlementId = String(settlementId ?? "").trim();
@@ -777,6 +822,7 @@ async function openGuidedDowntimeBlock({
   hours,
   actorIds,
   templateIds,
+  projectIds,
 }) {
   const budgetHours = Math.floor(Number(hours));
   if (
@@ -792,7 +838,18 @@ async function openGuidedDowntimeBlock({
   const templates = selectedIds
     .map((templateId) => guidedTemplateById(config.guidedTemplates, templateId))
     .filter(Boolean);
-  if (templates.length === 0)
+  const completedProjectHours = guidedProjectProgressFromHistory(
+    loadDowntimeWorkflowStore().history,
+  );
+  const projects = [...new Set(Array.isArray(projectIds) ? projectIds : [])]
+    .map((projectId) => guidedProjectById(config.guidedProjects, projectId))
+    .filter(
+      (project) =>
+        project &&
+        projectProgressHours(completedProjectHours, project.id) <
+          project.requiredHours,
+    );
+  if (templates.length === 0 && projects.length === 0)
     throw new Error("Choose at least one activity template.");
   const eligible = [...new Set(Array.isArray(actorIds) ? actorIds : [])]
     .map(actorById)
@@ -809,6 +866,7 @@ async function openGuidedDowntimeBlock({
     budgetHours,
     hours: budgetHours,
     guidedTemplates: templates,
+    guidedProjects: projects,
     participants: eligible.map((actor) => ({
       actorId: String(actor.id),
       actorName: String(actor.name ?? "Character"),
@@ -1201,19 +1259,24 @@ async function planGuidedDowntimeBlock(block) {
   const createdAt = now();
   const operations = [];
   const characters = [];
+  const projectProgress = guidedProjectProgressFromHistory(
+    loadDowntimeWorkflowStore().history,
+  );
   for (const participant of block.participants ?? []) {
     const actor = actorById(participant.actorId);
-    const selection = normalizeGuidedDowntimeSelection(
+    const selection = normalizeGuidedActivitySelection(
       participant.guidedSelection,
       block.guidedTemplates,
+      block.guidedProjects,
     );
     if (!actor || !selection) {
       throw new Error(
         `${participant.actorName}'s activity choice is missing or invalid.`,
       );
     }
-    const template = guidedTemplateById(
+    const activity = guidedActivityById(
       block.guidedTemplates,
+      block.guidedProjects,
       selection.templateId,
     );
     const roll = selection.skill
@@ -1224,17 +1287,24 @@ async function planGuidedDowntimeBlock(block) {
     }
     const selectedOutcomeIndex = guidedOutcomeIndex(
       roll.total,
-      template.outcomes.length,
+      activity.outcomes.length,
     );
     const operation = buildGuidedDowntimeOperation({
       block,
       actor,
-      template,
+      activity,
       skill: selection.skill,
       roll,
       selectedOutcomeIndex,
       createdAt,
+      projectProgress,
     });
+    if (operation.project) {
+      projectProgress.set(
+        operation.project.id,
+        operation.project.progressAfterHours,
+      );
+    }
     operations.push(operation);
     characters.push({
       actorId: actor.id,
@@ -1283,11 +1353,12 @@ export async function chooseGuidedDowntimeOutcome({
     const index = Math.floor(Number(outcomeIndex));
     const operations = (block.plan?.operations ?? []).map((operation) => {
       if (operation.operationId !== String(operationId)) return operation;
-      const template = guidedTemplateById(
+      const activity = guidedActivityById(
         block.guidedTemplates,
+        block.guidedProjects,
         operation.activityId,
       );
-      if (!template || index < 0 || index >= template.outcomes.length) {
+      if (!activity || index < 0 || index >= activity.outcomes.length) {
         throw new Error("Choose one of this activity's available results.");
       }
       const actor = actorById(operation.actorId);
@@ -1295,7 +1366,7 @@ export async function chooseGuidedDowntimeOutcome({
       return buildGuidedDowntimeOperation({
         block,
         actor,
-        template,
+        activity,
         skill: operation.check?.skill ?? "",
         roll: {
           ok: true,
@@ -1306,6 +1377,11 @@ export async function chooseGuidedDowntimeOutcome({
         createdAt: operation.createdAt ?? now(),
         operationId: operation.operationId,
         reportOverride: cleanGuidedReport(report) || operation.report,
+        projectProgress: operation.project
+          ? new Map([
+              [operation.project.id, operation.project.progressBeforeHours],
+            ])
+          : null,
       });
     });
     if (
@@ -1660,16 +1736,61 @@ async function buildPickpocketReward({
 function buildGuidedDowntimeOperation({
   block,
   actor,
-  template,
+  activity,
   skill,
   roll,
   selectedOutcomeIndex,
   createdAt,
   operationId = "",
   reportOverride = "",
+  projectProgress = null,
 }) {
-  const outcome = template.outcomes[selectedOutcomeIndex];
+  const outcome = activity.outcomes[selectedOutcomeIndex];
   const report = cleanGuidedReport(reportOverride) || outcome.report;
+  const total = Number(roll?.total) || 0;
+  if (activity.kind === "project") {
+    const progressBeforeHours = projectProgressHours(
+      projectProgress,
+      activity.id,
+    );
+    const contributedHours = block.budgetHours;
+    const progressAfterHours = progressBeforeHours + contributedHours;
+    const completed = progressAfterHours >= activity.requiredHours;
+    const project = {
+      id: activity.id,
+      name: activity.name,
+      requiredHours: activity.requiredHours,
+      progressBeforeHours,
+      contributedHours,
+      progressAfterHours,
+      completed,
+    };
+    const projectProgressLabel = formatGuidedProjectProgress(project);
+    return {
+      operationId: operationId || `guided-${block.id}-${actor.id}`,
+      kind: "noop",
+      mode: GUIDED_DOWNTIME_MODE,
+      actorId: actor.id,
+      settlementId: "guided-downtime",
+      activityId: activity.id,
+      activityLabel: activity.name,
+      activityImage: activity.image,
+      hours: block.budgetHours,
+      createdAt,
+      selectedOutcomeIndex,
+      outcomeLabel: outcome.label,
+      report,
+      project,
+      currencyDeltaCp: 0,
+      summary: `${outcome.label}: ${report} ${projectProgressLabel}`,
+      check: {
+        skill,
+        total,
+        formula: String(roll?.formula ?? roll?.roll?.formula ?? ""),
+        outcomeTier: "neutral",
+      },
+    };
+  }
   const walletRead = readWalletStrict(actor.system?.currency);
   if (!walletRead.ok)
     throw new Error(`${actor.name}'s currency could not be verified.`);
@@ -1677,16 +1798,15 @@ function buildGuidedDowntimeOperation({
   const walletAfter = planWalletDeltaCp(walletRead.wallet, currencyDeltaCp);
   if (!walletAfter)
     throw new Error(`${actor.name}'s reward could not be prepared.`);
-  const total = Number(roll?.total) || 0;
   return {
     operationId: operationId || `guided-${block.id}-${actor.id}`,
     kind: "currency",
     mode: GUIDED_DOWNTIME_MODE,
     actorId: actor.id,
     settlementId: "guided-downtime",
-    activityId: template.id,
-    activityLabel: template.name,
-    activityImage: template.image,
+    activityId: activity.id,
+    activityLabel: activity.name,
+    activityImage: activity.image,
     hours: block.budgetHours,
     createdAt,
     selectedOutcomeIndex,
@@ -1703,6 +1823,62 @@ function buildGuidedDowntimeOperation({
       outcomeTier: "neutral",
     },
   };
+}
+
+function guidedActivityById(templates, projects, activityId) {
+  const template = guidedTemplateById(templates, activityId);
+  if (template) return { ...template, kind: "template" };
+  const project = guidedProjectById(projects, activityId);
+  return project
+    ? { ...project, kind: "project", outcomes: GUIDED_PROJECT_OUTCOMES }
+    : null;
+}
+
+function normalizeGuidedActivitySelection(raw, templates, projects) {
+  const templateSelection = normalizeGuidedDowntimeSelection(raw, templates);
+  if (templateSelection) return templateSelection;
+  const project = guidedProjectById(projects, raw?.templateId);
+  const skill = String(raw?.skill ?? "").trim();
+  if (
+    !project ||
+    (project.skills.length > 0 && !project.skills.includes(skill))
+  ) {
+    return null;
+  }
+  return {
+    templateId: project.id,
+    skill: project.skills.length > 0 ? skill : "",
+  };
+}
+
+function guidedProjectProgressFromHistory(history) {
+  const progress = new Map();
+  for (const block of history ?? []) {
+    if (block?.state !== "completed") continue;
+    for (const operation of block.plan?.operations ?? []) {
+      const project = operation?.project;
+      const id = String(project?.id ?? "").trim();
+      const contributedHours = Math.max(
+        0,
+        Math.floor(Number(project?.contributedHours) || 0),
+      );
+      if (id && contributedHours) {
+        progress.set(id, projectProgressHours(progress, id) + contributedHours);
+      }
+    }
+  }
+  return progress;
+}
+
+function projectProgressHours(progress, projectId) {
+  const value = progress instanceof Map ? progress.get(projectId) : 0;
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function formatGuidedProjectProgress(project) {
+  const complete = project.completed ? " Project complete." : "";
+  const applied = Math.min(project.progressAfterHours, project.requiredHours);
+  return `${project.contributedHours}h contributed — ${applied}/${project.requiredHours}h.${complete}`;
 }
 
 function guidedOutcomeIndex(total, count) {
@@ -3157,6 +3333,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     config.settlements.find((entry) => entry.id === settlementId) ??
     config.settlements[0] ??
     null;
+  const projectProgress = guidedProjectProgressFromHistory(store.history);
   return {
     workflowStatus: active?.state ?? "idle",
     workflow: active ? projectWorkspaceBlock(active) : null,
@@ -3167,6 +3344,17 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
       description: template.description,
       image: template.image,
     })),
+    guidedProjects: config.guidedProjects.map((project) => {
+      const progressHours = projectProgressHours(projectProgress, project.id);
+      const requiredHours = project.requiredHours;
+      return {
+        ...projectGuidedDowntimeProject(project),
+        progressHours,
+        remainingHours: Math.max(0, requiredHours - progressHours),
+        complete: progressHours >= requiredHours,
+        progressLabel: `${Math.min(progressHours, requiredHours)} / ${requiredHours} hours`,
+      };
+    }),
     selectedSettlement: selected
       ? projectSettlementForWorkspace(selected)
       : null,
@@ -3246,7 +3434,14 @@ function projectWorkspaceBlock(block) {
         submitted: participant.submitted,
         budgetHours: block.budgetHours,
         usedHours: sumHours(participant.queue),
-        queue: decorateQueue(participant.queue),
+        queue:
+          block.mode === GUIDED_DOWNTIME_MODE
+            ? decorateGuidedQueue(
+                participant.queue,
+                block.guidedTemplates,
+                block.guidedProjects,
+              )
+            : decorateQueue(participant.queue),
         resultStatus: plan ? block.state : "",
         receipt:
           block.result?.playerReceipts?.[participant.actorId]?.summary ?? "",
@@ -3274,16 +3469,18 @@ function projectWorkspaceBlock(block) {
               outcomeOptions:
                 block.mode === GUIDED_DOWNTIME_MODE
                   ? (
-                      guidedTemplateById(
+                      guidedActivityById(
                         block.guidedTemplates,
+                        block.guidedProjects,
                         operation.activityId,
                       )?.outcomes ?? []
                     ).map((outcome, index) => ({
                       index,
                       label: outcome.label,
                       report: outcome.report,
-                      rewardLabel:
-                        outcome.rewardGp > 0
+                      rewardLabel: operation.project
+                        ? `${operation.project.contributedHours}h project work`
+                        : outcome.rewardGp > 0
                           ? `${outcome.rewardGp} gp`
                           : "No currency",
                       selected: index === operation.selectedOutcomeIndex,
@@ -3349,6 +3546,7 @@ export async function getPlayerProjectionForUser({
   const actor = actorById(selected.actorId);
   if (active.mode === GUIDED_DOWNTIME_MODE) {
     const queue = selected.queue ?? [];
+    const projectProgress = guidedProjectProgressFromHistory(store.history);
     return {
       status: active.state,
       mode: GUIDED_DOWNTIME_MODE,
@@ -3366,10 +3564,23 @@ export async function getPlayerProjectionForUser({
       budgetHours: active.budgetHours,
       usedHours: sumHours(queue),
       remainingHours: Math.max(0, active.budgetHours - sumHours(queue)),
-      activities: active.guidedTemplates.map((template) =>
-        projectGuidedActivity(template, active.budgetHours),
+      activities: [
+        ...active.guidedTemplates.map((template) =>
+          projectGuidedActivity(template, active.budgetHours),
+        ),
+        ...(active.guidedProjects ?? []).map((project) =>
+          projectGuidedActivity(
+            { ...project, kind: "project" },
+            active.budgetHours,
+            projectProgressHours(projectProgress, project.id),
+          ),
+        ),
+      ],
+      queue: decorateGuidedQueue(
+        queue,
+        active.guidedTemplates,
+        active.guidedProjects,
       ),
-      queue: decorateGuidedQueue(queue, active.guidedTemplates),
       rawQueue: queue,
       submitted: selected.submitted === true,
       canSubmit: active.state === "collecting" && selected.submitted !== true,
@@ -3658,12 +3869,13 @@ async function submitGuidedDowntimeChoice({
     throw new Error("Choose exactly one activity for this downtime block.");
   }
   const entry = source[0] ?? {};
-  const selection = normalizeGuidedDowntimeSelection(
+  const selection = normalizeGuidedActivitySelection(
     {
       templateId: entry.activityId,
       skill: entry.skill,
     },
     block.guidedTemplates,
+    block.guidedProjects,
   );
   if (!selection || Number(entry.hours) !== Number(block.budgetHours)) {
     throw new Error(
@@ -3701,8 +3913,9 @@ async function submitGuidedDowntimeChoice({
     }
     return block;
   }
-  const template = guidedTemplateById(
+  const activity = guidedActivityById(
     block.guidedTemplates,
+    block.guidedProjects,
     selection.templateId,
   );
   const participants = block.participants.map((entry) =>
@@ -3716,7 +3929,7 @@ async function submitGuidedDowntimeChoice({
           queue: [
             {
               id: "guided-choice",
-              activityId: template.id,
+              activityId: activity.id,
               hours: block.budgetHours,
               skill: selection.skill,
               guidedRoll: selection.skill
@@ -4119,8 +4332,9 @@ function buildCompletedResult(block) {
       tone: operation.check?.outcomeTier ?? "neutral",
       image: operation.activityImage ?? "",
       report: operation.report ?? "",
-      rewardLabel:
-        Number(operation.currencyDeltaCp) > 0
+      rewardLabel: operation.project
+        ? `${operation.project.contributedHours} hours contributed to ${operation.project.name}.`
+        : Number(operation.currencyDeltaCp) > 0
           ? `${formatCp(operation.currencyDeltaCp)} added to your character.`
           : "No currency was added.",
     }));
@@ -4141,33 +4355,42 @@ function buildCompletedResult(block) {
   };
 }
 
-function projectGuidedActivity(template, hours) {
+function projectGuidedActivity(activity, hours, progressHours = 0) {
+  const project = activity.kind === "project";
   return {
-    id: template.id,
-    label: template.name,
-    description: template.description,
-    category: "guided",
+    id: activity.id,
+    label: activity.name,
+    description: project
+      ? `${activity.description || "Long-term project."} ${Math.min(progressHours, activity.requiredHours)} / ${activity.requiredHours} hours complete.`
+      : activity.description,
+    category: project ? "project" : "guided",
     icon: "fa-solid fa-compass",
     available: true,
     fixedHours: hours,
-    skills: template.skills.map((skill) => ({
+    skills: activity.skills.map((skill) => ({
       id: skill,
       label: title(skill),
       selected: false,
     })),
-    hasSkills: template.skills.length > 0,
-    image: template.image,
+    hasSkills: activity.skills.length > 0,
+    image: activity.image,
+    project,
   };
 }
 
-function decorateGuidedQueue(queue, templates) {
+function decorateGuidedQueue(queue, templates, projects = []) {
   return (queue ?? []).map((entry) => {
-    const template = guidedTemplateById(templates, entry.activityId);
+    const activity = guidedActivityById(templates, projects, entry.activityId);
     return {
       ...entry,
-      label: template?.name ?? "Activity",
+      label: activity?.name ?? "Activity",
       icon: "fa-solid fa-compass",
-      detail: entry.skill ? title(entry.skill) : "",
+      detail: [
+        activity?.kind === "project" ? "Project work" : "",
+        entry.skill ? title(entry.skill) : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
     };
   });
 }
@@ -4272,4 +4495,5 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   recoverBlock: ({ blockId }) => recoverActiveDowntimeBlock(blockId),
   saveSettlement: saveSettlementProfile,
   deleteSettlement: ({ settlementId }) => deleteSettlementProfile(settlementId),
+  saveGuidedProject: saveGuidedDowntimeProject,
 });

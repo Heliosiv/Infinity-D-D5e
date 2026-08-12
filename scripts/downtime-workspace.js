@@ -19,7 +19,24 @@ const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/downtime-workspace.hbs`;
 export const DOWNTIME_WORKSPACE_QUICK_START_ID = "downtime-workspace:v0.3.0";
 const DEFAULT_VIEW = "current";
-const WORKSPACE_VIEWS = new Set(["current", "settlements", "history"]);
+const WORKSPACE_VIEWS = new Set([
+  "current",
+  "projects",
+  "settlements",
+  "history",
+]);
+const GUIDED_PROJECT_SKILLS = Object.freeze([
+  ["arc", "Arcana"],
+  ["ath", "Athletics"],
+  ["his", "History"],
+  ["ins", "Insight"],
+  ["inv", "Investigation"],
+  ["nat", "Nature"],
+  ["per", "Performance"],
+  ["rel", "Religion"],
+  ["slt", "Sleight of Hand"],
+  ["sur", "Survival"],
+]);
 const ACTOR_SELECTOR_SCOPES = new Set([
   "player-owned",
   "other",
@@ -156,6 +173,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       selectSettlement: DowntimeWorkspaceApp._onSelectSettlement,
       saveSettlement: DowntimeWorkspaceApp._onSaveSettlement,
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
+      saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
     },
   };
 
@@ -658,6 +676,10 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
         typeof data.getAll === "function"
           ? data.getAll("templateIds").map(cleanId).filter(Boolean)
           : [],
+      projectIds:
+        typeof data.getAll === "function"
+          ? data.getAll("projectIds").map(cleanId).filter(Boolean)
+          : [],
     };
     const result = await this._runCommand("createBlock", payload, {
       pending: "Creating downtime block...",
@@ -849,6 +871,31 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     }
   }
 
+  static async _onSaveGuidedProject() {
+    const form = this.element?.querySelector?.('[data-form="guided-project"]');
+    if (!form) return;
+    const data = new FormData(form);
+    const result = await this._runCommand(
+      "saveGuidedProject",
+      {
+        name: String(data.get("name") ?? "").trim(),
+        description: String(data.get("description") ?? "").trim(),
+        requiredHours: positiveInteger(data.get("requiredHours"), 0),
+        skills:
+          typeof data.getAll === "function"
+            ? data.getAll("skills").map(cleanId).filter(Boolean)
+            : [],
+      },
+      {
+        pending: "Saving long-term project...",
+        success:
+          "Project saved. Select it when you open the next downtime block.",
+        focus: '[data-action="saveGuidedProject"]',
+      },
+    );
+    if (result !== null && this.rendered) this.render(false);
+  }
+
   _currentBlockId() {
     return (
       cleanId(
@@ -892,6 +939,18 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       image: String(template?.image ?? "icons/svg/d20.svg"),
     }))
     .filter((template) => template.id);
+  const guidedProjects = array(source.guidedProjects)
+    .map((project) => ({
+      id: cleanId(project?.id),
+      name: String(project?.name ?? "Project"),
+      description: String(project?.description ?? ""),
+      requiredHours: positiveInteger(project?.requiredHours, 1),
+      progressHours: Math.max(0, positiveInteger(project?.progressHours, 0)),
+      remainingHours: Math.max(0, positiveInteger(project?.remainingHours, 0)),
+      progressLabel: String(project?.progressLabel ?? ""),
+      complete: project?.complete === true,
+    }))
+    .filter((project) => project.id);
   let selectedSettlementId = cleanId(uiState.selectedSettlementId);
   if (!selectedSettlementId && !uiState.creatingSettlement) {
     selectedSettlementId = cleanId(
@@ -946,6 +1005,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     dataAvailable: source.dataAvailable !== false,
     view,
     viewCurrent: view === "current",
+    viewProjects: view === "projects",
     viewSettlements: view === "settlements",
     viewHistory: view === "history",
     hasCurrentBlock: Boolean(currentBlock),
@@ -961,6 +1021,12 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     settlements,
     guidedTemplates,
     hasGuidedTemplates: guidedTemplates.length > 0,
+    guidedProjects,
+    hasGuidedProjects: guidedProjects.length > 0,
+    projectSkillOptions: GUIDED_PROJECT_SKILLS.map(([id, label]) => ({
+      id,
+      label,
+    })),
     hasSettlements: settlements.length > 0,
     selectedSettlement,
     hasSelectedSettlement: Boolean(selectedSettlement),
