@@ -133,7 +133,15 @@ try {
     projectsWorkspace.guidedProjects[0].progressLabel,
     "32 / 160 hours",
   );
-  assert.equal(projectsWorkspace.projectSkillOptions.length > 0, true);
+  assert.equal(projectsWorkspace.projectSkillOptions.length, 18);
+  assert.deepEqual(
+    projectsWorkspace.projectSkillOptions.find(({ id }) => id === "per"),
+    { id: "per", label: "Persuasion" },
+  );
+  assert.deepEqual(
+    projectsWorkspace.projectSkillOptions.find(({ id }) => id === "prf"),
+    { id: "prf", label: "Performance" },
+  );
 
   const workspaceAppState = {
     _adapter: {

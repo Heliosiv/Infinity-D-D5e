@@ -22,6 +22,7 @@ import {
 } from "./settlements.js";
 import {
   GUIDED_DOWNTIME_MODE,
+  guidedDowntimeSkillLabel,
   guidedTemplateById,
   normalizeGuidedDowntimeSelection,
   projectGuidedDowntimeTemplate,
@@ -838,8 +839,8 @@ async function openGuidedDowntimeBlock({
   const templates = selectedIds
     .map((templateId) => guidedTemplateById(config.guidedTemplates, templateId))
     .filter(Boolean);
-  const completedProjectHours = guidedProjectProgressFromHistory(
-    loadDowntimeWorkflowStore().history,
+  const completedProjectHours = guidedProjectProgressFromStore(
+    loadDowntimeWorkflowStore(),
   );
   const projects = [...new Set(Array.isArray(projectIds) ? projectIds : [])]
     .map((projectId) => guidedProjectById(config.guidedProjects, projectId))
@@ -1259,8 +1260,8 @@ async function planGuidedDowntimeBlock(block) {
   const createdAt = now();
   const operations = [];
   const characters = [];
-  const projectProgress = guidedProjectProgressFromHistory(
-    loadDowntimeWorkflowStore().history,
+  const projectProgress = guidedProjectProgressFromStore(
+    loadDowntimeWorkflowStore(),
   );
   for (const participant of block.participants ?? []) {
     const actor = actorById(participant.actorId);
@@ -1851,9 +1852,15 @@ function normalizeGuidedActivitySelection(raw, templates, projects) {
   };
 }
 
-function guidedProjectProgressFromHistory(history) {
+function guidedProjectProgressFromStore(store) {
   const progress = new Map();
-  for (const block of history ?? []) {
+  for (const [projectId, hours] of Object.entries(
+    store?.projectProgress ?? {},
+  )) {
+    progress.set(projectId, Math.max(0, Math.floor(Number(hours) || 0)));
+  }
+  if (Object.keys(store?.projectProgress ?? {}).length > 0) return progress;
+  for (const block of store?.history ?? []) {
     if (block?.state !== "completed") continue;
     for (const operation of block.plan?.operations ?? []) {
       const project = operation?.project;
@@ -3333,7 +3340,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     config.settlements.find((entry) => entry.id === settlementId) ??
     config.settlements[0] ??
     null;
-  const projectProgress = guidedProjectProgressFromHistory(store.history);
+  const projectProgress = guidedProjectProgressFromStore(store);
   return {
     workflowStatus: active?.state ?? "idle",
     workflow: active ? projectWorkspaceBlock(active) : null,
@@ -3460,7 +3467,7 @@ function projectWorkspaceBlock(block) {
               hours: operation.hours,
               rollLabel: operation.check
                 ? operation.mode === GUIDED_DOWNTIME_MODE
-                  ? `${title(operation.check.skill)} roll: ${operation.check.total}`
+                  ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}`
                   : `${operation.check.total} vs DC ${operation.check.dc}`
                 : "",
               outcome: operation.summary,
@@ -3546,7 +3553,7 @@ export async function getPlayerProjectionForUser({
   const actor = actorById(selected.actorId);
   if (active.mode === GUIDED_DOWNTIME_MODE) {
     const queue = selected.queue ?? [];
-    const projectProgress = guidedProjectProgressFromHistory(store.history);
+    const projectProgress = guidedProjectProgressFromStore(store);
     return {
       status: active.state,
       mode: GUIDED_DOWNTIME_MODE,
@@ -4369,7 +4376,7 @@ function projectGuidedActivity(activity, hours, progressHours = 0) {
     fixedHours: hours,
     skills: activity.skills.map((skill) => ({
       id: skill,
-      label: title(skill),
+      label: guidedDowntimeSkillLabel(skill),
       selected: false,
     })),
     hasSkills: activity.skills.length > 0,
@@ -4387,7 +4394,7 @@ function decorateGuidedQueue(queue, templates, projects = []) {
       icon: "fa-solid fa-compass",
       detail: [
         activity?.kind === "project" ? "Project work" : "",
-        entry.skill ? title(entry.skill) : "",
+        entry.skill ? guidedDowntimeSkillLabel(entry.skill) : "",
       ]
         .filter(Boolean)
         .join(" · "),

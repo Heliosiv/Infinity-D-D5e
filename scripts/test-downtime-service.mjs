@@ -668,8 +668,8 @@ try {
       available: true,
       fixedHours: 8,
       skills: [
-        { id: "arc", label: "Arc", selected: false },
-        { id: "his", label: "His", selected: false },
+        { id: "arc", label: "Arcana", selected: false },
+        { id: "his", label: "History", selected: false },
       ],
       hasSkills: true,
       image: languageProject.image,

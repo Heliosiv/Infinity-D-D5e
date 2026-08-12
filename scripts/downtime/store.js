@@ -676,6 +676,45 @@ export function normalizeDowntimeBlock(raw) {
   return block;
 }
 
+function projectContributionsFromBlock(block) {
+  const contributions = {};
+  if (block?.state !== "completed") return contributions;
+  for (const operation of block.plan?.operations ?? []) {
+    if (block.operationLedger?.[operation.operationId]?.state !== "applied") {
+      continue;
+    }
+    const projectId = toId(operation?.project?.id);
+    const hours = nonNegativeInteger(operation?.project?.contributedHours);
+    if (!projectId || hours < 1) continue;
+    contributions[projectId] = nonNegativeInteger(
+      (contributions[projectId] ?? 0) + hours,
+    );
+  }
+  return contributions;
+}
+
+function normalizeProjectProgress(raw, history = []) {
+  const progress = {};
+  if (isPlainObject(raw)) {
+    for (const [rawProjectId, rawHours] of Object.entries(raw)) {
+      const projectId = toId(rawProjectId);
+      const hours = nonNegativeInteger(rawHours);
+      if (projectId && hours > 0) progress[projectId] = hours;
+    }
+    return progress;
+  }
+  for (const block of history) {
+    for (const [projectId, hours] of Object.entries(
+      projectContributionsFromBlock(block),
+    )) {
+      progress[projectId] = nonNegativeInteger(
+        (progress[projectId] ?? 0) + hours,
+      );
+    }
+  }
+  return progress;
+}
+
 function defaultWorkflowStore() {
   return {
     version: STORE_VERSION,
@@ -685,6 +724,7 @@ function defaultWorkflowStore() {
     writeToken: null,
     configCheckpoint: null,
     activeBlock: null,
+    projectProgress: {},
     history: [],
   };
 }
@@ -713,6 +753,7 @@ export function normalizeDowntimeWorkflowStore(raw) {
       activeBlock && !isDowntimeTerminalState(activeBlock.state)
         ? activeBlock
         : null,
+    projectProgress: normalizeProjectProgress(raw.projectProgress, history),
     history: history.slice(-MAX_HISTORY),
   };
 }
@@ -739,12 +780,18 @@ function isPersistedEnvelope(raw) {
       raw.configCheckpoint,
     );
     if (!configCheckpoint) return false;
-    return persistedValuesEqual(raw, {
+    const current = {
       ...normalized,
       configCheckpoint: configCheckpoint.raw,
-    });
+    };
+    if (persistedValuesEqual(raw, current)) return true;
+    const { projectProgress: _projectProgress, ...legacy } = current;
+    return persistedValuesEqual(raw, legacy);
   }
-  const { configCheckpoint: _configCheckpoint, ...legacy } = normalized;
+  const { configCheckpoint: _configCheckpoint, ...withoutCheckpoint } =
+    normalized;
+  if (persistedValuesEqual(raw, withoutCheckpoint)) return true;
+  const { projectProgress: _projectProgress, ...legacy } = withoutCheckpoint;
   return persistedValuesEqual(raw, legacy);
 }
 
@@ -2106,6 +2153,13 @@ export async function completeDowntimeBlock(
       at: toTimestamp(at, currentTimestamp()),
       by: fence.userId,
     });
+    for (const [projectId, hours] of Object.entries(
+      projectContributionsFromBlock(completed),
+    )) {
+      store.projectProgress[projectId] = nonNegativeInteger(
+        (store.projectProgress[projectId] ?? 0) + hours,
+      );
+    }
     store.activeBlock = null;
     store.history = [...store.history, completed].slice(-MAX_HISTORY);
     return {

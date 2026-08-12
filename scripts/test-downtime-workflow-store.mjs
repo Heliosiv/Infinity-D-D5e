@@ -74,6 +74,7 @@ try {
     writeToken: null,
     configCheckpoint: null,
     activeBlock: null,
+    projectProgress: {},
     history: [],
   });
 
@@ -601,12 +602,20 @@ try {
         actorId: "actor-1",
         activityId: "lay-low",
         order: 0,
+        project: {
+          id: "project-compensated",
+          contributedHours: 8,
+        },
       },
       {
         operationId: "operation-2",
         actorId: "actor-1",
         activityId: "craft-ammunition",
         order: 1,
+        project: {
+          id: "project-language",
+          contributedHours: 8,
+        },
       },
       {
         operationId: "operation-3",
@@ -862,11 +871,40 @@ try {
   assert.equal(workflow.getActiveDowntimeBlock(), null);
   assert.deepEqual(completed.plan, plan, "history retains the immutable plan");
   assert.deepEqual(
+    workflow.loadDowntimeWorkflowStore().projectProgress,
+    { "project-language": 8 },
+    "only successfully applied project work enters the cumulative ledger",
+  );
+  assert.deepEqual(
     await workflow.completeDowntimeBlock("block-1", {
       result: { forged: true },
     }),
     completed,
     "duplicate completion returns the original durable receipt",
+  );
+  assert.deepEqual(
+    workflow.loadDowntimeWorkflowStore().projectProgress,
+    { "project-language": 8 },
+    "duplicate completion cannot count project work twice",
+  );
+  assert.deepEqual(
+    workflow.normalizeDowntimeWorkflowStore({
+      version: 1,
+      revision: 1,
+      activeBlock: null,
+      history: [completed],
+    }).projectProgress,
+    { "project-language": 8 },
+    "legacy stores derive their cumulative project ledger from retained history",
+  );
+  assert.deepEqual(
+    workflow.normalizeDowntimeWorkflowStore({
+      ...workflow.loadDowntimeWorkflowStore(),
+      projectProgress: { "project-language": 808 },
+      history: [],
+    }).projectProgress,
+    { "project-language": 808 },
+    "cumulative project work survives independently after history rotates",
   );
 
   primaryFailuresRemaining = 1;

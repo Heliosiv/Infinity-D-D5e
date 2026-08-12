@@ -12,6 +12,7 @@ import {
   openSingleton,
 } from "./infinity-app.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
+import { GUIDED_DOWNTIME_SKILLS } from "./downtime/dispatch.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
 
@@ -24,18 +25,6 @@ const WORKSPACE_VIEWS = new Set([
   "projects",
   "settlements",
   "history",
-]);
-const GUIDED_PROJECT_SKILLS = Object.freeze([
-  ["arc", "Arcana"],
-  ["ath", "Athletics"],
-  ["his", "History"],
-  ["ins", "Insight"],
-  ["inv", "Investigation"],
-  ["nat", "Nature"],
-  ["per", "Performance"],
-  ["rel", "Religion"],
-  ["slt", "Sleight of Hand"],
-  ["sur", "Survival"],
 ]);
 const ACTOR_SELECTOR_SCOPES = new Set([
   "player-owned",
@@ -1023,7 +1012,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     hasGuidedTemplates: guidedTemplates.length > 0,
     guidedProjects,
     hasGuidedProjects: guidedProjects.length > 0,
-    projectSkillOptions: GUIDED_PROJECT_SKILLS.map(([id, label]) => ({
+    projectSkillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
       id,
       label,
     })),

@@ -44,7 +44,9 @@ import {
   setDowntimeHeat,
 } from "./downtime/settlements.js";
 import {
+  GUIDED_DOWNTIME_SKILLS,
   defaultGuidedDowntimeTemplates,
+  guidedDowntimeSkillLabel,
   normalizeGuidedDowntimeSelection,
   normalizeGuidedDowntimeTemplates,
 } from "./downtime/dispatch.js";
@@ -92,6 +94,9 @@ import {
     ]).length,
     3,
   );
+  assert.equal(GUIDED_DOWNTIME_SKILLS.length, 18);
+  assert.equal(guidedDowntimeSkillLabel("per"), "Persuasion");
+  assert.equal(guidedDowntimeSkillLabel("prf"), "Performance");
 }
 
 /* Catalog contains every built-in with exact legal durations. */

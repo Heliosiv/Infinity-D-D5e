@@ -13,26 +13,35 @@ export const GUIDED_DOWNTIME_OUTCOME_MINIMUM = 3;
 export const GUIDED_DOWNTIME_OUTCOME_MAXIMUM = 6;
 
 const DEFAULT_IMAGE = "icons/svg/d20.svg";
-const SKILL_IDS = new Set([
-  "acr",
-  "ani",
-  "arc",
-  "ath",
-  "dec",
-  "his",
-  "ins",
-  "itm",
-  "inv",
-  "med",
-  "nat",
-  "prc",
-  "prf",
-  "per",
-  "rel",
-  "slt",
-  "ste",
-  "sur",
+export const GUIDED_DOWNTIME_SKILLS = Object.freeze([
+  Object.freeze({ id: "acr", label: "Acrobatics" }),
+  Object.freeze({ id: "ani", label: "Animal Handling" }),
+  Object.freeze({ id: "arc", label: "Arcana" }),
+  Object.freeze({ id: "ath", label: "Athletics" }),
+  Object.freeze({ id: "dec", label: "Deception" }),
+  Object.freeze({ id: "his", label: "History" }),
+  Object.freeze({ id: "ins", label: "Insight" }),
+  Object.freeze({ id: "itm", label: "Intimidation" }),
+  Object.freeze({ id: "inv", label: "Investigation" }),
+  Object.freeze({ id: "med", label: "Medicine" }),
+  Object.freeze({ id: "nat", label: "Nature" }),
+  Object.freeze({ id: "prc", label: "Perception" }),
+  Object.freeze({ id: "prf", label: "Performance" }),
+  Object.freeze({ id: "per", label: "Persuasion" }),
+  Object.freeze({ id: "rel", label: "Religion" }),
+  Object.freeze({ id: "slt", label: "Sleight of Hand" }),
+  Object.freeze({ id: "ste", label: "Stealth" }),
+  Object.freeze({ id: "sur", label: "Survival" }),
 ]);
+
+const SKILL_LABELS = new Map(
+  GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => [id, label]),
+);
+const SKILL_IDS = new Set(SKILL_LABELS.keys());
+
+export function guidedDowntimeSkillLabel(skill) {
+  return SKILL_LABELS.get(idValue(skill)) ?? "Unknown skill";
+}
 
 const DEFAULT_TEMPLATES = Object.freeze([
   {
