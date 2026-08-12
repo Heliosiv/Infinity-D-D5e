@@ -122,6 +122,11 @@ assert.match(resourceOverviewTemplate, /else if noGm/);
 assert.match(resourceOverviewTemplate, /else if loading/);
 assert.match(resourceOverviewTemplate, /else if requestFailed/);
 assert.match(resourceOverviewTemplate, /else if hasOverview/);
+const reputationViewTemplate = read("templates/reputation-view.hbs");
+assert.match(reputationViewTemplate, /else if noGm/);
+assert.match(reputationViewTemplate, /else if loading/);
+assert.match(reputationViewTemplate, /else if requestFailed/);
+assert.match(reputationViewTemplate, /else if hasFactions/);
 
 const forageScript = read("scripts/forage-prompt.js");
 const forageTemplate = read("templates/forage-prompt.hbs");

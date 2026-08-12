@@ -507,12 +507,28 @@ assert.match(
   /Loading reputations/,
 );
 assert.match(
+  views.find((view) => view.id === "reputation-view-loading").html,
+  /wait for the latest revealed standings before relying on this list/i,
+);
+assert.match(
   views.find((view) => view.id === "reputation-view-offline").html,
   /Reputation is offline[\s\S]*Try again/i,
 );
 assert.match(
+  views.find((view) => view.id === "reputation-view-offline").html,
+  /reconnect, then refresh for the latest revealed standings/i,
+);
+assert.match(
   views.find((view) => view.id === "reputation-view-error").html,
   /standings did not arrive[\s\S]*Try again/i,
+);
+assert.match(
+  views.find((view) => view.id === "reputation-view-error").html,
+  /use Try again to request the same revealed list\. No standing changed/i,
+);
+assert.match(
+  views.find((view) => view.id === "reputation-view-empty").html,
+  /ask the GM to reveal a faction after the party meets one\. No standing changed/i,
 );
 
 const downtimeEmptyView = views.find(
