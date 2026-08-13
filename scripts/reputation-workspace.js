@@ -286,6 +286,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
           ...current,
           name: data.name ?? current.name,
           category: data.category ?? current.category,
+          img: data.img ?? current.img,
           description: data.description ?? current.description,
           gmNotes: data.gmNotes ?? current.gmNotes,
           playerNote: data.playerNote ?? current.playerNote,

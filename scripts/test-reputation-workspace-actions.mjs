@@ -4,6 +4,7 @@ const savedFoundry = globalThis.foundry;
 const savedGame = globalThis.game;
 const savedConst = globalThis.CONST;
 const savedUi = globalThis.ui;
+const savedFormData = globalThis.FormData;
 
 const gm = { id: "gm", name: "GM", role: 4, isGM: true, active: true };
 const users = [gm];
@@ -38,6 +39,15 @@ try {
       error() {},
     },
   };
+  globalThis.FormData = class {
+    constructor(form) {
+      this.form = form;
+    }
+
+    entries() {
+      return this.form.entries();
+    }
+  };
   globalThis.game = {
     ready: false,
     user: gm,
@@ -64,6 +74,33 @@ try {
   settings.set("factions", [
     normalizeFaction({ id: "f1", name: "The Watch", standing: 3 }),
   ]);
+
+  const imageUrl =
+    "https://assets.forge-vtt.com/example/drakmor-factions/The-Watch.png";
+  const imageForm = {
+    *entries() {
+      yield ["name", "The Watch"];
+      yield ["category", "Guild"];
+      yield ["img", imageUrl];
+    },
+  };
+  const saveApp = {
+    _selectedId: "f1",
+    element: {
+      querySelector(selector) {
+        if (selector === '[data-form="faction-edit"]') return imageForm;
+        if (selector === "[data-save-status]") return null;
+        return null;
+      },
+    },
+    _setSaveStatus() {},
+  };
+  await ReputationWorkspaceApp.prototype._saveFromForm.call(saveApp);
+  assert.equal(
+    settings.get("factions")[0].img,
+    imageUrl,
+    "the faction image field persists through the normal save path",
+  );
 
   function actionFixture(rawValue) {
     const attributes = new Map();
@@ -137,6 +174,8 @@ try {
   else globalThis.CONST = savedConst;
   if (savedUi === undefined) delete globalThis.ui;
   else globalThis.ui = savedUi;
+  if (savedFormData === undefined) delete globalThis.FormData;
+  else globalThis.FormData = savedFormData;
 }
 
 process.stdout.write("reputation workspace action validation passed\n");
