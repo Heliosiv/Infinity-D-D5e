@@ -20,7 +20,7 @@ globalThis.Hooks = {
   },
 };
 
-const { CriticalInjuryTriageApp } =
+const { CriticalInjuryTriageApp, eligibleOwners } =
   await import("./injury/injury-triage-app.js");
 
 const app = new CriticalInjuryTriageApp();
@@ -75,6 +75,58 @@ actorSelect.changeHandler();
 assert.equal(recipientSelect.value, "player-b");
 assert.equal(recipientSelect.options[0].disabled, true);
 assert.equal(recipientSelect.options[1].disabled, false);
+
+const savedGame = globalThis.game;
+const savedConst = globalThis.CONST;
+try {
+  const offlineOwner = {
+    id: "player-offline-owner",
+    name: "Offline owner",
+    isGM: false,
+    role: 1,
+    active: false,
+  };
+  const assignedPlayer = {
+    id: "player-assigned",
+    name: "Assigned player",
+    isGM: false,
+    role: 1,
+    active: false,
+    character: "actor-assigned",
+  };
+  const unrelatedPlayer = {
+    id: "player-unrelated",
+    name: "Unrelated player",
+    isGM: false,
+    role: 1,
+    active: true,
+  };
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
+  globalThis.game = {
+    users: { contents: [offlineOwner, assignedPlayer, unrelatedPlayer] },
+  };
+
+  assert.deepEqual(
+    eligibleOwners({
+      id: "actor-owned",
+      ownership: { [offlineOwner.id]: 3 },
+    }).map((user) => user.id),
+    [offlineOwner.id],
+    "offline owners remain available for a manual injury review",
+  );
+  assert.deepEqual(
+    eligibleOwners({ id: "actor-assigned", ownership: {} }).map(
+      (user) => user.id,
+    ),
+    [assignedPlayer.id],
+    "a player's assigned character remains available without an explicit ownership entry",
+  );
+} finally {
+  if (savedGame === undefined) delete globalThis.game;
+  else globalThis.game = savedGame;
+  if (savedConst === undefined) delete globalThis.CONST;
+  else globalThis.CONST = savedConst;
+}
 
 delete globalThis.foundry;
 delete globalThis.Hooks;

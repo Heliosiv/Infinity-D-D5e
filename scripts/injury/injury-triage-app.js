@@ -153,7 +153,7 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       ]),
     );
     const playerUsers = (globalThis.game?.users?.contents ?? [])
-      .filter((user) => user?.active && !user?.isGM)
+      .filter((user) => user && !isFullGM(user))
       .map((user) => ({
         id: String(user.id ?? ""),
         name: String(user.name ?? "Player"),
@@ -321,12 +321,27 @@ function compareTriageRows(left, right) {
   );
 }
 
-function eligibleOwners(actor) {
+export function eligibleOwners(actor) {
+  const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
   return (globalThis.game?.users?.contents ?? []).filter(
     (user) =>
-      user?.active &&
-      !user?.isGM &&
-      (actor?.testUserPermission?.(user, "OWNER") === true ||
-        Number(actor?.ownership?.[user.id] ?? 0) >= 3),
+      user &&
+      !isFullGM(user) &&
+      (assignedCharacterId(user) === String(actor?.id ?? "") ||
+        actor?.testUserPermission?.(user, ownerLevel, { exact: false }) ===
+          true ||
+        Number(
+          Object.hasOwn(actor?.ownership ?? {}, user.id)
+            ? actor.ownership[user.id]
+            : actor?.ownership?.default,
+        ) >= Number(ownerLevel)),
+  );
+}
+
+function assignedCharacterId(user) {
+  return String(
+    typeof user?.character === "string"
+      ? user.character
+      : (user?.character?.id ?? ""),
   );
 }
