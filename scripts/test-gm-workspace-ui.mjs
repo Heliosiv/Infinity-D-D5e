@@ -382,6 +382,10 @@ for (const [label, source] of [
 assert.match(workbenchTemplate, /aria-label="Game Master tools"/);
 assert.match(workbenchTemplate, /aria-current="page"/);
 assert.match(workbenchTemplate, /data-action="navigateGmWorkbench"/);
+assert.match(workbenchTemplate, /data-action="openGmWorkbenchUtility"/);
+assert.match(workbenchTemplate, /data-workbench-utility="\{\{utility\}\}"/);
+assert.match(workbenchRoutesScript, /utility: "loot-studio"/);
+assert.match(workbenchRoutesScript, /utility: "settings"/);
 assert.match(workbenchStyle, /\.gmw-chrome/);
 assert.match(workbenchStyle, /\.gmw-route\.is-active/);
 assert.match(workbenchStyle, /@media \(forced-colors: active\)/);

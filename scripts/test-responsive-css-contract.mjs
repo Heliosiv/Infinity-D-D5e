@@ -34,19 +34,9 @@ try {
     "fine-pointer compact density remains compact",
   );
   assert.equal(
-    await computedProperty(
-      finePage,
-      "dashboard",
-      ".id-session-focus",
-      "flexDirection",
-    ),
-    "column",
-    "narrow Home stacks the session-focus action beside its guidance",
-  );
-  assert.equal(
-    await horizontalOverflow(finePage, "dashboard", ".id-session-focus"),
+    await horizontalOverflow(finePage, "dashboard", ".id-home-content"),
     false,
-    "narrow Home session focus has no horizontal overflow",
+    "narrow player launcher has no horizontal overflow",
   );
 
   await applyScenario(finePage, { width: 380, density: "comfortable" });

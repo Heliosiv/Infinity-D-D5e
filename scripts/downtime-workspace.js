@@ -162,6 +162,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 

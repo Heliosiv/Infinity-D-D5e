@@ -9,21 +9,37 @@
       <span>{{description}}</span>
     </div>
   </div>
-  <nav class="gmw-routes" aria-label="Game Master tools">
-    {{#each routes}}
-    <button
-      type="button"
-      class="gmw-route {{#if active}}is-active{{/if}}"
-      data-action="navigateGmWorkbench"
-      data-workbench-route="{{route}}"
-      title="{{description}}"
-      {{#if active}}aria-current="page"{{/if}}
-    >
-      <i class="{{icon}}" aria-hidden="true"></i>
-      <span>{{shortLabel}}</span>
-    </button>
-    {{/each}}
-  </nav>
+  <div class="gmw-actions">
+    <nav class="gmw-routes" aria-label="Game Master tools">
+      {{#each routes}}
+      <button
+        type="button"
+        class="gmw-route {{#if active}}is-active{{/if}}"
+        data-action="navigateGmWorkbench"
+        data-workbench-route="{{route}}"
+        title="{{description}}"
+        {{#if active}}aria-current="page"{{/if}}
+      >
+        <i class="{{icon}}" aria-hidden="true"></i>
+        <span>{{shortLabel}}</span>
+      </button>
+      {{/each}}
+    </nav>
+    <div class="gmw-utilities" role="group" aria-label="Workbench utilities">
+      {{#each utilities}}
+      <button
+        type="button"
+        class="gmw-utility"
+        data-action="openGmWorkbenchUtility"
+        data-workbench-utility="{{utility}}"
+        title="{{description}}"
+      >
+        <i class="{{icon}}" aria-hidden="true"></i>
+        <span>{{shortLabel}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
 </section>
 {{/if}}
 {{/with}}

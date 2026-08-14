@@ -166,8 +166,8 @@ export function createModuleRegistrars(bindings) {
     try {
       const precedence = bindings.getConst?.()?.KEYBINDING_PRECEDENCE?.NORMAL;
       game.keybindings.register(bindings.moduleId, "openDashboard", {
-        name: "Open Infinity D&D5e Home",
-        hint: "Open the role-aware Infinity Home from anywhere in the game.",
+        name: "Open Infinity Workbench or Player Launcher",
+        hint: "Full GMs enter the Workbench; other roles open the permission-scoped player launcher.",
         editable: [{ key: "KeyI", modifiers: ["Shift"] }],
         onDown: () => {
           bindings.openHub();

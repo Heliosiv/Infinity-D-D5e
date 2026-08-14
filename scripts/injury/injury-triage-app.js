@@ -43,6 +43,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
       dismissReview: CriticalInjuryTriageApp._onDismissReview,
       refresh: CriticalInjuryTriageApp._onRefresh,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 

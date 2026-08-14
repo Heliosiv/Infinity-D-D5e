@@ -129,7 +129,7 @@ const HUB_CONTROL_KEYS = Object.freeze([
   "injuries",
 ]);
 const HUB_LABELS = Object.freeze({
-  home: "Infinity Home",
+  home: "Infinity Player Launcher",
   "continue-adventure": "Continue Adventure",
   character: "Character",
   party: "Party",
@@ -334,7 +334,10 @@ try {
       .available,
     false,
   );
-  assert.equal(PLAYER_SURFACE_LABELS[PLAYER_SURFACES.HOME], "Infinity Home");
+  assert.equal(
+    PLAYER_SURFACE_LABELS[PLAYER_SURFACES.HOME],
+    "Infinity Player Launcher",
+  );
 
   const gmShopOpens = [];
   installGame({ currentUser: gm });

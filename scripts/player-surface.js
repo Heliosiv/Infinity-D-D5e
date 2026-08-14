@@ -38,9 +38,9 @@ export const PLAYER_SURFACES = Object.freeze({
   CRITICAL_INJURIES: "critical-injuries",
 });
 
-/** Plain-language labels shared by Home and optional launcher integrations. */
+/** Plain-language labels shared by player and optional launcher integrations. */
 export const PLAYER_SURFACE_LABELS = Object.freeze({
-  [PLAYER_SURFACES.HOME]: "Infinity Home",
+  [PLAYER_SURFACES.HOME]: "Infinity Player Launcher",
   [PLAYER_SURFACES.PARTY_SUPPLIES]: "Party Supplies",
   [PLAYER_SURFACES.SHOPS]: "Shops",
   [PLAYER_SURFACES.REPUTATION]: "Factions",

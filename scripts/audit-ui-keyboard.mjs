@@ -273,34 +273,18 @@ async function auditCriticalInjuryTriageKeyboardActions(page) {
 }
 
 async function auditCampaignDataRecoveryJourney(page) {
-  const disclosure = page.locator("[data-campaign-data-recovery]");
-  const summary = disclosure.locator("summary");
+  const recovery = page.locator(".infinity-campaign-recovery");
   assert.equal(
-    await disclosure.getAttribute("open"),
-    "",
-    "blocked recovery opens",
+    await recovery.count(),
+    1,
+    "blocked recovery renders as a focused application",
   );
-
-  await summary.focus();
-  await page.keyboard.press("Enter");
-  assert.equal(
-    await disclosure.getAttribute("open"),
-    null,
-    "Enter closes the native campaign-data disclosure",
-  );
-  await page.keyboard.press("Space");
-  assert.equal(
-    await disclosure.getAttribute("open"),
-    "",
-    "Space reopens the native campaign-data disclosure",
-  );
-
-  const adopt = disclosure
+  const adopt = recovery
     .locator(
       'button[data-action="reviewPrivateStateCandidate"]:not([disabled])',
     )
     .first();
-  const snapshot = disclosure.locator(
+  const snapshot = recovery.locator(
     'button[data-action="recoverPrivateStateSnapshot"]:not([disabled])',
   );
   await adopt.focus();
@@ -315,9 +299,9 @@ async function auditCampaignDataRecoveryJourney(page) {
 }
 
 async function auditCampaignDataRecoveryInspection(page) {
-  const disclosure = page.locator("[data-campaign-data-recovery]");
+  const recovery = page.locator(".infinity-campaign-recovery");
   assert.equal(
-    await disclosure
+    await recovery
       .locator('button[data-action="refreshPrivateState"]')
       .isEnabled(),
     true,
@@ -329,7 +313,7 @@ async function auditCampaignDataRecoveryInspection(page) {
     "createEmptyPrivateState",
   ]) {
     assert.equal(
-      await disclosure
+      await recovery
         .locator(`button[data-action="${action}"]`)
         .first()
         .isDisabled(),

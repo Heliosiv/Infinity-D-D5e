@@ -5,16 +5,18 @@ for D&D 5e on Foundry VTT.
 
 ## What This Module Is
 
-A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
+A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
 Version 0.3.9 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
-Open Home in either of these ways:
+Open the primary Infinity interface in either of these ways:
 
 1. Left scene-controls toolbar: the d20 icon labeled **Infinity D&D5e**.
 2. Keyboard shortcut: `Shift + I`, rebindable in Foundry's Configure Controls.
 
-Full GMs see campaign-management workspaces. Players and Assistant GMs see only permission-scoped player destinations. Existing direct player shortcuts remain available.
+Full GMs open directly into the remembered Workbench route. Its chrome moves between Merchants, Quartermaster, Downtime, Factions, and Injuries, and launches the focused Loot Studio and Infinity Settings windows. Players and Assistant GMs see only permission-scoped player destinations. Existing direct player shortcuts remain available.
+
+The former full-GM Home, Session Focus, Continue list, and Campaign Data panel are not part of normal navigation. If private campaign state is fail-closed, the same launcher opens a focused Campaign Recovery window instead of exposing normal campaign tools.
 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
@@ -54,8 +56,8 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: recovery from 0 HP or the dead state creates a durable GM triage review. The GM can send a private player d100 roll, dismiss it, or start an exceptional-case review manually; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Spell components**: every leveled spell cast spends one 1-gp component per cast level, including the chosen upcast level. Component Pouch charges are used before loose Spell Components; combined shortages block the cast before its native consumption updates are applied. Cantrips and spell-scroll item uses are exempt.
-- **Player launchers**: `Shift + I` opens Home, `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
-- **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The allowlisted action can open Home, Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile; it carries no campaign projection and performs no world write.
+- **Player launchers**: `Shift + I` opens the Player Launcher, `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
+- **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The compatibility `home` action opens the Player Launcher; other allowlisted actions can open Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile. They carry no campaign projection and perform no world write.
 - **Accessibility and responsive UI**: application-container layouts, comfortable/compact density, 44px touch targets, visible focus, reduced motion, forced colours, status announcements, and keyboard tab navigation.
 - **Art Rolls**: reusable art-object bases can roll unique generated names, summaries, appraised values, and item data without mutating the base compendium item.
 - **Publishable release pipeline**: `npm run release` can inject manifest/download URLs from `INFINITY_RELEASE_REPO=owner/repo` or per-field URL overrides.
@@ -68,9 +70,9 @@ Macro compatibility is retained:
 
 ```js
 const api = game.modules.get("infinity-dnd5e").api;
-api.openHub();
+api.openHub(); // Workbench for full GMs; player launcher for other roles.
 api.openLootStudio({ mode: "hoard" });
-api.openDashboard(); // Existing full-GM alias.
+api.openDashboard(); // Existing full-GM alias; now opens the Workbench.
 api.openGmWorkbench({ route: "quartermaster", subview: "setup" });
 api.openPerEncounterLoot(); // Existing Encounter alias.
 api.openHoardLoot(); // Existing Hoard alias.
@@ -99,7 +101,7 @@ In Loot Studio, Left/Right Arrow moves between mode tabs and Home/End jumps to t
 
 ### Settings
 
-Open **Infinity Settings** from Home or Foundry's Module Settings. Options are grouped under Appearance & Accessibility, Loot Studio, Merchants, Quartermaster, Automation, Audio, Injuries, and Advanced. Players see only client settings; full GMs also see world settings. Raw duplicate entries are hidden after automated parity coverage verifies every existing configurable key remains represented.
+Open **Infinity Settings** from the Workbench utility buttons or Foundry's Module Settings. Options are grouped under Appearance & Accessibility, Loot Studio, Merchants, Quartermaster, Automation, Audio, Injuries, and Advanced. Players see only client settings; full GMs also see world settings. Raw duplicate entries are hidden after automated parity coverage verifies every existing configurable key remains represented.
 
 The client-scoped `uiPreferences` v2 setting stores only density, last Loot Studio mode, last GM Workbench route, dismissed quick-start versions, and remembered Advanced disclosures. Workbench routing accepts only `merchants`, `quartermaster`, `downtime`, `factions`, or `injuries`; an optional allowlisted subview and sanitized entity ID may deep-link inside that route. The setting is sanitized and does not contain character, user, campaign, permission, merchant, or other private world data.
 
@@ -153,7 +155,7 @@ both registered and active.
 
 ### Downtime and city actions
 
-The full GM opens **Home → Run the Session → Downtime Workspace**, chooses eligible
+The full GM opens **Workbench → Downtime**, chooses eligible
 characters, and assigns a shared productive-hour budget. Player-owned character
 Actors are selected by default; group scopes, search, owner and folder filters,
 and sorting make it easy to add other characters deliberately. Filters change

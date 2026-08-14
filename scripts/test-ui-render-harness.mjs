@@ -95,10 +95,10 @@ assert.match(
   /data-harness-window="critical-injury-triage"[\s\S]*?--harness-height:\s*640px/,
   "Injury Triage is exercised at its real default window height",
 );
-assert.match(
+assert.doesNotMatch(
   documentHtml,
-  /Session focus[\s\S]*?Continue with Per-Encounter Loot/,
-  "Home foregrounds one role-safe session destination",
+  /Session focus|>Continue<|data-campaign-data-recovery/,
+  "normal launchers contain no intro, Continue, or campaign-data panels",
 );
 assert.ok(
   !/>Loot\./i.test(documentHtml),
@@ -335,8 +335,9 @@ for (const id of [
 }
 
 const dashboardView = views.find((view) => view.id === "dashboard");
-assert.ok(dashboardView, "harness includes the GM dashboard");
-assert.match(dashboardView.html, /Downtime Workspace/);
+assert.ok(dashboardView, "harness includes the player launcher");
+assert.match(dashboardView.html, /Infinity Player Launcher/);
+assert.doesNotMatch(dashboardView.html, /Merchant Workspace|Campaign Recovery/);
 
 const recoveryAuthorityView = views.find(
   (view) => view.id === "home-recovery-blocked-authority",
@@ -347,8 +348,8 @@ assert.ok(
 );
 assert.match(
   recoveryAuthorityView.html,
-  /<details\b[^>]*data-campaign-data-recovery[^>]*open/,
-  "blocked campaign data opens the recovery disclosure",
+  /Infinity Campaign Recovery/,
+  "blocked campaign data opens a focused recovery window",
 );
 assert.match(
   recoveryAuthorityView.html,
@@ -398,11 +399,11 @@ for (const action of [
 }
 
 const playerHomeView = views.find((view) => view.id === "home-player");
-assert.ok(playerHomeView, "harness includes the player Home");
+assert.ok(playerHomeView, "harness includes the Assistant GM launcher");
 assert.doesNotMatch(
   playerHomeView.html,
   /Campaign data|candidate-store-2|future-store-7/,
-  "player Home receives no private-store recovery metadata",
+  "the player launcher receives no private-store recovery metadata",
 );
 
 const merchantWorkspaceView = views.find(

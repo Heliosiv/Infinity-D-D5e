@@ -46,6 +46,11 @@ assert.equal(context.route, "injuries");
 assert.equal(context.routes.length, 5);
 assert.equal(context.routes.filter((route) => route.active).length, 1);
 assert.equal(context.routes.find((route) => route.active)?.route, "injuries");
+assert.deepEqual(
+  context.utilities.map((utility) => utility.utility),
+  ["loot-studio", "settings"],
+  "the Workbench chrome includes every focused GM utility displaced from Home",
+);
 
 globalThis.foundry = {
   applications: {
@@ -88,11 +93,13 @@ globalThis.ui = {
 
 const {
   configureGmWorkbench,
+  GmWorkbenchApp,
   getActiveGmWorkbenchApplication,
   openGmWorkbench,
 } = await import("./gm-workbench.js");
 
 const opened = [];
+const utilityCalls = [];
 function routeAdapter(route) {
   return {
     open(options) {
@@ -140,9 +147,26 @@ assert.equal(
     Object.fromEntries(
       GM_WORKBENCH_ROUTES.map((route) => [route, routeAdapter(route)]),
     ),
+    {
+      "loot-studio": { open: () => utilityCalls.push("loot-studio") },
+      settings: { open: () => utilityCalls.push("settings") },
+    },
   ),
   5,
 );
+
+await GmWorkbenchApp._onOpenUtility.call(
+  {},
+  { preventDefault() {} },
+  { dataset: { workbenchUtility: "loot-studio" } },
+);
+assert.deepEqual(utilityCalls, ["loot-studio"]);
+await GmWorkbenchApp._onOpenUtility.call(
+  {},
+  { preventDefault() {} },
+  { dataset: { workbenchUtility: "private-state" } },
+);
+assert.match(warnings.at(-1), /not available/);
 
 const factions = openGmWorkbench({
   route: "factions",

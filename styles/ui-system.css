@@ -136,7 +136,26 @@
   border-radius: var(--lf-radius);
 }
 
-.infinity-dnd5e .gmw-route {
+.infinity-dnd5e .gmw-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--lf-space-2);
+  align-items: stretch;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .gmw-utilities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(var(--lf-control-size), auto));
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+  padding: var(--lf-space-1);
+  background: rgb(7 12 20 / 46%);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e :is(.gmw-route, .gmw-utility) {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, auto);
@@ -163,10 +182,22 @@
     transform var(--lf-motion-fast) var(--lf-ease-standard);
 }
 
+.infinity-dnd5e .gmw-utility {
+  color: var(--lf-gold-soft);
+  border-color: rgb(231 189 114 / 24%);
+}
+
 .infinity-dnd5e .gmw-route:not(.is-active):hover {
   color: var(--lf-text-strong);
   background: rgb(255 255 255 / 5%);
   border-color: var(--lf-border);
+}
+
+.infinity-dnd5e .gmw-utility:hover,
+.infinity-dnd5e .gmw-utility:focus-visible {
+  color: var(--lf-text-strong);
+  background: rgb(255 255 255 / 5%);
+  border-color: var(--lf-gold-soft);
 }
 
 .infinity-dnd5e .gmw-route.is-active {
@@ -179,6 +210,10 @@
 }
 
 .infinity-dnd5e .gmw-route > i {
+  pointer-events: none;
+}
+
+.infinity-dnd5e .gmw-utility > i {
   pointer-events: none;
 }
 
@@ -224,13 +259,21 @@
     scrollbar-width: thin;
   }
 
-  .infinity-dnd5e .gmw-route {
+  .infinity-dnd5e .gmw-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-dnd5e .gmw-utilities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .infinity-dnd5e :is(.gmw-route, .gmw-utility) {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.15rem;
     padding-inline: var(--lf-space-1);
   }
 
-  .infinity-dnd5e .gmw-route span {
+  .infinity-dnd5e :is(.gmw-route, .gmw-utility) span {
     font-size: max(0.68rem, 11px);
     overflow-wrap: anywhere;
   }
@@ -240,6 +283,8 @@
   .infinity-dnd5e .gmw-chrome,
   .infinity-dnd5e .gmw-routes,
   .infinity-dnd5e .gmw-route,
+  .infinity-dnd5e .gmw-utilities,
+  .infinity-dnd5e .gmw-utility,
   .infinity-dnd5e .gmw-brand__sigil {
     background: Canvas;
     border-color: CanvasText;

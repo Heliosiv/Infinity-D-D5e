@@ -481,7 +481,8 @@ function createFixture({
   assert.equal(fixture.timers.length, 0);
   assert.match(fixture.notifications[0], /schema \(8\)/);
   assert.match(fixture.notifications[0], /automatic retries are stopped/);
-  assert.match(fixture.notifications[0], /Home > Campaign data/);
+  assert.match(fixture.notifications[0], /Shift\+I/);
+  assert.match(fixture.notifications[0], /recovery choices/i);
 }
 
 {
@@ -502,7 +503,8 @@ function createFixture({
   assert.equal(fixture.trace.includes("recovery-timer"), false);
   assert.equal(fixture.timers.length, 0);
   assert.match(fixture.notifications[0], /automatic replacement is disabled/);
-  assert.match(fixture.notifications[0], /Home > Campaign data/);
+  assert.match(fixture.notifications[0], /Shift\+I/);
+  assert.match(fixture.notifications[0], /Campaign Recovery/);
 }
 
 process.stdout.write("module lifecycle validation passed\n");

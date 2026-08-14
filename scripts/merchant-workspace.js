@@ -234,6 +234,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ),
       selectSection: navigateToAppSection,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 

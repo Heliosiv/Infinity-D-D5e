@@ -1,0 +1,100 @@
+{{!-- Exceptional full-GM recovery surface; never part of normal launcher navigation. --}}
+<div class="id-shell infinity-app-shell">
+  <header class="id-head">
+    <div class="id-head__title">
+      <p class="id-head__eyebrow">Exceptional recovery</p>
+      <h2>Infinity Campaign Recovery</h2>
+      <p class="id-head__hint">Campaign tools remain locked until the private store is verified. Nothing changes until the active Game Master confirms a reviewed action.</p>
+    </div>
+    <span class="id-head__version" aria-label="Infinity D&amp;D5e version {{moduleVersion}}">v{{moduleVersion}}</span>
+  </header>
+
+  <section class="infinity-banner {{privateStateRecovery.statusClass}}" role="{{privateStateRecovery.statusRole}}" aria-live="polite" aria-labelledby="infinity-recovery-status-title" data-recovery-status tabindex="-1">
+    <i class="{{privateStateRecovery.statusIcon}}" aria-hidden="true"></i>
+    <div class="infinity-banner__content">
+      <h3 id="infinity-recovery-status-title">{{privateStateRecovery.stateTitle}}</h3>
+      <p>{{privateStateRecovery.reason}}</p>
+      <p>{{privateStateRecovery.authorityLabel}}</p>
+    </div>
+  </section>
+
+  <section class="infinity-card" aria-labelledby="infinity-recovery-selection-title">
+    <h3 class="infinity-card__title" id="infinity-recovery-selection-title">Selected store</h3>
+    <dl>
+      <div><dt>Journal ID</dt><dd><code>{{privateStateRecovery.canonicalId}}</code></dd></div>
+      <div><dt>Selection</dt><dd>{{privateStateRecovery.canonicalStateLabel}}</dd></div>
+      <div><dt>Supported schema</dt><dd>{{privateStateRecovery.supportedSchema}}</dd></div>
+      <div><dt>Observed schema</dt><dd>{{privateStateRecovery.observedSchema}}</dd></div>
+    </dl>
+    <div class="infinity-actions">
+      <button type="button" class="infinity-button infinity-button--quiet" data-action="refreshPrivateState">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh status
+      </button>
+    </div>
+  </section>
+
+  <section aria-labelledby="infinity-recovery-candidates-title">
+    <h3 id="infinity-recovery-candidates-title">Available Journals</h3>
+    <p class="infinity-supporting">Only privacy and schema metadata is shown here. Stored campaign values are never projected into this window.</p>
+    {{#if privateStateRecovery.hasCandidates}}
+    <ul class="id-grid">
+      {{#each privateStateRecovery.candidates}}
+      <li class="infinity-card" aria-labelledby="{{domId}}-title">
+        <h4 class="infinity-card__title" id="{{domId}}-title"><code>{{id}}</code></h4>
+        <p class="infinity-supporting">{{canonicalLabel}}</p>
+        <dl>
+          <div><dt>Schema</dt><dd>{{schemaLabel}}</dd></div>
+          <div><dt>Data shape</dt><dd>{{payloadLabel}}</dd></div>
+          <div><dt>Privacy</dt><dd>{{ownershipLabel}}</dd></div>
+          <div><dt>Created</dt><dd>{{createdLabel}}</dd></div>
+          <div><dt>Modified</dt><dd>{{modifiedLabel}}</dd></div>
+        </dl>
+        <p class="infinity-supporting" id="{{domId}}-reason">{{reason}}</p>
+        <div class="infinity-actions">
+          <button type="button" class="infinity-button" data-action="reviewPrivateStateCandidate" data-candidate-id="{{id}}" data-focus-key="adopt-{{domId}}" aria-describedby="{{domId}}-reason" {{#unless canAdopt}}disabled{{/unless}}>
+            <i class="fa-solid fa-link" aria-hidden="true"></i> Review adoption
+          </button>
+        </div>
+      </li>
+      {{/each}}
+    </ul>
+    {{else}}
+    <p class="infinity-supporting">No marked private-state Journals are currently visible.</p>
+    {{/if}}
+  </section>
+
+  <section class="infinity-card" aria-labelledby="infinity-recovery-snapshot-title">
+    <h3 class="infinity-card__title" id="infinity-recovery-snapshot-title">Verified snapshot</h3>
+    <p class="infinity-supporting">Recover the last complete store this client verified. Existing Journals remain untouched.</p>
+    <p class="infinity-supporting" id="infinity-recovery-snapshot-reason">{{privateStateRecovery.snapshotReason}}</p>
+    <div class="infinity-actions">
+      <button type="button" class="infinity-button" data-action="recoverPrivateStateSnapshot" aria-describedby="infinity-recovery-snapshot-reason" {{#unless privateStateRecovery.canRecoverSnapshot}}disabled{{/unless}}>
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Review snapshot recovery
+      </button>
+    </div>
+  </section>
+
+  <section class="infinity-card" aria-labelledby="infinity-recovery-empty-title">
+    <h3 class="infinity-card__title" id="infinity-recovery-empty-title">Start empty</h3>
+    <p class="infinity-supporting">Create a new canonical store without copying private merchant, faction, resource, downtime, or injury data.</p>
+    <p class="infinity-supporting" id="infinity-recovery-empty-reason">{{privateStateRecovery.emptyReason}}</p>
+    <div class="infinity-actions">
+      <button type="button" class="infinity-button infinity-button--danger" data-action="createEmptyPrivateState" aria-describedby="infinity-recovery-empty-reason" {{#unless privateStateRecovery.canCreateEmpty}}disabled{{/unless}}>
+        <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i> Review empty replacement
+      </button>
+    </div>
+  </section>
+
+  {{#if privateStateRecovery.message}}
+  <p class="infinity-supporting" role="status" aria-live="polite" data-tone="{{privateStateRecovery.messageTone}}">{{privateStateRecovery.message}}</p>
+  {{/if}}
+
+  {{#unless privateStateRecovery.open}}
+  <footer class="id-foot">
+    <p>Recovery is complete. Return to the primary campaign workspace.</p>
+    <button type="button" class="infinity-button infinity-button--primary" data-action="openWorkbench">
+      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Open Game Master Workbench
+    </button>
+  </footer>
+  {{/unless}}
+</div>

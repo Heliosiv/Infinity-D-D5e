@@ -36,6 +36,7 @@
   "templates": [
     "templates/gm-workbench-nav.hbs",
     "templates/dashboard.hbs",
+    "templates/private-state-recovery.hbs",
     "templates/loot-studio.hbs",
     "templates/loot-studio-body.hbs",
     "templates/loot-result-item.hbs",

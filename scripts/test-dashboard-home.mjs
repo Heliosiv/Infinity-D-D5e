@@ -59,6 +59,7 @@ const moduleApi = {
   openCriticalInjuries: () => {},
   openDowntimeActivities: () => {},
   openHub: () => {},
+  openGmWorkbench: () => {},
   openMerchantWorkspace: () => {},
   openPartySupplies: () => {},
   openReputationView: () => {},
@@ -102,6 +103,7 @@ const {
   buildHomeHelpDialogContent,
   buildPlayerHomeActions,
   groupHomeActionsByIntent,
+  InfinityCampaignRecoveryApp,
   InfinityDashboardApp,
   openHub,
   presentPrivateStateRecoveryOverview,
@@ -279,7 +281,14 @@ assert.match(pendingRecovery.mutationReason, /still being checked/);
 const renderHome = Handlebars.compile(
   readFileSync("templates/dashboard.hbs", "utf8"),
 );
+const renderRecovery = Handlebars.compile(
+  readFileSync("templates/private-state-recovery.hbs", "utf8"),
+);
 const homeTemplateSource = readFileSync("templates/dashboard.hbs", "utf8");
+const recoveryTemplateSource = readFileSync(
+  "templates/private-state-recovery.hbs",
+  "utf8",
+);
 const templateActions = new Set(
   [...homeTemplateSource.matchAll(/data-action="([^"]+)"/g)].map(
     (match) => match[1],
@@ -287,19 +296,33 @@ const templateActions = new Set(
 );
 assert.deepEqual(
   templateActions,
-  new Set(Object.keys(InfinityDashboardApp.DEFAULT_OPTIONS.actions)),
-  "every Home template action has exactly one registered handler",
+  new Set(["help", "launch", "openSettings"]),
+  "the player launcher registers only its visible actions",
+);
+assert.deepEqual(
+  new Set(
+    [...recoveryTemplateSource.matchAll(/data-action="([^"]+)"/g)].map(
+      (match) => match[1],
+    ),
+  ),
+  new Set(Object.keys(InfinityCampaignRecoveryApp.DEFAULT_OPTIONS.actions)),
+  "the focused recovery template registers every recovery action",
 );
 const gmHtml = renderHome(gmContext);
 assert.match(gmHtml, /Merchant Workspace/);
 assert.match(gmHtml, /Per-Encounter Loot/);
 assert.match(gmHtml, /Reputation &amp; Factions/);
 assert.match(gmHtml, /data-action="help"/);
-assert.match(gmHtml, /Campaign data/);
-assert.match(gmHtml, /candidate-journal-id/);
-assert.match(gmHtml, /Review snapshot recovery/);
-assert.match(gmHtml, /Review empty replacement/);
-assert.match(gmHtml, /data-campaign-data-recovery open/);
+assert.doesNotMatch(gmHtml, /Campaign data|candidate-journal-id|Continue/);
+const gmRecoveryHtml = renderRecovery({
+  moduleVersion: "0.3.7",
+  privateStateRecovery: gmContext.privateStateRecovery,
+});
+assert.match(gmRecoveryHtml, /Infinity Campaign Recovery/);
+assert.match(gmRecoveryHtml, /candidate-journal-id/);
+assert.match(gmRecoveryHtml, /Review snapshot recovery/);
+assert.match(gmRecoveryHtml, /Review empty replacement/);
+assert.doesNotMatch(gmRecoveryHtml, /Open Game Master Workbench/);
 assert.match(gmHtml, /aria-haspopup="dialog"/);
 assert.doesNotMatch(gmHtml, /aria-controls="infinity-home-help"/);
 assert.doesNotMatch(
@@ -307,14 +330,14 @@ assert.doesNotMatch(
   /id-quick-start|data-home-help|Help &amp; Diagnostics/,
 );
 await InfinityDashboardApp._onHelp();
-assert.equal(helpDialogOptions.window.title, "Infinity D&D5e — Home Help");
+assert.equal(helpDialogOptions.window.title, "Infinity D&D5e — Launcher Help");
 assert.ok(helpDialogOptions.classes.includes("infinity-dialog"));
 assert.match(helpDialogOptions.content, /Prepare:/);
 assert.match(helpDialogOptions.content, /Shift\+I/);
 assert.equal(helpDialogOptions.ok.label, "Close");
 assert.doesNotMatch(buildHomeHelpDialogContent(), /Prepare:/);
 
-const subscribedApp = new InfinityDashboardApp({
+const subscribedApp = new InfinityCampaignRecoveryApp({
   privateStateRecoveryService: app._privateStateRecoveryService,
 });
 let recoveryRenders = 0;
@@ -325,12 +348,15 @@ subscribedApp.render = async () => {
 const privateStateHook = [...hookListeners.entries()].find(
   ([, entry]) => entry.name === "infinity-dnd5e.privateStateChanged",
 );
-assert.ok(privateStateHook, "full-GM Home subscribes to private-state changes");
+assert.ok(
+  privateStateHook,
+  "Campaign Recovery subscribes to private-state changes",
+);
 privateStateHook[1].callback({ reason: "recovery-status" });
 assert.equal(
   recoveryRenders,
   1,
-  "private-state status changes refresh open Home",
+  "private-state status changes refresh Campaign Recovery",
 );
 subscribedApp._onClose();
 assert.ok(
@@ -339,7 +365,7 @@ assert.ok(
       name === "infinity-dnd5e.privateStateChanged" &&
       id === privateStateHook[0],
   ),
-  "closing Home removes the private-state listener",
+  "closing Campaign Recovery removes the private-state listener",
 );
 
 recoveryDialogResult = false;
@@ -386,6 +412,22 @@ assert.match(
   recoveryDialogOptions.content,
   /merchant, faction, resource, downtime, and critical-injury data will not be copied/,
 );
+
+let workbenchOpenCalls = 0;
+let recoveryCloseCalls = 0;
+moduleApi.openGmWorkbench = () => {
+  workbenchOpenCalls += 1;
+};
+await InfinityCampaignRecoveryApp._onOpenWorkbench.call({
+  _privateStateRecoveryService: {
+    getOverview: async () => ({ status: { state: "ready" } }),
+  },
+  close: async () => {
+    recoveryCloseCalls += 1;
+  },
+});
+assert.equal(recoveryCloseCalls, 1);
+assert.equal(workbenchOpenCalls, 1);
 
 const applyCandidate = app._privateStateRecoveryService.applyCandidate;
 app._privateStateRecoveryService.applyCandidate = async () => {
@@ -447,14 +489,18 @@ recoveryOverview = {
   canRecoverSnapshot: false,
   canCreateEmpty: false,
 };
-const secondaryContext = await app._prepareContext();
-assert.equal(secondaryContext.isFullGm, true);
+const recoveryApp = Object.create(InfinityCampaignRecoveryApp.prototype);
+recoveryApp._privateStateRecoveryService = app._privateStateRecoveryService;
+recoveryApp._privateStateRecoveryInFlight = false;
+recoveryApp._privateStateRecoveryMessage = "";
+recoveryApp._privateStateRecoveryTone = "neutral";
+const secondaryContext = await recoveryApp._prepareContext();
 assert.equal(secondaryContext.privateStateRecovery.canMutate, false);
 assert.equal(
   secondaryContext.privateStateRecovery.candidates[0].canAdopt,
   false,
 );
-const secondaryHtml = renderHome(secondaryContext);
+const secondaryHtml = renderRecovery(secondaryContext);
 assert.match(secondaryHtml, /candidate-journal-id/);
 assert.match(secondaryHtml, /active Game Master must confirm/);
 assert.equal(
@@ -483,7 +529,7 @@ await InfinityDashboardApp._onOpenSettings();
 assert.equal(
   settingsOpenCalls,
   1,
-  "Home prefers the role-aware Infinity Settings API",
+  "the player launcher prefers the role-aware Infinity Settings API",
 );
 
 const playerActions = buildPlayerHomeActions({
@@ -498,7 +544,7 @@ assert.equal(
 );
 assert.ok(
   playerActions.some((action) => action.surface === "calendar"),
-  "Calendar appears in player Home",
+  "Calendar appears in the player launcher",
 );
 assert.ok(playerActions.every((action) => action.launchKind === "surface"));
 assert.deepEqual(
@@ -512,13 +558,13 @@ const focusedSessionAction = resolveSessionFocus(playerActions, [
 assert.equal(
   focusedSessionAction.title,
   "Shops",
-  "Home foregrounds a recent role-safe destination",
+  "the compatibility helper resolves a recent role-safe destination",
 );
 assert.match(focusedSessionAction.label, /^Continue with /);
 assert.equal(
   resolveSessionFocus([], []),
   null,
-  "Home leaves the focus card out when no destination is available",
+  "the compatibility helper returns no destination when none is available",
 );
 
 globalThis.game.user = {
@@ -532,7 +578,7 @@ settings.set("resourcePlayerView", false);
 const assistantContext = await app._prepareContext();
 assert.equal(assistantContext.isFullGm, false);
 assert.equal(assistantContext.isAssistantGm, true);
-assert.equal(assistantContext.roleLabel, "Assistant GM Home");
+assert.equal(assistantContext.roleLabel, "Assistant GM Launcher");
 assert.equal(assistantContext.privateStateRecovery, null);
 const assistantActions = assistantContext.groups.flatMap(
   (group) => group.actions,
@@ -559,12 +605,12 @@ assert.deepEqual(
       reason: "Critical Injuries are not enabled in this world.",
     },
   ],
-  "player Home reflects world feature gates with generic reasons",
+  "the player launcher reflects world feature gates with generic reasons",
 );
 assert.doesNotMatch(
   JSON.stringify(assistantActions),
   /assistant-secret-id|gm-secret-id/,
-  "unavailable Home actions do not expose user or campaign identifiers",
+  "unavailable launcher actions do not expose user or campaign identifiers",
 );
 assert.ok(
   assistantContext.groups
@@ -589,7 +635,7 @@ const renderedIds = [...assistantHtml.matchAll(/\sid="([^"]+)"/g)].map(
 assert.equal(
   new Set(renderedIds).size,
   renderedIds.length,
-  "role-aware Home renders no duplicate ids",
+  "the role-aware launcher renders no duplicate ids",
 );
 
 const homeCss = readFileSync("styles/dashboard.css", "utf8");
@@ -603,7 +649,7 @@ for (const width of [720, 520, 380]) {
 assert.doesNotMatch(
   homeCss,
   /(?:100vw|100vh)/,
-  "Home has no viewport coupling",
+  "the player launcher has no viewport coupling",
 );
 assert.match(homeCss, /@media \(pointer: coarse\)[\s\S]*min-height:\s*44px/);
 
@@ -624,7 +670,11 @@ moduleApi.openShops = () => {
 await InfinityDashboardApp._onLaunch.call({ render: async () => {} }, null, {
   dataset: { launchKind: "surface", launchId: "shops" },
 });
-assert.equal(playerOpenCalls, 1, "player Home opens a fixed local surface");
+assert.equal(
+  playerOpenCalls,
+  1,
+  "the player launcher opens a fixed local surface",
+);
 
 clearTools();
 delete globalThis.SimpleCalendar;
@@ -634,4 +684,4 @@ delete globalThis.CONST;
 delete globalThis.foundry;
 delete globalThis.ui;
 
-process.stdout.write("role-aware dashboard Home validation passed\n");
+process.stdout.write("role-aware launcher and recovery validation passed\n");

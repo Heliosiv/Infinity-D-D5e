@@ -1,8 +1,15 @@
-/** Add the one role-aware Infinity Home category to Foundry scene controls. */
+/** Add the single role-aware Infinity launcher to Foundry scene controls. */
 export function applyInfinitySceneControls(controls, bindings) {
   const launcherToolName = "infinity-dnd5e-launcher";
+  const fullGm = bindings.isFullGM?.() === true;
+  const launcherTitle = fullGm
+    ? "Open Infinity Game Master Workbench"
+    : "Open Infinity Player Launcher";
+  const categoryTitle = fullGm
+    ? "Infinity Game Master Workbench"
+    : "Infinity D&D5e";
   const baseTool = {
-    title: "Open Infinity D&D5e Home",
+    title: launcherTitle,
     icon: "fa-solid fa-dice-d20",
     button: true,
     visible: true,
@@ -33,7 +40,7 @@ export function applyInfinitySceneControls(controls, bindings) {
       if (!controls.some((control) => control?.name === bindings.moduleId)) {
         controls.push({
           name: bindings.moduleId,
-          title: "Infinity D&D5e",
+          title: categoryTitle,
           icon: "fa-solid fa-dice-d20",
           visible: true,
           activeTool: launcherToolName,
@@ -43,7 +50,7 @@ export function applyInfinitySceneControls(controls, bindings) {
         });
       }
       bindings.logger.log(
-        `${bindings.moduleId} | registered V12 role-aware Home control`,
+        `${bindings.moduleId} | registered V12 role-aware launcher control`,
       );
       return true;
     }
@@ -51,7 +58,7 @@ export function applyInfinitySceneControls(controls, bindings) {
     if (controls && typeof controls === "object") {
       controls[bindings.moduleId] = {
         name: bindings.moduleId,
-        title: "Infinity D&D5e",
+        title: categoryTitle,
         icon: "fa-solid fa-dice-d20",
         visible: true,
         activeTool: launcherToolName,
@@ -62,7 +69,7 @@ export function applyInfinitySceneControls(controls, bindings) {
         },
       };
       bindings.logger.log(
-        `${bindings.moduleId} | registered V13 role-aware Home control`,
+        `${bindings.moduleId} | registered V13 role-aware launcher control`,
       );
       return true;
     }

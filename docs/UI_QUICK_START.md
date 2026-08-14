@@ -1,26 +1,27 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the v0.3.6 interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
+This guide covers the current v0.3.7 source interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
 
-## Open Home
+## Open the primary launcher
 
 - Select the single **Infinity D&D5e** d20 category in scene controls.
 - Or press `Shift+I` from anywhere in Foundry.
-- A full GM sees campaign-management workspaces. Players and Assistant GMs see only player destinations already authorized for them.
+- A full GM enters the remembered Infinity Game Master Workbench route.
+- Players and Assistant GMs see only player destinations already authorized for them.
 
-Home groups destinations by intent:
+The full-GM Workbench keeps these destinations in one persistent header:
 
-- **Prepare** for setup such as merchants and available shops.
-- **Run the Session** for active loot, downtime, and calendar work.
-- **Track the Campaign** for Quartermaster supplies, factions, and injuries.
+- **Merchants**, **Quartermaster**, **Downtime**, **Factions**, and **Injuries** switch the active Workbench route.
+- **Loot** opens the focused Loot Studio.
+- **Settings** opens Infinity Settings.
 
-Home keeps its short guide and keyboard shortcuts behind the **Help** button in the header. Workspace-specific quick-start cards, such as Downtime's, can still be dismissed and restored from **Infinity Settings**.
+There is no full-GM intro screen, Session Focus card, Continue list, or Campaign Data panel. Workspace-specific quick-start cards, such as Downtime's, can still be dismissed and restored from **Infinity Settings**.
 
-Home also foregrounds one role-safe **Session focus** destination: it continues your most recent available workspace, or selects the next available session tool. Opening it never changes campaign data.
+The player/Assistant launcher remains intentionally separate and contains only permission-scoped player destinations. Opening it never changes campaign data.
 
 ## Use Loot Studio
 
-Full GMs open **Loot Studio** from Home. Choose Encounter, Hoard, or Creature with the mode tabs. Left/Right Arrow moves between tabs; Home/End selects the first or last mode.
+Full GMs open **Loot Studio** from the Workbench **Loot** utility. Choose Encounter, Hoard, or Creature with the mode tabs. Left/Right Arrow moves between tabs; Home/End selects the first or last mode.
 
 Each mode keeps its own form, result, undo stack, presets, and history. The common entry restores this client's last mode. Existing macros that open Per-Encounter, Hoard, or Per-Creature loot still open the matching mode, and existing preset exports remain compatible.
 
@@ -73,12 +74,12 @@ If only some settings save, the status names them. Review those settings, then s
 
 Status messages answer three questions: what happened, whether anything changed, and what to do next.
 
-Full GMs can open **Home > Campaign data** to inspect the private campaign store even when the other campaign tools are locked. Secondary full GMs can inspect the same value-free status and Journal metadata, but only the active Game Master can confirm a recovery action.
+When private campaign state is fail-closed, Shift+I and the scene-control launcher open a focused **Campaign Recovery** window instead of the normal Workbench. Secondary full GMs can inspect the same value-free status and Journal metadata, but only the active Game Master can confirm a recovery action. Campaign Recovery is exceptional and never appears in normal Workbench navigation.
 
 - **Adopt a Journal** reviews an existing complete, privately owned current or known-legacy store before selecting it. Supported legacy data follows the normal migration path after adoption. Other Journals remain untouched.
 - **Recover the verified snapshot** reviews the last complete snapshot available to this client before creating a verified recovery store. Other Journals remain untouched.
 - **Start empty** creates a new canonical store without copying private merchant, faction, resource, downtime, or critical-injury data. This always requires a separate confirmation, and old Journals are not deleted.
-- Closing or cancelling a recovery dialog changes nothing. If the review expires or active-GM control changes, refresh Campaign data and review the current state again.
+- Closing or cancelling a recovery dialog changes nothing. If the review expires or active-GM control changes, refresh the Campaign Recovery window and review the current state again.
 
 - **Loading or busy:** wait for the current authoritative request; duplicate actions stay disabled.
 - **GM offline:** no campaign write was attempted. Reconnect or ask a full GM to sign in, then retry.
@@ -91,4 +92,4 @@ Technical identifiers remain in Advanced details where a workflow provides them.
 
 ## Monk's Active Tiles
 
-The allowlisted `home` destination opens the same role-aware Home for the triggering player. Existing destination IDs remain valid. A full Gamemaster who clicks the Landing Page's Shops control opens Merchant Workspace locally; player clicks still open only the permission-scoped Shops picker through the authenticated player route. The tile message still carries only the fixed surface key and user IDs; it does not add campaign data or grant a new permission.
+The allowlisted `home` destination remains a compatibility ID and opens the permission-scoped player launcher for the triggering player. Existing destination IDs remain valid. A full Gamemaster who clicks the Landing Page's Shops control opens Merchant Workspace locally; player clicks still open only the permission-scoped Shops picker through the authenticated player route. The tile message still carries only the fixed surface key and user IDs; it does not add campaign data or grant a new permission.

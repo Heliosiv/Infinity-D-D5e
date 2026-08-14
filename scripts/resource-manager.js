@@ -119,6 +119,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       refresh: ResourceManagerApp._onRefresh,
       selectSection: navigateToAppSection,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 

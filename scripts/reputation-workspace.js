@@ -86,6 +86,7 @@ export class ReputationWorkspaceApp extends GmWorkbenchApp {
       save: ReputationWorkspaceApp._onSave,
       deleteFaction: ReputationWorkspaceApp._onDeleteFaction,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 

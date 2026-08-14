@@ -1,5 +1,9 @@
-import { openHub } from "../dashboard.js";
+import {
+  InfinityCampaignRecoveryApp,
+  openPlayerLauncher,
+} from "../dashboard.js";
 import { configureGmWorkbench, GmWorkbenchApp } from "../gm-workbench.js";
+import { openInfinityPrimaryLauncher } from "../primary-launcher.js";
 import { LootStudioApp } from "../loot-studio.js";
 import { InfinitySettingsApp } from "../settings-app.js";
 import { MerchantWorkspaceApp } from "../merchant-workspace.js";
@@ -123,23 +127,39 @@ function isCampaignWriteAuthority() {
   return isAuthoritativeGM() && hasCampaignTabLeadership();
 }
 
-configureGmWorkbench({
-  merchants: {
-    open: (options) => MerchantWorkspaceApp.open(options),
+configureGmWorkbench(
+  {
+    merchants: {
+      open: (options) => MerchantWorkspaceApp.open(options),
+    },
+    quartermaster: {
+      open: (options) => ResourceManagerApp.open(options),
+    },
+    downtime: {
+      open: (options) => DowntimeWorkspaceApp.open(options),
+    },
+    factions: {
+      open: (options) => ReputationWorkspaceApp.open(options),
+    },
+    injuries: {
+      open: (options) => CriticalInjuryTriageApp.open(options),
+    },
   },
-  quartermaster: {
-    open: (options) => ResourceManagerApp.open(options),
+  {
+    "loot-studio": { open: () => LootStudioApp.open() },
+    settings: { open: () => InfinitySettingsApp.open() },
   },
-  downtime: {
-    open: (options) => DowntimeWorkspaceApp.open(options),
-  },
-  factions: {
-    open: (options) => ReputationWorkspaceApp.open(options),
-  },
-  injuries: {
-    open: (options) => CriticalInjuryTriageApp.open(options),
-  },
-});
+);
+
+function openHub() {
+  return openInfinityPrimaryLauncher({
+    isFullGM,
+    getPrivateStateStatus,
+    openPlayerLauncher,
+    openCampaignRecovery: () => InfinityCampaignRecoveryApp.open(),
+    openGmWorkbench: () => GmWorkbenchApp.open(),
+  });
+}
 
 /**
  * The sole production composition root. The lifecycle modules consume these
@@ -161,6 +181,7 @@ export const runtimeBindings = Object.freeze({
   clearTimeout: (timer) => globalThis.clearTimeout?.(timer),
 
   openHub,
+  InfinityCampaignRecoveryApp,
   GmWorkbenchApp,
   LootStudioApp,
   InfinitySettingsApp,

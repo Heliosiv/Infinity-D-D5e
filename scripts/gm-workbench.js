@@ -20,6 +20,7 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 export const GM_WORKBENCH_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/gm-workbench-nav.hbs`;
 const routeAdapters = new Map();
+const utilityAdapters = new Map();
 const rememberedTargets = new Map();
 let activeApplication = null;
 
@@ -29,6 +30,7 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     actions: {
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
+      openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
   };
 
@@ -121,15 +123,48 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       _sourceApplication: this,
     });
   }
+
+  /** @this {GmWorkbenchApp} */
+  static async _onOpenUtility(event, target) {
+    event?.preventDefault?.();
+    if (!isFullGM()) {
+      globalThis.ui?.notifications?.warn?.(
+        "Workbench utilities are available to full Game Masters only.",
+      );
+      return null;
+    }
+    const utility = String(target?.dataset?.workbenchUtility ?? "").trim();
+    const adapter = utilityAdapters.get(utility);
+    if (!adapter) {
+      globalThis.ui?.notifications?.warn?.(
+        "That Workbench utility is not available. Nothing changed.",
+      );
+      return null;
+    }
+    try {
+      return await adapter.open();
+    } catch (error) {
+      console.warn(`${MODULE_ID} | Workbench utility did not open`, error);
+      globalThis.ui?.notifications?.error?.(
+        "That Workbench utility did not open. Nothing changed; try again.",
+      );
+      return null;
+    }
+  }
 }
 
 /** Configure route adapters once the established applications are imported. */
-export function configureGmWorkbench(adapters = {}) {
+export function configureGmWorkbench(adapters = {}, utilities = {}) {
   routeAdapters.clear();
   for (const route of GM_WORKBENCH_ROUTES) {
     const adapter = adapters[route];
     if (typeof adapter?.open !== "function") continue;
     routeAdapters.set(route, adapter);
+  }
+  utilityAdapters.clear();
+  for (const [utility, adapter] of Object.entries(utilities)) {
+    if (typeof adapter?.open !== "function") continue;
+    utilityAdapters.set(utility, adapter);
   }
   return routeAdapters.size;
 }

@@ -63,6 +63,25 @@ export const GM_WORKBENCH_ROUTE_DEFINITIONS = Object.freeze([
   }),
 ]);
 
+export const GM_WORKBENCH_UTILITY_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    utility: "loot-studio",
+    label: "Loot Studio",
+    shortLabel: "Loot",
+    icon: "fa-solid fa-coins",
+    description:
+      "Open the focused Encounter, Hoard, and Creature loot workspace.",
+  }),
+  Object.freeze({
+    utility: "settings",
+    label: "Infinity Settings",
+    shortLabel: "Settings",
+    icon: "fa-solid fa-sliders",
+    description:
+      "Open role-aware module settings and accessibility preferences.",
+  }),
+]);
+
 const ROUTE_SET = new Set(GM_WORKBENCH_ROUTES);
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,79}$/i;
 const SUBVIEW_BY_ROUTE = Object.freeze({
@@ -135,5 +154,6 @@ export function buildGmWorkbenchNavigationContext(target) {
       ...definition,
       active: definition.route === normalized.route,
     })),
+    utilities: GM_WORKBENCH_UTILITY_DEFINITIONS,
   };
 }

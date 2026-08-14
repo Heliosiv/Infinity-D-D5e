@@ -97,10 +97,10 @@ export function buildHarnessViews() {
   return [
     view(
       "dashboard",
-      "Home (full GM)",
+      "Player Launcher",
       "infinity-dashboard",
       "templates/dashboard.hbs",
-      dashboardContext(),
+      playerHomeContext(),
       {
         width: 720,
         height: 540,
@@ -108,9 +108,9 @@ export function buildHarnessViews() {
     ),
     view(
       "home-recovery-blocked-authority",
-      "Home campaign-data recovery (active GM)",
-      "infinity-dashboard",
-      "templates/dashboard.hbs",
+      "Campaign Recovery (active GM)",
+      "infinity-dashboard infinity-campaign-recovery",
+      "templates/private-state-recovery.hbs",
       dashboardContext({
         privateStateRecovery: recoveryHarnessContext({ authoritative: true }),
       }),
@@ -118,9 +118,9 @@ export function buildHarnessViews() {
     ),
     view(
       "home-recovery-blocked-secondary",
-      "Home campaign-data recovery (secondary GM)",
-      "infinity-dashboard",
-      "templates/dashboard.hbs",
+      "Campaign Recovery (secondary GM)",
+      "infinity-dashboard infinity-campaign-recovery",
+      "templates/private-state-recovery.hbs",
       dashboardContext({
         privateStateRecovery: recoveryHarnessContext({ authoritative: false }),
       }),
@@ -128,7 +128,7 @@ export function buildHarnessViews() {
     ),
     view(
       "home-player",
-      "Home (player)",
+      "Assistant GM Launcher",
       "infinity-dashboard",
       "templates/dashboard.hbs",
       playerHomeContext(),

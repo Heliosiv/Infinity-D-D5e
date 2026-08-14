@@ -1,18 +1,13 @@
-{{!-- Infinity D&D5e — role-aware Home (InfinityDashboardApp compatibility). --}}
+{{!-- Infinity D&D5e — permission-scoped player and Assistant GM launcher. --}}
 <div class="id-shell infinity-app-shell">
   <header class="id-head">
     <div class="id-head__title">
       <p class="id-head__eyebrow">{{roleLabel}}</p>
-      <h2>Infinity D&amp;D5e Home</h2>
-      <p class="id-head__hint">{{headingHint}} Reopen Home anytime with Shift+I.</p>
+      <h2>Infinity Player Launcher</h2>
+      <p class="id-head__hint">{{headingHint}} Reopen this launcher anytime with Shift+I.</p>
     </div>
     <div class="id-head__aside">
-      <button
-        type="button"
-        class="id-button id-button--secondary"
-        data-action="help"
-        aria-haspopup="dialog"
-      >
+      <button type="button" class="id-button id-button--secondary" data-action="help" aria-haspopup="dialog">
         <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
         <span>Help</span>
       </button>
@@ -20,181 +15,14 @@
     </div>
   </header>
 
-  {{#if sessionFocus}}
-  <section class="id-session-focus" aria-labelledby="infinity-home-focus-title">
-    <div>
-      <p class="id-session-focus__eyebrow">Session focus</p>
-      <h3 id="infinity-home-focus-title">{{sessionFocus.title}}</h3>
-      <p>{{sessionFocus.description}}</p>
-    </div>
-    <button
-      type="button"
-      class="id-button id-button--focus"
-      data-action="launch"
-      data-launch-kind="{{sessionFocus.launchKind}}"
-      data-launch-id="{{sessionFocus.launchId}}"
-    >
-      <i class="{{sessionFocus.icon}}" aria-hidden="true"></i>
-      <span>{{sessionFocus.label}}</span>
-    </button>
-  </section>
-  {{/if}}
-
-  {{#if isFullGm}}
-  <details class="infinity-disclosure" data-campaign-data-recovery {{#if privateStateRecovery.open}}open{{/if}}>
-    <summary>
-      <i class="fa-solid fa-database" aria-hidden="true"></i>
-      <span>Campaign data</span>
-      <span class="id-head__version">{{privateStateRecovery.stateLabel}}</span>
-    </summary>
-    <div class="infinity-disclosure__content">
-      <section
-        class="infinity-banner {{privateStateRecovery.statusClass}}"
-        role="{{privateStateRecovery.statusRole}}"
-        aria-live="polite"
-        aria-labelledby="infinity-home-campaign-data-title"
-        data-recovery-status
-        tabindex="-1"
-      >
-        <i class="{{privateStateRecovery.statusIcon}}" aria-hidden="true"></i>
-        <div class="infinity-banner__content">
-          <h3 id="infinity-home-campaign-data-title">{{privateStateRecovery.stateTitle}}</h3>
-          <p>{{privateStateRecovery.reason}}</p>
-          <p>{{privateStateRecovery.authorityLabel}}</p>
-        </div>
-      </section>
-
-      <section class="infinity-card" aria-labelledby="infinity-home-campaign-selection-title">
-        <h3 class="infinity-card__title" id="infinity-home-campaign-selection-title">Selected store</h3>
-        <dl>
-          <div><dt>Journal ID</dt><dd><code>{{privateStateRecovery.canonicalId}}</code></dd></div>
-          <div><dt>Selection</dt><dd>{{privateStateRecovery.canonicalStateLabel}}</dd></div>
-          <div><dt>Supported schema</dt><dd>{{privateStateRecovery.supportedSchema}}</dd></div>
-          <div><dt>Observed schema</dt><dd>{{privateStateRecovery.observedSchema}}</dd></div>
-        </dl>
-        <div class="infinity-actions">
-          <button type="button" class="infinity-button infinity-button--quiet" data-action="refreshPrivateState">
-            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
-            Refresh status
-          </button>
-        </div>
-      </section>
-
-      <section aria-labelledby="infinity-home-campaign-candidates-title">
-        <h3 id="infinity-home-campaign-candidates-title">Available Journals</h3>
-        <p class="infinity-supporting">Only privacy and schema metadata is shown here. Stored campaign values are never included in Home.</p>
-        {{#if privateStateRecovery.hasCandidates}}
-        <ul class="id-grid">
-          {{#each privateStateRecovery.candidates}}
-          <li class="infinity-card" aria-labelledby="{{domId}}-title">
-            <h4 class="infinity-card__title" id="{{domId}}-title"><code>{{id}}</code></h4>
-            <p class="infinity-supporting">{{canonicalLabel}}</p>
-            <dl>
-              <div><dt>Schema</dt><dd>{{schemaLabel}}</dd></div>
-              <div><dt>Data shape</dt><dd>{{payloadLabel}}</dd></div>
-              <div><dt>Privacy</dt><dd>{{ownershipLabel}}</dd></div>
-              <div><dt>Created</dt><dd>{{createdLabel}}</dd></div>
-              <div><dt>Modified</dt><dd>{{modifiedLabel}}</dd></div>
-            </dl>
-            <p class="infinity-supporting" id="{{domId}}-reason">{{reason}}</p>
-            <div class="infinity-actions">
-              <button
-                type="button"
-                class="infinity-button"
-                data-action="reviewPrivateStateCandidate"
-                data-candidate-id="{{id}}"
-                data-focus-key="adopt-{{domId}}"
-                aria-describedby="{{domId}}-reason"
-                {{#unless canAdopt}}disabled{{/unless}}
-              >
-                <i class="fa-solid fa-link" aria-hidden="true"></i>
-                Review adoption
-              </button>
-            </div>
-          </li>
-          {{/each}}
-        </ul>
-        {{else}}
-        <p class="infinity-supporting">No marked private-state Journals are currently visible.</p>
-        {{/if}}
-      </section>
-
-      <section class="infinity-card" aria-labelledby="infinity-home-campaign-snapshot-title">
-        <h3 class="infinity-card__title" id="infinity-home-campaign-snapshot-title">Verified snapshot</h3>
-        <p class="infinity-supporting">Recover the last complete store this client verified. Existing Journals remain untouched.</p>
-        <p class="infinity-supporting" id="infinity-home-campaign-snapshot-reason">{{privateStateRecovery.snapshotReason}}</p>
-        <div class="infinity-actions">
-          <button
-            type="button"
-            class="infinity-button"
-            data-action="recoverPrivateStateSnapshot"
-            aria-describedby="infinity-home-campaign-snapshot-reason"
-            {{#unless privateStateRecovery.canRecoverSnapshot}}disabled{{/unless}}
-          >
-            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-            Review snapshot recovery
-          </button>
-        </div>
-      </section>
-
-      <section class="infinity-card" aria-labelledby="infinity-home-campaign-empty-title">
-        <h3 class="infinity-card__title" id="infinity-home-campaign-empty-title">Start empty</h3>
-        <p class="infinity-supporting">Create a new canonical store without copying private merchant, faction, resource, downtime, or injury data.</p>
-        <p class="infinity-supporting" id="infinity-home-campaign-empty-reason">{{privateStateRecovery.emptyReason}}</p>
-        <div class="infinity-actions">
-          <button
-            type="button"
-            class="infinity-button infinity-button--danger"
-            data-action="createEmptyPrivateState"
-            aria-describedby="infinity-home-campaign-empty-reason"
-            {{#unless privateStateRecovery.canCreateEmpty}}disabled{{/unless}}
-          >
-            <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>
-            Review empty replacement
-          </button>
-        </div>
-      </section>
-
-      {{#if privateStateRecovery.message}}
-      <p class="infinity-supporting" role="status" aria-live="polite" data-tone="{{privateStateRecovery.messageTone}}">{{privateStateRecovery.message}}</p>
-      {{/if}}
-    </div>
-  </details>
-  {{/if}}
-
-  {{#if hasRecentTools}}
-  <nav class="id-recent" aria-labelledby="infinity-home-recent-title">
-    <h3 id="infinity-home-recent-title">
-      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-      Continue
-    </h3>
-    <ul class="id-recent__list">
-      {{#each recentTools}}
-      <li>
-        <button
-          type="button"
-          class="id-recent__button"
-          data-action="launch"
-          data-launch-kind="{{launchKind}}"
-          data-launch-id="{{launchId}}"
-        >
-          <i class="{{icon}}" aria-hidden="true"></i>
-          <span>{{title}}</span>
-        </button>
-      </li>
-      {{/each}}
-    </ul>
-  </nav>
-  {{/if}}
-
   <main class="id-home-content">
     {{#if groups}}
       {{#each groups}}
-      <section class="id-section" aria-labelledby="infinity-home-group-{{id}}">
+      <section class="id-section" aria-labelledby="infinity-launcher-group-{{id}}">
         <header class="id-section__head">
           <span class="id-section__icon" aria-hidden="true"><i class="{{icon}}"></i></span>
           <div>
-            <h3 id="infinity-home-group-{{id}}">{{label}}</h3>
+            <h3 id="infinity-launcher-group-{{id}}">{{label}}</h3>
             <p>{{description}}</p>
           </div>
         </header>
@@ -254,14 +82,14 @@
       <section class="id-empty" role="status">
         <i class="fa-solid fa-compass" aria-hidden="true"></i>
         <h3>No destinations are ready</h3>
-        <p>Nothing changed. Close and reopen Home after the module finishes starting.</p>
+        <p>Nothing changed. Close and reopen the launcher after the module finishes starting.</p>
       </section>
       {{/each}}
     {{/if}}
   </main>
 
   <footer class="id-foot">
-    <p aria-live="polite">Choose a destination above. Disabled cards explain what is needed.</p>
+    <p aria-live="polite">Choose an available destination above. Disabled cards explain what is needed.</p>
     <button type="button" class="id-button id-button--secondary" data-action="openSettings">
       <i class="fa-solid fa-sliders" aria-hidden="true"></i>
       <span>Infinity Settings</span>

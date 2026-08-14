@@ -28,9 +28,16 @@ globalThis.foundry = {
 
 const CHECKS = [
   {
-    name: "dashboard",
+    name: "player launcher",
     template: "templates/dashboard.hbs",
     script: "./dashboard.js",
+    className: "InfinityDashboardApp",
+  },
+  {
+    name: "campaign recovery",
+    template: "templates/private-state-recovery.hbs",
+    script: "./dashboard.js",
+    className: "InfinityCampaignRecoveryApp",
   },
   {
     name: "per-encounter loot",
@@ -149,6 +156,9 @@ for (const check of CHECKS) {
   }
   const dynamicTemplateActions = extractDynamicTemplateActions(templateSource);
   const registeredActions = await loadRegisteredActions(check);
+  for (const action of check.ignoredRegisteredActions ?? []) {
+    registeredActions.delete(action);
+  }
   const dynamicActions = new Set(check.dynamicActions ?? []);
 
   assert.ok(
@@ -221,6 +231,12 @@ async function loadRegisteredActions(check) {
   // loot apps' ...BaseLootApp.SHARED_ACTIONS).
   try {
     const mod = await import(check.script);
+    if (check.className) {
+      const selected = mod[check.className];
+      if (selected?.DEFAULT_OPTIONS?.actions) {
+        return new Set(Object.keys(selected.DEFAULT_OPTIONS.actions));
+      }
+    }
     for (const exported of Object.values(mod)) {
       if (typeof exported === "function" && exported.DEFAULT_OPTIONS?.actions) {
         return new Set(Object.keys(exported.DEFAULT_OPTIONS.actions));

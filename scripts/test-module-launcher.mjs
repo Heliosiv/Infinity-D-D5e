@@ -300,6 +300,7 @@ function apiFixture() {
     moduleId: "infinity-dnd5e",
     logger: { log: () => {}, warn: () => {}, error: () => {} },
     openHub: () => opened.push("home"),
+    isFullGM: () => false,
   };
 
   const v12 = [];
@@ -308,6 +309,7 @@ function apiFixture() {
   assert.equal(v12.length, 1, "the V12 category is not duplicated");
   assert.equal("onClick" in v12[0], false);
   assert.equal("onClick" in v12[0].tools[0], false);
+  assert.equal(v12[0].tools[0].title, "Open Infinity Player Launcher");
   v12[0].onChange(null, false);
   v12[0].onChange(null, true);
   v12[0].tools[0].onChange();
@@ -320,7 +322,23 @@ function apiFixture() {
   assert.deepEqual(Object.keys(category.tools), ["infinity-dnd5e-launcher"]);
   assert.equal("onClick" in category, false);
   assert.equal("onClick" in category.tools[category.activeTool], false);
+  assert.equal(
+    category.tools[category.activeTool].title,
+    "Open Infinity Player Launcher",
+  );
   assert.equal(applyInfinitySceneControls(null, bindings), false);
+
+  const gmControls = {};
+  bindings.isFullGM = () => true;
+  assert.equal(applyInfinitySceneControls(gmControls, bindings), true);
+  assert.equal(
+    gmControls["infinity-dnd5e"].title,
+    "Infinity Game Master Workbench",
+  );
+  assert.equal(
+    gmControls["infinity-dnd5e"].tools["infinity-dnd5e-launcher"].title,
+    "Open Infinity Game Master Workbench",
+  );
 }
 
 process.stdout.write("module launcher validation passed\n");

@@ -1,4 +1,4 @@
-/* Infinity D&D5e — role-aware Home. Shared palette/density lives in tokens.css. */
+/* Infinity D&D5e — player launcher and recovery surfaces. Shared palette/density lives in tokens.css. */
 
 .infinity-dnd5e.infinity-dashboard {
   container: infinity-home / inline-size;

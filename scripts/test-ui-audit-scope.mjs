@@ -27,7 +27,18 @@ assert.deepEqual(selectUiAuditScope(["styles/dashboard.css"]), {
     "home-player",
   ],
   scenarios: ["comfortable-380", "compact-380", "short-720"],
-  reason: "Home",
+  reason: "Launcher and Recovery",
+});
+assert.deepEqual(selectUiAuditScope(["scripts/primary-launcher.js"]), {
+  kind: "targeted",
+  fixtures: [
+    "dashboard",
+    "home-recovery-blocked-authority",
+    "home-recovery-blocked-secondary",
+    "home-player",
+  ],
+  scenarios: ["comfortable-380", "compact-380", "short-720"],
+  reason: "Launcher and Recovery",
 });
 assert.deepEqual(selectUiAuditScope(["templates/critical-injury-triage.hbs"]), {
   kind: "targeted",

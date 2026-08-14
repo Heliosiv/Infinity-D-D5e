@@ -1,9 +1,9 @@
 /**
- * Infinity D&D5e — role-aware Home
+ * Infinity D&D5e — permission-scoped player launcher and exceptional recovery
  *
  * `InfinityDashboardApp` remains the compatibility class name, but the window
- * is now safe and useful for every role. Full GMs see registered GM tools;
- * players and Assistant GMs see only fixed, permission-scoped local surfaces.
+ * now serves players and Assistant GMs with fixed, permission-scoped local
+ * surfaces. Full-GM primary access routes directly to the Workbench.
  */
 
 import { SOUND_EVENTS, playModuleSound } from "./audio.js";
@@ -37,6 +37,7 @@ import { bindFullGmWindowGuard, openSingleton } from "./infinity-app.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/dashboard.hbs`;
+const RECOVERY_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/private-state-recovery.hbs`;
 const { SETTING_KEYS, getSetting, setSetting } = settingsApi;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -199,7 +200,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     tag: "section",
     classes: ["infinity-dnd5e", "infinity-dashboard"],
     window: {
-      title: "Infinity D&D5e — Home",
+      title: "Infinity D&D5e — Player Launcher",
       icon: "fa-solid fa-dice-d20",
       resizable: true,
     },
@@ -208,12 +209,6 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       launch: InfinityDashboardApp._onLaunch,
       openSettings: InfinityDashboardApp._onOpenSettings,
       help: InfinityDashboardApp._onHelp,
-      refreshPrivateState: InfinityDashboardApp._onRefreshPrivateState,
-      reviewPrivateStateCandidate:
-        InfinityDashboardApp._onReviewPrivateStateCandidate,
-      recoverPrivateStateSnapshot:
-        InfinityDashboardApp._onRecoverPrivateStateSnapshot,
-      createEmptyPrivateState: InfinityDashboardApp._onCreateEmptyPrivateState,
     },
   };
 
@@ -221,7 +216,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     body: { template: TEMPLATE_PATH },
   };
 
-  /** Open or focus Home for the current role. */
+  /** Open or focus the player/Assistant launcher. */
   static open() {
     playModuleSound(SOUND_EVENTS.UI_OPEN);
     const shouldRefresh = Boolean(InfinityDashboardApp._instance?.rendered);
@@ -241,8 +236,8 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     this._privateStateRecoveryMessage = "";
     this._privateStateRecoveryTone = "neutral";
     this._privateStateHookId = null;
-    // A Home opened with privileged GM tiles closes on demotion so those tiles
-    // never remain in the DOM. Reopening immediately yields the player Home.
+    // A compatibility launcher opened with privileged GM tiles closes on
+    // demotion. Normal full-GM entry routes directly to the Workbench.
     this._unbindFullGmWindowGuard = isFullGM()
       ? bindFullGmWindowGuard(this)
       : bindPlayerHomePromotionGuard(this);
@@ -278,10 +273,10 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       isFullGm: fullGm,
       isAssistantGm: assistantGm,
       roleLabel: fullGm
-        ? "Game Master Home"
+        ? "Game Master Launcher"
         : assistantGm
-          ? "Assistant GM Home"
-          : "Player Home",
+          ? "Assistant GM Launcher"
+          : "Player Launcher",
       headingHint: fullGm
         ? "Prepare the session, run active workflows, and track what changes."
         : "Open the campaign tools and information currently available to you.",
@@ -298,6 +293,22 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       tools: registeredTools.map(normalizeRegisteredTool),
       categories: groupByCategory(registeredTools),
     };
+  }
+
+  /** @this {InfinityCampaignRecoveryApp} */
+  static async _onOpenWorkbench() {
+    const overview = await this._privateStateRecoveryService?.getOverview?.();
+    if (overview?.status?.state !== "ready") {
+      globalThis.ui?.notifications?.warn?.(
+        "Campaign recovery is not complete. Review the current status before opening campaign tools.",
+      );
+      await this.render?.(false);
+      return null;
+    }
+    const moduleApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api;
+    if (typeof moduleApi?.openGmWorkbench !== "function") return null;
+    await this.close?.({ animate: false });
+    return moduleApi.openGmWorkbench();
   }
 
   _onClose(options) {
@@ -349,7 +360,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     const fullGm = isFullGM();
     await promptInfinityDialog({
       window: {
-        title: "Infinity D&D5e — Home Help",
+        title: "Infinity D&D5e — Launcher Help",
         icon: "fa-solid fa-circle-question",
       },
       content: buildHomeHelpDialogContent({ fullGm }),
@@ -473,7 +484,7 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       notify(
         "warn",
-        "That Home destination is no longer available. Nothing changed; refresh Home and choose another destination.",
+        "That launcher destination is no longer available. Nothing changed; refresh the launcher and choose another destination.",
       );
       return;
     }
@@ -511,6 +522,75 @@ export class InfinityDashboardApp extends HandlebarsApplicationMixin(
     if (!opened) return;
     InfinityDashboardApp._recordRecent(`surface:${surface}`);
     void this.render(false);
+  }
+}
+
+export class InfinityCampaignRecoveryApp extends InfinityDashboardApp {
+  static _instance = null;
+
+  static DEFAULT_OPTIONS = {
+    id: "infinity-dnd5e-campaign-recovery",
+    tag: "section",
+    classes: [
+      "infinity-dnd5e",
+      "infinity-dashboard",
+      "infinity-campaign-recovery",
+    ],
+    window: {
+      title: "Infinity D&D5e — Campaign Recovery",
+      icon: "fa-solid fa-triangle-exclamation",
+      resizable: true,
+    },
+    position: { width: 760, height: 700 },
+    actions: {
+      refreshPrivateState: InfinityDashboardApp._onRefreshPrivateState,
+      reviewPrivateStateCandidate:
+        InfinityDashboardApp._onReviewPrivateStateCandidate,
+      recoverPrivateStateSnapshot:
+        InfinityDashboardApp._onRecoverPrivateStateSnapshot,
+      createEmptyPrivateState: InfinityDashboardApp._onCreateEmptyPrivateState,
+      openWorkbench: InfinityCampaignRecoveryApp._onOpenWorkbench,
+    },
+  };
+
+  static PARTS = {
+    body: { template: RECOVERY_TEMPLATE_PATH },
+  };
+
+  static open() {
+    if (!isFullGM()) {
+      globalThis.ui?.notifications?.warn?.(
+        "Campaign recovery is available to full Game Masters only.",
+      );
+      return null;
+    }
+    playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+    const shouldRefresh = Boolean(
+      InfinityCampaignRecoveryApp._instance?.rendered,
+    );
+    const app = openSingleton(
+      InfinityCampaignRecoveryApp,
+      () => new InfinityCampaignRecoveryApp(),
+    );
+    InfinityCampaignRecoveryApp._instance = app;
+    if (shouldRefresh) void app.render(false);
+    return app;
+  }
+
+  async _prepareContext() {
+    const moduleVersion = String(
+      globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "0.0.0",
+    );
+    return {
+      moduleId: MODULE_ID,
+      moduleVersion,
+      privateStateRecovery: await preparePrivateStateRecoveryContext(this),
+    };
+  }
+
+  _onClose(options) {
+    super._onClose(options);
+    InfinityCampaignRecoveryApp._instance = null;
   }
 }
 
@@ -566,7 +646,7 @@ async function preparePrivateStateRecoveryContext(application) {
   }
 }
 
-/** Convert the value-free service projection into stable, plain-language Home data. */
+/** Convert the value-free service projection into recovery-window data. */
 export function presentPrivateStateRecoveryOverview(raw = {}, uiState = {}) {
   const status =
     raw?.status && typeof raw.status === "object" ? raw.status : {};
@@ -877,10 +957,12 @@ function safeRecoveryErrorCode(error) {
   return code || "unknown";
 }
 
-/** Public role-aware opener; module.js exposes this as api.openHub(). */
-export function openHub() {
+/** Open the compatibility player launcher. Full-GM routing lives in bootstrap. */
+export function openPlayerLauncher() {
   return InfinityDashboardApp.open();
 }
+
+export const openHub = openPlayerLauncher;
 
 /** Build the fixed player/Assistant-GM destinations without campaign data. */
 export function buildPlayerHomeActions(options = {}) {
@@ -910,7 +992,7 @@ export function buildPlayerHomeActions(options = {}) {
   });
 }
 
-/** Group Home actions into the stable, task-oriented navigation model. */
+/** Group launcher actions into the stable, task-oriented navigation model. */
 export function groupHomeActionsByIntent(actions) {
   return HOME_INTENTS.map((intent) => ({
     ...intent,
@@ -919,10 +1001,10 @@ export function groupHomeActionsByIntent(actions) {
 }
 
 /**
- * Pick one role-safe destination to foreground when Home opens. Recent work
+ * Compatibility helper for extensions that still request a recent destination.
  * wins, then an available in-session tool, then any other available tool.
  * This is presentation-only: it never probes campaign state or changes what
- * Home is allowed to expose.
+ * the player launcher is allowed to expose.
  */
 export function resolveSessionFocus(actions = [], recentActions = []) {
   const available = actions.filter((action) => action?.isAvailable);
@@ -941,11 +1023,11 @@ export function resolveSessionFocus(actions = [], recentActions = []) {
       : `Open ${action.title}`,
     description: continuing
       ? "Resume a workspace you recently used. Its current state and next safe action stay inside that window."
-      : "This is the next available destination for the current role. Home does not change campaign data.",
+      : "This is the next available destination for the current role. The launcher does not change campaign data.",
   });
 }
 
-/** Build the concise, role-aware content opened by the Home header Help button. */
+/** Build the concise content opened by the player launcher Help button. */
 export function buildHomeHelpDialogContent({ fullGm = false } = {}) {
   const steps = fullGm
     ? [
@@ -954,7 +1036,7 @@ export function buildHomeHelpDialogContent({ fullGm = false } = {}) {
         "Track the Campaign: review lasting supplies, faction, and injury changes.",
       ]
     : [
-        "Open any available destination; Home only shows player-safe tools.",
+        "Open any available destination; the launcher only shows player-safe tools.",
         "Unavailable cards explain what the GM needs to enable.",
         "Use a shortcut below to reopen a familiar window.",
       ];
@@ -968,7 +1050,7 @@ export function buildHomeHelpDialogContent({ fullGm = false } = {}) {
     )
     .join("");
   return `<div class="id-help-dialog">
-    <p>Choose a destination in Home. Disabled cards explain what is needed without changing campaign data.</p>
+    <p>Choose a destination in the launcher. Disabled cards explain what is needed without changing campaign data.</p>
     <ol>${stepMarkup}</ol>
     <h3>Keyboard shortcuts</h3>
     <dl class="id-help-dialog__shortcuts">${shortcutMarkup}</dl>
@@ -1020,7 +1102,7 @@ function renderSettingsConfig(SettingsConfigClass) {
   }
 }
 
-/** Close a player Home before a promotion could leave stale role markup open. */
+/** Close the player launcher when promotion makes the Workbench primary. */
 function bindPlayerHomePromotionGuard(application) {
   const hooks = globalThis.Hooks;
   if (!application || typeof hooks?.on !== "function") return () => {};
@@ -1036,7 +1118,7 @@ function bindPlayerHomePromotionGuard(application) {
     }
     void Promise.resolve(application.close?.()).catch((error) => {
       console.warn(
-        `${MODULE_ID} | could not refresh Home after role change`,
+        `${MODULE_ID} | could not close the player launcher after role change`,
         error,
       );
     });
@@ -1050,7 +1132,7 @@ function bindPlayerHomePromotionGuard(application) {
 
 function buildShortcuts({ fullGm }) {
   const shortcuts = [
-    { keys: "Shift+I", label: "Open Infinity Home" },
+    { keys: "Shift+I", label: "Open Infinity launcher" },
     { keys: "Shift+D", label: "Open Downtime Activities" },
     { keys: "Shift+O", label: "Open Shops" },
     { keys: "Shift+Q", label: "Open Party Supplies" },

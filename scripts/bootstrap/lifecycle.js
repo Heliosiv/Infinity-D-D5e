@@ -148,10 +148,10 @@ export function createModuleBootstrap(bindings) {
         "color: inherit",
       );
       bindings.logger.log(
-        `${bindings.moduleId} | Home access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${bindings.moduleId}").api.openHub()`,
+        `${bindings.moduleId} | primary access: left scene-controls toolbar, Shift+I keybind, or game.modules.get("${bindings.moduleId}").api.openHub()`,
       );
       bindings.logger.log(
-        `${bindings.moduleId} | downtime access: Home for GMs; player Home, Shift+D, or game.modules.get("${bindings.moduleId}").api.openDowntimeActivities()`,
+        `${bindings.moduleId} | downtime access: Workbench for full GMs; player launcher, Shift+D, or game.modules.get("${bindings.moduleId}").api.openDowntimeActivities()`,
       );
       installModuleApi(bindings);
 
@@ -254,10 +254,10 @@ export function createModuleBootstrap(bindings) {
           ].includes(privateStateStatus.code);
           const observed = privateStateStatus.observedSchema;
           const message = missing
-            ? "Campaign tools are locked because the selected private-state Journal is missing or needs review. No campaign data was changed and automatic replacement is disabled. Open Home > Campaign data to inspect the available recovery choices."
+            ? "Campaign tools are locked because the selected private-state Journal is missing or needs review. No campaign data was changed and automatic replacement is disabled. Use Shift+I to open the focused Campaign Recovery window."
             : corrupt
-              ? "Campaign tools are locked because the current private-state store is incomplete or corrupt. No campaign data was changed and automatic retries are stopped. Open Home > Campaign data to inspect the available recovery choices."
-              : `Campaign tools are locked because the private-state schema (${observed == null ? "invalid" : String(observed)}) is newer than or incompatible with this module (supports ${privateStateStatus.supportedSchema}). No campaign data was changed and automatic retries are stopped. Install a compatible module version, or open Home > Campaign data to inspect non-destructive recovery choices.`;
+              ? "Campaign tools are locked because the current private-state store is incomplete or corrupt. No campaign data was changed and automatic retries are stopped. Use Shift+I to open the focused Campaign Recovery window."
+              : `Campaign tools are locked because the private-state schema (${observed == null ? "invalid" : String(observed)}) is newer than or incompatible with this module (supports ${privateStateStatus.supportedSchema}). No campaign data was changed and automatic retries are stopped. Install a compatible module version, or use Shift+I to inspect non-destructive recovery choices.`;
           bindings.getUi?.()?.notifications?.error?.(message);
         } else {
           bindings
