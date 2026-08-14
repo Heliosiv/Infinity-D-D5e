@@ -277,6 +277,7 @@ assert.deepEqual(
     "advancedDisclosures",
     "density",
     "dismissedQuickStarts",
+    "lastGmWorkbenchRoute",
     "lastLootStudioMode",
     "version",
   ],

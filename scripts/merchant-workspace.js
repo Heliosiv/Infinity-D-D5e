@@ -86,6 +86,7 @@ import {
   navigateToAppSection,
   openSingleton,
 } from "./infinity-app.js";
+import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { runAsFullGM } from "./permissions.js";
 import { isAuthoritativeGM } from "./socket-authority.js";
 import {
@@ -100,7 +101,7 @@ import {
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
-const FALLBACK_ART = "icons/svg/shop.svg";
+const FALLBACK_ART = "icons/svg/chest.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 
 /** Plain-language labels for the self-service access modes (matches the order
@@ -165,12 +166,9 @@ async function confirmMerchantWriteAuthority(app) {
   return true;
 }
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
-export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
-  ApplicationV2,
-) {
+export class MerchantWorkspaceApp extends GmWorkbenchApp {
   static _instance = null;
+  static WORKBENCH_ROUTE = "merchants";
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-merchant-workspace",
@@ -235,27 +233,31 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         MerchantWorkspaceApp._onRecheckTransaction,
       ),
       selectSection: navigateToAppSection,
+      navigateGmWorkbench: GmWorkbenchApp._onNavigate,
     },
   };
 
   static PARTS = {
+    workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
-  static open() {
+  static open(options = {}) {
     return runAsFullGM(() => {
       playModuleSound(SOUND_EVENTS.UI_OPEN);
-      return openSingleton(
+      const app = openSingleton(
         MerchantWorkspaceApp,
-        () => new MerchantWorkspaceApp(),
+        () => new MerchantWorkspaceApp(options),
       );
+      if (options.workbench) app.setWorkbenchTarget(options.workbench);
+      return app;
     }, "Merchant Workspace is available to full GMs only.");
   }
 
   constructor(options = {}) {
     super(options);
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
-    this._selectedId = null;
+    this._selectedId = String(options.workbench?.entityId ?? "").trim() || null;
     this._saveStatus = "All changes saved";
     this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
@@ -281,6 +283,23 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         if (this.rendered) this.render(false);
       },
     );
+  }
+
+  _captureWorkbenchTarget() {
+    return {
+      route: MerchantWorkspaceApp.WORKBENCH_ROUTE,
+      entityId: this._selectedId ?? "",
+    };
+  }
+
+  _applyWorkbenchTarget(target) {
+    if (target?.entityId) this._selectedId = target.entityId;
+  }
+
+  async _beforeWorkbenchNavigate() {
+    if (!this._selectedId || !this.rendered) return true;
+    await this._saveFromForm();
+    return true;
   }
 
   _onClose(options) {
@@ -480,6 +499,7 @@ export class MerchantWorkspaceApp extends HandlebarsApplicationMixin(
         };
       });
     return {
+      workbench: this.prepareWorkbenchContext?.() ?? null,
       moduleId: MODULE_ID,
       hasMerchants: merchants.length > 0,
       merchants: merchantList,

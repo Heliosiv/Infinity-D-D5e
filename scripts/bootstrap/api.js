@@ -9,6 +9,7 @@ export function createModuleApi(bindings) {
   const {
     packId,
     openHub,
+    GmWorkbenchApp,
     LootStudioApp,
     InfinitySettingsApp,
     MerchantWorkspaceApp,
@@ -51,6 +52,8 @@ export function createModuleApi(bindings) {
   return {
     openHub: () => openHub(),
     openDashboard: () => runAsFullGM(() => openHub()),
+    openGmWorkbench: (options = {}) =>
+      runAsFullGM(() => GmWorkbenchApp.open(options)),
     openLootStudio: (options = {}) =>
       runAsFullGM(() => LootStudioApp.open(options)),
     openPerEncounterLoot: () =>
@@ -59,17 +62,25 @@ export function createModuleApi(bindings) {
       runAsFullGM(() => LootStudioApp.open({ mode: "hoard" })),
     openPerCreatureLoot: () =>
       runAsFullGM(() => LootStudioApp.open({ mode: "creature" })),
-    openMerchantWorkspace: () => runAsFullGM(() => MerchantWorkspaceApp.open()),
+    openMerchantWorkspace: (options = {}) =>
+      runAsFullGM(() =>
+        GmWorkbenchApp.open({ route: "merchants", ...options }),
+      ),
     openShops: () => ShopPickerApp.open(),
-    openResourceManager: () => runAsFullGM(() => ResourceManagerApp.open()),
+    openResourceManager: (options = {}) =>
+      runAsFullGM(() =>
+        GmWorkbenchApp.open({ route: "quartermaster", ...options }),
+      ),
     openPartySupplies: () => ResourceOverviewApp.open(),
     openCriticalInjuries: () => CriticalInjuryApp.openForCurrentUser(),
     openCriticalInjuryHud: () => CriticalInjuryHudApp.reconcile(),
-    openCriticalInjuryTriage: () =>
-      runAsFullGM(() => CriticalInjuryTriageApp.open()),
-    openReputation: () => runAsFullGM(() => ReputationWorkspaceApp.open()),
+    openCriticalInjuryTriage: (options = {}) =>
+      runAsFullGM(() => GmWorkbenchApp.open({ route: "injuries", ...options })),
+    openReputation: (options = {}) =>
+      runAsFullGM(() => GmWorkbenchApp.open({ route: "factions", ...options })),
     openReputationView: () => ReputationViewApp.open(),
-    openDowntimeWorkspace: () => runAsFullGM(() => DowntimeWorkspaceApp.open()),
+    openDowntimeWorkspace: (options = {}) =>
+      runAsFullGM(() => GmWorkbenchApp.open({ route: "downtime", ...options })),
     openDowntimeActivities: (options = {}) =>
       DowntimeActivitiesApp.open(options),
     openCalendar: () => openCalendar(),

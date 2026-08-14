@@ -406,8 +406,16 @@ export class DowntimePlayerAdapter {
       options.getActor ??
       ((actorId) => globalThis.game?.actors?.get?.(actorId));
     this._rollSkill = options.rollSkill ?? rollSkillTotal;
-    this._setTimeout = options.setTimeout ?? globalThis.setTimeout;
-    this._clearTimeout = options.clearTimeout ?? globalThis.clearTimeout;
+    const setTimer = options.setTimeout ?? globalThis.setTimeout;
+    const clearTimer = options.clearTimeout ?? globalThis.clearTimeout;
+    this._setTimeout =
+      typeof setTimer === "function"
+        ? (...args) => Reflect.apply(setTimer, globalThis, args)
+        : null;
+    this._clearTimeout =
+      typeof clearTimer === "function"
+        ? (...args) => Reflect.apply(clearTimer, globalThis, args)
+        : null;
     const requestedTimeout = Number(options.requestTimeoutMs);
     this._requestTimeoutMs = Number.isFinite(requestedTimeout)
       ? Math.max(100, Math.min(120_000, Math.floor(requestedTimeout)))

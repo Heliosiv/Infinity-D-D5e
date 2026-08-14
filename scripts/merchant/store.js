@@ -380,7 +380,7 @@ export function createBlankMerchant(overrides = {}) {
   return normalizeMerchant({
     id: generateId(),
     name: "New Merchant",
-    art: "icons/svg/shop.svg",
+    art: "icons/svg/chest.svg",
     description: "",
     defaultMarkup: DEFAULT_MARKUP,
     sellRatio: DEFAULT_SELL_RATIO,

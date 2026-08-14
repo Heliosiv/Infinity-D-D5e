@@ -8,6 +8,7 @@ import {
   bindFocusRestoration,
   openSingleton,
 } from "../infinity-app.js";
+import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "../gm-workbench.js";
 import { formatInjuryTimestamp } from "./calendar.js";
 import {
   getActorCriticalInjuryEffects,
@@ -22,12 +23,9 @@ import {
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/critical-injury-triage.hbs`;
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
-export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
-  ApplicationV2,
-) {
+export class CriticalInjuryTriageApp extends GmWorkbenchApp {
   static _instance = null;
+  static WORKBENCH_ROUTE = "injuries";
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-critical-injury-triage",
@@ -44,12 +42,16 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       sendReview: CriticalInjuryTriageApp._onSendReview,
       dismissReview: CriticalInjuryTriageApp._onDismissReview,
       refresh: CriticalInjuryTriageApp._onRefresh,
+      navigateGmWorkbench: GmWorkbenchApp._onNavigate,
     },
   };
 
-  static PARTS = { body: { template: TEMPLATE_PATH } };
+  static PARTS = {
+    workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
+    body: { template: TEMPLATE_PATH },
+  };
 
-  static open() {
+  static open(options = {}) {
     if (!isFullGM()) {
       globalThis.ui?.notifications?.warn?.(
         "Critical Injury Triage is available to full Game Masters only.",
@@ -58,8 +60,9 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
     }
     const app = openSingleton(
       CriticalInjuryTriageApp,
-      () => new CriticalInjuryTriageApp(),
+      () => new CriticalInjuryTriageApp(options),
     );
+    if (options.workbench) app.setWorkbenchTarget(options.workbench);
     CriticalInjuryTriageApp._instance = app;
     return app;
   }
@@ -111,7 +114,12 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
   }
 
   async _prepareContext() {
-    if (!isFullGM()) return { accessDenied: true };
+    if (!isFullGM()) {
+      return {
+        workbench: this.prepareWorkbenchContext?.() ?? null,
+        accessDenied: true,
+      };
+    }
     const canMutate = isAuthoritativeGM();
     const records = getCriticalInjuryTriageRecords();
     const rows = records
@@ -160,6 +168,7 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       }));
     const reviewCount = rows.filter((row) => row.state === "review").length;
     return {
+      workbench: this.prepareWorkbenchContext?.() ?? null,
       rows,
       hasRows: rows.length > 0,
       reviewCount,
@@ -174,6 +183,10 @@ export class CriticalInjuryTriageApp extends HandlebarsApplicationMixin(
       message: this._message,
       tone: this._tone,
     };
+  }
+
+  _captureWorkbenchTarget() {
+    return { route: CriticalInjuryTriageApp.WORKBENCH_ROUTE };
   }
 
   async _run(action, successMessage) {

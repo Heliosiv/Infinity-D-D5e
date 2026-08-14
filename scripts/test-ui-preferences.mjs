@@ -21,6 +21,7 @@ import {
   setUiPreferences,
   updateUiPreferences,
 } from "./ui-preferences.js";
+import { GM_WORKBENCH_ROUTES } from "./gm-workbench-routes.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -30,16 +31,24 @@ const MODULE_ID = "infinity-dnd5e";
   const first = createDefaultUiPreferences();
   const second = createDefaultUiPreferences();
   assert.deepEqual(first, {
-    version: 1,
+    version: 2,
     density: "comfortable",
     lastLootStudioMode: "encounter",
+    lastGmWorkbenchRoute: "merchants",
     dismissedQuickStarts: [],
     advancedDisclosures: {},
   });
-  assert.equal(UI_PREFERENCES_SCHEMA_VERSION, 1);
+  assert.equal(UI_PREFERENCES_SCHEMA_VERSION, 2);
   assert.equal(UI_PREFERENCES_SETTING_KEY, "uiPreferences");
   assert.deepEqual(UI_DENSITIES, ["comfortable", "compact"]);
   assert.deepEqual(LOOT_STUDIO_MODES, ["encounter", "hoard", "creature"]);
+  assert.deepEqual(GM_WORKBENCH_ROUTES, [
+    "merchants",
+    "quartermaster",
+    "downtime",
+    "factions",
+    "injuries",
+  ]);
   assert.notEqual(first.dismissedQuickStarts, second.dismissedQuickStarts);
   assert.notEqual(first.advancedDisclosures, second.advancedDisclosures);
 }
@@ -49,6 +58,7 @@ const MODULE_ID = "infinity-dnd5e";
     version: 999,
     density: "compact",
     lastLootStudioMode: "hoard",
+    lastGmWorkbenchRoute: "factions",
     dismissedQuickStarts: [
       "home:v1",
       "home:v1",
@@ -68,9 +78,10 @@ const MODULE_ID = "infinity-dnd5e";
   });
 
   assert.deepEqual(normalized, {
-    version: 1,
+    version: 2,
     density: "compact",
     lastLootStudioMode: "hoard",
+    lastGmWorkbenchRoute: "factions",
     dismissedQuickStarts: ["home:v1", "quartermaster.first-run"],
     advancedDisclosures: {
       "loot-studio:encounter": true,
@@ -81,6 +92,7 @@ const MODULE_ID = "infinity-dnd5e";
     "advancedDisclosures",
     "density",
     "dismissedQuickStarts",
+    "lastGmWorkbenchRoute",
     "lastLootStudioMode",
     "version",
   ]);
@@ -92,6 +104,7 @@ const MODULE_ID = "infinity-dnd5e";
     normalizeUiPreferences({
       density: "tiny",
       lastLootStudioMode: "everything",
+      lastGmWorkbenchRoute: "secrets",
       dismissedQuickStarts: "home:v1",
       advancedDisclosures: [],
     }),
@@ -170,6 +183,7 @@ const MODULE_ID = "infinity-dnd5e";
   let stored = {
     density: "compact",
     lastLootStudioMode: "creature",
+    lastGmWorkbenchRoute: "downtime",
     dismissedQuickStarts: ["home:v1"],
     advancedDisclosures: { "loot-studio:creature": true },
     leaked: "drop me",
@@ -190,9 +204,10 @@ const MODULE_ID = "infinity-dnd5e";
   };
 
   assert.deepEqual(getUiPreferences(gameInstance), {
-    version: 1,
+    version: 2,
     density: "compact",
     lastLootStudioMode: "creature",
+    lastGmWorkbenchRoute: "downtime",
     dismissedQuickStarts: ["home:v1"],
     advancedDisclosures: { "loot-studio:creature": true },
   });
@@ -224,13 +239,25 @@ const MODULE_ID = "infinity-dnd5e";
   assert.equal(stored.lastLootStudioMode, "hoard");
   assert.equal("lastLootMode" in stored, false);
 
+  await updateUiPreferences({ lastGmWorkbenchRoute: "injuries" }, gameInstance);
+  assert.equal(stored.lastGmWorkbenchRoute, "injuries");
+  await updateUiPreferences(
+    { lastGmWorkbenchRoute: "private-state" },
+    gameInstance,
+  );
+  assert.equal(
+    stored.lastGmWorkbenchRoute,
+    "merchants",
+    "unknown Workbench routes fail back to the safe first route",
+  );
+
   await restoreQuickStarts(gameInstance);
   assert.deepEqual(stored.dismissedQuickStarts, []);
   assert.ok(calls.length >= 6, "writes use the mocked client setting service");
   for (const call of calls) {
     assert.equal(call.moduleId, MODULE_ID);
     assert.equal(call.key, UI_PREFERENCES_SETTING_KEY);
-    assert.equal(call.value.version, 1);
+    assert.equal(call.value.version, 2);
   }
 }
 

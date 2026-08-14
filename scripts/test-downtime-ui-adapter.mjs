@@ -171,6 +171,45 @@ try {
     "a local fencing draft keeps a canonical arbitrary item bundle",
   );
 
+  const strictTimerBus = makeBus();
+  let strictTimerThis = null;
+  let strictClearTimerThis = null;
+  let strictTimerRequest = null;
+  const strictTimerAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: strictTimerBus.subscribe,
+    registerSocket: () => true,
+    requestIdFactory: () => "strict-timer-request",
+    requestSnapshot: (actorId, { requestId }) => {
+      strictTimerRequest = { actorId, requestId };
+      return { ok: true, requestId };
+    },
+    isAuthority: () => false,
+    getCurrentUserId: () => "player-1",
+    setTimeout: function () {
+      strictTimerThis = this;
+      return 41;
+    },
+    clearTimeout: function (timer) {
+      strictClearTimerThis = this;
+      assert.equal(timer, 41);
+    },
+  });
+  const strictTimerProjection = strictTimerAdapter.getPlayerProjection({
+    actorId: "actor-1",
+  });
+  strictTimerBus.emit(DOWNTIME_EVENTS.SNAPSHOT_REPLY, {
+    requestId: strictTimerRequest.requestId,
+    projection: projection(),
+  });
+  await strictTimerProjection;
+  assert.equal(
+    strictTimerThis,
+    globalThis,
+    "browser timers are invoked with the global receiver",
+  );
+  assert.equal(strictClearTimerThis, globalThis);
+  strictTimerAdapter.destroy();
+
   const bus = makeBus();
   let requestCounter = 0;
   let snapshotRequest = null;

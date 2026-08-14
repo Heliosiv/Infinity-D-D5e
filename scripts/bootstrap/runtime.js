@@ -1,4 +1,5 @@
 import { openHub } from "../dashboard.js";
+import { configureGmWorkbench, GmWorkbenchApp } from "../gm-workbench.js";
 import { LootStudioApp } from "../loot-studio.js";
 import { InfinitySettingsApp } from "../settings-app.js";
 import { MerchantWorkspaceApp } from "../merchant-workspace.js";
@@ -122,6 +123,24 @@ function isCampaignWriteAuthority() {
   return isAuthoritativeGM() && hasCampaignTabLeadership();
 }
 
+configureGmWorkbench({
+  merchants: {
+    open: (options) => MerchantWorkspaceApp.open(options),
+  },
+  quartermaster: {
+    open: (options) => ResourceManagerApp.open(options),
+  },
+  downtime: {
+    open: (options) => DowntimeWorkspaceApp.open(options),
+  },
+  factions: {
+    open: (options) => ReputationWorkspaceApp.open(options),
+  },
+  injuries: {
+    open: (options) => CriticalInjuryTriageApp.open(options),
+  },
+});
+
 /**
  * The sole production composition root. The lifecycle modules consume these
  * explicit bindings; no feature implementation needs to know about bootstrap.
@@ -142,6 +161,7 @@ export const runtimeBindings = Object.freeze({
   clearTimeout: (timer) => globalThis.clearTimeout?.(timer),
 
   openHub,
+  GmWorkbenchApp,
   LootStudioApp,
   InfinitySettingsApp,
   MerchantWorkspaceApp,

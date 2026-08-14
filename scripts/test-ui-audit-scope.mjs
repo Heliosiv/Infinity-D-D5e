@@ -47,6 +47,14 @@ assert.deepEqual(selectUiAuditScope(["styles/ui-system.css"]), {
   kind: "full",
   reason: "shared UI foundation changed",
 });
+assert.deepEqual(selectUiAuditScope(["scripts/gm-workbench.js"]), {
+  kind: "full",
+  reason: "shared UI foundation changed",
+});
+assert.deepEqual(selectUiAuditScope(["templates/gm-workbench-nav.hbs"]), {
+  kind: "full",
+  reason: "shared UI foundation changed",
+});
 assert.deepEqual(selectUiAuditScope(["scripts/resource-manager.js"]), {
   kind: "full",
   reason: "UI path has no focused audit map",

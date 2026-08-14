@@ -34,6 +34,7 @@
     "styles/search-picker.css"
   ],
   "templates": [
+    "templates/gm-workbench-nav.hbs",
     "templates/dashboard.hbs",
     "templates/loot-studio.hbs",
     "templates/loot-studio-body.hbs",

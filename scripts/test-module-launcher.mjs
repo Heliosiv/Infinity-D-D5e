@@ -22,6 +22,7 @@ function apiFixture() {
     packId: "infinity-dnd5e.infinity-dnd5e-items",
     getGame: () => ({ modules: new Map([["infinity-dnd5e", moduleRecord]]) }),
     openHub: () => calls.push(["home"]),
+    GmWorkbenchApp: appStub("workbench", calls),
     LootStudioApp: appStub("loot", calls),
     InfinitySettingsApp: appStub("settings", calls),
     MerchantWorkspaceApp: appStub("merchants", calls),
@@ -95,6 +96,7 @@ function apiFixture() {
   assert.deepEqual(Object.keys(api), [
     "openHub",
     "openDashboard",
+    "openGmWorkbench",
     "openLootStudio",
     "openPerEncounterLoot",
     "openHoardLoot",
@@ -145,10 +147,15 @@ function apiFixture() {
 
   api.openHub();
   api.openDashboard();
+  api.openGmWorkbench({ route: "factions" });
   api.openLootStudio({ mode: "hoard" });
   api.openPerEncounterLoot();
   api.openHoardLoot();
   api.openPerCreatureLoot();
+  api.openMerchantWorkspace({ entityId: "merchant-1" });
+  api.openResourceManager({ subview: "setup" });
+  api.openCriticalInjuryTriage();
+  api.openReputation({ entityId: "faction-1" });
   api.openDowntimeWorkspace();
   api.openDowntimeActivities({ actorId: "actor-1" });
   assert.deepEqual(
@@ -164,6 +171,18 @@ function apiFixture() {
     "downtime-player",
     { actorId: "actor-1" },
   ]);
+  assert.deepEqual(
+    fixture.calls.filter(([name]) => name === "workbench"),
+    [
+      ["workbench", { route: "factions" }],
+      ["workbench", { route: "merchants", entityId: "merchant-1" }],
+      ["workbench", { route: "quartermaster", subview: "setup" }],
+      ["workbench", { route: "injuries" }],
+      ["workbench", { route: "factions", entityId: "faction-1" }],
+      ["workbench", { route: "downtime" }],
+    ],
+    "legacy GM launchers deep-link through the bounded Workbench contract",
+  );
 
   fixture.setFullGm(false);
   api.playSoundEvent("click", { audience: "all" });
@@ -213,6 +232,7 @@ function apiFixture() {
     ResourceOverviewApp: appStub("supplies", calls),
     CriticalInjuryApp: appStub("injuries", calls, "openForCurrentUser"),
     CriticalInjuryTriageApp: appStub("injury-triage", calls),
+    GmWorkbenchApp: appStub("workbench", calls),
     DowntimeActivitiesApp: appStub("downtime", calls),
     registerTool: (tool) => tools.push(tool),
     LootStudioApp: appStub("loot", calls),
@@ -266,7 +286,12 @@ function apiFixture() {
     ],
   );
   tools.forEach((tool) => tool.open());
-  assert.ok(calls.some((entry) => entry?.[0] === "quartermaster"));
+  assert.ok(
+    calls.some(
+      (entry) =>
+        entry?.[0] === "workbench" && entry?.[1]?.route === "quartermaster",
+    ),
+  );
 }
 
 {

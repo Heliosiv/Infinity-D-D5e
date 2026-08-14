@@ -65,6 +65,12 @@
   --lf-accent: #ffc06a;
   --lf-accent-hover: #ffd28f;
   --lf-accent-contrast: #211404;
+  --lf-copper: #c78345;
+  --lf-copper-deep: #6f3f22;
+  --lf-gold-soft: #e7bd72;
+  --lf-ink-blue: #0d1420;
+  --lf-cinematic-glow: rgb(231 189 114 / 18%);
+  --lf-cinematic-shadow: rgb(3 7 14 / 62%);
   --lf-info: #9acbff;
   --lf-info-bg: #172e4a;
   --lf-info-border: #4c80b9;
@@ -248,6 +254,12 @@
     --lf-accent: Highlight;
     --lf-accent-hover: Highlight;
     --lf-accent-contrast: HighlightText;
+    --lf-copper: Highlight;
+    --lf-copper-deep: CanvasText;
+    --lf-gold-soft: Highlight;
+    --lf-ink-blue: Canvas;
+    --lf-cinematic-glow: transparent;
+    --lf-cinematic-shadow: transparent;
     --lf-info: CanvasText;
     --lf-info-bg: Canvas;
     --lf-info-border: CanvasText;

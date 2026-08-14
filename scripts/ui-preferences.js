@@ -7,8 +7,12 @@
  */
 
 import { SETTINGS_MODULE_ID } from "./settings.js";
+import {
+  DEFAULT_GM_WORKBENCH_ROUTE,
+  GM_WORKBENCH_ROUTES,
+} from "./gm-workbench-routes.js";
 
-export const UI_PREFERENCES_SCHEMA_VERSION = 1;
+export const UI_PREFERENCES_SCHEMA_VERSION = 2;
 export const UI_PREFERENCES_SETTING_KEY = "uiPreferences";
 export const UI_DENSITY_ATTRIBUTE = "data-infinity-density";
 export const UI_DENSITIES = Object.freeze(["comfortable", "compact"]);
@@ -28,6 +32,7 @@ export const UI_PREFERENCES_DEFAULTS = Object.freeze({
   version: UI_PREFERENCES_SCHEMA_VERSION,
   density: "comfortable",
   lastLootStudioMode: "encounter",
+  lastGmWorkbenchRoute: DEFAULT_GM_WORKBENCH_ROUTE,
   dismissedQuickStarts: Object.freeze([]),
   advancedDisclosures: Object.freeze({}),
 });
@@ -38,6 +43,7 @@ export function createDefaultUiPreferences() {
     version: UI_PREFERENCES_SCHEMA_VERSION,
     density: UI_PREFERENCES_DEFAULTS.density,
     lastLootStudioMode: UI_PREFERENCES_DEFAULTS.lastLootStudioMode,
+    lastGmWorkbenchRoute: UI_PREFERENCES_DEFAULTS.lastGmWorkbenchRoute,
     dismissedQuickStarts: [],
     advancedDisclosures: {},
   };
@@ -87,7 +93,7 @@ function firstDefined(record, keys, fallback) {
 }
 
 /**
- * Reduce any persisted or caller-provided value to the complete v1 schema.
+ * Reduce any persisted or caller-provided value to the complete v2 schema.
  * Unknown properties are dropped. The former `lastLootMode` spelling and
  * early quick-start field spellings are accepted as read-only aliases.
  */
@@ -104,6 +110,11 @@ export function normalizeUiPreferences(value) {
   const lastLootStudioMode = LOOT_STUDIO_MODES.includes(requestedLootMode)
     ? requestedLootMode
     : UI_PREFERENCES_DEFAULTS.lastLootStudioMode;
+  const lastGmWorkbenchRoute = GM_WORKBENCH_ROUTES.includes(
+    record.lastGmWorkbenchRoute,
+  )
+    ? record.lastGmWorkbenchRoute
+    : UI_PREFERENCES_DEFAULTS.lastGmWorkbenchRoute;
   const dismissedQuickStarts = sanitizeIdentifierList(
     firstDefined(
       record,
@@ -120,6 +131,7 @@ export function normalizeUiPreferences(value) {
     version: UI_PREFERENCES_SCHEMA_VERSION,
     density,
     lastLootStudioMode,
+    lastGmWorkbenchRoute,
     dismissedQuickStarts,
     advancedDisclosures: sanitizeDisclosureMap(record.advancedDisclosures),
   };

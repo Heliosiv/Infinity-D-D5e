@@ -721,9 +721,11 @@ try {
   assert.match(template(recovering), /data-step-state="interrupted"/);
 
   const usedActions = new Set(
-    [...templateSource.matchAll(/\bdata-action="([^"]+)"/g)].map(
-      (match) => match[1],
-    ),
+    [
+      ...`${readFileSync("templates/gm-workbench-nav.hbs", "utf8")}\n${templateSource}`.matchAll(
+        /\bdata-action="([^"]+)"/g,
+      ),
+    ].map((match) => match[1]),
   );
   assert.deepEqual(
     [...usedActions].sort(),

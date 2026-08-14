@@ -1,6 +1,6 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the v0.3.2 interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
+This guide covers the v0.3.6 interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
 
 ## Open Home
 
@@ -30,6 +30,8 @@ If the item library is loading, wait before generating. If current filters have 
 
 ## Use GM workspaces
 
+Full GMs use the persistent **GM Workbench** bar to move between Merchants, Quartermaster, Downtime, Factions, and Injury Triage. Switching routes keeps the Workbench position and remembers the last safe route on this browser. Invalid or stale links fall back to Merchants, and a role demotion closes the privileged surface. Loot Studio and Infinity Settings remain separate so their focused keyboard and lifecycle behavior does not compete with campaign management.
+
 - **Merchant Workspace** separates Basics, Pricing & Bargaining, Stock, Access, and Sessions. The active full GM can edit and host live trades; other full-GM windows are clearly read-only and may use Preview. Player trade requests and the GM's exact write plan survive reloads, with ambiguous outcomes pinned for review instead of retried blindly. Search the full allowlisted compendium rather than paging through a capped list.
 - **Quartermaster** starts with Today, the recommended next action, supply outlook, and safety warnings. Use Recent Runs for read-only receipts and Setup & Rules for configuration, including creating, copying, ordering, and removing custom regions. Only the active GM browser tab can change setup or run upkeep; other full-GM tabs stay read-only. Exact resource matches default to a searchable item picker; **Paste an Item UUID** remains available for items from other world or compendium sources.
 - **Downtime Workspace** follows Create, Collect, Lock, Preview, Apply, and Complete. In a guided block, each player clicks **Roll & submit** for their one selected activity; the GM reviews that recorded check before choosing the outcome. The **Projects** tab creates shared hour targets that several characters can advance in the same block. Recovery appears as a separate branch when the authoritative result is uncertain.
@@ -37,6 +39,8 @@ If the item library is loading, wait before generating. If current filters have 
 - **Critical Injury Triage** lists every player character's active recovery alongside unsent reviews and player-roll work. A recovery from 0 HP or the dead state appears as **Needs GM review** instead of interrupting the session with a dialog. Use **Send roll** to privately prompt the selected owner, **No injury** to dismiss it without changing the character, or **Start review** for an exceptional case. The triage board never edits or removes injuries; the existing authoritative roll, treatment, and recovery workflow remains in control.
 
 GM workspaces include a compact **Workspace guide** at the top. It identifies the active mode, selected record, authority state, or pending save/review before you work in the detailed sections.
+
+Existing macros remain valid. `openMerchantWorkspace`, `openResourceManager`, `openDowntimeWorkspace`, `openReputation`, and `openCriticalInjuryTriage` now open the matching Workbench route. Advanced macros may call `openGmWorkbench({ route, subview, entityId })`; the route, subview, and entity identifier are sanitized before any surface opens.
 
 ## Player context and shortcuts
 

@@ -37,7 +37,7 @@ import {
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/shop-picker.hbs`;
-const FALLBACK_ART = "icons/svg/shop.svg";
+const FALLBACK_ART = "icons/svg/chest.svg";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 

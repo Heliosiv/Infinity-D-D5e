@@ -35,6 +35,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 **v0.3.0 — Released 2026-08-09** - Coordinated UI/UX redesign with role-aware Home, one Loot Studio, grouped settings, shared accessibility foundations, responsive application layouts, and plain-language recovery states. Game rules, stored campaign data, permissions, privacy boundaries, and authoritative-GM behavior remain unchanged.
 
 - One Home and one scene-control launcher for every role, with quick starts, compact recents, shortcuts, integration readiness, and privacy-safe diagnostics.
+- Full GMs move between Merchants, Quartermaster, Downtime, Factions, and Injury Triage through one cinematic GM Workbench bar. Each route keeps its established authoritative controller and recovery model; Loot Studio, Settings, player windows, and live shop sessions remain focused standalone windows.
 - Privileged loot, merchant, reputation, and GM-preview windows still require a full GM and close if that user is demoted; Assistant GMs use player-scoped Home destinations.
 - **Loot Studio**: accessible Encounter, Hoard, and Creature mode tabs in one visible ApplicationV2 window. Each mode retains its own form, result, undo stack, preset tool ID, and history. Existing generation engines and outcomes are unchanged.
 - **Per-Encounter Loot**: slider-driven controls for encounter scale, generosity, party size, optional item limit, and magic bias; tier buttons; filter-aware rarity and loot-type chips that disable zero-match choices; live pack-grounded candidate counts; quick-fight presets; locked results; re-roll unlocked; send to chat; drag/drop or send results to actors.
@@ -64,6 +65,7 @@ const api = game.modules.get("infinity-dnd5e").api;
 api.openHub();
 api.openLootStudio({ mode: "hoard" });
 api.openDashboard(); // Existing full-GM alias.
+api.openGmWorkbench({ route: "quartermaster", subview: "setup" });
 api.openPerEncounterLoot(); // Existing Encounter alias.
 api.openHoardLoot(); // Existing Hoard alias.
 api.openPerCreatureLoot(); // Existing Creature alias.
@@ -93,7 +95,7 @@ In Loot Studio, Left/Right Arrow moves between mode tabs and Home/End jumps to t
 
 Open **Infinity Settings** from Home or Foundry's Module Settings. Options are grouped under Appearance & Accessibility, Loot Studio, Merchants, Quartermaster, Automation, Audio, Injuries, and Advanced. Players see only client settings; full GMs also see world settings. Raw duplicate entries are hidden after automated parity coverage verifies every existing configurable key remains represented.
 
-The client-scoped `uiPreferences` v1 setting stores only density, last Loot Studio mode, dismissed quick-start versions, and remembered Advanced disclosures. It is sanitized and does not contain character, user, campaign, permission, merchant, or other private world data.
+The client-scoped `uiPreferences` v2 setting stores only density, last Loot Studio mode, last GM Workbench route, dismissed quick-start versions, and remembered Advanced disclosures. Workbench routing accepts only `merchants`, `quartermaster`, `downtime`, `factions`, or `injuries`; an optional allowlisted subview and sanitized entity ID may deep-link inside that route. The setting is sanitized and does not contain character, user, campaign, permission, merchant, or other private world data.
 
 Registered settings live in [scripts/settings.js](scripts/settings.js).
 

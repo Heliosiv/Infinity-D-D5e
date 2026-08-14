@@ -1,0 +1,29 @@
+{{#with workbench}}
+{{#if routes}}
+<section class="gmw-chrome" aria-label="Infinity Game Master Workbench">
+  <div class="gmw-brand">
+    <span class="gmw-brand__sigil" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+    <div class="gmw-brand__copy">
+      <p>Infinity Game Master Workbench</p>
+      <strong>{{label}}</strong>
+      <span>{{description}}</span>
+    </div>
+  </div>
+  <nav class="gmw-routes" aria-label="Game Master tools">
+    {{#each routes}}
+    <button
+      type="button"
+      class="gmw-route {{#if active}}is-active{{/if}}"
+      data-action="navigateGmWorkbench"
+      data-workbench-route="{{route}}"
+      title="{{description}}"
+      {{#if active}}aria-current="page"{{/if}}
+    >
+      <i class="{{icon}}" aria-hidden="true"></i>
+      <span>{{shortLabel}}</span>
+    </button>
+    {{/each}}
+  </nav>
+</section>
+{{/if}}
+{{/with}}

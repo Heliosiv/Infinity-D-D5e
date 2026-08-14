@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
 import { buildInfinityChatCard } from "./chat-card.js";
+import { buildGmWorkbenchNavigationContext } from "./gm-workbench-routes.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
@@ -45,10 +46,24 @@ const CSS_FILES = [
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
 const LOOT_RESULT_PARTIAL =
   "modules/infinity-dnd5e/templates/loot-result-item.hbs";
+const GM_WORKBENCH_PARTIAL =
+  "modules/infinity-dnd5e/templates/gm-workbench-nav.hbs";
 Handlebars.registerPartial(
   LOOT_RESULT_PARTIAL,
   readFileSync("templates/loot-result-item.hbs", "utf8"),
 );
+Handlebars.registerPartial(
+  GM_WORKBENCH_PARTIAL,
+  readFileSync("templates/gm-workbench-nav.hbs", "utf8"),
+);
+
+const WORKBENCH_ROUTE_BY_TEMPLATE = new Map([
+  ["templates/merchant-workspace.hbs", "merchants"],
+  ["templates/resource-manager.hbs", "quartermaster"],
+  ["templates/downtime-workspace.hbs", "downtime"],
+  ["templates/reputation-workspace.hbs", "factions"],
+  ["templates/critical-injury-triage.hbs", "injuries"],
+]);
 
 const COMMON_RARITIES = [
   ["common", "Common", 298],
@@ -1166,24 +1181,42 @@ function renderHarnessWindow(entry) {
 }
 
 function renderTemplate(templatePath, context) {
+  const workbenchRoute = WORKBENCH_ROUTE_BY_TEMPLATE.get(templatePath);
+  const renderContext = workbenchRoute
+    ? {
+        ...context,
+        workbench:
+          context.workbench ??
+          buildGmWorkbenchNavigationContext({ route: workbenchRoute }),
+      }
+    : context;
   const source = readFileSync(templatePath, "utf8");
   const template = Handlebars.compile(source, {
     strict: true,
     preventIndent: true,
   });
-  const body = template(context);
+  const body = template(renderContext);
+  const workbench = workbenchRoute
+    ? Handlebars.compile(
+        readFileSync("templates/gm-workbench-nav.hbs", "utf8"),
+        {
+          strict: true,
+          preventIndent: true,
+        },
+      )(renderContext)
+    : "";
   const lootBodies = new Set([
     "templates/loot-forge.hbs",
     "templates/hoard-loot.hbs",
     "templates/per-creature-loot.hbs",
   ]);
-  if (!lootBodies.has(templatePath)) return body;
+  if (!lootBodies.has(templatePath)) return `${workbench}${body}`;
   const studioSource = readFileSync("templates/loot-studio.hbs", "utf8");
   const studio = Handlebars.compile(studioSource, {
     strict: true,
     preventIndent: true,
   });
-  return `${studio(context)}${body}`;
+  return `${studio(renderContext)}${body}`;
 }
 
 function dashboardContext({
@@ -1907,7 +1940,7 @@ function merchantWorkspaceContext() {
   const selected = {
     id: "m-curios",
     name: "Yannick's Curios",
-    art: "icons/svg/shop.svg",
+    art: "icons/svg/chest.svg",
     description: "A cramped stall of oddments and salvaged gear.",
     defaultMarkup: 1.2,
     sellRatio: 0.5,
@@ -1929,7 +1962,7 @@ function merchantWorkspaceContext() {
       {
         id: "m-curios",
         name: "Yannick's Curios",
-        art: "icons/svg/shop.svg",
+        art: "icons/svg/chest.svg",
         itemCount: 3,
         itemCountIsOne: false,
         allowedCount: 2,
@@ -2105,7 +2138,7 @@ function merchantSessionContext(activeTab = "buy") {
     merchant: {
       id: "m-curios",
       name: "Yannick's Curios",
-      art: "icons/svg/shop.svg",
+      art: "icons/svg/chest.svg",
       description: "A cramped stall of oddments and salvaged gear.",
     },
     walletLabel: "42 gp · 5 sp",

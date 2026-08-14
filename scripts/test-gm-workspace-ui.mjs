@@ -15,8 +15,14 @@ const reputationScript = read("scripts/reputation-workspace.js");
 const lootStudioTemplate = read("templates/loot-studio.hbs");
 const lootStudioScript = read("scripts/loot/loot-app-base.js");
 const downtimeTemplate = read("templates/downtime-workspace.hbs");
+const downtimeScript = read("scripts/downtime-workspace.js");
+const injuryTriageScript = read("scripts/injury/injury-triage-app.js");
 const settingsTemplate = read("templates/settings.hbs");
 const settingsAppScript = read("scripts/settings-app.js");
+const workbenchTemplate = read("templates/gm-workbench-nav.hbs");
+const workbenchStyle = read("styles/ui-system.css");
+const workbenchScript = read("scripts/gm-workbench.js");
+const workbenchRoutesScript = read("scripts/gm-workbench-routes.js");
 
 for (const [name, template] of [
   ["merchant", merchantTemplate],
@@ -25,6 +31,7 @@ for (const [name, template] of [
   ["loot studio", lootStudioTemplate],
   ["downtime", downtimeTemplate],
   ["settings", settingsTemplate],
+  ["GM Workbench navigation", workbenchTemplate],
 ]) {
   assert.doesNotThrow(
     () => Handlebars.precompile(template),
@@ -68,7 +75,7 @@ assertOrdered(
   "merchant sections",
 );
 assertActions(
-  merchantTemplate,
+  `${workbenchTemplate}\n${merchantTemplate}`,
   [
     "newMerchant",
     "selectMerchant",
@@ -92,6 +99,7 @@ assertActions(
     "openInventoryItem",
     "recheckTransaction",
     "selectSection",
+    "navigateGmWorkbench",
   ],
   "merchant workspace",
 );
@@ -189,7 +197,7 @@ assertOrdered(
   "Quartermaster sections",
 );
 assertActions(
-  resourceTemplate,
+  `${workbenchTemplate}\n${resourceTemplate}`,
   [
     "advanceDay",
     "forageDrive",
@@ -205,6 +213,7 @@ assertActions(
     "resetConfig",
     "refresh",
     "selectSection",
+    "navigateGmWorkbench",
   ],
   "Quartermaster",
 );
@@ -266,7 +275,7 @@ assertOrdered(
   "reputation sections",
 );
 assertActions(
-  reputationTemplate,
+  `${workbenchTemplate}\n${reputationTemplate}`,
   [
     "newFaction",
     "selectFaction",
@@ -278,6 +287,7 @@ assertActions(
     "selectSection",
     "save",
     "deleteFaction",
+    "navigateGmWorkbench",
   ],
   "reputation workspace",
 );
@@ -337,5 +347,48 @@ assert.doesNotMatch(changeMethod, /adjustStanding\(/);
 assert.match(reputationStyle, /container-name:\s*reputation-workspace/);
 assert.match(reputationStyle, /@container reputation-workspace/);
 assert.doesNotMatch(reputationStyle, /@media\s*\(max-width/);
+
+/* Workbench: five bounded routes share chrome without moving authority. */
+for (const route of [
+  "merchants",
+  "quartermaster",
+  "downtime",
+  "factions",
+  "injuries",
+]) {
+  assert.match(workbenchRoutesScript, new RegExp(`route: "${route}"`));
+}
+assert.match(workbenchTemplate, /data-workbench-route="\{\{route\}\}"/);
+assert.match(workbenchScript, /normalizeGmWorkbenchTarget/);
+assert.match(
+  workbenchScript,
+  /_sourceApplication:\s*this/,
+  "route actions close the application that initiated navigation",
+);
+for (const [label, source] of [
+  ["merchant", merchantScript],
+  ["Quartermaster", resourceScript],
+  ["Downtime", downtimeScript],
+  ["Factions", reputationScript],
+  ["Injuries", injuryTriageScript],
+]) {
+  assert.match(
+    source,
+    /workbench:\s*\{\s*template:\s*GM_WORKBENCH_TEMPLATE_PATH\s*\}/,
+    `${label} loads the Workbench as an ApplicationV2 part`,
+  );
+}
+assert.match(workbenchTemplate, /aria-label="Game Master tools"/);
+assert.match(workbenchTemplate, /aria-current="page"/);
+assert.match(workbenchTemplate, /data-action="navigateGmWorkbench"/);
+assert.match(workbenchStyle, /\.gmw-chrome/);
+assert.match(workbenchStyle, /\.gmw-route\.is-active/);
+assert.match(workbenchStyle, /@media \(forced-colors: active\)/);
+assert.match(workbenchScript, /isFullGM\(\)/);
+assert.doesNotMatch(
+  workbenchScript,
+  /loadMerchants|loadResourceConfig|getWorkspaceProjection|loadFactions|getCriticalInjuryTriageRecords/,
+  "Workbench routing does not duplicate subsystem reads or writes",
+);
 
 console.log("GM workspace UI redesign validation passed");

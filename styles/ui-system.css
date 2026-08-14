@@ -17,6 +17,242 @@
   line-height: var(--lf-leading-normal);
 }
 
+/* Cinematic application canvas ----------------------------------- */
+
+.application.infinity-dnd5e .window-content {
+  background:
+    radial-gradient(
+      circle at 12% -8%,
+      var(--lf-cinematic-glow),
+      transparent 34rem
+    ),
+    linear-gradient(145deg, var(--lf-ink-blue), var(--lf-bg) 48%);
+}
+
+.infinity-dnd5e
+  :is(
+    .id-head,
+    .mw-head,
+    .rm-head,
+    .dt-head,
+    .rw-head,
+    .ci-triage-hero,
+    .sp-head,
+    .ro-head,
+    .rv-head
+  ) {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 6%),
+    0 14px 32px var(--lf-cinematic-shadow);
+}
+
+/* Routed GM Workbench -------------------------------------------- */
+
+.infinity-dnd5e .gmw-chrome {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: calc(var(--lf-layer-sticky) + 2);
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.8fr) minmax(28rem, 1.55fr);
+  gap: var(--lf-space-3);
+  align-items: center;
+  min-inline-size: 0;
+  padding: var(--lf-space-3) var(--lf-density-pad);
+  color: var(--lf-text);
+  background:
+    linear-gradient(110deg, rgb(16 23 36 / 97%), rgb(30 37 52 / 96%)),
+    var(--lf-bg-alt);
+  border-block-end: 1px solid var(--lf-copper);
+  box-shadow:
+    inset 0 -1px 0 rgb(255 213 145 / 10%),
+    0 12px 30px rgb(0 0 0 / 38%);
+}
+
+.infinity-dnd5e .gmw-brand {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--lf-space-3);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .gmw-brand__sigil {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  color: var(--lf-accent-contrast);
+  background:
+    radial-gradient(circle at 35% 25%, var(--lf-accent-hover), transparent 62%),
+    var(--lf-copper);
+  border: 1px solid var(--lf-gold-soft);
+  border-radius: 50% 50% 46% 46%;
+  box-shadow:
+    0 0 0 3px rgb(231 189 114 / 10%),
+    var(--lf-shadow-md);
+}
+
+.infinity-dnd5e .gmw-brand__copy {
+  display: grid;
+  gap: 0.1rem;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .gmw-brand__copy > :is(p, strong, span) {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.infinity-dnd5e .gmw-brand__copy p {
+  color: var(--lf-gold-soft);
+  font-size: var(--lf-text-xs);
+  font-weight: var(--lf-weight-bold);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.infinity-dnd5e .gmw-brand__copy strong {
+  color: var(--lf-text-strong);
+  font-family: var(--lf-font-heading);
+  font-size: var(--lf-text-lg);
+  line-height: var(--lf-leading-tight);
+}
+
+.infinity-dnd5e .gmw-brand__copy span {
+  color: var(--lf-muted);
+  font-size: var(--lf-text-xs);
+  line-height: var(--lf-leading-normal);
+}
+
+.infinity-dnd5e .gmw-routes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--lf-space-1);
+  min-inline-size: 0;
+  padding: var(--lf-space-1);
+  background: rgb(7 12 20 / 46%);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+
+.infinity-dnd5e .gmw-route {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, auto);
+  gap: var(--lf-space-2);
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--lf-control-size);
+  min-inline-size: var(--lf-control-size);
+  margin: 0;
+  padding: var(--lf-space-2);
+  color: var(--lf-muted);
+  font: inherit;
+  font-size: var(--lf-text-xs);
+  font-weight: var(--lf-weight-bold);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--lf-radius-sm);
+  box-shadow: none;
+  transition:
+    color var(--lf-motion-fast) var(--lf-ease-standard),
+    background-color var(--lf-motion-fast) var(--lf-ease-standard),
+    border-color var(--lf-motion-fast) var(--lf-ease-standard),
+    transform var(--lf-motion-fast) var(--lf-ease-standard);
+}
+
+.infinity-dnd5e .gmw-route:not(.is-active):hover {
+  color: var(--lf-text-strong);
+  background: rgb(255 255 255 / 5%);
+  border-color: var(--lf-border);
+}
+
+.infinity-dnd5e .gmw-route.is-active {
+  color: var(--lf-accent-contrast);
+  background: linear-gradient(180deg, var(--lf-accent-hover), var(--lf-accent));
+  border-color: var(--lf-gold-soft);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 30%),
+    0 5px 16px var(--lf-cinematic-glow);
+}
+
+.infinity-dnd5e .gmw-route > i {
+  pointer-events: none;
+}
+
+.infinity-dnd5e[data-infinity-theme="quartermaster"] {
+  --lf-accent: #e7bd72;
+  --lf-accent-hover: #f5d79c;
+}
+
+.infinity-dnd5e[data-infinity-theme="downtime"] {
+  --lf-accent: #f0ad62;
+  --lf-accent-hover: #f8c98f;
+}
+
+.infinity-dnd5e[data-infinity-theme="factions"] {
+  --lf-accent: #a8c8ff;
+  --lf-accent-hover: #c9dcff;
+  --lf-accent-contrast: #101a2b;
+}
+
+@container (max-width: 900px) {
+  .infinity-dnd5e .gmw-chrome {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .infinity-dnd5e .gmw-brand__copy span {
+    display: none;
+  }
+}
+
+@container (max-width: 520px) {
+  .infinity-dnd5e .gmw-chrome {
+    padding: var(--lf-space-2);
+  }
+
+  .infinity-dnd5e .gmw-brand__sigil {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+
+  .infinity-dnd5e .gmw-routes {
+    grid-template-columns: repeat(5, minmax(var(--lf-control-size), 1fr));
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .infinity-dnd5e .gmw-route {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+    padding-inline: var(--lf-space-1);
+  }
+
+  .infinity-dnd5e .gmw-route span {
+    font-size: max(0.68rem, 11px);
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-dnd5e .gmw-chrome,
+  .infinity-dnd5e .gmw-routes,
+  .infinity-dnd5e .gmw-route,
+  .infinity-dnd5e .gmw-brand__sigil {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .infinity-dnd5e .gmw-route.is-active {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+  }
+}
+
 .infinity-dnd5e:is(.infinity-app-shell, .infinity-ui),
 .infinity-dnd5e:is(.infinity-app-shell, .infinity-ui) *,
 .infinity-dnd5e:is(.infinity-app-shell, .infinity-ui) *::before,

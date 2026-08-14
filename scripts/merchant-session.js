@@ -84,7 +84,7 @@ import { authoritativeGMId } from "./socket-authority.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-session.hbs`;
-const FALLBACK_ART = "icons/svg/shop.svg";
+const FALLBACK_ART = "icons/svg/chest.svg";
 const FALLBACK_ITEM_IMAGE = "icons/svg/item-bag.svg";
 // How long a live bargain waits for the GM's seal before giving up and
 // re-enabling the row, so a never-returning seal (GM offline / session expired)

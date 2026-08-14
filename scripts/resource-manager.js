@@ -64,6 +64,7 @@ import { isFullGM } from "./permissions.js";
 import { pickSearchOption } from "./search-picker.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import { bindFocusRestoration, navigateToAppSection } from "./infinity-app.js";
+import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { initializePrivateState } from "./private-state.js";
 import { normalizeInfinityItemUuid } from "./item-uuid-compat.js";
 import {
@@ -85,12 +86,9 @@ function requireResourceWriteAuthority(action = "change Quartermaster setup") {
   return false;
 }
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
-export class ResourceManagerApp extends HandlebarsApplicationMixin(
-  ApplicationV2,
-) {
+export class ResourceManagerApp extends GmWorkbenchApp {
   static _instance = null;
+  static WORKBENCH_ROUTE = "quartermaster";
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-resource-manager",
@@ -120,22 +118,27 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
       selectSection: navigateToAppSection,
+      navigateGmWorkbench: GmWorkbenchApp._onNavigate,
     },
   };
 
   static PARTS = {
+    workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
-  static open() {
+  static open(options = {}) {
     if (!isFullGM()) {
       notify("warn", `the Quartermaster is available to full GMs only.`);
       return null;
     }
     playModuleSound(SOUND_EVENTS.UI_OPEN);
     if (!ResourceManagerApp._instance) {
-      ResourceManagerApp._instance = new ResourceManagerApp();
+      ResourceManagerApp._instance = new ResourceManagerApp(options);
       bindFocusRestoration(ResourceManagerApp._instance);
+    }
+    if (options.workbench) {
+      ResourceManagerApp._instance.setWorkbenchTarget(options.workbench);
     }
     if (ResourceManagerApp._instance.rendered) {
       ResourceManagerApp._instance.bringToFront();
@@ -147,7 +150,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
 
   constructor(options = {}) {
     super(options);
-    this._setupExpanded = false;
+    this._setupExpanded = options.workbench?.subview === "setup";
     this._unsubs = [
       subscribe(RESOURCE_EVENTS.STATE_UPDATE, () => this.render(false)),
       subscribe(RESOURCE_EVENTS.UPKEEP_REPORT, () => this.render(false)),
@@ -218,6 +221,19 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
       this._campaignLeadershipHook = null;
     }
     ResourceManagerApp._instance = null;
+  }
+
+  _captureWorkbenchTarget() {
+    return {
+      route: ResourceManagerApp.WORKBENCH_ROUTE,
+      subview: this._setupExpanded ? "setup" : "today",
+    };
+  }
+
+  _applyWorkbenchTarget(target) {
+    if (target?.subview) {
+      this._setupExpanded = target.subview === "setup";
+    }
   }
 
   async _prepareContext() {
@@ -425,6 +441,7 @@ export class ResourceManagerApp extends HandlebarsApplicationMixin(
     );
 
     return {
+      workbench: this.prepareWorkbenchContext?.() ?? null,
       resources,
       environments,
       currentEnvironment: currentEnv

@@ -43,6 +43,7 @@ import {
   navigateToAppSection,
   openSingleton,
 } from "./infinity-app.js";
+import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { runAsFullGM } from "./permissions.js";
 import {
   confirmInfinityDialog,
@@ -59,12 +60,9 @@ const SCROLL_TARGETS = [
   { key: "edit", selector: ".rw-edit" },
 ];
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
-export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
-  ApplicationV2,
-) {
+export class ReputationWorkspaceApp extends GmWorkbenchApp {
   static _instance = null;
+  static WORKBENCH_ROUTE = "factions";
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-reputation-workspace",
@@ -87,27 +85,31 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
       selectSection: navigateToAppSection,
       save: ReputationWorkspaceApp._onSave,
       deleteFaction: ReputationWorkspaceApp._onDeleteFaction,
+      navigateGmWorkbench: GmWorkbenchApp._onNavigate,
     },
   };
 
   static PARTS = {
+    workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
-  static open() {
+  static open(options = {}) {
     return runAsFullGM(() => {
       playModuleSound(SOUND_EVENTS.UI_OPEN);
-      return openSingleton(
+      const app = openSingleton(
         ReputationWorkspaceApp,
-        () => new ReputationWorkspaceApp(),
+        () => new ReputationWorkspaceApp(options),
       );
+      if (options.workbench) app.setWorkbenchTarget(options.workbench);
+      return app;
     }, "Reputation Workspace is available to full GMs only.");
   }
 
   constructor(options = {}) {
     super(options);
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
-    this._selectedId = null;
+    this._selectedId = String(options.workbench?.entityId ?? "").trim() || null;
     this._scroll = null;
     this._saveStatus = "All changes saved";
   }
@@ -117,6 +119,23 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     this._unbindFullGmWindowGuard?.();
     this._unbindFullGmWindowGuard = null;
     ReputationWorkspaceApp._instance = null;
+  }
+
+  _captureWorkbenchTarget() {
+    return {
+      route: ReputationWorkspaceApp.WORKBENCH_ROUTE,
+      entityId: this._selectedId ?? "",
+    };
+  }
+
+  _applyWorkbenchTarget(target) {
+    if (target?.entityId) this._selectedId = target.entityId;
+  }
+
+  async _beforeWorkbenchNavigate() {
+    if (!this._selectedId || !this.rendered) return true;
+    await this._saveFromForm();
+    return true;
   }
 
   /* -------------------- context -------------------- */
@@ -144,6 +163,7 @@ export class ReputationWorkspaceApp extends HandlebarsApplicationMixin(
     const characters = listCharacterActors();
 
     return {
+      workbench: this.prepareWorkbenchContext?.() ?? null,
       moduleId: MODULE_ID,
       hasFactions: factions.length > 0,
       total: factions.length,

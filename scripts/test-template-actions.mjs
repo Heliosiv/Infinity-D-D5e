@@ -64,7 +64,10 @@ const CHECKS = [
   },
   {
     name: "merchant workspace",
-    template: "templates/merchant-workspace.hbs",
+    templates: [
+      "templates/gm-workbench-nav.hbs",
+      "templates/merchant-workspace.hbs",
+    ],
     script: "./merchant-workspace.js",
   },
   {
@@ -79,12 +82,18 @@ const CHECKS = [
   },
   {
     name: "resource manager",
-    template: "templates/resource-manager.hbs",
+    templates: [
+      "templates/gm-workbench-nav.hbs",
+      "templates/resource-manager.hbs",
+    ],
     script: "./resource-manager.js",
   },
   {
     name: "reputation workspace",
-    template: "templates/reputation-workspace.hbs",
+    templates: [
+      "templates/gm-workbench-nav.hbs",
+      "templates/reputation-workspace.hbs",
+    ],
     script: "./reputation-workspace.js",
   },
   {
@@ -104,7 +113,10 @@ const CHECKS = [
   },
   {
     name: "critical injury triage",
-    template: "templates/critical-injury-triage.hbs",
+    templates: [
+      "templates/gm-workbench-nav.hbs",
+      "templates/critical-injury-triage.hbs",
+    ],
     script: "./injury/injury-triage-app.js",
   },
   {
@@ -114,7 +126,10 @@ const CHECKS = [
   },
   {
     name: "downtime workspace",
-    template: "templates/downtime-workspace.hbs",
+    templates: [
+      "templates/gm-workbench-nav.hbs",
+      "templates/downtime-workspace.hbs",
+    ],
     script: "./downtime-workspace.js",
   },
   {

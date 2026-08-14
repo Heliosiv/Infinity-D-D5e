@@ -112,7 +112,7 @@ export function createModuleRegistrars(bindings) {
       icon: "fa-solid fa-store",
       category: "merchants",
       status: "available",
-      open: () => bindings.MerchantWorkspaceApp.open(),
+      open: () => bindings.GmWorkbenchApp.open({ route: "merchants" }),
     });
     bindings.registerTool({
       id: "resource-manager",
@@ -122,7 +122,7 @@ export function createModuleRegistrars(bindings) {
       icon: "fa-solid fa-campground",
       category: "party",
       status: "available",
-      open: () => bindings.ResourceManagerApp.open(),
+      open: () => bindings.GmWorkbenchApp.open({ route: "quartermaster" }),
     });
     bindings.registerTool({
       id: "downtime-workspace",
@@ -132,7 +132,7 @@ export function createModuleRegistrars(bindings) {
       icon: "fa-solid fa-hourglass-half",
       category: "party",
       status: "available",
-      open: () => bindings.DowntimeWorkspaceApp.open(),
+      open: () => bindings.GmWorkbenchApp.open({ route: "downtime" }),
     });
     bindings.registerTool({
       id: "reputation",
@@ -142,7 +142,7 @@ export function createModuleRegistrars(bindings) {
       icon: "fa-solid fa-handshake",
       category: "party",
       status: "available",
-      open: () => bindings.ReputationWorkspaceApp.open(),
+      open: () => bindings.GmWorkbenchApp.open({ route: "factions" }),
     });
     bindings.registerTool({
       id: "critical-injury-triage",
@@ -152,7 +152,7 @@ export function createModuleRegistrars(bindings) {
       icon: "fa-solid fa-heart-pulse",
       category: "party",
       status: "available",
-      open: () => bindings.CriticalInjuryTriageApp.open(),
+      open: () => bindings.GmWorkbenchApp.open({ route: "injuries" }),
     });
     return true;
   }

@@ -103,7 +103,7 @@ for (const [label, source] of [
 ]) {
   assert.match(
     source,
-    /static open\(\) \{[\s\S]*?return runAsFullGM\(/,
+    /static open\([^)]*\) \{[\s\S]*?return runAsFullGM\(/,
     `${label} should reject Assistant GMs before constructing its editor`,
   );
   assert.doesNotMatch(

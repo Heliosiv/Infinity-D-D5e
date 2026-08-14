@@ -11,6 +11,7 @@ import {
   bindFullGmWindowGuard,
   openSingleton,
 } from "./infinity-app.js";
+import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
 import { GUIDED_DOWNTIME_SKILLS } from "./downtime/dispatch.js";
 import { runAsFullGM } from "./permissions.js";
@@ -112,8 +113,6 @@ const PRIMARY_ACTION_COPY = Object.freeze({
   },
 });
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
 /**
  * Adapter expected by {@link DowntimeWorkspaceApp}.
  *
@@ -124,11 +123,10 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  * receives a plain ID/value payload; the adapter must derive authority, rolls,
  * costs, DCs, rewards, and document mutations itself.
  */
-export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
-  ApplicationV2,
-) {
+export class DowntimeWorkspaceApp extends GmWorkbenchApp {
   static _instance = null;
   static _adapterFactory = null;
+  static WORKBENCH_ROUTE = "downtime";
 
   static DEFAULT_OPTIONS = {
     id: "infinity-dnd5e-downtime-workspace",
@@ -163,10 +161,12 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
       saveSettlement: DowntimeWorkspaceApp._onSaveSettlement,
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
+      navigateGmWorkbench: GmWorkbenchApp._onNavigate,
     },
   };
 
   static PARTS = {
+    workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
 
@@ -177,18 +177,33 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
   }
 
   /** Open or focus the singleton full-GM workspace. */
-  static open({ adapter = null, view = DEFAULT_VIEW } = {}) {
+  static open({
+    adapter = null,
+    view = DEFAULT_VIEW,
+    workbench = null,
+    ...applicationOptions
+  } = {}) {
     return runAsFullGM(() => {
+      const requestedView = WORKSPACE_VIEWS.has(workbench?.subview)
+        ? workbench.subview
+        : view;
       const resolvedAdapter = adapter ?? this._adapterFactory?.() ?? null;
       const app = openSingleton(
         DowntimeWorkspaceApp,
-        () => new DowntimeWorkspaceApp({ adapter: resolvedAdapter, view }),
+        () =>
+          new DowntimeWorkspaceApp({
+            adapter: resolvedAdapter,
+            view: requestedView,
+            workbench,
+            ...applicationOptions,
+          }),
       );
       if (resolvedAdapter && app._adapter !== resolvedAdapter) {
         app._replaceAdapter(resolvedAdapter);
       }
-      if (WORKSPACE_VIEWS.has(view) && app._view !== view) {
-        app._view = view;
+      if (workbench) app.setWorkbenchTarget(workbench);
+      if (WORKSPACE_VIEWS.has(requestedView) && app._view !== requestedView) {
+        app._view = requestedView;
         if (app.rendered) app.render(false);
       }
       return app;
@@ -226,6 +241,21 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     this._unbindFullGmWindowGuard?.();
     this._unbindFullGmWindowGuard = null;
     DowntimeWorkspaceApp._instance = null;
+  }
+
+  _captureWorkbenchTarget() {
+    return {
+      route: DowntimeWorkspaceApp.WORKBENCH_ROUTE,
+      subview: this._view,
+      entityId: this._selectedSettlementId ?? "",
+    };
+  }
+
+  _applyWorkbenchTarget(target) {
+    if (WORKSPACE_VIEWS.has(target?.subview)) this._view = target.subview;
+    if (target?.subview === "settlements" && target.entityId) {
+      this._selectedSettlementId = target.entityId;
+    }
   }
 
   _replaceAdapter(adapter) {
@@ -295,6 +325,7 @@ export class DowntimeWorkspaceApp extends HandlebarsApplicationMixin(
     const errorMessage = this._projectionErrorMessage || this._errorMessage;
     const uiPreferences = getUiPreferences();
     return {
+      workbench: this.prepareWorkbenchContext?.() ?? null,
       ...context,
       dataAvailable,
       busy: this._busy,

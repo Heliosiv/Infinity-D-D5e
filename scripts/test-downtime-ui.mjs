@@ -588,7 +588,12 @@ try {
 }
 
 function assertActionCoverage(templatePath, actions) {
-  const source = readFileSync(templatePath, "utf8");
+  const source = [
+    templatePath === "templates/downtime-workspace.hbs"
+      ? readFileSync("templates/gm-workbench-nav.hbs", "utf8")
+      : "",
+    readFileSync(templatePath, "utf8"),
+  ].join("\n");
   const used = new Set(
     [...source.matchAll(/\bdata-action="([^"]+)"/g)].map((match) => match[1]),
   );

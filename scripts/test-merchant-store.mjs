@@ -57,6 +57,11 @@ import {
   assert.ok(blank.id, "id assigned");
   assert.equal(blank.name, "Unnamed Merchant");
   assert.equal(
+    createBlankMerchant().art,
+    "icons/svg/chest.svg",
+    "new merchants use a Foundry core image that exists in V13",
+  );
+  assert.equal(
     normalizeMerchant({ version: 2 }).version,
     1,
     "the pure normalizer remains permissive; live persistence owns the guard",
