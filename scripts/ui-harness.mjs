@@ -823,7 +823,7 @@ export function buildHarnessViews() {
       "infinity-critical-injury-triage",
       "templates/critical-injury-triage.hbs",
       criticalInjuryTriageContext(),
-      { width: 760, height: 720 },
+      { width: 760, height: 640 },
     ),
     view(
       "critical-injury-hud",
@@ -1000,9 +1000,11 @@ export function buildUiHarnessDocument() {
     }
 
     .window-content {
+      display: flex;
+      flex-direction: column;
       min-height: 0;
       box-sizing: border-box;
-      overflow: auto;
+      overflow: hidden;
     }
 
     .ui-harness__overlay-stage {

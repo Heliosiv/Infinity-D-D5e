@@ -103,7 +103,7 @@
           <span class="sp-search__field"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-role="shop-search" value="{{query}}" placeholder="Search name or description" aria-label="Search shops by name or description" autocomplete="off" /></span>
         </label>
         <p class="sp-sr-status" data-role="shop-search-status" role="status" aria-live="polite"></p>
-        <ul class="sp-list" aria-label="Shops you can visit">
+        <ul class="sp-list" tabindex="0" aria-label="Shops you can visit">
           {{#each shops}}
           <li class="sp-row {{#if pending}}is-pending{{/if}}">
             <button type="button" class="sp-row__btn" data-action="openShop" data-merchant-id="{{id}}" {{#if pending}}disabled aria-disabled="true"{{else if actorRequired}}disabled aria-disabled="true" title="Choose a controlled character first"{{/if}}>

@@ -87,6 +87,16 @@ for (const control of [
 const documentHtml = buildUiHarnessDocument();
 assert.match(
   documentHtml,
+  /\.window-content \{[\s\S]*?overflow:\s*hidden;/,
+  "the harness mirrors Foundry's clipped ApplicationV2 content frame instead of supplying a test-only scrollbar",
+);
+assert.match(
+  documentHtml,
+  /data-harness-window="critical-injury-triage"[\s\S]*?--harness-height:\s*640px/,
+  "Injury Triage is exercised at its real default window height",
+);
+assert.match(
+  documentHtml,
   /Session focus[\s\S]*?Continue with Per-Encounter Loot/,
   "Home foregrounds one role-safe session destination",
 );

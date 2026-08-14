@@ -24,11 +24,18 @@ for (const path of templates) {
 
 const shopScript = read("scripts/shop-picker.js");
 const shopTemplate = read("templates/shop-picker.hbs");
+const shopStyle = read("styles/shop-picker.css");
 assert.match(shopScript, /_wireSearch\(root\)/);
 assert.match(shopScript, /resolveShopperActor/);
 assert.match(shopScript, /getControlledMerchantActors/);
 assert.match(shopTemplate, /data-role="shopper-actor"/);
 assert.match(shopTemplate, /data-role="shop-search"/);
+assert.match(
+  shopTemplate,
+  /<ul(?=[^>]*class="sp-list")(?=[^>]*tabindex="0")(?=[^>]*aria-label="Shops you can visit")[^>]*>/,
+  "the shop results remain keyboard-scrollable when every shop action is disabled",
+);
+assert.match(shopStyle, /\.sp-list:focus-visible/);
 assert.match(
   shopTemplate,
   /<input(?=[^>]*data-role="shop-search")(?=[^>]*aria-label="Search shops by name or description")[^>]*>/,

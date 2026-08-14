@@ -265,7 +265,7 @@ async function auditPage(scenario) {
   for (const root of windows) {
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
-      ".infinity-app-shell, .lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell, .ci-hud-shell, .dt-shell",
+      ".infinity-app-shell, .lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell, .ci-triage-shell, .ci-hud-shell, .dt-shell",
     );
     const isOverlay = root.matches(".infinity-critical-injury-hud");
     for (const element of [content, shell].filter(Boolean)) {
@@ -315,6 +315,17 @@ async function auditPage(scenario) {
       if (hasVisibleChildOverflow || hasVisibleTextOverflow) {
         issues.push(
           `${root.dataset.harnessWindow}: nested horizontal overflow in ${describe(element)} (${element.scrollWidth}px > ${element.clientWidth}px)`,
+        );
+      }
+    }
+
+    const terminal = findTerminalContent(shell);
+    if (terminal) {
+      bringIntoAuditView(terminal, { block: 0.9 });
+      const reachability = findVerticalReachability(terminal, root);
+      if (!reachability.reachable) {
+        issues.push(
+          `${root.dataset.harnessWindow}: bottom content cannot be reached because ${describe(reachability.clippingElement)} clips it without a working vertical scroll path`,
         );
       }
     }
@@ -560,6 +571,47 @@ async function auditPage(scenario) {
     }
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
+  }
+
+  function findTerminalContent(shell) {
+    if (!shell) return null;
+    const candidates = [...shell.querySelectorAll("*")].filter((element) => {
+      if (!isRenderedForAudit(element) || element.children.length > 0) {
+        return false;
+      }
+      if (element.matches("option, script, style, .lf-sr-only")) return false;
+      const style = getComputedStyle(element);
+      return !["absolute", "fixed"].includes(style.position);
+    });
+    return candidates.reduce((terminal, element) => {
+      if (!terminal) return element;
+      return element.getBoundingClientRect().bottom >
+        terminal.getBoundingClientRect().bottom
+        ? element
+        : terminal;
+    }, null);
+  }
+
+  function findVerticalReachability(element, root) {
+    const rect = element.getBoundingClientRect();
+    let top = Math.max(0, rect.top);
+    let bottom = Math.min(document.documentElement.clientHeight, rect.bottom);
+    let clippingElement = root;
+    for (
+      let ancestor = element.parentElement;
+      ancestor;
+      ancestor = ancestor.parentElement
+    ) {
+      const style = getComputedStyle(ancestor);
+      if (["auto", "scroll", "hidden", "clip"].includes(style.overflowY)) {
+        const ancestorRect = ancestor.getBoundingClientRect();
+        top = Math.max(top, ancestorRect.top);
+        bottom = Math.min(bottom, ancestorRect.bottom);
+        if (bottom <= top) clippingElement = ancestor;
+      }
+      if (ancestor === root) break;
+    }
+    return { reachable: bottom > top, clippingElement };
   }
 
   function findReachablePoint(button, { skipCover }) {

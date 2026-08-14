@@ -17,6 +17,7 @@ const lootStudioScript = read("scripts/loot/loot-app-base.js");
 const downtimeTemplate = read("templates/downtime-workspace.hbs");
 const downtimeScript = read("scripts/downtime-workspace.js");
 const injuryTriageScript = read("scripts/injury/injury-triage-app.js");
+const injuryTriageStyle = read("styles/critical-injury-triage.css");
 const settingsTemplate = read("templates/settings.hbs");
 const settingsAppScript = read("scripts/settings-app.js");
 const workbenchTemplate = read("templates/gm-workbench-nav.hbs");
@@ -384,6 +385,11 @@ assert.match(workbenchTemplate, /data-action="navigateGmWorkbench"/);
 assert.match(workbenchStyle, /\.gmw-chrome/);
 assert.match(workbenchStyle, /\.gmw-route\.is-active/);
 assert.match(workbenchStyle, /@media \(forced-colors: active\)/);
+assert.match(
+  injuryTriageStyle,
+  /\.infinity-critical-injury-triage \.window-content \{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior:\s*contain;[\s\S]*?scrollbar-gutter:\s*stable;/,
+  "Injury Triage owns a bounded vertical scroll path inside the Foundry window",
+);
 assert.match(workbenchScript, /isFullGM\(\)/);
 assert.doesNotMatch(
   workbenchScript,
