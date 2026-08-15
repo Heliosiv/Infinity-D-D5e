@@ -652,7 +652,75 @@ export class ResourceManagerApp extends GmWorkbenchApp {
         await this._renderPreservingFocus(input);
         return;
       }
-      await setCurrentEnvironment(environmentId);
+      const before = loadResourceConfig();
+      const current = resolveCurrentEnvironment(before);
+      const candidate = findEnvironment(before.environments, environmentId);
+      if (!candidate) {
+        notify(
+          "warn",
+          "that environment is no longer available; nothing changed.",
+        );
+        await this._renderPreservingFocus(input);
+        return;
+      }
+      if (candidate.id === current?.id) {
+        await this._renderPreservingFocus(input);
+        return;
+      }
+
+      const currentFingerprint = environmentFingerprint(current);
+      const candidateFingerprint = environmentFingerprint(candidate);
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: `Use ${environmentDisplayLabel(candidate)}?`,
+          icon: "fa-solid fa-map-location-dot",
+        },
+        content: buildEnvironmentActivationPreview(current, candidate),
+        rejectClose: false,
+      });
+      if (!confirmed) {
+        await this._renderPreservingFocus(input);
+        return;
+      }
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "active GM control changed while the environment preview was open; nothing changed.",
+        );
+        await this._renderPreservingFocus(input);
+        return;
+      }
+
+      const latest = loadResourceConfig();
+      const latestCurrent = resolveCurrentEnvironment(latest);
+      const latestCandidate = findEnvironment(
+        latest.environments,
+        environmentId,
+      );
+      if (
+        environmentFingerprint(latestCurrent) !== currentFingerprint ||
+        environmentFingerprint(latestCandidate) !== candidateFingerprint
+      ) {
+        notify(
+          "warn",
+          "the current or selected environment changed while the preview was open; review it again before applying.",
+        );
+        await this._renderPreservingFocus(input);
+        return;
+      }
+
+      try {
+        await setCurrentEnvironment(environmentId);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm the selected environment. The previous environment remains active.",
+        );
+        await this._renderPreservingFocus(input);
+        return;
+      }
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      notify("info", `activated ${environmentDisplayLabel(candidate)}.`);
       await this._renderPreservingFocus(input);
     });
   }
@@ -1518,6 +1586,36 @@ function environmentFingerprint(environment) {
     yieldWater: environment.yieldWater,
     builtIn: environment.builtIn,
   });
+}
+
+function buildEnvironmentActivationPreview(current, candidate) {
+  const rows = [
+    ["Current", environmentDisplayLabel(current) || "None"],
+    ["Selected", environmentDisplayLabel(candidate)],
+    ["Foraging", candidate?.forageable === false ? "Closed" : "Open"],
+    ["Food", describeEnvironmentChannel(candidate, "food")],
+    ["Water", describeEnvironmentChannel(candidate, "water")],
+  ];
+  const rowMarkup = rows
+    .map(
+      ([label, value]) =>
+        `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`,
+    )
+    .join("");
+  return `<div class="infinity-dialog-copy">
+    <p>Review the selected region before it becomes the party's active environment. No supplies are consumed by this change.</p>
+    <dl>${rowMarkup}</dl>
+  </div>`;
+}
+
+function describeEnvironmentChannel(environment, channel) {
+  if (!environment || environment.forageable === false) return "Unavailable";
+  const isWater = channel === "water";
+  const dc = isWater
+    ? (environment.waterDc ?? environment.dc)
+    : (environment.foodDc ?? environment.dc);
+  const formula = isWater ? environment.yieldWater : environment.yieldFood;
+  return `DC ${dc ?? "—"}; yield ${String(formula ?? "0")}`;
 }
 
 async function renderAndFocusEnvironmentControl(app, selector) {

@@ -111,7 +111,7 @@
   <section class="rm-section rm-environment">
     <h3>Where is the party?</h3>
     <div class="rm-environment__row">
-      <select class="mw-input" data-role="environment" aria-label="Current environment" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
+      <select class="mw-input" data-role="environment" aria-label="Choose an environment to preview and activate" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
         {{#each environments}}
         <option value="{{id}}" {{#if selected}}selected{{/if}}>{{optionLabel}}</option>
         {{/each}}
@@ -124,6 +124,7 @@
         {{/if}}
       </span>
     </div>
+    <p class="rm-note">Choosing another region opens a rules preview before anything becomes active.</p>
     {{#if canRunResourceWrites}}{{#unless currentEnvForageable}}
     <p id="rm-forage-drive-reason" class="rm-disabled-reason" role="status"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Forage Drive is unavailable here. Choose a forageable environment first.</p>
     {{/unless}}{{/if}}

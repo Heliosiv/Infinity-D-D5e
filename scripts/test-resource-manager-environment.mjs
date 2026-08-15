@@ -271,6 +271,102 @@ try {
   assert.match(html, /Food DC 15/);
   assert.match(html, /Water DC 19/);
   assert.match(html, /Ashen March/);
+  assert.match(html, /opens a rules preview before anything becomes active/i);
+
+  const activeBeforePreview =
+    settingValues.get("resourceRunState")?.currentEnvironmentId;
+  const confirmationsBeforePreview = confirmationCount;
+  confirmationResult = false;
+  await ResourceManagerApp.prototype._onEnvironmentSelection.call(fakeApp, {
+    value: "biome-forest",
+    dataset: { role: "environment" },
+  });
+  assert.equal(confirmationCount, confirmationsBeforePreview + 1);
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    activeBeforePreview,
+    "cancelling the environment preview keeps the current region active",
+  );
+  assert.match(lastConfirmation?.content ?? "", /Current/);
+  assert.match(lastConfirmation?.content ?? "", /Selected/);
+  assert.match(lastConfirmation?.content ?? "", /Foraging/);
+  assert.match(lastConfirmation?.content ?? "", /DC 10; yield 1d6/);
+
+  confirmationResult = true;
+  await ResourceManagerApp.prototype._onEnvironmentSelection.call(fakeApp, {
+    value: "biome-forest",
+    dataset: { role: "environment" },
+  });
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    "biome-forest",
+    "confirming the reviewed preset activates it",
+  );
+  await ResourceManagerApp.prototype._onEnvironmentSelection.call(fakeApp, {
+    value: copied.id,
+    dataset: { role: "environment" },
+  });
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    copied.id,
+  );
+
+  const activationOpened = deferred();
+  const resolveStaleActivation = deferred();
+  pendingConfirmation = {
+    markOpened: activationOpened.resolve,
+    result: resolveStaleActivation.promise,
+  };
+  const staleActivation =
+    ResourceManagerApp.prototype._onEnvironmentSelection.call(fakeApp, {
+      value: "limited",
+      dataset: { role: "environment" },
+    });
+  await activationOpened.promise;
+  const externallyChangedRunState = structuredClone(
+    settingValues.get("resourceRunState"),
+  );
+  externallyChangedRunState.currentEnvironmentId = "biome-forest";
+  settingValues.set("resourceRunState", externallyChangedRunState);
+  resolveStaleActivation.resolve(true);
+  await staleActivation;
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    "biome-forest",
+    "a stale preview cannot overwrite a newer active environment",
+  );
+  assert.match(
+    notifications.at(-1)?.message ?? "",
+    /changed while the preview/i,
+  );
+  externallyChangedRunState.currentEnvironmentId = copied.id;
+  settingValues.set("resourceRunState", externallyChangedRunState);
+
+  const authorityPreviewOpened = deferred();
+  const resolveAuthorityPreview = deferred();
+  pendingConfirmation = {
+    markOpened: authorityPreviewOpened.resolve,
+    result: resolveAuthorityPreview.promise,
+  };
+  const demotedActivation =
+    ResourceManagerApp.prototype._onEnvironmentSelection.call(fakeApp, {
+      value: "limited",
+      dataset: { role: "environment" },
+    });
+  await authorityPreviewOpened.promise;
+  users.activeGM = otherGm;
+  resolveAuthorityPreview.resolve(true);
+  await demotedActivation;
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    copied.id,
+    "authority handoff while the preview is open performs no activation",
+  );
+  assert.match(
+    notifications.at(-1)?.message ?? "",
+    /active GM control changed/i,
+  );
+  users.activeGM = gm;
 
   const builtInIds = copiedConfig.environments
     .filter((environment) => environment.builtIn === true)
