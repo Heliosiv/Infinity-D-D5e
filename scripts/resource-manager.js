@@ -42,6 +42,7 @@ import {
   removeCustomEnvironment,
   updateEnvironmentFields,
 } from "./resource/environment.js";
+import { downloadEnvironmentExport } from "./resource/environment-portability.js";
 import { presentRecentRuns } from "./resource/history.js";
 import {
   diagnoseResourceConfiguration,
@@ -63,6 +64,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
 import { pickSearchOption } from "./search-picker.js";
 import { loadCompendiumItems } from "./loot/pack.js";
+import { downloadJson } from "./loot/loot-app-shared.js";
 import { bindFocusRestoration, navigateToAppSection } from "./infinity-app.js";
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { initializePrivateState } from "./private-state.js";
@@ -115,6 +117,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       copyEnvironment: ResourceManagerApp._onCopyEnvironment,
       moveEnvironment: ResourceManagerApp._onMoveEnvironment,
       removeEnvironment: ResourceManagerApp._onRemoveEnvironment,
+      exportEnvironments: ResourceManagerApp._onExportEnvironments,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
       selectSection: navigateToAppSection,
@@ -460,6 +463,8 @@ export class ResourceManagerApp extends GmWorkbenchApp {
         currentCustomIndex < customEnvironmentIds.length - 1,
       canRemoveEnvironment:
         isAuthoritative && Boolean(currentEnv?.id) && currentCustomIndex >= 0,
+      customEnvironmentCount: customEnvironmentIds.length,
+      canExportEnvironments: isAuthoritative && customEnvironmentIds.length > 0,
       currentEnvLabel: currentEnv ? environmentDisplayLabel(currentEnv) : "—",
       currentEnvForageable: currentEnv ? currentEnvForageable : false,
       currentEnvDc: currentEnv?.dc ?? null,
@@ -1504,6 +1509,33 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       );
       await renderAndFocusEnvironmentControl(this, "[data-role='environment']");
     });
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onExportEnvironments() {
+    if (!requireResourceWriteAuthority("export custom environments")) return;
+    const config = loadResourceConfig();
+    const activeEnvironment = resolveCurrentEnvironment(config);
+    const result = downloadEnvironmentExport({
+      catalog: config.environments,
+      activeEnvironmentId: activeEnvironment?.id,
+      download: downloadJson,
+    });
+    if (result.data.environments.length === 0) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      notify("info", "create or copy a custom region before exporting.");
+      return;
+    }
+    if (!result.ok) {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      notify("warn", "Quartermaster could not start the environment download.");
+      return;
+    }
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    notify(
+      "info",
+      `exported ${result.data.environments.length} custom region${result.data.environments.length === 1 ? "" : "s"} to ${result.filename}.`,
+    );
   }
 
   /** @this {ResourceManagerApp} */

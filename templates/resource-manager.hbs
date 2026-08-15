@@ -335,12 +335,15 @@
       <section class="rm-section rm-environment-setup" aria-labelledby="rm-environment-setup-heading">
         <div class="rm-section__head">
           <h3 id="rm-environment-setup-heading">Environment setup</h3>
-          <div class="rm-environment-setup__actions" role="group" aria-label="Create custom regions">
+          <div class="rm-environment-setup__actions" role="group" aria-label="Manage custom regions">
             <button type="button" class="mw-btn mw-btn--ghost" data-action="createEnvironment" title="{{#if canCreateEnvironment}}Create and open a new editable custom region{{else}}Only the active GM can create and activate a custom region{{/if}}" {{#unless canCreateEnvironment}}disabled aria-disabled="true"{{/unless}}>
               <i class="fa-solid fa-plus" aria-hidden="true"></i> New custom
             </button>
             <button type="button" class="mw-btn mw-btn--ghost" data-action="copyEnvironment" title="{{#if canCopyEnvironment}}Copy the current region into an editable custom region{{else}}Only the active GM can copy and activate a custom region{{/if}}" {{#unless canCopyEnvironment}}disabled aria-disabled="true"{{/unless}}>
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Copy as custom
+            </button>
+            <button type="button" class="mw-btn mw-btn--ghost" data-action="exportEnvironments" title="{{#if canExportEnvironments}}Download {{customEnvironmentCount}} custom region rules as versioned JSON{{else}}{{#if isAuthoritative}}Create or copy a custom region before exporting{{else}}Only the active GM client can export custom regions{{/if}}{{/if}}" {{#unless canExportEnvironments}}disabled aria-disabled="true"{{/unless}}>
+              <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export custom
             </button>
           </div>
         </div>

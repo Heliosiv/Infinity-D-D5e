@@ -1067,6 +1067,18 @@ assert.match(customEnvironmentView.html, /data-environment-field="foodDc"/);
 assert.match(customEnvironmentView.html, /data-environment-field="waterDc"/);
 assert.match(customEnvironmentView.html, /data-environment-field="yieldFood"/);
 assert.match(customEnvironmentView.html, /Ashen March/);
+const exportEnvironmentButton = customEnvironmentView.html.match(
+  /<button\b[^>]*data-action="exportEnvironments"[^>]*>/,
+)?.[0];
+assert.ok(
+  exportEnvironmentButton,
+  "custom-region fixture exposes the versioned export action",
+);
+assert.doesNotMatch(
+  exportEnvironmentButton,
+  /\sdisabled(?:\s|=|>)/,
+  "export is available when custom regions exist",
+);
 
 const forageDriveDialog = views.find(
   (view) => view.id === "forage-drive-dialog",

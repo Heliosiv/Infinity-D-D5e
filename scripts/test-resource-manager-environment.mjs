@@ -246,6 +246,8 @@ try {
   assert.equal(context.canMoveEnvironmentEarlier, false);
   assert.equal(context.canMoveEnvironmentLater, false);
   assert.equal(context.canRemoveEnvironment, true);
+  assert.equal(context.customEnvironmentCount, 1);
+  assert.equal(context.canExportEnvironments, true);
   assert.equal(
     context.environments.find((environment) => environment.id === copied.id)
       ?.optionLabel,
@@ -264,6 +266,7 @@ try {
   assert.match(html, /data-action="copyEnvironment"/);
   assert.match(html, /data-action="moveEnvironment"/);
   assert.match(html, /data-action="removeEnvironment"/);
+  assert.match(html, /data-action="exportEnvironments"/);
   assert.match(html, /aria-label="Edit current custom environment"/);
   assert.match(html, /data-environment-field="foodDc"/);
   assert.match(html, /data-environment-field="waterDc"/);
