@@ -8,6 +8,8 @@ const savedGame = globalThis.game;
 const savedConst = globalThis.CONST;
 const savedFromUuid = globalThis.fromUuid;
 const savedUi = globalThis.ui;
+const savedDocument = globalThis.document;
+const savedFileReader = globalThis.FileReader;
 
 const gm = { id: "gm", isGM: true, role: 4, active: true };
 const otherGm = { id: "other-gm", isGM: true, role: 4, active: true };
@@ -35,6 +37,8 @@ let pendingConfirmation = null;
 let pendingResourceConfigWrite = null;
 let failNextResourceConfigWrite = false;
 let failNextRunStateWrite = false;
+let resourceConfigWriteCount = 0;
+let runStateWriteCount = 0;
 const notifications = [];
 
 try {
@@ -95,6 +99,8 @@ try {
       },
       async set(moduleId, key, value) {
         assert.equal(moduleId, "infinity-dnd5e");
+        if (key === "resourceConfig") resourceConfigWriteCount += 1;
+        if (key === "resourceRunState") runStateWriteCount += 1;
         if (key === "resourceConfig" && failNextResourceConfigWrite) {
           failNextResourceConfigWrite = false;
           throw new Error("simulated resource config write failure");
@@ -115,9 +121,10 @@ try {
     },
   };
 
-  const [{ ResourceManagerApp }, store] = await Promise.all([
+  const [{ ResourceManagerApp }, store, portability] = await Promise.all([
     import("./resource-manager.js"),
     import("./resource/store.js"),
+    import("./resource/environment-portability.js"),
   ]);
   settingValues.set("resourceConfig", store.createDefaultResourceConfig());
   settingValues.set("resourceRunState", {
@@ -248,6 +255,7 @@ try {
   assert.equal(context.canRemoveEnvironment, true);
   assert.equal(context.customEnvironmentCount, 1);
   assert.equal(context.canExportEnvironments, true);
+  assert.equal(context.canImportEnvironments, true);
   assert.equal(
     context.environments.find((environment) => environment.id === copied.id)
       ?.optionLabel,
@@ -267,6 +275,7 @@ try {
   assert.match(html, /data-action="moveEnvironment"/);
   assert.match(html, /data-action="removeEnvironment"/);
   assert.match(html, /data-action="exportEnvironments"/);
+  assert.match(html, /data-action="importEnvironments"/);
   assert.match(html, /aria-label="Edit current custom environment"/);
   assert.match(html, /data-environment-field="foodDc"/);
   assert.match(html, /data-environment-field="waterDc"/);
@@ -755,6 +764,211 @@ try {
     notifications.at(-1)?.message ?? "",
     /saved custom region .* but could not confirm it became active/i,
   );
+
+  const importBaseline = store.normalizeResourceConfig(
+    settingValues.get("resourceConfig"),
+  );
+  const importedUpdate = {
+    ...importBaseline.environments.find(
+      (environment) => environment.id === copied.id,
+    ),
+    label: "Imported Ashen March",
+    foodDc: 16,
+    dc: 19,
+  };
+  const importedAddition = {
+    id: "river-camp",
+    label: "River Camp",
+    dc: 12,
+    foodDc: 12,
+    waterDc: 8,
+    forageable: true,
+    yieldFood: "1d4",
+    yieldWater: "1d8",
+  };
+  const importFile = {
+    schema: portability.ENVIRONMENT_EXPORT_SCHEMA,
+    activeEnvironmentId: importedAddition.id,
+    environments: [importedUpdate, importedAddition],
+  };
+  const activeBeforeImport =
+    settingValues.get("resourceRunState")?.currentEnvironmentId;
+  const importBaselineFingerprint = portability.environmentCatalogFingerprint(
+    importBaseline.environments,
+  );
+  const writesBeforeImportPreview = resourceConfigWriteCount;
+  confirmationResult = false;
+  queueJsonFile(importFile);
+  await ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(
+    fakeApp,
+  );
+  assert.equal(
+    portability.environmentCatalogFingerprint(
+      store.normalizeResourceConfig(settingValues.get("resourceConfig"))
+        .environments,
+    ),
+    importBaselineFingerprint,
+    "cancelling the complete import preview performs no catalog write",
+  );
+  assert.equal(resourceConfigWriteCount, writesBeforeImportPreview);
+  assert.match(lastConfirmation?.content ?? "", /Add — River Camp/);
+  assert.match(
+    lastConfirmation?.content ?? "",
+    /Update — Imported Ashen March/,
+  );
+  assert.match(lastConfirmation?.content ?? "", /will not activate it/i);
+
+  confirmationResult = true;
+  const resourcesBeforeImport = structuredClone(importBaseline.resources);
+  const runStateWritesBeforeImport = runStateWriteCount;
+  queueJsonFile(importFile);
+  await ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(
+    fakeApp,
+  );
+  let importedConfig = store.normalizeResourceConfig(
+    settingValues.get("resourceConfig"),
+  );
+  assert.equal(
+    importedConfig.environments.find(
+      (environment) => environment.id === copied.id,
+    )?.label,
+    "Imported Ashen March",
+  );
+  assert.equal(
+    importedConfig.environments.find(
+      (environment) => environment.id === importedAddition.id,
+    )?.yieldWater,
+    "1d8",
+  );
+  assert.deepEqual(
+    importedConfig.resources,
+    resourcesBeforeImport,
+    "environment import preserves resource definitions",
+  );
+  assert.equal(
+    resourceConfigWriteCount,
+    writesBeforeImportPreview + 1,
+    "a confirmed import uses one catalog write",
+  );
+  assert.equal(
+    runStateWriteCount,
+    runStateWritesBeforeImport,
+    "environment import does not write activation state",
+  );
+  assert.equal(
+    settingValues.get("resourceRunState")?.currentEnvironmentId,
+    activeBeforeImport,
+    "import never auto-activates the file's suggested environment",
+  );
+  assert.match(
+    notifications.at(-1)?.message ?? "",
+    /active environment remains/i,
+  );
+
+  const confirmationsBeforeInvalidImport = confirmationCount;
+  queueJsonFile({ ...importFile, schema: "not-an-infinity-file" });
+  await ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(
+    fakeApp,
+  );
+  assert.equal(
+    confirmationCount,
+    confirmationsBeforeInvalidImport,
+    "an invalid file never reaches the save confirmation",
+  );
+  assert.match(notifications.at(-1)?.message ?? "", /Expected schema/);
+
+  const updatedRiverFile = {
+    ...importFile,
+    environments: [
+      {
+        ...importedAddition,
+        label: "River Camp Revised",
+        yieldWater: "2d6",
+      },
+    ],
+    activeEnvironmentId: importedAddition.id,
+  };
+  const staleImportOpened = deferred();
+  const resolveStaleImport = deferred();
+  pendingConfirmation = {
+    markOpened: staleImportOpened.resolve,
+    result: resolveStaleImport.promise,
+  };
+  queueJsonFile(updatedRiverFile);
+  const staleImport =
+    ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(fakeApp);
+  await staleImportOpened.promise;
+  const concurrentConfig = structuredClone(settingValues.get("resourceConfig"));
+  concurrentConfig.environments.push({
+    ...importedAddition,
+    id: "concurrent-camp",
+    label: "Concurrent Camp",
+  });
+  settingValues.set("resourceConfig", concurrentConfig);
+  resolveStaleImport.resolve(true);
+  await staleImport;
+  importedConfig = store.normalizeResourceConfig(
+    settingValues.get("resourceConfig"),
+  );
+  assert.ok(
+    importedConfig.environments.some(
+      (environment) => environment.id === "concurrent-camp",
+    ),
+    "a concurrent catalog change is preserved",
+  );
+  assert.equal(
+    importedConfig.environments.find(
+      (environment) => environment.id === importedAddition.id,
+    )?.label,
+    "River Camp",
+    "a stale import preview cannot overwrite the newer catalog",
+  );
+  assert.match(notifications.at(-1)?.message ?? "", /catalog changed/i);
+
+  const authorityImportOpened = deferred();
+  const resolveAuthorityImport = deferred();
+  pendingConfirmation = {
+    markOpened: authorityImportOpened.resolve,
+    result: resolveAuthorityImport.promise,
+  };
+  const beforeAuthorityImport = portability.environmentCatalogFingerprint(
+    importedConfig.environments,
+  );
+  queueJsonFile(updatedRiverFile);
+  const authorityImport =
+    ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(fakeApp);
+  await authorityImportOpened.promise;
+  users.activeGM = otherGm;
+  resolveAuthorityImport.resolve(true);
+  await authorityImport;
+  assert.equal(
+    portability.environmentCatalogFingerprint(
+      store.normalizeResourceConfig(settingValues.get("resourceConfig"))
+        .environments,
+    ),
+    beforeAuthorityImport,
+    "authority handoff during preview performs no import write",
+  );
+  assert.match(
+    notifications.at(-1)?.message ?? "",
+    /active GM control changed/i,
+  );
+  users.activeGM = gm;
+
+  failNextResourceConfigWrite = true;
+  queueJsonFile(updatedRiverFile);
+  await ResourceManagerApp.DEFAULT_OPTIONS.actions.importEnvironments.call(
+    fakeApp,
+  );
+  assert.equal(
+    portability.environmentCatalogFingerprint(
+      store.normalizeResourceConfig(settingValues.get("resourceConfig"))
+        .environments,
+    ),
+    beforeAuthorityImport,
+    "a failed import save leaves the prior catalog authoritative",
+  );
+  assert.match(notifications.at(-1)?.message ?? "", /could not confirm/i);
 } finally {
   if (savedFoundry === undefined) delete globalThis.foundry;
   else globalThis.foundry = savedFoundry;
@@ -766,6 +980,10 @@ try {
   else globalThis.fromUuid = savedFromUuid;
   if (savedUi === undefined) delete globalThis.ui;
   else globalThis.ui = savedUi;
+  if (savedDocument === undefined) delete globalThis.document;
+  else globalThis.document = savedDocument;
+  if (savedFileReader === undefined) delete globalThis.FileReader;
+  else globalThis.FileReader = savedFileReader;
 }
 
 function customEnvironmentIds(catalog) {
@@ -804,6 +1022,39 @@ function environmentInput(environmentId, field, value) {
       this.reported = true;
       return !this.validationMessage;
     },
+  };
+}
+
+function queueJsonFile(data) {
+  let changeHandler = null;
+  globalThis.document = {
+    createElement(tagName) {
+      assert.equal(tagName, "input");
+      return {
+        files: [{}],
+        addEventListener(type, handler) {
+          if (type === "change") changeHandler = handler;
+        },
+        click() {
+          changeHandler?.();
+        },
+      };
+    },
+  };
+  globalThis.FileReader = class {
+    constructor() {
+      this.result = "";
+      this._listeners = new Map();
+    }
+
+    addEventListener(type, handler) {
+      this._listeners.set(type, handler);
+    }
+
+    readAsText() {
+      this.result = JSON.stringify(data);
+      this._listeners.get("load")?.();
+    }
   };
 }
 

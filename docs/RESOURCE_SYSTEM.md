@@ -485,16 +485,19 @@ and `npm run ui:audit` pass.
 
 ### Milestone 2 - Environment editor and presets
 
-The first four vertical slices are implemented in source. A GM can create a
+The first five vertical slices are implemented in source. A GM can create a
 fresh custom region or copy the current preset or custom region, immediately
 activate it, and safely edit its name, forage availability, separate food and
 water DCs, and food/water yields. Custom entries can be ordered relative to one
 another and removed with a deterministic replacement. Choosing a different
 region now previews its forage rules before activation, with authority and
-stale-state checks repeated after confirmation. The remaining deliverables
-below cover validated portable-file import. Custom-region export uses the
+stale-state checks repeated after confirmation. Custom-region export uses the
 versioned `infinity-dnd5e-quartermaster-environments-v1` schema and intentionally
-omits built-in presets, roster data, balances, and run history.
+omits built-in presets, roster data, balances, and run history. Import validates
+the complete file, previews every addition, update, and unchanged entry, then
+saves the catalog in one authoritative write without changing the active
+environment. The Milestone 2 source deliverables are complete; installed-world
+multi-client acceptance remains part of Milestone 5.
 
 #### Deliverables
 

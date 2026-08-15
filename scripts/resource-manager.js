@@ -42,7 +42,12 @@ import {
   removeCustomEnvironment,
   updateEnvironmentFields,
 } from "./resource/environment.js";
-import { downloadEnvironmentExport } from "./resource/environment-portability.js";
+import {
+  downloadEnvironmentExport,
+  environmentCatalogFingerprint,
+  ENVIRONMENT_EXPORT_LIMIT,
+  planEnvironmentImport,
+} from "./resource/environment-portability.js";
 import { presentRecentRuns } from "./resource/history.js";
 import {
   diagnoseResourceConfiguration,
@@ -64,7 +69,7 @@ import { SOUND_EVENTS, playModuleSound } from "./audio.js";
 import { isFullGM } from "./permissions.js";
 import { pickSearchOption } from "./search-picker.js";
 import { loadCompendiumItems } from "./loot/pack.js";
-import { downloadJson } from "./loot/loot-app-shared.js";
+import { downloadJson, pickJsonFile } from "./loot/loot-app-shared.js";
 import { bindFocusRestoration, navigateToAppSection } from "./infinity-app.js";
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { initializePrivateState } from "./private-state.js";
@@ -118,6 +123,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       moveEnvironment: ResourceManagerApp._onMoveEnvironment,
       removeEnvironment: ResourceManagerApp._onRemoveEnvironment,
       exportEnvironments: ResourceManagerApp._onExportEnvironments,
+      importEnvironments: ResourceManagerApp._onImportEnvironments,
       resetConfig: ResourceManagerApp._onResetConfig,
       refresh: ResourceManagerApp._onRefresh,
       selectSection: navigateToAppSection,
@@ -465,6 +471,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
         isAuthoritative && Boolean(currentEnv?.id) && currentCustomIndex >= 0,
       customEnvironmentCount: customEnvironmentIds.length,
       canExportEnvironments: isAuthoritative && customEnvironmentIds.length > 0,
+      canImportEnvironments: isAuthoritative,
       currentEnvLabel: currentEnv ? environmentDisplayLabel(currentEnv) : "—",
       currentEnvForageable: currentEnv ? currentEnvForageable : false,
       currentEnvDc: currentEnv?.dc ?? null,
@@ -1526,6 +1533,14 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       notify("info", "create or copy a custom region before exporting.");
       return;
     }
+    if (result.reason === "limit-exceeded") {
+      playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+      notify(
+        "warn",
+        `Quartermaster can export at most ${ENVIRONMENT_EXPORT_LIMIT} custom regions at once. Remove extras before exporting; nothing was downloaded.`,
+      );
+      return;
+    }
     if (!result.ok) {
       playModuleSound(SOUND_EVENTS.WARNING_MUTED);
       notify("warn", "Quartermaster could not start the environment download.");
@@ -1536,6 +1551,117 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       "info",
       `exported ${result.data.environments.length} custom region${result.data.environments.length === 1 ? "" : "s"} to ${result.filename}.`,
     );
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onImportEnvironments() {
+    if (!requireResourceWriteAuthority("import custom environments")) return;
+    const data = await pickJsonFile();
+    if (!data) return;
+    return await enqueueEnvironmentMutation(this, async () => {
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "active GM control changed while the file picker was open; nothing was imported.",
+        );
+        return;
+      }
+      const before = loadResourceConfig();
+      const sourceFingerprint = environmentCatalogFingerprint(
+        before.environments,
+      );
+      const plan = planEnvironmentImport(data, before.environments);
+      if (!plan.ok) {
+        playModuleSound(SOUND_EVENTS.WARNING_MUTED);
+        const firstError = plan.errors[0] ?? "The file is not valid.";
+        const remaining = Math.max(0, plan.errors.length - 1);
+        notify(
+          "warn",
+          `${firstError}${remaining ? ` (${remaining} more validation issue${remaining === 1 ? "" : "s"}.)` : ""} Nothing was imported.`,
+        );
+        return;
+      }
+
+      const currentEnvironment = resolveCurrentEnvironment(before);
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: `Import ${plan.preview.total} custom region${plan.preview.total === 1 ? "" : "s"}?`,
+          icon: "fa-solid fa-file-import",
+        },
+        content: buildEnvironmentImportPreview(plan, currentEnvironment),
+        rejectClose: false,
+      });
+      if (!confirmed) return;
+      if (!isAuthoritativeGM()) {
+        notify(
+          "warn",
+          "active GM control changed while the import preview was open; nothing was imported.",
+        );
+        return;
+      }
+
+      const latest = loadResourceConfig();
+      if (
+        environmentCatalogFingerprint(latest.environments) !== sourceFingerprint
+      ) {
+        notify(
+          "warn",
+          "the saved environment catalog changed while the import preview was open; review the file again before saving.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-action='importEnvironments']",
+        );
+        return;
+      }
+      const currentPlan = planEnvironmentImport(data, latest.environments);
+      if (!currentPlan.ok) {
+        notify(
+          "warn",
+          "the import is no longer valid against the saved catalog; review the file again.",
+        );
+        return;
+      }
+      latest.environments = currentPlan.catalog;
+      try {
+        await saveResourceConfig(latest);
+      } catch {
+        notify(
+          "warn",
+          "Quartermaster could not confirm the imported catalog. The previous saved regions remain authoritative.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-action='importEnvironments']",
+        );
+        return;
+      }
+      const saved = loadResourceConfig();
+      if (
+        environmentCatalogFingerprint(saved.environments) !==
+        environmentCatalogFingerprint(currentPlan.catalog)
+      ) {
+        notify(
+          "warn",
+          "Quartermaster could not verify the imported catalog after saving. Review the environment list before trying again.",
+        );
+        await renderAndFocusEnvironmentControl(
+          this,
+          "[data-action='importEnvironments']",
+        );
+        return;
+      }
+
+      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+      notify(
+        "info",
+        `imported ${currentPlan.preview.total} custom region${currentPlan.preview.total === 1 ? "" : "s"}. The active environment remains ${environmentDisplayLabel(currentEnvironment)} until you review and choose another.`,
+      );
+      await renderAndFocusEnvironmentControl(
+        this,
+        "[data-action='importEnvironments']",
+      );
+    });
   }
 
   /** @this {ResourceManagerApp} */
@@ -1637,6 +1763,36 @@ function buildEnvironmentActivationPreview(current, candidate) {
   return `<div class="infinity-dialog-copy">
     <p>Review the selected region before it becomes the party's active environment. No supplies are consumed by this change.</p>
     <dl>${rowMarkup}</dl>
+  </div>`;
+}
+
+function buildEnvironmentImportPreview(plan, currentEnvironment) {
+  const preview = plan?.preview ?? {};
+  const entries = Array.isArray(plan?.imported) ? plan.imported : [];
+  const entryMarkup = entries
+    .map(({ action, environment }) => {
+      const actionLabel =
+        action === "add" ? "Add" : action === "update" ? "Update" : "Unchanged";
+      const forageLabel =
+        environment?.forageable === false
+          ? "Foraging closed"
+          : `Food ${describeEnvironmentChannel(environment, "food")}; Water ${describeEnvironmentChannel(environment, "water")}`;
+      return `<li>
+        <strong>${escapeHtml(actionLabel)} — ${escapeHtml(environmentDisplayLabel(environment))}</strong>
+        <code>${escapeHtml(environment?.id ?? "")}</code>
+        <span>${escapeHtml(forageLabel)}</span>
+      </li>`;
+    })
+    .join("");
+  const recommended = preview.recommendedActiveEnvironment;
+  const recommendation = recommended
+    ? `<p><strong>File suggestion:</strong> ${escapeHtml(environmentDisplayLabel(recommended))}. Import will not activate it; review and choose it separately afterward.</p>`
+    : "<p>The file does not suggest an active custom region.</p>";
+  return `<div class="infinity-dialog-copy rm-environment-import-preview">
+    <p>This one save adds <strong>${Number(preview.additions) || 0}</strong>, updates <strong>${Number(preview.updates) || 0}</strong>, and leaves <strong>${Number(preview.unchanged) || 0}</strong> custom regions unchanged.</p>
+    <p>The active environment remains <strong>${escapeHtml(environmentDisplayLabel(currentEnvironment) || "unchanged")}</strong>. Built-in presets, resource rules, roster, supplies, and run history are not imported.</p>
+    ${recommendation}
+    <ul>${entryMarkup}</ul>
   </div>`;
 }
 

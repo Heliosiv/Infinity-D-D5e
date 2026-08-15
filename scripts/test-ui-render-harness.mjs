@@ -1079,6 +1079,18 @@ assert.doesNotMatch(
   /\sdisabled(?:\s|=|>)/,
   "export is available when custom regions exist",
 );
+const importEnvironmentButton = customEnvironmentView.html.match(
+  /<button\b[^>]*data-action="importEnvironments"[^>]*>/,
+)?.[0];
+assert.ok(
+  importEnvironmentButton,
+  "custom-region fixture exposes validated import",
+);
+assert.doesNotMatch(
+  importEnvironmentButton,
+  /\sdisabled(?:\s|=|>)/,
+  "the active GM can choose a portable environment file",
+);
 
 const forageDriveDialog = views.find(
   (view) => view.id === "forage-drive-dialog",

@@ -52,7 +52,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 - Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
 - **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and durable authoritative buy/sell transactions. Each player request is saved before sending; the active GM checkpoints the exact Actor and merchant plan before the first campaign write, then resumes only operations proven incomplete after reload or authority handoff. Unexpected third-state data is pinned for GM review instead of guessed or rolled back. A persistent global lock can close every shop, remember live player sessions without changing per-shop access modes, and restore valid sessions later; see [Merchant Sessions and Global Access](docs/MERCHANT_SESSIONS.md).
 - **Downtime & City Actions**: the GM assigns the same hour budget to each eligible character; players queue several routine, commerce, and crime activities; the GM locks an immutable hidden-roll preview before applying exact receipts. Local Heat and stolen-goods provenance persist by settlement.
-- **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, review-before-activation environment choices, versioned custom-region exports, and a read-only player **Party Supplies** outlook.
+- **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, review-before-activation environment choices, and versioned custom-region export/import with a complete validation preview. Players retain a read-only **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
 - **Critical Injuries V2**: recovery from 0 HP or the dead state creates a durable GM triage review. The GM can send a private player d100 roll, dismiss it, or start an exceptional-case review manually; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Spell components**: every leveled spell cast spends one 1-gp component per cast level, including the chosen upcast level. Component Pouch charges are used before loose Spell Components; combined shortages block the cast before its native consumption updates are applied. Cantrips and spell-scroll item uses are exempt.
@@ -285,8 +285,10 @@ replay, rollback, or player-socket projection. An acknowledged interruption is
 recorded as an unknown inventory outcome rather than assuming nothing changed.
 
 Campaign-specific regions can be created directly in Quartermaster. Choose
-**New custom** for a fresh baseline, or select the closest existing environment
-and choose **Copy as custom**. Custom regions can be renamed, ordered relative
+**New custom** for a fresh baseline, or activate the closest existing environment
+and choose **Copy as custom**. Choosing a different active environment first
+shows its forage availability, food and water DCs, and yields; the selection is
+rechecked after confirmation. Custom regions can be renamed, ordered relative
 to one another, and removed after confirmation. Removing the active custom
 region activates the next catalog entry, or the nearest previous entry when it
 was last. Edit forage availability, separate food and water Survival DCs, and
@@ -294,7 +296,10 @@ food/water yield formulas. Built-in scarcity tiers remain available alongside
 forest, rainforest, grassland, coast, hills, mountains, swamp, desert, tundra,
 and riverlands presets. Built-ins remain unchanged, custom IDs are
 collision-safe, and new yield formulas are validated and bounded before they
-are saved.
+are saved. **Export custom** downloads only the portable region rules. **Import
+custom** validates the entire versioned file and previews every add, update, and
+unchanged entry before one catalog save; it never changes the active environment
+or imports roster, supply, rule, or run-history data.
 
 The complete current-state map, data ownership rules, automation contract,
 test matrix, and phased hardening plan live in

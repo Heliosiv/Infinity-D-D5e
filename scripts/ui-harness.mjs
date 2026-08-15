@@ -2590,6 +2590,7 @@ function resourceManagerContext() {
     canRemoveEnvironment: false,
     customEnvironmentCount: 0,
     canExportEnvironments: false,
+    canImportEnvironments: true,
     currentEnvLabel: "Limited",
     currentEnvForageable: true,
     currentEnvDc: 15,

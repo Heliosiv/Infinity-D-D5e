@@ -345,6 +345,9 @@
             <button type="button" class="mw-btn mw-btn--ghost" data-action="exportEnvironments" title="{{#if canExportEnvironments}}Download {{customEnvironmentCount}} custom region rules as versioned JSON{{else}}{{#if isAuthoritative}}Create or copy a custom region before exporting{{else}}Only the active GM client can export custom regions{{/if}}{{/if}}" {{#unless canExportEnvironments}}disabled aria-disabled="true"{{/unless}}>
               <i class="fa-solid fa-file-export" aria-hidden="true"></i> Export custom
             </button>
+            <button type="button" class="mw-btn mw-btn--ghost" data-action="importEnvironments" title="{{#if canImportEnvironments}}Choose a versioned custom-region JSON file, validate it, and preview every change before saving{{else}}Only the active GM client can import custom regions{{/if}}" {{#unless canImportEnvironments}}disabled aria-disabled="true"{{/unless}}>
+              <i class="fa-solid fa-file-import" aria-hidden="true"></i> Import custom
+            </button>
           </div>
         </div>
         {{#if currentEnvironment.isCustom}}
