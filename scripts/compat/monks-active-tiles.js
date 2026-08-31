@@ -3,6 +3,7 @@
 import { isFullGM } from "../permissions.js";
 import {
   emitPlayerSurfaceOpen,
+  openPlayerSurface,
   PLAYER_SURFACE_LABELS,
   PLAYER_SURFACES,
   setMattSenderGuardStatus,
@@ -415,7 +416,7 @@ function isPlainObject(value) {
 
 export function buildPlayerSurfaceAction() {
   return {
-    name: "Open Infinity player window",
+    name: "Open Infinity window",
     group: MODULE_ID,
     requiresGM: true,
     ctrls: [
@@ -430,16 +431,26 @@ export function buildPlayerSurfaceAction() {
     ],
     values: { surfaces: PLAYER_SURFACE_LABELS },
     fn: async ({ action, userId } = {}) => {
+      const surface = action?.data?.surface;
+      const triggeringUserId = boundedId(userId);
+      const currentUser = globalThis.game?.user;
+      if (
+        isFullGM(currentUser) &&
+        triggeringUserId === boundedId(currentUser?.id)
+      ) {
+        const opened = await openPlayerSurface(surface);
+        return { continue: opened === true };
+      }
       const payload = await emitPlayerSurfaceOpen({
-        targetUserId: userId,
-        surface: action?.data?.surface,
+        targetUserId: triggeringUserId,
+        surface,
       });
       return { continue: Boolean(payload) };
     },
     content: async (_trigger, action) => {
       const label =
         PLAYER_SURFACE_LABELS[action?.data?.surface] ?? "Invalid window";
-      return `<span class="action-style">Open Infinity player window</span> <span class="details-style">${label}</span> for the triggering player`;
+      return `<span class="action-style">Open Infinity window</span> <span class="details-style">${label}</span> for the triggering user`;
     },
   };
 }

@@ -977,6 +977,25 @@ try {
   assert.notEqual(preRegisteredApi.onMessage, preRegisteredOriginal);
 
   const directAction = buildPlayerSurfaceAction();
+  let localGmOpens = 0;
+  const socketlibExecutionsBeforeGmClick = socketlibExecutions.length;
+  installGame({
+    currentUser: gm,
+    infinityApi: { openShops: () => (localGmOpens += 1) },
+  });
+  const successfulGmAction = await directAction.fn({
+    action: { data: { surface: PLAYER_SURFACES.SHOPS } },
+    userId: gm.id,
+  });
+  assert.deepEqual(successfulGmAction, { continue: true });
+  assert.equal(localGmOpens, 1, "a full GM click opens the window locally");
+  assert.equal(
+    socketlibExecutions.length,
+    socketlibExecutionsBeforeGmClick,
+    "a full GM click never enters the player-targeted SocketLib path",
+  );
+
+  installGame({ currentUser: gm });
   const successfulAction = await directAction.fn({
     action: { data: { surface: PLAYER_SURFACES.SHOPS } },
     userId: player.id,

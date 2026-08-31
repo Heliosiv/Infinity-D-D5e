@@ -134,6 +134,10 @@ Reborn's public `showCalendar()` API. An active legacy Simple Calendar
 installation is supported as a fallback, while inactive packages are ignored;
 the launcher fails closed when neither active module exposes the API.
 
+When the current full Gamemaster clicks one of these Landing Page controls, the
+same allowlisted surface opens locally for testing. That GM-only local path does
+not enter SocketLib or weaken the authenticated player-targeting guard.
+
 Installed-world checks can call
 `game.modules.get("infinity-dnd5e").api.getPlayerSurfaceStatus()`. It returns
 only
