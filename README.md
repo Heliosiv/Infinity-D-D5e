@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.7 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.8 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -19,6 +19,8 @@ Full GMs see campaign-management workspaces. Players and Assistant GMs see only 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.8 — Released 2026-08-31** - Fixes the Landing Page's Infinity-backed Party Supplies, Shops, Factions, Downtime, Calendar, and Injuries sections for full Gamemasters while preserving the existing permission-scoped SocketLib path for players.
 
 **v0.3.7 — Released 2026-08-13** - Introduces the cinematic GM Workbench for Merchants, Quartermaster, Downtime, Factions, and Critical Injuries while preserving existing launchers and authoritative subsystem workflows. It also fixes Critical Injury recipient selection and faction-image persistence, strengthens privileged-route fallbacks and demotion cleanup, and clarifies responsive, accessible recovery states across module surfaces.
 
