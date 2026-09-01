@@ -91,4 +91,4 @@ Technical identifiers remain in Advanced details where a workflow provides them.
 
 ## Monk's Active Tiles
 
-The allowlisted `home` destination opens the same role-aware Home for the triggering player. Existing destination IDs remain valid. The tile message still carries only the fixed surface key and user IDs; it does not add campaign data or grant a new permission.
+The allowlisted `home` destination opens the same role-aware Home for the triggering player. Existing destination IDs remain valid. A full Gamemaster who clicks the Landing Page's Shops control opens Merchant Workspace locally; player clicks still open only the permission-scoped Shops picker through the authenticated player route. The tile message still carries only the fixed surface key and user IDs; it does not add campaign data or grant a new permission.

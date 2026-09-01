@@ -336,6 +336,21 @@ try {
   );
   assert.equal(PLAYER_SURFACE_LABELS[PLAYER_SURFACES.HOME], "Infinity Home");
 
+  const gmShopOpens = [];
+  installGame({ currentUser: gm });
+  assert.equal(
+    await openPlayerSurface(PLAYER_SURFACES.SHOPS, {
+      moduleApi: {
+        openShops: () => gmShopOpens.push("player-shops"),
+        openMerchantWorkspace: () => gmShopOpens.push("merchant-workspace"),
+      },
+      gameRef: globalThis.game,
+    }),
+    true,
+    "a full GM Shops click opens the Merchant Workspace",
+  );
+  assert.deepEqual(gmShopOpens, ["merchant-workspace"]);
+
   installGame({
     currentUser: player,
     criticalInjuriesEnabled: false,
@@ -981,7 +996,7 @@ try {
   const socketlibExecutionsBeforeGmClick = socketlibExecutions.length;
   installGame({
     currentUser: gm,
-    infinityApi: { openShops: () => (localGmOpens += 1) },
+    infinityApi: { openMerchantWorkspace: () => (localGmOpens += 1) },
   });
   const successfulGmAction = await directAction.fn({
     action: { data: { surface: PLAYER_SURFACES.SHOPS } },

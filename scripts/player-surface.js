@@ -65,6 +65,10 @@ const API_OPENERS = Object.freeze({
   [PLAYER_SURFACES.CRITICAL_INJURIES]: "openCriticalInjuries",
 });
 
+const FULL_GM_API_OPENERS = Object.freeze({
+  [PLAYER_SURFACES.SHOPS]: "openMerchantWorkspace",
+});
+
 const PLAYER_SURFACE_SETTING_GATES = Object.freeze({
   [PLAYER_SURFACES.PARTY_SUPPLIES]: Object.freeze({
     key: SETTING_KEYS.RESOURCE_PLAYER_VIEW,
@@ -266,6 +270,7 @@ export async function openPlayerSurface(
   {
     moduleApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api,
     calendarApi = resolveCalendarApi(),
+    gameRef = globalThis.game,
   } = {},
 ) {
   if (!SURFACE_SET.has(surface)) return false;
@@ -274,7 +279,7 @@ export async function openPlayerSurface(
     return openCalendar({ calendarApi });
   }
 
-  const method = API_OPENERS[surface];
+  const method = resolveApiOpener(surface, gameRef);
   const opener = moduleApi?.[method];
   if (typeof opener !== "function") {
     notifyUnavailable(surface);
@@ -335,7 +340,7 @@ export function getPlayerSurfaceAvailability(
     return { available: true, reason: "" };
   }
 
-  const method = API_OPENERS[surface];
+  const method = resolveApiOpener(surface, gameRef);
   const resolvedModuleApi =
     moduleApi ?? gameRef?.modules?.get?.(MODULE_ID)?.api;
   if (typeof resolvedModuleApi?.[method] !== "function") {
@@ -345,6 +350,13 @@ export function getPlayerSurfaceAvailability(
     };
   }
   return { available: true, reason: "" };
+}
+
+function resolveApiOpener(surface, gameRef = globalThis.game) {
+  if (isFullGM(gameRef?.user) && FULL_GM_API_OPENERS[surface]) {
+    return FULL_GM_API_OPENERS[surface];
+  }
+  return API_OPENERS[surface];
 }
 
 function readWorldSetting(gameRef, key) {

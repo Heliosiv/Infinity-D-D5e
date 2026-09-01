@@ -59,6 +59,7 @@ const moduleApi = {
   openCriticalInjuries: () => {},
   openDowntimeActivities: () => {},
   openHub: () => {},
+  openMerchantWorkspace: () => {},
   openPartySupplies: () => {},
   openReputationView: () => {},
   openShops: () => {},

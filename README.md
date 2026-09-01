@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. One role-aware Home groups authorized destinations by **Prepare**, **Run the Session**, and **Track the Campaign** without widening any player data projection.
 
-Version 0.3.8 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.9 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open Home in either of these ways:
 
@@ -20,7 +20,9 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.8 — Released 2026-08-31** - Fixes the Landing Page's Infinity-backed Party Supplies, Shops, Factions, Downtime, Calendar, and Injuries sections for full Gamemasters while preserving the existing permission-scoped SocketLib path for players.
+**v0.3.9 — Released 2026-08-31** - Completes the Landing Page fix for full Gamemasters: Shops now opens the usable Merchant Workspace instead of stopping at the player-only Shops warning. Player clicks keep the existing permission-scoped SocketLib route.
+
+**v0.3.8 — Released 2026-08-31** - Fixes the Landing Page's Infinity-backed Party Supplies, Factions, Downtime, Calendar, and Injuries sections for full Gamemasters, and restores a bounded local Shops response while preserving the existing permission-scoped SocketLib path for players.
 
 **v0.3.7 — Released 2026-08-13** - Introduces the cinematic GM Workbench for Merchants, Quartermaster, Downtime, Factions, and Critical Injuries while preserving existing launchers and authoritative subsystem workflows. It also fixes Critical Injury recipient selection and faction-image persistence, strengthens privileged-route fallbacks and demotion cleanup, and clarifies responsive, accessible recovery states across module surfaces.
 
@@ -137,8 +139,10 @@ installation is supported as a fallback, while inactive packages are ignored;
 the launcher fails closed when neither active module exposes the API.
 
 When the current full Gamemaster clicks one of these Landing Page controls, the
-same allowlisted surface opens locally for testing. That GM-only local path does
-not enter SocketLib or weaken the authenticated player-targeting guard.
+allowlisted surface opens locally for testing. Shops opens the Merchant Workspace
+because the player Shops picker intentionally rejects full Gamemasters; the other
+destinations keep their existing local view. That GM-only local path does not enter
+SocketLib or weaken the authenticated player-targeting guard.
 
 Installed-world checks can call
 `game.modules.get("infinity-dnd5e").api.getPlayerSurfaceStatus()`. It returns
