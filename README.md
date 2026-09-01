@@ -7,7 +7,7 @@ for D&D 5e on Foundry VTT.
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.9 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.10 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -21,6 +21,8 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.10 — Released 2026-08-31** - Releases all pending Workbench and Quartermaster improvements: full Gamemasters now enter the persistent Workbench as the primary launcher, recovery remains fail-closed and focused, short layouts keep every control reachable, and custom Quartermaster environments can be previewed before activation and exported or safely imported through a complete versioned validation review.
 
 **v0.3.9 — Released 2026-08-31** - Completes the Landing Page fix for full Gamemasters: Shops now opens the usable Merchant Workspace instead of stopping at the player-only Shops warning. Player clicks keep the existing permission-scoped SocketLib route.
 

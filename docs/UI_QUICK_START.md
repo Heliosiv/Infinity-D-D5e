@@ -1,6 +1,6 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the current v0.3.7 source interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
+This guide covers the current v0.3.10 source interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
 
 ## Open the primary launcher
 
