@@ -153,6 +153,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       lockBlock: DowntimeWorkspaceApp._onLockBlock,
       planBlock: DowntimeWorkspaceApp._onPlanBlock,
       chooseGuidedOutcome: DowntimeWorkspaceApp._onChooseGuidedOutcome,
+      saveGuidedReport: DowntimeWorkspaceApp._onSaveGuidedReport,
       applyBlock: DowntimeWorkspaceApp._onApplyBlock,
       cancelBlock: DowntimeWorkspaceApp._onCancelBlock,
       recoverBlock: DowntimeWorkspaceApp._onRecoverBlock,
@@ -229,6 +230,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._errorMessage = "";
     this._projectionErrorMessage = "";
     this._pendingFocus = null;
+    this._guidedReportDrafts = new Map();
     this._actorSelectorState = createActorSelectorState();
     this._unsubscribe = null;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
@@ -322,6 +324,23 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
+    this._guided = context.currentBlock?.guided ?? true;
+    const reportKeys = new Set();
+    for (const character of context.currentBlock?.planCharacters ?? []) {
+      for (const operation of character.operations) {
+        const key = `${this._activeBlockId}:${operation.id}`;
+        reportKeys.add(key);
+        const draft = this._guidedReportDrafts?.get(key);
+        if (draft !== undefined && context.currentBlock.canApply)
+          operation.report = draft;
+      }
+    }
+    if (dataAvailable && this._view === "current") {
+      for (const key of this._guidedReportDrafts?.keys() ?? []) {
+        if (!reportKeys.has(key) || !context.currentBlock?.canApply)
+          this._guidedReportDrafts.delete(key);
+      }
+    }
 
     const errorMessage = this._projectionErrorMessage || this._errorMessage;
     const uiPreferences = getUiPreferences();
@@ -343,6 +362,20 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
     this._bindActorSelector(context);
+    for (const field of this.element?.querySelectorAll?.(
+      "[data-guided-report]",
+    ) ?? []) {
+      field.addEventListener("input", () => {
+        const operationId = field.closest("[data-operation-id]")?.dataset
+          .operationId;
+        if (!operationId) return;
+        this._guidedReportDrafts ??= new Map();
+        this._guidedReportDrafts.set(
+          `${this._activeBlockId}:${operationId}`,
+          field.value,
+        );
+      });
+    }
     this._restoreFocus();
   }
 
@@ -729,7 +762,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
   }
 
   static async _onLockBlock() {
-    await this._runCommand(
+    const result = await this._runCommand(
       "lockBlock",
       {
         blockId: this._currentBlockId(),
@@ -740,6 +773,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         focus: '[data-action="planBlock"]',
       },
     );
+    if (result !== null && this._guided)
+      await DowntimeWorkspaceApp._onPlanBlock.call(this);
   }
 
   static async _onPlanBlock() {
@@ -749,14 +784,41 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         blockId: this._currentBlockId(),
       },
       {
-        pending: "Rolling hidden checks and building the immutable preview...",
-        success: "Immutable preview generated. Review it before applying.",
+        pending: this._guided
+          ? "Preparing results from the submitted player checks..."
+          : "Rolling hidden checks and building the immutable preview...",
+        success: this._guided
+          ? "Results ready. Choose an outcome and edit each player report."
+          : "Immutable preview generated. Review it before applying.",
         focus: '[data-action="applyBlock"]',
       },
     );
   }
 
   static async _onApplyBlock() {
+    if (this._busy) return;
+    const reports = [
+      ...(this.element?.querySelectorAll?.("[data-guided-report]") ?? []),
+    ]
+      .filter((field) => field.value !== field.dataset.savedReport)
+      .map((field) => ({
+        blockId: this._currentBlockId(),
+        operationId: field.closest("[data-operation-id]")?.dataset.operationId,
+        outcomeIndex: Number(
+          field.closest("[data-operation-id]")?.dataset.outcomeIndex,
+        ),
+        report: field.value,
+      }));
+    for (const payload of reports) {
+      const saved = await this._runCommand("chooseGuidedOutcome", payload, {
+        pending: "Saving the player reports before applying...",
+        success: "Player report saved.",
+      });
+      if (saved === null) return;
+      this._guidedReportDrafts?.delete(
+        `${payload.blockId}:${payload.operationId}`,
+      );
+    }
     await this._runCommand(
       "applyBlock",
       {
@@ -774,20 +836,45 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const operationId = cleanId(target?.dataset?.operationId);
     const outcomeIndex = positiveInteger(target?.dataset?.outcomeIndex, -1);
     if (!operationId || outcomeIndex < 0) return;
-    const report = String(
-      target
-        ?.closest?.("[data-operation-id]")
-        ?.querySelector?.("[data-guided-report]")?.value ?? "",
-    );
-    await this._runCommand(
+    if (Number(target?.parentElement?.dataset?.outcomeIndex) === outcomeIndex)
+      return;
+    const blockId = this._currentBlockId();
+    const result = await this._runCommand(
       "chooseGuidedOutcome",
-      { blockId: this._currentBlockId(), operationId, outcomeIndex, report },
+      { blockId, operationId, outcomeIndex },
       {
         pending: "Updating the GM-selected result...",
         success: "Result selected. Apply when the reports are ready.",
-        focus: `[data-operation-id="${cssEscape(operationId)}"]`,
+        focus: `[data-operation-id="${cssEscape(operationId)}"] [data-guided-report]`,
       },
     );
+    if (result !== null) {
+      this._guidedReportDrafts?.delete(`${blockId}:${operationId}`);
+      if (this.rendered) this.render(false);
+    }
+  }
+
+  static async _onSaveGuidedReport(_event, target) {
+    const card = target?.closest?.("[data-operation-id]");
+    if (!card) return;
+    const blockId = this._currentBlockId();
+    const operationId = cleanId(card.dataset.operationId);
+    const result = await this._runCommand(
+      "chooseGuidedOutcome",
+      {
+        blockId,
+        operationId,
+        outcomeIndex: Number(card.dataset.outcomeIndex),
+        report: String(card.querySelector("[data-guided-report]")?.value ?? ""),
+      },
+      {
+        pending: "Saving player report...",
+        success: "Player report saved. Apply results when ready.",
+        focus: `[data-operation-id="${cssEscape(operationId)}"] [data-guided-report]`,
+      },
+    );
+    if (result !== null)
+      this._guidedReportDrafts?.delete(`${blockId}:${operationId}`);
   }
 
   static async _onCancelBlock() {
@@ -1017,6 +1104,48 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     needsRecovery,
     recoveryMessage,
   });
+  const guided = currentBlock?.guided ?? true;
+  if (guided) {
+    const groups = [
+      ["Set up", "Choose hours, characters, and activities.", [0]],
+      ["Player rolls", "Each player chooses one activity and rolls.", [1]],
+      ["GM review", "Choose a result and edit each player report.", [2, 3]],
+      ["Results", "Apply rewards and send the finished reports.", [4, 5]],
+    ];
+    lifecycle.steps = groups.map(([label, description, indexes]) => {
+      const candidates = indexes.map((index) => lifecycle.steps[index]);
+      const step =
+        candidates.find((entry) =>
+          ["current", "interrupted", "stopped"].includes(entry.state),
+        ) ?? candidates.at(-1);
+      return { ...step, label, description };
+    });
+    const copy = {
+      createBlock: [
+        "Open block",
+        "Assign downtime so players can choose an activity.",
+      ],
+      openForPlayers: [
+        "Open for players",
+        "Ask each assigned player to choose an activity and roll.",
+      ],
+      lockBlock: [
+        "Review results",
+        "All players have submitted. Prepare their results for review.",
+      ],
+      planBlock: [
+        "Prepare results",
+        "Prepare the reports from the saved player rolls.",
+      ],
+      applyBlock: [
+        "Apply rewards & send reports",
+        "Review the results below. Report edits are saved when you apply.",
+      ],
+    }[lifecycle.primaryAction.id];
+    if (copy)
+      [lifecycle.primaryAction.label, lifecycle.primaryAction.description] =
+        copy;
+  }
   const actorProjection = normalizeDowntimeActors(
     source.actors ?? source.actorOptions,
     uiState.actorSelector,
@@ -1024,6 +1153,8 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
 
   return {
     dataAvailable: source.dataAvailable !== false,
+    guided,
+    lifecycleLabel: lifecycle.steps.map((step) => step.label).join(", "),
     view,
     viewCurrent: view === "current",
     viewProjects: view === "projects",
@@ -1532,6 +1663,10 @@ function normalizeCurrentBlock(workflow, root) {
             "",
         ),
         tone: cleanTone(operation?.tone ?? operation?.outcomeTier),
+        selectedOutcomeIndex: positiveInteger(
+          operation?.outcomeOptions?.find((option) => option.selected)?.index,
+          0,
+        ),
         outcomeOptions: array(operation?.outcomeOptions).map((option) => ({
           index: positiveInteger(option?.index, 0),
           label: String(option?.label ?? "Result"),
@@ -1541,6 +1676,7 @@ function normalizeCurrentBlock(workflow, root) {
         })),
         hasOutcomeOptions: array(operation?.outcomeOptions).length > 0,
         report: String(operation?.report ?? ""),
+        savedReport: String(operation?.report ?? ""),
       }),
     ),
   }));
@@ -1556,6 +1692,7 @@ function normalizeCurrentBlock(workflow, root) {
       Boolean(root.recovery?.available));
   return {
     id: cleanId(workflow.id ?? workflow.blockId),
+    guided: workflow.guided === true || workflow.mode === "guided",
     status,
     statusLabel: workflowLabel(status),
     statusTone: workflowTone(status),

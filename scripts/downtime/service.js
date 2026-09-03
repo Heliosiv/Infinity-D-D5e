@@ -1,4 +1,5 @@
 import { DOWNTIME_ACTIVITY_IDS, getDowntimeActivity } from "./catalog.js";
+import { DOWNTIME_MAX_BLOCK_HOURS as MAX_BLOCK_HOURS } from "./limits.js";
 import { DOWNTIME_OUTCOME_TIERS, getFencingValueCapCp } from "./math.js";
 import {
   createDowntimeOpportunitySecretBundle,
@@ -155,7 +156,6 @@ import {
 } from "./socket.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const MAX_BLOCK_HOURS = 8 * 30;
 const MAX_REQUEST_RECEIPTS = 200;
 const CHECKED_ACTIVITIES = new Set([
   DOWNTIME_ACTIVITY_IDS.MARKET_TRADING,
@@ -920,6 +920,16 @@ export async function lockActiveDowntimeBlock(blockId) {
     const block = getActiveDowntimeBlock();
     if (!block || block.id !== String(blockId))
       throw new Error("Block not found.");
+    if (block.mode === GUIDED_DOWNTIME_MODE && block.state === "collecting") {
+      const waiting = block.participants.filter(
+        (participant) => !participant.submitted,
+      );
+      if (waiting.length) {
+        throw new Error(
+          `Waiting for ${waiting.map((participant) => participant.actorName).join(", ")} to choose an activity and submit.`,
+        );
+      }
+    }
     const locked = await lockDowntimeBlock(block.id);
     notifyServiceChanged("block-lock");
     await broadcastPlayerState(locked);
@@ -1336,7 +1346,7 @@ export async function chooseGuidedDowntimeOutcome({
   blockId,
   operationId,
   outcomeIndex,
-  report = "",
+  report,
 } = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
@@ -1351,7 +1361,9 @@ export async function chooseGuidedDowntimeOutcome({
         "Choose a result before applying this guided downtime block.",
       );
     }
-    const index = Math.floor(Number(outcomeIndex));
+    const index = Number(outcomeIndex);
+    if (!Number.isInteger(index))
+      throw new Error("Choose a valid downtime result.");
     const operations = (block.plan?.operations ?? []).map((operation) => {
       if (operation.operationId !== String(operationId)) return operation;
       const activity = guidedActivityById(
@@ -1377,7 +1389,12 @@ export async function chooseGuidedDowntimeOutcome({
         selectedOutcomeIndex: index,
         createdAt: operation.createdAt ?? now(),
         operationId: operation.operationId,
-        reportOverride: cleanGuidedReport(report) || operation.report,
+        reportOverride:
+          report === undefined
+            ? index === operation.selectedOutcomeIndex
+              ? operation.report
+              : ""
+            : cleanGuidedReport(report),
         projectProgress: operation.project
           ? new Map([
               [operation.project.id, operation.project.progressBeforeHours],
@@ -3497,7 +3514,15 @@ function projectWorkspaceBlock(block) {
           })),
         }
       : null,
-    canLock: block.state === "collecting",
+    canLock:
+      block.state === "collecting" &&
+      (block.mode !== GUIDED_DOWNTIME_MODE ||
+        block.participants.every((participant) => participant.submitted)),
+    lockReason:
+      block.mode === GUIDED_DOWNTIME_MODE &&
+      block.participants.some((participant) => !participant.submitted)
+        ? "Waiting for every character to choose an activity and submit."
+        : "",
     canPlan: block.state === "locked" && !planningNeedsReview,
     planReason: planningNeedsReview
       ? block.planningDraft.reviewReason ||

@@ -441,6 +441,10 @@ try {
     },
   });
   guidedAdapter._cacheProjection(guidedProjection(), "actor-1");
+  assert.equal(
+    (await guidedAdapter.getPlayerProjection({ actorId: "actor-1" })).canSubmit,
+    false,
+  );
   await guidedAdapter.queueActivity({
     actorId: "actor-1",
     activityId: "guided-labor",
@@ -448,6 +452,18 @@ try {
     skill: "ath",
   });
   assert.equal(guidedRollCalls, 0, "choosing an activity does not roll it");
+  await guidedAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  assert.equal(
+    (await guidedAdapter.getPlayerProjection({ actorId: "actor-1" })).queue
+      .length,
+    1,
+    "choosing again replaces the activity instead of exceeding the budget",
+  );
   const guidedSubmitPromise = guidedAdapter.submitQueue({ actorId: "actor-1" });
   for (let tick = 0; tick < 4; tick += 1) await Promise.resolve();
   assert.equal(guidedRollCalls, 1, "the player click creates the check");
@@ -466,6 +482,38 @@ try {
     }),
   });
   assert.equal((await guidedSubmitPromise).submitted, true);
+  guidedAdapter._cacheProjection(
+    guidedProjection({
+      blockId: "long-guided",
+      budgetHours: 240,
+      queue: [],
+      rawQueue: [],
+      activities: [
+        {
+          id: "guided-labor",
+          label: "Paid Work",
+          category: "guided",
+          available: true,
+          fixedHours: 240,
+          skills: [{ id: "ath", label: "Athletics" }],
+        },
+      ],
+    }),
+    "actor-1",
+  );
+  await guidedAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 240,
+    skill: "ath",
+  });
+  const longChoice = await guidedAdapter.getPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.equal(longChoice.activities[0].fixedHours, 240);
+  assert.equal(longChoice.queue[0].hours, 240);
+  assert.equal(longChoice.usedHours, 240);
+  assert.equal(longChoice.canSubmit, true);
   guidedAdapter.destroy();
 
   const noGmAdapter = createDowntimePlayerAdapter({

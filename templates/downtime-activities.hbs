@@ -1,10 +1,10 @@
 {{!-- Infinity D&D5e - player-facing Downtime Activities. --}}
-<div class="dt-shell dt-shell--activities" aria-busy="{{#if ariaBusy}}true{{else}}false{{/if}}">
+<div class="dt-shell dt-shell--activities {{#if guided}}dt-shell--guided{{/if}}" aria-busy="{{#if ariaBusy}}true{{else}}false{{/if}}">
   <header class="dt-head dt-player-head">
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>Choose one activity for the downtime the GM assigned, then click Roll &amp; submit. Your GM will review the result and send your report.</p>
+      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Choose one activity for the downtime the GM assigned, then click Roll &amp; submit. Your GM will review the result and send your report.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -25,7 +25,8 @@
       {{else if hasError}}refresh the saved queue before choosing whether to make a new change; the failed request was not retried.
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
-      {{else if hasActiveBlock}}{{#if actor}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{else}}choose an eligible character when the GM has assigned one.{{/if}}
+      {{else if completed}}read your completed report below. Your GM will open another block when it is time for more downtime.
+      {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if guided}}{{#if hasQueue}}click Roll &amp; submit, or choose another activity to replace your selection.{{else}}choose one activity and an approach for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
       {{else}}wait for the GM to open a downtime block; no activity was submitted.
       {{/if}}
     </span>
@@ -53,6 +54,8 @@
     <p>Your last receipt is still shown below. No new request can start. If one was interrupted, refresh after reconnection and verify the saved queue or receipt before repeating it.</p>
     <button type="button" class="dt-button" data-action="refresh" {{#if busy}}disabled{{/if}}>Try again</button>
   </div>
+  {{else if completed}}
+  <p class="dt-notice dt-notice--success" role="status">Downtime complete. Your saved results are ready.</p>
   {{else if hasActiveBlock}}
     {{#if actor}}
       {{#if hasMultipleActors}}
@@ -75,9 +78,9 @@
         <div class="dt-time-meter">
           <div><span>Time budget</span><strong>{{usedHours}} / {{budgetHours}} hours</strong></div>
           <progress max="{{budgetHours}}" value="{{usedHours}}" aria-label="{{usedHours}} of {{budgetHours}} downtime hours used">{{progressPercent}}%</progress>
-          <small>{{remainingHours}} hours unassigned · unused time is allowed</small>
+          <small>{{#if guided}}Your chosen activity uses all {{budgetHours}} hours.{{else}}{{remainingHours}} hours unassigned · unused time is allowed{{/if}}</small>
         </div>
-        {{#if hasSettlement}}
+        {{#unless guided}}{{#if hasSettlement}}
         <div class="dt-heat" title="Heat is personal and applies only in this settlement">
           <span>Local Heat</span>
           <div class="dt-heat__pips" role="img" aria-label="Heat {{heat}} out of 5">
@@ -91,16 +94,16 @@
           <strong>Outside a settlement</strong>
           <small>Settlement-only activities are unavailable here.</small>
         </div>
-        {{/if}}
+        {{/if}}{{/unless}}
       </section>
 
-      {{#if editable}}
+      {{#if editable}}{{#unless guided}}
       <nav class="dt-categories" aria-label="Activity categories">
         {{#each categories}}
         <button type="button" data-action="selectCategory" data-category="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>{{label}}</button>
         {{/each}}
       </nav>
-      {{/if}}
+      {{/unless}}{{/if}}
 
       <div class="dt-player-layout">
         <section class="dt-activity-pane" aria-labelledby="dt-activity-heading">
@@ -111,7 +114,7 @@
             {{#if hasActivities}}
             <div class="dt-activity-list" data-activity-list tabindex="-1">
               {{#each activities}}
-              <article class="dt-activity-card {{#unless available}}is-unavailable{{/unless}}" data-activity-id="{{id}}" data-fixed-hours="{{fixedHours}}" aria-labelledby="dt-activity-{{id}}">
+              <article class="dt-activity-card {{#unless available}}is-unavailable{{/unless}} {{#if selected}}is-selected{{/if}}" data-activity-id="{{id}}" data-fixed-hours="{{fixedHours}}" aria-labelledby="dt-activity-{{id}}">
                 <header>
                   <span class="dt-activity-card__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
                   <div><span>{{categoryLabel}}</span><h4 id="dt-activity-{{id}}">{{label}}</h4></div>
@@ -175,8 +178,8 @@
                   </label>
                   {{/if}}
                 </div>
-                <button type="button" class="dt-button dt-button--primary dt-activity-card__add" data-action="addActivity" aria-label="Add {{label}} to queue" {{#if ../busy}}disabled{{/if}}>
-                  <i class="fa-solid fa-plus" aria-hidden="true"></i> Add to queue
+                <button type="button" class="dt-button dt-button--primary dt-activity-card__add" data-action="addActivity" aria-label="{{#if ../guided}}Choose {{label}}{{else}}Add {{label}} to queue{{/if}}" {{#if ../guided}}aria-pressed="{{#if selected}}true{{else}}false{{/if}}"{{/if}} {{#if ../busy}}disabled{{/if}}>
+                  <i class="fa-solid {{#if selected}}fa-check{{else}}fa-plus{{/if}}" aria-hidden="true"></i> {{#if ../guided}}{{#if selected}}Selected · update approach{{else}}Choose activity{{/if}}{{else}}Add to queue{{/if}}
                 </button>
                 {{else}}
                 <div class="dt-prerequisite" role="note">
@@ -199,7 +202,7 @@
 
         <aside class="dt-queue" aria-labelledby="dt-queue-heading">
           <details class="dt-queue__drawer" open>
-          <summary id="dt-queue-heading"><span><i class="fa-solid fa-list-check" aria-hidden="true"></i><span><small>Resolves in order</small><strong>Your Queue</strong></span></span><strong>{{usedHours}}h</strong></summary>
+          <summary id="dt-queue-heading"><span><i class="fa-solid fa-list-check" aria-hidden="true"></i><span><small>{{#if guided}}One activity for this block{{else}}Resolves in order{{/if}}</small><strong>{{#if guided}}Your choice{{else}}Your Queue{{/if}}</strong></span></span><strong>{{usedHours}}h</strong></summary>
           {{#if hasQueue}}
           <ol class="dt-queue__list" data-queue-list tabindex="-1">
             {{#each queue}}
@@ -208,6 +211,7 @@
               <span class="dt-queue__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
               <div><strong>{{label}}</strong><span class="dt-queue__detail" {{#if detail}}title="{{detail}}"{{/if}}>{{hours}} hours{{#if detail}} · {{detail}}{{/if}}</span></div>
               <div class="dt-queue__actions">
+                {{#unless ../guided}}
                 <button type="button" data-action="moveActivityUp" data-queue-entry-id="{{id}}" title="Move earlier" aria-label="Move {{label}} earlier" {{#unless canMoveUp}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
                 </button>
@@ -217,12 +221,13 @@
                 <button type="button" class="is-danger" data-action="removeActivity" data-queue-entry-id="{{id}}" title="Remove" aria-label="Remove {{label}}" {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
+                {{/unless}}
               </div>
             </li>
             {{/each}}
           </ol>
           {{else}}
-          <p class="dt-inline-empty">Choose an activity to start your queue.</p>
+          <p class="dt-inline-empty">{{#if guided}}Choose an activity. You can change your choice before submitting.{{else}}Choose an activity to start your queue.{{/if}}</p>
           {{/if}}
 
           <footer class="dt-queue__footer">

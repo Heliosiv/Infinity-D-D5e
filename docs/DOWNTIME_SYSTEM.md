@@ -3,17 +3,23 @@
 ## Guided downtime (default)
 
 The default GM flow is intentionally small and has no settlement, faction,
-Heat, theft, or escalation data. Open **Home → Run the Session → Downtime
-Workspace**, enter a location and a productive-hour budget, choose the player
+Heat, theft, or escalation data. Open **Workbench → Downtime**,
+enter a location and a productive-hour budget, choose the player
 characters, then tick the saved activity templates that apply. Each player
 chooses exactly one activity and an applicable skill, then clicks **Roll &
 submit**. This makes the check on the player's controlled Actor and records its
 total with the submission; the assigned hours are used as one downtime
-activity.
+activity. Choosing a different activity replaces the previous choice. All
+assigned hours are retained, including blocks up to 240 hours.
 
-After locking submissions, the GM sees each recorded player roll and a small
-set of three possible report outcomes. The GM chooses an outcome, can rewrite
-the player report, then applies the plan. A configured coin reward is deposited
+Once everyone has submitted, the GM clicks **Review results**. This closes
+submissions and prepares the reports from the recorded player checks. The GM
+chooses from the possible outcomes, can rewrite the player report, then clicks
+**Apply rewards & send reports**. Changing an outcome loads its matching report.
+**Save report** saves an edit separately; applying also saves any visible report
+edits first and stops if a report cannot be saved. Unsaved report edits survive
+an in-window refresh. Player rolls and project hours stay fixed, and results
+cannot be changed after application begins. A configured coin reward is deposited
 into the character's currency and verified before the player receives an
 updated Downtime Activities report with the activity art, narrative, and award.
 
@@ -50,9 +56,9 @@ specific rewards.
 
 ---
 
-## v0.3.1 interface quick start
+## Standard city-action workflow
 
-The GM workspace visualizes **Create → Collect → Lock → Preview → Apply → Complete**, with Recovery shown as an explicit branch rather than another forward step. Only the next valid primary action is emphasized. Players always see their controlled character, remaining hours, queue order, submission state, and the reason an action is unavailable. Keyboard queue controls remain available alongside pointer reordering.
+Guided downtime displays **Set up → Player rolls → GM review → Results**. Existing standard city-action blocks retain **Create → Collect → Lock → Preview → Apply → Complete**, along with their activity queues and immutable plans. Recovery appears when an interrupted application needs review.
 
 Infinity D&D5e downtime is a GM-authoritative planning block for activities
 that take hours rather than combat turns. It is intentionally separate from
@@ -60,7 +66,7 @@ Foundry world time and Quartermaster upkeep.
 
 ## Running a downtime block
 
-1. A full GM opens **Home → Run the Session → Downtime Workspace**.
+1. A full GM opens **Workbench → Downtime** to manage an existing standard block.
 2. In **Current Block**, optionally select a saved settlement. If the party is
    at camp, in the wilderness, aboard a ship, on the road, or somewhere else,
    leave the settlement unset and enter an **Other location** name instead.
@@ -79,11 +85,22 @@ Foundry world time and Quartermaster upkeep.
 7. Apply the preview. Review each character's receipt or use recovery if an
    external write was interrupted.
 
-Guided blocks use the same lifecycle, but each player chooses one allowed
+Guided blocks use the same saved states, but each player chooses one allowed
 activity and clicks **Roll & submit** instead of building a queue. The player's
 normal Foundry skill roll is recorded with that submission; the GM does not
 roll it again during preview. The GM still selects the final outcome, narrative,
 and reward before application.
+
+## Repeatable downtime gauntlet
+
+Run `npm run ui:audit:downtime` for the browser journey through setup, a changed
+player choice, a 240-hour submission, GM review, report editing, a failed save,
+application, and the player receipt. It uses the real screen controllers and
+player adapter with isolated campaign doubles. It also checks review layout and
+accessibility at 1040, 720, and 380 pixels. Screenshots are written to
+`output/playwright/downtime/`. The regular `npm run check` suite covers the
+authoritative service, storage, transport, and project-progress rules. These
+checks do not establish installed-world multiplayer acceptance.
 
 A full GM may cancel a block while it is collecting submissions, locked, or
 showing its immutable preview. Once application begins, cancellation is closed;

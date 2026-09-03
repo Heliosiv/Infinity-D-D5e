@@ -143,6 +143,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       category: this._category,
     });
     this._actorId = context.actor?.id ?? this._actorId;
+    this._guided = context.guided;
     if (!context.categories.some((category) => category.selected)) {
       this._category = DEFAULT_CATEGORY;
     }
@@ -261,8 +262,10 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
         ...values,
       },
       {
-        pending: "Adding activity...",
-        success: "Activity added to your queue.",
+        pending: this._guided ? "Selecting activity..." : "Adding activity...",
+        success: this._guided
+          ? "Activity selected. Roll & submit when ready."
+          : "Activity added to your queue.",
         focus: "[data-queue-list]",
       },
     );
@@ -326,9 +329,12 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       "submitQueue",
       { actorId: this._actorId },
       {
-        pending: "Rolling and submitting your downtime activity...",
-        success:
-          "Your activity and player roll are submitted. The GM can now review the result.",
+        pending: this._guided
+          ? "Rolling and submitting your downtime activity..."
+          : "Submitting your queue...",
+        success: this._guided
+          ? "Your activity and player roll are submitted. The GM can now review the result."
+          : "Your queue is submitted for GM review.",
         focus: '[data-action="recallSubmission"]',
       },
     );
@@ -419,8 +425,12 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     !submitted &&
     !needsRecovery;
   const withinBudget = usedHours <= budgetHours;
+  const guided = cleanId(source.mode) === "guided";
   const canSubmit =
-    editable && withinBudget && Boolean(source.canSubmit ?? true);
+    editable &&
+    withinBudget &&
+    (!guided || queue.length === 1) &&
+    Boolean(source.canSubmit ?? true);
   const progressPercent =
     budgetHours > 0
       ? Math.min(100, Math.round((usedHours / budgetHours) * 100))
@@ -430,7 +440,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
 
   return {
     status,
-    guided: cleanId(source.mode) === "guided",
+    completed: status === "completed",
+    guided,
     statusLabel: playerStatusLabel(status, submitted),
     statusTone: playerStatusTone(status),
     hasActiveBlock,
@@ -460,7 +471,21 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     remainingHours,
     progressPercent,
     categories,
-    activities: visibleActivities,
+    activities: visibleActivities.map((activity) => {
+      const choice = guided
+        ? queue.find((entry) => entry.activityId === activity.id)
+        : null;
+      return {
+        ...activity,
+        selected: Boolean(choice),
+        skills: choice
+          ? activity.skills.map((skill) => ({
+              ...skill,
+              selected: skill.id === choice.skill,
+            }))
+          : activity.skills,
+      };
+    }),
     hasActivities: visibleActivities.length > 0,
     queue,
     hasQueue: queue.length > 0,
@@ -473,9 +498,11 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
         ? submitted
           ? "Your queue is already submitted."
           : "Submissions are not open."
-        : usedHours > budgetHours
-          ? "Your queue exceeds the time budget."
-          : ""),
+        : guided && queue.length !== 1
+          ? "Choose one activity, then roll and submit it."
+          : usedHours > budgetHours
+            ? "Your queue exceeds the time budget."
+            : ""),
     canRecall:
       hasActiveBlock &&
       status === "collecting" &&
@@ -589,6 +616,8 @@ function normalizeQueueEntry(entry, index, total) {
   const source = entry && typeof entry === "object" ? entry : {};
   return {
     id: cleanId(source.id ?? source.queueEntryId ?? index),
+    activityId: cleanId(source.activityId),
+    skill: cleanId(source.skill),
     position: index + 1,
     label: String(source.label ?? source.activityLabel ?? "Activity"),
     icon: safeIcon(source.icon),

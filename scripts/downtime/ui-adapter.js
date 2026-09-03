@@ -22,6 +22,7 @@ import {
   subscribeDowntime,
 } from "./socket.js";
 import { rollSkillTotal } from "../dnd5e-roll.js";
+import { DOWNTIME_MAX_BLOCK_HOURS } from "./limits.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const MAX_ID_LENGTH = 160;
@@ -173,7 +174,11 @@ function sanitizeActivity(raw) {
   const hourOptions = array(raw.hourOptions ?? raw.allowedHours)
     .map((entry) => {
       const source = plainObject(entry) ? entry : { value: entry };
-      const value = safeInteger(source.value ?? source.hours, 0, 80);
+      const value = safeInteger(
+        source.value ?? source.hours,
+        0,
+        DOWNTIME_MAX_BLOCK_HOURS,
+      );
       return value > 0
         ? {
             value,
@@ -213,7 +218,7 @@ function sanitizeActivity(raw) {
     available: raw.available !== false,
     unavailableReason: cleanText(raw.unavailableReason ?? raw.reason, 500),
     hourOptions,
-    fixedHours: safeInteger(raw.fixedHours, 0, 80),
+    fixedHours: safeInteger(raw.fixedHours, 0, DOWNTIME_MAX_BLOCK_HOURS),
     skills,
     forcedSkill: cleanId(raw.forcedSkill),
     targets: array(raw.targets ?? raw.targetOptions)
@@ -236,7 +241,7 @@ function sanitizeActivity(raw) {
 function sanitizeCanonicalEntry(raw, index = 0) {
   if (!plainObject(raw)) return null;
   const activityId = cleanId(raw.activityId ?? raw.activity);
-  const hours = safeInteger(raw.hours, 0, 80);
+  const hours = safeInteger(raw.hours, 0, DOWNTIME_MAX_BLOCK_HOURS);
   if (!activityId || hours < 1) return null;
   const entry = {
     id: cleanId(raw.id ?? raw.queueEntryId) || `action-${index + 1}`,
@@ -357,7 +362,11 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     selectedActorId: cleanId(source.selectedActorId ?? source.actorId),
     actors,
     heat: safeInteger(source.heat, 0, 5),
-    budgetHours: safeInteger(source.budgetHours ?? source.hours, 0, 8 * 30),
+    budgetHours: safeInteger(
+      source.budgetHours ?? source.hours,
+      0,
+      DOWNTIME_MAX_BLOCK_HOURS,
+    ),
     usedHours: safeInteger(source.usedHours, 0, 8 * 30),
     remainingHours: safeInteger(source.remainingHours, 0, 8 * 30),
     activities: array(source.activities).map(sanitizeActivity).filter(Boolean),
@@ -546,16 +555,25 @@ export class DowntimePlayerAdapter {
     this._assertEditable(projection, actorId);
     const key = this._draftKey(projection.blockId, actorId);
     const draft = this._ensureDraft(key, projection.rawQueue);
-    if (draft.queue.length >= MAX_DRAFT_ACTIONS) {
+    if (
+      projection.mode !== "guided" &&
+      draft.queue.length >= MAX_DRAFT_ACTIONS
+    ) {
       throw new Error("A downtime queue can contain at most 64 activities.");
     }
     const activityId = cleanId(payload.activityId);
-    const hours = safeInteger(payload.hours, 0, 80);
+    const guided = projection.mode === "guided";
+    const hours = guided
+      ? projection.budgetHours
+      : safeInteger(payload.hours, 0, DOWNTIME_MAX_BLOCK_HOURS);
     if (!activityId || hours < 1)
       throw new Error("Choose a valid activity and time.");
     const activity = projection.activities.find(
       (candidate) => candidate.id === activityId,
     );
+    if (guided && (!activity || !activity.available)) {
+      throw new Error("Choose an available activity assigned by your GM.");
+    }
     const targetIds = activity?.multiTarget
       ? sanitizeTargetIds(payload.targetIds)
       : [];
@@ -582,7 +600,8 @@ export class DowntimePlayerAdapter {
     if (targetId) entry.targetId = targetId;
     if (targetIds.length > 0) entry.targetIds = targetIds;
     if (stakeCp > 0) entry.stakeCp = stakeCp;
-    draft.queue.push(entry);
+    if (guided) draft.queue = [entry];
+    else draft.queue.push(entry);
     draft.dirty = true;
     this._notify("draft-change", actorId);
     return clone(entry);
@@ -1007,6 +1026,7 @@ export class DowntimePlayerAdapter {
       !projection.noGm &&
       projection.status === "collecting" &&
       !projection.submitted &&
+      (projection.mode !== "guided" || queue.length === 1) &&
       projection.usedHours <= projection.budgetHours,
     );
     return projection;

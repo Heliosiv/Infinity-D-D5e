@@ -11,6 +11,7 @@ import {
   registerModuleSocketRoute,
 } from "../socket-router.js";
 import { normalizeFenceBundleItemIds } from "./catalog.js";
+import { DOWNTIME_MAX_BLOCK_HOURS } from "./limits.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const MAX_ID_LENGTH = 160;
@@ -393,7 +394,8 @@ function validateQueueEntry(entry) {
     return false;
   if (!boundedId(entry.id) || !boundedId(entry.activityId)) return false;
   const hours = Number(entry.hours);
-  if (!Number.isInteger(hours) || hours < 1 || hours > 80) return false;
+  if (!Number.isInteger(hours) || hours < 1 || hours > DOWNTIME_MAX_BLOCK_HOURS)
+    return false;
   for (const key of ["skill", "targetId"]) {
     if (entry[key] != null && !boundedId(entry[key])) return false;
   }

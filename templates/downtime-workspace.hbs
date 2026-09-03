@@ -1,10 +1,10 @@
 {{!-- Infinity D&D5e - full-GM Downtime Workspace. --}}
-<div class="dt-shell dt-shell--workspace" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
+<div class="dt-shell dt-shell--workspace {{#if guided}}dt-shell--guided{{/if}}" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
   <header class="dt-head">
     <div class="dt-head__copy">
       <p class="dt-eyebrow">City actions and personal projects</p>
       <h2><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Downtime Workspace</h2>
-      <p>Assign productive hours, collect each character's queue, then preview and apply one immutable plan.</p>
+      <p>{{#if guided}}Assign downtime, let players choose and roll, then review their results and send reports.{{else}}Assign productive hours, collect each character's queue, then preview and apply one immutable plan.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{workflowTone}}">{{workflowStatusLabel}}</span>
@@ -59,13 +59,13 @@
       <section class="dt-lifecycle" aria-labelledby="dt-lifecycle-heading">
         <div class="dt-lifecycle__head">
           <div>
-            <p class="dt-eyebrow">Authoritative workflow</p>
-            <h3 id="dt-lifecycle-heading">Downtime lifecycle</h3>
+            <p class="dt-eyebrow">{{#if guided}}From assignment to results{{else}}Authoritative workflow{{/if}}</p>
+            <h3 id="dt-lifecycle-heading">{{#if guided}}Run downtime{{else}}Downtime lifecycle{{/if}}</h3>
           </div>
-          <span>Recovery branches only from an interrupted Apply.</span>
+          {{#unless guided}}<span>Recovery branches only from an interrupted Apply.</span>{{/unless}}
         </div>
         <div class="dt-lifecycle__layout">
-          <ol class="dt-lifecycle__steps" aria-label="Create, Collect, Lock, Preview, Apply, Complete">
+          <ol class="dt-lifecycle__steps" aria-label="{{lifecycleLabel}}">
             {{#each lifecycleSteps}}
             <li class="dt-lifecycle__step is-{{state}}" data-step="{{id}}" data-step-state="{{state}}" aria-label="{{label}}: {{stateLabel}}" {{#if current}}aria-current="step"{{/if}}>
               <span class="dt-lifecycle__marker" aria-hidden="true"><i class="fa-solid {{icon}}"></i></span>
@@ -76,7 +76,7 @@
             </li>
             {{/each}}
           </ol>
-          <aside class="dt-lifecycle__recovery is-{{lifecycleRecovery.state}}" data-step="recovery" data-step-state="{{lifecycleRecovery.state}}" aria-label="Recovery: {{lifecycleRecovery.stateLabel}}" {{#if lifecycleRecovery.current}}aria-current="step"{{/if}}>
+          <aside class="dt-lifecycle__recovery is-{{lifecycleRecovery.state}}" data-step="recovery" data-step-state="{{lifecycleRecovery.state}}" aria-label="Recovery: {{lifecycleRecovery.stateLabel}}" {{#if guided}}{{#unless lifecycleRecovery.current}}hidden{{/unless}}{{/if}} {{#if lifecycleRecovery.current}}aria-current="step"{{/if}}>
             <span class="dt-lifecycle__marker" aria-hidden="true"><i class="fa-solid {{lifecycleRecovery.icon}}"></i></span>
             <div>
               <strong>{{lifecycleRecovery.label}}</strong>
@@ -97,24 +97,24 @@
           <div>
             <p class="dt-eyebrow">{{currentBlock.dayLabel}}</p>
             <h3 id="dt-current-heading">{{currentBlock.locationName}}</h3>
-            <p>{{#if currentBlock.hasSettlement}}Settlement downtime{{else}}Away from a settlement{{/if}}</p>
-            <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. Unused time is allowed.</p>
+            <p>{{#if guided}}One activity per character{{else}}{{#if currentBlock.hasSettlement}}Settlement downtime{{else}}Away from a settlement{{/if}}{{/if}}</p>
+            <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. {{#if guided}}Their chosen activity uses this full budget.{{else}}Unused time is allowed.{{/if}}</p>
           </div>
           <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
         </div>
 
         <div class="dt-command-bar" aria-label="Downtime workflow actions">
-          <button type="button" class="dt-button {{#if primaryAction.openForPlayers}}dt-button--primary dt-button--next{{/if}}" data-action="openForPlayers" {{#if primaryAction.openForPlayers}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.openForPlayers}}dt-button--primary dt-button--next{{/if}}" data-action="openForPlayers" {{#if guided}}{{#unless currentBlock.canOpenForPlayers}}hidden{{/unless}}{{/if}} {{#if primaryAction.openForPlayers}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open for players
           </button>
-          <button type="button" class="dt-button {{#if primaryAction.lockBlock}}dt-button--primary dt-button--next{{/if}}" data-action="lockBlock" {{#if primaryAction.lockBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-            <i class="fa-solid fa-lock" aria-hidden="true"></i> Lock submissions
+          <button type="button" class="dt-button {{#if primaryAction.lockBlock}}dt-button--primary dt-button--next{{/if}}" data-action="lockBlock" {{#if guided}}{{#unless currentBlock.canOpenForPlayers}}hidden{{/unless}}{{/if}} {{#if primaryAction.lockBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-lock" aria-hidden="true"></i> {{#if guided}}Review results{{else}}Lock submissions{{/if}}
           </button>
-          <button type="button" class="dt-button {{#if primaryAction.planBlock}}dt-button--primary dt-button--next{{/if}}" data-action="planBlock" {{#if primaryAction.planBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-            <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> Generate preview
+          <button type="button" class="dt-button {{#if primaryAction.planBlock}}dt-button--primary dt-button--next{{/if}}" data-action="planBlock" {{#if guided}}{{#unless currentBlock.canPlan}}hidden{{/unless}}{{/if}} {{#if primaryAction.planBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> {{#if guided}}Prepare results{{else}}Generate preview{{/if}}
           </button>
-          <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-            <i class="fa-solid fa-check-double" aria-hidden="true"></i> Apply exact plan
+          <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if guided}}{{#unless currentBlock.canApply}}hidden{{/unless}}{{/if}} {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-check-double" aria-hidden="true"></i> {{#if guided}}Apply rewards &amp; send reports{{else}}Apply exact plan{{/if}}
           </button>
           <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
@@ -127,9 +127,10 @@
         </div>
 
         <section class="dt-section" aria-labelledby="dt-submissions-heading">
+          {{#if currentBlock.lockReason}}<p class="dt-notice" role="status">{{currentBlock.lockReason}}</p>{{/if}}
           <div class="dt-section__head">
             <div>
-              <p class="dt-eyebrow">Player queues</p>
+              <p class="dt-eyebrow">{{#if guided}}Player choices{{else}}Player queues{{/if}}</p>
               <h3 id="dt-submissions-heading">Submissions</h3>
             </div>
             <span>{{currentBlock.submittedCount}} / {{currentBlock.participants.length}} submitted</span>
@@ -171,14 +172,14 @@
         <section class="dt-section dt-preview" aria-labelledby="dt-preview-heading">
           <div class="dt-section__head">
             <div>
-              <p class="dt-eyebrow">Immutable write plan {{#if currentBlock.planId}}· {{currentBlock.planId}}{{/if}}</p>
-              <h3 id="dt-preview-heading">GM Preview</h3>
+              <p class="dt-eyebrow">{{#if guided}}Recorded player checks{{else}}Immutable write plan {{#if currentBlock.planId}}· {{currentBlock.planId}}{{/if}}{{/if}}</p>
+              <h3 id="dt-preview-heading">{{#if guided}}Review player results{{else}}GM Preview{{/if}}</h3>
             </div>
             {{#if currentBlock.plannedAt}}<span>Generated {{currentBlock.plannedAt}}</span>{{/if}}
           </div>
           <div class="dt-preview__warning">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
-            Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.
+            {{#if guided}}Choose a result for each character, then edit the report if needed. Apply rewards &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
           </div>
           <div class="dt-plan-list">
             {{#each currentBlock.planCharacters}}
@@ -190,11 +191,12 @@
                   <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
                   <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
                   {{#if hasOutcomeOptions}}
-                  <div class="dt-chip-grid" data-operation-id="{{id}}" aria-label="Choose result for {{label}}">
+                  <div class="dt-chip-grid" data-operation-id="{{id}}" data-outcome-index="{{selectedOutcomeIndex}}" aria-label="Choose result for {{label}}">
                     {{#each outcomeOptions}}
-                    <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
+                    <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
                     {{/each}}
-                    <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report rows="3" maxlength="800" aria-label="Player report for {{label}}">{{report}}</textarea></label>
+                    <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report data-saved-report="{{savedReport}}" rows="3" maxlength="800" aria-label="Player report for {{label}}" {{#unless ../../currentBlock.canApply}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{report}}</textarea><small>Choosing another result loads its report. Edits are saved when you apply, or with Save report.</small></label>
+                    <button type="button" class="dt-button" data-action="saveGuidedReport" {{#unless ../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../busy}}disabled{{/if}}>Save report</button>
                   </div>
                   {{/if}}
                 </li>
@@ -228,9 +230,9 @@
             </button>
           </div>
           <ol>
-            <li><strong>Create:</strong> choose a location, productive-hour budget, and eligible characters.</li>
-            <li><strong>Collect and Lock:</strong> open player queues, then close submissions when ready.</li>
-            <li><strong>Preview and Apply:</strong> review the immutable plan before applying that exact plan.</li>
+            <li><strong>Set up:</strong> choose a location, hours, characters, and activities.</li>
+            <li><strong>Player rolls:</strong> open the window for players; each chooses one activity and clicks Roll &amp; submit.</li>
+            <li><strong>GM review:</strong> click Review results, choose each outcome, edit the reports, then apply rewards and send reports.</li>
           </ol>
           <p><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Use Recovery only when this workspace reports an interrupted Apply. Restore this guide from Infinity Settings.</p>
         </aside>

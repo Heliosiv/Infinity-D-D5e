@@ -49,7 +49,7 @@ try {
     { view: "current" },
   );
   assertLifecycle(idle, {
-    states: ["current", "pending", "pending", "pending", "pending", "pending"],
+    states: ["current", "pending", "pending", "pending"],
     primaryAction: "createBlock",
   });
 
@@ -700,18 +700,16 @@ try {
   const idleHtml = template({ ...idle, showQuickStart: true });
   assertInOrder(
     idleHtml,
-    ">Create<",
-    ">Collect<",
-    ">Lock<",
-    ">Preview<",
-    ">Apply<",
-    ">Complete<",
+    ">Set up<",
+    ">Player rolls<",
+    ">GM review<",
+    ">Results<",
   );
   assert.match(idleHtml, /<aside[^>]+data-step="recovery"/);
   assert.equal(
     idleHtml.match(/\bdt-lifecycle__arrow\b/g)?.length ?? 0,
-    5,
-    "the six-step lifecycle should show five directional connectors",
+    3,
+    "guided downtime presents four clear stages",
   );
   assert.match(idleHtml, /data-action="dismissQuickStart"/);
   assert.match(idleHtml, /Restore this guide from Infinity Settings/);

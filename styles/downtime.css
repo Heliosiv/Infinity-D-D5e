@@ -430,6 +430,31 @@
   scrollbar-gutter: stable;
 }
 
+.infinity-downtime-workspace .dt-shell--guided .dt-lifecycle__layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.infinity-downtime-workspace .dt-shell--guided .dt-lifecycle__steps {
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+
+.infinity-downtime-workspace .dt-shell--guided [hidden] {
+  display: none;
+}
+
+.infinity-downtime-workspace .dt-shell--guided .dt-compact-list li {
+  flex-wrap: wrap;
+}
+
+.infinity-downtime-workspace .dt-shell--guided .dt-chip-grid {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.infinity-downtime-activities .dt-activity-card.is-selected {
+  border-color: var(--dt-accent);
+}
+
 .infinity-downtime-workspace .dt-lifecycle__step {
   position: relative;
   z-index: 0;
@@ -1990,6 +2015,10 @@
   .infinity-downtime-workspace .dt-lifecycle__steps {
     grid-template-columns: repeat(6, minmax(124px, 1fr));
     scroll-snap-type: x proximity;
+  }
+
+  .infinity-downtime-workspace .dt-shell--guided .dt-lifecycle__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .infinity-downtime-workspace .dt-next-action {

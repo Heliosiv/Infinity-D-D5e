@@ -590,6 +590,14 @@ try {
     templateIds: ["guided-labor"],
   });
   await assert.rejects(
+    service.lockActiveDowntimeBlock(guidedBlock.id),
+    /Waiting for Mira/,
+  );
+  assert.equal(
+    (await service.getWorkspaceProjection()).workflow.canLock,
+    false,
+  );
+  await assert.rejects(
     service.submitQueueAuthoritatively({
       userId: player.id,
       requestId: "guided-missing-roll",
@@ -630,8 +638,59 @@ try {
     1,
     "the GM preview uses the player-clicked check as its suggested result",
   );
+  const guidedOperationId = guidedBlock.plan.operations[0].operationId;
+  const changedRollPlan = clone(guidedBlock.plan);
+  changedRollPlan.operations[0].check.total += 1;
+  changedRollPlan.characters[0].operations[0].check.total += 1;
+  await assert.rejects(
+    workflow.updateGuidedDowntimePlan(guidedBlock.id, changedRollPlan),
+    /PlanImmutable/,
+    "GM report editing cannot replace the recorded player roll",
+  );
+  const previousReport = guidedBlock.plan.operations[0].report;
+  guidedBlock = await service.chooseGuidedDowntimeOutcome({
+    blockId: guidedBlock.id,
+    operationId: guidedOperationId,
+    outcomeIndex: 2,
+  });
+  assert.notEqual(
+    guidedBlock.plan.operations[0].report,
+    previousReport,
+    "a different outcome loads its matching narrative",
+  );
+  await assert.rejects(
+    service.chooseGuidedDowntimeOutcome({
+      blockId: guidedBlock.id,
+      operationId: guidedOperationId,
+      outcomeIndex: Number.NaN,
+    }),
+    /valid downtime result/,
+  );
+  const customReport =
+    "Mira repaired the harbor crane and earned the foreman's thanks.";
+  guidedBlock = await service.chooseGuidedDowntimeOutcome({
+    blockId: guidedBlock.id,
+    operationId: guidedOperationId,
+    outcomeIndex: 2,
+    report: customReport,
+  });
+  assert.equal(guidedBlock.plan.operations[0].report, customReport);
   guidedBlock = await service.applyActiveDowntimeBlock(guidedBlock.id);
   assert.equal(guidedBlock.state, "completed");
+  const finishedReport = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.equal(finishedReport.receipt.activities[0].report, customReport);
+  await assert.rejects(
+    service.chooseGuidedDowntimeOutcome({
+      blockId: guidedBlock.id,
+      operationId: guidedOperationId,
+      outcomeIndex: 0,
+    }),
+    /before applying/,
+    "applied results cannot be edited",
+  );
   delete actor.rollSkill;
 
   const projectPartner = makeActor({ id: "project-partner" });

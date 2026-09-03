@@ -104,6 +104,31 @@ try {
       targetIds: ["stolen-a", "stolen-b"],
     },
   ];
+  for (const [hours, expected] of [
+    [240, true],
+    [241, false],
+  ]) {
+    assert.equal(
+      socket.validateDowntimePayload({
+        type: socket.DOWNTIME_EVENTS.SUBMIT_QUEUE,
+        requestId: "long-guided",
+        targetUserId: gm.id,
+        blockId: "block-1",
+        actorId: "actor-1",
+        queue: [
+          {
+            id: "guided-choice",
+            activityId: "guided-labor",
+            hours,
+            skill: "ath",
+            guidedRoll: { total: 17, formula: "1d20 + 5" },
+          },
+        ],
+      }).ok,
+      expected,
+      "transport supports exactly the GM's maximum hour budget",
+    );
+  }
   assert.equal(
     socket.validateDowntimePayload({
       type: socket.DOWNTIME_EVENTS.SUBMIT_QUEUE,

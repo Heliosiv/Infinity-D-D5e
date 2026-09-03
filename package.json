@@ -39,8 +39,8 @@
     "sound:generate": "node scripts/sound-pipeline.mjs generate",
     "sound:validate": "node scripts/sound-pipeline.mjs validate",
     "verify": "npm run verify:release-source && node scripts/build-release.mjs",
-    "verify:source": "npm run format:check && npm run check && npm run ui:audit && npm run ui:audit:a11y && npm run ui:audit:keyboard",
-    "verify:source:fast": "npm run format:check && npm run check && npm run ui:audit:changed",
+    "verify:source": "npm run format:check && npm run check && npm run ui:audit && npm run ui:audit:a11y && npm run ui:audit:keyboard && npm run ui:audit:downtime",
+    "verify:source:fast": "npm run format:check && npm run check && npm run ui:audit:changed && npm run ui:audit:downtime",
     "verify:release-source": "node scripts/verify-release-source.mjs",
     "release": "npm run verify",
     "release:nocheck": "node scripts/build-release.mjs",
@@ -49,6 +49,7 @@
     "ui:audit:changed": "node scripts/audit-changed-ui.mjs",
     "ui:audit:a11y": "node scripts/audit-ui-accessibility.mjs",
     "ui:audit:keyboard": "node scripts/audit-ui-keyboard.mjs",
+    "ui:audit:downtime": "node scripts/audit-downtime-journey.mjs",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\"",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"scripts/**/*.{js,mjs}\" \"styles/**/*.css\" \"*.{json,md}\""
   },

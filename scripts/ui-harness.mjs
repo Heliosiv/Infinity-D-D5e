@@ -3549,6 +3549,7 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
     }),
   ];
   const context = {
+    lifecycleLabel: "Create, Collect, Lock, Preview, Apply, Complete",
     showQuickStart: false,
     dataAvailable: true,
     view: "current",

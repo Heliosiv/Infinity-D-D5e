@@ -157,8 +157,17 @@ both registered and active.
 
 ### Downtime and city actions
 
-The full GM opens **Workbench → Downtime**, chooses eligible
-characters, and assigns a shared productive-hour budget. Player-owned character
+The default guided flow is **Workbench → Downtime → Open block → Open for
+players**. Each player chooses one activity and clicks **Roll & submit**;
+choosing another activity replaces their selection. Once everyone has submitted,
+the GM clicks **Review results**, chooses each outcome, edits the reports, and
+clicks **Apply rewards & send reports**. Report edits save before application,
+and **Save report** can save them separately. See the
+[downtime guide](docs/DOWNTIME_SYSTEM.md) for projects, existing city-action
+blocks, and the repeatable `npm run ui:audit:downtime` browser gauntlet.
+
+Existing standard city-action blocks retain their shared productive-hour
+budget and multi-activity queues. Player-owned character
 Actors are selected by default; group scopes, search, owner and folder filters,
 and sorting make it easy to add other characters deliberately. Filters change
 only what is shown, so hidden selections remain selected. A settlement is
@@ -189,7 +198,7 @@ applicable skills. Include that project when opening a guided block; any number
 of selected characters can choose it, and each of their assigned hours advances
 the same durable total when the GM applies the block.
 
-When submissions are ready, the GM locks the block and generates a durable,
+For standard city-action blocks, the GM locks submissions and generates a durable,
 immutable preview. All hidden checks, DCs, consequences, rewards, operation
 IDs, and projected writes are persisted before anything changes. Apply uses
 that exact plan, continues independent characters if one character's state has

@@ -1422,18 +1422,62 @@ export function getDowntimeBlock(blockId) {
   return clone(store.history.find((entry) => entry.id === id) ?? null);
 }
 
-function assertImmutablePlan(before, nextStore) {
+function guidedPlanIdentity(plan) {
+  const identity = clone(plan);
+  const retainIdentity = (operation) => {
+    const result = { ...operation };
+    for (const field of [
+      "selectedOutcomeIndex",
+      "outcomeLabel",
+      "report",
+      "currencyDeltaCp",
+      "walletBefore",
+      "walletAfter",
+      "summary",
+    ])
+      delete result[field];
+    return result;
+  };
+  identity.operations = (identity.operations ?? []).map(retainIdentity);
+  identity.characters = (identity.characters ?? []).map((character) => ({
+    ...character,
+    operations: (character.operations ?? []).map(retainIdentity),
+  }));
+  return identity;
+}
+
+function assertImmutablePlan(
+  before,
+  nextStore,
+  { allowGuidedReview = false } = {},
+) {
   if (!before?.plan) return;
   const after =
     nextStore?.activeBlock?.id === before.id
       ? nextStore.activeBlock
       : nextStore?.history?.find((entry) => entry.id === before.id);
+  if (
+    allowGuidedReview &&
+    before.mode === "guided" &&
+    after?.mode === "guided" &&
+    before.state === "planned" &&
+    after.state === "planned" &&
+    Object.values(before.operationLedger ?? {}).every(
+      (record) => record.state === "pending",
+    ) &&
+    persistedValuesEqual(before.operationLedger, after.operationLedger) &&
+    persistedValuesEqual(
+      guidedPlanIdentity(before.plan),
+      guidedPlanIdentity(after.plan),
+    )
+  )
+    return;
   if (!after || !persistedValuesEqual(before.plan, after.plan)) {
     throw new Error("DowntimeWorkflowPlanImmutable");
   }
 }
 
-async function mutateWorkflow(mutator) {
+async function mutateWorkflow(mutator, options = {}) {
   return enqueueWrite(async (fence) => {
     const ensured = await ensureEnvelopeForFence(fence);
     assertAuthorityFence(fence);
@@ -1455,7 +1499,7 @@ async function mutateWorkflow(mutator) {
     const beforeBlock = clone(working.activeBlock);
     const outcome = await mutator(working, fence);
     const nextStore = normalizeDowntimeWorkflowStore(outcome?.store ?? working);
-    assertImmutablePlan(beforeBlock, nextStore);
+    assertImmutablePlan(beforeBlock, nextStore, options);
     if (persistedValuesEqual(beforeStore, nextStore)) {
       return clone(outcome?.result ?? nextStore);
     }
@@ -1621,43 +1665,46 @@ export async function updateGuidedDowntimePlan(blockId, plan) {
     throw new Error("DowntimeGuidedPlanInvalid");
   }
   const normalizedPlan = sanitizeJson(plan);
-  return mutateWorkflow((store, fence) => {
-    const current = store.activeBlock;
-    if (
-      !current ||
-      current.id !== id ||
-      current.state !== "planned" ||
-      current.mode !== "guided" ||
-      !current.plan
-    ) {
-      throw new Error("DowntimeGuidedPlanNotEditable");
-    }
-    const currentIds = plannedOperations(current.plan)
-      .map((operation) => operation.operationId)
-      .sort();
-    const nextIds = plannedOperations(normalizedPlan)
-      .map((operation) => operation.operationId)
-      .sort();
-    if (!persistedValuesEqual(currentIds, nextIds)) {
-      throw new Error("DowntimeGuidedPlanOperationMismatch");
-    }
-    if (
-      Object.values(current.operationLedger ?? {}).some(
-        (record) => record.state !== "pending",
-      )
-    ) {
-      throw new Error("DowntimeGuidedPlanAlreadyApplying");
-    }
-    const next = normalizeDowntimeBlock({
-      ...current,
-      plan: normalizedPlan,
-      updatedAt: currentTimestamp(),
-      updatedBy: fence.userId,
-    });
-    if (!next) throw new Error("DowntimeGuidedPlanInvalid");
-    store.activeBlock = next;
-    return { store, mapResult: (committed) => committed.activeBlock };
-  });
+  return mutateWorkflow(
+    (store, fence) => {
+      const current = store.activeBlock;
+      if (
+        !current ||
+        current.id !== id ||
+        current.state !== "planned" ||
+        current.mode !== "guided" ||
+        !current.plan
+      ) {
+        throw new Error("DowntimeGuidedPlanNotEditable");
+      }
+      const currentIds = plannedOperations(current.plan)
+        .map((operation) => operation.operationId)
+        .sort();
+      const nextIds = plannedOperations(normalizedPlan)
+        .map((operation) => operation.operationId)
+        .sort();
+      if (!persistedValuesEqual(currentIds, nextIds)) {
+        throw new Error("DowntimeGuidedPlanOperationMismatch");
+      }
+      if (
+        Object.values(current.operationLedger ?? {}).some(
+          (record) => record.state !== "pending",
+        )
+      ) {
+        throw new Error("DowntimeGuidedPlanAlreadyApplying");
+      }
+      const next = normalizeDowntimeBlock({
+        ...current,
+        plan: normalizedPlan,
+        updatedAt: currentTimestamp(),
+        updatedBy: fence.userId,
+      });
+      if (!next) throw new Error("DowntimeGuidedPlanInvalid");
+      store.activeBlock = next;
+      return { store, mapResult: (committed) => committed.activeBlock };
+    },
+    { allowGuidedReview: true },
+  );
 }
 
 function assertLockedPlanningBlock(store, blockId) {
