@@ -7,6 +7,10 @@ import { buildGmWorkbenchNavigationContext } from "./gm-workbench-routes.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
+import {
+  defaultGuidedDowntimeTemplates,
+  GUIDED_DOWNTIME_SKILLS,
+} from "./downtime/dispatch.js";
 
 /** Market-filter context (mirrors BaseLootApp._marketContext) for the harness. */
 function marketContext(minItemGp = 0, maxItemGp = 0) {
@@ -591,6 +595,22 @@ export function buildHarnessViews() {
       "infinity-downtime-workspace",
       "templates/downtime-workspace.hbs",
       downtimeWorkspaceEmptyContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-activity-editor",
+      "Downtime Workspace (activity editor)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceActivityEditorContext(),
+      { width: 1040, height: 760 },
+    ),
+    view(
+      "downtime-workspace-project-editor",
+      "Downtime Workspace (project editor)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceProjectEditorContext(),
       { width: 1040, height: 760 },
     ),
     view(
@@ -3525,6 +3545,55 @@ function downtimeWorkspaceCharacterPickerBusyContext() {
   };
 }
 
+function downtimeWorkspaceProjectEditorContext() {
+  return downtimeWorkspaceBaseContext({
+    view: "projects",
+    viewCurrent: false,
+    viewProjects: true,
+    newProjectName: "Restore the observatory",
+    newProjectDescription: "Rebuild the telescope and chart the northern sky.",
+    newProjectHours: "80",
+    guidedProjects: [
+      {
+        id: "project-archive",
+        name: "Translate the archive",
+        progressLabel: "24 / 80 hours",
+        complete: false,
+      },
+    ],
+    hasGuidedProjects: true,
+    projectSkillOptions: GUIDED_DOWNTIME_SKILLS.map((row) => ({
+      ...row,
+      checked: row.id === "arc",
+    })),
+  });
+}
+
+function downtimeWorkspaceActivityEditorContext() {
+  const templates = defaultGuidedDowntimeTemplates();
+  const selected = templates[0];
+  return downtimeWorkspaceBaseContext({
+    view: "activities",
+    viewCurrent: false,
+    viewActivities: true,
+    guidedTemplates: templates.map((row) => ({
+      ...row,
+      selected: row.id === selected.id,
+    })),
+    templateEditor: {
+      ...selected,
+      outcomes: selected.outcomes.map((row, index) => ({
+        ...row,
+        number: index + 1,
+      })),
+      skillOptions: GUIDED_DOWNTIME_SKILLS.map((row) => ({
+        ...row,
+        checked: selected.skills.includes(row.id),
+      })),
+    },
+  });
+}
+
 function downtimeWorkspaceBaseContext(overrides = {}) {
   const actors = [
     downtimeWorkspaceActorFixture({
@@ -3550,6 +3619,8 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
   ];
   const context = {
     lifecycleLabel: "Create, Collect, Lock, Preview, Apply, Complete",
+    newBlockLocation: "",
+    newBlockHours: "8",
     showQuickStart: false,
     dataAvailable: true,
     view: "current",

@@ -441,6 +441,7 @@ export class DowntimePlayerAdapter {
     this._drafts = new Map();
     this._pending = new Map();
     this._refreshing = new Map();
+    this._submitting = new Map();
     this._destroyed = false;
     this._bindSocketEvents();
     this._registerSocket?.();
@@ -522,13 +523,24 @@ export class DowntimePlayerAdapter {
       return this._projectDraft(actor, projection);
     } catch (error) {
       if (String(error?.message ?? "").includes("no active GM")) {
-        const projection = emptyProjection({ noGm: true });
+        // GM availability applies to every cached character in this window.
+        // Switching characters must not revive stale submission controls.
+        for (const entry of this._cache.values()) {
+          entry.projection.noGm = true;
+          entry.projection.canSubmit = false;
+          entry.projection.canRecall = false;
+        }
         const prior = cached?.projection;
+        const projection = prior?.hasActiveBlock
+          ? { ...clone(prior), noGm: true, canSubmit: false, canRecall: false }
+          : emptyProjection({ noGm: true });
         const receiptActorId =
           actor ||
           cleanId(prior?.selectedActorId) ||
           cleanId(prior?.actors?.[0]?.id);
         if (prior?.receipt) {
+          projection.blockId = prior.blockId;
+          projection.actors = clone(prior.actors);
           projection.selectedActorId = receiptActorId;
           projection.receipt = sanitizeReceipt(prior.receipt);
           projection.completionMessage = cleanText(
@@ -653,8 +665,17 @@ export class DowntimePlayerAdapter {
     return clone(draft.queue);
   }
 
-  async submitQueue({ actorId = "" } = {}) {
+  submitQueue({ actorId = "" } = {}) {
     const actor = cleanId(actorId);
+    if (this._submitting.has(actor)) return this._submitting.get(actor);
+    const submission = this._submitQueueForActor(actor).finally(() =>
+      this._submitting.delete(actor),
+    );
+    this._submitting.set(actor, submission);
+    return submission;
+  }
+
+  async _submitQueueForActor(actor) {
     const projection = await this.getPlayerProjection({ actorId: actor });
     this._assertEditable(projection, actor);
     const draft = this._ensureDraft(
@@ -662,15 +683,27 @@ export class DowntimePlayerAdapter {
       projection.rawQueue,
     );
     const queue = sanitizeDowntimeSubmissionQueue(draft.queue);
-    const submittedQueue =
-      projection.mode === "guided"
-        ? await this._preparePlayerClickedGuidedRoll({
-            projection,
-            actorId: actor,
-            queue,
-          })
-        : queue;
-    const requestId = cleanId(this._requestIdFactory("submit"));
+    let attempt = draft.submissionAttempt;
+    const queueKey = JSON.stringify(queue);
+    if (projection.mode !== "guided" || attempt?.queueKey !== queueKey) {
+      const submittedQueue =
+        projection.mode === "guided"
+          ? await this._preparePlayerClickedGuidedRoll({
+              projection,
+              actorId: actor,
+              queue,
+            })
+          : queue;
+      attempt = {
+        queueKey,
+        queue: submittedQueue,
+        requestId: cleanId(this._requestIdFactory("submit")),
+      };
+      // Keep the exact check and request identity when a reply is interrupted.
+      // An edited choice or a successful recall creates a new attempt.
+      if (projection.mode === "guided") draft.submissionAttempt = attempt;
+    }
+    const { requestId, queue: submittedQueue } = attempt;
     if (this._isAuthority()) {
       await this._submitDirect({
         userId: this._getCurrentUserId(),
@@ -715,9 +748,11 @@ export class DowntimePlayerAdapter {
       fastForward: false,
     });
     if (!result?.ok) {
-      throw new Error(
+      const error = new Error(
         "Your downtime check was cancelled. Choose Roll & submit to try again.",
       );
+      error.code = "DOWNTIME_ROLL_CANCELLED";
+      throw error;
     }
     return [
       {
@@ -919,8 +954,8 @@ export class DowntimePlayerAdapter {
   _cacheProjection(raw, actorHint = "", { replaceDraft = false } = {}) {
     const projection = sanitizePlayerDowntimeSnapshot(raw);
     const actorId =
-      cleanId(actorHint) ||
       projection.selectedActorId ||
+      cleanId(actorHint) ||
       projection.actors[0]?.id ||
       "";
     projection.selectedActorId = actorId;
@@ -972,8 +1007,8 @@ export class DowntimePlayerAdapter {
   _projectDraft(actorId, rawProjection) {
     const projection = clone(sanitizePlayerDowntimeSnapshot(rawProjection));
     const selectedActorId =
-      cleanId(actorId) ||
       projection.selectedActorId ||
+      cleanId(actorId) ||
       projection.actors[0]?.id ||
       "";
     projection.selectedActorId = selectedActorId;
@@ -1028,6 +1063,10 @@ export class DowntimePlayerAdapter {
       !projection.submitted &&
       (projection.mode !== "guided" || queue.length === 1) &&
       projection.usedHours <= projection.budgetHours,
+    );
+    projection.retrySubmission = Boolean(
+      projection.canSubmit &&
+      draft.submissionAttempt?.queueKey === JSON.stringify(queue),
     );
     return projection;
   }

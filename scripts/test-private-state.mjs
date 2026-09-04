@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { applyFlagMerge } from "./test-utils/foundry-flags.mjs";
 
 import {
   PRIVATE_STATE_SCHEMA_VERSION,
@@ -103,7 +104,12 @@ function makeDocument(data) {
           continue;
         }
         const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
-        if (match) flags[MODULE_ID][match[1]] = structuredClone(value);
+        if (match) {
+          flags[MODULE_ID][match[1]] = applyFlagMerge(
+            flags[MODULE_ID][match[1]],
+            value,
+          );
+        }
       }
       globalThis.Hooks.call("updateJournalEntry", this, changes);
       return this;
@@ -443,6 +449,92 @@ try {
       getPrivateState("merchantTransactions"),
       written.merchantTransactions,
     );
+  }
+
+  // Recovery clears a nested authority claim, and history pruning removes
+  // records. Foundry's merge must not retain either omitted value. Replacing
+  // an empty object and an array must also preserve unrelated private fields.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const before = {
+      workflow: {
+        revision: 77,
+        activeBlock: {
+          operationLedger: {
+            recovering: {
+              state: "needs-review",
+              authorityEpoch: "old-gm:old-tab",
+              before: { gp: 20 },
+            },
+            pruned: { state: "applied" },
+          },
+        },
+        history: [{ id: "old-block", obsolete: true }],
+      },
+      obsolete: { nested: true },
+    };
+    const source = makeStoreData({
+      merchants: [{ id: "unrelated-shop" }],
+      downtimeWorkflowCheckpoint: before,
+      downtimeConfig: { preserve: { project: "observatory" } },
+    });
+    source.flags.otherModule = { untouched: true };
+    const store = activeJournal.insert(source);
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+    const next = {
+      workflow: {
+        revision: 78,
+        activeBlock: {
+          operationLedger: {
+            recovering: {
+              state: "verified-unapplied",
+              before: { gp: 20 },
+            },
+          },
+        },
+        history: [{ id: "new-block" }],
+      },
+    };
+    const ownership = structuredClone(store.ownership);
+    const updateCount = store.updateCalls.length;
+    assert.deepEqual(
+      await setPrivateState("downtimeWorkflowCheckpoint", next),
+      next,
+    );
+    assert.equal(store.updateCalls.length, updateCount + 1);
+    assert.deepEqual(
+      store.getFlag(MODULE_ID, "downtimeWorkflowCheckpoint"),
+      next,
+    );
+    assert.deepEqual(before.workflow.activeBlock.operationLedger.recovering, {
+      state: "needs-review",
+      authorityEpoch: "old-gm:old-tab",
+      before: { gp: 20 },
+    });
+    assert.deepEqual(
+      await setPrivateState("downtimeWorkflowCheckpoint", {}),
+      {},
+    );
+    assert.deepEqual(
+      store.getFlag(MODULE_ID, "downtimeWorkflowCheckpoint"),
+      {},
+    );
+    assert.deepEqual(store.getFlag(MODULE_ID, "downtimeConfig"), {
+      preserve: { project: "observatory" },
+    });
+    assert.deepEqual(store.getFlag(MODULE_ID, "merchants"), [
+      { id: "unrelated-shop" },
+    ]);
+    assert.deepEqual(store.getFlag("otherModule", "untouched"), true);
+    assert.deepEqual(store.ownership, ownership);
   }
 
   // A failed guard writes neither field. A storage layer that silently drops

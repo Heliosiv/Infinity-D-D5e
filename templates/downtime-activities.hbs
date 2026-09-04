@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Choose one activity for the downtime the GM assigned, then click Roll &amp; submit. Your GM will review the result and send your report.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
+      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Choose one activity for the downtime the GM assigned, then submit it. If it uses a skill, you will roll your check. Your GM will review the result and send your report.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -22,11 +22,11 @@
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Safe next step:</strong>
       {{#if busy}}wait for the current request to finish before changing the queue.
-      {{else if hasError}}refresh the saved queue before choosing whether to make a new change; the failed request was not retried.
+      {{else if hasError}}{{#if retrySubmission}}use Retry submission to resend the saved choice and check. It will not roll again.{{else}}refresh the saved queue before choosing whether to make a new change; the failed request was not retried.{{/if}}
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
       {{else if completed}}read your completed report below. Your GM will open another block when it is time for more downtime.
-      {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if guided}}{{#if hasQueue}}click Roll &amp; submit, or choose another activity to replace your selection.{{else}}choose one activity and an approach for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
+      {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if retrySubmission}}retry your submission. Your choice and any check are saved in this window and will not be rolled again.{{else if guided}}{{#if hasQueue}}click {{#if requiresRoll}}Roll &amp; submit{{else}}Submit activity{{/if}}, or choose another activity to replace your selection.{{else}}choose one activity and an approach for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
       {{else}}wait for the GM to open a downtime block; no activity was submitted.
       {{/if}}
     </span>
@@ -47,29 +47,30 @@
   </div>
   {{/if}}
 
+  {{#if hasMultipleActors}}
+  <nav class="dt-actor-tabs" aria-label="Your downtime characters">
+    {{#each actors}}
+      {{#if eligible}}
+      <button type="button" data-action="selectActor" data-actor-id="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>
+        <img src="{{img}}" alt="" /> <span>{{name}}</span>
+      </button>
+      {{/if}}
+    {{/each}}
+  </nav>
+  {{/if}}
+
   {{#if noGm}}
   <div class="dt-state-panel">
     <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
     <h3>No full GM is online</h3>
-    <p>Your last receipt is still shown below. No new request can start. If one was interrupted, refresh after reconnection and verify the saved queue or receipt before repeating it.</p>
+    <p>{{#if hasReceipt}}Your last receipt is still shown below. {{else if hasQueue}}Your choice is kept in this window. {{/if}}No new request can start. If one was interrupted, refresh after reconnection and verify the saved queue or receipt before repeating it.</p>
+    {{#if hasQueue}}<p class="dt-notice">Last choice: {{#each queue}}{{#unless @first}} · {{/unless}}{{label}} ({{hours}}h){{/each}}</p>{{/if}}
     <button type="button" class="dt-button" data-action="refresh" {{#if busy}}disabled{{/if}}>Try again</button>
   </div>
   {{else if completed}}
   <p class="dt-notice dt-notice--success" role="status">Downtime complete. Your saved results are ready.</p>
   {{else if hasActiveBlock}}
     {{#if actor}}
-      {{#if hasMultipleActors}}
-      <nav class="dt-actor-tabs" aria-label="Eligible characters">
-        {{#each actors}}
-          {{#if eligible}}
-          <button type="button" data-action="selectActor" data-actor-id="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>
-            <img src="{{img}}" alt="" /> <span>{{name}}</span>
-          </button>
-          {{/if}}
-        {{/each}}
-      </nav>
-      {{/if}}
-
       <section class="dt-player-summary" aria-label="Character downtime summary">
         <div class="dt-player-summary__actor">
           <img src="{{actor.img}}" alt="" />
@@ -242,7 +243,7 @@
               {{/if}}
             {{else}}
             <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-              <i class="fa-solid {{#if guided}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if guided}}Roll &amp; submit{{else}}Submit queue{{/if}}
+              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit activity{{else}}Submit queue{{/if}}
             </button>
             {{/if}}
           </footer>
@@ -267,7 +268,7 @@
   {{#if hasReceipt}}
   <section class="dt-receipt" aria-labelledby="dt-receipt-heading">
     <div class="dt-section__head">
-      <div><p class="dt-eyebrow">GM-and-owner receipt</p><h3 id="dt-receipt-heading">Latest Results</h3></div>
+      <div><p class="dt-eyebrow">GM-and-owner receipt{{#if actor}} · {{actor.name}}{{/if}}</p><h3 id="dt-receipt-heading">Latest Results</h3></div>
       {{#if receipt.completedAt}}<span>{{receipt.completedAt}}</span>{{/if}}
     </div>
     {{#if receipt.summary}}<p>{{receipt.summary}}</p>{{/if}}

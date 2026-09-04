@@ -18,6 +18,9 @@
     <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block
     </button>
+    <button type="button" data-action="setView" data-view="activities" {{#if viewActivities}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
+      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Activities
+    </button>
     <button type="button" data-action="setView" data-view="projects" {{#if viewProjects}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-diagram-project" aria-hidden="true"></i> Projects
     </button>
@@ -116,7 +119,7 @@
           <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if guided}}{{#unless currentBlock.canApply}}hidden{{/unless}}{{/if}} {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-check-double" aria-hidden="true"></i> {{#if guided}}Apply rewards &amp; send reports{{else}}Apply exact plan{{/if}}
           </button>
-          <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#if guided}}{{#unless currentBlock.canCancel}}hidden{{/unless}}{{/if}} {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
           </button>
           {{#if currentBlock.canStartNext}}
@@ -173,13 +176,13 @@
           <div class="dt-section__head">
             <div>
               <p class="dt-eyebrow">{{#if guided}}Recorded player checks{{else}}Immutable write plan {{#if currentBlock.planId}}· {{currentBlock.planId}}{{/if}}{{/if}}</p>
-              <h3 id="dt-preview-heading">{{#if guided}}Review player results{{else}}GM Preview{{/if}}</h3>
+              <h3 id="dt-preview-heading" tabindex="-1">{{#if guided}}{{#if currentBlock.completed}}Completed reports{{else}}Review player results{{/if}}{{else}}GM Preview{{/if}}</h3>
             </div>
             {{#if currentBlock.plannedAt}}<span>Generated {{currentBlock.plannedAt}}</span>{{/if}}
           </div>
           <div class="dt-preview__warning">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
-            {{#if guided}}Choose a result for each character, then edit the report if needed. Apply rewards &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
+            {{#if guided}}{{#if currentBlock.completed}}These results have been applied and the player reports delivered. Start the next block when the party is ready.{{else if currentBlock.canApply}}Choose a result for each character, then edit the report if needed. Apply rewards &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}These saved results are read-only while application or recovery is in progress.{{/if}}{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
           </div>
           <div class="dt-plan-list">
             {{#each currentBlock.planCharacters}}
@@ -191,6 +194,7 @@
                   <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
                   <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
                   {{#if hasOutcomeOptions}}
+                  {{#if ../../currentBlock.canApply}}
                   <div class="dt-chip-grid" data-operation-id="{{id}}" data-outcome-index="{{selectedOutcomeIndex}}" aria-label="Choose result for {{label}}">
                     {{#each outcomeOptions}}
                     <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
@@ -198,6 +202,7 @@
                     <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report data-saved-report="{{savedReport}}" rows="3" maxlength="800" aria-label="Player report for {{label}}" {{#unless ../../currentBlock.canApply}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{report}}</textarea><small>Choosing another result loads its report. Edits are saved when you apply, or with Save report.</small></label>
                     <button type="button" class="dt-button" data-action="saveGuidedReport" {{#unless ../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../busy}}disabled{{/if}}>Save report</button>
                   </div>
+                  {{/if}}
                   {{/if}}
                 </li>
                 {{/each}}
@@ -240,13 +245,13 @@
         <form class="dt-form" data-form="new-block">
           <label class="dt-field">
             <span>Location</span>
-            <input type="text" name="locationName" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Downtime location" {{#if busy}}disabled{{/if}} />
+            <input type="text" name="locationName" value="{{newBlockLocation}}" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Downtime location" {{#if busy}}disabled{{/if}} />
             <small>This is player-facing context for the downtime report.</small>
           </label>
           <div class="dt-field">
             <span id="dt-new-block-hours-label">Productive hours per character</span>
             <div class="dt-hours-row">
-              <input type="number" name="hours" min="1" max="240" step="1" value="8" required aria-labelledby="dt-new-block-hours-label" {{#if busy}}disabled{{/if}} />
+              <input type="number" name="hours" min="1" max="240" step="1" value="{{newBlockHours}}" required aria-labelledby="dt-new-block-hours-label" {{#if busy}}disabled{{/if}} />
               <button type="button" data-action="setHourPreset" data-hours="8" {{#if busy}}disabled{{/if}}>1 day</button>
               <button type="button" data-action="setHourPreset" data-hours="16" {{#if busy}}disabled{{/if}}>2 days</button>
               <button type="button" data-action="setHourPreset" data-hours="40" {{#if busy}}disabled{{/if}}>5 days</button>
@@ -368,7 +373,7 @@
             {{#if hasGuidedTemplates}}
             <div class="dt-chip-grid">
               {{#each guidedTemplates}}
-              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" checked {{#if ../busy}}disabled{{/if}} /><span>{{name}}</span></label>
+              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}}</span></label>
               {{/each}}
             </div>
             {{else}}
@@ -382,7 +387,7 @@
             <div class="dt-chip-grid">
               {{#each guidedProjects}}
               <label class="dt-chip {{#if complete}}is-disabled{{/if}}" title="{{progressLabel}}">
-                <input type="checkbox" name="projectIds" value="{{id}}" {{#if complete}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} />
+                <input type="checkbox" name="projectIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if complete}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} />
                 <span>{{name}} <small>{{progressLabel}}</small></span>
               </label>
               {{/each}}
@@ -403,6 +408,42 @@
         </form>
       </section>
       {{/if}}
+    {{/if}}
+
+    {{#if viewActivities}}
+    <section class="dt-settlement-layout" aria-labelledby="dt-activities-editor-heading">
+      <aside class="dt-rail">
+        <div class="dt-rail__head">
+          <div><p class="dt-eyebrow">Your campaign library</p><h3 id="dt-activities-editor-heading">Activities</h3></div>
+          <button type="button" class="dt-icon-button" data-action="newGuidedTemplate" title="New activity" aria-label="New activity" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+        </div>
+        <ul class="dt-rail__list">
+          {{#each guidedTemplates}}
+          <li><button type="button" data-action="selectGuidedTemplate" data-template-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}><strong>{{name}}</strong><span>{{description}}</span></button></li>
+          {{/each}}
+        </ul>
+      </aside>
+      <form class="dt-form" data-form="guided-template" aria-labelledby="dt-template-editor-heading">
+        <div class="dt-form__head">
+          <div><p class="dt-eyebrow">{{#if templateEditor.id}}Edit activity{{else}}New activity{{/if}}</p><h3 id="dt-template-editor-heading">{{#if templateEditor.id}}{{templateEditor.name}}{{else}}Create an activity{{/if}}</h3></div>
+          <p>Changes apply to future blocks. Activities already assigned to players keep their original details and rewards.</p>
+        </div>
+        <input type="hidden" name="id" value="{{templateEditor.id}}" />
+        <label class="dt-field dt-field--wide"><span>Activity name</span><input name="name" value="{{templateEditor.name}}" maxlength="80" required {{#if busy}}disabled{{/if}} /></label>
+        <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Player description" rows="3" maxlength="400" {{#if busy}}disabled{{/if}}>{{templateEditor.description}}</textarea></label>
+        <label class="dt-field dt-field--wide"><span>Activity image (optional)</span><input name="image" value="{{templateEditor.image}}" maxlength="500" placeholder="Image path or URL" {{#if busy}}disabled{{/if}} /><small>Leave blank to use the default activity icon.</small></label>
+        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one of these skills. Leave all unchecked for an activity without a roll.</p><div class="dt-chip-grid">{{#each templateEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per full assigned block.</p></div>
+        {{#each templateEditor.outcomes}}
+        <fieldset class="dt-fieldset" data-template-outcome><legend>Result {{number}}</legend>
+          <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../busy}}disabled{{/if}} /></label>
+          <label class="dt-field dt-field--wide"><span>Player report</span><textarea name="outcomeReport" aria-label="Player report for result {{number}}" rows="3" maxlength="800" required {{#if ../busy}}disabled{{/if}}>{{report}}</textarea></label>
+          <label class="dt-field"><span>Reward (gp)</span><input type="number" name="outcomeReward" min="0" max="100000" step="0.01" value="{{rewardGp}}" required {{#if ../busy}}disabled{{/if}} /></label>
+        </fieldset>
+        {{/each}}
+        <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedTemplate" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save activity</button></footer>
+      </form>
+    </section>
     {{/if}}
 
     {{#if viewProjects}}
@@ -428,10 +469,10 @@
           <div><p class="dt-eyebrow">New project</p><h3 id="dt-project-create-heading">Track shared progress</h3></div>
           <p>Project pacing is one productive hour of progress per character. Rolls shape the GM report, not the number of hours earned.</p>
         </div>
-        <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
-        <label class="dt-field dt-field--wide"><span>Project description</span><textarea name="description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}></textarea></label>
-        <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" min="1" max="10000" step="1" value="160" required {{#if busy}}disabled{{/if}} /><small>160 hours is 20 eight-hour days; set the pace that fits your campaign.</small></label>
-        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one, then click Roll &amp; submit.</p><div class="dt-chip-grid">{{#each projectSkillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" value="{{newProjectName}}" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
+        <label class="dt-field dt-field--wide"><span>Project description</span><textarea name="description" aria-label="Project description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}>{{newProjectDescription}}</textarea></label>
+        <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" aria-label="Total productive hours" aria-describedby="dt-project-hours-help" min="1" max="10000" step="1" value="{{newProjectHours}}" required {{#if busy}}disabled{{/if}} /><small id="dt-project-hours-help">160 hours is 20 eight-hour days; set the pace that fits your campaign.</small></label>
+        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one, then click Roll &amp; submit.</p><div class="dt-chip-grid">{{#each projectSkillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
         <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save project</button></footer>
       </form>
     </section>

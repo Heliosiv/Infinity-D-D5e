@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { applyFlagMerge } from "./test-utils/foundry-flags.mjs";
 
 import {
   isMerchantAccessClosed,
@@ -360,7 +361,7 @@ try {
       this.updateCalls.push(structuredClone(changes));
       for (const [path, value] of Object.entries(changes)) {
         const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
-        if (match) flags[match[1]] = structuredClone(value);
+        if (match) flags[match[1]] = applyFlagMerge(flags[match[1]], value);
       }
       globalThis.Hooks.call("updateJournalEntry", this, changes);
       return this;

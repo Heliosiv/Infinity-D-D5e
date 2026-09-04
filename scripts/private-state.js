@@ -1,13 +1,15 @@
 /**
- * GM-only persistent state backed by a restricted JournalEntry.
+ * GM-authoritative state backed by a restricted JournalEntry.
  *
  * Foundry world settings are readable by every connected client even when
  * `config:false`. Merchant economy and unrevealed faction records therefore
- * live on a JournalEntry with default NONE ownership and are cached only on
- * full-GM clients. Critical Injury approvals and replay receipts use the same
- * boundary because player-owned Actor flags are not authorization records.
- * Other roles receive typed empty defaults. Legacy settings are migrated once
- * and then cleared.
+ * live on a JournalEntry with default NONE ownership. This module hydrates its
+ * cache only for full GMs and returns typed empty defaults to other roles.
+ * Ownership is an application/write boundary, not transport confidentiality:
+ * the installed Foundry 13.351 gauntlet demonstrated that player clients still
+ * receive the underlying Journal flags. See docs/DOWNTIME_SYSTEM.md before
+ * relying on these records to conceal information from a connected client.
+ * Legacy settings are migrated once and then cleared.
  */
 
 import { isFullGM } from "./permissions.js";
@@ -1526,6 +1528,30 @@ function verifyPrivateStateWrite(document, cleaned) {
   }
 }
 
+// Foundry merges object-valued flags. A snapshot must explicitly remove keys
+// which no longer exist, or cleared claims and deleted records survive the
+// write. Keep these deletion markers inside the requested field so siblings,
+// ownership, and unrelated module flags remain untouched by the update.
+function replacementFlagValue(previous, next) {
+  if (!next || typeof next !== "object" || Array.isArray(next)) return next;
+  const prior =
+    previous && typeof previous === "object" && !Array.isArray(previous)
+      ? previous
+      : {};
+  return Object.fromEntries([
+    ...Object.entries(next).map(([key, value]) => [
+      key,
+      replacementFlagValue(
+        Object.hasOwn(prior, key) ? prior[key] : null,
+        value,
+      ),
+    ]),
+    ...Object.keys(prior)
+      .filter((key) => !Object.hasOwn(next, key))
+      .map((key) => [`-=${key}`, null]),
+  ]);
+}
+
 /**
  * Persist one or more private-state fields in one canonical Journal update.
  *
@@ -1600,7 +1626,7 @@ export async function setPrivateStates(
     Object.fromEntries(
       Object.entries(cleaned).map(([key, value]) => [
         `flags.${MODULE_ID}.${key}`,
-        value,
+        replacementFlagValue(document.getFlag(MODULE_ID, key), value),
       ]),
     ),
   );

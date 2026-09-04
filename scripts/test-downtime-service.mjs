@@ -167,6 +167,42 @@ try {
   privateState.resetPrivateStateForTests();
   workflow.resetDowntimeWorkflowStoreForTests();
 
+  // An already open GM window learns when private state finishes loading or
+  // changes in another tab, and closing it removes the corresponding hook.
+  {
+    const hooksBefore = globalThis.Hooks;
+    const listeners = new Map();
+    let hookSequence = 0;
+    globalThis.Hooks = {
+      on(event, callback) {
+        assert.equal(event, privateState.PRIVATE_STATE_CHANGED_HOOK);
+        const id = ++hookSequence;
+        listeners.set(id, callback);
+        return id;
+      },
+      off(event, id) {
+        assert.equal(event, privateState.PRIVATE_STATE_CHANGED_HOOK);
+        listeners.delete(id);
+      },
+    };
+    const changes = [];
+    const unsubscribe = service.subscribeDowntimeService((payload) =>
+      changes.push(payload),
+    );
+    for (const callback of listeners.values()) {
+      callback({ keys: ["merchants"], reason: "store-ready" });
+      callback({ keys: ["downtimeWorkflow"], reason: "store-ready" });
+      callback({ keys: ["downtimeConfig"], reason: "journal-update" });
+    }
+    assert.deepEqual(changes, [
+      { reason: "private-state-change" },
+      { reason: "private-state-change" },
+    ]);
+    unsubscribe();
+    assert.equal(listeners.size, 0);
+    globalThis.Hooks = hooksBefore;
+  }
+
   const canonical = service.canonicalizeDowntimeQueueSubmission([
     {
       queueEntryId: "craft-1",
@@ -629,6 +665,30 @@ try {
       },
     ],
   });
+  const repeatGuidedRequest = {
+    userId: player.id,
+    requestId: "guided-player-roll",
+    blockId: guidedBlock.id,
+    actorId: actor.id,
+    queue: [
+      {
+        id: "guided-choice",
+        activityId: "guided-labor",
+        hours: 8,
+        skill: "ath",
+        guidedRoll: { total: 17, formula: "1d20 + 5" },
+      },
+    ],
+  };
+  await service.submitQueueAuthoritatively(repeatGuidedRequest);
+  await assert.rejects(
+    service.submitQueueAuthoritatively({
+      ...repeatGuidedRequest,
+      requestId: "guided-replacement-without-recall",
+    }),
+    /Recall your submitted activity/,
+    "accepted checks cannot be silently overwritten with a fresh request",
+  );
   guidedBlock = await service.lockActiveDowntimeBlock(guidedBlock.id);
   guidedBlock = await service.planActiveDowntimeBlock(guidedBlock.id);
   assert.equal(guidedBlock.plan.operations[0].check.total, 17);
@@ -675,6 +735,23 @@ try {
     report: customReport,
   });
   assert.equal(guidedBlock.plan.operations[0].report, customReport);
+  actor.system.currency.gp += 1;
+  await assert.rejects(
+    service.applyActiveDowntimeBlock(guidedBlock.id),
+    /currency changed.*Save their report/,
+    "wallet changes are caught while the preview can still be edited",
+  );
+  assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+  assert.equal(
+    workflow.getActiveDowntimeBlock().operationLedger[guidedOperationId].state,
+    "pending",
+  );
+  await service.chooseGuidedDowntimeOutcome({
+    blockId: guidedBlock.id,
+    operationId: guidedOperationId,
+    outcomeIndex: 2,
+    report: customReport,
+  });
   guidedBlock = await service.applyActiveDowntimeBlock(guidedBlock.id);
   assert.equal(guidedBlock.state, "completed");
   const finishedReport = await service.getPlayerProjectionForUser({
@@ -693,15 +770,175 @@ try {
   );
   delete actor.rollSkill;
 
+  // The GM can maintain an activity library without changing work that has
+  // already been assigned. Players receive descriptions and skills, never the
+  // unpublished result options, and an activity can intentionally skip a roll.
+  const libraryActivity = {
+    name: "Tend the community garden",
+    description: "Spend the assigned time growing useful herbs.",
+    skills: [],
+    outcomes: [
+      {
+        label: "A quiet day",
+        report: "You tended the seedlings.",
+        rewardGp: 0,
+      },
+      {
+        label: "Healthy growth",
+        report: "The herb beds are thriving.",
+        rewardGp: 1.25,
+      },
+      {
+        label: "Bountiful harvest",
+        report: "You brought back a useful harvest.",
+        rewardGp: 2.5,
+      },
+    ],
+  };
+  globalThis.game.user = player;
+  await assert.rejects(
+    service.saveGuidedDowntimeTemplate(libraryActivity),
+    /active full GM/,
+  );
+  globalThis.game.user = gm;
+  await assert.rejects(
+    service.saveGuidedDowntimeTemplate({
+      ...libraryActivity,
+      outcomes: libraryActivity.outcomes.slice(0, 2),
+    }),
+    /three to six/,
+  );
+  await assert.rejects(
+    service.saveGuidedDowntimeTemplate({
+      ...libraryActivity,
+      outcomes: libraryActivity.outcomes.map((row) => ({
+        ...row,
+        rewardGp: -1,
+      })),
+    }),
+    /reward/,
+  );
+  await assert.rejects(
+    service.saveGuidedDowntimeTemplate({
+      ...libraryActivity,
+      outcomes: libraryActivity.outcomes.map((row) => ({ ...row, report: "" })),
+    }),
+    /player report/,
+  );
+  const savedActivity =
+    await service.saveGuidedDowntimeTemplate(libraryActivity);
+  assert.deepEqual(
+    (await service.getWorkspaceProjection()).guidedTemplates.find(
+      (row) => row.id === savedActivity.id,
+    ),
+    savedActivity,
+  );
+  const customBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationName: "Community garden",
+    hours: 4,
+    actorIds: [actor.id],
+    templateIds: [savedActivity.id],
+  });
+  const customPlayer = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.equal(Object.hasOwn(customPlayer.activities[0], "outcomes"), false);
+  await service.saveGuidedDowntimeTemplate({
+    ...savedActivity,
+    name: "Revised garden",
+    outcomes: savedActivity.outcomes.map((row) => ({ ...row, rewardGp: 99 })),
+  });
+  assert.deepEqual(
+    workflow.getActiveDowntimeBlock().guidedTemplates[0],
+    savedActivity,
+    "editing the library preserves the active block snapshot",
+  );
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "garden-no-roll",
+    blockId: customBlock.id,
+    actorId: actor.id,
+    queue: [
+      {
+        id: "garden-choice",
+        activityId: savedActivity.id,
+        hours: 4,
+        skill: "",
+      },
+    ],
+  });
+  await service.lockActiveDowntimeBlock(customBlock.id);
+  const gardenPlan = await service.planActiveDowntimeBlock(customBlock.id);
+  const gardenOperation = gardenPlan.plan.operations[0];
+  assert.equal(
+    (await service.getWorkspaceProjection()).workflow.plan.characters[0]
+      .operations[0].rollLabel,
+    "No skill check",
+  );
+  await service.chooseGuidedDowntimeOutcome({
+    blockId: customBlock.id,
+    operationId: gardenOperation.operationId,
+    outcomeIndex: 2,
+  });
+  assert.equal(
+    workflow.getActiveDowntimeBlock().plan.operations[0].currencyDeltaCp,
+    250,
+  );
+  await service.applyActiveDowntimeBlock(customBlock.id);
+  const gardenReceipt = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.equal(
+    gardenReceipt.receipt.activities[0].report,
+    savedActivity.outcomes[2].report,
+  );
+
   const projectPartner = makeActor({ id: "project-partner" });
   projectPartner.name = "Project Partner";
   actors.set(projectPartner.id, projectPartner);
+  for (const requiredHours of [0, -1, 1.5, 10001]) {
+    await assert.rejects(
+      service.saveGuidedDowntimeProject({
+        name: "Invalid work target",
+        requiredHours,
+        skills: ["arc"],
+      }),
+      /whole number.*1.*10,000/,
+      "invalid project hours must not be silently clamped into a saved project",
+    );
+  }
   const languageProject = await service.saveGuidedDowntimeProject({
     name: "Learn Draconic",
     description: "Study the language together between adventures.",
     requiredHours: 16,
     skills: ["arc", "his"],
   });
+  const configurationBeforeLimitProbe = workflow.loadDowntimeConfig();
+  await workflow.updateDowntimeConfig((current) => ({
+    ...current,
+    guidedProjects: Array.from({ length: 40 }, (_, index) => ({
+      id: `project-limit-${index}`,
+      name: `Limit probe ${index}`,
+      requiredHours: 8,
+      skills: ["arc"],
+    })),
+  }));
+  await assert.rejects(
+    service.saveGuidedDowntimeProject({
+      name: "Forty-first project",
+      requiredHours: 8,
+      skills: ["arc"],
+    }),
+    /library is full/,
+  );
+  assert.equal(workflow.loadDowntimeConfig().guidedProjects.length, 40);
+  await workflow.updateDowntimeConfig((current) => ({
+    ...current,
+    guidedProjects: configurationBeforeLimitProbe.guidedProjects,
+  }));
   let projectBlock = await service.openDowntimeBlock({
     mode: "guided",
     locationName: "The Lantern District",
@@ -781,7 +1018,65 @@ try {
   );
   projectBlock = await service.applyActiveDowntimeBlock(projectBlock.id);
   assert.equal(projectBlock.state, "completed");
+  for (const ownedActor of [actor, projectPartner]) {
+    const result = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: ownedActor.id,
+    });
+    assert.equal(result.status, "completed");
+    assert.equal(result.hasActiveBlock, false);
+    assert.equal(result.selectedActorId, ownedActor.id);
+    assert.deepEqual(
+      result.actors.map((entry) => entry.id),
+      [actor.id, projectPartner.id],
+    );
+    assert.deepEqual(
+      result.receipt,
+      projectBlock.result.playerReceipts[ownedActor.id],
+    );
+  }
+  const completedUpdates = socketEmissions
+    .map(([, payload]) => payload)
+    .filter(
+      (payload) =>
+        payload?.targetUserId === player.id &&
+        payload?.projection?.status === "completed" &&
+        payload?.projection?.blockId === projectBlock.id,
+    );
+  assert.deepEqual(
+    new Set(
+      completedUpdates.map((payload) => payload.projection.selectedActorId),
+    ),
+    new Set([actor.id, projectPartner.id]),
+    "completion updates reach every owned participant",
+  );
+  projectPartner.ownership[player.id] = 0;
+  const revokedReceipt = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: projectPartner.id,
+  });
+  assert.equal(
+    revokedReceipt.actors.some((entry) => entry.id === projectPartner.id),
+    false,
+    "losing ownership removes that character's reports",
+  );
+  assert.notDeepEqual(
+    revokedReceipt.receipt,
+    projectBlock.result.playerReceipts[projectPartner.id],
+  );
+  projectPartner.ownership[player.id] = 3;
   const projectWorkspace = await service.getWorkspaceProjection();
+  assert.equal(projectWorkspace.workflow.id, projectBlock.id);
+  assert.equal(
+    projectWorkspace.workflowStatus,
+    "completed",
+    "the GM can review the final block before starting another",
+  );
+  assert.equal(projectWorkspace.canCreateBlock, true);
+  assert.ok(
+    projectBlock.completedAt > Date.UTC(2025, 0, 1),
+    "calendar timestamps do not interpret Foundry server uptime as a date",
+  );
   assert.deepEqual(
     projectWorkspace.guidedProjects.find(
       (project) => project.id === languageProject.id,

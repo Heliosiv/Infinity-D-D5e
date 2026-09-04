@@ -87,7 +87,13 @@ const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,79}$/i;
 const SUBVIEW_BY_ROUTE = Object.freeze({
   merchants: new Set(["overview", "pricing", "stock", "access", "sessions"]),
   quartermaster: new Set(["today", "recent", "setup"]),
-  downtime: new Set(["current", "projects", "settlements", "history"]),
+  downtime: new Set([
+    "current",
+    "activities",
+    "projects",
+    "settlements",
+    "history",
+  ]),
   factions: new Set(["overview", "visibility", "history"]),
   injuries: new Set(["triage", "recovery"]),
 });

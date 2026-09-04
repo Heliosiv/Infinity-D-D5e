@@ -81,6 +81,8 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     const cleanActorId = cleanId(actorId);
     if (cleanActorId && app._actorId !== cleanActorId) {
       app._actorId = cleanActorId;
+      app._statusMessage = "";
+      app._errorMessage = "";
       app._pendingFocus = "[data-activity-list]";
       if (app.rendered) app.render(false);
     }
@@ -142,8 +144,16 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       actorId: this._actorId,
       category: this._category,
     });
+    if (this._blockId && context.blockId && this._blockId !== context.blockId) {
+      this._statusMessage = "";
+      this._errorMessage = "";
+    }
+    this._blockId = context.blockId;
     this._actorId = context.actor?.id ?? this._actorId;
     this._guided = context.guided;
+    this._retrySubmission = context.retrySubmission;
+    this._requiresRoll = context.requiresRoll;
+    if (context.completed && !this._busy) this._statusMessage = "";
     if (!context.categories.some((category) => category.selected)) {
       this._category = DEFAULT_CATEGORY;
     }
@@ -204,6 +214,13 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       this._pendingFocus = options.focus ?? null;
       return result;
     } catch (error) {
+      if (error?.code === "DOWNTIME_ROLL_CANCELLED") {
+        this._errorMessage = "";
+        this._statusMessage =
+          "Roll cancelled. Your choice is still here when you are ready to submit.";
+        this._pendingFocus = '[data-action="submitQueue"]';
+        return null;
+      }
       console.error(
         `${MODULE_ID} | downtime player command ${method} failed`,
         error,
@@ -211,7 +228,8 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       this._errorMessage =
         String(error?.message ?? "").trim() ||
         "The GM could not accept that change. Your prior queue is unchanged.";
-      this._statusMessage = "Downtime was not changed.";
+      this._statusMessage =
+        "The request did not finish. Refresh to check the saved state.";
       return null;
     } finally {
       this._busy = false;
@@ -233,9 +251,12 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
   }
 
   static _onSelectActor(_event, target) {
+    if (this._busy) return;
     const actorId = cleanId(target?.dataset?.actorId);
     if (!actorId || actorId === this._actorId) return;
     this._actorId = actorId;
+    this._statusMessage = "";
+    this._errorMessage = "";
     this._category = DEFAULT_CATEGORY;
     this._pendingFocus = `[data-actor-id="${cssEscape(actorId)}"]`;
     this.render(false);
@@ -264,9 +285,11 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       {
         pending: this._guided ? "Selecting activity..." : "Adding activity...",
         success: this._guided
-          ? "Activity selected. Roll & submit when ready."
+          ? "Activity selected. Submit when ready."
           : "Activity added to your queue.",
-        focus: "[data-queue-list]",
+        focus: this._guided
+          ? '[data-action="submitQueue"]'
+          : "[data-queue-list]",
       },
     );
   }
@@ -329,11 +352,13 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       "submitQueue",
       { actorId: this._actorId },
       {
-        pending: this._guided
-          ? "Rolling and submitting your downtime activity..."
-          : "Submitting your queue...",
+        pending: this._retrySubmission
+          ? "Retrying the saved downtime check..."
+          : this._requiresRoll
+            ? "Rolling and submitting your downtime activity..."
+            : "Submitting your queue...",
         success: this._guided
-          ? "Your activity and player roll are submitted. The GM can now review the result."
+          ? "Your activity is submitted. The GM can now review the result."
           : "Your queue is submitted for GM review.",
         focus: '[data-action="recallSubmission"]',
       },
@@ -367,7 +392,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     eligible: actor?.eligible !== false,
     reason: String(actor?.reason ?? actor?.unavailableReason ?? ""),
   }));
-  const requestedActorId = cleanId(uiState.actorId);
+  const requestedActorId = cleanId(source.selectedActorId ?? uiState.actorId);
   const actor =
     actors.find((entry) => entry.id === requestedActorId && entry.eligible) ??
     actors.find((entry) => entry.eligible) ??
@@ -442,6 +467,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status,
     completed: status === "completed",
     guided,
+    requiresRoll: guided && (queue.length === 0 || Boolean(queue[0]?.skill)),
+    retrySubmission: source.retrySubmission === true,
     statusLabel: playerStatusLabel(status, submitted),
     statusTone: playerStatusTone(status),
     hasActiveBlock,
@@ -499,7 +526,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
           ? "Your queue is already submitted."
           : "Submissions are not open."
         : guided && queue.length !== 1
-          ? "Choose one activity, then roll and submit it."
+          ? "Choose one activity, then submit it."
           : usedHours > budgetHours
             ? "Your queue exceeds the time budget."
             : ""),

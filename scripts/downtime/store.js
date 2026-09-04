@@ -124,7 +124,7 @@ function sanitizeJson(value, depth = 0) {
 }
 
 function currentTimestamp() {
-  return toTimestamp(globalThis.game?.time?.serverTime, Date.now());
+  return Date.now();
 }
 
 function createWriteToken() {

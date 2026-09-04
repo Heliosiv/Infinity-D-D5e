@@ -23,13 +23,18 @@ import {
 } from "./settlements.js";
 import {
   GUIDED_DOWNTIME_MODE,
+  GUIDED_DOWNTIME_TEMPLATE_LIMIT,
+  GUIDED_DOWNTIME_OUTCOME_MINIMUM,
+  GUIDED_DOWNTIME_OUTCOME_MAXIMUM,
   guidedDowntimeSkillLabel,
   guidedTemplateById,
+  normalizeGuidedDowntimeTemplate,
   normalizeGuidedDowntimeSelection,
   projectGuidedDowntimeTemplate,
 } from "./dispatch.js";
 import {
   guidedProjectById,
+  GUIDED_DOWNTIME_PROJECT_LIMIT,
   normalizeGuidedDowntimeProject,
   projectGuidedDowntimeProject,
 } from "./projects.js";
@@ -148,6 +153,10 @@ import {
 } from "../item-uuid-compat.js";
 import { isAuthoritativeGM } from "../socket-authority.js";
 import {
+  onPrivateStateChanged,
+  PRIVATE_STATE_CHANGED_HOOK,
+} from "../private-state.js";
+import {
   DOWNTIME_EVENTS,
   emitSharpeningLifecycleAck,
   emitDowntimeEvent,
@@ -224,7 +233,28 @@ function notifyServiceChanged(reason = "state-update") {
 export function subscribeDowntimeService(listener) {
   if (typeof listener !== "function") return () => {};
   serviceListeners.add(listener);
-  return () => serviceListeners.delete(listener);
+  // A workspace can open before private state is ready, and another GM tab
+  // can change it later. Both cases need the same fresh projection as a local
+  // command; otherwise the window remains unavailable or shows stale reports.
+  const hookId = onPrivateStateChanged((payload) => {
+    if (
+      payload?.keys?.some((key) =>
+        [
+          "downtimeConfig",
+          "downtimeWorkflow",
+          "downtimeWorkflowCheckpoint",
+        ].includes(key),
+      )
+    ) {
+      listener({ reason: "private-state-change" });
+    }
+  });
+  return () => {
+    serviceListeners.delete(listener);
+    if (hookId !== null) {
+      globalThis.Hooks?.off?.(PRIVATE_STATE_CHANGED_HOOK, hookId);
+    }
+  };
 }
 
 function assertAuthority() {
@@ -232,10 +262,9 @@ function assertAuthority() {
 }
 
 function now() {
-  const serverTime = Number(globalThis.game?.time?.serverTime);
-  return Number.isSafeInteger(serverTime) && serverTime >= 0
-    ? serverTime
-    : Date.now();
+  // Foundry 13's server clock can be elapsed uptime, not Unix milliseconds.
+  // Persist calendar timestamps from the authoritative GM's wall clock.
+  return Date.now();
 }
 
 function newId(prefix) {
@@ -716,9 +745,75 @@ export async function deleteSettlementProfile(settlementId) {
   });
 }
 
+export async function saveGuidedDowntimeTemplate(payload = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const outcomes = Array.isArray(payload.outcomes) ? payload.outcomes : [];
+    if (
+      outcomes.length < GUIDED_DOWNTIME_OUTCOME_MINIMUM ||
+      outcomes.length > GUIDED_DOWNTIME_OUTCOME_MAXIMUM
+    ) {
+      throw new Error("Include three to six possible activity results.");
+    }
+    if (
+      outcomes.some((outcome) => {
+        const reward = Number(outcome?.rewardGp);
+        return (
+          !Number.isFinite(reward) ||
+          reward < 0 ||
+          reward > 100000 ||
+          Math.abs(reward * 100 - Math.round(reward * 100)) > 0.000001
+        );
+      })
+    ) {
+      throw new Error(
+        "Enter each reward from 0 to 100,000 gp, with at most two decimal places.",
+      );
+    }
+    const template = normalizeGuidedDowntimeTemplate({
+      ...payload,
+      id: payload.id || newId("activity"),
+    });
+    if (!template || template.outcomes.length !== outcomes.length) {
+      throw new Error(
+        "Enter an activity name, plus a label and player report for every result.",
+      );
+    }
+    await updateDowntimeConfig((current) => {
+      const templates = [...current.guidedTemplates];
+      const index = templates.findIndex((entry) => entry.id === template.id);
+      if (payload.id && index < 0) {
+        throw new Error(
+          "That activity is no longer available. Refresh before saving.",
+        );
+      }
+      if (index >= 0) templates[index] = template;
+      else if (templates.length < GUIDED_DOWNTIME_TEMPLATE_LIMIT)
+        templates.push(template);
+      else
+        throw new Error(
+          `The activity library is full (${GUIDED_DOWNTIME_TEMPLATE_LIMIT}). Edit an existing activity.`,
+        );
+      return { ...current, guidedTemplates: templates };
+    });
+    notifyServiceChanged("guided-template-save");
+    return template;
+  });
+}
+
 export async function saveGuidedDowntimeProject(payload = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
+    const requiredHours = Number(payload.requiredHours);
+    if (
+      !Number.isSafeInteger(requiredHours) ||
+      requiredHours < 1 ||
+      requiredHours > 10000
+    ) {
+      throw new Error(
+        "Enter project hours as a whole number from 1 to 10,000.",
+      );
+    }
     const project = normalizeGuidedDowntimeProject(payload, {
       fallbackId: payload.id || newId("project"),
     });
@@ -731,7 +826,12 @@ export async function saveGuidedDowntimeProject(payload = {}) {
       const projects = [...current.guidedProjects];
       const index = projects.findIndex((entry) => entry.id === project.id);
       if (index >= 0) projects[index] = project;
-      else projects.push(project);
+      else if (projects.length < GUIDED_DOWNTIME_PROJECT_LIMIT)
+        projects.push(project);
+      else
+        throw new Error(
+          `The project library is full (${GUIDED_DOWNTIME_PROJECT_LIMIT}). No project was added.`,
+        );
       return { ...current, guidedProjects: projects };
     });
     notifyServiceChanged("guided-project-save");
@@ -1833,7 +1933,7 @@ function buildGuidedDowntimeOperation({
     currencyDeltaCp,
     walletBefore: walletRead.wallet,
     walletAfter,
-    summary: `${outcome.label}: ${report}${currencyDeltaCp > 0 ? ` ${formatCp(currencyDeltaCp)} was added to ${actor.name}.` : ""}`,
+    summary: `${outcome.label}: ${report}${currencyDeltaCp > 0 ? ` Reward: ${formatCp(currencyDeltaCp)}.` : ""}`,
     check: {
       skill,
       total,
@@ -1961,6 +2061,25 @@ async function applyBlockInternal(blockId) {
     throw new Error("Generate the immutable preview before applying downtime.");
   }
   if (block.state === "planned") {
+    if (block.mode === GUIDED_DOWNTIME_MODE) {
+      for (const operation of block.plan.operations ?? []) {
+        const actor = actorById(operation.actorId);
+        if (!actor)
+          throw new Error(
+            "An assigned character is no longer available. Cancel this block and choose the remaining characters.",
+          );
+        if (operation.kind !== "currency") continue;
+        const current = readWalletStrict(actor.system?.currency);
+        if (
+          !current.ok ||
+          !walletsEqual(current.wallet, operation.walletBefore)
+        ) {
+          throw new Error(
+            `${actor.name}'s currency changed during review. Save their report again, then apply the results.`,
+          );
+        }
+      }
+    }
     block = await beginDowntimeApplication(block.id);
   } else if (block.state === "needs-review") {
     throw new Error("Run recovery before retrying a block that needs review.");
@@ -3352,6 +3471,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
   const store = loadDowntimeWorkflowStore();
   const active = store.activeBlock;
   const factions = loadFactions();
+  const visibleBlock = active ?? store.history.at(-1) ?? null;
   const merchants = loadMerchants();
   const selected =
     config.settlements.find((entry) => entry.id === settlementId) ??
@@ -3359,15 +3479,10 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     null;
   const projectProgress = guidedProjectProgressFromStore(store);
   return {
-    workflowStatus: active?.state ?? "idle",
-    workflow: active ? projectWorkspaceBlock(active) : null,
+    workflowStatus: visibleBlock?.state ?? "idle",
+    workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
-    guidedTemplates: config.guidedTemplates.map((template) => ({
-      id: template.id,
-      name: template.name,
-      description: template.description,
-      image: template.image,
-    })),
+    guidedTemplates: structuredClone(config.guidedTemplates),
     guidedProjects: config.guidedProjects.map((project) => {
       const progressHours = projectProgressHours(projectProgress, project.id);
       const requiredHours = project.requiredHours;
@@ -3484,7 +3599,9 @@ function projectWorkspaceBlock(block) {
               hours: operation.hours,
               rollLabel: operation.check
                 ? operation.mode === GUIDED_DOWNTIME_MODE
-                  ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}`
+                  ? operation.check.skill
+                    ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}`
+                    : "No skill check"
                   : `${operation.check.total} vs DC ${operation.check.dc}`
                 : "",
               outcome: operation.summary,
@@ -3549,13 +3666,7 @@ export async function getPlayerProjectionForUser({
   const store = loadDowntimeWorkflowStore();
   const active = store.activeBlock;
   if (!active) {
-    const receipt = latestReceiptForUser(store.history, user, actorId);
-    return {
-      ...emptyPlayerProjection({ noGm: false }),
-      status: receipt ? "completed" : "idle",
-      receipt,
-      completionMessage: receipt?.summary ?? "",
-    };
+    return completedPlayerProjection(store.history, user, actorId);
   }
   const eligible = (active.participants ?? []).filter((participant) => {
     const actor = actorById(participant.actorId);
@@ -3587,6 +3698,7 @@ export async function getPlayerProjectionForUser({
       locationName: active.locationName,
       hasSettlement: false,
       blockId: active.id,
+      selectedActorId: selected.actorId,
       actors: eligible.map((participant) => ({
         id: participant.actorId,
         name: participant.actorName,
@@ -3638,6 +3750,7 @@ export async function getPlayerProjectionForUser({
     locationName: active.locationName ?? active.settlementName,
     hasSettlement: active.hasSettlement !== false,
     blockId: active.id,
+    selectedActorId: selected.actorId,
     actors: eligible.map((participant) => {
       const participantActor = actorById(participant.actorId);
       return {
@@ -3944,6 +4057,14 @@ async function submitGuidedDowntimeChoice({
       );
     }
     return block;
+  }
+  if (
+    block.participants.find((participant) => participant.actorId === actor.id)
+      ?.submitted
+  ) {
+    throw new Error(
+      "Recall your submitted activity before choosing and rolling again.",
+    );
   }
   const activity = guidedActivityById(
     block.guidedTemplates,
@@ -4287,12 +4408,12 @@ async function broadcastPlayerState(block = getActiveDowntimeBlock()) {
   for (const participant of block.participants ?? []) {
     for (const userId of participant.userIds ?? []) {
       if (
-        sent.has(userId) ||
+        sent.has(`${userId}:${participant.actorId}`) ||
         !userOwnsDowntimeActor(userById(userId), actorById(participant.actorId))
       ) {
         continue;
       }
-      sent.add(userId);
+      sent.add(`${userId}:${participant.actorId}`);
       const projection = await getPlayerProjectionForUser({
         userId,
         actorId: participant.actorId,
@@ -4311,46 +4432,68 @@ async function broadcastCompletedState(completed) {
   for (const participant of completed.participants ?? []) {
     for (const userId of participant.userIds ?? []) {
       if (
-        sent.has(userId) ||
+        sent.has(`${userId}:${participant.actorId}`) ||
         !userOwnsDowntimeActor(userById(userId), actorById(participant.actorId))
       ) {
         continue;
       }
-      sent.add(userId);
-      const receipt =
-        completed.result?.playerReceipts?.[participant.actorId] ?? null;
+      sent.add(`${userId}:${participant.actorId}`);
+      const projection =
+        completed.state === "completed"
+          ? completedPlayerProjection(
+              loadDowntimeWorkflowStore().history,
+              userById(userId),
+              participant.actorId,
+            )
+          : {
+              ...emptyPlayerProjection({ noGm: false }),
+              status: completed.state,
+              settlementName: completed.settlementName,
+              locationName: completed.locationName ?? completed.settlementName,
+              hasSettlement: completed.hasSettlement !== false,
+              completionMessage: completed.reason ?? "",
+            };
       emitDowntimeEvent(DOWNTIME_EVENTS.STATE_UPDATE, {
         targetUserId: userId,
-        projection: {
-          ...emptyPlayerProjection({ noGm: false }),
-          status: completed.state,
-          settlementName: completed.settlementName,
-          locationName: completed.locationName ?? completed.settlementName,
-          hasSettlement: completed.hasSettlement !== false,
-          receipt,
-          completionMessage: receipt?.summary ?? completed.reason ?? "",
-        },
+        projection,
       });
     }
   }
 }
 
-function latestReceiptForUser(history, user, actorId) {
+function completedPlayerProjection(history, user, actorId) {
   const blocks = [...(history ?? [])].reverse();
+  const results = new Map();
   for (const block of blocks) {
     if (block.state !== "completed") continue;
-    const participants = block.participants ?? [];
-    const candidates = actorId
-      ? participants.filter((entry) => entry.actorId === actorId)
-      : participants;
-    for (const participant of candidates) {
+    for (const participant of block.participants ?? []) {
+      if (results.has(participant.actorId)) continue;
       const actor = actorById(participant.actorId);
       if (!actor || !userOwnsDowntimeActor(user, actor)) continue;
       const receipt = block.result?.playerReceipts?.[participant.actorId];
-      if (receipt) return receipt;
+      if (receipt) results.set(participant.actorId, { actor, block, receipt });
     }
   }
-  return null;
+  const selected = results.get(actorId) ?? results.values().next().value;
+  if (!selected) return emptyPlayerProjection({ noGm: false });
+  return {
+    ...emptyPlayerProjection({ noGm: false }),
+    status: "completed",
+    mode: selected.block.mode,
+    blockId: selected.block.id,
+    selectedActorId: selected.actor.id,
+    actors: [...results.values()].map(({ actor }) => ({
+      id: actor.id,
+      name: actor.name,
+      img: actor.img,
+      eligible: true,
+    })),
+    settlementName: selected.block.settlementName,
+    locationName: selected.block.locationName ?? selected.block.settlementName,
+    hasSettlement: selected.block.hasSettlement !== false,
+    receipt: selected.receipt,
+    completionMessage: selected.receipt.summary ?? "",
+  };
 }
 
 function buildCompletedResult(block) {
@@ -4528,4 +4671,5 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   saveSettlement: saveSettlementProfile,
   deleteSettlement: ({ settlementId }) => deleteSettlementProfile(settlementId),
   saveGuidedProject: saveGuidedDowntimeProject,
+  saveGuidedTemplate: saveGuidedDowntimeTemplate,
 });

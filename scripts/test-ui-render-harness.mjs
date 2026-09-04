@@ -12,7 +12,7 @@ import {
 const views = renderHarnessViews();
 assert.equal(
   views.length,
-  94,
+  96,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 

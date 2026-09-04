@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { applyFlagMerge } from "./test-utils/foundry-flags.mjs";
 
 import {
   RESOURCE_CONFIG_VERSION,
@@ -1077,14 +1078,7 @@ import {
           const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
           if (match) {
             const key = match[1];
-            const snapshot = structuredClone(value);
-            flags[key] =
-              key === "resourceRunState" &&
-              flags[key] &&
-              typeof flags[key] === "object" &&
-              !Array.isArray(flags[key])
-                ? { ...flags[key], ...snapshot }
-                : snapshot;
+            flags[key] = applyFlagMerge(flags[key], value);
           }
         }
         globalThis.Hooks.call("updateJournalEntry", this, changes);
@@ -1614,14 +1608,7 @@ import {
           const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
           if (!match) continue;
           const key = match[1];
-          const snapshot = structuredClone(value);
-          flags[key] =
-            key === "resourceRunState" &&
-            flags[key] &&
-            typeof flags[key] === "object" &&
-            !Array.isArray(flags[key])
-              ? { ...flags[key], ...snapshot }
-              : snapshot;
+          flags[key] = applyFlagMerge(flags[key], value);
         }
         if (loseOnPrivateKey && changedKeys.includes(loseOnPrivateKey)) {
           loseOnPrivateKey = null;
@@ -2910,7 +2897,7 @@ import {
         }
         for (const [path, value] of Object.entries(changes)) {
           const match = /^flags\.infinity-dnd5e\.(.+)$/.exec(path);
-          if (match) flags[match[1]] = structuredClone(value);
+          if (match) flags[match[1]] = applyFlagMerge(flags[match[1]], value);
         }
         globalThis.Hooks.call("updateJournalEntry", this, changes);
         if (

@@ -17,6 +17,71 @@ try {
   const workspaceModule = await import("./downtime-workspace.js");
   const activitiesModule = await import("./downtime-activities.js");
 
+  const cancelledCommand = {
+    _busy: false,
+    rendered: false,
+    _errorMessage: "",
+    _statusMessage: "",
+    _adapter: {
+      submitQueue: async () => {
+        const error = new Error("Cancelled");
+        error.code = "DOWNTIME_ROLL_CANCELLED";
+        throw error;
+      },
+    },
+  };
+  await activitiesModule.DowntimeActivitiesApp.prototype._runCommand.call(
+    cancelledCommand,
+    "submitQueue",
+  );
+  assert.equal(cancelledCommand._busy, false);
+  assert.equal(cancelledCommand._errorMessage, "");
+  assert.match(cancelledCommand._statusMessage, /Roll cancelled/);
+  assert.equal(cancelledCommand._pendingFocus, '[data-action="submitQueue"]');
+
+  {
+    const originalFrame = globalThis.requestAnimationFrame;
+    let frame;
+    let focused = false;
+    const openingButton = {};
+    const editedField = {};
+    const root = {
+      ownerDocument: { activeElement: openingButton },
+      contains: (node) => node === editedField,
+      querySelector: () => ({
+        focus() {
+          focused = true;
+        },
+      }),
+    };
+    globalThis.requestAnimationFrame = (callback) => {
+      frame = callback;
+    };
+    workspaceModule.DowntimeWorkspaceApp.prototype._restoreFocus.call({
+      element: root,
+      _pendingFocus: "input",
+    });
+    root.ownerDocument.activeElement = editedField;
+    frame();
+    assert.equal(
+      focused,
+      false,
+      "deferred form focus cannot steal typing from another field",
+    );
+    root.ownerDocument.activeElement = openingButton;
+    workspaceModule.DowntimeWorkspaceApp.prototype._restoreFocus.call({
+      element: root,
+      _pendingFocus: "input",
+    });
+    frame();
+    assert.equal(
+      focused,
+      true,
+      "the intended field receives focus when the user has not moved it",
+    );
+    globalThis.requestAnimationFrame = originalFrame;
+  }
+
   const workspace = workspaceModule.normalizeWorkspaceProjection(
     {
       settlements: [
@@ -136,11 +201,11 @@ try {
   assert.equal(projectsWorkspace.projectSkillOptions.length, 18);
   assert.deepEqual(
     projectsWorkspace.projectSkillOptions.find(({ id }) => id === "per"),
-    { id: "per", label: "Persuasion" },
+    { id: "per", label: "Persuasion", checked: false },
   );
   assert.deepEqual(
     projectsWorkspace.projectSkillOptions.find(({ id }) => id === "prf"),
-    { id: "prf", label: "Performance" },
+    { id: "prf", label: "Performance", checked: false },
   );
 
   const workspaceAppState = {
@@ -285,11 +350,88 @@ try {
     /<div(?=[^>]*class="dt-heat__pips")(?=[^>]*role="img")(?=[^>]*aria-label="Heat \{\{heat\}\} out of 5")[^>]*>/,
     "the visual Heat meter exposes a valid image label",
   );
-  assert.match(
-    activitiesTemplateSource,
-    /\{\{#if guided\}\}Roll &amp; submit\{\{else\}\}Submit queue\{\{\/if\}\}/,
-    "guided downtime names the player-clicked roll action",
+  const renderPlayer = Handlebars.compile(activitiesTemplateSource);
+  const offlineDraftContext =
+    activitiesModule.normalizePlayerDowntimeProjection({
+      mode: "guided",
+      status: "collecting",
+      noGm: true,
+      hasActiveBlock: true,
+      actors: [{ id: "ada", name: "Ada" }],
+      selectedActorId: "ada",
+      budgetHours: 8,
+      queue: [
+        {
+          id: "choice",
+          activityId: "guided-labor",
+          label: "Paid Work",
+          hours: 8,
+          skill: "ath",
+        },
+      ],
+    });
+  assert.equal(offlineDraftContext.canSubmit, false);
+  const offlineDraftHtml = renderPlayer(offlineDraftContext);
+  assert.match(offlineDraftHtml, /Last choice: Paid Work \(8h\)/);
+  assert.doesNotMatch(offlineDraftHtml, /Your last receipt is still shown/);
+  assert.doesNotMatch(offlineDraftHtml, /data-action="submitQueue"/);
+  for (const [skill, buttonText] of [
+    ["ath", "Roll &amp; submit"],
+    ["", "Submit activity"],
+  ]) {
+    const guidedPlayer = activitiesModule.normalizePlayerDowntimeProjection(
+      {
+        mode: "guided",
+        status: "collecting",
+        hasActiveBlock: true,
+        blockId: "guided-ui",
+        budgetHours: 8,
+        actors: [{ id: "ada", name: "Ada" }],
+        queue: [{ id: "choice", activityId: "custom", hours: 8, skill }],
+      },
+      { actorId: "ada" },
+    );
+    assert.equal(guidedPlayer.requiresRoll, Boolean(skill));
+    assert.match(
+      renderPlayer(guidedPlayer),
+      new RegExp(`data-action="submitQueue"[^>]*>[\\s\\S]*?${buttonText}`),
+    );
+  }
+
+  const { defaultGuidedDowntimeTemplates } =
+    await import("./downtime/dispatch.js");
+  const library = defaultGuidedDowntimeTemplates();
+  const draft = {
+    ...library[1],
+    name: "Unfinished custom research",
+    outcomes: library[1].outcomes.map((row) => ({
+      ...row,
+      report: "Unsaved report text",
+    })),
+  };
+  const editorContext = workspaceModule.normalizeWorkspaceProjection(
+    { guidedTemplates: library },
+    {
+      view: "activities",
+      selectedTemplateId: library[1].id,
+      templateDrafts: new Map([[library[1].id, draft]]),
+    },
   );
+  assert.equal(editorContext.templateEditor.name, draft.name);
+  assert.equal(
+    editorContext.templateEditor.outcomes[0].report,
+    "Unsaved report text",
+  );
+  const editorHtml = Handlebars.compile(workspaceTemplateSource)(editorContext);
+  assert.match(editorHtml, /data-form="guided-template"/);
+  assert.match(editorHtml, /Unsaved report text/);
+  assert.equal((editorHtml.match(/data-template-outcome/g) ?? []).length, 3);
+  const newEditor = workspaceModule.normalizeWorkspaceProjection(
+    { guidedTemplates: library },
+    { view: "activities", creatingTemplate: true },
+  );
+  assert.equal(newEditor.templateEditor.id, "");
+  assert.equal(newEditor.templateEditor.outcomes.length, 3);
 
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
@@ -442,6 +584,36 @@ try {
   assert.deepEqual(
     receiptPlayer.receipt.activities.map((activity) => activity.tone),
     ["exceptional", "serious"],
+  );
+  const multiReceiptContext =
+    activitiesModule.normalizePlayerDowntimeProjection(
+      {
+        status: "completed",
+        hasActiveBlock: false,
+        selectedActorId: "rowan",
+        actors: [
+          { id: "ada", name: "Ada" },
+          { id: "rowan", name: "Rowan" },
+        ],
+        receipt: { summary: "Rowan's result", activities: [] },
+      },
+      { actorId: "ada" },
+    );
+  assert.equal(
+    multiReceiptContext.actor.id,
+    "rowan",
+    "receipt identity follows the returned character, not an obsolete request",
+  );
+  const multiReceiptHtml = Handlebars.compile(activitiesTemplateSource)(
+    multiReceiptContext,
+  );
+  assert.match(multiReceiptHtml, /data-actor-id="ada"/);
+  assert.match(multiReceiptHtml, /data-actor-id="rowan"/);
+  assert.match(multiReceiptHtml, /GM-and-owner receipt · Rowan/);
+  assert.doesNotMatch(
+    multiReceiptHtml,
+    /data-action="submitQueue"/,
+    "completed reports never offer a new submission",
   );
 
   const allowed = activitiesModule.readAllowedActivityInputs({

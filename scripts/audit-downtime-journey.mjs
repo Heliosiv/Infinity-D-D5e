@@ -124,6 +124,18 @@ try {
       receipt: state.receipt,
     });
     const gmAdapter = {
+      saveGuidedProject: async (payload) => {
+        state.projectSaves = (state.projectSaves || 0) + 1;
+        return { ...payload, id: "project-observatory" };
+      },
+      saveGuidedTemplate: async (payload) => {
+        const saved = { ...payload, id: payload.id || "custom-garden" };
+        const index = templates.findIndex((row) => row.id === saved.id);
+        if (index < 0) templates.push(saved);
+        else templates[index] = saved;
+        state.activitySaves = (state.activitySaves || 0) + 1;
+        return saved;
+      },
       getWorkspaceProjection: async () => ({
         actors: [actor],
         guidedTemplates: templates,
@@ -284,8 +296,139 @@ try {
     await mount("workspace");
   });
 
+  await page.locator('[data-action="setView"][data-view="projects"]').click();
+  await page
+    .getByLabel("Project name", { exact: true })
+    .fill("Restore the observatory");
+  await page.getByLabel("Total productive hours", { exact: true }).fill("0");
+  await page.locator('[data-action="saveGuidedProject"]').click();
+  assert.equal(await page.evaluate(() => journey.state.projectSaves || 0), 0);
+  await page.getByLabel("Total productive hours", { exact: true }).fill("80");
+  await page
+    .locator('[data-form="guided-project"] [name="skills"][value="arc"]')
+    .check();
+  await page.locator('[data-action="refresh"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Project name", { exact: true }).inputValue(),
+    "Restore the observatory",
+  );
+  assert.equal(
+    await page
+      .getByLabel("Total productive hours", { exact: true })
+      .inputValue(),
+    "80",
+  );
+  assert.equal(
+    await page
+      .locator('[data-form="guided-project"] [name="skills"][value="arc"]')
+      .isChecked(),
+    true,
+  );
+  await page.locator('[data-action="setView"][data-view="current"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  await page.locator('[data-action="setView"][data-view="projects"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Project name", { exact: true }).inputValue(),
+    "Restore the observatory",
+  );
+  await page.locator('[data-action="saveGuidedProject"]').click();
+  await page.waitForFunction(() => journey.state.projectSaves === 1);
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Project name", { exact: true }).inputValue(),
+    "",
+  );
+
+  await page.locator('[data-action="setView"][data-view="activities"]').click();
+  await page.locator('[data-action="newGuidedTemplate"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  await page
+    .getByLabel("Activity name", { exact: true })
+    .fill("Community garden");
+  await page
+    .locator('[name="outcomeReport"]')
+    .nth(0)
+    .fill("The seedlings are tended.");
+  await page
+    .locator('[name="outcomeReport"]')
+    .nth(1)
+    .fill("The garden is thriving.");
+  await page
+    .locator('[name="outcomeReport"]')
+    .nth(2)
+    .fill("A generous harvest is ready.");
+  await page.locator('[name="outcomeReward"]').nth(2).fill("-1");
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  assert.equal(
+    await page.evaluate(() => journey.state.activitySaves || 0),
+    0,
+    "invalid activity rewards stay in the editor",
+  );
+  await page.locator('[name="outcomeReward"]').nth(2).fill("2.5");
+  await page.locator('[data-action="setView"][data-view="current"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  await page.locator('[data-action="setView"][data-view="activities"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Activity name", { exact: true }).inputValue(),
+    "Community garden",
+  );
+  assert.equal(
+    await page.locator('[name="outcomeReward"]').nth(2).inputValue(),
+    "2.5",
+  );
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      ),
+      false,
+      `activity editor fits ${width}px`,
+    );
+    const a11y = await new AxeBuilder({ page })
+      .include("#app")
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    assert.deepEqual(
+      a11y.violations.map(({ id, nodes }) => ({
+        id,
+        targets: nodes.map((node) => node.target),
+      })),
+      [],
+      `accessible activity editor at ${width}px`,
+    );
+    await page.screenshot({
+      path: path.join(out, `gm-activity-editor-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 1100, height: 1000 });
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  await page.waitForFunction(() => journey.state.activitySaves === 1);
+  await page.locator('[data-action="setView"][data-view="current"]').click();
+
   await page.locator('[name="locationName"]').fill("Harbor workshop");
+  await page.locator('[name="hours"]').fill("241");
+  await page.locator('[data-action="createBlock"]').click();
+  assert.equal(await page.evaluate(() => journey.state.block), null);
   await page.locator('[name="hours"]').fill("240");
+  await page.locator('[name="templateIds"][value="guided-thievery"]').uncheck();
+  await page.locator('[data-action="refresh"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.locator('[name="locationName"]').inputValue(),
+    "Harbor workshop",
+  );
+  assert.equal(await page.locator('[name="hours"]').inputValue(), "240");
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-thievery"]')
+      .isChecked(),
+    false,
+  );
   await page.locator('[data-action="createBlock"]').click();
   await page.waitForFunction(() => journey.state.block?.hours === 240);
   assert.deepEqual(await page.evaluate(() => journey.state.block.actorIds), [
@@ -323,6 +466,9 @@ try {
   await page.locator('[data-action="lockBlock"]').click();
   await page.waitForFunction(() =>
     document.querySelector("[data-guided-report]"),
+  );
+  await page.waitForFunction(
+    () => document.activeElement?.id === "dt-preview-heading",
   );
   assert.equal(
     await page.evaluate(() => journey.state.block.status),
@@ -403,6 +549,9 @@ try {
     .fill(`${report} The workshop will welcome her back.`);
   await page.locator('[data-action="applyBlock"]').click();
   await page.waitForFunction(() => journey.state.applied === 1);
+  await page.waitForFunction(
+    () => document.activeElement?.id === "dt-preview-heading",
+  );
   await page.evaluate(async () => {
     journey.playerAdapter.invalidate();
     await journey.mount("activities");

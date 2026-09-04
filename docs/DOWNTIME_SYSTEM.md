@@ -12,9 +12,23 @@ total with the submission; the assigned hours are used as one downtime
 activity. Choosing a different activity replaces the previous choice. All
 assigned hours are retained, including blocks up to 240 hours.
 
+The GM's unfinished setup survives in-window refreshes and switching workspace
+tabs. Invalid hours are highlighted before a request is sent. Selecting an
+activity moves keyboard focus to **Roll & submit**. On narrow windows, the
+submission panel stays in the page flow so it cannot cover activity buttons.
+
+If a submission reply is interrupted, **Retry submission** reuses the exact
+check and request from that window. Repeated clicks share one pending roll.
+After a submission is accepted, use **Recall and edit** to change it; another
+request cannot silently replace an accepted check. A full browser reload does
+not preserve an unacknowledged local check, so refresh and inspect the saved
+submission before starting another roll.
+If the GM goes offline, the current window keeps and displays the player's
+last choice with submissions disabled. Refresh after the GM returns to continue.
+
 Once everyone has submitted, the GM clicks **Review results**. This closes
 submissions and prepares the reports from the recorded player checks. The GM
-chooses from the possible outcomes, can rewrite the player report, then clicks
+lands on the reports to review them, chooses from the possible outcomes, can rewrite the player report, then clicks
 **Apply rewards & send reports**. Changing an outcome loads its matching report.
 **Save report** saves an edit separately; applying also saves any visible report
 edits first and stops if a report cannot be saved. Unsaved report edits survive
@@ -22,10 +36,45 @@ an in-window refresh. Player rolls and project hours stay fixed, and results
 cannot be changed after application begins. A configured coin reward is deposited
 into the character's currency and verified before the player receives an
 updated Downtime Activities report with the activity art, narrative, and award.
+Players who own multiple participating characters can use the character tabs
+to switch between their latest completed reports. Each character receives its
+own state update, and report access follows current Actor ownership.
 
 The shipped templates are **Paid Work**, **Research & Rumors**, and
 **Thievery**. They are intentionally a safe starting set. No campaign time is
 advanced by this workflow.
+
+### Edit the activity library
+
+Open **Downtime → Activities** to edit a saved activity or click **New activity**
+to create one. Set the player description, optional image, applicable skills,
+and three possible results with their player reports and rewards. Existing
+templates with up to six results retain all of them in the editor. Result
+rewards apply once per assigned block; they are not multiplied by its hours.
+Put the results in order from least to most successful. The GM can choose any
+result during review.
+
+Leave all skills unchecked for work that needs no roll. Players then see
+**Submit activity**, and the GM review identifies **No skill check**. For
+skill-based work, players see **Roll & submit**. The result options remain
+hidden in the player interface until the GM delivers the selected report. See
+the transport privacy limitation below before storing confidential material.
+
+Activity drafts survive in-window refreshes and switching tabs or activities.
+**Save activity** updates the library for future blocks. An open block keeps
+the descriptions, skills, and rewards assigned when it began. The library
+supports 24 saved activities.
+
+### Interrupted application
+
+If a character's currency changes during review, application pauses while the
+report is still editable. Use **Save report** for that character, then apply
+again. If application has already started, use **Verify and recover**. Recovery
+checks saved operations before retrying work confirmed not to have happened;
+it does not repeat verified rewards. Completed reports stay visible in the GM
+workspace until **Start next block**.
+After application or recovery, keyboard focus moves to the saved reports;
+an interrupted application instead points to **Verify and recover**.
 
 ## Long-term projects
 
@@ -35,6 +84,11 @@ baseline is 160 hours (20 eight-hour days) for learning a language; choose a
 smaller or larger target to suit the task and pace of the campaign. For actual
 automatic ammunition delivery, use the standard **Craft Ammunition** activity;
 a project can instead track a larger commission or other multi-block goal.
+
+Unfinished project details survive in-window refreshes and switching tabs.
+Project targets must be whole numbers from 1 to 10,000 hours. Saving clears the
+form only after the project was accepted. A full library (40 projects) rejects
+another addition explicitly rather than reporting success and dropping it.
 
 When opening a guided block, select any unfinished projects that characters may
 work on. Each character can choose the same project, so concurrent effort is
@@ -93,7 +147,8 @@ and reward before application.
 
 ## Repeatable downtime gauntlet
 
-Run `npm run ui:audit:downtime` for the browser journey through setup, a changed
+Run `npm run ui:audit:downtime` for the browser journey through activity editing,
+draft retention, invalid reward handling, setup, a changed
 player choice, a 240-hour submission, GM review, report editing, a failed save,
 application, and the player receipt. It uses the real screen controllers and
 player adapter with isolated campaign doubles. It also checks review layout and
@@ -101,6 +156,27 @@ accessibility at 1040, 720, and 380 pixels. Screenshots are written to
 `output/playwright/downtime/`. The regular `npm run check` suite covers the
 authoritative service, storage, transport, and project-progress rules. These
 checks do not establish installed-world multiplayer acceptance.
+
+For the installed-world gauntlet, start a **disposable** local Foundry 13 world
+whose ID is `downtime-gauntlet`, with D&D5e and this module enabled. Create a
+GM named `Gamemaster` and a player named `Gauntlet Player`, both without test
+passwords. Close other clients for those test users, then run:
+
+```powershell
+npm run ui:audit:downtime:foundry -- --test-world downtime-gauntlet --url http://127.0.0.1:32173
+```
+
+This command refuses other world IDs and non-local hosts. It creates/reuses
+two marked test characters, resets only their test wallets, and creates a
+test activity. It exercises real player skill rolls, GM report editing,
+fractional rewards, interrupted writes, and GM/player reloads.
+It also verifies that an unfinished player choice survives a GM disconnect.
+Fault-injection blocks use explicitly marked deterministic check fixtures. Results and
+screenshots are saved under `output/playwright/downtime/foundry/`.
+
+The command also tests transport privacy and currently **fails that gate** on
+Foundry 13.351, despite passing the functional journeys. Do not describe this
+as a fully green multiplayer gauntlet; the observed limitation is below.
 
 A full GM may cancel a block while it is collecting submissions, locked, or
 showing its immutable preview. Once application begins, cancellation is closed;
@@ -280,6 +356,22 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
+**Known transport privacy limitation, observed 2026-09-03:** Foundry 13.351
+sends the restricted Journal's raw flags to authenticated player clients,
+even with `ownership.default = NONE` and `journal.visible = false`. The
+disposable-world player could read the downtime configuration and workflow
+history directly from its client document collection. Hiding the Journal and
+returning sanitized module projections does not make the underlying payload
+confidential. Synthetic tests of a NONE-owned compendium and a GM-only whisper
+also returned their data to that player, so moving the same flags into either
+container is not an established fix.
+
+This predates the downtime UI changes and affects the shared private-state
+storage design. The write guards and GM approval flow remain enforced by the
+module, but campaign secrets must not rely on this storage for confidentiality.
+Resolving it needs a separately validated storage/encryption design and a
+reviewable migration; it is not fixed by this downtime pass.
+
 Only the active full GM can optionally configure settlements, create projects,
 create or transition a block, roll hidden checks, or apply results. A player can
 view and submit only directly owned or assigned eligible Actors. Socket requests
@@ -296,7 +388,8 @@ data, or merchant internals.
 
 ## Current compatibility
 
-This version targets Foundry VTT 13.351 and is verified with D&D5e 4.4.4.
+This version targets Foundry VTT 13.351. The guided downtime journeys in this
+pass were exercised with D&D5e 5.3.3; earlier compatibility work used 4.4.4.
 Sharpening uses a module-owned Active Effect embedded on the weapon and listens
 to D&D5e's `preRollDamageV2`, `rollDamageV2`, and `restCompleted` hooks for
 charge consumption and long-rest removal. The compatibility damage hook remains

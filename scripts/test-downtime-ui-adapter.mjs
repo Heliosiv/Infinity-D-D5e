@@ -516,6 +516,156 @@ try {
   assert.equal(longChoice.canSubmit, true);
   guidedAdapter.destroy();
 
+  const cancelledAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: makeBus().subscribe,
+    registerSocket: () => true,
+    isAuthority: () => true,
+    getCurrentUserId: () => "player-1",
+    getDirectProjection: async () => guidedProjection(),
+    getActor: () => ({ id: "actor-1" }),
+    rollSkill: async () => ({ ok: false }),
+    submitDirect: async () => {
+      throw new Error("A cancelled roll must not be submitted");
+    },
+  });
+  await cancelledAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  await assert.rejects(
+    cancelledAdapter.submitQueue({ actorId: "actor-1" }),
+    (error) => error.code === "DOWNTIME_ROLL_CANCELLED",
+  );
+  const cancelledView = await cancelledAdapter.getPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.equal(cancelledView.queue.length, 1);
+  assert.equal(cancelledView.submitted, false);
+  assert.equal(
+    cancelledView.retrySubmission,
+    false,
+    "a cancelled check does not create a replayable submission",
+  );
+  cancelledAdapter.destroy();
+
+  let reconnectAuthority = true;
+  const reconnectAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: makeBus().subscribe,
+    registerSocket: () => true,
+    isAuthority: () => reconnectAuthority,
+    getCurrentUserId: () => "player-1",
+    getDirectProjection: async () => guidedProjection(),
+    requestSnapshot: () => ({ ok: false, reason: "no-gm" }),
+  });
+  await reconnectAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  reconnectAdapter._cacheProjection(
+    guidedProjection({
+      selectedActorId: "actor-2",
+      actors: [{ id: "actor-2", name: "Bea", eligible: true }],
+    }),
+    "actor-2",
+  );
+  reconnectAuthority = false;
+  const offlineChoice = await reconnectAdapter.refreshPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.equal(offlineChoice.noGm, true);
+  assert.equal(offlineChoice.canSubmit, false);
+  assert.equal(offlineChoice.canRecall, false);
+  assert.equal(offlineChoice.queue[0]?.activityId, "guided-labor");
+  assert.equal(offlineChoice.queue[0]?.label, "Paid Work");
+  const otherOfflineChoice = await reconnectAdapter.getPlayerProjection({
+    actorId: "actor-2",
+  });
+  assert.equal(otherOfflineChoice.noGm, true);
+  assert.equal(otherOfflineChoice.canSubmit, false);
+  await assert.rejects(
+    reconnectAdapter.submitQueue({ actorId: "actor-1" }),
+    /submissions are not open/i,
+    "an offline choice is read-only",
+  );
+  reconnectAuthority = true;
+  const reconnectedChoice = await reconnectAdapter.refreshPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.equal(reconnectedChoice.noGm, false);
+  assert.equal(reconnectedChoice.canSubmit, true);
+  assert.deepEqual(reconnectedChoice.rawQueue, offlineChoice.rawQueue);
+  reconnectAdapter.destroy();
+
+  const retryBus = makeBus();
+  const retryPayloads = [];
+  let retryRolls = 0;
+  let retryIds = 0;
+  let timeoutCallback;
+  const retryAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: retryBus.subscribe,
+    registerSocket: () => true,
+    isAuthority: () => false,
+    requestIdFactory: (prefix) => `${prefix}-retry-${++retryIds}`,
+    setTimeout: (callback) => {
+      timeoutCallback = callback;
+      return 1;
+    },
+    clearTimeout: () => {},
+    submitTransport: (payload) => {
+      retryPayloads.push(structuredClone(payload));
+      return { ok: true };
+    },
+    getActor: () => ({ id: "actor-1" }),
+    rollSkill: async () => {
+      retryRolls++;
+      return { ok: true, total: 13, roll: { formula: "1d20 + 3" } };
+    },
+  });
+  retryAdapter._cacheProjection(guidedProjection(), "actor-1");
+  await retryAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  const interrupted = retryAdapter.submitQueue({ actorId: "actor-1" });
+  assert.equal(
+    retryAdapter.submitQueue({ actorId: "actor-1" }),
+    interrupted,
+    "a duplicate click shares the same in-flight roll and submission",
+  );
+  const interruptedAssertion = assert.rejects(interrupted, /did not answer/);
+  for (let tick = 0; tick < 6; tick++) await Promise.resolve();
+  timeoutCallback();
+  await interruptedAssertion;
+  assert.equal(
+    (await retryAdapter.getPlayerProjection({ actorId: "actor-1" }))
+      .retrySubmission,
+    true,
+  );
+  const retried = retryAdapter.submitQueue({ actorId: "actor-1" });
+  for (let tick = 0; tick < 6; tick++) await Promise.resolve();
+  assert.equal(retryRolls, 1, "a timeout retry never rerolls the saved check");
+  assert.deepEqual(
+    retryPayloads[1],
+    retryPayloads[0],
+    "a retry preserves the exact request identity and roll",
+  );
+  retryBus.emit(DOWNTIME_EVENTS.SUBMIT_RESULT, {
+    requestId: retryPayloads[1].requestId,
+    ok: true,
+    projection: guidedProjection({
+      submitted: true,
+      rawQueue: retryPayloads[1].queue,
+    }),
+  });
+  assert.equal((await retried).submitted, true);
+  retryAdapter.destroy();
+
   const noGmAdapter = createDowntimePlayerAdapter({
     subscribeSocket: makeBus().subscribe,
     registerSocket: () => true,

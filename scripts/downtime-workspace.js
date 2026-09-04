@@ -23,6 +23,7 @@ export const DOWNTIME_WORKSPACE_QUICK_START_ID = "downtime-workspace:v0.3.0";
 const DEFAULT_VIEW = "current";
 const WORKSPACE_VIEWS = new Set([
   "current",
+  "activities",
   "projects",
   "settlements",
   "history",
@@ -162,6 +163,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       saveSettlement: DowntimeWorkspaceApp._onSaveSettlement,
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
+      selectGuidedTemplate: DowntimeWorkspaceApp._onSelectGuidedTemplate,
+      newGuidedTemplate: DowntimeWorkspaceApp._onNewGuidedTemplate,
+      saveGuidedTemplate: DowntimeWorkspaceApp._onSaveGuidedTemplate,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
@@ -225,6 +229,11 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._activeBlockId = "";
     this._creatingSettlement = false;
     this._newBlockMode = false;
+    this._newBlockDraft = null;
+    this._selectedTemplateId = null;
+    this._creatingTemplate = false;
+    this._templateDrafts = new Map();
+    this._projectDraft = null;
     this._busy = false;
     this._statusMessage = "";
     this._errorMessage = "";
@@ -316,6 +325,11 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       selectedSettlementId: this._selectedSettlementId,
       creatingSettlement: this._creatingSettlement,
       newBlockMode: this._newBlockMode,
+      newBlockDraft: this._newBlockDraft,
+      selectedTemplateId: this._selectedTemplateId,
+      creatingTemplate: this._creatingTemplate,
+      templateDrafts: this._templateDrafts,
+      projectDraft: this._projectDraft,
       actorSelector: this._actorSelectorState,
     });
     if (dataAvailable) {
@@ -323,6 +337,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       this._reconcileActorSelector?.(context.actors);
     }
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
+    this._selectedTemplateId = context.templateEditor?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
     this._guided = context.currentBlock?.guided ?? true;
     const reportKeys = new Set();
@@ -362,6 +377,28 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
     this._bindActorSelector(context);
+    const setup = this.element?.querySelector?.('[data-form="new-block"]');
+    for (const event of ["input", "change"]) {
+      setup?.addEventListener(event, () => this._captureNewBlockDraft(setup));
+    }
+    const templateForm = this.element?.querySelector?.(
+      '[data-form="guided-template"]',
+    );
+    for (const event of ["input", "change"]) {
+      templateForm?.addEventListener(event, () => {
+        const draft = readGuidedTemplateForm(templateForm);
+        this._templateDrafts ??= new Map();
+        this._templateDrafts.set(draft.id || "new", draft);
+      });
+    }
+    const projectForm = this.element?.querySelector?.(
+      '[data-form="guided-project"]',
+    );
+    for (const event of ["input", "change"]) {
+      projectForm?.addEventListener(event, () => {
+        this._projectDraft = readGuidedProjectForm(projectForm);
+      });
+    }
     for (const field of this.element?.querySelectorAll?.(
       "[data-guided-report]",
     ) ?? []) {
@@ -377,6 +414,16 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       });
     }
     this._restoreFocus();
+  }
+
+  _captureNewBlockDraft(form) {
+    const data = new FormData(form);
+    this._newBlockDraft = {
+      locationName: String(data.get("locationName") ?? ""),
+      hours: String(data.get("hours") ?? ""),
+      templateIds: data.getAll("templateIds").map(cleanId).filter(Boolean),
+      projectIds: data.getAll("projectIds").map(cleanId).filter(Boolean),
+    };
   }
 
   _reconcileActorSelector(actors) {
@@ -564,8 +611,15 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     if (!this._pendingFocus || !this.element) return;
     const selector = this._pendingFocus;
     this._pendingFocus = null;
+    const root = this.element;
+    const focusedAtRender = root.ownerDocument?.activeElement;
     globalThis.requestAnimationFrame?.(() => {
-      this.element?.querySelector?.(selector)?.focus?.();
+      // Do not pull focus back after the user has already started editing a
+      // different field during the frame between rendering and this callback.
+      const focusedNow = root.ownerDocument?.activeElement;
+      if (root !== this.element) return;
+      if (focusedNow !== focusedAtRender && root.contains?.(focusedNow)) return;
+      root.querySelector?.(selector)?.focus?.();
     });
   }
 
@@ -593,7 +647,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       this._errorMessage =
         String(error?.message ?? "").trim() ||
         "The downtime command failed. No new outcome was generated.";
-      this._statusMessage = "Downtime was not changed.";
+      this._statusMessage =
+        "The request did not finish. Refresh to check the saved state.";
       return null;
     } finally {
       this._busy = false;
@@ -643,9 +698,10 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
 
   static _onBeginNextBlock() {
     this._newBlockMode = true;
+    this._newBlockDraft = null;
     this._actorSelectorState = createActorSelectorState();
     this._statusMessage = "Choose the location, time budget, and characters.";
-    this._pendingFocus = '[data-form="new-block"] select[name="settlementId"]';
+    this._pendingFocus = '[data-form="new-block"] input[name="locationName"]';
     this.render(false);
   }
 
@@ -708,8 +764,11 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
   }
 
   static async _onCreateBlock() {
+    if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="new-block"]');
     if (!form) return;
+    if (form.reportValidity?.() === false) return;
+    this._captureNewBlockDraft?.(form);
     const data = new FormData(form);
     const payload = {
       settlementId: cleanId(data.get("settlementId")),
@@ -742,6 +801,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     });
     if (result !== null) {
       this._newBlockMode = false;
+      this._newBlockDraft = null;
       this._actorSelectorState = createActorSelectorState();
       if (this.rendered) this.render(false);
     }
@@ -790,7 +850,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         success: this._guided
           ? "Results ready. Choose an outcome and edit each player report."
           : "Immutable preview generated. Review it before applying.",
-        focus: '[data-action="applyBlock"]',
+        focus: "#dt-preview-heading",
       },
     );
   }
@@ -819,7 +879,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         `${payload.blockId}:${payload.operationId}`,
       );
     }
-    await this._runCommand(
+    const applied = await this._runCommand(
       "applyBlock",
       {
         blockId: this._currentBlockId(),
@@ -827,9 +887,15 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       {
         pending: "Applying the saved downtime plan...",
         success: "Downtime application finished.",
-        focus: '[data-action="refresh"]',
+        focus: "#dt-preview-heading",
       },
     );
+    if (applied?.state === "needs-review") {
+      this._statusMessage =
+        "Some results need recovery. Review the recovery notice above.";
+      this._pendingFocus = '[data-action="recoverBlock"]';
+      if (this.rendered) this.render(false);
+    }
   }
 
   static async _onChooseGuidedOutcome(_event, target) {
@@ -901,7 +967,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         pending: "Checking saved operations and recovering safely...",
         success:
           "Recovery check finished. Only proven-unapplied operations were retried.",
-        focus: '[data-action="refresh"]',
+        focus: "#dt-preview-heading",
       },
     );
   }
@@ -979,21 +1045,48 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
   }
 
+  static _onSelectGuidedTemplate(_event, target) {
+    if (this._busy) return;
+    this._selectedTemplateId = cleanId(target?.dataset?.templateId);
+    this._creatingTemplate = false;
+    this._pendingFocus = '[data-form="guided-template"] input[name="name"]';
+    this.render(false);
+  }
+
+  static _onNewGuidedTemplate() {
+    if (this._busy) return;
+    this._selectedTemplateId = null;
+    this._creatingTemplate = true;
+    this._pendingFocus = '[data-form="guided-template"] input[name="name"]';
+    this.render(false);
+  }
+
+  static async _onSaveGuidedTemplate() {
+    if (this._busy) return;
+    const form = this.element?.querySelector?.('[data-form="guided-template"]');
+    if (!form || form.reportValidity?.() === false) return;
+    const draft = readGuidedTemplateForm(form);
+    const result = await this._runCommand("saveGuidedTemplate", draft, {
+      pending: "Saving activity...",
+      success: "Activity saved. Use it in your next downtime block.",
+      focus: '[data-form="guided-template"] input[name="name"]',
+    });
+    if (result !== null) {
+      this._templateDrafts?.delete(draft.id || "new");
+      this._selectedTemplateId = result.id;
+      this._creatingTemplate = false;
+      if (this.rendered) this.render(false);
+    }
+  }
+
   static async _onSaveGuidedProject() {
+    if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="guided-project"]');
-    if (!form) return;
-    const data = new FormData(form);
+    if (!form || form.reportValidity?.() === false) return;
+    this._projectDraft = readGuidedProjectForm(form);
     const result = await this._runCommand(
       "saveGuidedProject",
-      {
-        name: String(data.get("name") ?? "").trim(),
-        description: String(data.get("description") ?? "").trim(),
-        requiredHours: positiveInteger(data.get("requiredHours"), 0),
-        skills:
-          typeof data.getAll === "function"
-            ? data.getAll("skills").map(cleanId).filter(Boolean)
-            : [],
-      },
+      this._projectDraft,
       {
         pending: "Saving long-term project...",
         success:
@@ -1001,7 +1094,10 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         focus: '[data-action="saveGuidedProject"]',
       },
     );
-    if (result !== null && this.rendered) this.render(false);
+    if (result !== null) {
+      this._projectDraft = null;
+      if (this.rendered) this.render(false);
+    }
   }
 
   _currentBlockId() {
@@ -1011,6 +1107,32 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       ) || this._activeBlockId
     );
   }
+}
+
+function readGuidedProjectForm(form) {
+  const data = new FormData(form);
+  return {
+    name: String(data.get("name") ?? ""),
+    description: String(data.get("description") ?? ""),
+    requiredHours: String(data.get("requiredHours") ?? ""),
+    skills: data.getAll("skills").map(cleanId).filter(Boolean),
+  };
+}
+
+function readGuidedTemplateForm(form) {
+  const data = new FormData(form);
+  return {
+    id: String(data.get("id") ?? ""),
+    name: String(data.get("name") ?? ""),
+    description: String(data.get("description") ?? ""),
+    image: String(data.get("image") ?? ""),
+    skills: data.getAll("skills").map(String),
+    outcomes: data.getAll("outcomeLabel").map((label, index) => ({
+      label: String(label),
+      report: String(data.getAll("outcomeReport")[index] ?? ""),
+      rewardGp: String(data.getAll("outcomeReward")[index] ?? "0"),
+    })),
+  };
 }
 
 function workspaceProjectionErrorMessage(error) {
@@ -1045,8 +1167,46 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       name: String(template?.name ?? "Activity"),
       description: String(template?.description ?? ""),
       image: String(template?.image ?? "icons/svg/d20.svg"),
+      checked: uiState.newBlockDraft
+        ? array(uiState.newBlockDraft.templateIds).includes(template?.id)
+        : true,
     }))
     .filter((template) => template.id);
+  const selectedTemplate = uiState.creatingTemplate
+    ? null
+    : (array(source.guidedTemplates).find(
+        (entry) => entry.id === uiState.selectedTemplateId,
+      ) ?? array(source.guidedTemplates)[0]);
+  const templateDraft = uiState.templateDrafts?.get?.(
+    selectedTemplate?.id || "new",
+  );
+  const templateSource = templateDraft ??
+    selectedTemplate ?? {
+      id: "",
+      name: "",
+      description: "",
+      image: "",
+      skills: [],
+      outcomes: ["Setback", "Steady progress", "Breakthrough"].map((label) => ({
+        label,
+        report: "",
+        rewardGp: 0,
+      })),
+    };
+  const templateEditor = {
+    ...templateSource,
+    outcomes: array(templateSource.outcomes).map((outcome, index) => ({
+      ...outcome,
+      number: index + 1,
+    })),
+    skillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
+      id,
+      label,
+      checked: array(templateSource.skills).includes(id),
+    })),
+  };
+  for (const template of guidedTemplates)
+    template.selected = template.id === templateEditor.id;
   const guidedProjects = array(source.guidedProjects)
     .map((project) => ({
       id: cleanId(project?.id),
@@ -1057,6 +1217,9 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       remainingHours: Math.max(0, positiveInteger(project?.remainingHours, 0)),
       progressLabel: String(project?.progressLabel ?? ""),
       complete: project?.complete === true,
+      checked:
+        project?.complete !== true &&
+        array(uiState.newBlockDraft?.projectIds).includes(project?.id),
     }))
     .filter((project) => project.id);
   let selectedSettlementId = cleanId(uiState.selectedSettlementId);
@@ -1154,9 +1317,12 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   return {
     dataAvailable: source.dataAvailable !== false,
     guided,
+    newBlockLocation: String(uiState.newBlockDraft?.locationName ?? ""),
+    newBlockHours: String(uiState.newBlockDraft?.hours ?? "8"),
     lifecycleLabel: lifecycle.steps.map((step) => step.label).join(", "),
     view,
     viewCurrent: view === "current",
+    viewActivities: view === "activities",
     viewProjects: view === "projects",
     viewSettlements: view === "settlements",
     viewHistory: view === "history",
@@ -1172,12 +1338,17 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     primaryAction: lifecycle.primaryAction,
     settlements,
     guidedTemplates,
+    templateEditor,
     hasGuidedTemplates: guidedTemplates.length > 0,
     guidedProjects,
+    newProjectName: String(uiState.projectDraft?.name ?? ""),
+    newProjectDescription: String(uiState.projectDraft?.description ?? ""),
+    newProjectHours: String(uiState.projectDraft?.requiredHours ?? "160"),
     hasGuidedProjects: guidedProjects.length > 0,
     projectSkillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
       id,
       label,
+      checked: array(uiState.projectDraft?.skills).includes(id),
     })),
     hasSettlements: settlements.length > 0,
     selectedSettlement,
@@ -1719,6 +1890,7 @@ function normalizeCurrentBlock(workflow, root) {
       workflow.plan?.createdAt ?? workflow.preview?.createdAt,
     ),
     completedAt: formatDate(workflow.completedAt),
+    completed: status === "completed",
     canOpenForPlayers: workflow.canOpenForPlayers ?? status === "collecting",
     canLock: Boolean(canLock),
     canPlan: Boolean(canPlan),
