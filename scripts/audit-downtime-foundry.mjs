@@ -128,30 +128,51 @@ async function waitCompleted() {
   return current;
 }
 
-async function selectResults(index) {
-  const buttons = gm.locator(
+async function prepareParticipant(actorId) {
+  await gm
+    .locator(
+      `.dt-participant [data-action="prepareParticipant"][data-actor-id="${actorId}"]`,
+    )
+    .click();
+  await gm.locator("[data-guided-report]").first().waitFor();
+  await gm.waitForFunction(
+    () => document.activeElement?.id === "dt-preview-heading",
+  );
+}
+
+async function selectResult(index) {
+  const button = gm.locator(
     `[data-action="chooseGuidedOutcome"][data-outcome-index="${index}"]`,
   );
-  for (
-    let actorIndex = 0;
-    actorIndex < evidence.actorIds.length;
-    actorIndex += 1
-  ) {
-    await buttons.nth(actorIndex).click();
-    await gm.waitForFunction(
-      ({ index, row }) =>
-        document
-          .querySelectorAll(
-            `[data-action="chooseGuidedOutcome"][data-outcome-index="${index}"]`,
-          )
-          [row]?.getAttribute("aria-pressed") === "true",
-      { index, row: actorIndex },
-    );
-  }
+  await button.click();
+  await gm.waitForFunction(
+    (index) =>
+      document
+        .querySelector(
+          `[data-action="chooseGuidedOutcome"][data-outcome-index="${index}"]`,
+        )
+        ?.getAttribute("aria-pressed") === "true",
+    index,
+  );
+}
+
+async function waitForParticipantReceipt(actorId, expected) {
+  await player
+    .getByRole("button", { name: "Refresh downtime", exact: true })
+    .click();
+  await player
+    .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
+    .click();
+  await player.locator(".dt-receipt").waitFor();
+  assert.match(await player.locator(".dt-receipt").innerText(), expected);
 }
 
 async function openUiBlock(templateId, location) {
-  await gm.locator('[data-action="setView"][data-view="current"]').click();
+  const currentView = gm.locator(
+    '[data-action="setView"][data-view="current"]',
+  );
+  if ((await currentView.getAttribute("aria-current")) !== "page")
+    await currentView.click();
   await gm.waitForFunction(
     () =>
       document
@@ -287,11 +308,6 @@ async function submitUiChoices(
     }
     await player.locator('[data-action="recallSubmission"]').waitFor();
   }
-  await gm.locator('[data-action="lockBlock"]').click();
-  await gm.locator("[data-guided-report]").first().waitFor();
-  await gm.waitForFunction(
-    () => document.activeElement?.id === "dt-preview-heading",
-  );
 }
 
 async function prepareFaultBlock(label) {
@@ -424,7 +440,8 @@ try {
   if (!args.includes("--crafting-only")) {
     await openUiBlock("guided-labor", "Gauntlet: real player skill checks");
     await submitUiChoices("guided-labor", true, { probeRetry: true });
-    await selectResults(2);
+    await prepareParticipant(evidence.actorIds[0]);
+    await selectResult(2);
     const editedReport =
       "The harbor crew praises the careful repairs. The work is complete.";
     await gm.locator("[data-guided-report]").first().fill(editedReport);
@@ -434,12 +451,31 @@ try {
       editedReport,
     );
     await gm.locator('[data-action="applyBlock"]').click();
+    await gm
+      .locator(
+        `.dt-participant [data-action="prepareParticipant"][data-actor-id="${evidence.actorIds[1]}"]`,
+      )
+      .waitFor();
+    const firstPaid = await state();
+    assert.equal(firstPaid.state, "collecting");
+    assert.equal(firstPaid.active, true);
+    assert.deepEqual(firstPaid.wallets, [1400, 2000]);
+    await waitForParticipantReceipt(
+      evidence.actorIds[0],
+      /harbor crew praises the careful repairs/i,
+    );
+    await prepareParticipant(evidence.actorIds[1]);
+    await selectResult(2);
+    await gm.locator('[data-action="applyBlock"]').click();
     const paid = await waitCompleted();
     await gm.waitForFunction(
       () => document.activeElement?.id === "dt-preview-heading",
     );
     assert.deepEqual(paid.wallets, [1400, 2400]);
-    record("two real player skill checks, edited report, exact rewards", paid);
+    record(
+      "two real player skill checks resolve independently with immediate receipts",
+      { firstPaid, completed: paid },
+    );
 
     await gm.locator('[data-action="setView"][data-view="activities"]').click();
     const templateId = await gm.evaluate(async () => {
@@ -499,14 +535,31 @@ try {
       .screenshot({ path: path.join(output, "activity-editor.png") });
     await openUiBlock(gardenId, "Gauntlet: custom activity without a roll");
     await submitUiChoices(gardenId, false);
+    await prepareParticipant(evidence.actorIds[0]);
     assert.match(await gm.locator(".dt-preview").innerText(), /No skill check/);
-    await selectResults(2);
+    await selectResult(2);
+    await gm.locator('[data-action="applyBlock"]').click();
+    await gm
+      .locator(
+        `.dt-participant [data-action="prepareParticipant"][data-actor-id="${evidence.actorIds[1]}"]`,
+      )
+      .waitFor();
+    const firstGarden = await state();
+    assert.equal(firstGarden.state, "collecting");
+    assert.equal(firstGarden.active, true);
+    assert.deepEqual(firstGarden.wallets, [1650, 2400]);
+    await waitForParticipantReceipt(
+      evidence.actorIds[0],
+      /generous harvest rewards your care/i,
+    );
+    await prepareParticipant(evidence.actorIds[1]);
+    await selectResult(2);
     await gm.locator('[data-action="applyBlock"]').click();
     const garden = await waitCompleted();
     assert.deepEqual(garden.wallets, [1650, 2650]);
     record(
-      "custom activity editor, no-roll choices, fractional rewards",
-      garden,
+      "custom activity editor, individual no-roll choices, fractional rewards",
+      { firstGarden, completed: garden },
     );
 
     await openUiBlock(

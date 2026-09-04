@@ -38,7 +38,8 @@ const CHECKPOINT_VERSION = 1;
 const CONFIG_CHECKPOINT_VERSION = 1;
 const LEGACY_DOWNTIME_CONFIG_VERSION = 2;
 const GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION = 3;
-const PREVIOUS_DOWNTIME_CONFIG_VERSION = 4;
+const PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION = 4;
+const PREVIOUS_DOWNTIME_CONFIG_VERSION = 5;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -172,6 +173,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
     [
       LEGACY_DOWNTIME_CONFIG_VERSION,
       GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION,
+      PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
       PREVIOUS_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
@@ -368,10 +370,29 @@ function parsePersistedDowntimeConfig(raw) {
   } else if (
     persistedVersionEquals(raw.version, PREVIOUS_DOWNTIME_CONFIG_VERSION)
   ) {
+    persistedShape = {
+      ...current,
+      version: PREVIOUS_DOWNTIME_CONFIG_VERSION,
+      guidedProjects: current.guidedProjects.map((project) => {
+        const {
+          requiredGp: _requiredGp,
+          requiredSuccesses: _requiredSuccesses,
+          checkDc: _checkDc,
+          ...previousProject
+        } = project;
+        return previousProject;
+      }),
+    };
+  } else if (
+    persistedVersionEquals(
+      raw.version,
+      PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
+    )
+  ) {
     const { guidedProjects: _guidedProjects, ...previousShape } = current;
     persistedShape = {
       ...previousShape,
-      version: PREVIOUS_DOWNTIME_CONFIG_VERSION,
+      version: PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
     };
   } else if (
     persistedVersionEquals(raw.version, GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION)

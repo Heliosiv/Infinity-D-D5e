@@ -371,6 +371,46 @@ try {
     });
     workflow.resetDowntimeWorkflowStoreForTests();
   };
+  const historicalV5Config = {
+    ...structuredClone(canonicalCheckpoint.config.value),
+    version: 5,
+    guidedProjects: [
+      {
+        id: "project-smith-arrows",
+        name: "Smith Arrows",
+        description: "Forge a bundle of durable arrows.",
+        image: "icons/svg/clockwork.svg",
+        skills: ["ath"],
+        requiredHours: 40,
+      },
+    ],
+  };
+  seedCompositeConfig(historicalV5Config);
+  assert.equal(
+    workflow.isDowntimeWorkflowReady(),
+    false,
+    "v5 projects stay read-only until their economics fields are migrated",
+  );
+  const compatibleV5Config = workflow.loadDowntimeConfig();
+  assert.deepEqual(
+    compatibleV5Config.guidedProjects[0],
+    {
+      ...historicalV5Config.guidedProjects[0],
+      requiredGp: 0,
+      requiredSuccesses: 0,
+      checkDc: 15,
+    },
+    "v5 projects gain safe GP, success, and DC defaults",
+  );
+  await workflow.ensureDowntimeWorkflowAuthority();
+  assert.equal(settings.get("downtimeConfig").version, DOWNTIME_CONFIG_VERSION);
+  assert.deepEqual(
+    settings.get("downtimeConfig").guidedProjects[0],
+    compatibleV5Config.guidedProjects[0],
+    "the guarded migration persists the complete v6 project shape",
+  );
+  assert.equal(workflow.isDowntimeWorkflowReady(), true);
+
   const malformedConfig = {
     ...structuredClone(settings.get("downtimeConfig")),
     unexpected: true,

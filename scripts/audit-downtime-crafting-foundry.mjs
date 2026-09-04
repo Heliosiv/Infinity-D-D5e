@@ -42,20 +42,23 @@ export async function runCraftingFoundryJourney({
     await actor.update({
       "system.currency": { pp: 0, gp: 500, ep: 0, sp: 0, cp: 0 },
     });
+    const timberName = `Gauntlet crafting timber ${foundry.utils.randomID(6)}`;
+    const inkName = `Gauntlet spell ink ${foundry.utils.randomID(6)}`;
+    const spellName = "Gauntlet scribing spell";
     const sources = [
       { name: "Smith's Tools", type: "tool", system: { quantity: 1 } },
       {
-        name: `Gauntlet crafting timber ${foundry.utils.randomID(6)}`,
+        name: timberName,
         type: "loot",
         system: { quantity: 5 },
       },
       {
-        name: `Gauntlet spell ink ${foundry.utils.randomID(6)}`,
+        name: inkName,
         type: "loot",
         system: { quantity: 2 },
       },
       {
-        name: "Gauntlet scribing spell",
+        name: spellName,
         type: "spell",
         system: {
           level: 2,
@@ -71,13 +74,22 @@ export async function runCraftingFoundryJourney({
     for (const source of sources)
       source.flags = { "infinity-dnd5e": { downtimeCraftingFixture: true } };
     const created = await actor.createEmbeddedDocuments("Item", sources);
+    const byName = (name) => {
+      const item = created.find((entry) => entry.name === name);
+      if (!item) throw Error(`Missing created crafting fixture: ${name}`);
+      return item;
+    };
+    const tool = byName("Smith's Tools");
+    const timber = byName(timberName);
+    const ink = byName(inkName);
+    const spell = byName(spellName);
     return {
-      toolId: created[0].id,
-      timberName: created[1].name,
-      inkName: created[2].name,
-      timberId: created[1].id,
-      inkId: created[2].id,
-      spellId: created[3].id,
+      toolId: tool.id,
+      timberName: timber.name,
+      inkName: ink.name,
+      timberId: timber.id,
+      inkId: ink.id,
+      spellId: spell.id,
     };
   }, actorId);
 
@@ -152,7 +164,11 @@ export async function runCraftingFoundryJourney({
     return id;
   }
   async function openBlock(templateId, hours, targetId = "") {
-    await gm.locator('[data-action="setView"][data-view="current"]').click();
+    const currentView = gm.locator(
+      '[data-action="setView"][data-view="current"]',
+    );
+    if ((await currentView.getAttribute("aria-current")) !== "page")
+      await currentView.click();
     if (await gm.locator('[data-action="beginNextBlock"]').count())
       await gm.locator('[data-action="beginNextBlock"]').click();
     await gm
@@ -187,7 +203,11 @@ export async function runCraftingFoundryJourney({
       : await card.locator(".dt-activity-card__cost").innerText();
     await card.locator('[data-action="addActivity"]').click();
     await player.locator('[data-action="submitQueue"]').click();
-    await gm.locator('[data-action="lockBlock"]').click();
+    await gm
+      .locator(
+        `.dt-participant [data-action="prepareParticipant"][data-actor-id="${actorId}"]`,
+      )
+      .click();
     await gm.locator("[data-guided-report]").waitFor();
     assert.equal(
       (await gm.locator("[data-work-summary]").innerText()).trim(),
