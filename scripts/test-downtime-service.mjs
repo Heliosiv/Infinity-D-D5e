@@ -910,12 +910,49 @@ try {
       "invalid project hours must not be silently clamped into a saved project",
     );
   }
+  await assert.rejects(
+    service.saveGuidedDowntimeProject({
+      name: "Invalid project cost",
+      requiredHours: 8,
+      requiredGp: 1.001,
+      requiredSuccesses: 0,
+      checkDc: 15,
+    }),
+    /two decimal places/,
+  );
+  await assert.rejects(
+    service.saveGuidedDowntimeProject({
+      name: "Missing project skill",
+      requiredHours: 8,
+      requiredGp: 0,
+      requiredSuccesses: 1,
+      checkDc: 15,
+      skills: [],
+    }),
+    /at least one skill/,
+  );
   const languageProject = await service.saveGuidedDowntimeProject({
     name: "Learn Draconic",
     description: "Study the language together between adventures.",
     requiredHours: 16,
+    requiredGp: 2,
+    requiredSuccesses: 1,
+    checkDc: 15,
     skills: ["arc", "his"],
   });
+  const editedLanguageProject = await service.saveGuidedDowntimeProject({
+    ...languageProject,
+    description: "Study the language together between adventures.",
+  });
+  assert.equal(editedLanguageProject.id, languageProject.id);
+  assert.equal(
+    workflow
+      .loadDowntimeConfig()
+      .guidedProjects.filter((project) => project.id === languageProject.id)
+      .length,
+    1,
+    "saving an existing preset-backed project edits it in place",
+  );
   const configurationBeforeLimitProbe = workflow.loadDowntimeConfig();
   await workflow.updateDowntimeConfig((current) => ({
     ...current,
@@ -926,6 +963,14 @@ try {
       skills: ["arc"],
     })),
   }));
+  actor.system.currency = { pp: 0, gp: 10, ep: 0, sp: 0, cp: 0 };
+  projectPartner.system.currency = {
+    pp: 0,
+    gp: 10,
+    ep: 0,
+    sp: 0,
+    cp: 0,
+  };
   await assert.rejects(
     service.saveGuidedDowntimeProject({
       name: "Forty-first project",
@@ -958,7 +1003,7 @@ try {
       id: languageProject.id,
       label: "Learn Draconic",
       description:
-        "Study the language together between adventures. 0 / 16 hours complete.",
+        "Study the language together between adventures. 0 / 16 hours · 0 / 1 successes at DC 15 · 2 gp total.",
       category: "project",
       icon: "fa-solid fa-compass",
       available: true,
@@ -970,54 +1015,126 @@ try {
       hasSkills: true,
       image: languageProject.image,
       project: true,
+      costLabel: "Spend 1 gp for this contribution",
+      availabilityReason: "",
+      progressHours: 0,
+      progressSuccesses: 0,
+      requiredHours: 16,
+      requiredSuccesses: 1,
+      checkDc: 15,
     },
     "players receive a rollable project activity with the current shared progress",
   );
-  for (const [index, projectActor] of [actor, projectPartner].entries()) {
-    await service.submitQueueAuthoritatively({
-      userId: player.id,
-      requestId: `project-contributor-${index}`,
-      blockId: projectBlock.id,
-      actorId: projectActor.id,
-      queue: [
-        {
-          id: "guided-choice",
-          activityId: languageProject.id,
-          hours: 8,
-          skill: "arc",
-          guidedRoll: { total: 14 + index, formula: "1d20 + 4" },
-        },
-      ],
-    });
-  }
-  projectBlock = await service.lockActiveDowntimeBlock(projectBlock.id);
-  projectBlock = await service.planActiveDowntimeBlock(projectBlock.id);
-  assert.deepEqual(
-    projectBlock.plan.operations.map((operation) => operation.project),
-    [
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "project-contributor-0",
+    blockId: projectBlock.id,
+    actorId: actor.id,
+    queue: [
       {
-        id: languageProject.id,
-        name: "Learn Draconic",
-        requiredHours: 16,
-        progressBeforeHours: 0,
-        contributedHours: 8,
-        progressAfterHours: 8,
-        completed: false,
-      },
-      {
-        id: languageProject.id,
-        name: "Learn Draconic",
-        requiredHours: 16,
-        progressBeforeHours: 8,
-        contributedHours: 8,
-        progressAfterHours: 16,
-        completed: true,
+        id: "guided-choice",
+        activityId: languageProject.id,
+        hours: 8,
+        skill: "arc",
+        guidedRoll: { total: 14, formula: "1d20 + 4" },
       },
     ],
-    "two characters can contribute concurrently to one long-term project",
+  });
+  actor.system.currency.gp = 0;
+  await assert.rejects(
+    service.prepareGuidedDowntimeParticipant({
+      blockId: projectBlock.id,
+      actorId: actor.id,
+    }),
+    /needs 1 gp/,
+    "a failed individual preflight leaves the shared block open",
   );
+  assert.equal(workflow.getActiveDowntimeBlock().state, "collecting");
+  actor.system.currency.gp = 10;
+  projectBlock = await service.prepareGuidedDowntimeParticipant({
+    blockId: projectBlock.id,
+    actorId: actor.id,
+  });
+  assert.deepEqual(
+    projectBlock.plan.characters.map((row) => row.actorId),
+    [actor.id],
+  );
+  assert.deepEqual(projectBlock.plan.operations[0].project, {
+    id: languageProject.id,
+    name: "Learn Draconic",
+    requiredHours: 16,
+    requiredGp: 2,
+    requiredSuccesses: 1,
+    checkDc: 15,
+    progressBeforeHours: 0,
+    contributedHours: 8,
+    progressAfterHours: 8,
+    successesBefore: 0,
+    successesAdded: 0,
+    successesAfter: 0,
+    successfulCheck: false,
+    costCp: 100,
+    completed: false,
+  });
+  projectBlock = await service.applyActiveDowntimeBlock(projectBlock.id);
+  assert.equal(
+    projectBlock.state,
+    "collecting",
+    "one resolved character reopens the same block for everyone else",
+  );
+  assert.equal(projectBlock.participants[0].resolved, true);
+  assert.equal(projectBlock.participants[1].submitted, false);
+  assert.equal(actor.system.currency.gp, 9);
+  assert.deepEqual(workflow.loadDowntimeWorkflowStore().projectProgress, {
+    [languageProject.id]: 8,
+  });
+  assert.deepEqual(workflow.loadDowntimeWorkflowStore().projectSuccesses, {});
+  const firstReceipt = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: actor.id,
+  });
+  assert.equal(firstReceipt.status, "completed");
+  assert.equal(firstReceipt.hasActiveBlock, true);
+
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "project-contributor-1",
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
+    queue: [
+      {
+        id: "guided-choice",
+        activityId: languageProject.id,
+        hours: 8,
+        skill: "arc",
+        guidedRoll: { total: 15, formula: "1d20 + 4" },
+      },
+    ],
+  });
+  projectBlock = await service.prepareGuidedDowntimeParticipant({
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
+  });
+  assert.deepEqual(projectBlock.plan.operations[0].project, {
+    id: languageProject.id,
+    name: "Learn Draconic",
+    requiredHours: 16,
+    requiredGp: 2,
+    requiredSuccesses: 1,
+    checkDc: 15,
+    progressBeforeHours: 8,
+    contributedHours: 8,
+    progressAfterHours: 16,
+    successesBefore: 0,
+    successesAdded: 1,
+    successesAfter: 1,
+    successfulCheck: true,
+    costCp: 100,
+    completed: true,
+  });
   projectBlock = await service.applyActiveDowntimeBlock(projectBlock.id);
   assert.equal(projectBlock.state, "completed");
+  assert.equal(projectPartner.system.currency.gp, 9);
   for (const ownedActor of [actor, projectPartner]) {
     const result = await service.getPlayerProjectionForUser({
       userId: player.id,
@@ -1084,9 +1201,10 @@ try {
     {
       ...languageProject,
       progressHours: 16,
+      progressSuccesses: 1,
       remainingHours: 0,
       complete: true,
-      progressLabel: "16 / 16 hours",
+      progressLabel: "16 / 16 hours · 1 / 1 successes at DC 15 · 2 gp total",
     },
     "completed project work is derived from durable operation receipts",
   );
@@ -1100,6 +1218,58 @@ try {
     }),
     /choose at least one activity/i,
     "a completed project cannot be reopened accidentally",
+  );
+  const soloProject = await service.saveGuidedDowntimeProject({
+    name: "Repair the Gate",
+    requiredHours: 8,
+    requiredGp: 0,
+    requiredSuccesses: 0,
+    checkDc: 15,
+    skills: [],
+  });
+  let finishEarlyBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationName: "North Gate",
+    hours: 8,
+    actorIds: [actor.id, projectPartner.id],
+    projectIds: [soloProject.id],
+  });
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "finish-early-first",
+    blockId: finishEarlyBlock.id,
+    actorId: actor.id,
+    queue: [
+      {
+        id: "guided-choice",
+        activityId: soloProject.id,
+        hours: 8,
+        skill: "",
+      },
+    ],
+  });
+  finishEarlyBlock = await service.prepareGuidedDowntimeParticipant({
+    blockId: finishEarlyBlock.id,
+    actorId: actor.id,
+  });
+  finishEarlyBlock = await service.applyActiveDowntimeBlock(
+    finishEarlyBlock.id,
+  );
+  assert.equal(finishEarlyBlock.state, "collecting");
+  await assert.rejects(
+    service.cancelActiveDowntimeBlock(finishEarlyBlock.id),
+    /already applied/i,
+    "an individually applied receipt cannot be erased by cancelling the block",
+  );
+  finishEarlyBlock = await service.finishGuidedDowntimeBlock(
+    finishEarlyBlock.id,
+  );
+  assert.equal(finishEarlyBlock.state, "completed");
+  assert.ok(finishEarlyBlock.result.playerReceipts[actor.id]);
+  assert.equal(
+    finishEarlyBlock.result.playerReceipts[projectPartner.id],
+    undefined,
+    "finishing early leaves an absent character unresolved",
   );
   actors.delete(projectPartner.id);
 

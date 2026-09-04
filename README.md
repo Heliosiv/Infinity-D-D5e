@@ -171,10 +171,13 @@ both registered and active.
 
 The default guided flow is **Workbench → Downtime → Open block → Open for
 players**. Each player chooses one activity and clicks **Roll & submit**;
-choosing another activity replaces their selection. Once everyone has submitted,
-the GM clicks **Review results**, chooses each outcome, edits the reports, and
-clicks **Apply results & send reports**. Report edits save before application,
-and **Save report** can save them separately. See the
+choosing another activity replaces their selection. As soon as any character
+submits, the GM can click **Review** for that character, choose the outcome,
+edit the report, and click **Apply results & send report**. That character gets
+the receipt immediately and the same block reopens for everyone still
+outstanding. **Finish without waiting** closes the block after at least one
+result is resolved and no submitted character is awaiting review. Report edits
+save before application, and **Save report** can save them separately. See the
 [downtime guide](docs/DOWNTIME_SYSTEM.md) for projects, existing city-action
 blocks, and the repeatable `npm run ui:audit:downtime` browser gauntlet.
 
@@ -204,11 +207,13 @@ clicks **Roll & submit**. Their controlled Actor makes the visible Foundry
 check; its recorded total is what the GM reviews before choosing the report and
 approved reward.
 
-The **Projects** tab lets the GM define a shared long-term goal—such as learning
-Draconic or rebuilding a watchtower—with a total productive-hour target and
-applicable skills. Include that project when opening a guided block; any number
-of selected characters can choose it, and each of their assigned hours advances
-the same durable total when the GM applies the block.
+The **Projects** tab provides editable presets for crafting or commissioning,
+research, and training. A project defines its total productive hours, total GP
+cost, required successful checks, check DC, and applicable skills. GP is charged
+proportionally as hours are completed; a check at or above the DC adds one
+success. Include the saved project when opening a guided block. Characters can
+contribute at different times, and the shared hours and successes update after
+each individual result is applied.
 
 For standard city-action blocks, the GM locks submissions and generates a durable,
 immutable preview. All hidden checks, DCs, consequences, rewards, operation

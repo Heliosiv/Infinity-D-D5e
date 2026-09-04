@@ -26,10 +26,14 @@ submission before starting another roll.
 If the GM goes offline, the current window keeps and displays the player's
 last choice with submissions disabled. Refresh after the GM returns to continue.
 
-Once everyone has submitted, the GM clicks **Review results**. This closes
-submissions and prepares the reports from the recorded player checks. The GM
-lands on the reports to review them, chooses from the possible outcomes, can rewrite the player report, then clicks
-**Apply results & send reports**. Changing an outcome loads its matching report.
+As soon as one character has submitted, the GM can click **Review** for that
+character. This briefly closes submissions while the exact result is prepared.
+The GM lands on that report, chooses from the possible outcomes, can rewrite the
+player report, then clicks **Apply results & send report**. That character gets
+the receipt immediately and the same block reopens for every unresolved
+character. Late players can submit afterward. **Finish without waiting** closes
+the block when at least one result is resolved and no submitted character is
+still awaiting review. Changing an outcome loads its matching report.
 **Save report** saves an edit separately; applying also saves any visible report
 edits first and stops if a report cannot be saved. Unsaved report edits survive
 an in-window refresh. Player rolls and project hours stay fixed, and results
@@ -141,12 +145,14 @@ an interrupted application instead points to **Verify and recover**.
 
 ## Long-term projects
 
-Use **Downtime Workspace → Projects** to name a project, set its total
-productive-hour target, and choose the skills players may use. A good campaign
-baseline is 160 hours (20 eight-hour days) for learning a language; choose a
-smaller or larger target to suit the task and pace of the campaign. For actual
-automatic ammunition delivery, add an **arrow crafting** activity in the Activities tab;
-a project can instead track a larger commission or other multi-block goal.
+Use **Downtime Workspace → Projects** and choose **Craft or commission**,
+**Research a lead**, or **Train or learn** for an editable starting point. You
+can also create a blank project or select a saved project to edit it. Set the
+total productive hours, total GP cost, required successful checks, check DC,
+and skills players may use. Set successful checks to 0 for work that only needs
+time and GP. For automatic ammunition delivery, use the **arrow crafting**
+activity in the Activities tab; a project can track a larger commission or
+other shared multi-block goal.
 
 Unfinished project details survive in-window refreshes and switching tabs.
 Project targets must be whole numbers from 1 to 10,000 hours. Saving clears the
@@ -154,12 +160,15 @@ form only after the project was accepted. A full library (40 projects) rejects
 another addition explicitly rather than reporting success and dropping it.
 
 When opening a guided block, select any unfinished projects that characters may
-work on. Each character can choose the same project, so concurrent effort is
-added together. One assigned productive hour always adds one project-work hour;
-the player roll and the GM-selected result shape the report, rather than making
-the completion pace swing unpredictably. Progress is calculated from completed
-operation receipts, so it remains accurate after reloads and does not count a
-cancelled or interrupted block.
+work on. GP is divided across the required hours and rounded cumulatively to
+copper, so splitting work across blocks does not increase the total. Each
+applied contribution adds up to its assigned hours; a roll at or above the DC
+adds one success. A failed check still spends the assigned downtime and pays
+that contribution's GP. If all hours are complete before all successes are
+earned, later attempts can add successes without paying the project GP again.
+A project completes only when both targets are met. Progress is checkpointed
+after each individually resolved character, survives reloads and history
+rotation, and excludes cancelled, interrupted, or compensated work.
 
 ## Baseline reward balance
 
@@ -210,10 +219,10 @@ and reward before application.
 
 ## Repeatable downtime gauntlet
 
-Run `npm run ui:audit:downtime` for the browser journey through activity editing,
-draft retention, invalid reward handling, setup, a changed
-player choice, a 240-hour submission, GM review, report editing, a failed save,
-application, and the player receipt. It uses the real screen controllers and
+Run `npm run ui:audit:downtime` for the browser journey through project presets,
+activity editing, draft retention, invalid reward handling, setup, a changed
+player choice, a 240-hour submission, individual GM review, report editing, a
+failed save, application, and the player receipt. It uses the real screen controllers and
 player adapter with isolated campaign doubles. It also checks review layout and
 accessibility at 1040, 720, and 380 pixels. Screenshots are written to
 `output/playwright/downtime/`. The regular `npm run check` suite covers the

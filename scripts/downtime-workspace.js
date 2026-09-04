@@ -14,6 +14,10 @@ import {
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
 import { GUIDED_DOWNTIME_SKILLS } from "./downtime/dispatch.js";
+import {
+  GUIDED_PROJECT_PRESETS,
+  guidedProjectPreset,
+} from "./downtime/projects.js";
 import { guidedWorkPreset, WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
@@ -104,6 +108,11 @@ const PRIMARY_ACTION_COPY = Object.freeze({
     label: "Apply exact plan",
     description: "Apply the reviewed saved plan without rerolling.",
   },
+  prepareParticipant: {
+    label: "Review next submission",
+    description:
+      "Prepare one submitted character while everyone else keeps their place.",
+  },
   recoverBlock: {
     label: "Verify and recover",
     description:
@@ -152,11 +161,13 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
+      prepareParticipant: DowntimeWorkspaceApp._onPrepareParticipant,
       lockBlock: DowntimeWorkspaceApp._onLockBlock,
       planBlock: DowntimeWorkspaceApp._onPlanBlock,
       chooseGuidedOutcome: DowntimeWorkspaceApp._onChooseGuidedOutcome,
       saveGuidedReport: DowntimeWorkspaceApp._onSaveGuidedReport,
       applyBlock: DowntimeWorkspaceApp._onApplyBlock,
+      finishBlock: DowntimeWorkspaceApp._onFinishBlock,
       cancelBlock: DowntimeWorkspaceApp._onCancelBlock,
       recoverBlock: DowntimeWorkspaceApp._onRecoverBlock,
       newSettlement: DowntimeWorkspaceApp._onNewSettlement,
@@ -164,6 +175,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       saveSettlement: DowntimeWorkspaceApp._onSaveSettlement,
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
+      selectGuidedProject: DowntimeWorkspaceApp._onSelectGuidedProject,
+      newGuidedProject: DowntimeWorkspaceApp._onNewGuidedProject,
+      projectPreset: DowntimeWorkspaceApp._onProjectPreset,
       selectGuidedTemplate: DowntimeWorkspaceApp._onSelectGuidedTemplate,
       newGuidedTemplate: DowntimeWorkspaceApp._onNewGuidedTemplate,
       craftingPreset: DowntimeWorkspaceApp._onCraftingPreset,
@@ -236,6 +250,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._creatingTemplate = false;
     this._templateDrafts = new Map();
     this._projectDraft = null;
+    this._selectedProjectId = null;
+    this._creatingProject = true;
     this._busy = false;
     this._statusMessage = "";
     this._errorMessage = "";
@@ -332,6 +348,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       creatingTemplate: this._creatingTemplate,
       templateDrafts: this._templateDrafts,
       projectDraft: this._projectDraft,
+      selectedProjectId: this._selectedProjectId,
+      creatingProject: this._creatingProject,
       actorSelector: this._actorSelectorState,
     });
     if (dataAvailable) {
@@ -340,6 +358,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
     this._selectedTemplateId = context.templateEditor?.id ?? null;
+    this._selectedProjectId = context.projectEditor?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
     this._guided = context.currentBlock?.guided ?? true;
     const reportKeys = new Set();
@@ -834,6 +853,26 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     );
   }
 
+  static async _onPrepareParticipant(_event, target) {
+    const actorId =
+      cleanId(target?.dataset?.actorId) ||
+      cleanId(
+        this.element?.querySelector?.(
+          '[data-action="prepareParticipant"][data-actor-id]',
+        )?.dataset?.actorId,
+      );
+    if (!actorId) return;
+    await this._runCommand(
+      "prepareParticipant",
+      { blockId: this._currentBlockId(), actorId },
+      {
+        pending: "Preparing this character's saved result...",
+        success: "Result ready. Review the report, then apply it.",
+        focus: "#dt-preview-heading",
+      },
+    );
+  }
+
   static async _onLockBlock() {
     const result = await this._runCommand(
       "lockBlock",
@@ -908,7 +947,33 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         "Some results need recovery. Review the recovery notice above.";
       this._pendingFocus = '[data-action="recoverBlock"]';
       if (this.rendered) this.render(false);
+    } else if (applied?.state === "collecting") {
+      this._statusMessage =
+        "Character resolved. The block remains open for everyone else.";
+      this._pendingFocus = "#dt-submissions-heading";
+      if (this.rendered) this.render(false);
     }
+  }
+
+  static async _onFinishBlock() {
+    if (this._busy) return;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Finish this downtime block?" },
+      content:
+        "<p>Resolved characters keep their results. Characters who have not submitted will be left unresolved.</p>",
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "finishBlock",
+      { blockId: this._currentBlockId() },
+      {
+        pending: "Finishing the downtime block...",
+        success:
+          "Downtime block finished with the completed character results.",
+        focus: '[data-action="beginNextBlock"]',
+      },
+    );
   }
 
   static async _onChooseGuidedOutcome(_event, target) {
@@ -1102,6 +1167,45 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
   }
 
+  static _onSelectGuidedProject(_event, target) {
+    if (this._busy) return;
+    const projectId = cleanId(target?.dataset?.projectId);
+    if (!projectId) return;
+    this._selectedProjectId = projectId;
+    this._creatingProject = false;
+    this._projectDraft = null;
+    this._pendingFocus = '[data-form="guided-project"] input[name="name"]';
+    this.render(false);
+  }
+
+  static _onNewGuidedProject() {
+    if (this._busy) return;
+    this._selectedProjectId = null;
+    this._creatingProject = true;
+    this._projectDraft = {
+      name: "",
+      description: "",
+      requiredHours: "40",
+      requiredGp: "100",
+      requiredSuccesses: "3",
+      checkDc: "15",
+      skills: ["ath", "inv"],
+    };
+    this._pendingFocus = '[data-form="guided-project"] input[name="name"]';
+    this.render(false);
+  }
+
+  static _onProjectPreset(_event, target) {
+    if (this._busy) return;
+    const preset = guidedProjectPreset(target?.dataset?.preset);
+    if (!preset) return;
+    this._selectedProjectId = null;
+    this._creatingProject = true;
+    this._projectDraft = preset;
+    this._pendingFocus = '[data-form="guided-project"] input[name="name"]';
+    this.render(false);
+  }
+
   static async _onSaveGuidedProject() {
     if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="guided-project"]');
@@ -1119,6 +1223,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     );
     if (result !== null) {
       this._projectDraft = null;
+      this._selectedProjectId = result.id;
+      this._creatingProject = false;
       if (this.rendered) this.render(false);
     }
   }
@@ -1135,9 +1241,13 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
 function readGuidedProjectForm(form) {
   const data = new FormData(form);
   return {
+    id: cleanId(data.get("id")),
     name: String(data.get("name") ?? ""),
     description: String(data.get("description") ?? ""),
     requiredHours: String(data.get("requiredHours") ?? ""),
+    requiredGp: String(data.get("requiredGp") ?? ""),
+    requiredSuccesses: String(data.get("requiredSuccesses") ?? ""),
+    checkDc: String(data.get("checkDc") ?? ""),
     skills: data.getAll("skills").map(cleanId).filter(Boolean),
   };
 }
@@ -1288,15 +1398,57 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       name: String(project?.name ?? "Project"),
       description: String(project?.description ?? ""),
       requiredHours: positiveInteger(project?.requiredHours, 1),
+      requiredGp: Number(project?.requiredGp ?? 0),
+      requiredSuccesses: positiveInteger(project?.requiredSuccesses, 0),
+      checkDc: positiveInteger(project?.checkDc, 15),
+      skills: array(project?.skills).map(cleanId).filter(Boolean),
       progressHours: Math.max(0, positiveInteger(project?.progressHours, 0)),
+      progressSuccesses: Math.max(
+        0,
+        positiveInteger(project?.progressSuccesses, 0),
+      ),
       remainingHours: Math.max(0, positiveInteger(project?.remainingHours, 0)),
       progressLabel: String(project?.progressLabel ?? ""),
       complete: project?.complete === true,
       checked:
         project?.complete !== true &&
         array(uiState.newBlockDraft?.projectIds).includes(project?.id),
+      source: project,
     }))
     .filter((project) => project.id);
+  const selectedProjectId = cleanId(uiState.selectedProjectId);
+  const selectedProject = guidedProjects.find(
+    (project) => project.id === selectedProjectId,
+  );
+  for (const project of guidedProjects)
+    project.selected = project.id === selectedProject?.id;
+  const projectSource = uiState.projectDraft ??
+    (uiState.creatingProject === false ? selectedProject?.source : null) ?? {
+      name: "",
+      description: "",
+      requiredHours: 40,
+      requiredGp: 100,
+      requiredSuccesses: 3,
+      checkDc: 15,
+      skills: ["ath", "inv"],
+    };
+  const projectEditor = {
+    id:
+      uiState.creatingProject === false
+        ? cleanId(projectSource.id ?? selectedProject?.id)
+        : "",
+    name: String(projectSource.name ?? ""),
+    description: String(projectSource.description ?? ""),
+    requiredHours: String(projectSource.requiredHours ?? 40),
+    requiredGp: String(projectSource.requiredGp ?? 100),
+    requiredSuccesses: String(projectSource.requiredSuccesses ?? 3),
+    checkDc: String(projectSource.checkDc ?? 15),
+    skillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
+      id,
+      label,
+      checked: array(projectSource.skills).includes(id),
+    })),
+  };
   let selectedSettlementId = cleanId(uiState.selectedSettlementId);
   if (!selectedSettlementId && !uiState.creatingSettlement) {
     selectedSettlementId = cleanId(
@@ -1367,6 +1519,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         "Open for players",
         "Ask each assigned player to choose an activity and roll.",
       ],
+      prepareParticipant: [
+        "Review next submission",
+        "Prepare one character now; the block will reopen for everyone else after you apply it.",
+      ],
       lockBlock: [
         "Review results",
         "All players have submitted. Prepare their results for review.",
@@ -1416,15 +1572,16 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     templateEditor,
     hasGuidedTemplates: guidedTemplates.length > 0,
     guidedProjects,
-    newProjectName: String(uiState.projectDraft?.name ?? ""),
-    newProjectDescription: String(uiState.projectDraft?.description ?? ""),
-    newProjectHours: String(uiState.projectDraft?.requiredHours ?? "160"),
-    hasGuidedProjects: guidedProjects.length > 0,
-    projectSkillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
+    projectEditor,
+    projectPresets: GUIDED_PROJECT_PRESETS.map(({ id, label }) => ({
       id,
       label,
-      checked: array(uiState.projectDraft?.skills).includes(id),
     })),
+    newProjectName: projectEditor.name,
+    newProjectDescription: projectEditor.description,
+    newProjectHours: projectEditor.requiredHours,
+    hasGuidedProjects: guidedProjects.length > 0,
+    projectSkillOptions: projectEditor.skillOptions,
     hasSettlements: settlements.length > 0,
     selectedSettlement,
     hasSelectedSettlement: Boolean(selectedSettlement),
@@ -1779,6 +1936,9 @@ function resolvePrimaryActionId({
   if (needsRecovery) return "recoverBlock";
   if (!hasCurrentBlock) return canCreateBlock ? "createBlock" : "";
   if (status === "collecting") {
+    if (currentBlock?.guided && currentBlock?.canPrepareAny) {
+      return "prepareParticipant";
+    }
     const allSubmitted =
       currentBlock?.hasParticipants &&
       currentBlock.submittedCount >= currentBlock.participants.length;
@@ -1869,7 +2029,21 @@ function normalizeCurrentBlock(workflow, root) {
       name: String(row?.name ?? row?.actorName ?? "Unknown character"),
       img: String(row?.img ?? "icons/svg/mystery-man.svg"),
       submitted: row?.submitted === true,
-      submissionLabel: row?.submitted === true ? "Submitted" : "Draft",
+      resolved: row?.resolved === true,
+      canPrepare: row?.canPrepare === true,
+      resolutionLabel: String(
+        row?.resolutionLabel ??
+          (row?.resolved
+            ? "Resolved"
+            : row?.submitted
+              ? "Ready for GM review"
+              : "Waiting for player"),
+      ),
+      submissionLabel: row?.resolved
+        ? "Resolved"
+        : row?.submitted === true
+          ? "Submitted"
+          : "Draft",
       usedHours,
       budgetHours,
       remainingHours: Math.max(
@@ -1959,6 +2133,26 @@ function normalizeCurrentBlock(workflow, root) {
     participants,
     hasParticipants: participants.length > 0,
     submittedCount: participants.filter((row) => row.submitted).length,
+    resolvedCount: positiveInteger(
+      workflow.resolvedCount,
+      participants.filter((row) => row.resolved).length,
+    ),
+    readyCount: positiveInteger(
+      workflow.readyCount,
+      participants.filter((row) => row.canPrepare).length,
+    ),
+    unresolvedCount: positiveInteger(
+      workflow.unresolvedCount,
+      participants.filter((row) => !row.resolved).length,
+    ),
+    firstReadyActorId: cleanId(
+      workflow.firstReadyActorId ??
+        participants.find((row) => row.canPrepare)?.actorId,
+    ),
+    canPrepareAny:
+      workflow.canPrepareAny === true ||
+      participants.some((row) => row.canPrepare),
+    canFinish: workflow.canFinish === true,
     planCharacters,
     hasPlan: planCharacters.length > 0,
     planId: cleanId(workflow.plan?.id ?? workflow.preview?.id),

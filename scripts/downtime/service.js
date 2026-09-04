@@ -53,6 +53,7 @@ import {
   cancelDowntimeBlock,
   claimDowntimeOperation,
   completeDowntimeBlock,
+  continueGuidedDowntimeBlock,
   createDowntimeBlock,
   ensureDowntimeWorkflowAuthority,
   getActiveDowntimeBlock,
@@ -815,6 +816,9 @@ export async function saveGuidedDowntimeProject(payload = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
     const requiredHours = Number(payload.requiredHours);
+    const requiredGp = Number(payload.requiredGp ?? 0);
+    const requiredSuccesses = Number(payload.requiredSuccesses ?? 0);
+    const checkDc = Number(payload.checkDc ?? 15);
     if (
       !Number.isSafeInteger(requiredHours) ||
       requiredHours < 1 ||
@@ -824,17 +828,47 @@ export async function saveGuidedDowntimeProject(payload = {}) {
         "Enter project hours as a whole number from 1 to 10,000.",
       );
     }
+    if (
+      !Number.isFinite(requiredGp) ||
+      requiredGp < 0 ||
+      requiredGp > 100000 ||
+      Math.abs(requiredGp * 100 - Math.round(requiredGp * 100)) > 0.000001
+    ) {
+      throw new Error(
+        "Enter project GP from 0 to 100,000, with at most two decimal places.",
+      );
+    }
+    if (
+      !Number.isSafeInteger(requiredSuccesses) ||
+      requiredSuccesses < 0 ||
+      requiredSuccesses > 1000
+    ) {
+      throw new Error(
+        "Enter required successes as a whole number from 0 to 1,000.",
+      );
+    }
+    if (!Number.isSafeInteger(checkDc) || checkDc < 5 || checkDc > 40) {
+      throw new Error("Enter a check DC as a whole number from 5 to 40.");
+    }
     const project = normalizeGuidedDowntimeProject(payload, {
       fallbackId: payload.id || newId("project"),
     });
-    if (!project || project.skills.length === 0) {
+    if (
+      !project ||
+      (project.requiredSuccesses > 0 && project.skills.length === 0)
+    ) {
       throw new Error(
-        "Enter a project name, total work hours, and at least one applicable skill.",
+        "Enter a project name and choose at least one skill when successful checks are required.",
       );
     }
     await updateDowntimeConfig((current) => {
       const projects = [...current.guidedProjects];
       const index = projects.findIndex((entry) => entry.id === project.id);
+      if (payload.id && index < 0) {
+        throw new Error(
+          "That project is no longer available. Refresh before saving.",
+        );
+      }
       if (index >= 0) projects[index] = project;
       else if (projects.length < GUIDED_DOWNTIME_PROJECT_LIMIT)
         projects.push(project);
@@ -952,13 +986,19 @@ async function openGuidedDowntimeBlock({
   const completedProjectHours = guidedProjectProgressFromStore(
     loadDowntimeWorkflowStore(),
   );
+  const completedProjectSuccesses = guidedProjectSuccessesFromStore(
+    loadDowntimeWorkflowStore(),
+  );
   const projects = [...new Set(Array.isArray(projectIds) ? projectIds : [])]
     .map((projectId) => guidedProjectById(config.guidedProjects, projectId))
     .filter(
       (project) =>
         project &&
-        projectProgressHours(completedProjectHours, project.id) <
-          project.requiredHours,
+        !guidedProjectIsComplete(
+          project,
+          projectProgressHours(completedProjectHours, project.id),
+          projectProgressSuccesses(completedProjectSuccesses, project.id),
+        ),
     );
   if (templates.length === 0 && projects.length === 0)
     throw new Error("Choose at least one activity template.");
@@ -1005,6 +1045,7 @@ export async function openBlockForPlayers(blockId) {
   }
   const sent = new Set();
   for (const participant of block.participants ?? []) {
+    if (participant.resolved === true) continue;
     for (const userId of participant.userIds ?? []) {
       if (
         sent.has(userId) ||
@@ -1032,7 +1073,7 @@ export async function lockActiveDowntimeBlock(blockId) {
       throw new Error("Block not found.");
     if (block.mode === GUIDED_DOWNTIME_MODE && block.state === "collecting") {
       const waiting = block.participants.filter(
-        (participant) => !participant.submitted,
+        (participant) => !participant.resolved && !participant.submitted,
       );
       if (waiting.length) {
         throw new Error(
@@ -1044,6 +1085,43 @@ export async function lockActiveDowntimeBlock(blockId) {
     notifyServiceChanged("block-lock");
     await broadcastPlayerState(locked);
     return locked;
+  });
+}
+
+export async function prepareGuidedDowntimeParticipant({
+  blockId,
+  actorId,
+} = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      block.state !== "collecting"
+    ) {
+      throw new Error("That guided downtime block is not collecting results.");
+    }
+    const participant = participantFor(block, actorId);
+    if (!participant || participant.resolved === true) {
+      throw new Error("Choose an unresolved character from this block.");
+    }
+    if (participant.submitted !== true) {
+      throw new Error(
+        `${participant.actorName} has not submitted downtime yet.`,
+      );
+    }
+    const preparedPlan = await buildGuidedDowntimePlan(block, {
+      actorIds: [participant.actorId],
+    });
+    const locked = await lockDowntimeBlock(block.id, {
+      at: preparedPlan.createdAt,
+    });
+    const planned = await planGuidedDowntimeBlock(locked, {
+      preparedPlan,
+    });
+    return planned;
   });
 }
 
@@ -1376,14 +1454,30 @@ export async function planActiveDowntimeBlock(blockId) {
   });
 }
 
-async function planGuidedDowntimeBlock(block) {
+async function buildGuidedDowntimePlan(block, { actorIds = [] } = {}) {
   const createdAt = now();
   const operations = [];
   const characters = [];
+  const selectedActorIds = new Set(
+    (Array.isArray(actorIds) ? actorIds : []).map(String).filter(Boolean),
+  );
   const projectProgress = guidedProjectProgressFromStore(
     loadDowntimeWorkflowStore(),
   );
-  for (const participant of block.participants ?? []) {
+  const projectSuccesses = guidedProjectSuccessesFromStore(
+    loadDowntimeWorkflowStore(),
+  );
+  const participants = (block.participants ?? []).filter(
+    (participant) =>
+      participant.resolved !== true &&
+      participant.submitted === true &&
+      (selectedActorIds.size === 0 ||
+        selectedActorIds.has(participant.actorId)),
+  );
+  if (participants.length === 0) {
+    throw new Error("Choose a submitted character to review.");
+  }
+  for (const participant of participants) {
     const actor = actorById(participant.actorId);
     const selection = normalizeGuidedActivitySelection(
       participant.guidedSelection,
@@ -1420,11 +1514,18 @@ async function planGuidedDowntimeBlock(block) {
       selectedOutcomeIndex,
       createdAt,
       projectProgress,
+      projectSuccesses,
     });
     if (operation.project) {
       projectProgress.set(
         operation.project.id,
         operation.project.progressAfterHours,
+      );
+    }
+    if (operation.project) {
+      projectSuccesses.set(
+        operation.project.id,
+        operation.project.successesAfter,
       );
     }
     operations.push(operation);
@@ -1436,18 +1537,25 @@ async function planGuidedDowntimeBlock(block) {
       operations: [operation],
     });
   }
-  const planned = await persistDowntimePlan(
-    block.id,
-    {
-      id: newId("guided-plan"),
-      blockId: block.id,
-      mode: GUIDED_DOWNTIME_MODE,
-      createdAt,
-      characters,
-      operations,
-    },
-    { at: createdAt },
-  );
+  return {
+    id: newId("guided-plan"),
+    blockId: block.id,
+    mode: GUIDED_DOWNTIME_MODE,
+    createdAt,
+    characters,
+    operations,
+  };
+}
+
+async function planGuidedDowntimeBlock(
+  block,
+  { actorIds = [], preparedPlan = null } = {},
+) {
+  const plan =
+    preparedPlan ?? (await buildGuidedDowntimePlan(block, { actorIds }));
+  const planned = await persistDowntimePlan(block.id, plan, {
+    at: plan.createdAt,
+  });
   notifyServiceChanged("guided-block-plan");
   await broadcastPlayerState(planned);
   return planned;
@@ -1512,6 +1620,11 @@ export async function chooseGuidedDowntimeOutcome({
           projectProgress: operation.project
             ? new Map([
                 [operation.project.id, operation.project.progressBeforeHours],
+              ])
+            : null,
+          projectSuccesses: operation.project
+            ? new Map([
+                [operation.project.id, operation.project.successesBefore],
               ])
             : null,
         });
@@ -1877,6 +1990,7 @@ async function buildGuidedDowntimeOperation({
   operationId = "",
   reportOverride = "",
   projectProgress = null,
+  projectSuccesses = null,
   targetId = "",
   existingWork = null,
 }) {
@@ -1888,22 +2002,60 @@ async function buildGuidedDowntimeOperation({
       projectProgress,
       activity.id,
     );
-    const contributedHours = block.budgetHours;
+    const successesBefore = projectProgressSuccesses(
+      projectSuccesses,
+      activity.id,
+    );
+    const contributedHours = Math.min(
+      block.budgetHours,
+      Math.max(0, activity.requiredHours - progressBeforeHours),
+    );
     const progressAfterHours = progressBeforeHours + contributedHours;
-    const completed = progressAfterHours >= activity.requiredHours;
+    const successfulCheck =
+      activity.requiredSuccesses > 0 && total >= activity.checkDc;
+    const successesAdded =
+      successfulCheck && successesBefore < activity.requiredSuccesses ? 1 : 0;
+    const successesAfter = successesBefore + successesAdded;
+    const completed = guidedProjectIsComplete(
+      activity,
+      progressAfterHours,
+      successesAfter,
+    );
+    const costCp = guidedProjectContributionCostCp(
+      activity,
+      progressBeforeHours,
+      progressAfterHours,
+    );
+    const walletRead = readWalletStrict(actor.system?.currency);
+    if (!walletRead.ok)
+      throw new Error(`${actor.name}'s currency could not be verified.`);
+    const walletAfter = planWalletDeltaCp(walletRead.wallet, -costCp);
+    if (!walletAfter) {
+      throw new Error(
+        `${actor.name} needs ${formatCp(costCp)} available for this project contribution.`,
+      );
+    }
     const project = {
       id: activity.id,
       name: activity.name,
       requiredHours: activity.requiredHours,
+      requiredGp: activity.requiredGp,
+      requiredSuccesses: activity.requiredSuccesses,
+      checkDc: activity.checkDc,
       progressBeforeHours,
       contributedHours,
       progressAfterHours,
+      successesBefore,
+      successesAdded,
+      successesAfter,
+      successfulCheck,
+      costCp,
       completed,
     };
     const projectProgressLabel = formatGuidedProjectProgress(project);
     return {
       operationId: operationId || `guided-${block.id}-${actor.id}`,
-      kind: "noop",
+      kind: costCp > 0 ? "currency" : "noop",
       mode: GUIDED_DOWNTIME_MODE,
       actorId: actor.id,
       settlementId: "guided-downtime",
@@ -1916,13 +2068,22 @@ async function buildGuidedDowntimeOperation({
       outcomeLabel: outcome.label,
       report,
       project,
-      currencyDeltaCp: 0,
+      currencyDeltaCp: -costCp,
+      walletBefore: walletRead.wallet,
+      walletAfter,
       summary: `${outcome.label}: ${report} ${projectProgressLabel}`,
       check: {
         skill,
         total,
         formula: String(roll?.formula ?? roll?.roll?.formula ?? ""),
-        outcomeTier: "neutral",
+        dc: activity.checkDc,
+        success: successfulCheck,
+        outcomeTier:
+          activity.requiredSuccesses > 0
+            ? successfulCheck
+              ? "success"
+              : "failure"
+            : "neutral",
       },
     };
   }
@@ -2027,15 +2188,56 @@ function guidedProjectProgressFromStore(store) {
   return progress;
 }
 
+function guidedProjectSuccessesFromStore(store) {
+  return new Map(
+    Object.entries(store?.projectSuccesses ?? {}).map(([projectId, count]) => [
+      projectId,
+      Math.max(0, Math.floor(Number(count) || 0)),
+    ]),
+  );
+}
+
 function projectProgressHours(progress, projectId) {
   const value = progress instanceof Map ? progress.get(projectId) : 0;
   return Math.max(0, Math.floor(Number(value) || 0));
 }
 
+function projectProgressSuccesses(progress, projectId) {
+  const value = progress instanceof Map ? progress.get(projectId) : 0;
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function guidedProjectIsComplete(project, hours, successes) {
+  return (
+    Math.max(0, Math.floor(Number(hours) || 0)) >= project.requiredHours &&
+    Math.max(0, Math.floor(Number(successes) || 0)) >= project.requiredSuccesses
+  );
+}
+
+function guidedProjectContributionCostCp(project, beforeHours, afterHours) {
+  const totalCp = Math.round(
+    Math.max(0, Number(project.requiredGp) || 0) * 100,
+  );
+  const requiredHours = Math.max(1, Math.floor(Number(project.requiredHours)));
+  const paidBefore = Math.ceil(
+    (Math.min(requiredHours, Math.max(0, beforeHours)) * totalCp) /
+      requiredHours,
+  );
+  const paidAfter = Math.ceil(
+    (Math.min(requiredHours, Math.max(0, afterHours)) * totalCp) /
+      requiredHours,
+  );
+  return Math.max(0, paidAfter - paidBefore);
+}
+
 function formatGuidedProjectProgress(project) {
   const complete = project.completed ? " Project complete." : "";
   const applied = Math.min(project.progressAfterHours, project.requiredHours);
-  return `${project.contributedHours}h contributed — ${applied}/${project.requiredHours}h.${complete}`;
+  const check = project.requiredSuccesses
+    ? ` ${project.successesAfter}/${project.requiredSuccesses} successful checks.`
+    : "";
+  const cost = project.costCp > 0 ? ` ${formatCp(project.costCp)} paid.` : "";
+  return `${project.contributedHours}h contributed — ${applied}/${project.requiredHours}h.${check}${cost}${complete}`;
 }
 
 function guidedOutcomeIndex(total, count) {
@@ -2229,6 +2431,24 @@ async function applyBlockInternal(blockId) {
     return block;
   }
   const result = buildCompletedResult(block);
+  if (block.mode === GUIDED_DOWNTIME_MODE) {
+    const resolvedNow = new Set(
+      (block.plan?.characters ?? []).map((character) => character.actorId),
+    );
+    const unresolvedRemain = (block.participants ?? []).some(
+      (participant) =>
+        participant.resolved !== true && !resolvedNow.has(participant.actorId),
+    );
+    if (unresolvedRemain) {
+      const continued = await continueGuidedDowntimeBlock(block.id, {
+        result,
+        at: result.completedAt,
+      });
+      notifyServiceChanged("guided-participant-complete");
+      await broadcastPlayerState(continued);
+      return continued;
+    }
+  }
   const completed = await completeDowntimeBlock(block.id, {
     result,
     at: result.completedAt,
@@ -3503,6 +3723,59 @@ export function inspectDowntimeOperationConsequences(operation) {
   };
 }
 
+export async function finishGuidedDowntimeBlock(blockId) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    let block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      block.state !== "collecting"
+    ) {
+      throw new Error("That guided downtime block cannot be finished now.");
+    }
+    const resolved = (block.participants ?? []).filter(
+      (participant) => participant.resolved === true,
+    );
+    const waitingForReview = (block.participants ?? []).filter(
+      (participant) =>
+        participant.resolved !== true && participant.submitted === true,
+    );
+    if (resolved.length === 0) {
+      throw new Error("Resolve at least one character before finishing early.");
+    }
+    if (waitingForReview.length > 0) {
+      throw new Error(
+        `Review ${waitingForReview.map((participant) => participant.actorName).join(", ")} before finishing this block.`,
+      );
+    }
+    block = await lockDowntimeBlock(block.id);
+    block = await persistDowntimePlan(
+      block.id,
+      {
+        id: newId("guided-finish"),
+        blockId: block.id,
+        mode: GUIDED_DOWNTIME_MODE,
+        createdAt: now(),
+        characters: [],
+        operations: [],
+      },
+      { at: now() },
+    );
+    block = await beginDowntimeApplication(block.id);
+    const result = buildCompletedResult(block);
+    result.summary = `${Object.keys(result.playerReceipts).length} character ${Object.keys(result.playerReceipts).length === 1 ? "result" : "results"} resolved individually; remaining characters were left unresolved. Campaign time was not advanced.`;
+    const completed = await completeDowntimeBlock(block.id, {
+      result,
+      at: result.completedAt,
+    });
+    notifyServiceChanged("guided-block-finish");
+    await broadcastCompletedState(completed);
+    return completed;
+  });
+}
+
 export async function cancelActiveDowntimeBlock(blockId) {
   return runServiceMutation(async () => {
     assertAuthority();
@@ -3513,6 +3786,16 @@ export async function cancelActiveDowntimeBlock(blockId) {
       );
       if (cancelled) return cancelled;
       throw new Error("Block not found.");
+    }
+    if (
+      block.mode === GUIDED_DOWNTIME_MODE &&
+      (block.participants ?? []).some(
+        (participant) => participant.resolved === true,
+      )
+    ) {
+      throw new Error(
+        "Some character results are already applied. Finish the block instead of cancelling it.",
+      );
     }
     if (!["collecting", "locked", "planned"].includes(block.state)) {
       throw new Error(
@@ -3542,6 +3825,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     config.settlements[0] ??
     null;
   const projectProgress = guidedProjectProgressFromStore(store);
+  const projectSuccesses = guidedProjectSuccessesFromStore(store);
   return {
     workflowStatus: visibleBlock?.state ?? "idle",
     workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
@@ -3549,13 +3833,26 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     guidedTemplates: structuredClone(config.guidedTemplates),
     guidedProjects: config.guidedProjects.map((project) => {
       const progressHours = projectProgressHours(projectProgress, project.id);
+      const progressSuccesses = projectProgressSuccesses(
+        projectSuccesses,
+        project.id,
+      );
       const requiredHours = project.requiredHours;
       return {
         ...projectGuidedDowntimeProject(project),
         progressHours,
+        progressSuccesses,
         remainingHours: Math.max(0, requiredHours - progressHours),
-        complete: progressHours >= requiredHours,
-        progressLabel: `${Math.min(progressHours, requiredHours)} / ${requiredHours} hours`,
+        complete: guidedProjectIsComplete(
+          project,
+          progressHours,
+          progressSuccesses,
+        ),
+        progressLabel: guidedProjectProgressLabel(
+          project,
+          progressHours,
+          progressSuccesses,
+        ),
       };
     }),
     selectedSettlement: selected
@@ -3624,17 +3921,37 @@ function projectWorkspaceBlock(block) {
   );
   const planningNeedsReview =
     block.state === "locked" && block.planningDraft?.state === "needs-review";
+  const resolvedCount = (block.participants ?? []).filter(
+    (participant) => participant.resolved === true,
+  ).length;
+  const readyParticipants = (block.participants ?? []).filter(
+    (participant) =>
+      participant.resolved !== true && participant.submitted === true,
+  );
+  const firstReadyActorId = readyParticipants[0]?.actorId ?? "";
   return {
     ...block,
     guided: block.mode === GUIDED_DOWNTIME_MODE,
     status: block.state,
     participants: (block.participants ?? []).map((participant) => {
       const plan = byActor.get(participant.actorId);
+      const resolved = participant.resolved === true;
       return {
         actorId: participant.actorId,
         name: participant.actorName,
         img: participant.actorImg,
         submitted: participant.submitted,
+        resolved,
+        canPrepare:
+          block.mode === GUIDED_DOWNTIME_MODE &&
+          block.state === "collecting" &&
+          participant.submitted === true &&
+          !resolved,
+        resolutionLabel: resolved
+          ? "Resolved"
+          : participant.submitted
+            ? "Ready for GM review"
+            : "Waiting for player",
         budgetHours: block.budgetHours,
         usedHours: sumHours(participant.queue),
         queue:
@@ -3645,9 +3962,11 @@ function projectWorkspaceBlock(block) {
                 block.guidedProjects,
               )
             : decorateQueue(participant.queue),
-        resultStatus: plan ? block.state : "",
+        resultStatus: resolved ? "completed" : plan ? block.state : "",
         receipt:
-          block.result?.playerReceipts?.[participant.actorId]?.summary ?? "",
+          block.individualReceipts?.[participant.actorId]?.summary ??
+          block.result?.playerReceipts?.[participant.actorId]?.summary ??
+          "",
       };
     }),
     plan: block.plan
@@ -3664,7 +3983,7 @@ function projectWorkspaceBlock(block) {
               rollLabel: operation.check
                 ? operation.mode === GUIDED_DOWNTIME_MODE
                   ? operation.check.skill
-                    ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}`
+                    ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}${operation.project ? ` vs DC ${operation.project.checkDc}` : ""}`
                     : "No skill check"
                   : `${operation.check.total} vs DC ${operation.check.dc}`
                 : "",
@@ -3691,7 +4010,7 @@ function projectWorkspaceBlock(block) {
                       label: outcome.label,
                       report: outcome.report,
                       rewardLabel: operation.project
-                        ? `${operation.project.contributedHours}h project work`
+                        ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
                         : outcome.rewardGp > 0
                           ? `${outcome.rewardGp} gp`
                           : operation.work
@@ -3704,14 +4023,31 @@ function projectWorkspaceBlock(block) {
           })),
         }
       : null,
-    canLock:
-      block.state === "collecting" &&
-      (block.mode !== GUIDED_DOWNTIME_MODE ||
-        block.participants.every((participant) => participant.submitted)),
-    lockReason:
+    resolvedCount,
+    readyCount: readyParticipants.length,
+    unresolvedCount: Math.max(
+      0,
+      (block.participants ?? []).length - resolvedCount,
+    ),
+    firstReadyActorId,
+    canPrepareAny:
       block.mode === GUIDED_DOWNTIME_MODE &&
-      block.participants.some((participant) => !participant.submitted)
-        ? "Waiting for every character to choose an activity and submit."
+      block.state === "collecting" &&
+      readyParticipants.length > 0,
+    canFinish:
+      block.mode === GUIDED_DOWNTIME_MODE &&
+      block.state === "collecting" &&
+      resolvedCount > 0 &&
+      readyParticipants.length === 0,
+    canLock:
+      block.mode !== GUIDED_DOWNTIME_MODE && block.state === "collecting",
+    lockReason:
+      block.mode === GUIDED_DOWNTIME_MODE && block.state === "collecting"
+        ? readyParticipants.length > 0
+          ? "Review submitted characters now; everyone else can finish later."
+          : resolvedCount > 0
+            ? "Resolved characters have their reports. Keep waiting, or finish the block without absent players."
+            : "Players can submit independently. Review each character as soon as they are ready."
         : "",
     canPlan: block.state === "locked" && !planningNeedsReview,
     planReason: planningNeedsReview
@@ -3719,7 +4055,9 @@ function projectWorkspaceBlock(block) {
         "A hidden roll was interrupted. Cancel this block; it cannot reroll that check."
       : "",
     canApply: block.state === "planned",
-    canCancel: ["collecting", "locked", "planned"].includes(block.state),
+    canCancel:
+      resolvedCount === 0 &&
+      ["collecting", "locked", "planned"].includes(block.state),
     canRecover: ["applying", "needs-review"].includes(block.state),
     canOpenForPlayers: block.state === "collecting",
   };
@@ -3762,9 +4100,11 @@ export async function getPlayerProjectionForUser({
   const actor = actorById(selected.actorId);
   if (active.mode === GUIDED_DOWNTIME_MODE) {
     const queue = selected.queue ?? [];
+    const individuallyResolved = selected.resolved === true;
     const projectProgress = guidedProjectProgressFromStore(store);
+    const projectSuccesses = guidedProjectSuccessesFromStore(store);
     return {
-      status: active.state,
+      status: individuallyResolved ? "completed" : active.state,
       mode: GUIDED_DOWNTIME_MODE,
       hasActiveBlock: true,
       settlementName: active.locationName,
@@ -3796,6 +4136,8 @@ export async function getPlayerProjectionForUser({
             { ...project, kind: "project" },
             active.budgetHours,
             projectProgressHours(projectProgress, project.id),
+            projectProgressSuccesses(projectSuccesses, project.id),
+            actor,
           ),
         ),
       ],
@@ -3806,10 +4148,19 @@ export async function getPlayerProjectionForUser({
       ),
       rawQueue: queue,
       submitted: selected.submitted === true,
-      canSubmit: active.state === "collecting" && selected.submitted !== true,
-      canRecall: active.state === "collecting" && selected.submitted === true,
+      canSubmit:
+        !individuallyResolved &&
+        active.state === "collecting" &&
+        selected.submitted !== true,
+      canRecall:
+        !individuallyResolved &&
+        active.state === "collecting" &&
+        selected.submitted === true,
       needsRecovery: active.state === "needs-review",
-      receipt: active.result?.playerReceipts?.[selected.actorId] ?? null,
+      receipt:
+        active.individualReceipts?.[selected.actorId] ??
+        active.result?.playerReceipts?.[selected.actorId] ??
+        null,
     };
   }
   const settlement = settlementForBlock(active, config);
@@ -4141,6 +4492,12 @@ async function submitGuidedDowntimeChoice({
   }
   if (
     block.participants.find((participant) => participant.actorId === actor.id)
+      ?.resolved
+  ) {
+    throw new Error("This character's downtime has already been resolved.");
+  }
+  if (
+    block.participants.find((participant) => participant.actorId === actor.id)
       ?.submitted
   ) {
     throw new Error(
@@ -4152,6 +4509,28 @@ async function submitGuidedDowntimeChoice({
     block.guidedProjects,
     selection.templateId,
   );
+  if (activity?.kind === "project") {
+    const store = loadDowntimeWorkflowStore();
+    const progressHours = projectProgressHours(
+      guidedProjectProgressFromStore(store),
+      activity.id,
+    );
+    const afterHours = Math.min(
+      activity.requiredHours,
+      progressHours + block.budgetHours,
+    );
+    const costCp = guidedProjectContributionCostCp(
+      activity,
+      progressHours,
+      afterHours,
+    );
+    const wallet = readWalletStrict(actor.system?.currency);
+    if (!wallet.ok || totalWalletCp(wallet.wallet) < costCp) {
+      throw new Error(
+        `${actor.name} needs ${formatCp(costCp)} available for this project contribution.`,
+      );
+    }
+  }
   const workQuote = quoteGuidedWork({
     actor,
     activity,
@@ -4227,6 +4606,9 @@ export async function recallSubmissionAuthoritatively({
     const participant = participantFor(block, actorId);
     if (!actor || !participant || !userOwnsDowntimeActor(user, actor)) {
       throw new Error("You do not own that eligible character.");
+    }
+    if (participant.resolved === true) {
+      throw new Error("This character's downtime has already been resolved.");
     }
     const prior = block.requests?.[requestId];
     if (prior) {
@@ -4588,7 +4970,9 @@ function completedPlayerProjection(history, user, actorId) {
 
 function buildCompletedResult(block) {
   const completedAt = now();
-  const playerReceipts = {};
+  const playerReceipts = {
+    ...(block.individualReceipts ?? {}),
+  };
   for (const character of block.plan?.characters ?? []) {
     const activities = character.operations.map((operation) => ({
       id: operation.operationId,
@@ -4598,7 +4982,7 @@ function buildCompletedResult(block) {
       image: operation.activityImage ?? "",
       report: operation.report ?? "",
       rewardLabel: operation.project
-        ? `${operation.project.contributedHours} hours contributed to ${operation.project.name}.`
+        ? `${operation.project.contributedHours} hours contributed to ${operation.project.name}.${operation.project.successesAdded ? " The check succeeded." : operation.project.requiredSuccesses ? " The check did not add a success." : ""}${operation.project.costCp ? ` ${formatCp(operation.project.costCp)} paid.` : ""}`
         : operation.work
           ? guidedWorkReceipt(operation.work)
           : Number(operation.currencyDeltaCp) > 0
@@ -4622,17 +5006,34 @@ function buildCompletedResult(block) {
   };
 }
 
-function projectGuidedActivity(activity, hours, progressHours = 0) {
+function projectGuidedActivity(
+  activity,
+  hours,
+  progressHours = 0,
+  progressSuccesses = 0,
+  actor = null,
+) {
   const project = activity.kind === "project";
+  const afterHours = project
+    ? Math.min(activity.requiredHours, progressHours + hours)
+    : progressHours;
+  const projectCostCp = project
+    ? guidedProjectContributionCostCp(activity, progressHours, afterHours)
+    : 0;
+  const wallet = actor ? readWalletStrict(actor.system?.currency) : null;
+  const affordable =
+    !project ||
+    !actor ||
+    (wallet?.ok && totalWalletCp(wallet.wallet) >= projectCostCp);
   return {
     id: activity.id,
     label: activity.name,
     description: project
-      ? `${activity.description || "Long-term project."} ${Math.min(progressHours, activity.requiredHours)} / ${activity.requiredHours} hours complete.`
+      ? `${activity.description || "Long-term project."} ${guidedProjectProgressLabel(activity, progressHours, progressSuccesses)}.`
       : activity.description,
     category: project ? "project" : "guided",
     icon: "fa-solid fa-compass",
-    available: true,
+    available: affordable,
     fixedHours: hours,
     skills: activity.skills.map((skill) => ({
       id: skill,
@@ -4642,7 +5043,33 @@ function projectGuidedActivity(activity, hours, progressHours = 0) {
     hasSkills: activity.skills.length > 0,
     image: activity.image,
     project,
+    ...(project
+      ? {
+          costLabel:
+            projectCostCp > 0
+              ? `Spend ${formatCp(projectCostCp)} for this contribution`
+              : "No GP due for this contribution",
+          availabilityReason: affordable
+            ? ""
+            : `You need ${formatCp(projectCostCp)} available for this contribution.`,
+          progressHours,
+          progressSuccesses,
+          requiredHours: activity.requiredHours,
+          requiredSuccesses: activity.requiredSuccesses,
+          checkDc: activity.checkDc,
+        }
+      : {}),
   };
+}
+
+function guidedProjectProgressLabel(project, hours, successes) {
+  const hourLabel = `${Math.min(hours, project.requiredHours)} / ${project.requiredHours} hours`;
+  const successLabel = project.requiredSuccesses
+    ? ` · ${Math.min(successes, project.requiredSuccesses)} / ${project.requiredSuccesses} successes at DC ${project.checkDc}`
+    : "";
+  const gpLabel =
+    project.requiredGp > 0 ? ` · ${project.requiredGp} gp total` : "";
+  return `${hourLabel}${successLabel}${gpLabel}`;
 }
 
 function decorateGuidedQueue(queue, templates, projects = []) {
@@ -4754,10 +5181,12 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   getWorkspaceProjection,
   createBlock: openDowntimeBlock,
   openForPlayers: ({ blockId }) => openBlockForPlayers(blockId),
+  prepareParticipant: (payload) => prepareGuidedDowntimeParticipant(payload),
   lockBlock: ({ blockId }) => lockActiveDowntimeBlock(blockId),
   planBlock: ({ blockId }) => planActiveDowntimeBlock(blockId),
   chooseGuidedOutcome: (payload) => chooseGuidedDowntimeOutcome(payload),
   applyBlock: ({ blockId }) => applyActiveDowntimeBlock(blockId),
+  finishBlock: ({ blockId }) => finishGuidedDowntimeBlock(blockId),
   cancelBlock: ({ blockId }) => cancelActiveDowntimeBlock(blockId),
   recoverBlock: ({ blockId }) => recoverActiveDowntimeBlock(blockId),
   saveSettlement: saveSettlementProfile,

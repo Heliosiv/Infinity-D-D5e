@@ -3547,6 +3547,10 @@ function downtimeWorkspaceCharacterPickerBusyContext() {
 }
 
 function downtimeWorkspaceProjectEditorContext() {
+  const skillOptions = GUIDED_DOWNTIME_SKILLS.map((row) => ({
+    ...row,
+    checked: row.id === "arc",
+  }));
   return downtimeWorkspaceBaseContext({
     view: "projects",
     viewCurrent: false,
@@ -3563,10 +3567,22 @@ function downtimeWorkspaceProjectEditorContext() {
       },
     ],
     hasGuidedProjects: true,
-    projectSkillOptions: GUIDED_DOWNTIME_SKILLS.map((row) => ({
-      ...row,
-      checked: row.id === "arc",
-    })),
+    projectPresets: [
+      { id: "craft", label: "Craft or commission" },
+      { id: "research", label: "Research a lead" },
+      { id: "training", label: "Train or learn" },
+    ],
+    projectEditor: {
+      id: "",
+      name: "Restore the observatory",
+      description: "Rebuild the telescope and chart the northern sky.",
+      requiredHours: "80",
+      requiredGp: "100",
+      requiredSuccesses: "3",
+      checkDc: "15",
+      skillOptions,
+    },
+    projectSkillOptions: skillOptions,
   });
 }
 

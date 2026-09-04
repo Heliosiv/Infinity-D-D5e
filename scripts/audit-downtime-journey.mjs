@@ -126,6 +126,7 @@ try {
     const gmAdapter = {
       saveGuidedProject: async (payload) => {
         state.projectSaves = (state.projectSaves || 0) + 1;
+        state.lastProjectSave = structuredClone(payload);
         return { ...payload, id: "project-observatory" };
       },
       saveGuidedTemplate: async (payload) => {
@@ -190,6 +191,10 @@ try {
         };
         return state.block;
       },
+      prepareParticipant: async () => {
+        state.block.status = "locked";
+        return gmAdapter.planBlock();
+      },
       chooseGuidedOutcome: async (payload) => {
         if (state.failSave)
           throw new Error("Test report save interrupted. Refresh and retry.");
@@ -235,6 +240,8 @@ try {
           submitted: true,
           queue,
           usedHours: state.block.hours,
+          canPrepare: true,
+          resolutionLabel: "Ready for GM review",
         };
       },
       rollSkill: async () => {
@@ -301,6 +308,36 @@ try {
 
   await page.locator('[data-action="setView"][data-view="projects"]').click();
   await page
+    .locator('[data-action="projectPreset"][data-preset="craft"]')
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page
+      .getByLabel("Total productive hours", { exact: true })
+      .inputValue(),
+    "40",
+  );
+  assert.equal(
+    await page
+      .getByLabel("Total project cost (gp)", { exact: true })
+      .inputValue(),
+    "100",
+  );
+  assert.equal(
+    await page
+      .getByLabel("Successful checks required", { exact: true })
+      .inputValue(),
+    "3",
+  );
+  assert.equal(
+    await page.getByLabel("Check DC", { exact: true }).inputValue(),
+    "15",
+  );
+  await page.screenshot({
+    path: path.join(out, "gm-project-preset-1040.png"),
+    fullPage: true,
+  });
+  await page
     .getByLabel("Project name", { exact: true })
     .fill("Restore the observatory");
   await page.getByLabel("Total productive hours", { exact: true }).fill("0");
@@ -338,6 +375,17 @@ try {
   );
   await page.locator('[data-action="saveGuidedProject"]').click();
   await page.waitForFunction(() => journey.state.projectSaves === 1);
+  assert.deepEqual(await page.evaluate(() => journey.state.lastProjectSave), {
+    id: "",
+    name: "Restore the observatory",
+    description:
+      "Make, repair, or commission a substantial item over several downtime blocks.",
+    requiredHours: "80",
+    requiredGp: "100",
+    requiredSuccesses: "3",
+    checkDc: "15",
+    skills: ["arc", "ath", "inv"],
+  });
   await page.evaluate(() => journey.app.rendering);
   assert.equal(
     await page.getByLabel("Project name", { exact: true }).inputValue(),
@@ -516,7 +564,7 @@ try {
   assert.equal(await page.evaluate(() => journey.state.rolls), 1);
   assert.equal(await page.evaluate(() => journey.state.queue[0].hours), 240);
   await page.evaluate(() => journey.mount("workspace"));
-  await page.locator('[data-action="lockBlock"]').click();
+  await page.locator('[data-action="prepareParticipant"]').first().click();
   await page.waitForFunction(() =>
     document.querySelector("[data-guided-report]"),
   );
@@ -620,7 +668,7 @@ try {
   assert.equal(await page.evaluate(() => journey.state.error ?? ""), "");
   assert.deepEqual(errors, []);
   console.log(
-    "Downtime browser gauntlet passed: setup, replacement choice, 240-hour roll, GM review, draft refresh, failed-save stop, save, apply, receipt; 3 responsive/accessibility sizes.",
+    "Downtime browser gauntlet passed: editable project preset, setup, replacement choice, 240-hour roll, individual GM review, draft refresh, failed-save stop, save, apply, receipt; 3 responsive/accessibility sizes.",
   );
 } catch (error) {
   const page = browser.contexts()[0]?.pages()[0];

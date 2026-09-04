@@ -110,10 +110,15 @@
           <button type="button" class="dt-button {{#if primaryAction.openForPlayers}}dt-button--primary dt-button--next{{/if}}" data-action="openForPlayers" {{#if guided}}{{#unless currentBlock.canOpenForPlayers}}hidden{{/unless}}{{/if}} {{#if primaryAction.openForPlayers}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open for players
           </button>
-          <button type="button" class="dt-button {{#if primaryAction.lockBlock}}dt-button--primary dt-button--next{{/if}}" data-action="lockBlock" {{#if guided}}{{#unless currentBlock.canOpenForPlayers}}hidden{{/unless}}{{/if}} {{#if primaryAction.lockBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          {{#if guided}}
+          <button type="button" class="dt-button {{#if primaryAction.prepareParticipant}}dt-button--primary dt-button--next{{/if}}" data-action="prepareParticipant" data-actor-id="{{currentBlock.firstReadyActorId}}" {{#if primaryAction.prepareParticipant}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canPrepareAny}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-user-check" aria-hidden="true"></i> Review next submission
+          </button>
+          {{/if}}
+          <button type="button" class="dt-button {{#if primaryAction.lockBlock}}dt-button--primary dt-button--next{{/if}}" data-action="lockBlock" {{#if guided}}hidden{{/if}} {{#if primaryAction.lockBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.lockReason}}" {{#unless currentBlock.canLock}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-lock" aria-hidden="true"></i> {{#if guided}}Review results{{else}}Lock submissions{{/if}}
           </button>
-          <button type="button" class="dt-button {{#if primaryAction.planBlock}}dt-button--primary dt-button--next{{/if}}" data-action="planBlock" {{#if guided}}{{#unless currentBlock.canPlan}}hidden{{/unless}}{{/if}} {{#if primaryAction.planBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
+          <button type="button" class="dt-button {{#if primaryAction.planBlock}}dt-button--primary dt-button--next{{/if}}" data-action="planBlock" {{#if guided}}hidden{{/if}} {{#if primaryAction.planBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.planReason}}" {{#unless currentBlock.canPlan}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> {{#if guided}}Prepare results{{else}}Generate preview{{/if}}
           </button>
           <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if guided}}{{#unless currentBlock.canApply}}hidden{{/unless}}{{/if}} {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
@@ -122,6 +127,11 @@
           <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#if guided}}{{#unless currentBlock.canCancel}}hidden{{/unless}}{{/if}} {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
           </button>
+          {{#if currentBlock.canFinish}}
+          <button type="button" class="dt-button" data-action="finishBlock" {{#if busy}}disabled{{/if}}>
+            <i class="fa-solid fa-flag-checkered" aria-hidden="true"></i> Finish without waiting
+          </button>
+          {{/if}}
           {{#if currentBlock.canStartNext}}
           <button type="button" class="dt-button {{#if primaryAction.beginNextBlock}}dt-button--primary dt-button--next{{/if}}" data-action="beginNextBlock" {{#if primaryAction.beginNextBlock}}aria-describedby="dt-next-action"{{/if}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Start next block
@@ -136,17 +146,17 @@
               <p class="dt-eyebrow">{{#if guided}}Player choices{{else}}Player queues{{/if}}</p>
               <h3 id="dt-submissions-heading">Submissions</h3>
             </div>
-            <span>{{currentBlock.submittedCount}} / {{currentBlock.participants.length}} submitted</span>
+            <span>{{#if guided}}{{currentBlock.resolvedCount}} resolved · {{currentBlock.readyCount}} ready{{else}}{{currentBlock.submittedCount}} / {{currentBlock.participants.length}} submitted{{/if}}</span>
           </div>
           {{#if currentBlock.hasParticipants}}
           <div class="dt-participant-grid">
             {{#each currentBlock.participants}}
-            <article class="dt-participant {{#if submitted}}is-submitted{{/if}}">
+            <article class="dt-participant {{#if submitted}}is-submitted{{/if}} {{#if resolved}}is-resolved{{/if}}">
               <header>
                 <img src="{{img}}" alt="" />
                 <div>
                   <h4>{{name}}</h4>
-                  <span>{{submissionLabel}} · {{usedHours}} / {{budgetHours}} hours</span>
+                  <span>{{#if ../guided}}{{resolutionLabel}}{{else}}{{submissionLabel}}{{/if}} · {{usedHours}} / {{budgetHours}} hours</span>
                 </div>
                 <strong>{{remainingHours}}h left</strong>
               </header>
@@ -163,6 +173,7 @@
               <p class="dt-inline-empty">No activities queued.</p>
               {{/if}}
               {{#if hasReceipt}}<p class="dt-receipt-summary">{{receipt}}</p>{{/if}}
+              {{#if canPrepare}}<button type="button" class="dt-button dt-button--primary" data-action="prepareParticipant" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}><i class="fa-solid fa-user-check" aria-hidden="true"></i> Review {{name}}</button>{{/if}}
             </article>
             {{/each}}
           </div>
@@ -238,7 +249,7 @@
           <ol>
             <li><strong>Set up:</strong> choose a location, hours, characters, and activities.</li>
             <li><strong>Player rolls:</strong> open the window for players; each chooses one activity and clicks Roll &amp; submit.</li>
-            <li><strong>GM review:</strong> click Review results, choose each outcome, edit the reports, then apply rewards and send reports.</li>
+            <li><strong>GM review:</strong> review and apply each submitted character on their own. The block stays open for everyone else.</li>
           </ol>
           <p><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Use Recovery only when this workspace reports an interrupted Apply. Restore this guide from Infinity Settings.</p>
         </aside>
@@ -482,30 +493,36 @@
     <section class="dt-settlement-layout" aria-labelledby="dt-projects-heading">
       <aside class="dt-rail">
         <div class="dt-rail__head">
-          <div><p class="dt-eyebrow">Shared long-term work</p><h3 id="dt-projects-heading">Projects</h3></div>
+          <div><p class="dt-eyebrow">Reusable player choices</p><h3 id="dt-projects-heading">Projects</h3></div>
+          <button type="button" class="dt-icon-button" data-action="newGuidedProject" title="New project" aria-label="New project" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
         </div>
         {{#if hasGuidedProjects}}
-        <ol class="dt-rail__list">
+        <ul class="dt-rail__list">
           {{#each guidedProjects}}
-          <li class="dt-rail__item {{#if complete}}is-muted{{/if}}">
-            <span><strong>{{name}}</strong><small>{{progressLabel}}{{#if complete}} · Complete{{/if}}</small></span>
-          </li>
+          <li><button type="button" data-action="selectGuidedProject" data-project-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}><strong>{{name}}</strong><span>{{progressLabel}}{{#if complete}} · Complete{{/if}}</span></button></li>
           {{/each}}
-        </ol>
+        </ul>
         {{else}}
-        <p class="dt-inline-empty">Create a project, then include it in a guided downtime block.</p>
+        <p class="dt-inline-empty">Pick a preset or create a project, then include it in a downtime block.</p>
         {{/if}}
+        <div class="dt-form__actions dt-project-presets" aria-label="Project presets">
+          {{#each projectPresets}}<button type="button" class="dt-button" data-action="projectPreset" data-preset="{{id}}" {{#if ../busy}}disabled{{/if}}>Use {{label}}</button>{{/each}}
+        </div>
       </aside>
       <form class="dt-form" data-form="guided-project" aria-labelledby="dt-project-create-heading">
+        <input type="hidden" name="id" value="{{projectEditor.id}}" />
         <div class="dt-form__head">
-          <div><p class="dt-eyebrow">New project</p><h3 id="dt-project-create-heading">Track shared progress</h3></div>
-          <p>Project pacing is one productive hour of progress per character. Rolls shape the GM report, not the number of hours earned.</p>
+          <div><p class="dt-eyebrow">{{#if projectEditor.id}}Edit project{{else}}New project{{/if}}</p><h3 id="dt-project-create-heading">{{#if projectEditor.name}}{{projectEditor.name}}{{else}}Set the requirements{{/if}}</h3></div>
+          <p>Players pay the GP gradually as hours are completed. A check at or above the DC adds one success. Failed checks still use the assigned downtime and pay that contribution's GP.</p>
         </div>
-        <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" value="{{newProjectName}}" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
-        <label class="dt-field dt-field--wide"><span>Project description</span><textarea name="description" aria-label="Project description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}>{{newProjectDescription}}</textarea></label>
-        <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" aria-label="Total productive hours" aria-describedby="dt-project-hours-help" min="1" max="10000" step="1" value="{{newProjectHours}}" required {{#if busy}}disabled{{/if}} /><small id="dt-project-hours-help">160 hours is 20 eight-hour days; set the pace that fits your campaign.</small></label>
-        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one, then click Roll &amp; submit.</p><div class="dt-chip-grid">{{#each projectSkillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
-        <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save project</button></footer>
+        <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" value="{{projectEditor.name}}" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
+        <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Project description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}>{{projectEditor.description}}</textarea></label>
+        <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" aria-label="Total productive hours" min="1" max="10000" step="1" value="{{projectEditor.requiredHours}}" required {{#if busy}}disabled{{/if}} /><small>Eight productive hours is one workday.</small></label>
+        <label class="dt-field"><span>Total project cost (gp)</span><input type="number" name="requiredGp" aria-label="Total project cost (gp)" min="0" max="100000" step="0.01" value="{{projectEditor.requiredGp}}" required {{#if busy}}disabled{{/if}} /><small>This total is divided across the required hours.</small></label>
+        <label class="dt-field"><span>Successful checks required</span><input type="number" name="requiredSuccesses" aria-label="Successful checks required" min="0" max="1000" step="1" value="{{projectEditor.requiredSuccesses}}" required {{#if busy}}disabled{{/if}} /><small>Use 0 for a project that only needs time and GP.</small></label>
+        <label class="dt-field"><span>Check DC</span><input type="number" name="checkDc" aria-label="Check DC" min="5" max="40" step="1" value="{{projectEditor.checkDc}}" required {{#if busy}}disabled{{/if}} /></label>
+        <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one for each contribution. Choose at least one if successes are required.</p><div class="dt-chip-grid">{{#each projectEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{#if projectEditor.id}}Save changes{{else}}Add project{{/if}}</button></footer>
       </form>
     </section>
     {{/if}}

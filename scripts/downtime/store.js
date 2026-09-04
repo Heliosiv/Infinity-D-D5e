@@ -57,6 +57,7 @@ const OPERATION_TERMINAL_STATES = new Set([
   "skipped",
   "compensated",
 ]);
+const OPERATION_PROGRESS_STATES = new Set(["applied", "skipped"]);
 const RECOVERED_OPERATION_RESOLUTION = Symbol(
   "recovered-downtime-operation-resolution",
 );
@@ -679,18 +680,52 @@ export function normalizeDowntimeBlock(raw) {
 function projectContributionsFromBlock(block) {
   const contributions = {};
   if (block?.state !== "completed") return contributions;
-  for (const operation of block.plan?.operations ?? []) {
-    if (block.operationLedger?.[operation.operationId]?.state !== "applied") {
-      continue;
+  for (const segment of completedBlockSegments(block)) {
+    for (const operation of segment.plan?.operations ?? []) {
+      if (
+        !OPERATION_PROGRESS_STATES.has(
+          segment.operationLedger?.[operation.operationId]?.state,
+        )
+      )
+        continue;
+      const projectId = toId(operation?.project?.id);
+      const hours = nonNegativeInteger(operation?.project?.contributedHours);
+      if (!projectId || hours < 1) continue;
+      contributions[projectId] = nonNegativeInteger(
+        (contributions[projectId] ?? 0) + hours,
+      );
     }
-    const projectId = toId(operation?.project?.id);
-    const hours = nonNegativeInteger(operation?.project?.contributedHours);
-    if (!projectId || hours < 1) continue;
-    contributions[projectId] = nonNegativeInteger(
-      (contributions[projectId] ?? 0) + hours,
-    );
   }
   return contributions;
+}
+
+function projectSuccessesFromBlock(block) {
+  const successes = {};
+  if (block?.state !== "completed") return successes;
+  for (const segment of completedBlockSegments(block)) {
+    for (const operation of segment.plan?.operations ?? []) {
+      if (
+        !OPERATION_PROGRESS_STATES.has(
+          segment.operationLedger?.[operation.operationId]?.state,
+        )
+      )
+        continue;
+      const projectId = toId(operation?.project?.id);
+      const added = nonNegativeInteger(operation?.project?.successesAdded);
+      if (!projectId || added < 1) continue;
+      successes[projectId] = nonNegativeInteger(
+        (successes[projectId] ?? 0) + added,
+      );
+    }
+  }
+  return successes;
+}
+
+function completedBlockSegments(block) {
+  return [
+    ...(Array.isArray(block?.resolvedSegments) ? block.resolvedSegments : []),
+    block,
+  ];
 }
 
 function normalizeProjectProgress(raw, history = []) {
@@ -715,6 +750,28 @@ function normalizeProjectProgress(raw, history = []) {
   return progress;
 }
 
+function normalizeProjectSuccesses(raw, history = []) {
+  const successes = {};
+  if (isPlainObject(raw)) {
+    for (const [rawProjectId, rawSuccesses] of Object.entries(raw)) {
+      const projectId = toId(rawProjectId);
+      const count = nonNegativeInteger(rawSuccesses);
+      if (projectId && count > 0) successes[projectId] = count;
+    }
+    return successes;
+  }
+  for (const block of history) {
+    for (const [projectId, count] of Object.entries(
+      projectSuccessesFromBlock(block),
+    )) {
+      successes[projectId] = nonNegativeInteger(
+        (successes[projectId] ?? 0) + count,
+      );
+    }
+  }
+  return successes;
+}
+
 function normalizeWorkProgress(raw) {
   return Object.fromEntries(
     Object.entries(isPlainObject(raw) ? raw : {}).filter(
@@ -736,6 +793,7 @@ function defaultWorkflowStore() {
     configCheckpoint: null,
     activeBlock: null,
     projectProgress: {},
+    projectSuccesses: {},
     history: [],
   };
 }
@@ -765,6 +823,7 @@ export function normalizeDowntimeWorkflowStore(raw) {
         ? activeBlock
         : null,
     projectProgress: normalizeProjectProgress(raw.projectProgress, history),
+    projectSuccesses: normalizeProjectSuccesses(raw.projectSuccesses, history),
     ...(raw.workProgress
       ? { workProgress: normalizeWorkProgress(raw.workProgress) }
       : {}),
@@ -799,13 +858,27 @@ function isPersistedEnvelope(raw) {
       configCheckpoint: configCheckpoint.raw,
     };
     if (persistedValuesEqual(raw, current)) return true;
-    const { projectProgress: _projectProgress, ...legacy } = current;
+    const { projectSuccesses: _projectSuccessesOnly, ...withoutSuccesses } =
+      current;
+    if (persistedValuesEqual(raw, withoutSuccesses)) return true;
+    const {
+      projectProgress: _projectProgress,
+      projectSuccesses: _projectSuccesses,
+      ...legacy
+    } = current;
     return persistedValuesEqual(raw, legacy);
   }
   const { configCheckpoint: _configCheckpoint, ...withoutCheckpoint } =
     normalized;
   if (persistedValuesEqual(raw, withoutCheckpoint)) return true;
-  const { projectProgress: _projectProgress, ...legacy } = withoutCheckpoint;
+  const { projectSuccesses: _projectSuccessesOnly, ...withoutSuccesses } =
+    withoutCheckpoint;
+  if (persistedValuesEqual(raw, withoutSuccesses)) return true;
+  const {
+    projectProgress: _projectProgress,
+    projectSuccesses: _projectSuccesses,
+    ...legacy
+  } = withoutCheckpoint;
   return persistedValuesEqual(raw, legacy);
 }
 
@@ -1463,7 +1536,7 @@ function guidedPlanIdentity(plan) {
 function assertImmutablePlan(
   before,
   nextStore,
-  { allowGuidedReview = false } = {},
+  { allowGuidedReview = false, allowGuidedContinuation = false } = {},
 ) {
   if (!before?.plan) return;
   const after =
@@ -1483,6 +1556,25 @@ function assertImmutablePlan(
     persistedValuesEqual(
       guidedPlanIdentity(before.plan),
       guidedPlanIdentity(after.plan),
+    )
+  )
+    return;
+  const continuedSegment = after?.resolvedSegments?.at?.(-1);
+  if (
+    allowGuidedContinuation &&
+    before.mode === "guided" &&
+    before.state === "applying" &&
+    after?.mode === "guided" &&
+    after.state === "collecting" &&
+    after.plan === null &&
+    Object.keys(after.operationLedger ?? {}).length === 0 &&
+    Object.values(before.operationLedger ?? {}).every((record) =>
+      OPERATION_TERMINAL_STATES.has(record.state),
+    ) &&
+    persistedValuesEqual(continuedSegment?.plan, before.plan) &&
+    persistedValuesEqual(
+      continuedSegment?.operationLedger,
+      before.operationLedger,
     )
   )
     return;
@@ -2188,6 +2280,141 @@ export function markDowntimeNeedsReview(blockId, reason, options = {}) {
   });
 }
 
+function applyCompletedPlanProgress(store, block) {
+  for (const operation of block.plan?.operations ?? []) {
+    const state = block.operationLedger?.[operation.operationId]?.state;
+    const project = operation.project;
+    if (project && OPERATION_PROGRESS_STATES.has(state)) {
+      const projectId = toId(project.id);
+      const contributedHours = nonNegativeInteger(project.contributedHours);
+      const successesAdded = nonNegativeInteger(project.successesAdded);
+      if (!projectId) throw new Error("DowntimeProjectProgressInvalid");
+      const currentHours = nonNegativeInteger(
+        store.projectProgress?.[projectId] ?? 0,
+      );
+      const expectedHours = nonNegativeInteger(project.progressBeforeHours);
+      if (currentHours !== expectedHours)
+        throw new Error("DowntimeProjectProgressDrift");
+      store.projectProgress ??= {};
+      store.projectProgress[projectId] = currentHours + contributedHours;
+
+      const currentSuccesses = nonNegativeInteger(
+        store.projectSuccesses?.[projectId] ?? 0,
+      );
+      const expectedSuccesses = nonNegativeInteger(project.successesBefore);
+      if (currentSuccesses !== expectedSuccesses)
+        throw new Error("DowntimeProjectSuccessProgressDrift");
+      store.projectSuccesses ??= {};
+      store.projectSuccesses[projectId] = currentSuccesses + successesAdded;
+    }
+
+    const work = operation.work;
+    if (!work || state !== "applied") continue;
+    if (
+      !/^[A-Za-z0-9]{16}$/.test(work.key) ||
+      !Number.isInteger(work.contributedHours) ||
+      work.contributedHours < 1
+    )
+      throw new Error("DowntimeCraftingProgressInvalid");
+    store.workProgress ??= {};
+    if ((store.workProgress[work.key] ?? 0) !== work.progressBeforeHours)
+      throw new Error("DowntimeCraftingProgressDrift");
+    store.workProgress[work.key] =
+      work.progressBeforeHours + work.contributedHours;
+  }
+}
+
+/**
+ * Commit one guided character's terminal plan, then reopen the same block for
+ * every unresolved participant. The archived segment keeps the exact plan and
+ * ledger available for audit while preventing a retry from double-counting it.
+ */
+export async function continueGuidedDowntimeBlock(
+  blockId,
+  { result = null, at = null } = {},
+) {
+  const id = toId(blockId);
+  if (!id) throw new Error("DowntimeWorkflowBlockIdInvalid");
+  return mutateWorkflow(
+    (store, fence) => {
+      const active = store.activeBlock;
+      if (!active || active.id !== id)
+        throw new Error("DowntimeWorkflowBlockNotFound");
+      if (active.mode !== "guided" || active.state !== "applying")
+        throw new Error("DowntimeWorkflowGuidedContinuationInvalid");
+      if (
+        Object.values(active.operationLedger).some(
+          (record) => !OPERATION_TERMINAL_STATES.has(record.state),
+        )
+      )
+        throw new Error("DowntimeWorkflowOperationsIncomplete");
+
+      applyCompletedPlanProgress(store, active);
+      const completedAt = toTimestamp(at, currentTimestamp());
+      const actorIds = new Set(
+        (active.plan?.characters ?? []).map((character) =>
+          toId(character.actorId),
+        ),
+      );
+      const normalizedResult = isPlainObject(result)
+        ? sanitizeJson(result)
+        : null;
+      const individualReceipts = {
+        ...(isPlainObject(active.individualReceipts)
+          ? active.individualReceipts
+          : {}),
+        ...(isPlainObject(normalizedResult?.playerReceipts)
+          ? normalizedResult.playerReceipts
+          : {}),
+      };
+      const segment = {
+        completedAt,
+        plan: active.plan,
+        operationLedger: active.operationLedger,
+        result: normalizedResult,
+      };
+      const next = {
+        ...active,
+        state: "collecting",
+        plan: null,
+        operationLedger: {},
+        participants: (active.participants ?? []).map((participant) =>
+          actorIds.has(toId(participant.actorId))
+            ? {
+                ...participant,
+                resolved: true,
+                resolvedAt: completedAt,
+              }
+            : participant,
+        ),
+        individualReceipts,
+        resolvedSegments: [
+          ...(Array.isArray(active.resolvedSegments)
+            ? active.resolvedSegments
+            : []),
+          segment,
+        ].slice(-MAX_HISTORY),
+        updatedAt: completedAt,
+        updatedBy: fence.userId,
+      };
+      for (const field of [
+        "planningDraft",
+        "lockedAt",
+        "plannedAt",
+        "applyingAt",
+        "needsReviewAt",
+        "reviewReason",
+      ])
+        delete next[field];
+      store.activeBlock = normalizeDowntimeBlock(next);
+      if (!store.activeBlock)
+        throw new Error("DowntimeWorkflowGuidedContinuationInvalid");
+      return { store, mapResult: (committed) => committed.activeBlock };
+    },
+    { allowGuidedContinuation: true },
+  );
+}
+
 export async function completeDowntimeBlock(
   blockId,
   { result = null, at = null } = {},
@@ -2214,34 +2441,9 @@ export async function completeDowntimeBlock(
       at: toTimestamp(at, currentTimestamp()),
       by: fence.userId,
     });
-    for (const [projectId, hours] of Object.entries(
-      projectContributionsFromBlock(completed),
-    )) {
-      store.projectProgress[projectId] = nonNegativeInteger(
-        (store.projectProgress[projectId] ?? 0) + hours,
-      );
-    }
-    // Keep paid crafting hours after history is trimmed; only successful,
-    // uncompensated receipts contribute. Completion itself is idempotent.
-    for (const operation of completed.plan?.operations ?? []) {
-      const work = operation.work;
-      if (
-        !work ||
-        completed.operationLedger?.[operation.operationId]?.state !== "applied"
-      )
-        continue;
-      if (
-        !/^[A-Za-z0-9]{16}$/.test(work.key) ||
-        !Number.isInteger(work.contributedHours) ||
-        work.contributedHours < 1
-      )
-        throw new Error("DowntimeCraftingProgressInvalid");
-      store.workProgress ??= {};
-      if ((store.workProgress[work.key] ?? 0) !== work.progressBeforeHours)
-        throw new Error("DowntimeCraftingProgressDrift");
-      store.workProgress[work.key] =
-        work.progressBeforeHours + work.contributedHours;
-    }
+    // Only this plan is new. Earlier individually resolved guided plans were
+    // committed when their segment reopened the block.
+    applyCompletedPlanProgress(store, completed);
     store.activeBlock = null;
     store.history = [...store.history, completed].slice(-MAX_HISTORY);
     return {

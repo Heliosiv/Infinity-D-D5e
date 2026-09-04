@@ -75,6 +75,7 @@ try {
     configCheckpoint: null,
     activeBlock: null,
     projectProgress: {},
+    projectSuccesses: {},
     history: [],
   });
 

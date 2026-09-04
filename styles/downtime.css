@@ -1330,6 +1330,18 @@
   border-top: 1px solid var(--dt-border);
 }
 
+.infinity-downtime-workspace .dt-project-presets {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.infinity-downtime-workspace .dt-project-presets .dt-button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
 .infinity-downtime-workspace .dt-form-reason {
   margin: 0;
   color: var(--dt-warning);
