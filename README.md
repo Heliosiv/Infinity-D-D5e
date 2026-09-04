@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**In development — resource-based downtime:** Activities now support GP per
+**Resource-based downtime:** Activities now support GP per
 workday, flat fees, required tools, consumed inventory materials, and crafted
 items. Arrow and scroll presets include visible costs and progress across
 blocks; the GM approves spending and item delivery together. See
@@ -13,7 +13,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.11 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world.
+Version 0.3.12 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The installed crafting and scribing journeys were also exercised on D&D5e 5.3.3.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -28,9 +28,11 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
+**v0.3.12 — Custom deployment build** - Adds resource-based downtime: arrow crafting, scroll scribing from owned spells or scrolls, GP per workday, flat fees, consumed inventory materials, required tools, and custom item recipes. Players and GMs review the same costs; approved work spends resources, delivers usable items, and retains partial progress across blocks. Interrupted writes recover without duplicate spending. Copying an owned scroll remains a GM-approved campaign option. This build extends the scoped v0.3.11 deployment and excludes unrelated unreleased work.
+
 **v0.3.11 — Custom deployment build** - Improves the guided downtime workflow with editable activities, clearer reports, draft preservation, safe retries, per-character receipts, and recovery after interrupted reward saves. Built from published v0.3.10 plus the reviewed downtime changes; separate unreleased calendar changes are excluded. Functional installed-world testing also covers Foundry 13.351 with D&D5e 5.3.3. The existing hidden-state confidentiality limitation is documented in [Downtime System](docs/DOWNTIME_SYSTEM.md).
 
-For a direct Forge installation, open **My Foundry → Summon Import Wizard**, turn off **Install found packages from the Bazaar**, select the reviewed `module.zip`, analyze and import it, then stop/start the game server. This custom upload does not publish a GitHub release; the packaged update links remain the canonical public release channel. Keep the previous v0.3.10 ZIP for rollback.
+For a direct Forge installation, open **My Foundry → Summon Import Wizard**, turn off **Install found packages from the Bazaar**, select the reviewed `module.zip`, analyze and import it, then stop/start the game server. This custom upload does not publish a GitHub release; the packaged update links remain the canonical public release channel. Keep the previous v0.3.11 ZIP for rollback. Reinstalling the previous module does not undo GP, materials, or items already applied in a completed block.
 
 **v0.3.10 — Released 2026-08-31** - Releases all pending Workbench and Quartermaster improvements: full Gamemasters now enter the persistent Workbench as the primary launcher, recovery remains fail-closed and focused, short layouts keep every control reachable, and custom Quartermaster environments can be previewed before activation and exported or safely imported through a complete versioned validation review.
 
