@@ -715,6 +715,17 @@ function normalizeProjectProgress(raw, history = []) {
   return progress;
 }
 
+function normalizeWorkProgress(raw) {
+  return Object.fromEntries(
+    Object.entries(isPlainObject(raw) ? raw : {}).filter(
+      ([key, hours]) =>
+        /^[A-Za-z0-9]{16}$/.test(key) &&
+        Number.isSafeInteger(hours) &&
+        hours >= 0,
+    ),
+  );
+}
+
 function defaultWorkflowStore() {
   return {
     version: STORE_VERSION,
@@ -754,6 +765,9 @@ export function normalizeDowntimeWorkflowStore(raw) {
         ? activeBlock
         : null,
     projectProgress: normalizeProjectProgress(raw.projectProgress, history),
+    ...(raw.workProgress
+      ? { workProgress: normalizeWorkProgress(raw.workProgress) }
+      : {}),
     history: history.slice(-MAX_HISTORY),
   };
 }
@@ -2206,6 +2220,27 @@ export async function completeDowntimeBlock(
       store.projectProgress[projectId] = nonNegativeInteger(
         (store.projectProgress[projectId] ?? 0) + hours,
       );
+    }
+    // Keep paid crafting hours after history is trimmed; only successful,
+    // uncompensated receipts contribute. Completion itself is idempotent.
+    for (const operation of completed.plan?.operations ?? []) {
+      const work = operation.work;
+      if (
+        !work ||
+        completed.operationLedger?.[operation.operationId]?.state !== "applied"
+      )
+        continue;
+      if (
+        !/^[A-Za-z0-9]{16}$/.test(work.key) ||
+        !Number.isInteger(work.contributedHours) ||
+        work.contributedHours < 1
+      )
+        throw new Error("DowntimeCraftingProgressInvalid");
+      store.workProgress ??= {};
+      if ((store.workProgress[work.key] ?? 0) !== work.progressBeforeHours)
+        throw new Error("DowntimeCraftingProgressDrift");
+      store.workProgress[work.key] =
+        work.progressBeforeHours + work.contributedHours;
     }
     store.activeBlock = null;
     store.history = [...store.history, completed].slice(-MAX_HISTORY);

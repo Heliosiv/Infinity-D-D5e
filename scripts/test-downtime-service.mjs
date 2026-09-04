@@ -1103,6 +1103,184 @@ try {
   );
   actors.delete(projectPartner.id);
 
+  // Guided resource work uses the same player/GM flow, with paid progress
+  // retained across blocks and reloads, and exact inventory writes on finish.
+  {
+    const workModule = await import("./downtime/work.js");
+    const crafter = makeActor({
+      id: "guided-crafter",
+      currency: { pp: 0, gp: 20, ep: 0, sp: 0, cp: 0 },
+    });
+    actors.set(crafter.id, crafter);
+    crafter.addItem({
+      _id: "craft-tool",
+      name: "Smith's Tools",
+      type: "tool",
+      system: { quantity: 1 },
+    });
+    const supplies = crafter.addItem({
+      _id: "craft-iron",
+      name: "Iron",
+      type: "loot",
+      system: { quantity: 5 },
+    });
+    const crafting = await service.saveGuidedDowntimeTemplate({
+      ...workModule.guidedWorkPreset("arrows"),
+      work: {
+        ...workModule.guidedWorkPreset("arrows").work,
+        gpPerDay: 2,
+        materials: [{ name: "Iron", quantity: 3, per: "batch" }],
+      },
+    });
+    const originalResolver = globalThis.fromUuid;
+    globalThis.fromUuid = async () => ({
+      _id: "recipe-arrows",
+      name: "Arrows",
+      type: "consumable",
+      system: { quantity: 20, type: { value: "ammo" } },
+    });
+    let progressKey;
+    for (let pass = 0; pass < 2; pass++) {
+      const opened = await service.openDowntimeBlock({
+        mode: "guided",
+        locationName: "Forge",
+        hours: 4,
+        actorIds: [crafter.id],
+        templateIds: [crafting.id],
+      });
+      const projected = await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: crafter.id,
+      });
+      assert.match(projected.activities[0].costLabel, /Spend 1.25 gp/);
+      assert.equal(
+        "work" in projected.activities[0],
+        false,
+        "player receives costs, not item write snapshots",
+      );
+      await service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: `craft-pass-${pass}`,
+        blockId: opened.id,
+        actorId: crafter.id,
+        queue: [
+          {
+            activityId: crafting.id,
+            hours: 4,
+            work: { costCp: 0 },
+            rewardGp: 10000,
+          },
+        ],
+      });
+      assert.equal(supplies.system.quantity, 5, "submission spends nothing");
+      await service.lockActiveDowntimeBlock(opened.id);
+      const planned = await service.planActiveDowntimeBlock(opened.id);
+      const op = planned.plan.operations[0];
+      progressKey = op.work.key;
+      assert.equal(op.work.costCp, 125, "player cannot forge a cheaper cost");
+      assert.equal(op.work.progressBeforeHours, pass * 4);
+      assert.equal(op.work.outputQuantity, pass === 0 ? 0 : 20);
+      const tampered = clone(planned.plan);
+      tampered.operations[0].work.costCp = 0;
+      await assert.rejects(
+        workflow.updateGuidedDowntimePlan(opened.id, tampered),
+        /Immutable|immutable/,
+      );
+      if (pass === 1) {
+        supplies.system.quantity = 2;
+        await assert.rejects(
+          service.applyActiveDowntimeBlock(opened.id),
+          /supplies or source changed/,
+        );
+        assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+        supplies.system.quantity = 5;
+      }
+      const reviewed = await service.chooseGuidedDowntimeOutcome({
+        blockId: opened.id,
+        operationId: op.operationId,
+        outcomeIndex: 2,
+        report: "Worked at the forge.",
+      });
+      assert.deepEqual(
+        reviewed.plan.operations[0].work,
+        op.work,
+        "report edits keep exact costs and materials",
+      );
+      const completed = await service.applyActiveDowntimeBlock(opened.id);
+      assert.equal(completed.state, "completed");
+      await service.applyActiveDowntimeBlock(opened.id);
+      assert.equal(
+        workflow.loadDowntimeWorkflowStore().workProgress[progressKey],
+        (pass + 1) * 4,
+        "duplicate apply counts work once",
+      );
+      workflow.resetDowntimeWorkflowStoreForTests();
+      assert.equal(
+        workflow.loadDowntimeWorkflowStore().workProgress[progressKey],
+        (pass + 1) * 4,
+        "paid progress survives service reload",
+      );
+    }
+    assert.equal(supplies.system.quantity, 2);
+    assert.equal(
+      [...crafter.items.values()].filter((item) => item.name === "Arrows")
+        .length,
+      1,
+    );
+    assert.deepEqual(crafter.system.currency, {
+      pp: 0,
+      gp: 17,
+      ep: 0,
+      sp: 5,
+      cp: 0,
+    });
+    const receipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: crafter.id,
+    });
+    assert.match(receipt.receipt.activities[0].summary, /Consume: 3 × Iron/);
+    assert.match(receipt.receipt.activities[0].summary, /Receive 20 × Arrows/);
+    assert.match(receipt.receipt.activities[0].rewardLabel, /Spent 1.25 gp/);
+    assert.match(
+      receipt.receipt.activities[0].rewardLabel,
+      /Received 20 × Arrows/,
+    );
+    const cancelled = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Forge",
+      hours: 8,
+      actorIds: [crafter.id],
+      templateIds: [crafting.id],
+    });
+    await assert.rejects(
+      service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: "craft-insufficient",
+        blockId: cancelled.id,
+        actorId: crafter.id,
+        queue: [{ activityId: crafting.id, hours: 8 }],
+      }),
+      /Missing 1 × Iron/,
+    );
+    await service.cancelActiveDowntimeBlock(cancelled.id);
+    assert.equal(
+      workflow.loadDowntimeWorkflowStore().workProgress[progressKey],
+      8,
+      "cancelled work adds no hours or charges",
+    );
+    const trimmed = workflow.normalizeDowntimeWorkflowStore({
+      ...workflow.loadDowntimeWorkflowStore(),
+      history: [],
+    });
+    assert.equal(
+      trimmed.workProgress[progressKey],
+      8,
+      "paid progress does not depend on retained history",
+    );
+    actors.delete(crafter.id);
+    globalThis.fromUuid = originalResolver;
+  }
+
   const reusableRollActor = makeActor({ id: "reusable-roll-actor" });
   reusableRollActor.name = "Reusable Roll Hero";
   actors.set(reusableRollActor.id, reusableRollActor);

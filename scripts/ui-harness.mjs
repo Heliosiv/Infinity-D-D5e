@@ -7,6 +7,7 @@ import { buildGmWorkbenchNavigationContext } from "./gm-workbench-routes.js";
 import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
+import { WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
 import {
   defaultGuidedDowntimeTemplates,
   GUIDED_DOWNTIME_SKILLS,
@@ -3582,6 +3583,28 @@ function downtimeWorkspaceActivityEditorContext() {
     })),
     templateEditor: {
       ...selected,
+      work: {
+        gpPerBlock: 0,
+        gpPerDay: 0,
+        batchGp: 0,
+        batchHours: 8,
+        quantity: 1,
+        itemUuid: "",
+        tool: "",
+        isBatch: false,
+        isItem: false,
+        isScroll: false,
+        outputOptions: WORK_OUTPUT_OPTIONS.map((option) => ({
+          ...option,
+          selected: option.id === "none",
+        })),
+        materials: Array.from({ length: 4 }, (_, index) => ({
+          number: index + 1,
+          name: "",
+          quantity: 1,
+          perOptions: [{ id: "block", label: "Per block", selected: true }],
+        })),
+      },
       outcomes: selected.outcomes.map((row, index) => ({
         ...row,
         number: index + 1,
@@ -4382,6 +4405,7 @@ function downtimeActivityCards() {
       items: [],
       hasItems: false,
       targetField: "targetId",
+      targetLabel: "Target",
       stakeAllowed: true,
       maxStakeGp: 250,
       stakeStepGp: 0.01,

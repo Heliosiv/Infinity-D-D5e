@@ -129,7 +129,10 @@ try {
         return { ...payload, id: "project-observatory" };
       },
       saveGuidedTemplate: async (payload) => {
-        const saved = { ...payload, id: payload.id || "custom-garden" };
+        const saved = {
+          ...payload,
+          id: payload.id || `custom-${state.activitySaves || 0}`,
+        };
         const index = templates.findIndex((row) => row.id === saved.id);
         if (index < 0) templates.push(saved);
         else templates[index] = saved;
@@ -408,6 +411,56 @@ try {
   await page.setViewportSize({ width: 1100, height: 1000 });
   await page.locator('[data-action="saveGuidedTemplate"]').click();
   await page.waitForFunction(() => journey.state.activitySaves === 1);
+  await page
+    .locator('[data-action="craftingPreset"][data-recipe="arrows"]')
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Activity name", { exact: true }).inputValue(),
+    "Craft Arrows",
+  );
+  assert.equal(
+    await page.locator('[name="workOutput"]').inputValue(),
+    "arrows",
+  );
+  assert.equal(await page.locator('[name="workBatchGp"]').inputValue(), "0.5");
+  await page
+    .getByLabel("Additional cost per workday (gp)", { exact: true })
+    .fill("2");
+  await page
+    .locator("summary")
+    .filter({ hasText: "Inventory materials to consume" })
+    .click();
+  await page.locator('[name="materialName"]').nth(0).fill("Iron");
+  await page.locator('[name="materialQuantity"]').nth(0).fill("3");
+  await page.locator('[data-action="refresh"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(await page.locator('[name="workGpPerDay"]').inputValue(), "2");
+  assert.equal(
+    await page.locator('[name="materialName"]').nth(0).inputValue(),
+    "Iron",
+  );
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  await page.waitForFunction(() => journey.state.activitySaves === 2);
+  await page
+    .locator('[data-action="craftingPreset"][data-recipe="scroll"]')
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.locator('[name="workOutput"]').inputValue(),
+    "scroll",
+  );
+  assert.equal(
+    await page.locator('[name="workBatchGp"]').isVisible(),
+    false,
+    "scroll pricing uses its spell level",
+  );
+  assert.match(
+    await page.locator('[data-work-output="scroll"]').innerText(),
+    /original is kept/,
+  );
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  await page.waitForFunction(() => journey.state.activitySaves === 3);
   await page.locator('[data-action="setView"][data-view="current"]').click();
 
   await page.locator('[name="locationName"]').fill("Harbor workshop");

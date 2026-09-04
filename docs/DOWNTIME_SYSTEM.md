@@ -29,7 +29,7 @@ last choice with submissions disabled. Refresh after the GM returns to continue.
 Once everyone has submitted, the GM clicks **Review results**. This closes
 submissions and prepares the reports from the recorded player checks. The GM
 lands on the reports to review them, chooses from the possible outcomes, can rewrite the player report, then clicks
-**Apply rewards & send reports**. Changing an outcome loads its matching report.
+**Apply results & send reports**. Changing an outcome loads its matching report.
 **Save report** saves an edit separately; applying also saves any visible report
 edits first and stops if a report cannot be saved. Unsaved report edits survive
 an in-window refresh. Player rolls and project hours stay fixed, and results
@@ -65,6 +65,69 @@ Activity drafts survive in-window refreshes and switching tabs or activities.
 the descriptions, skills, and rewards assigned when it began. The library
 supports 24 saved activities.
 
+### Crafting, scribing, and resource costs
+
+In **Downtime → Activities**, use **Add arrow crafting** or **Add scroll
+scribing**, adjust the recipe, and **Save activity**. These buttons prepare a new
+editable activity; they never overwrite your existing library. Include the saved
+activity when opening the next block. Ordinary activities can also use the
+**Costs, supplies & crafting** section without producing an item.
+
+- **Fee per block** is charged once per submitted block.
+- **Additional cost per workday** scales with productive time: eight hours is
+  one day. Costs round up to copper, and earlier rounding is credited in later
+  blocks of the same recipe. Splitting a day does not increase its total cost.
+- **Base materials cost per batch** is paid as the character works, on top of
+  any block or daily fee. Set it to zero when inventory materials replace that
+  GP cost; otherwise the two are additional costs.
+- **Required tool** matches an inventory name and is kept. Ammunition also
+  checks for the appropriate smith's, woodcarver's, or tinker's tools. The GM
+  confirms proficiency and access to the workspace before applying the result.
+- Up to four **inventory materials** match names on the character sheet, combining
+  matching stacks. Consume them per block, per workday, or per finished batch.
+  Whole materials round up; prior daily consumption is credited in later blocks.
+  Depleted stacks remain at quantity zero. Required tools and the original
+  scribing source are kept.
+
+Arrow crafting starts at **20 arrows per 8 hours, for 0.5 gp**. Other ammunition
+types are in the crafting-result picker. For other equipment, select **Craft a
+configured item**, paste its world or compendium Item UUID, and set hours, GP,
+and quantity per batch. Finished items are added as separate usable inventory
+stacks. Multiple batches can finish in one block; leftover hours carry forward.
+
+Scribing offers spells and spell scrolls already on the selected character's
+sheet. A source scroll must have recorded spell-level metadata. Scribing uses
+the [2024 Basic Rules scroll time and base cost by level](https://www.dndbeyond.com/sources/dnd/br-2024/equipment#ScribingSpellScrolls),
+charged gradually as work progresses. For example, a level-2 scroll takes 24
+hours and 100 gp: an 8-hour block costs 33.34 gp, then 16 hours costs 66.66 gp.
+The finished scroll retains its spell activity, and the original spell or scroll
+is kept. Copying an owned scroll is a GM-approved campaign option, not an
+automatic substitute for the rules' prepared-spell requirement. The GM checks
+preparation, proficiency, and spell components; list consumed components as
+additional inventory materials. These requirements are not inferred from spell
+description text.
+
+Before submitting, players see the block's cost, materials, finished quantity,
+and remaining progress. A spell picker shows the figures for each source. A
+choice with insufficient GP, missing supplies, or missing tools cannot be
+submitted. Submitting and preparing a report do not spend anything. The GM
+reviews the same quote, then **Apply results & send reports** spends the costs,
+consumes the materials, delivers finished items, and sends the receipt. Costs
+and work hours apply to every narrative outcome; any configured reward is
+additional and cannot fund an otherwise unaffordable submission.
+
+Paid hours belong to the individual character, activity recipe, and selected
+spell or scroll. They survive reloads and history rotation; cancelled work adds
+none. Changing a recipe's costs, supplies, duration, or output starts separate
+progress. Existing blocks retain their original recipe. Complete ongoing work
+before changing its recipe if you want to retain that progress.
+
+If supplies or the scribing source change during GM review, restore the reviewed
+supplies or cancel the block and submit again. Recovery checks every saved
+wallet, material quantity, and crafted item. Exact partial writes can be restored
+before retrying; changed or ambiguous inventory stops for GM review. A completed
+operation is never charged or delivered twice.
+
 ### Interrupted application
 
 If a character's currency changes during review, application pauses while the
@@ -82,7 +145,7 @@ Use **Downtime Workspace → Projects** to name a project, set its total
 productive-hour target, and choose the skills players may use. A good campaign
 baseline is 160 hours (20 eight-hour days) for learning a language; choose a
 smaller or larger target to suit the task and pace of the campaign. For actual
-automatic ammunition delivery, use the standard **Craft Ammunition** activity;
+automatic ammunition delivery, add an **arrow crafting** activity in the Activities tab;
 a project can instead track a larger commission or other multi-block goal.
 
 Unfinished project details survive in-window refreshes and switching tabs.
@@ -157,7 +220,9 @@ accessibility at 1040, 720, and 380 pixels. Screenshots are written to
 authoritative service, storage, transport, and project-progress rules. These
 checks do not establish installed-world multiplayer acceptance.
 
-For the installed-world gauntlet, start a **disposable** local Foundry 13 world
+For the installed-world gauntlet, install a built module package, or run
+`npm run compile:packs` before launching a source checkout. The item catalog
+must be compiled for actual inventory delivery. Start a **disposable** local Foundry 13 world
 whose ID is `downtime-gauntlet`, with D&D5e and this module enabled. Create a
 GM named `Gamemaster` and a player named `Gauntlet Player`, both without test
 passwords. Close other clients for those test users, then run:

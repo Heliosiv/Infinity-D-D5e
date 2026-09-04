@@ -7,6 +7,8 @@
  * privileged document data.
  */
 
+import { normalizeGuidedWork } from "./work.js";
+
 export const GUIDED_DOWNTIME_MODE = "guided";
 export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 24;
 export const GUIDED_DOWNTIME_OUTCOME_MINIMUM = 3;
@@ -149,6 +151,7 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
     .filter(Boolean);
   if (!id || !name || outcomes.length < GUIDED_DOWNTIME_OUTCOME_MINIMUM)
     return null;
+  const work = normalizeGuidedWork(raw.work);
   return {
     id,
     name,
@@ -156,6 +159,7 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
     image: imagePath(raw.image),
     skills: normalizeSkills(raw.skills),
     outcomes,
+    ...(work ? { work } : {}),
   };
 }
 
@@ -179,7 +183,13 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   const skill = idValue(raw.skill);
   if (template.skills.length > 0 && !template.skills.includes(skill))
     return null;
-  return { templateId, skill: template.skills.length > 0 ? skill : "" };
+  return {
+    templateId,
+    skill: template.skills.length > 0 ? skill : "",
+    ...(template.work?.output === "scroll"
+      ? { targetId: idValue(raw.targetId) }
+      : {}),
+  };
 }
 
 export function guidedTemplateById(templates, templateId) {
@@ -197,6 +207,7 @@ export function projectGuidedDowntimeTemplate(template) {
     description: template.description,
     image: template.image,
     skills: [...template.skills],
+    ...(template.work ? { work: structuredClone(template.work) } : {}),
   };
 }
 

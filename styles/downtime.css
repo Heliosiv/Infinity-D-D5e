@@ -827,6 +827,16 @@
   font-size: 0.75rem;
 }
 
+.infinity-downtime-workspace .dt-operation-cost {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--dt-border);
+  border-radius: 6px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .infinity-downtime-workspace .dt-plan-list {
   display: grid;
   gap: 8px;

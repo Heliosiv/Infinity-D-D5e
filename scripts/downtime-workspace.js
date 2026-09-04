@@ -14,6 +14,7 @@ import {
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
 import { GUIDED_DOWNTIME_SKILLS } from "./downtime/dispatch.js";
+import { guidedWorkPreset, WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
 
@@ -165,6 +166,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
       selectGuidedTemplate: DowntimeWorkspaceApp._onSelectGuidedTemplate,
       newGuidedTemplate: DowntimeWorkspaceApp._onNewGuidedTemplate,
+      craftingPreset: DowntimeWorkspaceApp._onCraftingPreset,
       saveGuidedTemplate: DowntimeWorkspaceApp._onSaveGuidedTemplate,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
@@ -384,6 +386,17 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const templateForm = this.element?.querySelector?.(
       '[data-form="guided-template"]',
     );
+    const showWorkFields = () => {
+      const output = templateForm?.querySelector('[name="workOutput"]')?.value;
+      for (const field of templateForm?.querySelectorAll(
+        "[data-work-output]",
+      ) ?? [])
+        field.hidden = !field.dataset.workOutput.split(" ").includes(output);
+    };
+    templateForm
+      ?.querySelector('[name="workOutput"]')
+      ?.addEventListener("change", showWorkFields);
+    showWorkFields();
     for (const event of ["input", "change"]) {
       templateForm?.addEventListener(event, () => {
         const draft = readGuidedTemplateForm(templateForm);
@@ -1061,6 +1074,16 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this.render(false);
   }
 
+  static _onCraftingPreset(_event, target) {
+    if (this._busy) return;
+    this._templateDrafts ??= new Map();
+    this._templateDrafts.set("new", guidedWorkPreset(target?.dataset?.recipe));
+    this._selectedTemplateId = null;
+    this._creatingTemplate = true;
+    this._pendingFocus = '[data-form="guided-template"] input[name="name"]';
+    this.render(false);
+  }
+
   static async _onSaveGuidedTemplate() {
     if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="guided-template"]');
@@ -1127,6 +1150,21 @@ function readGuidedTemplateForm(form) {
     description: String(data.get("description") ?? ""),
     image: String(data.get("image") ?? ""),
     skills: data.getAll("skills").map(String),
+    work: {
+      output: String(data.get("workOutput") ?? "none"),
+      gpPerBlock: String(data.get("workGpPerBlock") ?? "0"),
+      gpPerDay: String(data.get("workGpPerDay") ?? "0"),
+      batchGp: String(data.get("workBatchGp") ?? "0"),
+      batchHours: String(data.get("workBatchHours") ?? "8"),
+      quantity: String(data.get("workQuantity") ?? "1"),
+      itemUuid: String(data.get("workItemUuid") ?? ""),
+      tool: String(data.get("workTool") ?? ""),
+      materials: data.getAll("materialName").map((name, index) => ({
+        name: String(name),
+        quantity: String(data.getAll("materialQuantity")[index] ?? "1"),
+        per: String(data.getAll("materialPer")[index] ?? "batch"),
+      })),
+    },
     outcomes: data.getAll("outcomeLabel").map((label, index) => ({
       label: String(label),
       report: String(data.getAll("outcomeReport")[index] ?? ""),
@@ -1195,6 +1233,43 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     };
   const templateEditor = {
     ...templateSource,
+    work: {
+      gpPerBlock: 0,
+      gpPerDay: 0,
+      batchGp: 0,
+      batchHours: 8,
+      quantity: 1,
+      ...templateSource.work,
+      isBatch: ["arrows", "bolts", "needles", "sling-bullets", "item"].includes(
+        templateSource.work?.output,
+      ),
+      isItem: templateSource.work?.output === "item",
+      isScroll: templateSource.work?.output === "scroll",
+      outputOptions: WORK_OUTPUT_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.id === (templateSource.work?.output ?? "none"),
+      })),
+      materials: Array.from({ length: 4 }, (_, index) => {
+        const material = templateSource.work?.materials?.[index] ?? {
+          name: "",
+          quantity: 1,
+          per: "batch",
+        };
+        return {
+          ...material,
+          number: index + 1,
+          perOptions: [
+            ["batch", "Per finished batch"],
+            ["block", "Per block"],
+            ["day", "Per workday (round up)"],
+          ].map(([id, label]) => ({
+            id,
+            label,
+            selected: id === material.per,
+          })),
+        };
+      }),
+    },
     outcomes: array(templateSource.outcomes).map((outcome, index) => ({
       ...outcome,
       number: index + 1,
@@ -1273,7 +1348,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       ["Set up", "Choose hours, characters, and activities.", [0]],
       ["Player rolls", "Each player chooses one activity and rolls.", [1]],
       ["GM review", "Choose a result and edit each player report.", [2, 3]],
-      ["Results", "Apply rewards and send the finished reports.", [4, 5]],
+      ["Results", "Apply results and send the finished reports.", [4, 5]],
     ];
     lifecycle.steps = groups.map(([label, description, indexes]) => {
       const candidates = indexes.map((index) => lifecycle.steps[index]);
@@ -1301,7 +1376,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         "Prepare the reports from the saved player rolls.",
       ],
       applyBlock: [
-        "Apply rewards & send reports",
+        "Apply results & send reports",
         "Review the results below. Report edits are saved when you apply.",
       ],
     }[lifecycle.primaryAction.id];
@@ -1827,6 +1902,7 @@ function normalizeCurrentBlock(workflow, root) {
         hours: positiveInteger(operation?.hours, 0),
         rollLabel: String(operation?.rollLabel ?? operation?.roll ?? ""),
         hasRoll: Boolean(operation?.rollLabel ?? operation?.roll),
+        workSummary: String(operation?.workSummary ?? ""),
         outcome: String(
           operation?.outcome ??
             operation?.outcomeLabel ??

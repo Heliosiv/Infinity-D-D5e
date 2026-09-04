@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
+import { runCraftingFoundryJourney } from "./audit-downtime-crafting-foundry.mjs";
 
 const WORLD = "downtime-gauntlet";
 const args = process.argv.slice(2);
@@ -335,9 +336,38 @@ async function prepareFaultBlock(label) {
 try {
   gm = await join(argument("--gm", "Gamemaster"));
   await readyGm();
-  const fixture = await gm.evaluate(async () => {
+  const fixture = await gm.evaluate(async (craftingOnly) => {
     const state =
       await import("/modules/infinity-dnd5e/scripts/private-state.js");
+    const previous = state.getPrivateState("downtimeWorkflow").activeBlock;
+    if (
+      craftingOnly &&
+      previous?.locationName === "Gauntlet crafting workshop" &&
+      ["applying", "needs-review"].includes(previous.state) &&
+      previous.participants.every((row) =>
+        game.actors
+          .get(row.actorId)
+          ?.getFlag("infinity-dnd5e", "downtimeGauntletActor"),
+      )
+    ) {
+      const service =
+        await import("/modules/infinity-dnd5e/scripts/downtime/service.js");
+      await service.recoverActiveDowntimeBlock(previous.id);
+    }
+    if (
+      craftingOnly &&
+      previous?.locationName === "Gauntlet crafting workshop" &&
+      ["collecting", "locked", "planned"].includes(previous.state) &&
+      previous.participants.every((row) =>
+        game.actors
+          .get(row.actorId)
+          ?.getFlag("infinity-dnd5e", "downtimeGauntletActor"),
+      )
+    ) {
+      const service =
+        await import("/modules/infinity-dnd5e/scripts/downtime/service.js");
+      await service.cancelActiveDowntimeBlock(previous.id);
+    }
     if (state.getPrivateState("downtimeWorkflow").activeBlock)
       throw Error(
         "Finish the existing disposable test block before running this gauntlet.",
@@ -378,7 +408,7 @@ try {
       foundry: game.version,
       dnd5e: game.system.version,
     };
-  });
+  }, args.includes("--crafting-only"));
   Object.assign(evidence, fixture);
   player = await join("Gauntlet Player");
   assert.equal(
@@ -391,228 +421,255 @@ try {
   );
   await gm.locator('[data-action="refresh"]').click();
 
-  await openUiBlock("guided-labor", "Gauntlet: real player skill checks");
-  await submitUiChoices("guided-labor", true, { probeRetry: true });
-  await selectResults(2);
-  const editedReport =
-    "The harbor crew praises the careful repairs. The work is complete.";
-  await gm.locator("[data-guided-report]").first().fill(editedReport);
-  await gm.locator('[data-action="refresh"]').click();
-  assert.equal(
-    await gm.locator("[data-guided-report]").first().inputValue(),
-    editedReport,
-  );
-  await gm.locator('[data-action="applyBlock"]').click();
-  const paid = await waitCompleted();
-  await gm.waitForFunction(
-    () => document.activeElement?.id === "dt-preview-heading",
-  );
-  assert.deepEqual(paid.wallets, [1400, 2400]);
-  record("two real player skill checks, edited report, exact rewards", paid);
-
-  await gm.locator('[data-action="setView"][data-view="activities"]').click();
-  const templateId = await gm.evaluate(async () => {
-    const store =
-      await import("/modules/infinity-dnd5e/scripts/private-state.js");
-    return (
-      store
-        .getPrivateState("downtimeConfig")
-        .guidedTemplates.find((row) => row.name === "Gauntlet runner garden")
-        ?.id ?? null
+  if (!args.includes("--crafting-only")) {
+    await openUiBlock("guided-labor", "Gauntlet: real player skill checks");
+    await submitUiChoices("guided-labor", true, { probeRetry: true });
+    await selectResults(2);
+    const editedReport =
+      "The harbor crew praises the careful repairs. The work is complete.";
+    await gm.locator("[data-guided-report]").first().fill(editedReport);
+    await gm.locator('[data-action="refresh"]').click();
+    assert.equal(
+      await gm.locator("[data-guided-report]").first().inputValue(),
+      editedReport,
     );
-  });
-  if (templateId)
+    await gm.locator('[data-action="applyBlock"]').click();
+    const paid = await waitCompleted();
+    await gm.waitForFunction(
+      () => document.activeElement?.id === "dt-preview-heading",
+    );
+    assert.deepEqual(paid.wallets, [1400, 2400]);
+    record("two real player skill checks, edited report, exact rewards", paid);
+
+    await gm.locator('[data-action="setView"][data-view="activities"]').click();
+    const templateId = await gm.evaluate(async () => {
+      const store =
+        await import("/modules/infinity-dnd5e/scripts/private-state.js");
+      return (
+        store
+          .getPrivateState("downtimeConfig")
+          .guidedTemplates.find((row) => row.name === "Gauntlet runner garden")
+          ?.id ?? null
+      );
+    });
+    if (templateId)
+      await gm
+        .locator(
+          `[data-action="selectGuidedTemplate"][data-template-id="${templateId}"]`,
+        )
+        .click();
+    else await gm.locator('[data-action="newGuidedTemplate"]').click();
     await gm
+      .getByLabel("Activity name", { exact: true })
+      .fill("Gauntlet runner garden");
+    await gm
+      .getByLabel("Player description", { exact: true })
+      .fill("Tend the community garden during the assigned downtime.");
+    for (const checkbox of await gm
+      .locator('[data-form="guided-template"] [name="skills"]')
+      .all())
+      await checkbox.uncheck();
+    for (let index = 0; index < 3; index += 1) {
+      await gm
+        .locator('[name="outcomeReport"]')
+        .nth(index)
+        .fill(
+          [
+            "The seedlings are tended.",
+            "Fresh herbs fill the kitchen.",
+            "A generous harvest rewards your care.",
+          ][index],
+        );
+      await gm
+        .locator('[name="outcomeReward"]')
+        .nth(index)
+        .fill(["0", "1.25", "2.5"][index]);
+    }
+    await gm.locator('[data-action="saveGuidedTemplate"]').click();
+    await gm.waitForFunction(
+      () =>
+        document.querySelector('[data-form="guided-template"] [name="id"]')
+          ?.value,
+    );
+    const gardenId = await gm
+      .locator('[data-form="guided-template"] [name="id"]')
+      .inputValue();
+    await gm
+      .locator(".infinity-downtime-workspace")
+      .screenshot({ path: path.join(output, "activity-editor.png") });
+    await openUiBlock(gardenId, "Gauntlet: custom activity without a roll");
+    await submitUiChoices(gardenId, false);
+    assert.match(await gm.locator(".dt-preview").innerText(), /No skill check/);
+    await selectResults(2);
+    await gm.locator('[data-action="applyBlock"]').click();
+    const garden = await waitCompleted();
+    assert.deepEqual(garden.wallets, [1650, 2650]);
+    record(
+      "custom activity editor, no-roll choices, fractional rewards",
+      garden,
+    );
+
+    await openUiBlock(
+      "guided-labor",
+      "Gauntlet: GM reconnect preserves choice",
+    );
+    await player
       .locator(
-        `[data-action="selectGuidedTemplate"][data-template-id="${templateId}"]`,
+        `[data-action="selectActor"][data-actor-id="${evidence.actorIds[0]}"]`,
       )
       .click();
-  else await gm.locator('[data-action="newGuidedTemplate"]').click();
-  await gm
-    .getByLabel("Activity name", { exact: true })
-    .fill("Gauntlet runner garden");
-  await gm
-    .getByLabel("Player description", { exact: true })
-    .fill("Tend the community garden during the assigned downtime.");
-  for (const checkbox of await gm
-    .locator('[data-form="guided-template"] [name="skills"]')
-    .all())
-    await checkbox.uncheck();
-  for (let index = 0; index < 3; index += 1) {
-    await gm
-      .locator('[name="outcomeReport"]')
-      .nth(index)
-      .fill(
-        [
-          "The seedlings are tended.",
-          "Fresh herbs fill the kitchen.",
-          "A generous harvest rewards your care.",
-        ][index],
-      );
-    await gm
-      .locator('[name="outcomeReward"]')
-      .nth(index)
-      .fill(["0", "1.25", "2.5"][index]);
-  }
-  await gm.locator('[data-action="saveGuidedTemplate"]').click();
-  await gm.waitForFunction(
-    () =>
-      document.querySelector('[data-form="guided-template"] [name="id"]')
-        ?.value,
-  );
-  const gardenId = await gm
-    .locator('[data-form="guided-template"] [name="id"]')
-    .inputValue();
-  await gm
-    .locator(".infinity-downtime-workspace")
-    .screenshot({ path: path.join(output, "activity-editor.png") });
-  await openUiBlock(gardenId, "Gauntlet: custom activity without a roll");
-  await submitUiChoices(gardenId, false);
-  assert.match(await gm.locator(".dt-preview").innerText(), /No skill check/);
-  await selectResults(2);
-  await gm.locator('[data-action="applyBlock"]').click();
-  const garden = await waitCompleted();
-  assert.deepEqual(garden.wallets, [1650, 2650]);
-  record("custom activity editor, no-roll choices, fractional rewards", garden);
-
-  await openUiBlock("guided-labor", "Gauntlet: GM reconnect preserves choice");
-  await player
-    .locator(
-      `[data-action="selectActor"][data-actor-id="${evidence.actorIds[0]}"]`,
-    )
-    .click();
-  await player
-    .locator('[data-activity-id="guided-labor"] [data-action="addActivity"]')
-    .click();
-  await player.waitForFunction(
-    () =>
-      document.querySelector('[data-action="submitQueue"]')?.disabled === false,
-  );
-  const beforeDisconnect = await player
-    .locator("[data-queue-list]")
-    .innerText();
-  const reconnectBlockId = (await state()).blockId;
-  const gmId = await gm.evaluate(() => game.user.id);
-  await gm.context().close();
-  await player.waitForFunction((id) => !game.users.get(id).active, gmId);
-  await player
-    .getByRole("button", { name: "Refresh downtime", exact: true })
-    .click();
-  await player.getByRole("heading", { name: "No full GM is online" }).waitFor();
-  const offline = await player
-    .locator(".infinity-downtime-activities")
-    .innerText();
-  assert.match(offline, /Last choice: Paid Work \(8h\)/);
-  assert.doesNotMatch(offline, /Your last receipt is still shown/);
-  assert.equal(await player.locator('[data-action="submitQueue"]').count(), 0);
-  for (const actorId of [evidence.actorIds[1], evidence.actorIds[0]]) {
     await player
-      .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
+      .locator('[data-activity-id="guided-labor"] [data-action="addActivity"]')
       .click();
     await player.waitForFunction(
-      (id) =>
-        document
-          .querySelector(`[data-actor-id="${id}"]`)
-          ?.getAttribute("aria-current") === "true",
-      actorId,
+      () =>
+        document.querySelector('[data-action="submitQueue"]')?.disabled ===
+        false,
     );
+    const beforeDisconnect = await player
+      .locator("[data-queue-list]")
+      .innerText();
+    const reconnectBlockId = (await state()).blockId;
+    const gmId = await gm.evaluate(() => game.user.id);
+    await gm.context().close();
+    await player.waitForFunction((id) => !game.users.get(id).active, gmId);
+    await player
+      .getByRole("button", { name: "Refresh downtime", exact: true })
+      .click();
     await player
       .getByRole("heading", { name: "No full GM is online" })
       .waitFor();
+    const offline = await player
+      .locator(".infinity-downtime-activities")
+      .innerText();
+    assert.match(offline, /Last choice: Paid Work \(8h\)/);
+    assert.doesNotMatch(offline, /Your last receipt is still shown/);
     assert.equal(
       await player.locator('[data-action="submitQueue"]').count(),
       0,
     );
-  }
-  await player.locator(".infinity-downtime-activities").screenshot({
-    path: path.join(output, "offline-choice.png"),
-  });
-  gm = await join(argument("--gm", "Gamemaster"));
-  await readyGm();
-  await player.getByRole("button", { name: "Try again", exact: true }).click();
-  await player.locator('[data-action="submitQueue"]').waitFor();
-  assert.equal(
-    await player.locator("[data-queue-list]").innerText(),
-    beforeDisconnect,
-  );
-  assert.equal(
-    await player.locator('[data-action="submitQueue"]').isEnabled(),
-    true,
-  );
-  await gm.evaluate(async (blockId) => {
-    const service =
-      await import("/modules/infinity-dnd5e/scripts/downtime/service.js");
-    await service.cancelActiveDowntimeBlock(blockId);
-  }, reconnectBlockId);
-  record("GM offline and reconnect preserve the unfinished choice", {
-    blockId: reconnectBlockId,
-    choiceVisibleOffline: true,
-    submissionDisabledOffline: true,
-    sameChoiceAfterReconnect: true,
-  });
-
-  for (const afterWrite of [true, false]) {
-    const before = await state();
-    const label = afterWrite
-      ? "Gauntlet: lost reply after payment"
-      : "Gauntlet: interruption before payment";
-    await prepareFaultBlock(label);
-    await gm.evaluate(
-      ({ actorId, afterWrite }) => {
-        const actor = game.actors.get(actorId);
-        const original = actor.update;
-        actor.update = async function (...args) {
-          actor.update = original;
-          if (afterWrite) await original.apply(actor, args);
-          throw Error("Gauntlet injected interruption");
-        };
-      },
-      { actorId: evidence.actorIds[0], afterWrite },
-    );
-    await gm.locator('[data-action="applyBlock"]').click();
-    await gm.locator('[data-action="recoverBlock"]').waitFor();
-    const interrupted = await state();
-    assert.equal(interrupted.state, "needs-review");
-    assert.deepEqual(interrupted.wallets, [
-      before.wallets[0] + (afterWrite ? 400 : 0),
-      before.wallets[1] + 400,
-    ]);
-    await gm.reload();
+    for (const actorId of [evidence.actorIds[1], evidence.actorIds[0]]) {
+      await player
+        .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
+        .click();
+      await player.waitForFunction(
+        (id) =>
+          document
+            .querySelector(`[data-actor-id="${id}"]`)
+            ?.getAttribute("aria-current") === "true",
+        actorId,
+      );
+      await player
+        .getByRole("heading", { name: "No full GM is online" })
+        .waitFor();
+      assert.equal(
+        await player.locator('[data-action="submitQueue"]').count(),
+        0,
+      );
+    }
+    await player.locator(".infinity-downtime-activities").screenshot({
+      path: path.join(output, "offline-choice.png"),
+    });
+    gm = await join(argument("--gm", "Gamemaster"));
     await readyGm();
-    await gm.locator('[data-action="recoverBlock"]').click();
-    const recovered = await waitCompleted();
-    assert.deepEqual(
-      recovered.wallets,
-      before.wallets.map((value) => value + 400),
-    );
-    record(
-      afterWrite
-        ? "lost payment reply survives reload without duplicate rewards"
-        : "unpaid operation recovers after reload",
-      { interrupted, recovered, checks: "deterministic fixture totals" },
-    );
-  }
-  await gm
-    .locator(".infinity-downtime-workspace")
-    .screenshot({ path: path.join(output, "recovered-reports.png") });
-  await player.reload();
-  await player.waitForFunction(() => globalThis.game?.ready, null, {
-    timeout: 30_000,
-  });
-  await player.evaluate(() =>
-    game.modules.get("infinity-dnd5e").api.openDowntimeActivities(),
-  );
-  for (const actorId of evidence.actorIds) {
     await player
-      .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
+      .getByRole("button", { name: "Try again", exact: true })
       .click();
-    await player.locator(".dt-receipt").waitFor();
-    assert.match(await player.locator(".dt-receipt").innerText(), /4 gp added/);
+    await player.locator('[data-action="submitQueue"]').waitFor();
+    assert.equal(
+      await player.locator("[data-queue-list]").innerText(),
+      beforeDisconnect,
+    );
+    assert.equal(
+      await player.locator('[data-action="submitQueue"]').isEnabled(),
+      true,
+    );
+    await gm.evaluate(async (blockId) => {
+      const service =
+        await import("/modules/infinity-dnd5e/scripts/downtime/service.js");
+      await service.cancelActiveDowntimeBlock(blockId);
+    }, reconnectBlockId);
+    record("GM offline and reconnect preserve the unfinished choice", {
+      blockId: reconnectBlockId,
+      choiceVisibleOffline: true,
+      submissionDisabledOffline: true,
+      sameChoiceAfterReconnect: true,
+    });
+
+    for (const afterWrite of [true, false]) {
+      const before = await state();
+      const label = afterWrite
+        ? "Gauntlet: lost reply after payment"
+        : "Gauntlet: interruption before payment";
+      await prepareFaultBlock(label);
+      await gm.evaluate(
+        ({ actorId, afterWrite }) => {
+          const actor = game.actors.get(actorId);
+          const original = actor.update;
+          actor.update = async function (...args) {
+            actor.update = original;
+            if (afterWrite) await original.apply(actor, args);
+            throw Error("Gauntlet injected interruption");
+          };
+        },
+        { actorId: evidence.actorIds[0], afterWrite },
+      );
+      await gm.locator('[data-action="applyBlock"]').click();
+      await gm.locator('[data-action="recoverBlock"]').waitFor();
+      const interrupted = await state();
+      assert.equal(interrupted.state, "needs-review");
+      assert.deepEqual(interrupted.wallets, [
+        before.wallets[0] + (afterWrite ? 400 : 0),
+        before.wallets[1] + 400,
+      ]);
+      await gm.reload();
+      await readyGm();
+      await gm.locator('[data-action="recoverBlock"]').click();
+      const recovered = await waitCompleted();
+      assert.deepEqual(
+        recovered.wallets,
+        before.wallets.map((value) => value + 400),
+      );
+      record(
+        afterWrite
+          ? "lost payment reply survives reload without duplicate rewards"
+          : "unpaid operation recovers after reload",
+        { interrupted, recovered, checks: "deterministic fixture totals" },
+      );
+    }
+    await gm
+      .locator(".infinity-downtime-workspace")
+      .screenshot({ path: path.join(output, "recovered-reports.png") });
+    await player.reload();
+    await player.waitForFunction(() => globalThis.game?.ready, null, {
+      timeout: 30_000,
+    });
+    await player.evaluate(() =>
+      game.modules.get("infinity-dnd5e").api.openDowntimeActivities(),
+    );
+    for (const actorId of evidence.actorIds) {
+      await player
+        .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
+        .click();
+      await player.locator(".dt-receipt").waitFor();
+      assert.match(
+        await player.locator(".dt-receipt").innerText(),
+        /4 gp added/,
+      );
+    }
+    await player
+      .locator(".infinity-downtime-activities")
+      .screenshot({ path: path.join(output, "player-report.png") });
+    record("both reports survive player reconnect", await state());
   }
-  await player
-    .locator(".infinity-downtime-activities")
-    .screenshot({ path: path.join(output, "player-report.png") });
-  record("both reports survive player reconnect", await state());
+  await runCraftingFoundryJourney({
+    gm,
+    player,
+    actorIds: evidence.actorIds,
+    worldTime: evidence.worldTime,
+    output,
+    record,
+  });
   evidence.functionalPassed = true;
   evidence.privacy = await player.evaluate(() => {
     const journal = game.journal.find((row) =>

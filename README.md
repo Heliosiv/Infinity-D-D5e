@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**In development — resource-based downtime:** Activities now support GP per
+workday, flat fees, required tools, consumed inventory materials, and crafted
+items. Arrow and scroll presets include visible costs and progress across
+blocks; the GM approves spending and item delivery together. See
+[crafting and scribing](docs/DOWNTIME_SYSTEM.md#crafting-scribing-and-resource-costs).
+
 ## What This Module Is
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
@@ -165,7 +171,7 @@ The default guided flow is **Workbench → Downtime → Open block → Open for
 players**. Each player chooses one activity and clicks **Roll & submit**;
 choosing another activity replaces their selection. Once everyone has submitted,
 the GM clicks **Review results**, chooses each outcome, edits the reports, and
-clicks **Apply rewards & send reports**. Report edits save before application,
+clicks **Apply results & send reports**. Report edits save before application,
 and **Save report** can save them separately. See the
 [downtime guide](docs/DOWNTIME_SYSTEM.md) for projects, existing city-action
 blocks, and the repeatable `npm run ui:audit:downtime` browser gauntlet.

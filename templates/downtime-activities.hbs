@@ -149,16 +149,17 @@
 
                   {{#if hasTargets}}
                   <label class="dt-field dt-field--wide">
-                    <span>{{#if multiTarget}}Goods to fence{{else}}Target{{/if}}</span>
+                    <span>{{#if multiTarget}}Goods to fence{{else}}{{#if targetLabel}}{{targetLabel}}{{else}}Target{{/if}}{{/if}}</span>
                     {{#if multiTarget}}
                     <select name="targetIds" multiple size="5" data-activity-input required aria-label="Goods to fence for {{label}}" aria-describedby="dt-target-help-{{id}}">
                       {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
                     </select>
                     <small id="dt-target-help-{{id}}">Select any combination that fits this activity's value capacity. On desktop, use Ctrl or Cmd to select more than one.</small>
                     {{else}}
-                    <select name="targetId" data-activity-input aria-label="Target for {{label}}">
-                      {{#each targets}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
+                    <select name="targetId" data-activity-input aria-label="{{#if targetLabel}}{{targetLabel}}{{else}}Target{{/if}} for {{label}}" aria-describedby="dt-target-detail-{{id}}">
+                      {{#each targets}}<option value="{{id}}" data-detail="{{#if detail}}{{detail}}{{/if}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>{{/each}}
                     </select>
+                    <small id="dt-target-detail-{{id}}" data-target-detail aria-live="polite">{{#each targets}}{{#if selected}}{{#if detail}}{{detail}}{{/if}}{{/if}}{{/each}}</small>
                     {{/if}}
                   </label>
                   {{/if}}

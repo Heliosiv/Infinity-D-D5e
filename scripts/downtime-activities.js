@@ -99,6 +99,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     this._statusMessage = "";
     this._errorMessage = "";
     this._pendingFocus = null;
+    this._activityTargets = new Map();
     this._unsubscribe = null;
     this._bindAdapter();
   }
@@ -129,6 +130,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
   }
 
   async _prepareContext() {
+    this._activityTargets ??= new Map();
     let projection = null;
     try {
       projection = await this._adapter?.getPlayerProjection?.({
@@ -147,12 +149,25 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     if (this._blockId && context.blockId && this._blockId !== context.blockId) {
       this._statusMessage = "";
       this._errorMessage = "";
+      this._activityTargets.clear();
     }
     this._blockId = context.blockId;
     this._actorId = context.actor?.id ?? this._actorId;
     this._guided = context.guided;
     this._retrySubmission = context.retrySubmission;
     this._requiresRoll = context.requiresRoll;
+    for (const activity of context.activities) {
+      const targetId = this._activityTargets.get(
+        `${this._actorId}:${activity.id}`,
+      );
+      if (
+        targetId &&
+        activity.targets.some((option) => option.id === targetId)
+      ) {
+        for (const option of activity.targets)
+          option.selected = option.id === targetId;
+      }
+    }
     if (context.completed && !this._busy) this._statusMessage = "";
     if (!context.categories.some((category) => category.selected)) {
       this._category = DEFAULT_CATEGORY;
@@ -177,11 +192,18 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
   _wireActivityInputs() {
     const root = this.element?.querySelector?.("[data-activity-list]");
     if (!root) return;
+    for (const card of root.querySelectorAll("[data-activity-id]"))
+      updateActivityCardSummary(card);
     root.addEventListener("change", (event) => {
       const input = event.target;
       if (!(input instanceof HTMLElement)) return;
       const card = input.closest?.("[data-activity-id]");
       if (!card) return;
+      if (input.name === "targetId")
+        this._activityTargets.set(
+          `${this._actorId}:${card.dataset.activityId}`,
+          input.value,
+        );
       updateActivityCardSummary(card);
     });
   }
@@ -629,6 +651,7 @@ function normalizeActivity(activity) {
     items,
     hasItems: items.length > 0,
     targetField: cleanId(source.targetField ?? "targetId") || "targetId",
+    targetLabel: String(source.targetLabel ?? "Target"),
     multiTarget: source.multiTarget === true,
     stakeAllowed,
     maxStakeGp,
@@ -704,6 +727,11 @@ export function readAllowedActivityInputs(card) {
 }
 
 function updateActivityCardSummary(card) {
+  const detail = card.querySelector?.("[data-target-detail]");
+  if (detail)
+    detail.textContent =
+      card.querySelector?.('[name="targetId"]')?.selectedOptions?.[0]?.dataset
+        ?.detail ?? "";
   const hours = positiveInteger(
     card.querySelector?.('[name="hours"]')?.value ?? card.dataset?.fixedHours,
     0,

@@ -160,7 +160,7 @@ function sanitizeOption(raw) {
   return {
     id,
     label: cleanText(raw.label ?? raw.name ?? "Option", 200),
-    detail: cleanText(raw.detail ?? raw.description, 500),
+    detail: cleanText(raw.detail ?? raw.description, 1600),
     selected: raw.selected === true,
     disabled: raw.disabled === true,
     reason: cleanText(raw.reason, 300),
@@ -228,12 +228,13 @@ function sanitizeActivity(raw) {
       .map(sanitizeOption)
       .filter(Boolean),
     targetField: cleanId(raw.targetField) || "targetId",
+    targetLabel: cleanText(raw.targetLabel, 100),
     multiTarget: raw.multiTarget === true,
     stakeAllowed,
     maxStakeGp,
     stakeStepGp,
     stakeValueGp,
-    costLabel: cleanText(raw.costLabel, 300),
+    costLabel: cleanText(raw.costLabel, 1600),
     limitLabel: cleanText(raw.limitLabel, 300),
   };
 }
@@ -604,6 +605,16 @@ export class DowntimePlayerAdapter {
       activityId,
       hours,
     };
+    if (
+      guided &&
+      activity.targets.length &&
+      !activity.targets.some(
+        (option) => option.id === targetId && !option.disabled,
+      )
+    )
+      throw new Error(
+        "Choose a source that meets this activity's costs and supplies.",
+      );
     const skill = cleanId(payload.skill ?? payload.skillId);
     const stakeCp = Number.isFinite(Number(payload.stakeGp))
       ? Math.round(Math.max(0, Number(payload.stakeGp)) * 100)
@@ -739,6 +750,19 @@ export class DowntimePlayerAdapter {
       throw new Error("Choose exactly one activity before rolling.");
     }
     const entry = queue[0];
+    const activity = projection.activities.find(
+      (option) => option.id === entry.activityId,
+    );
+    if (
+      !activity?.available ||
+      (activity.targets.length &&
+        !activity.targets.some(
+          (option) => option.id === entry.targetId && !option.disabled,
+        ))
+    )
+      throw new Error(
+        "This activity's costs or supplies are no longer available. Refresh and review your choice before submitting.",
+      );
     if (!entry.skill) return queue;
     const actor = this._getActor(actorId);
     if (!actor)
@@ -1044,6 +1068,12 @@ export class DowntimePlayerAdapter {
       } else if (entry.targetId) {
         detail.push(selectedOptionLabel(activity, entry.targetId));
       }
+      if (projection.mode === "guided" && activity?.costLabel) {
+        const target = activity.targets.find(
+          (option) => option.id === entry.targetId,
+        );
+        detail.push(target?.detail || activity.costLabel);
+      }
       return {
         ...entry,
         label: activity?.label ?? entry.activityId,
@@ -1052,6 +1082,14 @@ export class DowntimePlayerAdapter {
       };
     });
     projection.usedHours = queue.reduce((sum, entry) => sum + entry.hours, 0);
+    for (const activity of projection.activities) {
+      const entry = queue.find((row) => row.activityId === activity.id);
+      const selected =
+        activity.targets.find((option) => option.id === entry?.targetId) ??
+        activity.targets.find((option) => !option.disabled);
+      for (const option of activity.targets)
+        option.selected = option === selected;
+    }
     projection.remainingHours = Math.max(
       0,
       projection.budgetHours - projection.usedHours,

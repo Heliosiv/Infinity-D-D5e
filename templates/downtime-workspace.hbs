@@ -117,7 +117,7 @@
             <i class="fa-solid fa-dice-d20" aria-hidden="true"></i> {{#if guided}}Prepare results{{else}}Generate preview{{/if}}
           </button>
           <button type="button" class="dt-button {{#if primaryAction.applyBlock}}dt-button--success dt-button--next{{/if}}" data-action="applyBlock" {{#if guided}}{{#unless currentBlock.canApply}}hidden{{/unless}}{{/if}} {{#if primaryAction.applyBlock}}aria-describedby="dt-next-action"{{/if}} title="{{currentBlock.applyReason}}" {{#unless currentBlock.canApply}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-            <i class="fa-solid fa-check-double" aria-hidden="true"></i> {{#if guided}}Apply rewards &amp; send reports{{else}}Apply exact plan{{/if}}
+            <i class="fa-solid fa-check-double" aria-hidden="true"></i> {{#if guided}}Apply results &amp; send reports{{else}}Apply exact plan{{/if}}
           </button>
           <button type="button" class="dt-button dt-button--danger dt-command-bar__cancel" data-action="cancelBlock" title="{{currentBlock.cancelReason}}" {{#if guided}}{{#unless currentBlock.canCancel}}hidden{{/unless}}{{/if}} {{#unless currentBlock.canCancel}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel
@@ -182,7 +182,7 @@
           </div>
           <div class="dt-preview__warning">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
-            {{#if guided}}{{#if currentBlock.completed}}These results have been applied and the player reports delivered. Start the next block when the party is ready.{{else if currentBlock.canApply}}Choose a result for each character, then edit the report if needed. Apply rewards &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}These saved results are read-only while application or recovery is in progress.{{/if}}{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
+            {{#if guided}}{{#if currentBlock.completed}}These results have been applied and the player reports delivered. Start the next block when the party is ready.{{else if currentBlock.canApply}}Choose a result for each character, then edit the report if needed. Apply results &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}These saved results are read-only while application or recovery is in progress.{{/if}}{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
           </div>
           <div class="dt-plan-list">
             {{#each currentBlock.planCharacters}}
@@ -193,6 +193,7 @@
                 <li>
                   <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
                   <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
+                  {{#if workSummary}}<p class="dt-operation-cost" data-work-summary>{{workSummary}}</p>{{/if}}
                   {{#if hasOutcomeOptions}}
                   {{#if ../../currentBlock.canApply}}
                   <div class="dt-chip-grid" data-operation-id="{{id}}" data-outcome-index="{{selectedOutcomeIndex}}" aria-label="Choose result for {{label}}">
@@ -422,6 +423,10 @@
           <li><button type="button" data-action="selectGuidedTemplate" data-template-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}><strong>{{name}}</strong><span>{{description}}</span></button></li>
           {{/each}}
         </ul>
+        <div class="dt-form__actions" aria-label="Crafting presets">
+          <button type="button" class="dt-button" data-action="craftingPreset" data-recipe="arrows" {{#if busy}}disabled{{/if}}>Add arrow crafting</button>
+          <button type="button" class="dt-button" data-action="craftingPreset" data-recipe="scroll" {{#if busy}}disabled{{/if}}>Add scroll scribing</button>
+        </div>
       </aside>
       <form class="dt-form" data-form="guided-template" aria-labelledby="dt-template-editor-heading">
         <div class="dt-form__head">
@@ -433,6 +438,33 @@
         <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Player description" rows="3" maxlength="400" {{#if busy}}disabled{{/if}}>{{templateEditor.description}}</textarea></label>
         <label class="dt-field dt-field--wide"><span>Activity image (optional)</span><input name="image" value="{{templateEditor.image}}" maxlength="500" placeholder="Image path or URL" {{#if busy}}disabled{{/if}} /><small>Leave blank to use the default activity icon.</small></label>
         <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one of these skills. Leave all unchecked for an activity without a roll.</p><div class="dt-chip-grid">{{#each templateEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        <fieldset class="dt-fieldset"><legend>Costs, supplies &amp; crafting</legend>
+          <p>Costs apply to every result, after your review. One workday is 8 productive hours. GP/day is prorated and rounded up to copper; whole materials per day round up. Earlier rounded charges count toward later blocks, so splitting a day adds no extra cost. No costs are taken on submission.</p>
+          <label class="dt-field dt-field--wide"><span>Crafting result</span><select name="workOutput" {{#if busy}}disabled{{/if}}>{{#each templateEditor.work.outputOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label class="dt-field"><span>Fee per block (gp)</span><input type="number" name="workGpPerBlock" min="0" max="100000" step="0.01" value="{{templateEditor.work.gpPerBlock}}" required {{#if busy}}disabled{{/if}} /></label>
+          <label class="dt-field"><span>Additional cost per workday (gp)</span><input type="number" name="workGpPerDay" min="0" max="100000" step="0.01" value="{{templateEditor.work.gpPerDay}}" required {{#if busy}}disabled{{/if}} /></label>
+          <div data-work-output="arrows bolts needles sling-bullets item" {{#unless templateEditor.work.isBatch}}hidden{{/unless}}>
+            <label class="dt-field"><span>Hours per batch</span><input type="number" name="workBatchHours" min="1" max="10000" step="1" value="{{templateEditor.work.batchHours}}" required {{#if busy}}disabled{{/if}} /></label>
+            <label class="dt-field"><span>Base materials cost per batch (gp)</span><input type="number" name="workBatchGp" min="0" max="100000" step="0.01" value="{{templateEditor.work.batchGp}}" required {{#if busy}}disabled{{/if}} /><small>Paid gradually as hours are worked. Add inventory materials below only if they are additional to this GP cost.</small></label>
+          </div>
+          <div data-work-output="item" {{#unless templateEditor.work.isItem}}hidden{{/unless}}>
+            <label class="dt-field dt-field--wide"><span>Finished item UUID</span><input type="text" name="workItemUuid" aria-label="Finished item UUID" value="{{templateEditor.work.itemUuid}}" maxlength="300" placeholder="Compendium.module.pack.Item.id" {{#if busy}}disabled{{/if}} /><small>Copy the UUID of a world or compendium item.</small></label>
+            <label class="dt-field"><span>Items per batch</span><input type="number" name="workQuantity" min="1" max="1000" step="1" value="{{templateEditor.work.quantity}}" required {{#if busy}}disabled{{/if}} /></label>
+          </div>
+          <p data-work-output="scroll" {{#unless templateEditor.work.isScroll}}hidden{{/unless}}>Scrolls use the 2024 time and base GP cost for their spell level, paid as work progresses. The player picks an owned spell or scroll; the original is kept. Confirm spell preparation, proficiency, material components, and permission to copy an existing scroll. Add any consumed spell components below. Higher-level scrolls can span multiple blocks.</p>
+          <p>Partial crafting hours carry forward for that character and recipe. Changing the recipe's costs, materials, or output starts separate progress. Ammunition requires appropriate tools in inventory; confirm proficiency before approving.</p>
+          <label class="dt-field dt-field--wide"><span>Additional required tool (kept)</span><input type="text" name="workTool" aria-label="Additional required tool (kept)" value="{{templateEditor.work.tool}}" maxlength="100" placeholder="Exact inventory name, e.g. Calligrapher's Supplies" {{#if busy}}disabled{{/if}} /></label>
+          <details><summary>Inventory materials to consume (optional)</summary>
+            <p>Match the exact item name on the character's sheet. Matching stacks are combined. Empty names add no requirement. Depleted stacks stay on the sheet with quantity zero.</p>
+            {{#each templateEditor.work.materials}}
+            <fieldset class="dt-fieldset"><legend>Material {{number}}</legend>
+              <label class="dt-field dt-field--wide"><span>Material name</span><input type="text" name="materialName" aria-label="Material {{number}} name" value="{{name}}" maxlength="100" {{#if ../busy}}disabled{{/if}} /></label>
+              <label class="dt-field"><span>Quantity</span><input type="number" name="materialQuantity" value="{{quantity}}" min="1" max="10000" step="1" required {{#if ../busy}}disabled{{/if}} /></label>
+              <label class="dt-field"><span>Consume</span><select name="materialPer" {{#if ../busy}}disabled{{/if}}>{{#each perOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            </fieldset>
+            {{/each}}
+          </details>
+        </fieldset>
         <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per full assigned block.</p></div>
         {{#each templateEditor.outcomes}}
         <fieldset class="dt-fieldset" data-template-outcome><legend>Result {{number}}</legend>
