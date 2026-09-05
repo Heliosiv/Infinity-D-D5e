@@ -49,13 +49,15 @@ import {
   guidedDowntimeSkillLabel,
   normalizeGuidedDowntimeSelection,
   normalizeGuidedDowntimeTemplates,
+  normalizeGuidedDowntimeLibrary,
+  projectGuidedDowntimeTemplate,
 } from "./downtime/dispatch.js";
 
 /* Guided downtime templates remain bounded and player choices only name a
    configured template and skill. */
 {
   const templates = defaultGuidedDowntimeTemplates();
-  assert.equal(templates.length, 3);
+  assert.equal(templates.length, 11);
   assert.deepEqual(
     Object.fromEntries(
       templates.map((template) => [
@@ -67,6 +69,14 @@ import {
       "guided-labor": [1, 2, 4],
       "guided-research": [0, 0, 0],
       "guided-thievery": [0, 2, 6],
+      "guided-performance": [0, 2, 4],
+      "guided-training": [0, 0, 0],
+      "guided-contacts": [0, 0, 0],
+      "guided-scouting": [0, 0, 0],
+      "guided-care": [0, 0, 0],
+      "guided-service": [0, 0, 0],
+      "guided-animal-care": [0, 0, 0],
+      "guided-reflection": [0, 0, 0],
     },
     "the shipped guided rewards stay within the modest one-day balance budget",
   );
@@ -92,7 +102,53 @@ import {
     normalizeGuidedDowntimeTemplates([
       { id: "invalid", name: "Invalid", outcomes: [] },
     ]).length,
-    3,
+    11,
+  );
+  for (const template of templates.slice(3)) {
+    const choice = normalizeGuidedDowntimeSelection(
+      { templateId: template.id, skill: template.skills[0] ?? "forged" },
+      templates,
+    );
+    assert.equal(choice.templateId, template.id);
+    assert.equal(choice.skill, template.skills[0] ?? "");
+    assert.equal(
+      Object.hasOwn(projectGuidedDowntimeTemplate(template), "outcomes"),
+      false,
+    );
+  }
+  const original = templates.slice(0, 3);
+  original[0].name = "Our campaign's work";
+  const before = structuredClone(original);
+  const expanded = normalizeGuidedDowntimeLibrary(original);
+  assert.deepEqual(expanded.slice(0, 3), before);
+  assert.deepEqual(original, before, "expansion never mutates saved records");
+  assert.equal(expanded.length, 11);
+  assert.deepEqual(normalizeGuidedDowntimeLibrary(expanded), expanded);
+  assert.deepEqual(
+    normalizeGuidedDowntimeTemplates(original),
+    original,
+    "normalizing an assigned block must not add unassigned activities",
+  );
+  assert.deepEqual(
+    normalizeDowntimeConfig({ guidedTemplates: original }).guidedTemplates,
+    original,
+    "stored config validation must not rewrite an existing library",
+  );
+  expanded[3].name = "Our custom performance";
+  expanded[3].outcomes[2].rewardGp = 3;
+  assert.deepEqual(
+    normalizeGuidedDowntimeLibrary(expanded),
+    expanded,
+    "customized built-ins take precedence over shipped content",
+  );
+  const full = Array.from({ length: 24 }, (_, index) => ({
+    ...templates[0],
+    id: `custom-${index}`,
+  }));
+  assert.deepEqual(
+    normalizeGuidedDowntimeLibrary(full),
+    full,
+    "new activities cannot evict a full campaign library",
   );
   assert.equal(GUIDED_DOWNTIME_SKILLS.length, 18);
   assert.equal(guidedDowntimeSkillLabel("per"), "Persuasion");

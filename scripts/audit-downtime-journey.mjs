@@ -547,6 +547,32 @@ try {
     () =>
       document.querySelector('[data-action="submitQueue"]')?.disabled === false,
   );
+  for (const id of [
+    "guided-performance",
+    "guided-training",
+    "guided-contacts",
+    "guided-scouting",
+    "guided-care",
+    "guided-service",
+    "guided-animal-care",
+    "guided-reflection",
+  ]) {
+    await page
+      .locator(`[data-activity-id="${id}"] [data-action="addActivity"]`)
+      .click();
+    await page.waitForFunction(
+      (activityId) =>
+        document.querySelector(
+          `[data-activity-id="${activityId}"] [aria-pressed="true"]`,
+        ),
+      id,
+    );
+    assert.equal(await page.locator("[data-queue-entry-id]").count(), 1);
+    assert.match(
+      await page.locator('[data-action="submitQueue"]').innerText(),
+      id === "guided-reflection" ? /Submit activity/ : /Roll & submit/,
+    );
+  }
   await page
     .locator('[data-activity-id="guided-labor"] [data-action="addActivity"]')
     .click();

@@ -13,6 +13,7 @@ import {
   verifyGuidedWorkBefore,
 } from "./downtime/work.js";
 import { planWalletDeltaCp } from "./downtime/items.js";
+import { defaultGuidedDowntimeTemplates } from "./downtime/dispatch.js";
 
 const moduleId = "infinity-dnd5e";
 const saved = { fromUuid: globalThis.fromUuid, CONFIG: globalThis.CONFIG };
@@ -119,6 +120,23 @@ const authorized = { authorizeWrite: () => true };
 try {
   assert.equal(normalizeGuidedWork(undefined), null);
   assert.equal(normalizeGuidedWork({}), null);
+  const library = defaultGuidedDowntimeTemplates();
+  for (const [id, dailyCp] of [
+    ["guided-training", 100],
+    ["guided-contacts", 100],
+    ["guided-care", 50],
+  ]) {
+    const activity = library.find((entry) => entry.id === id);
+    for (const hours of [4, 8, 24]) {
+      const quote = quoteGuidedWork(args(actor(), activity, { hours }));
+      assert.equal(quote.costCp, (dailyCp * hours) / 8);
+      assert.equal(
+        quote.outputQuantity,
+        0,
+        "narrative activities do not create items",
+      );
+    }
+  }
   for (const bad of [-1, NaN, Infinity, "oops", 0.001, 100001])
     assert.throws(() => normalizeGuidedWork({ gpPerDay: bad }), /GP per day/);
   for (const bad of [0, -1, 0.5, 10001])

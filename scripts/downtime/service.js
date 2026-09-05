@@ -39,6 +39,7 @@ import {
   guidedDowntimeSkillLabel,
   guidedTemplateById,
   normalizeGuidedDowntimeTemplate,
+  normalizeGuidedDowntimeLibrary,
   normalizeGuidedDowntimeSelection,
   projectGuidedDowntimeTemplate,
 } from "./dispatch.js";
@@ -791,7 +792,7 @@ export async function saveGuidedDowntimeTemplate(payload = {}) {
       );
     }
     await updateDowntimeConfig((current) => {
-      const templates = [...current.guidedTemplates];
+      const templates = normalizeGuidedDowntimeLibrary(current.guidedTemplates);
       const index = templates.findIndex((entry) => entry.id === template.id);
       if (payload.id && index < 0) {
         throw new Error(
@@ -980,8 +981,9 @@ async function openGuidedDowntimeBlock({
   const selectedIds = [
     ...new Set(Array.isArray(templateIds) ? templateIds.map(String) : []),
   ];
+  const library = normalizeGuidedDowntimeLibrary(config.guidedTemplates);
   const templates = selectedIds
-    .map((templateId) => guidedTemplateById(config.guidedTemplates, templateId))
+    .map((templateId) => guidedTemplateById(library, templateId))
     .filter(Boolean);
   const completedProjectHours = guidedProjectProgressFromStore(
     loadDowntimeWorkflowStore(),
@@ -3830,7 +3832,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     workflowStatus: visibleBlock?.state ?? "idle",
     workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
-    guidedTemplates: structuredClone(config.guidedTemplates),
+    guidedTemplates: normalizeGuidedDowntimeLibrary(config.guidedTemplates),
     guidedProjects: config.guidedProjects.map((project) => {
       const progressHours = projectProgressHours(projectProgress, project.id);
       const progressSuccesses = projectProgressSuccesses(

@@ -897,6 +897,105 @@ try {
   );
 
   const projectPartner = makeActor({ id: "project-partner" });
+  // Upgrade an existing saved library, then exercise every new player choice.
+  const { ADDITIONAL_GUIDED_ACTIVITIES } =
+    await import("./downtime/activity-library.js");
+  const extraIds = ADDITIONAL_GUIDED_ACTIVITIES.map((entry) => entry.id);
+  await workflow.updateDowntimeConfig((current) => ({
+    ...current,
+    guidedTemplates: current.guidedTemplates.filter(
+      (entry) => !extraIds.includes(entry.id),
+    ),
+  }));
+  const legacyLibrary = clone(workflow.loadDowntimeConfig());
+  const offeredLibrary = (await service.getWorkspaceProjection())
+    .guidedTemplates;
+  for (const id of extraIds)
+    assert.ok(offeredLibrary.some((entry) => entry.id === id));
+  assert.deepEqual(
+    workflow.loadDowntimeConfig(),
+    legacyLibrary,
+    "offering new activities does not rewrite a stored checkpoint",
+  );
+  const activityTester = makeActor({
+    id: "activity-library-tester",
+    currency: { gp: 10, pp: 0, ep: 0, sp: 0, cp: 0 },
+  });
+  actors.set(activityTester.id, activityTester);
+  const walletCp = () =>
+    Object.entries({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 }).reduce(
+      (total, [key, value]) =>
+        total + activityTester.system.currency[key] * value,
+      0,
+    );
+  for (const activity of ADDITIONAL_GUIDED_ACTIVITIES) {
+    const newBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Activity testing",
+      hours: 8,
+      actorIds: [activityTester.id],
+      templateIds: extraIds,
+    });
+    const available = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: activityTester.id,
+    });
+    assert.equal(available.activities.length, extraIds.length);
+    assert.equal(
+      available.activities.every((entry) => !Object.hasOwn(entry, "outcomes")),
+      true,
+    );
+    const beforeCp = walletCp();
+    const beforeItems = activityTester.items.size;
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: `test-${activity.id}`,
+      blockId: newBlock.id,
+      actorId: activityTester.id,
+      queue: [
+        {
+          id: "choice",
+          activityId: activity.id,
+          hours: 8,
+          skill: activity.skills[0] ?? "",
+          ...(activity.skills.length
+            ? { guidedRoll: { total: 18, formula: "1d20 + 3" } }
+            : {}),
+        },
+      ],
+    });
+    await service.lockActiveDowntimeBlock(newBlock.id);
+    const planned = await service.planActiveDowntimeBlock(newBlock.id);
+    await service.chooseGuidedDowntimeOutcome({
+      blockId: newBlock.id,
+      operationId: planned.plan.operations[0].operationId,
+      outcomeIndex: 2,
+    });
+    await service.applyActiveDowntimeBlock(newBlock.id);
+    assert.equal(
+      walletCp() - beforeCp,
+      activity.outcomes[2].rewardGp * 100 -
+        (activity.work?.gpPerDay ?? 0) * 100,
+    );
+    assert.equal(activityTester.items.size, beforeItems);
+    const receipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: activityTester.id,
+    });
+    assert.equal(
+      receipt.receipt.activities[0].report,
+      activity.outcomes[2].report,
+    );
+    const afterCp = walletCp();
+    await service.applyActiveDowntimeBlock(newBlock.id);
+    assert.equal(
+      walletCp(),
+      afterCp,
+      "replaying an applied activity cannot pay or charge again",
+    );
+  }
+  actors.delete(activityTester.id);
+
   projectPartner.name = "Project Partner";
   actors.set(projectPartner.id, projectPartner);
   for (const requiredHours of [0, -1, 1.5, 10001]) {

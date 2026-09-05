@@ -8,6 +8,7 @@
  */
 
 import { normalizeGuidedWork } from "./work.js";
+import { ADDITIONAL_GUIDED_ACTIVITIES } from "./activity-library.js";
 
 export const GUIDED_DOWNTIME_MODE = "guided";
 export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 24;
@@ -123,9 +124,22 @@ const DEFAULT_TEMPLATES = Object.freeze([
 ]);
 
 export function defaultGuidedDowntimeTemplates() {
-  return DEFAULT_TEMPLATES.map((template) =>
-    normalizeGuidedDowntimeTemplate(template),
+  return [...DEFAULT_TEMPLATES, ...ADDITIONAL_GUIDED_ACTIVITIES].map(
+    (template) => normalizeGuidedDowntimeTemplate(template),
   );
+}
+
+/** Extend the campaign library only; assigned block snapshots stay unchanged. */
+export function normalizeGuidedDowntimeLibrary(raw) {
+  const templates = normalizeGuidedDowntimeTemplates(raw);
+  const ids = new Set(templates.map((template) => template.id));
+  for (const entry of ADDITIONAL_GUIDED_ACTIVITIES) {
+    if (templates.length >= GUIDED_DOWNTIME_TEMPLATE_LIMIT) break;
+    if (ids.has(entry.id)) continue;
+    templates.push(normalizeGuidedDowntimeTemplate(entry));
+    ids.add(entry.id);
+  }
+  return templates;
 }
 
 export function normalizeGuidedDowntimeTemplates(raw) {

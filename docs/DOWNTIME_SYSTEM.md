@@ -44,9 +44,33 @@ Players who own multiple participating characters can use the character tabs
 to switch between their latest completed reports. Each character receives its
 own state update, and report access follows current Actor ownership.
 
-The shipped templates are **Paid Work**, **Research & Rumors**, and
-**Thievery**. They are intentionally a safe starting set. No campaign time is
-advanced by this workflow.
+The library ships with eleven editable activities: **Paid Work**,
+**Research & Rumors**, **Thievery**, and the eight choices below. No campaign
+time is advanced by this workflow.
+
+| Activity             | Player skills                       | Cost and possible benefit                                                |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| Perform for a Crowd  | Performance, Acrobatics, Persuasion | No fee; 0, 2, or 4 gp in tips per block.                                 |
+| Train & Spar         | Athletics, Acrobatics, Insight      | 1 gp per workday; a training lesson or milestone described by the GM.    |
+| Build Local Contacts | Persuasion, Insight, Deception      | 1 gp per workday; introductions, information, or a modest favor.         |
+| Scout & Map          | Survival, Perception, Nature        | No fee; a local route, hazard, or discovery chosen by the GM.            |
+| Tend the Sick        | Medicine, Nature, Insight           | 0.5 gp per workday; care, gratitude, and connections with local healers. |
+| Religious Service    | Religion, Insight, Persuasion       | No fee; community trust, guidance, or a request for service.             |
+| Care for Animals     | Animal Handling, Medicine, Nature   | No fee; care and progress toward an agreed training goal.                |
+| Rest & Reflect       | No roll                             | No fee; a personal takeaway or resolution.                               |
+
+These are original campaign templates with three editable reports each.
+Narrative benefits do not automatically change HP, injuries, conditions,
+proficiencies, faction standing, or rest resources. Daily costs scale with
+assigned time at eight productive hours per workday and appear before submission;
+the GM applies costs and the chosen report through the normal review workflow.
+
+Existing libraries offer the eight additions automatically when space remains,
+keeping saved activities, their order, and customized versions of the new choices.
+A full 24-activity library is preserved. This does not rewrite stored checkpoints
+just to display the additions. Current blocks keep their original activity list;
+tick the new choices when opening the next block. Saving an activity records the
+expanded library through the normal save path.
 
 ### Edit the activity library
 

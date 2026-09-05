@@ -19,7 +19,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.14-preview.4 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
+Version 0.3.14-preview.5 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -33,6 +33,12 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.14-preview.5 — More player downtime activities** - Adds performing,
+training, local contacts, scouting and mapping, medical care, religious service,
+animal care, and reflection. Each has three editable GM reports; reflection
+needs no roll. Existing libraries offer the additions without overwriting saved
+activities or changing an open block. See [the activity list and costs](docs/DOWNTIME_SYSTEM.md).
 
 **v0.3.14-preview.4 — Read-only navigation fix** - A GM window that does
 not own editing control can browse merchants and switch Workbench tools without
