@@ -166,7 +166,6 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     this._loading = true;
     this._requestFailed = false;
-    emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
     // Don't spin forever if no reply lands (GM disconnects mid-request, the GM
     // handler throws, or the GM's socket isn't ready yet): fall back to the
     // resolved empty/list state after a short wait.
@@ -178,6 +177,17 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (this.rendered) this.render(false);
       }
     }, 5000);
+    try {
+      emitMerchantEvent(MERCHANT_EVENTS.SHOP_LIST_REQUEST, {});
+    } catch (error) {
+      console.warn(`${MODULE_ID} | shop list request could not be sent`, error);
+      if (!this._loading) return;
+      globalThis.clearTimeout?.(this._loadTimer);
+      this._loadTimer = null;
+      this._loading = false;
+      this._requestFailed = true;
+      if (this.rendered) this.render(false);
+    }
   }
 
   _onShopList(payload) {
@@ -348,18 +358,32 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.render(false);
       return;
     }
-    emitMerchantEvent(MERCHANT_EVENTS.SHOP_REQUEST, { merchantId });
+    this._pending.add(merchantId);
+    try {
+      emitMerchantEvent(MERCHANT_EVENTS.SHOP_REQUEST, { merchantId });
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | shop entry request could not be sent`,
+        error,
+      );
+      this._pending.delete(merchantId);
+      ui.notifications?.warn(
+        "Your shop request could not be sent. Refresh Shops and try again.",
+      );
+      this.render(false);
+      return;
+    }
     // Show a persistent waiting state on the row (cleared on SESSION_OPEN or
     // SHOP_RESULT) so the request never feels like a dead click. The session
     // chime plays when the window actually opens (registerMerchantSessionAutoOpen).
     const shop = this._shops?.find((s) => s.id === merchantId);
     const name = shop?.name ?? "the shop";
-    this._pending.add(merchantId);
-    ui.notifications?.info(
-      shop?.knock || shop?.selfServiceMode === "knock"
-        ? `Knocking at ${name} — waiting for the GM…`
-        : `Entering ${name}…`,
-    );
+    if (this._pending.has(merchantId))
+      ui.notifications?.info(
+        shop?.knock || shop?.selfServiceMode === "knock"
+          ? `Knocking at ${name} — waiting for the GM…`
+          : `Entering ${name}…`,
+      );
     this.render(false);
   }
 

@@ -167,10 +167,9 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     this._requestId = `${userId}:${Date.now()}:${Math.random()
       .toString(36)
       .slice(2, 10)}`;
-    emitResourceEvent(RESOURCE_EVENTS.OVERVIEW_REQUEST, {
-      requestId: this._requestId,
-    });
+    const requestId = this._requestId;
     this._requestTimer = globalThis.setTimeout?.(() => {
+      if (this._requestId !== requestId) return;
       this._requestTimer = null;
       this._requestId = null;
       this._loading = false;
@@ -178,6 +177,20 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       this._overview = null;
       if (this.rendered) this.render(false);
     }, REQUEST_TIMEOUT_MS);
+    try {
+      emitResourceEvent(RESOURCE_EVENTS.OVERVIEW_REQUEST, { requestId });
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | party supplies request could not be sent`,
+        error,
+      );
+      if (this._requestId !== requestId) return;
+      this._clearRequestTimer();
+      this._requestId = null;
+      this._loading = false;
+      this._requestFailed = true;
+      if (this.rendered) this.render(false);
+    }
   }
 
   _onOverviewReply(payload) {

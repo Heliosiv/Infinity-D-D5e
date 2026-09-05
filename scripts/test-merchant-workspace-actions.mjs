@@ -10,11 +10,16 @@ let writes = 0;
 let packReads = 0;
 let confirm = async () => true;
 let pickerOptions;
+let onPickerRender = () => {};
 globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
 globalThis.foundry = {
   applications: {
     api: {
-      ApplicationV2: class {},
+      ApplicationV2: class {
+        render() {
+          onPickerRender(this);
+        }
+      },
       HandlebarsApplicationMixin: (Base) => class extends Base {},
       DialogV2: { confirm: (options) => confirm(options) },
     },
@@ -251,6 +256,127 @@ for (const action of ["clearInventory", "restock"]) {
     assert.equal(writes, 1);
   });
 }
+await check("merchant selection preserves a failed draft", async () => {
+  const app = fixture();
+  await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+    app,
+    null,
+    { dataset: { merchantId: "b" } },
+  );
+  assert.equal(
+    app._selectedId,
+    "a",
+    "failed edits must not disappear when choosing another merchant",
+  );
+  assert.equal(app.renders, 0);
+});
+await check("merchant selection saves once before switching", async () => {
+  const app = fixture();
+  let saves = 0;
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  app._saveFromForm = async () => {
+    saves++;
+    await pending;
+  };
+  const action = () =>
+    MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+      app,
+      null,
+      { dataset: { merchantId: "b" } },
+    );
+  const first = action();
+  const repeated = action();
+  release();
+  await Promise.all([first, repeated]);
+  assert.equal(saves, 1);
+  assert.equal(app._selectedId, "b");
+  assert.equal(app.renders, 1);
+});
+await check("read-only merchant browsing does not save", async () => {
+  const app = fixture();
+  const savedUser = game.user;
+  game.user = { id: "secondary", role: 4, isGM: true, active: true };
+  try {
+    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+      app,
+      null,
+      { dataset: { merchantId: "b" } },
+    );
+    assert.equal(app._selectedId, "b");
+    assert.equal(writes, 0);
+  } finally {
+    game.user = savedUser;
+  }
+});
+await check("item lookup selection change", async () => {
+  const app = fixture();
+  app._resolveItem = async () => {
+    app._selectedId = "b";
+    return { name: "Sword", type: "weapon" };
+  };
+  await app._addUuidToInventory("Item.sword");
+  assert.equal(
+    writes,
+    0,
+    "a late item lookup must never stock a newly selected merchant",
+  );
+});
+await check("missing item does not create broken stock", async () => {
+  const app = fixture();
+  app._resolveItem = async () => null;
+  await app._addUuidToInventory("Item.missing");
+  assert.equal(writes, 0);
+  assert.match(notifications.at(-1)?.message ?? "", /item|load|available/i);
+});
+await check("resolved item stocks the intended merchant", async () => {
+  const app = fixture();
+  app._resolveItem = async () => ({ name: "Sword", type: "weapon" });
+  await app._addUuidToInventory("Item.sword");
+  assert.equal(
+    findMerchant("a").items.some((row) => row.uuid === "Item.sword"),
+    true,
+  );
+  assert.equal(findMerchant("b").items.length, 1);
+});
+await check("failed item lookup can recover on retry", async () => {
+  const app = fixture();
+  let available = false;
+  globalThis.fromUuid = async () =>
+    available ? { name: "Recovered sword", type: "weapon" } : null;
+  try {
+    assert.equal(await app._resolveItem("Item.recovered"), null);
+    available = true;
+    assert.equal(
+      (await app._resolveItem("Item.recovered"))?.name,
+      "Recovered sword",
+      "a cached lookup failure must not permanently block retry",
+    );
+  } finally {
+    delete globalThis.fromUuid;
+  }
+});
+await check("library picker selection change", async () => {
+  const app = fixture();
+  game.packs.get = () => ({
+    getDocuments: async () => [
+      { _id: "1234567890123456", name: "Sword", type: "weapon" },
+    ],
+  });
+  app._resolveItem = async () => ({ name: "Sword", type: "weapon" });
+  onPickerRender = (picker) => {
+    app._selectedId = "b";
+    picker._settle(picker._options[0].id);
+  };
+  await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.addFromPack.call(app);
+  assert.equal(
+    writes,
+    0,
+    "a library choice is bound to the merchant that opened it",
+  );
+});
 assert.deepEqual(failures, [], failures.join("\n"));
 console.log(
   "Merchant workspace failure, retry, and delayed confirmation journeys passed",

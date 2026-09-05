@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import path from "node:path";
 import Handlebars from "handlebars";
 import { chromium } from "playwright";
+import { auditPlayerRequests } from "./workbench-player-journey.mjs";
 
 const root = path.resolve(".");
 const outputRoot = path.resolve("output/playwright");
@@ -15,6 +16,12 @@ const renderMerchant = Handlebars.compile(
   readFileSync("templates/gm-workbench-nav.hbs", "utf8") +
     readFileSync("templates/merchant-workspace.hbs", "utf8"),
 );
+const renderPlayers = Object.fromEntries(
+  ["shop-picker", "resource-overview"].map((surface) => [
+    `/render/${surface}`,
+    Handlebars.compile(readFileSync(`templates/${surface}.hbs`, "utf8")),
+  ]),
+);
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
@@ -23,10 +30,15 @@ const server = createServer(async (request, response) => {
       response.end(
         `<!doctype html><html lang="en"><head><title>Workbench functional gauntlet</title>${manifest.styles.map((file) => `<link rel="stylesheet" href="/${file}">`).join("")}<style>body{margin:0;padding:16px;background:#171a1c;color:#eee;font-family:Arial}#app{height:860px;margin:auto;position:relative;max-width:1040px}.application-content{height:100%;display:flex;flex-direction:column;overflow:hidden}button,input,select,textarea{font:inherit}#notices{position:fixed;right:8px;bottom:8px;max-width:340px;padding:8px;background:#171a1c;z-index:10;pointer-events:none}button{cursor:pointer}</style></head><body><div id="notices" role="status"></div><section id="app" class="infinity-dnd5e infinity-merchant-workspace infinity-gm-workbench"><div class="application-content"></div></section></body></html>`,
       );
-    } else if (pathname === "/render" && request.method === "POST") {
+    } else if (
+      (pathname === "/render" || renderPlayers[pathname]) &&
+      request.method === "POST"
+    ) {
       let body = "";
       for await (const chunk of request) body += chunk;
-      response.end(renderMerchant(JSON.parse(body)));
+      response.end(
+        (renderPlayers[pathname] ?? renderMerchant)(JSON.parse(body)),
+      );
     } else if (/^\/(?:scripts|styles|assets)\/[\w/.-]+$/.test(pathname)) {
       const filename = path.resolve(root, `.${pathname}`);
       if (!filename.startsWith(`${root}${path.sep}`))
@@ -268,6 +280,25 @@ try {
       ["loot.armor.mundane"],
     );
     assert.match(await page.locator("#notices").textContent(), /Save now/);
+    const selectionsBefore = await page.evaluate(
+      () =>
+        journey.state.actions.filter((action) => action === "selectMerchant")
+          .length,
+    );
+    await page
+      .locator('[data-action="selectMerchant"][data-merchant-id="b"]')
+      .click();
+    await page.waitForFunction(
+      (before) =>
+        journey.state.actions.filter((action) => action === "selectMerchant")
+          .length > before,
+      selectionsBefore,
+    );
+    assert.equal(await page.evaluate(() => journey.app._selectedId), "a");
+    assert.equal(
+      await page.locator('input[name="name"]').inputValue(),
+      "Draft merchant name",
+    );
     await page.locator('[data-workbench-route="downtime"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
     assert.equal(await page.evaluate(() => journey.app.rendered), true);
@@ -290,6 +321,17 @@ try {
       await page.evaluate(() => journey.findMerchant("a").buyFilter.lootTypes),
       ["loot.weapon.mundane"],
     );
+    for (const id of ["b", "a"]) {
+      await page
+        .locator(`[data-action="selectMerchant"][data-merchant-id="${id}"]`)
+        .click();
+      await page.waitForFunction(
+        (id) =>
+          journey.app._selectedId === id && !journey.app._merchantSelecting,
+        id,
+      );
+      await page.evaluate(() => journey.app.rendering);
+    }
 
     // A confirmation can outlive its selected merchant; never retarget it.
     const beforePrompt = await page.evaluate(() =>
@@ -350,6 +392,8 @@ try {
       await page.evaluate(() => journey.state.actionError ?? ""),
       "",
     );
+    await auditPlayerRequests(page, width, out);
+    assert.deepEqual(errors, []);
     await page.close();
     console.log(
       `Workbench functional journey passed at ${width}px: failed save, draft recovery, filter retry, stale confirmation, failed route, repeated navigation.`,

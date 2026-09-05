@@ -831,9 +831,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     });
   }
 
-  async _addUuidToInventory(uuid) {
-    if (!this._selectedId) return;
-    const merchant = findMerchant(this._selectedId);
+  async _addUuidToInventory(uuid, merchantId = this._selectedId) {
+    if (!merchantId || !isCurrentMerchantAction(this, merchantId)) return;
+    const merchant = findMerchant(merchantId);
     if (!merchant) return;
     const exists = merchant.items.some((r) => r.uuid === uuid);
     if (exists) {
@@ -841,10 +841,24 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       return;
     }
     // Ammunition always stocks as a full stack of 20; everything else as 1.
-    const item = await this._resolveItem(uuid);
+    let item;
+    try {
+      item = await this._resolveItem(uuid);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | inventory item could not be loaded`, error);
+    }
+    if (!item) {
+      notify(
+        "warn",
+        "That item could not be loaded. Nothing was added; check the item and try again.",
+      );
+      return;
+    }
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    if (!isCurrentMerchantAction(this, merchantId)) return;
     const qty = resolveStockQty(item, 1);
     await commitMerchantWrite(
-      this._selectedId,
+      merchantId,
       (fresh) =>
         fresh.items.some((r) => r.uuid === uuid)
           ? null
@@ -860,9 +874,11 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
   /** Resolve an item snapshot by uuid, using the render cache when warm. */
   async _resolveItem(uuid) {
-    if (this._itemCache.has(uuid)) return this._itemCache.get(uuid);
+    const cached = this._itemCache.get(uuid);
+    if (cached) return cached;
     const snapshot = await resolveItemSnapshot(uuid);
-    this._itemCache.set(uuid, snapshot);
+    if (snapshot) this._itemCache.set(uuid, snapshot);
+    else this._itemCache.delete(uuid);
     return snapshot;
   }
 
@@ -1008,12 +1024,37 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this.render(false);
   }
 
-  static _onSelectMerchant(_event, target) {
+  static async _onSelectMerchant(_event, target) {
     const id = target?.dataset?.merchantId;
-    if (!id) return;
-    this._selectedId = id;
-    playModuleSound(SOUND_EVENTS.ITEM_OPEN);
-    this.render(false);
+    if (
+      !id ||
+      id === this._selectedId ||
+      this._merchantSelecting ||
+      this._gmWorkbenchSwitching
+    )
+      return;
+    this._merchantSelecting = true;
+    try {
+      if (
+        this._selectedId &&
+        isAuthoritativeGM() &&
+        hasMerchantTabLeadership()
+      ) {
+        if (!(await saveBeforeMerchantAction(this, this._selectedId))) return;
+      }
+      if (!findMerchant(id)) {
+        notify(
+          "warn",
+          "That merchant is no longer available. Choose another merchant.",
+        );
+        return;
+      }
+      this._selectedId = id;
+      playModuleSound(SOUND_EVENTS.ITEM_OPEN);
+      this.render(false);
+    } finally {
+      this._merchantSelecting = false;
+    }
   }
 
   static async _onSave() {
@@ -1058,6 +1099,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     const items = await loadCompendiumItems().catch(() => []);
+    if (!isCurrentMerchantAction(this, merchant.id)) return;
     if (items.length === 0) {
       notify("warn", `no items in compendium.`);
       return;
@@ -1095,11 +1137,12 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       pickedUuid = null;
     }
     if (!pickedUuid) return;
+    if (!isCurrentMerchantAction(this, merchant.id)) return;
 
     // The picker is intentionally presentation-only. Revalidate the canonical
     // candidate and the current merchant inventory immediately before writing.
     const stillAvailable = candidates.some((item) => item.uuid === pickedUuid);
-    const currentMerchant = findMerchant(this._selectedId);
+    const currentMerchant = findMerchant(merchant.id);
     const alreadyStocked = currentMerchant?.items?.some(
       (row) => row.uuid === pickedUuid,
     );
@@ -1110,7 +1153,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       );
       return;
     }
-    await this._addUuidToInventory(pickedUuid);
+    await this._addUuidToInventory(pickedUuid, merchant.id);
   }
 
   static async _onMarketTier(_event, target) {

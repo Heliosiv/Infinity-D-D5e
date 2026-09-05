@@ -1,6 +1,6 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the v0.3.14-preview.2 source interface. The preview retains the established game rules, permissions, campaign records, and authoritative-GM workflow.
+This guide covers the v0.3.14-preview.3 source interface. The preview retains the established game rules, permissions, campaign records, and authoritative-GM workflow.
 
 ## Open the primary launcher
 
@@ -94,6 +94,15 @@ Use **Save now**, then retry the action. A pending confirmation stops if its
 merchant is changed or the workspace closes; start it again for the merchant
 you want. If the workspace refreshes while the artwork picker is open, your
 selection applies to the current form for that same merchant.
+
+Choosing another merchant also waits for the current merchant's edits to save.
+If that save fails, the current form stays open. Item drops and library choices
+stop if you switch merchants before the item finishes loading. If an item
+cannot be loaded, nothing is added; retry after the item becomes available.
+
+If Shops or Party Supplies cannot send a request, the loading indicator clears
+and **Try again** remains available. A shop-entry request stays disabled while
+waiting for the GM, then becomes available again after a decline or send error.
 
 Workbench navigation keeps the current window open if the destination cannot
 start. Wait for a pending save before choosing another tool. Returning through
