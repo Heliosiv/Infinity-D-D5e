@@ -19,7 +19,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.14-preview.1 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
+Version 0.3.14-preview.2 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -33,6 +33,15 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.14-preview.2 — Functional gauntlet improvements** - Merchant stock,
+filter, preset, and artwork actions stop when pending edits cannot be saved,
+leaving those edits available for retry. Delayed delete, clear, restock, and
+artwork prompts cannot affect a newly selected merchant. Artwork selection
+survives a workspace refresh. Failed Workbench destinations leave the current
+window open, repeated route clicks wait for the first save, and returning to a
+tool restores its remembered section. A browser gauntlet exercises the real
+controllers and templates with isolated campaign storage at three widths.
 
 **v0.3.14-preview.1 — Local UI preview** - Carries the Campaign Atlas UI onto
 the v0.3.13 tagged build, retaining its launcher fixes and downtime crafting,
@@ -383,6 +392,14 @@ Layout audits keep each run's HTML, screenshots, and summary in its own
 other's input, and an empty, incomplete, or duplicated window inventory fails
 the audit before any click checks run. The standalone `ui:harness` preview keeps
 its existing fixed path.
+
+`npm run ui:audit:workbench` exercises merchant save failure and retry, preserved
+drafts, stock-filter copying, stale confirmations, failed route startup, and
+repeated navigation at 1040, 720, and 380px. It uses the real controllers,
+templates, and local artwork with in-memory campaign storage; it does not
+connect to a Foundry world. Evidence is saved in a unique
+`output/playwright/workbench-journey-*` directory. Both source verification
+gates include this journey alongside the downtime gauntlet.
 
 ### Compendium pack
 

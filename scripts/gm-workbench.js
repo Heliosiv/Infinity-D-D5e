@@ -103,25 +103,32 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /** @this {GmWorkbenchApp} */
   static async _onNavigate(event, target) {
     event?.preventDefault?.();
+    if (this._gmWorkbenchNavigating || this._gmWorkbenchSwitching) return null;
+    this._gmWorkbenchNavigating = true;
     const route = String(target?.dataset?.workbenchRoute ?? "").trim();
     const subview = String(target?.dataset?.workbenchSubview ?? "").trim();
     const entityId = String(target?.dataset?.workbenchEntityId ?? "").trim();
     try {
       const ready = await this._beforeWorkbenchNavigate?.();
       if (ready === false) return null;
+      if (this._gmWorkbenchSwitching || this.rendered === false) return null;
+      return openGmWorkbench({
+        route,
+        ...(target?.dataset?.workbenchSubview !== undefined ? { subview } : {}),
+        ...(target?.dataset?.workbenchEntityId !== undefined
+          ? { entityId }
+          : {}),
+        _sourceApplication: this,
+      });
     } catch (error) {
       console.warn(`${MODULE_ID} | Workbench route change was stopped`, error);
       globalThis.ui?.notifications?.error?.(
         "This workspace still has a change that could not be saved. Review it before switching tools.",
       );
       return null;
+    } finally {
+      this._gmWorkbenchNavigating = false;
     }
-    return openGmWorkbench({
-      route,
-      subview,
-      entityId,
-      _sourceApplication: this,
-    });
   }
 
   /** @this {GmWorkbenchApp} */
@@ -220,6 +227,21 @@ export function openGmWorkbench(options = {}) {
 
   const previous = options?._sourceApplication ?? activeApplication;
   const position = capturePosition(previous?.position);
+  let app;
+  try {
+    app = adapter.open({
+      workbench: target,
+      ...target,
+      ...(position ? { position } : {}),
+    });
+    if (!app) throw new Error("Workbench route returned no application");
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Workbench route did not open`, error);
+    globalThis.ui?.notifications?.error?.(
+      "That workspace did not open. Your current workspace is still available; try again.",
+    );
+    return null;
+  }
   if (previous) {
     previous._gmWorkbenchSwitching = true;
     try {
@@ -238,12 +260,6 @@ export function openGmWorkbench(options = {}) {
     }
   }
 
-  const app = adapter.open({
-    workbench: target,
-    ...target,
-    ...(position ? { position } : {}),
-  });
-  if (!app) return null;
   app._gmWorkbenchSwitching = false;
   app.setWorkbenchTarget?.(target);
   if (position && app.element?.style) app.setPosition?.(position);

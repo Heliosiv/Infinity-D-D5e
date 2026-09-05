@@ -166,6 +166,37 @@ async function confirmMerchantWriteAuthority(app) {
   return true;
 }
 
+function isCurrentMerchantAction(app, merchantId) {
+  if (
+    app._selectedId === merchantId &&
+    app.rendered !== false &&
+    !app._gmWorkbenchSwitching &&
+    findMerchant(merchantId)
+  )
+    return true;
+  globalThis.ui?.notifications?.warn?.(
+    "The selected merchant changed or closed. Nothing changed; start the action again for the current merchant.",
+  );
+  return false;
+}
+
+async function saveBeforeMerchantAction(app, merchantId) {
+  try {
+    await app._saveFromForm();
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | merchant action stopped after save failure`,
+      error,
+    );
+    notify(
+      "error",
+      "Merchant changes could not be saved. Your edits are still here; use Save now, then retry the action.",
+    );
+    return false;
+  }
+  return isCurrentMerchantAction(app, merchantId);
+}
+
 export class MerchantWorkspaceApp extends GmWorkbenchApp {
   static _instance = null;
   static WORKBENCH_ROUTE = "merchants";
@@ -1013,7 +1044,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     });
     if (!confirmed) return;
     if (!(await confirmMerchantWriteAuthority(this))) return;
-    const deletedId = this._selectedId;
+    if (!isCurrentMerchantAction(this, merchant.id)) return;
+    const deletedId = merchant.id;
     await deleteMerchant(deletedId);
     pushCloseAllSessionsFor(deletedId);
     this._selectedId = null;
@@ -1083,6 +1115,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
   static async _onMarketTier(_event, target) {
     if (!this._selectedId) return;
+    const merchantId = this._selectedId;
     const form = this.element?.querySelector?.('[data-form="merchant-edit"]');
     if (!form) return;
     const min = Math.max(0, Math.floor(Number(target?.dataset?.min) || 0));
@@ -1091,9 +1124,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const maxInput = form.querySelector('[name="poolMaxGp"]');
     if (minInput) minInput.value = String(min);
     if (maxInput) maxInput.value = String(max);
-    try {
-      await this._saveFromForm();
-    } catch {}
+    if (!(await saveBeforeMerchantAction(this, merchantId))) return;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     this.render(false);
   }
@@ -1112,12 +1143,11 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
    */
   async _generateStock({ replace }) {
     if (!this._selectedId) return;
+    const merchantId = this._selectedId;
     // Persist pending form edits (e.g. just-toggled pool chips) so we roll
     // against the latest config, not the last-saved one.
-    try {
-      await this._saveFromForm();
-    } catch {}
-    let merchant = findMerchant(this._selectedId);
+    if (!(await saveBeforeMerchantAction(this, merchantId))) return;
+    let merchant = findMerchant(merchantId);
     if (!merchant) return;
     const pool = merchant.pool ?? { lootTypes: [], rarities: [], count: 6 };
     if (
@@ -1130,6 +1160,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       return;
     }
     const items = await loadCompendiumItems().catch(() => []);
+    if (!isCurrentMerchantAction(this, merchantId)) return;
     if (items.length === 0) {
       ui.notifications?.warn("No items found in the compendium.");
       return;
@@ -1147,6 +1178,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       });
       if (!confirmed) return;
     }
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    if (!isCurrentMerchantAction(this, merchantId)) return;
     if (replace) merchant = clearInventory(merchant);
     const exclude = new Set(merchant.items.map((r) => r.uuid));
     // Also exclude by name so an append can't add a different library entry
@@ -1168,7 +1201,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       return;
     }
     await commitMerchantWrite(
-      this._selectedId,
+      merchantId,
       (fresh) => {
         let next = replace ? clearInventory(fresh) : fresh;
         for (const row of rows) next = upsertInventoryRow(next, row);
@@ -1187,14 +1220,13 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
    *  filter, so a merchant buys back the same kinds of goods it sells. */
   static async _onCopyStockToBuyFilter() {
     if (!this._selectedId) return;
+    const merchantId = this._selectedId;
     // Persist pending form edits so we copy the latest pool selections.
-    try {
-      await this._saveFromForm();
-    } catch {}
-    const merchant = findMerchant(this._selectedId);
+    if (!(await saveBeforeMerchantAction(this, merchantId))) return;
+    const merchant = findMerchant(merchantId);
     if (!merchant) return;
     await commitMerchantWrite(
-      this._selectedId,
+      merchantId,
       (fresh) =>
         normalizeMerchant({
           ...fresh,
@@ -1222,16 +1254,18 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       rejectClose: false,
     });
     if (!confirmed) return;
-    await commitMerchantWrite(
-      this._selectedId,
-      (fresh) => clearInventory(fresh),
-      { broadcast: true },
-    );
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    if (!isCurrentMerchantAction(this, merchant.id)) return;
+    await commitMerchantWrite(merchant.id, (fresh) => clearInventory(fresh), {
+      broadcast: true,
+    });
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     this.render(false);
   }
 
   static async _onPickArt() {
+    const merchantId = this._selectedId;
+    if (!merchantId) return;
     const input = this.element?.querySelector?.('input[name="art"]');
     const FP =
       foundry?.applications?.apps?.FilePicker?.implementation ??
@@ -1244,10 +1278,11 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       type: "image",
       current: input?.value || "",
       callback: async (path) => {
-        if (input) input.value = path;
-        try {
-          await this._saveFromForm();
-        } catch {}
+        if (!isCurrentMerchantAction(this, merchantId)) return;
+        const currentInput = this.element?.querySelector?.('input[name="art"]');
+        if (!currentInput) return;
+        currentInput.value = path;
+        if (!(await saveBeforeMerchantAction(this, merchantId))) return;
         this.render(false);
       },
     });
@@ -1271,7 +1306,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       });
       if (!confirmed) return;
     }
-    await commitMerchantWrite(this._selectedId, (fresh) => restockAll(fresh), {
+    if (!(await confirmMerchantWriteAuthority(this))) return;
+    if (!isCurrentMerchantAction(this, merchant.id)) return;
+    await commitMerchantWrite(merchant.id, (fresh) => restockAll(fresh), {
       broadcast: true,
     });
     playModuleSound(SOUND_EVENTS.ROLL_START);

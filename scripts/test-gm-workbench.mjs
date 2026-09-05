@@ -222,6 +222,57 @@ assert.equal(
   "invalid routes fail to the first route",
 );
 
+for (const failure of ["null", "throw"]) {
+  configureGmWorkbench({
+    merchants: routeAdapter("merchants"),
+    injuries: {
+      open() {
+        if (failure === "throw") throw new Error("Route startup interrupted");
+        return null;
+      },
+    },
+  });
+  assert.equal(openGmWorkbench({ route: "injuries" }), null);
+  assert.equal(
+    fallback.closeCalls,
+    0,
+    "a failed destination must leave the current workspace open",
+  );
+  assert.equal(fallback._gmWorkbenchSwitching, false);
+  assert.equal(getActiveGmWorkbenchApplication(), fallback);
+  assert.match(warnings.at(-1), /did not open/i);
+}
+
+configureGmWorkbench(
+  Object.fromEntries(
+    GM_WORKBENCH_ROUTES.map((route) => [route, routeAdapter(route)]),
+  ),
+);
+let releaseSave;
+const saved = new Promise((resolve) => {
+  releaseSave = resolve;
+});
+fallback._beforeWorkbenchNavigate = () => saved;
+const firstNavigation = GmWorkbenchApp._onNavigate.call(fallback, null, {
+  dataset: { workbenchRoute: "downtime" },
+});
+const duplicateNavigation = GmWorkbenchApp._onNavigate.call(fallback, null, {
+  dataset: { workbenchRoute: "injuries" },
+});
+releaseSave(true);
+await Promise.all([firstNavigation, duplicateNavigation]);
+assert.equal(
+  getActiveGmWorkbenchApplication().route,
+  "downtime",
+  "repeat clicks during a pending save must not race to open a second route",
+);
+assert.equal(fallback.closeCalls, 1);
+assert.equal(
+  getActiveGmWorkbenchApplication().captureWorkbenchTarget().subview,
+  "history",
+  "route buttons retain the remembered subview when they do not request a new one",
+);
+
 globalThis.game.user = { id: "assistant", isGM: true, role: 3 };
 assert.equal(openGmWorkbench({ route: "injuries" }), null);
 assert.match(warnings.at(-1), /full Game Masters only/);

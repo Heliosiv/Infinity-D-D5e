@@ -1,6 +1,6 @@
 # Infinity D&D5e UI Quick Start
 
-This guide covers the current v0.3.10 source interface. It does not change any game rule, permission, stored campaign record, or authoritative-GM workflow.
+This guide covers the v0.3.14-preview.2 source interface. The preview retains the established game rules, permissions, campaign records, and authoritative-GM workflow.
 
 ## Open the primary launcher
 
@@ -87,6 +87,17 @@ If only some settings save, the status names them. Review those settings, then s
 ## Understand status and recovery messages
 
 Status messages answer three questions: what happened, whether anything changed, and what to do next.
+
+If merchant edits cannot be saved, stock generation, stock-filter copying,
+market presets, and artwork selection stop and leave the edited fields visible.
+Use **Save now**, then retry the action. A pending confirmation stops if its
+merchant is changed or the workspace closes; start it again for the merchant
+you want. If the workspace refreshes while the artwork picker is open, your
+selection applies to the current form for that same merchant.
+
+Workbench navigation keeps the current window open if the destination cannot
+start. Wait for a pending save before choosing another tool. Returning through
+the route buttons restores that tool's remembered section.
 
 When private campaign state is fail-closed, Shift+I and the scene-control launcher open a focused **Campaign Recovery** window instead of the normal Workbench. Secondary full GMs can inspect the same value-free status and Journal metadata, but only the active Game Master can confirm a recovery action. Campaign Recovery is exceptional and never appears in normal Workbench navigation.
 
