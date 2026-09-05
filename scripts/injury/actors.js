@@ -1,5 +1,21 @@
 import { isFullGM } from "../permissions.js";
 
+/** Main party roster: the character selected in each player's configuration. */
+export function isAssignedPlayerCharacter(actor, gameRef = globalThis.game) {
+  if (actor?.type !== "character" || !actor.id) return false;
+  const users =
+    gameRef?.users?.contents ??
+    gameRef?.users?.values?.() ??
+    gameRef?.users ??
+    [];
+  return Array.from(users).some((user) => {
+    if (!user || user.isGM || isFullGM(user)) return false;
+    const id =
+      typeof user.character === "string" ? user.character : user.character?.id;
+    return String(id ?? "") === String(actor.id);
+  });
+}
+
 /** The injury roster includes characters assigned to or owned by a non-GM. */
 export function isPlayerOwnedCriticalInjuryActor(
   actor,

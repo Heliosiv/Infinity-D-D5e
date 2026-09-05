@@ -10,6 +10,7 @@ import {
 } from "../infinity-app.js";
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "../gm-workbench.js";
 import { formatInjuryTimestamp } from "./calendar.js";
+import { isAssignedPlayerCharacter } from "./actors.js";
 import {
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
@@ -137,7 +138,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
       .filter(Boolean)
       .sort(compareTriageRows);
     const playerCharacters = (globalThis.game?.actors?.contents ?? [])
-      .filter((actor) => actor?.type === "character")
+      .filter((actor) => isAssignedPlayerCharacter(actor))
       .map((actor) => ({
         id: String(actor.id ?? ""),
         name: String(actor.name ?? "Character"),
@@ -294,7 +295,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
 
 function buildTriageRow(record) {
   const actor = globalThis.game?.actors?.get?.(record.actorId);
-  if (!actor) return null;
+  if (!isAssignedPlayerCharacter(actor)) return null;
   const injuries = getActorCriticalInjuryEffects(actor)
     .map((effect) => getCriticalInjuryData(effect))
     .filter(Boolean)

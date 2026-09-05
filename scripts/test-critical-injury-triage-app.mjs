@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import Handlebars from "handlebars";
 
 globalThis.foundry = {
   applications: {
@@ -120,6 +122,102 @@ try {
     ),
     [assignedPlayer.id],
     "a player's assigned character remains available without an explicit ownership entry",
+  );
+
+  const gm = {
+    id: "gm",
+    isGM: true,
+    role: 4,
+    active: true,
+    character: "gm-character",
+  };
+  const assistant = {
+    id: "assistant",
+    isGM: true,
+    role: 3,
+    character: "assistant-character",
+  };
+  const actor = (id, type = "character") => ({
+    id,
+    type,
+    name: id,
+    ownership: { default: 3 },
+    effects: { contents: [] },
+    testUserPermission: () => true,
+  });
+  const characters = [
+    actor("actor-assigned"),
+    actor("actor-owned"),
+    actor("actor-copy"),
+    actor("gm-character"),
+    actor("assistant-character"),
+    actor("assigned-npc", "npc"),
+  ];
+  globalThis.game.user = gm;
+  globalThis.game.settings = { get: () => undefined };
+  globalThis.game.actors = {
+    contents: characters,
+    get: (id) => characters.find((entry) => entry.id === id),
+  };
+  game.users.contents.push(gm, assistant);
+  unrelatedPlayer.character = "assigned-npc";
+  const contextApp = {
+    prepareWorkbenchContext: () => null,
+    _actionInFlight: false,
+    _message: "",
+    _tone: "ready",
+  };
+  const prepare = () =>
+    CriticalInjuryTriageApp.prototype._prepareContext.call(contextApp);
+  let context = await prepare();
+  assert.deepEqual(
+    context.partyRows.map((entry) => entry.id),
+    ["actor-assigned"],
+    "only the offline player's main character appears, even when every actor grants Owner access",
+  );
+  assert.deepEqual(
+    context.playerCharacters.map((entry) => entry.id),
+    ["actor-assigned"],
+    "manual review uses the same main-character roster",
+  );
+  const render = Handlebars.compile(
+    readFileSync("templates/critical-injury-triage.hbs", "utf8"),
+  );
+  const html = render(context);
+  assert.match(html, /<h4>actor-assigned<\/h4>/);
+  assert.doesNotMatch(
+    html,
+    /actor-copy|actor-owned|gm-character|assistant-character|assigned-npc/,
+  );
+  offlineOwner.character = characters[0];
+  assert.equal(
+    (await prepare()).partyRows.length,
+    1,
+    "shared assignment does not duplicate a character",
+  );
+  offlineOwner.character = null;
+  assignedPlayer.character = characters[1];
+  context = await prepare();
+  assert.deepEqual(
+    context.partyRows.map((entry) => entry.id),
+    ["actor-owned"],
+    "changing a player's assigned Actor document changes the table",
+  );
+  assert.ok(
+    registeredHooks.some((entry) => entry.event === "updateUser"),
+    "assignment changes trigger a refresh",
+  );
+  assignedPlayer.character = null;
+  context = await prepare();
+  assert.equal(context.hasPlayerCharacters, false);
+  assert.match(
+    render(context),
+    /Select each player's character in User Configuration/,
+  );
+  assert.equal(
+    characters.length,
+    6,
+    "filtering does not delete extra characters",
   );
 } finally {
   if (savedGame === undefined) delete globalThis.game;

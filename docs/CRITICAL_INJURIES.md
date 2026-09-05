@@ -10,6 +10,12 @@ removed.
 
 ## Player and GM flow
 
+The GM **Critical Injury Triage** table and manual-review character picker show
+only the main character assigned to each non-GM player in **User Configuration**.
+Offline players remain included. Extra owned characters, copies, NPCs, and
+GM-assigned characters are excluded. Changing a player's assignment refreshes
+the table; existing injury effects and saved reviews are retained.
+
 Successful **Tend the Sick** downtime can shorten one selected timed injury by
 one calendar day after at least eight hours of care. The GM selects the patient
 and injury while reviewing result 3. This updates the existing effect and
