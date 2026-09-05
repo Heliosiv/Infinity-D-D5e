@@ -907,6 +907,22 @@ try {
       (entry) => !extraIds.includes(entry.id),
     ),
   }));
+  for (const mode of ["guided", ""]) {
+    for (const hours of [1.5, 240.9, 0, -1, 241, NaN, Infinity]) {
+      await assert.rejects(
+        service.openDowntimeBlock({
+          mode,
+          hours,
+          locationName: "Invalid budget",
+          actorIds: [actor.id],
+          templateIds: ["guided-labor"],
+        }),
+        /whole number.*1.*240/,
+        "Invalid budgets must be rejected, never rounded into a different block",
+      );
+      assert.equal(workflow.loadDowntimeWorkflowStore().activeBlock, null);
+    }
+  }
   const legacyLibrary = clone(workflow.loadDowntimeConfig());
   const offeredLibrary = (await service.getWorkspaceProjection())
     .guidedTemplates;
@@ -919,7 +935,7 @@ try {
   );
   const activityTester = makeActor({
     id: "activity-library-tester",
-    currency: { gp: 10, pp: 0, ep: 0, sp: 0, cp: 0 },
+    currency: { gp: 1000, pp: 0, ep: 0, sp: 0, cp: 0 },
   });
   actors.set(activityTester.id, activityTester);
   const walletCp = () =>
@@ -929,70 +945,74 @@ try {
       0,
     );
   for (const activity of ADDITIONAL_GUIDED_ACTIVITIES) {
-    const newBlock = await service.openDowntimeBlock({
-      mode: "guided",
-      locationName: "Activity testing",
-      hours: 8,
-      actorIds: [activityTester.id],
-      templateIds: extraIds,
-    });
-    const available = await service.getPlayerProjectionForUser({
-      userId: player.id,
-      actorId: activityTester.id,
-    });
-    assert.equal(available.activities.length, extraIds.length);
-    assert.equal(
-      available.activities.every((entry) => !Object.hasOwn(entry, "outcomes")),
-      true,
-    );
-    const beforeCp = walletCp();
-    const beforeItems = activityTester.items.size;
-    await service.submitQueueAuthoritatively({
-      userId: player.id,
-      requestId: `test-${activity.id}`,
-      blockId: newBlock.id,
-      actorId: activityTester.id,
-      queue: [
-        {
-          id: "choice",
-          activityId: activity.id,
-          hours: 8,
-          skill: activity.skills[0] ?? "",
-          ...(activity.skills.length
-            ? { guidedRoll: { total: 18, formula: "1d20 + 3" } }
-            : {}),
-        },
-      ],
-    });
-    await service.lockActiveDowntimeBlock(newBlock.id);
-    const planned = await service.planActiveDowntimeBlock(newBlock.id);
-    await service.chooseGuidedDowntimeOutcome({
-      blockId: newBlock.id,
-      operationId: planned.plan.operations[0].operationId,
-      outcomeIndex: 2,
-    });
-    await service.applyActiveDowntimeBlock(newBlock.id);
-    assert.equal(
-      walletCp() - beforeCp,
-      activity.outcomes[2].rewardGp * 100 -
-        (activity.work?.gpPerDay ?? 0) * 100,
-    );
-    assert.equal(activityTester.items.size, beforeItems);
-    const receipt = await service.getPlayerProjectionForUser({
-      userId: player.id,
-      actorId: activityTester.id,
-    });
-    assert.equal(
-      receipt.receipt.activities[0].report,
-      activity.outcomes[2].report,
-    );
-    const afterCp = walletCp();
-    await service.applyActiveDowntimeBlock(newBlock.id);
-    assert.equal(
-      walletCp(),
-      afterCp,
-      "replaying an applied activity cannot pay or charge again",
-    );
+    for (const [outcomeIndex, hours] of [1, 8, 240].entries()) {
+      const newBlock = await service.openDowntimeBlock({
+        mode: "guided",
+        locationName: "Activity testing",
+        hours,
+        actorIds: [activityTester.id],
+        templateIds: extraIds,
+      });
+      const available = await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: activityTester.id,
+      });
+      assert.equal(available.activities.length, extraIds.length);
+      assert.equal(
+        available.activities.every(
+          (entry) => !Object.hasOwn(entry, "outcomes"),
+        ),
+        true,
+      );
+      const beforeCp = walletCp();
+      const beforeItems = activityTester.items.size;
+      await service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: `test-${activity.id}-${outcomeIndex}`,
+        blockId: newBlock.id,
+        actorId: activityTester.id,
+        queue: [
+          {
+            id: "choice",
+            activityId: activity.id,
+            hours,
+            skill: activity.skills[0] ?? "",
+            ...(activity.skills.length
+              ? { guidedRoll: { total: 18, formula: "1d20 + 3" } }
+              : {}),
+          },
+        ],
+      });
+      await service.lockActiveDowntimeBlock(newBlock.id);
+      const planned = await service.planActiveDowntimeBlock(newBlock.id);
+      await service.chooseGuidedDowntimeOutcome({
+        blockId: newBlock.id,
+        operationId: planned.plan.operations[0].operationId,
+        outcomeIndex,
+      });
+      await service.applyActiveDowntimeBlock(newBlock.id);
+      assert.equal(
+        walletCp() - beforeCp,
+        activity.outcomes[outcomeIndex].rewardGp * 100 -
+          Math.ceil(((activity.work?.gpPerDay ?? 0) * 100 * hours) / 8),
+      );
+      assert.equal(activityTester.items.size, beforeItems);
+      const receipt = await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: activityTester.id,
+      });
+      assert.equal(
+        receipt.receipt.activities[0].report,
+        activity.outcomes[outcomeIndex].report,
+      );
+      const afterCp = walletCp();
+      await service.applyActiveDowntimeBlock(newBlock.id);
+      assert.equal(
+        walletCp(),
+        afterCp,
+        "replaying an applied activity cannot pay or charge again",
+      );
+    }
   }
   actors.delete(activityTester.id);
 

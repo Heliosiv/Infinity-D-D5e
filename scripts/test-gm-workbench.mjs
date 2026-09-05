@@ -290,6 +290,44 @@ assert.equal(
 );
 assert.equal(refreshing.closeCalls, 1);
 
+const sameRoute = openGmWorkbench({ route: "merchants" });
+sameRoute.constructor = { RENDER_STATES: { RENDERING: 1 } };
+sameRoute._beforeWorkbenchNavigate = async () => {
+  sameRoute.rendered = false;
+  sameRoute.state = 1;
+  return true;
+};
+configureGmWorkbench({
+  merchants: { open: () => sameRoute },
+  factions: routeAdapter("factions"),
+});
+sameRoute.rendered = false;
+sameRoute.state = 1;
+assert.equal(openGmWorkbench({ route: "merchants" }), sameRoute);
+sameRoute._beforeWorkbenchNavigate = () => {
+  throw Error("The current tab must not start a redundant save");
+};
+await GmWorkbenchApp._onNavigate.call(sameRoute, null, {
+  dataset: { workbenchRoute: "merchants" },
+});
+assert.equal(getActiveGmWorkbenchApplication(), sameRoute);
+assert.equal(
+  sameRoute.closeCalls,
+  0,
+  "Clicking the current route during its save refresh must not close its singleton",
+);
+assert.equal(sameRoute._gmWorkbenchSwitching, false);
+sameRoute._beforeWorkbenchNavigate = async () => true;
+await GmWorkbenchApp._onNavigate.call(sameRoute, null, {
+  dataset: { workbenchRoute: "factions" },
+});
+assert.equal(getActiveGmWorkbenchApplication().route, "factions");
+configureGmWorkbench(
+  Object.fromEntries(
+    GM_WORKBENCH_ROUTES.map((route) => [route, routeAdapter(route)]),
+  ),
+);
+
 for (const state of [-3, -2, -1, 0, undefined]) {
   const closing = openGmWorkbench({ route: "merchants" });
   closing.constructor = { RENDER_STATES: { RENDERING: 1 } };

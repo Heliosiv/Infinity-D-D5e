@@ -118,6 +118,14 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const subview = String(target?.dataset?.workbenchSubview ?? "").trim();
     const entityId = String(target?.dataset?.workbenchEntityId ?? "").trim();
     try {
+      // The active top-level tab is already selected. Starting a save here
+      // needlessly blocks the user's next click while that save is pending.
+      if (
+        route === this.captureWorkbenchTarget?.().route &&
+        target?.dataset?.workbenchSubview === undefined &&
+        target?.dataset?.workbenchEntityId === undefined
+      )
+        return this;
       const ready = await this._beforeWorkbenchNavigate?.();
       if (ready === false) return null;
       if (!canContinueWorkbenchAction(this)) return null;
@@ -225,7 +233,7 @@ export function openGmWorkbench(options = {}) {
   );
 
   if (
-    activeApplication?.rendered &&
+    canContinueWorkbenchAction(activeApplication) &&
     activeApplication.captureWorkbenchTarget?.().route === target.route
   ) {
     activeApplication.setWorkbenchTarget?.(target);
@@ -251,7 +259,9 @@ export function openGmWorkbench(options = {}) {
     );
     return null;
   }
-  if (previous) {
+  // Route adapters may return their existing singleton during a refresh.
+  // A reused destination must never be closed as its own previous window.
+  if (previous && previous !== app) {
     previous._gmWorkbenchSwitching = true;
     try {
       const closing = previous.close?.({ animate: false });

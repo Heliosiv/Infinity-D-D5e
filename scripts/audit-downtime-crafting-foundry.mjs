@@ -283,8 +283,10 @@ export async function runCraftingFoundryJourney({
   assert.equal(scribed.cp, finished.cp - 10000);
   assert.equal(scribed.ink, 1);
   assert.equal(scribed.spellPresent, true);
-  const scrollItem = scribed.outputs.find((item) =>
-    item.name.includes("Gauntlet scribing spell"),
+  const scrollItem = scribed.outputs.find(
+    (item) =>
+      item.name.includes("Gauntlet scribing spell") &&
+      !finished.outputs.some((previous) => previous.id === item.id),
   );
   assert.ok(scrollItem);
   assert.equal(scrollItem.type, "consumable");

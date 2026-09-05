@@ -4,6 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 import { runCraftingFoundryJourney } from "./audit-downtime-crafting-foundry.mjs";
+import { runActivityLibraryFoundryJourney } from "./audit-downtime-library-foundry.mjs";
+import { runWorkbenchFoundryJourney } from "./audit-workbench-foundry.mjs";
 
 const WORLD = "downtime-gauntlet";
 const args = process.argv.slice(2);
@@ -33,6 +35,7 @@ const evidence = {
 const browser = await chromium.launch({ headless: true });
 let gm;
 let player;
+let originalTemplates;
 
 async function join(userName) {
   const context = await browser.newContext({
@@ -167,7 +170,7 @@ async function waitForParticipantReceipt(actorId, expected) {
   assert.match(await player.locator(".dt-receipt").innerText(), expected);
 }
 
-async function openUiBlock(templateId, location) {
+async function openUiBlock(templateId, location, hours = 8) {
   const currentView = gm.locator(
     '[data-action="setView"][data-view="current"]',
   );
@@ -182,7 +185,9 @@ async function openUiBlock(templateId, location) {
   if (await gm.locator('[data-action="beginNextBlock"]').count())
     await gm.locator('[data-action="beginNextBlock"]').click();
   await gm.getByLabel("Downtime location", { exact: true }).fill(location);
-  await gm.locator('[data-form="new-block"] [name="hours"]').fill("8");
+  await gm
+    .locator('[data-form="new-block"] [name="hours"]')
+    .fill(String(hours));
   for (const checkbox of await gm.locator('[name="actorIds"]').all()) {
     await checkbox.setChecked(
       evidence.actorIds.includes(await checkbox.getAttribute("value")),
@@ -352,6 +357,27 @@ async function prepareFaultBlock(label) {
 try {
   gm = await join(argument("--gm", "Gamemaster"));
   await readyGm();
+  gm = await runWorkbenchFoundryJourney({ gm, output, record });
+  await readyGm();
+  originalTemplates = await gm.evaluate(async () => {
+    const store =
+      await import("/modules/infinity-dnd5e/scripts/downtime/store.js");
+    const original = structuredClone(
+      store.loadDowntimeConfig().guidedTemplates,
+    );
+    // Old gauntlet runs accumulated these fixtures until the library was full.
+    // Restore the exact library in finally, including any custom activities.
+    await store.updateDowntimeConfig((config) => ({
+      ...config,
+      guidedTemplates: config.guidedTemplates.filter(
+        (row) =>
+          !["Gauntlet resource arrows", "Gauntlet resource scroll"].includes(
+            row.name,
+          ),
+      ),
+    }));
+    return original;
+  });
   const fixture = await gm.evaluate(async (craftingOnly) => {
     const state =
       await import("/modules/infinity-dnd5e/scripts/private-state.js");
@@ -437,7 +463,10 @@ try {
   );
   await gm.locator('[data-action="refresh"]').click();
 
-  if (!args.includes("--crafting-only")) {
+  if (
+    !args.includes("--crafting-only") &&
+    !args.includes("--activities-only")
+  ) {
     await openUiBlock("guided-labor", "Gauntlet: real player skill checks");
     await submitUiChoices("guided-labor", true, { probeRetry: true });
     await prepareParticipant(evidence.actorIds[0]);
@@ -715,14 +744,31 @@ try {
       .screenshot({ path: path.join(output, "player-report.png") });
     record("both reports survive player reconnect", await state());
   }
-  await runCraftingFoundryJourney({
-    gm,
-    player,
-    actorIds: evidence.actorIds,
-    worldTime: evidence.worldTime,
-    output,
-    record,
-  });
+  if (!args.includes("--crafting-only"))
+    await runActivityLibraryFoundryJourney({
+      gm,
+      player,
+      actorIds: evidence.actorIds,
+      worldTime: evidence.worldTime,
+      output,
+      record,
+      openUiBlock,
+      submitUiChoices,
+      prepareParticipant,
+      selectResult,
+      waitCompleted,
+      state,
+      waitForParticipantReceipt,
+    });
+  if (!args.includes("--activities-only"))
+    await runCraftingFoundryJourney({
+      gm,
+      player,
+      actorIds: evidence.actorIds,
+      worldTime: evidence.worldTime,
+      output,
+      record,
+    });
   evidence.functionalPassed = true;
   evidence.privacy = await player.evaluate(() => {
     const journal = game.journal.find((row) =>
@@ -764,6 +810,30 @@ try {
       .catch(() => {});
   throw error;
 } finally {
+  if (originalTemplates && gm && !gm.isClosed()) {
+    try {
+      await gm.evaluate(async (templates) => {
+        if (game.world.id !== "downtime-gauntlet")
+          throw Error("Wrong test world");
+        const store =
+          await import("/modules/infinity-dnd5e/scripts/downtime/store.js");
+        await store.updateDowntimeConfig((config) => ({
+          ...config,
+          guidedTemplates: templates,
+        }));
+        if (
+          JSON.stringify(store.loadDowntimeConfig().guidedTemplates) !==
+          JSON.stringify(templates)
+        )
+          throw Error("Test library restoration did not verify");
+      }, originalTemplates);
+      evidence.libraryRestored = true;
+    } catch (error) {
+      evidence.libraryRestored = false;
+      evidence.restorationFailure = String(error?.stack ?? error);
+      process.exitCode = 1;
+    }
+  }
   writeFileSync(
     path.join(output, "results.json"),
     `${JSON.stringify(evidence, null, 2)}\n`,

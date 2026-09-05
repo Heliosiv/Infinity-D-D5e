@@ -266,7 +266,19 @@ npm run ui:audit:downtime:foundry -- --test-world downtime-gauntlet --url http:/
 
 This command refuses other world IDs and non-local hosts. It creates/reuses
 two marked test characters, resets only their test wallets, and creates a
-test activity. It exercises real player skill rolls, GM report editing,
+test activity. Old crafting fixtures are temporarily removed from the disposable
+activity library so repeated runs cannot fill its 24 slots; the exact original
+library is restored and read back even if a later check fails. It exercises
+40 Workbench navigation actions across the editing GM and a read-only duplicate
+tab, then verifies editing transfers when the first tab closes. It also tests
+all eight additional activities through real player choices and GM reports,
+including fractional-day costs, a 240-hour block, no-roll reflection, and
+duplicate application. Character HP, skills, items, effects, and world time
+must remain unchanged by these narrative activities.
+Add `--activities-only` to focus on navigation and these eight activities;
+add `--crafting-only` to focus on navigation and installed crafting. Both
+focused runs retain the transport privacy gate.
+The full run also exercises real player skill rolls, GM report editing,
 fractional rewards, interrupted writes, and GM/player reloads.
 It also verifies that an unfinished player choice survives a GM disconnect.
 Fault-injection blocks use explicitly marked deterministic check fixtures. Results and
@@ -283,6 +295,8 @@ use the saved recovery checkpoint instead.
 Every eligible character receives the complete GM-assigned budget. For
 example, a 16-hour block gives every selected character 16 hours; those hours
 are not divided across the party.
+Block budgets must be whole numbers from 1 through 240 productive hours.
+Fractional and out-of-range values are rejected without opening a block.
 
 Starting, planning, or applying a block never advances Foundry time and never
 triggers Quartermaster consumption. The GM advances campaign time separately.
@@ -454,7 +468,8 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-**Known transport privacy limitation, observed 2026-09-03:** Foundry 13.351
+**Known transport privacy limitation, observed 2026-09-03 and reconfirmed
+2026-09-05:** Foundry 13.351
 sends the restricted Journal's raw flags to authenticated player clients,
 even with `ownership.default = NONE` and `journal.visible = false`. The
 disposable-world player could read the downtime configuration and workflow

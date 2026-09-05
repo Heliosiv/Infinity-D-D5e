@@ -916,14 +916,14 @@ export async function openDowntimeBlock({
     }
     const settlement =
       savedSettlement ?? createNonSettlementDowntimeContext(locationName);
-    const budgetHours = Math.floor(Number(hours));
+    const budgetHours = Number(hours);
     if (
       !Number.isSafeInteger(budgetHours) ||
       budgetHours < 1 ||
       budgetHours > MAX_BLOCK_HOURS
     ) {
       throw new Error(
-        `Downtime must be between 1 and ${MAX_BLOCK_HOURS} hours.`,
+        `Enter downtime hours as a whole number from 1 to ${MAX_BLOCK_HOURS}.`,
       );
     }
     const eligible = [...new Set(Array.isArray(actorIds) ? actorIds : [])]
@@ -970,13 +970,15 @@ async function openGuidedDowntimeBlock({
   templateIds,
   projectIds,
 }) {
-  const budgetHours = Math.floor(Number(hours));
+  const budgetHours = Number(hours);
   if (
     !Number.isSafeInteger(budgetHours) ||
     budgetHours < 1 ||
     budgetHours > MAX_BLOCK_HOURS
   ) {
-    throw new Error(`Downtime must be between 1 and ${MAX_BLOCK_HOURS} hours.`);
+    throw new Error(
+      `Enter downtime hours as a whole number from 1 to ${MAX_BLOCK_HOURS}.`,
+    );
   }
   const selectedIds = [
     ...new Set(Array.isArray(templateIds) ? templateIds.map(String) : []),
