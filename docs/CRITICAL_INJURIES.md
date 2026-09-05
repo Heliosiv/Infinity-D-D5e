@@ -243,7 +243,7 @@ The full-GM API is
 Use an exact source Actor ActiveEffect or calendar Journal UUID. `status` is
 `active`, `permanent`, `recovered`, or `review`. Supply `calendarUuid` for an
 existing one-time note, or a new note's `date: {year, month, day}` using zero-based
-month and day. `dateMeaning` is `injury`, `recovery`, or `recorded`; the last
+month and day. `dateMeaning` is `injury`, `recovery`, `historical` (existing notes only), or `recorded`; the last
 explicitly identifies a documentation date when the original injury date is
 unknown. A passed deadline alone does not prove healing.
 

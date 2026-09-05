@@ -92,7 +92,8 @@ export function normalizeRecordedInjury(input) {
     throw new Error("RecordedInjuryExistingDatePreserved");
   const dateMeaning = input.dateMeaning;
   if (
-    !["injury", "recovery", "recorded"].includes(dateMeaning) ||
+    !["injury", "recovery", "recorded", "historical"].includes(dateMeaning) ||
+    (dateMeaning === "historical" && !calendarUuid) ||
     (input.status === "permanent" && dateMeaning === "recovery")
   )
     throw new Error("RecordedInjuryInvalidDateMeaning");
@@ -179,6 +180,13 @@ export function createRecordedInjuryApi(env) {
     const startMarker = `<!-- infinity-recorded-injury:${id}:start -->`;
     const endMarker = `<!-- infinity-recorded-injury:${id}:end -->`;
     const matches = notes().filter((j) => pageText(j).includes(startMarker));
+    const previous =
+      actor.flags?.[MODULE_ID]?.[RECORDED_INJURY_FLAG]?.[id] ?? null;
+    if (
+      previous?.calendarUuid &&
+      !matches.some((j) => j.uuid === previous.calendarUuid)
+    )
+      throw new Error("RecordedInjuryLinkedCalendarMarkerChanged");
     if (matches.length > 1)
       throw new Error("RecordedInjuryDuplicateCalendarMarker");
     const explicit = input.calendarUuid
@@ -207,7 +215,7 @@ export function createRecordedInjuryApi(env) {
       date.day >= months[date.month].numberOfDays
     )
       throw new Error("RecordedInjuryCalendarDateInvalid");
-    const calendarLabel = `${input.dateMeaning === "recorded" ? "Recorded" : input.dateMeaning === "recovery" ? "Recovery" : "Injury"}: ${months[date.month].name} ${date.day + 1}, ${date.year}`;
+    const calendarLabel = `${input.dateMeaning === "historical" ? "Historical calendar entry" : input.dateMeaning === "recorded" ? "Recorded" : input.dateMeaning === "recovery" ? "Recovery" : "Injury"}: ${months[date.month].name} ${date.day + 1}, ${date.year}`;
     const beforeText = note ? pageText(note) : "";
     const block = `${startMarker}<section><h2>Injury record: ${escape(actor.name)}</h2><p><strong>${escape(input.label)}</strong> — ${escape(input.status)}</p><p>${escape(input.notes)}</p><p>${escape(calendarLabel)}. ${input.dateMeaning === "recorded" ? "This is the recording date; the original injury date is unknown." : "Existing campaign date preserved."}</p><p>Source: @UUID[${input.sourceUuid}]</p></section>${endMarker}`;
     const start = beforeText.indexOf(startMarker);
@@ -220,8 +228,6 @@ export function createRecordedInjuryApi(env) {
           block +
           beforeText.slice(end + endMarker.length)
         : beforeText + block;
-    const previous =
-      actor.flags?.[MODULE_ID]?.[RECORDED_INJURY_FLAG]?.[id] ?? null;
     if (
       !previous &&
       Object.keys(actor.flags?.[MODULE_ID]?.[RECORDED_INJURY_FLAG] ?? {})

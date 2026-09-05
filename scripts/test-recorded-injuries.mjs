@@ -292,6 +292,8 @@ console.log(
   assert.match(html, /Recorded injuries and history/);
   assert.match(html, /Heavy scarring/);
   assert.match(html, /Shadowfall 21, 53/);
+  f.journal[0].pages[0].text.content = "Edited outside the injury API";
+  await assert.rejects(f.api.preview(f.input), /LinkedCalendarMarkerChanged/);
   f.setFull(false);
   await assert.rejects(f.api.read(), /FullGMRequired/);
 }
