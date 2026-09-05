@@ -57,7 +57,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 **v0.3.14 — Injury care and release fixes** - Adds a searchable injury board, saved injury history, clickable token badges, and calendar repair while retaining recorded injuries and the preview fixes. Corrects prerelease ordering and exact-tag verification.
 
-**v0.3.14-preview.9 — Existing injury reconciliation** - Adds a guarded read/preview/apply API for recording historical injuries in GM triage and Simple Calendar Reborn. Existing effects and mechanical penalties remain intact; records do not invent rolls or treatment receipts. Existing calendar dates are preserved. See [Critical Injuries](docs/CRITICAL_INJURIES.md).
+**v0.3.14-preview.10 — Existing injury reconciliation** - Adds a guarded read/preview/apply API for recording historical injuries in GM triage and Simple Calendar Reborn. Existing effects and mechanical penalties remain intact; records do not invent rolls or treatment receipts. Existing calendar dates are preserved. See [Critical Injuries](docs/CRITICAL_INJURIES.md).
 
 **v0.3.14-preview.7 — Repeated navigation and budget validation** - Clicking
 the current Workbench tool during a save refresh keeps the window open and
