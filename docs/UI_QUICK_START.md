@@ -19,6 +19,26 @@ There is no full-GM intro screen, Session Focus card, Continue list, or Campaign
 
 The player/Assistant launcher remains intentionally separate and contains only permission-scoped player destinations. Opening it never changes campaign data.
 
+## Use two GM profiles
+
+For profiles such as **Gamemaster** and **Test GM**, select **Gamemaster** for
+both in Foundry's **User Management**. This is the full GM role (4);
+**Assistant Gamemaster** (3) intentionally opens Infinity's player launcher.
+Infinity checks the current role, not the profile name or which profile was
+created first. Drakemore's full-GM actions use the same role requirement.
+
+Foundry may sign the changed profile out after saving its new role. Sign it
+back in, then press `Shift+I` to open the GM Workbench. This does not require
+restarting the world.
+
+Both full GMs can open and browse the Workbench. Campaign editing still uses
+one authoritative GM at a time to prevent conflicting writes. A browsing-only
+status therefore does not mean that the second profile lacks GM permissions.
+Use the existing editing handoff when switching between connected GM profiles.
+
+Foundry world profiles are separate from GitHub accounts. Repository access
+is managed for the actual GitHub identity, not the Foundry display name.
+
 ## Use Loot Studio
 
 Full GMs open **Loot Studio** from the Workbench **Loot** utility. Choose Encounter, Hoard, or Creature with the mode tabs. Left/Right Arrow moves between tabs; Home/End selects the first or last mode.
