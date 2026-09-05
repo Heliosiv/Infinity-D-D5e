@@ -2,11 +2,10 @@
 {{#if routes}}
 <section class="gmw-chrome" aria-label="Infinity Game Master Workbench">
   <div class="gmw-brand">
-    <span class="gmw-brand__sigil" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
+    <span class="gmw-brand__sigil" aria-hidden="true"><span class="infinity-emblem infinity-emblem--crest"></span></span>
     <div class="gmw-brand__copy">
-      <p>Infinity Game Master Workbench</p>
-      <strong>{{label}}</strong>
-      <span>{{description}}</span>
+      <p>Infinity D&amp;D5e</p>
+      <strong>Game Master Workbench</strong>
     </div>
   </div>
   <div class="gmw-actions">
@@ -20,7 +19,7 @@
         title="{{description}}"
         {{#if active}}aria-current="page"{{/if}}
       >
-        <i class="{{icon}}" aria-hidden="true"></i>
+        <span class="infinity-emblem" aria-hidden="true"></span>
         <span>{{shortLabel}}</span>
       </button>
       {{/each}}
@@ -32,9 +31,10 @@
         class="gmw-utility"
         data-action="openGmWorkbenchUtility"
         data-workbench-utility="{{utility}}"
+        aria-label="{{label}}"
         title="{{description}}"
       >
-        <i class="{{icon}}" aria-hidden="true"></i>
+        <span class="infinity-emblem" aria-hidden="true"></span>
         <span>{{shortLabel}}</span>
       </button>
       {{/each}}

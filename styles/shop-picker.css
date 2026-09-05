@@ -6,13 +6,25 @@
 
 .infinity-shop-picker .sp-shell {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 10px;
   padding: 10px;
   min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   color: var(--lf-text, #e7ecf6);
   background: var(--lf-bg, #1d2330);
   container: shop-picker / inline-size;
+}
+
+/* The whole picker scrolls when character context and guidance fill a short
+   window. A shrinking inner list can otherwise leave shops unreachable. */
+.infinity-shop-picker .sp-shell > * {
+  flex-shrink: 0;
 }
 
 .infinity-shop-picker .sp-head {
@@ -217,7 +229,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow: auto;
+  overflow: visible;
   min-height: 0;
 }
 

@@ -99,9 +99,9 @@ const TARGETS = Object.freeze([
 ]);
 
 const FULL_AUDIT_PATH =
-  /^(?:styles\/(?:tokens|ui-system)\.css|scripts\/(?:ui-harness|audit-ui-layout|infinity-app|gm-workbench(?:-routes)?|ui-preferences|ui-util)\.js|templates\/(?:gm-workbench-nav|search-picker)\.hbs)$/;
+  /^(?:assets\/ui\/.*|styles\/(?:tokens|ui-system|atlas)\.css|scripts\/(?:ui-harness|audit-ui-layout|infinity-app|gm-workbench(?:-routes)?|ui-preferences|ui-util)\.m?js|templates\/(?:gm-workbench-nav|search-picker)\.hbs)$/;
 const UI_PATH =
-  /^(?:templates\/|styles\/|scripts\/(?:audit-ui-layout|dashboard|primary-launcher|settings|loot|hoard-loot|per-creature-loot|merchant|downtime|injury|resource|reputation|shop-picker|search-picker|forage-prompt|chat-card|dialog-contract|infinity-app|gm-workbench|ui-))/;
+  /^(?:assets\/ui\/|templates\/|styles\/|scripts\/(?:audit-ui-layout|dashboard|primary-launcher|settings|loot|hoard-loot|per-creature-loot|merchant|downtime|injury|resource|reputation|shop-picker|search-picker|forage-prompt|chat-card|dialog-contract|infinity-app|gm-workbench|ui-))/;
 
 export function selectUiAuditScope(paths = []) {
   const changed = [

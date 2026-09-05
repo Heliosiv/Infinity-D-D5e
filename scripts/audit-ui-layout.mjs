@@ -1,9 +1,13 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
-import { buildHarnessViews, buildUiHarnessDocument } from "./ui-harness.mjs";
+import {
+  assertUiHarnessInventory,
+  buildHarnessViews,
+  buildUiHarnessDocument,
+} from "./ui-harness.mjs";
 
 const SCENARIOS = [
   {
@@ -90,7 +94,9 @@ const SCENARIOS = [
 ];
 
 async function main() {
-  const outDir = path.resolve("tmp", "playwright");
+  const outputRoot = path.resolve("tmp", "playwright");
+  mkdirSync(outputRoot, { recursive: true });
+  const outDir = mkdtempSync(path.join(outputRoot, "ui-layout-"));
   const outFile = path.join(outDir, "ui-harness.html");
 
   mkdirSync(outDir, { recursive: true });
@@ -146,6 +152,13 @@ async function main() {
         {
           waitUntil: "load",
         },
+      );
+      assertUiHarnessInventory(
+        await page
+          .locator("[data-harness-window]")
+          .evaluateAll((windows) =>
+            windows.map((window) => window.dataset.harnessWindow),
+          ),
       );
       await page.evaluate((options) => {
         document.body.style.zoom = String(options.zoom ?? 1);

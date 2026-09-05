@@ -46,6 +46,7 @@ const CSS_FILES = [
   "styles/downtime.css",
   "styles/settings.css",
   "styles/search-picker.css",
+  "styles/atlas.css",
 ];
 
 const MODULE_VERSION = JSON.parse(readFileSync("package.json", "utf8")).version;
@@ -928,8 +929,33 @@ export function renderHarnessViews() {
   }));
 }
 
+/** Prevent empty, incomplete, or duplicated pages from passing a browser audit. */
+export function assertUiHarnessInventory(renderedIds) {
+  const expectedIds = buildHarnessViews().map((view) => view.id);
+  const counts = new Map();
+  for (const id of renderedIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+  for (const id of expectedIds) {
+    if (counts.get(id) !== 1) {
+      throw new Error(`UI harness must render exactly one ${id} window`);
+    }
+  }
+  if (renderedIds.length !== expectedIds.length) {
+    throw new Error("UI harness contains unexpected windows");
+  }
+}
+
 export function buildUiHarnessDocument() {
-  const css = CSS_FILES.map((file) => readFileSync(file, "utf8")).join("\n\n");
+  // The harness inlines styles, so embed shipped UI assets as well. Relative
+  // stylesheet URLs otherwise resolve against tmp/playwright and disappear.
+  const css = CSS_FILES.map((file) =>
+    readFileSync(file, "utf8").replace(
+      /url\("\.\.\/(assets\/ui\/[a-z0-9/.-]+\.(svg|webp))"\)/g,
+      (_match, assetPath, extension) => {
+        const mime = extension === "svg" ? "image/svg+xml" : "image/webp";
+        return `url("data:${mime};base64,${readFileSync(assetPath).toString("base64")}")`;
+      },
+    ),
+  ).join("\n\n");
   const windows = renderHarnessViews()
     .map((entry) => renderHarnessWindow(entry))
     .join("\n");

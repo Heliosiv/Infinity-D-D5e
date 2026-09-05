@@ -4,12 +4,31 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 
 import {
+  assertUiHarnessInventory,
   buildHarnessViews,
   buildUiHarnessDocument,
   renderHarnessViews,
 } from "./ui-harness.mjs";
 
 const views = renderHarnessViews();
+const renderedIds = [
+  ...buildUiHarnessDocument().matchAll(/data-harness-window="([^"]+)"/g),
+].map((match) => match[1]);
+assert.doesNotThrow(() => assertUiHarnessInventory(renderedIds));
+assert.doesNotThrow(() => assertUiHarnessInventory([...renderedIds].reverse()));
+assert.throws(() => assertUiHarnessInventory([]), /must render/);
+assert.throws(
+  () => assertUiHarnessInventory(renderedIds.slice(1)),
+  /must render/,
+);
+assert.throws(
+  () => assertUiHarnessInventory([renderedIds[0], ...renderedIds.slice(0, -1)]),
+  /must render/,
+);
+assert.throws(
+  () => assertUiHarnessInventory([...renderedIds, "unexpected"]),
+  /unexpected windows/,
+);
 assert.equal(
   views.length,
   96,

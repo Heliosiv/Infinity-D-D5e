@@ -61,6 +61,20 @@ When a controlled character has an active Critical Injury, the compact body HUD 
 
 ## Keyboard, touch, and accessibility
 
+The Campaign Atlas presentation uses original map artwork and matching tool
+emblems throughout the module. In narrow Workbench windows, the chest opens
+**Loot Studio** and the astrolabe opens **Infinity Settings**; both retain named
+tooltips and accessible labels. The five main routes always keep their text
+labels, and a gold underline identifies the current route. Decorative artwork
+is removed in forced-colour mode. All artwork ships with the module and requires
+no external image service.
+
+Party Supplies uses wider, responsive resource cards with wrapping names and
+metric labels, so availability, daily use, and coverage remain readable in
+smaller windows.
+The Shops launcher scrolls as one page so its character controls, search, and
+every shop remain reachable in short windows.
+
 - Use Tab and Shift+Tab to move through controls, Enter or Space to activate buttons, and Escape to cancel safe dialogs or unpin the injury HUD.
 - Item rows that open on double-click also expose a keyboard button or action.
 - Comfortable density and coarse pointers use at least 44px action targets. Compact density uses 32px controls on a fine pointer and automatically returns to 44px for touch.

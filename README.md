@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Campaign Atlas UI preview:** Original map artwork and nine custom emblems give
+the GM Workbench, player launcher, and focused windows a shared visual identity.
+Compact navigation, readable supply cards, and continuous shop scrolling improve
+smaller windows. All art ships with the module; see
+[UI artwork and provenance](assets/ui/PROVENANCE.md).
+
 **Resource-based downtime:** Activities now support GP per
 workday, flat fees, required tools, consumed inventory materials, and crafted
 items. Arrow and scroll presets include visible costs and progress across
@@ -13,7 +19,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.13 source targets Foundry VTT 13.351 and is verified with the official D&D5e 4.4.4 system release. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The installed downtime journeys were also exercised on D&D5e 5.3.3.
+Version 0.3.14-preview.1 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -27,6 +33,15 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.14-preview.1 — Local UI preview** - Carries the Campaign Atlas UI onto
+the v0.3.13 tagged build, retaining its launcher fixes and downtime crafting,
+project presets, and individual character resolution. This isolated preview
+contains the UI changes from `adf62c5`; separate injury/calendar development on
+`codex/simplify-harden-module` remains on that branch. Build locally with
+`npm run verify` and inspect `release/module.zip`. The preview has not been
+published or installed in a live world. Keep the reviewed v0.3.13 package for
+an installation rollback; this UI update does not introduce a data migration.
 
 **v0.3.13 — Custom deployment build** - Adds editable crafting, research, and training project presets with total hours, proportional GP costs, required successful checks, and configurable DCs. Guided blocks now resolve and report each submitted character independently, reopen for late players after every result, and can finish without waiting for characters who never submitted. Durable checkpoints prevent duplicate GP charges, hours, or successes during retry and recovery. This build extends the scoped v0.3.12 deployment and excludes unrelated unreleased work.
 
@@ -362,6 +377,12 @@ npm run verify
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
 `npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:changed` selects only the fixtures and risk viewports touched since the previous commit; shared UI foundations deliberately use the full audit. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source:fast` runs formatting, deterministic checks, and the changed UI audit. `npm run verify:source` remains the full UI, accessibility, and keyboard gate; `npm run verify:release-source` also requires an exact release-version tag. `npm run verify` adds release construction and verifies the actual ZIP root, manifest references, release URLs, and SHA-256; `npm run release` invokes that same strict complete gate and build.
+
+Layout audits keep each run's HTML, screenshots, and summary in its own
+`tmp/playwright/ui-layout-*` directory. Parallel runs cannot overwrite each
+other's input, and an empty, incomplete, or duplicated window inventory fails
+the audit before any click checks run. The standalone `ui:harness` preview keeps
+its existing fixed path.
 
 ### Compendium pack
 

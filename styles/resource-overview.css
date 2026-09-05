@@ -200,7 +200,7 @@
 
 .infinity-resource-overview .ro-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 8px;
 }
 
@@ -253,20 +253,18 @@
 
 .infinity-resource-overview .ro-card h4 {
   margin: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--lf-text-strong, #f6f7fb);
   font-size: 0.9rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .infinity-resource-overview .ro-card__head > div > span {
   display: block;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--lf-muted, #97a3c1);
   font-size: 0.75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .infinity-resource-overview .ro-status,
@@ -320,23 +318,20 @@
 }
 
 .infinity-resource-overview .ro-metrics dt {
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--lf-muted, #97a3c1);
   font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
+  text-transform: none;
+  white-space: normal;
 }
 
 .infinity-resource-overview .ro-metrics dd {
   margin: 1px 0 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--lf-text-strong, #f6f7fb);
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .infinity-resource-overview .ro-section-head {

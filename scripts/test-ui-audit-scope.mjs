@@ -58,6 +58,17 @@ assert.deepEqual(selectUiAuditScope(["styles/ui-system.css"]), {
   kind: "full",
   reason: "shared UI foundation changed",
 });
+for (const sharedPath of [
+  "styles/atlas.css",
+  "assets/ui/campaign-atlas-v1.webp",
+  "assets/ui/icons/merchants.svg",
+  "scripts/ui-harness.mjs",
+]) {
+  assert.deepEqual(selectUiAuditScope([sharedPath]), {
+    kind: "full",
+    reason: "shared UI foundation changed",
+  });
+}
 assert.deepEqual(selectUiAuditScope(["scripts/gm-workbench.js"]), {
   kind: "full",
   reason: "shared UI foundation changed",

@@ -1,0 +1,523 @@
+/* Campaign Atlas: shared, locally shipped art and presentation.
+   Loaded after feature styles; gameplay and window controllers are unchanged. */
+
+.infinity-dnd5e {
+  --atlas-art: url("../assets/ui/campaign-atlas-v1.webp");
+  --atlas-crest: url("../assets/ui/icons/infinity-crest.svg");
+  --atlas-merchants: url("../assets/ui/icons/merchants.svg");
+  --atlas-supplies: url("../assets/ui/icons/supplies.svg");
+  --atlas-downtime: url("../assets/ui/icons/downtime.svg");
+  --atlas-factions: url("../assets/ui/icons/factions.svg");
+  --atlas-injuries: url("../assets/ui/icons/injuries.svg");
+  --atlas-loot: url("../assets/ui/icons/loot.svg");
+  --atlas-settings: url("../assets/ui/icons/settings.svg");
+  --atlas-calendar: url("../assets/ui/icons/calendar.svg");
+  --atlas-emblem: var(--atlas-crest);
+  --atlas-heading: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --atlas-rule: color-mix(in srgb, var(--lf-gold-soft) 35%, var(--lf-bg));
+}
+
+/* A common silhouette language, independent of Foundry's icon font. */
+.infinity-dnd5e .infinity-emblem {
+  display: inline-block;
+  flex: 0 0 auto;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  background: currentColor;
+  mask: var(--atlas-emblem) center / contain no-repeat;
+  pointer-events: none;
+}
+
+.infinity-dnd5e .infinity-emblem--crest {
+  --atlas-emblem: var(--atlas-crest);
+}
+
+.infinity-dnd5e
+  :is([data-workbench-route="merchants"], [data-launch-id="shops"]),
+.infinity-dnd5e:is(
+  .infinity-merchant-workspace,
+  .infinity-merchant-session,
+  .infinity-shop-picker
+) {
+  --atlas-emblem: var(--atlas-merchants);
+}
+
+.infinity-dnd5e
+  :is(
+    [data-workbench-route="quartermaster"],
+    [data-launch-id="party-supplies"]
+  ),
+.infinity-dnd5e:is(
+  .infinity-resource-manager,
+  .infinity-resource-overview,
+  .infinity-forage-prompt
+) {
+  --atlas-emblem: var(--atlas-supplies);
+}
+
+.infinity-dnd5e
+  :is([data-workbench-route="downtime"], [data-launch-id="downtime"]),
+.infinity-dnd5e:is(
+  .infinity-downtime-workspace,
+  .infinity-downtime-activities
+) {
+  --atlas-emblem: var(--atlas-downtime);
+}
+
+.infinity-dnd5e
+  :is([data-workbench-route="factions"], [data-launch-id="reputation"]),
+.infinity-dnd5e:is(.infinity-reputation-workspace, .infinity-reputation-view) {
+  --atlas-emblem: var(--atlas-factions);
+}
+
+.infinity-dnd5e
+  :is([data-workbench-route="injuries"], [data-launch-id="critical-injuries"]),
+.infinity-dnd5e:is(
+  .infinity-critical-injury,
+  .infinity-critical-injury-triage
+) {
+  --atlas-emblem: var(--atlas-injuries);
+}
+
+.infinity-dnd5e [data-workbench-utility="loot-studio"],
+.infinity-dnd5e .loot-studio-nav {
+  --atlas-emblem: var(--atlas-loot);
+}
+
+.infinity-dnd5e [data-workbench-utility="settings"],
+.infinity-dnd5e .ix-settings {
+  --atlas-emblem: var(--atlas-settings);
+}
+
+.infinity-dnd5e [data-launch-id="calendar"] {
+  --atlas-emblem: var(--atlas-calendar);
+}
+
+/* Keep tool switching visible without a separate utility row on narrow windows. */
+.infinity-dnd5e .gmw-chrome {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "brand utilities" "routes routes";
+  gap: var(--lf-space-2) var(--lf-space-3);
+  flex: 0 0 auto;
+  padding: var(--lf-space-3) var(--lf-density-pad) var(--lf-space-2);
+  background: var(--lf-surface-sunken);
+  border-block-end-color: var(--atlas-rule);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 20%);
+}
+
+.infinity-dnd5e .gmw-brand {
+  grid-area: brand;
+}
+
+.infinity-dnd5e .gmw-brand__sigil {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  color: var(--lf-gold-soft);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.infinity-dnd5e .gmw-brand__sigil .infinity-emblem {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.infinity-dnd5e .gmw-brand__copy p {
+  letter-spacing: 0.16em;
+}
+
+.infinity-dnd5e .gmw-brand__copy strong {
+  font-family: var(--atlas-heading);
+  font-size: 1.125rem;
+  font-weight: 400;
+}
+
+.infinity-dnd5e .gmw-actions {
+  display: contents;
+}
+
+.infinity-dnd5e .gmw-routes {
+  grid-area: routes;
+  gap: var(--lf-space-1);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.infinity-dnd5e .gmw-utilities {
+  grid-area: utilities;
+  align-self: center;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.infinity-dnd5e :is(.gmw-route, .gmw-utility) {
+  grid-template-columns: auto minmax(0, auto);
+  gap: var(--lf-space-2);
+  padding: var(--lf-space-1) var(--lf-space-2);
+  font-size: var(--lf-text-xs);
+  border-radius: var(--lf-radius-xs);
+}
+
+.infinity-dnd5e .gmw-route {
+  border-block-end: 2px solid transparent;
+}
+
+.infinity-dnd5e .gmw-route.is-active {
+  color: var(--lf-gold-soft);
+  background: color-mix(in srgb, var(--lf-gold-soft) 10%, var(--lf-bg));
+  border-color: var(--atlas-rule);
+  border-block-end-color: var(--lf-gold-soft);
+  box-shadow: none;
+}
+
+.infinity-dnd5e .gmw-utility {
+  color: var(--lf-muted);
+  border-color: var(--lf-border);
+}
+
+/* Quiet text area, with original atlas art visible toward the right edge. */
+.infinity-dnd5e
+  :is(
+    .id-head,
+    .mw-head,
+    .rm-head,
+    .dt-head,
+    .rw-head,
+    .ci-triage-hero,
+    .sp-head,
+    .ro-head,
+    .rv-head,
+    .ci-hero,
+    .loot-studio-nav,
+    .ix-settings > .infinity-app-header
+  ) {
+  background-color: var(--lf-surface-sunken);
+  background-image:
+    linear-gradient(
+      90deg,
+      rgb(13 20 28 / 96%),
+      rgb(13 20 28 / 80%) 45%,
+      rgb(13 20 28 / 48%)
+    ),
+    var(--atlas-art);
+  background-position:
+    center,
+    right center;
+  background-size: cover;
+  border: 1px solid var(--atlas-rule);
+  border-radius: var(--lf-radius-sm);
+  box-shadow: inset 0 1px 0 rgb(231 189 114 / 12%);
+}
+
+.infinity-dnd5e
+  :is(
+    .id-head,
+    .mw-head,
+    .rm-head,
+    .dt-head,
+    .rw-head,
+    .ci-triage-hero,
+    .sp-head,
+    .ro-head,
+    .rv-head,
+    .ci-hero,
+    .ix-settings > .infinity-app-header
+  ) {
+  padding: var(--lf-density-pad);
+}
+
+.infinity-dnd5e
+  :is(
+    .id-head,
+    .mw-head,
+    .rm-head,
+    .dt-head,
+    .rw-head,
+    .ci-triage-hero,
+    .sp-head,
+    .ro-head,
+    .rv-head,
+    .ci-hero
+  )
+  h2,
+.infinity-dnd5e .ix-settings > .infinity-app-header h1 {
+  color: var(--lf-text-strong);
+  font-family: var(--atlas-heading);
+  font-weight: 400;
+  font-size: clamp(1.25rem, 1.05rem + 0.8cqi, 1.65rem);
+  letter-spacing: 0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+  border: 0;
+}
+
+.infinity-dnd5e
+  :is(
+    .mw-head__hint,
+    .id-head__hint,
+    .rm-head__hint,
+    .dt-head__hint,
+    .rw-head__hint,
+    .sp-head__hint,
+    .rv-head__hint
+  ) {
+  color: var(--lf-muted);
+  line-height: 1.5;
+  max-inline-size: 62ch;
+}
+
+/* Replace only the decorative identity icons; action glyphs remain familiar. */
+.infinity-dnd5e
+  :is(.ro-head h2, .rv-head h2, .sp-head h2, .loot-studio-nav__identity)
+  > i,
+.infinity-dnd5e .id-tile__icon > i {
+  display: inline-block;
+  inline-size: 1.8rem;
+  block-size: 1.8rem;
+  flex: 0 0 auto;
+  color: var(--lf-gold-soft);
+  background: currentColor;
+  mask: var(--atlas-emblem) center / contain no-repeat;
+}
+
+.infinity-dnd5e
+  :is(.ro-head h2, .rv-head h2, .sp-head h2, .loot-studio-nav__identity)
+  > i::before,
+.infinity-dnd5e .id-tile__icon > i::before {
+  content: none;
+}
+
+/* The launcher should feel like an invitation into the campaign. */
+.infinity-dnd5e .id-head {
+  flex: 0 0 auto;
+  min-block-size: 148px;
+  align-items: center;
+  background-image:
+    linear-gradient(
+      90deg,
+      rgb(13 20 28 / 95%),
+      rgb(13 20 28 / 78%) 45%,
+      rgb(13 20 28 / 22%)
+    ),
+    var(--atlas-art);
+}
+
+.infinity-dnd5e .id-head h2 {
+  margin-block: var(--lf-space-2);
+  font-size: clamp(1.5rem, 1.1rem + 1.5cqi, 2rem);
+}
+
+.infinity-dnd5e .id-section {
+  padding: var(--lf-space-3) 0;
+  background: transparent;
+  border-color: transparent;
+}
+
+.infinity-dnd5e .id-section__head {
+  align-items: center;
+  padding-block-end: var(--lf-space-2);
+  border-block-end: 1px solid var(--atlas-rule);
+}
+
+.infinity-dnd5e .id-section__icon {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 0;
+  color: var(--lf-gold-soft);
+  background: currentColor;
+  mask: var(--atlas-crest) center / contain no-repeat;
+}
+
+.infinity-dnd5e .id-section__icon > i {
+  display: none;
+}
+
+.infinity-dnd5e .id-section__head h3 {
+  letter-spacing: 0.04em;
+  color: var(--lf-gold-soft);
+}
+
+.infinity-dnd5e .id-tile__button {
+  background: linear-gradient(
+    120deg,
+    var(--lf-bg-alt),
+    var(--lf-surface-sunken)
+  );
+  border-color: var(--lf-border);
+  border-radius: var(--lf-radius-sm);
+  transition:
+    border-color var(--lf-motion-fast),
+    background-color var(--lf-motion-fast);
+}
+
+.infinity-dnd5e .id-tile__button:hover {
+  background: var(--lf-surface);
+  border-color: var(--lf-gold-soft);
+}
+
+.infinity-dnd5e .id-tile__icon {
+  width: 52px;
+  height: 52px;
+  background: color-mix(in srgb, var(--lf-gold-soft) 6%, var(--lf-bg));
+  border: 1px solid var(--atlas-rule);
+  border-radius: 50%;
+}
+
+.infinity-dnd5e .id-tile__icon > i {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+.infinity-dnd5e .id-tile[data-available="false"] .id-tile__icon {
+  border-style: dashed;
+}
+
+/* Quieter guidance and consistent numeric alignment improve dense workspaces. */
+.infinity-dnd5e :is(.infinity-workspace-context, .infinity-session-context) {
+  border-radius: 0 var(--lf-radius-xs) var(--lf-radius-xs) 0;
+  border-width: 1px 1px 1px 2px;
+  border-color: var(--atlas-rule);
+  border-block-color: transparent;
+  border-inline-end-color: transparent;
+  background: var(--lf-bg-alt);
+  box-shadow: none;
+}
+
+.infinity-dnd5e
+  :is(
+    .mw-workspace-section,
+    .rm-section,
+    .infinity-card,
+    .ci-triage-start,
+    .ro-context
+  ) {
+  border-radius: var(--lf-radius-sm);
+  box-shadow: none;
+}
+
+.infinity-dnd5e
+  :is(.mw-workspace-section__head, .rm-section__head, .rw-section__head) {
+  border-block-end-color: var(--atlas-rule);
+}
+
+.infinity-dnd5e
+  :is(.mw-workspace-section__head, .rm-section__head, .rw-section__head)
+  h3 {
+  font-family: var(--atlas-heading);
+}
+
+.infinity-dnd5e :is(.mw-list__row.is-selected, .rw-list__row.is-selected) {
+  border-inline-start: 3px solid var(--lf-gold-soft);
+}
+
+.infinity-dnd5e
+  :is(input[type="number"], .ro-stat, .ci-triage-counts, .mw-price, .lf-coin) {
+  font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 520px) {
+  .infinity-dnd5e .gmw-chrome {
+    gap: var(--lf-space-2);
+    padding: var(--lf-space-2);
+  }
+
+  .infinity-dnd5e .gmw-brand {
+    gap: var(--lf-space-2);
+  }
+
+  .infinity-dnd5e .gmw-brand__sigil {
+    inline-size: 2rem;
+    block-size: 2rem;
+  }
+
+  .infinity-dnd5e .gmw-brand__copy strong {
+    font-size: 1rem;
+  }
+
+  .infinity-dnd5e .gmw-brand__copy p {
+    letter-spacing: 0.07em;
+  }
+
+  .infinity-dnd5e .gmw-utility > span:last-child {
+    display: none;
+  }
+
+  .infinity-dnd5e .gmw-utilities {
+    grid-template-columns: repeat(2, var(--lf-control-size));
+  }
+
+  .infinity-dnd5e .gmw-utility {
+    padding: 0;
+    grid-template-columns: auto;
+  }
+
+  .infinity-dnd5e .gmw-route {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 2px;
+    padding: var(--lf-space-1) 2px;
+  }
+
+  .infinity-dnd5e .gmw-route > span:last-child {
+    font-size: var(--lf-text-xs);
+  }
+
+  .infinity-dnd5e .id-head {
+    min-block-size: auto;
+    align-items: flex-start;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-dnd5e {
+    --atlas-art: none;
+    --atlas-rule: CanvasText;
+  }
+
+  .infinity-dnd5e
+    :is(
+      .id-head,
+      .mw-head,
+      .rm-head,
+      .dt-head,
+      .rw-head,
+      .ci-triage-hero,
+      .sp-head,
+      .ro-head,
+      .rv-head,
+      .ci-hero,
+      .loot-studio-nav,
+      .ix-settings > .infinity-app-header,
+      .gmw-chrome,
+      .id-tile__button,
+      .id-tile__icon
+    ) {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .infinity-dnd5e .gmw-route.is-active {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+  }
+
+  .infinity-dnd5e .infinity-emblem,
+  .infinity-dnd5e .id-tile__icon > i,
+  .infinity-dnd5e
+    :is(.ro-head h2, .rv-head h2, .sp-head h2, .loot-studio-nav__identity)
+    > i {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .infinity-dnd5e .gmw-route.is-active .infinity-emblem {
+    background: HighlightText;
+  }
+}
