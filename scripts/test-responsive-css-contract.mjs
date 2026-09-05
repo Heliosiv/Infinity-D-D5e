@@ -42,7 +42,7 @@ try {
   await applyScenario(finePage, { width: 380, density: "comfortable" });
   const inventoryButtonWidths = await finePage
     .locator(
-      '[data-harness-window="merchant-workspace"] .mw-inv__row > .mw-btn--icon',
+      '[data-harness-window="merchant-editor-stock"] .mw-inv__row > .mw-btn--icon',
     )
     .evaluateAll((buttons) =>
       buttons.map((button) => button.getBoundingClientRect().width),
@@ -58,8 +58,7 @@ try {
 
   await applyScenario(finePage, { width: 720, density: "comfortable" });
   for (const [fixture, selector] of [
-    ["merchant-workspace", ".mw-section-nav"],
-    ["merchant-workspace", ".mw-editor-status"],
+    ["merchant-editor-stock", ".mw-section-nav"],
     ["reputation-workspace", ".rw-section-nav"],
     ["reputation-workspace", ".rw-form__foot"],
   ]) {

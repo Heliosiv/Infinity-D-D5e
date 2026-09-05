@@ -3,6 +3,13 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**In development - focused merchant windows:** Merchants opens a searchable
+directory. Click a merchant to open its own window with ten tabs: Profile,
+Prices, Bargaining, Charm, Inventory, Generate, Buys, Access, Sessions, and Manage.
+Only the selected tab is visible. Edits save automatically; Save now retries a
+failed save. Multiple merchants can stay open, and reopening the same merchant
+returns to its existing window.
+
 **Campaign Atlas UI preview:** Original map artwork and nine custom emblems give
 the GM Workbench, player launcher, and focused windows a shared visual identity.
 Compact navigation, readable supply cards, and continuous shop scrolling improve

@@ -1,15 +1,12 @@
 {{!--
   Infinity D&D5e — Merchant Workspace template.
-  GM curation UI: list of merchants on the left, selected merchant
-  editor + inventory grid + session-launch controls on the right.
+  Searchable directory or a focused merchant window with real tab panels.
 --}}
-<div class="mw-shell">
+<div class="mw-shell {{#if isMerchantEditor}}mw-shell--editor{{else}}mw-shell--directory{{/if}}">
+  {{#unless isMerchantEditor}}
   <header class="mw-head">
     <div class="mw-head__title">
-      <h2>Merchant Workspace</h2>
-      <p class="mw-head__hint">
-        Stock the shelves, set prices, and welcome players to a shopping session.
-      </p>
+      <h2>Merchants</h2>
     </div>
     <div class="mw-head__actions">
       <span class="mw-global-status {{merchantAccessStatusClass}}" role="status">
@@ -45,17 +42,14 @@
       </button>
     </div>
   </header>
+  {{else}}
+  <header class="mw-person-head">
+    <h2>{{#if selected}}{{selected.name}}{{else}}Merchant unavailable{{/if}}</h2>
+    <span class="mw-save-status" role="status" aria-live="polite" data-save-status>{{saveStatus}}</span>
+    <button type="button" class="mw-btn" data-action="save" {{#unless selected}}disabled{{/unless}} title="Edits save automatically; retry a failed save here">Save now</button>
+  </header>
+  {{/unless}}
 
-  <p class="infinity-workspace-context" role="note">
-    <i class="fa-solid fa-compass" aria-hidden="true"></i>
-    <span><strong>Workspace guide:</strong>
-      {{#if hasTransactionReviews}}review each pinned transaction before changing the same merchant or character state.
-      {{else if merchantAccessClosed}}global shop access is closed; reopening restores only the saved player sessions.
-      {{else if canManageMerchants}}select a merchant to edit its stock and access, then open a player session only when the saved plan is ready.
-      {{else}}this window is inspection-only; use the active full GM window for campaign changes.
-      {{/if}}
-    </span>
-  </p>
 
   {{#unless canManageMerchants}}
   <div class="mw-global-notice" role="status">
@@ -67,10 +61,11 @@
   {{#if merchantAccessClosed}}
   <div class="mw-global-notice" role="status">
     <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-    <span>Players cannot open any shop or complete a merchant transaction. Per-shop Open, Knock, and Off settings are preserved.{{#if globalActiveSessionCount}} Close Stale dismisses the {{globalActiveSessionCount}} remaining player window{{#unless globalActiveSessionCountIsOne}}s{{/unless}} without changing this lock.{{/if}} Reopen All restores access and the {{suspendedSessionCount}} saved session{{#unless suspendedSessionCountIsOne}}s{{/unless}}.</span>
+    <span>All shops are closed to players. Reopen All restores access and saved sessions.</span>
   </div>
   {{/if}}
 
+  {{#unless isMerchantEditor}}
   {{#if hasTransactionReviews}}
   <section class="mw-review-panel" aria-labelledby="mw-review-heading">
     <div class="mw-review-panel__head">
@@ -111,14 +106,18 @@
   </section>
   {{/if}}
 
+  {{/unless}}
   <div class="mw-body">
+    {{#unless isMerchantEditor}}
     {{!-- Left rail: merchant list --}}
     <aside class="mw-list" aria-label="Merchants">
       {{#if hasMerchants}}
+        <input type="search" class="mw-input mw-directory-search" data-merchant-search placeholder="Find a merchant…" aria-label="Find a merchant" />
+        <p class="mw-empty" data-merchant-no-match hidden>No merchants match.</p>
         <ul class="mw-list__items">
           {{#each merchants}}
-          <li class="mw-list__row {{#if selected}}is-selected{{/if}}">
-            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+          <li class="mw-list__row">
+            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-haspopup="dialog">
               <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
               <span class="mw-list__copy">
                 <strong class="mw-list__name">{{name}}</strong>
@@ -132,35 +131,21 @@
         <p class="mw-empty">No merchants yet. Click <strong>New Merchant</strong> to start.</p>
       {{/if}}
     </aside>
+    {{else}}
 
     {{!-- Right pane: editor --}}
     <section class="mw-edit" aria-label="Merchant editor">
       {{#if selected}}
       <form class="mw-form" data-form="merchant-edit" autocomplete="off">
-        <nav class="mw-section-nav" aria-label="Merchant editor sections">
-          <button type="button" data-action="selectSection" data-section-target="mw-section-basics" aria-controls="mw-section-basics">Basics</button>
-          <button type="button" data-action="selectSection" data-section-target="mw-section-pricing" aria-controls="mw-section-pricing">Pricing &amp; Bargaining</button>
-          <button type="button" data-action="selectSection" data-section-target="mw-section-stock" aria-controls="mw-section-stock">Stock</button>
-          <button type="button" data-action="selectSection" data-section-target="mw-section-access" aria-controls="mw-section-access">Access</button>
-          <button type="button" data-action="selectSection" data-section-target="mw-section-sessions" aria-controls="mw-section-sessions">Sessions</button>
+        <nav class="mw-section-nav" role="tablist" aria-label="Merchant sections">
+          {{#each merchantTabs}}
+          <button type="button" role="tab" id="{{tabId}}" data-action="selectSection" data-merchant-tab="{{key}}" aria-controls="{{panelId}}" aria-selected="{{active}}" tabindex="{{#if active}}0{{else}}-1{{/if}}">{{label}}</button>
+          {{/each}}
         </nav>
+        <div class="mw-tab-content">
 
-        <div class="mw-editor-status">
-          <span class="mw-save-status" role="status" aria-live="polite" data-save-status>
-            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
-            {{saveStatus}}
-          </span>
-          <p>Edits save automatically. Live shoppers use the canonical saved stock, prices, and access rules; closing a session does not undo completed trades.</p>
-        </div>
 
-        <section id="mw-section-basics" class="mw-workspace-section" aria-labelledby="mw-section-basics-heading" tabindex="-1">
-          <div class="mw-workspace-section__head">
-            <div>
-              <p class="mw-workspace-section__eyebrow">Merchant profile</p>
-              <h3 id="mw-section-basics-heading">Basics</h3>
-            </div>
-            <p>Name the shop and describe what players see.</p>
-          </div>
+        <section data-merchant-panel="basics" id="{{merchantPanels.basics.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.basics.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.basics.active}}hidden{{/unless}}>
         <div class="mw-form__head">
           <span class="mw-form__art" style="background-image:url('{{selected.art}}');" aria-hidden="true"></span>
           <div class="mw-form__head-fields">
@@ -186,15 +171,8 @@
         </label>
         </section>
 
-        <section id="mw-section-pricing" class="mw-workspace-section" aria-labelledby="mw-section-pricing-heading" tabindex="-1">
-          <div class="mw-workspace-section__head">
-            <div>
-              <p class="mw-workspace-section__eyebrow">Trade rules</p>
-              <h3 id="mw-section-pricing-heading">Pricing &amp; Bargaining</h3>
-            </div>
-            <p>Set the purse, markups, sell-back rate, and negotiation rules.</p>
-          </div>
-        <div class="mw-form__grid">
+        <section data-merchant-panel="pricing" id="{{merchantPanels.pricing.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.pricing.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.pricing.active}}hidden{{/unless}}>
+<div class="mw-form__grid">
           <label class="mw-field">
             <span class="mw-field__label">Buy price ×</span>
             <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" title="Multiplier on the listed price players pay. 1.0 = list price, 1.2 = +20%, 2.0 = double." />
@@ -204,16 +182,20 @@
             <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" title="Fraction of an item's value players get when selling to this merchant. 0.5 = half (standard 5e)." />
           </label>
           <label class="mw-field">
+            <span class="mw-field__label">Gold on Hand</span>
+            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" title="Blank = unlimited purse. A literal 0 means the merchant can't buy anything from players." />
+          </label>
+</div>        </section>
+
+        <section data-merchant-panel="bargaining" id="{{merchantPanels.bargaining.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.bargaining.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.bargaining.active}}hidden{{/unless}}>
+<div class="mw-form__grid">
+          <label class="mw-field">
             <span class="mw-field__label">Bargain DC</span>
             <input class="mw-input" type="number" name="bargainDC" min="5" max="30" step="1" value="{{selected.bargainDC}}" />
           </label>
           <label class="mw-field mw-field--toggle">
             <span class="mw-field__label">Advantage on Bargain</span>
             <input type="checkbox" name="bargainAdvantage" {{#if selected.bargainAdvantage}}checked{{/if}} />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Gold on Hand</span>
-            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" title="Blank = unlimited purse. A literal 0 means the merchant can't buy anything from players." />
           </label>
           <label class="mw-field">
             <span class="mw-field__label">Discount if Bargain Succeeds</span>
@@ -223,6 +205,21 @@
             <span class="mw-field__label">Penalty if Bargain Fails</span>
             <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
           </label>
+</div>        <fieldset class="mw-fieldset">
+          <legend>Allowed Skills</legend>
+          <div class="mw-chiprow">
+            {{#each skillOptions}}
+            <label class="mw-chip">
+              <input type="checkbox" name="allowedSkills" value="{{id}}" {{#if checked}}checked{{/if}} />
+              <span>{{label}}</span>
+            </label>
+            {{/each}}
+          </div>
+        </fieldset>
+
+        </section>
+        <section data-merchant-panel="charm" id="{{merchantPanels.charm.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.charm.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.charm.active}}hidden{{/unless}}>
+<div class="mw-form__grid">
           <label class="mw-field mw-field--toggle">
             <span class="mw-field__label">Charm affects prices</span>
             <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} title="On by default: a charismatic shopper automatically shifts prices before any bargain roll." />
@@ -235,35 +232,74 @@
             <span class="mw-field__label">Most a price can shift</span>
             <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Cap on the automatic passive price shift, in either direction." />
           </label>
-        </div>
-        <p class="mw-hint">
-          <strong>Buy price</strong> is what players pay; <strong>sell-back</strong> is what they get selling to this merchant. <strong>Charm affects prices</strong> is on by default — a charismatic shopper sees prices shift before any haggle roll.
-        </p>
-
-        <fieldset class="mw-fieldset">
-          <legend>Allowed Skills</legend>
-          <div class="mw-chiprow">
-            {{#each skillOptions}}
-            <label class="mw-chip">
-              <input type="checkbox" name="allowedSkills" value="{{id}}" {{#if checked}}checked{{/if}} />
-              <span>{{label}}</span>
-            </label>
-            {{/each}}
+</div>
+        </section>
+        <section data-merchant-panel="stock" id="{{merchantPanels.stock.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.stock.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.stock.active}}hidden{{/unless}}>
+        <fieldset class="mw-fieldset mw-fieldset--inv">
+          <legend>Inventory <small>({{selected.items.length}} {{#if selected.itemCountIsOne}}row{{else}}rows{{/if}})</small></legend>
+          {{#if inventoryRows.length}}
+          <div class="mw-inv__search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" class="mw-input" data-inv-search placeholder="Filter inventory…" aria-label="Filter inventory by item name" />
+            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite"></span>
+          </div>
+          {{/if}}
+          <div class="mw-inv__head">
+            <span>Item</span>
+            <span title="Current quantity in stock right now.">Qty</span>
+            <span title="Restock amount — what 'Restock' resets this item's quantity back to.">Restock to</span>
+            <span title="Custom price in gp for this item. Leave blank to use Buy price ×.">Custom gp</span>
+            <span class="mw-inv__head-flag" title="Never runs out — unlimited stock.">∞</span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="mw-inv__drop" data-drop-zone="inventory" role="region" aria-label="Inventory — drag items here or use Add From Library below">
+            {{#if inventoryRows.length}}
+              {{#each inventoryRows}}
+              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" data-search-text="{{name}}{{#if rarityLabel}} {{rarityLabel}}{{/if}}" title="Double-click to open sheet">
+                <div class="mw-inv__name">
+                  <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
+                  <div class="mw-inv__copy">
+                    <strong>{{name}}</strong>
+                    <span class="mw-inv__meta">{{#unless missing}}<i class="fa-solid fa-coins mw-coin" aria-hidden="true"></i> {{/unless}}{{basePriceLabel}}{{#if rarityLabel}} · <span class="mw-rarity mw-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}{{#if missing}} · <em>missing</em>{{/if}}</span>
+                  </div>
+                </div>
+                <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} aria-label="Quantity for {{name}}" />
+                <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" aria-label="Restock quantity for {{name}}" />
+                <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" aria-label="Custom price (gp) for {{name}}" />
+                <label class="mw-toggle" aria-label="Unlimited stock for {{name}}">
+                  <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
+                </label>
+                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openInventoryItem" data-uuid="{{uuid}}" title="Open {{name}}" aria-label="Open {{name}} item sheet">
+                  <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="invRemove" data-uuid="{{uuid}}" title="Remove from inventory">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+              {{/each}}
+            {{else}}
+              <p class="mw-empty">Drag items from the sidebar / item library here, or click <strong>Add From Library</strong>.</p>
+            {{/if}}
+          </div>
+          <div class="mw-inv__actions">
+            <button type="button" class="mw-btn" data-action="addFromPack">
+              <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Library
+            </button>
+            <button type="button" class="mw-btn" data-action="restock">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All
+            </button>
+            <button type="button" class="mw-btn mw-btn--danger" data-action="clearInventory">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Clear All
+            </button>
           </div>
         </fieldset>
-        </section>
 
-        <section id="mw-section-stock" class="mw-workspace-section" aria-labelledby="mw-section-stock-heading" tabindex="-1">
-          <div class="mw-workspace-section__head">
-            <div>
-              <p class="mw-workspace-section__eyebrow">Inventory</p>
-              <h3 id="mw-section-stock-heading">Stock</h3>
-            </div>
-            <p>Generate, filter, price, restock, and curate the items for sale.</p>
-          </div>
+        </section>
+        <section data-merchant-panel="generate" id="{{merchantPanels.generate.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.generate.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.generate.active}}hidden{{/unless}}>
         <fieldset class="mw-fieldset">
           <legend>Random Stock <small>auto-generated inventory</small></legend>
-          <p class="mw-hint">Pick item types and/or rarities, choose how many to draw, then <strong>Generate Stock</strong> to roll random items from the item library into this merchant. Ammunition always stocks in full stacks of 20.</p>
+          <p class="mw-hint">Generate adds stock. Re-Generate replaces it. Ammunition comes in stacks of 20.</p>
           <div class="mw-pool">
             <div class="mw-pool__col">
               <span class="mw-field__label">Item Types</span>
@@ -347,6 +383,9 @@
           </div>
         </fieldset>
 
+
+        </section>
+        <section data-merchant-panel="buys" id="{{merchantPanels.buys.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.buys.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.buys.active}}hidden{{/unless}}>
         <fieldset class="mw-fieldset">
           <legend>Buys From Players <small>what this merchant will purchase</small></legend>
           <p class="mw-hint">Pick the item types and/or rarities this merchant buys back from players. Leave everything unchecked to buy anything sellable.{{#if buysAnything}} <strong>Currently buys anything.</strong>{{/if}}</p>
@@ -381,75 +420,9 @@
           </div>
         </fieldset>
 
-        <fieldset class="mw-fieldset mw-fieldset--inv">
-          <legend>Inventory <small>({{selected.items.length}} {{#if selected.itemCountIsOne}}row{{else}}rows{{/if}})</small></legend>
-          {{#if inventoryRows.length}}
-          <div class="mw-inv__search">
-            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <input type="search" class="mw-input" data-inv-search placeholder="Filter inventory…" aria-label="Filter inventory by item name" />
-            <span class="mw-inv__search-count" data-inv-search-count aria-live="polite"></span>
-          </div>
-          {{/if}}
-          <div class="mw-inv__head">
-            <span>Item</span>
-            <span title="Current quantity in stock right now.">Qty</span>
-            <span title="Restock amount — what 'Restock' resets this item's quantity back to.">Restock to</span>
-            <span title="Custom price in gp for this item. Leave blank to use Buy price ×.">Custom gp</span>
-            <span class="mw-inv__head-flag" title="Never runs out — unlimited stock.">∞</span>
-            <span></span>
-            <span></span>
-          </div>
-          <div class="mw-inv__drop" data-drop-zone="inventory" role="region" aria-label="Inventory — drag items here or use Add From Library below">
-            {{#if inventoryRows.length}}
-              {{#each inventoryRows}}
-              <div class="mw-inv__row {{#if rarity}}mw-inv__row--{{rarity}}{{/if}} {{#if missing}}is-missing{{/if}} {{#if outOfStock}}is-out{{/if}}" data-uuid="{{uuid}}" data-search-text="{{name}}{{#if rarityLabel}} {{rarityLabel}}{{/if}}" title="Double-click to open sheet">
-                <div class="mw-inv__name">
-                  <span class="mw-inv__icon" style="background-image:url('{{img}}');" aria-hidden="true"></span>
-                  <div class="mw-inv__copy">
-                    <strong>{{name}}</strong>
-                    <span class="mw-inv__meta">{{#unless missing}}<i class="fa-solid fa-coins mw-coin" aria-hidden="true"></i> {{/unless}}{{basePriceLabel}}{{#if rarityLabel}} · <span class="mw-rarity mw-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}{{#if missing}} · <em>missing</em>{{/if}}</span>
-                  </div>
-                </div>
-                <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} aria-label="Quantity for {{name}}" />
-                <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" aria-label="Restock quantity for {{name}}" />
-                <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" aria-label="Custom price (gp) for {{name}}" />
-                <label class="mw-toggle" aria-label="Unlimited stock for {{name}}">
-                  <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
-                </label>
-                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openInventoryItem" data-uuid="{{uuid}}" title="Open {{name}}" aria-label="Open {{name}} item sheet">
-                  <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>
-                </button>
-                <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="invRemove" data-uuid="{{uuid}}" title="Remove from inventory">
-                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                </button>
-              </div>
-              {{/each}}
-            {{else}}
-              <p class="mw-empty">Drag items from the sidebar / item library here, or click <strong>Add From Library</strong>.</p>
-            {{/if}}
-          </div>
-          <div class="mw-inv__actions">
-            <button type="button" class="mw-btn" data-action="addFromPack">
-              <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Library
-            </button>
-            <button type="button" class="mw-btn" data-action="restock">
-              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All
-            </button>
-            <button type="button" class="mw-btn mw-btn--danger" data-action="clearInventory">
-              <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Clear All
-            </button>
-          </div>
-        </fieldset>
-        </section>
 
-        <section id="mw-section-access" class="mw-workspace-section" aria-labelledby="mw-section-access-heading" tabindex="-1">
-          <div class="mw-workspace-section__head">
-            <div>
-              <p class="mw-workspace-section__eyebrow">Player availability</p>
-              <h3 id="mw-section-access-heading">Access</h3>
-            </div>
-            <p>Choose who can shop and whether they may enter without a pushed session.</p>
-          </div>
+        </section>
+        <section data-merchant-panel="access" id="{{merchantPanels.access.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.access.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.access.active}}hidden{{/unless}}>
           <fieldset class="mw-fieldset">
             <legend>Allowed Players</legend>
             {{#if hasPlayers}}
@@ -465,7 +438,7 @@
             <p class="mw-empty">No active player users.</p>
             {{/if}}
             <label class="mw-field mw-field--inline mw-field--selfservice">
-              <span class="mw-field__label">Self-Service <small>(can allowed players open this shop themselves?)</small></span>
+              <span class="mw-field__label">Self-Service</span>
               <select class="mw-input" name="selfServiceMode">
                 {{#each selfServiceOptions}}
                 <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -473,33 +446,15 @@
               </select>
             </label>
             {{#if selfServiceOffWithPlayers}}
-            <p class="mw-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> This shop has allowed players but Self-Service is <strong>Off</strong>, so it will <strong>not</strong> appear in their Shops door. Set it to <strong>Open</strong> or <strong>Knock</strong> for players to open it themselves (you can still push a session either way).</p>
+            <p class="mw-warn">Self-Service is Off. Players need you to open a session.</p>
             {{/if}}
             <p class="mw-hint">With <strong>Knock</strong>, when a player asks to enter you'll get an Approve / Deny prompt on your screen.</p>
           </fieldset>
         </section>
 
-        <section id="mw-section-sessions" class="mw-workspace-section mw-workspace-section--sessions" aria-labelledby="mw-section-sessions-heading" tabindex="-1">
-          <div class="mw-workspace-section__head">
-            <div>
-              <p class="mw-workspace-section__eyebrow">Live shop</p>
-              <h3 id="mw-section-sessions-heading">Sessions</h3>
-            </div>
-            <p>Preview safely, open the shop for allowed players, or close a live window.</p>
-          </div>
+        <section data-merchant-panel="sessions" id="{{merchantPanels.sessions.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.sessions.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.sessions.active}}hidden{{/unless}}>
         <div class="mw-form__foot">
-          <div class="mw-form__foot-left">
-            <button type="button" class="mw-btn mw-btn--danger" data-action="deleteMerchant">
-              <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Merchant
-            </button>
-          </div>
           <div class="mw-form__foot-right">
-            <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
-              <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
-            </button>
-            <button type="button" class="mw-btn" data-action="save" title="Changes save automatically as you edit — this just saves right now.">
-              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save now
-            </button>
             <button type="button" class="mw-btn" data-action="previewSession" title="Open a sandbox shop window to see how buying, selling, and bargaining work — nothing real changes">
               <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
             </button>
@@ -534,13 +489,25 @@
         <p class="mw-empty mw-empty--session">No live sessions for this merchant. Preview does not change campaign data.</p>
         {{/if}}
         </section>
+        <section data-merchant-panel="manage" id="{{merchantPanels.manage.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.manage.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.manage.active}}hidden{{/unless}}>
+          <div class="mw-form__foot">
+            <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
+              <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
+            </button>
+            <button type="button" class="mw-btn mw-btn--danger" data-action="deleteMerchant">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Merchant
+            </button>
+          </div>
+        </section>
+        </div>
       </form>
       {{else}}
       <div class="mw-edit__empty">
         <i class="fa-solid fa-shop-lock" aria-hidden="true"></i>
-        <p>Select a merchant from the list, or create one to get started.</p>
+        <p>This merchant was removed. Close this window and choose another merchant.</p>
       </div>
       {{/if}}
     </section>
+    {{/unless}}
   </div>
 </div>

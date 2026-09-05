@@ -19,7 +19,6 @@ for (const file of templateFiles) {
 
 for (const file of [
   "templates/reputation-workspace.hbs",
-  "templates/merchant-workspace.hbs",
   "templates/resource-manager.hbs",
   "templates/settings.hbs",
 ]) {

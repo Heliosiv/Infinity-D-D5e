@@ -127,3 +127,13 @@ Technical identifiers remain in Advanced details where a workflow provides them.
 ## Monk's Active Tiles
 
 The allowlisted `home` destination remains a compatibility ID and opens the permission-scoped player launcher for the triggering player. Existing destination IDs remain valid. A full Gamemaster who clicks the Landing Page's Shops control opens Merchant Workspace locally; player clicks still open only the permission-scoped Shops picker through the authenticated player route. The tile message still carries only the fixed surface key and user IDs; it does not add campaign data or grant a new permission.
+
+### Focused merchant windows
+
+Open **Merchants**, search the directory, then click a merchant. Its separate
+window has ten tabs, each showing only its own controls. Use **Inventory** for
+existing items, **Generate** for random stock, **Access** for allowed players, and
+**Sessions** to preview or open a shop. **Manage** contains Duplicate and Delete.
+Edits save automatically; **Save now** retries a failed save. Left/Right arrows
+and Home/End move between tabs. Each merchant keeps its selected tab while open.
+Global Close All / Reopen All and transaction recovery remain in the directory.

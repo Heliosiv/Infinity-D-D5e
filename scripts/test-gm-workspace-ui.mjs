@@ -67,11 +67,11 @@ function assertOrdered(source, needles, label) {
 assertOrdered(
   merchantTemplate,
   [
-    'id="mw-section-basics"',
-    'id="mw-section-pricing"',
-    'id="mw-section-stock"',
-    'id="mw-section-access"',
-    'id="mw-section-sessions"',
+    'data-merchant-panel="basics"',
+    'data-merchant-panel="pricing"',
+    'data-merchant-panel="stock"',
+    'data-merchant-panel="access"',
+    'data-merchant-panel="sessions"',
   ],
   "merchant sections",
 );
@@ -125,8 +125,8 @@ for (const field of [
   );
 }
 assert.match(merchantTemplate, /data-save-status/);
-assert.match(merchantTemplate, /Workspace guide:/);
-assert.match(merchantTemplate, /Live shoppers use the canonical saved stock/);
+assert.doesNotMatch(merchantTemplate, /Workspace guide:/);
+assert.match(merchantTemplate, /role="tablist"/);
 assert.match(merchantTemplate, /Open Session is unavailable:/);
 assert.match(
   merchantTemplate,
@@ -176,8 +176,8 @@ assert.match(merchantStyle, /container-name:\s*merchant-workspace/);
 assert.match(merchantStyle, /@container merchant-workspace/);
 assert.match(
   merchantStyle,
-  /@container merchant-workspace \(max-width: 720px\) \{[\s\S]*?\.mw-body \{[\s\S]*?grid-template-rows:\s*minmax\(12rem, 0\.42fr\) minmax\(0, 1fr\)/,
-  "stacked Merchant Workspace keeps a bounded, scrollable rail above the editor",
+  /@container merchant-workspace \(max-width: 720px\) \{[\s\S]*?\.mw-body \{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\)/,
+  "Merchant directory retains one bounded scrolling region",
 );
 assert.doesNotMatch(merchantStyle, /@media\s*\(max-width/);
 assert.match(

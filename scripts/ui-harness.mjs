@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 
 import Handlebars from "handlebars";
+import {
+  MERCHANT_EDITOR_TABS,
+  merchantTabContext,
+} from "./merchant/editor-tabs.js";
 
 import { buildInfinityChatCard } from "./chat-card.js";
 import { buildGmWorkbenchNavigationContext } from "./gm-workbench-routes.js";
@@ -390,6 +394,20 @@ export function buildHarnessViews() {
       "templates/merchant-workspace.hbs",
       merchantWorkspaceSaveErrorContext(),
       { width: 1000, height: 720 },
+    ),
+    ...MERCHANT_EDITOR_TABS.map(([key, label]) =>
+      view(
+        `merchant-editor-${key}`,
+        `Merchant - ${label}`,
+        "infinity-merchant-workspace",
+        "templates/merchant-workspace.hbs",
+        {
+          ...merchantWorkspaceContext(),
+          isMerchantEditor: true,
+          ...merchantTabContext(`editor-${key}`, key),
+        },
+        { width: 820, height: 640 },
+      ),
     ),
     view(
       "merchant-session-buy",
@@ -1133,6 +1151,13 @@ export function buildUiHarnessDocument() {
 }
 
 function view(id, label, rootClass, template, context, size) {
+  if (template === "templates/merchant-workspace.hbs") {
+    context = {
+      isMerchantEditor: false,
+      ...merchantTabContext(id),
+      ...context,
+    };
+  }
   return { id, label, rootClass, template, context, ...size };
 }
 
@@ -1230,7 +1255,9 @@ function renderHarnessWindow(entry) {
 }
 
 function renderTemplate(templatePath, context) {
-  const workbenchRoute = WORKBENCH_ROUTE_BY_TEMPLATE.get(templatePath);
+  const workbenchRoute = context.isMerchantEditor
+    ? null
+    : WORKBENCH_ROUTE_BY_TEMPLATE.get(templatePath);
   const renderContext = workbenchRoute
     ? {
         ...context,
@@ -2156,6 +2183,8 @@ function merchantWorkspaceContext() {
 function merchantWorkspaceSaveErrorContext() {
   return {
     ...merchantWorkspaceContext(),
+    isMerchantEditor: true,
+    ...merchantTabContext("save-error"),
     saveStatus: "Save failed — retry with Save now",
   };
 }

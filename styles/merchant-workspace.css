@@ -283,12 +283,12 @@
   line-height: 1.35;
 }
 
-/* Two-pane body */
+/* A directory or a focused editor fills the available body. */
 .mw-body {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -1081,11 +1081,8 @@
 @container merchant-workspace (max-width: 720px) {
   .mw-body {
     grid-template-columns: 1fr;
-    /* The stacked rail and editor otherwise use implicit content-sized rows.
-       On short Chromium viewports that can clip later merchant rows inside the
-       rail, leaving the aside itself on top of its buttons. Give both panes a
-       bounded share of the available height; each pane already owns scrolling. */
-    grid-template-rows: minmax(12rem, 0.42fr) minmax(0, 1fr);
+    /* Keep the active surface within the window's available height. */
+    grid-template-rows: minmax(0, 1fr);
   }
   /* In the stacked layout the editor pane can be quite short. Let its
      navigation and save guidance scroll with the form so they cannot consume
@@ -1175,4 +1172,89 @@
     grid-row: auto;
     width: 100%;
   }
+}
+
+/* Directory and focused windows share the theme without nested editor frames. */
+.infinity-merchant-workspace .mw-person-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.infinity-merchant-workspace .mw-person-head h2 {
+  flex: 1 1 180px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.infinity-merchant-workspace .mw-person-head .mw-btn {
+  width: auto;
+}
+.infinity-merchant-workspace .mw-save-status {
+  font-size: 0.78rem;
+}
+.infinity-merchant-workspace .mw-shell--editor .mw-edit {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+}
+.infinity-merchant-workspace .mw-shell--editor .mw-form {
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+.infinity-merchant-workspace .mw-section-nav {
+  position: static;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  overflow: visible;
+  padding: 0 0 6px;
+  gap: 2px;
+  background: transparent;
+}
+.infinity-merchant-workspace .mw-section-nav button {
+  padding: 6px 9px;
+}
+.infinity-merchant-workspace .mw-section-nav [aria-selected="true"] {
+  color: var(--lf-text-strong);
+  background: var(--lf-surface-elev);
+  border-color: var(--ms-brass);
+}
+.infinity-merchant-workspace .mw-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px;
+}
+.infinity-merchant-workspace .mw-workspace-section {
+  padding: 8px 2px;
+  border: 0;
+  background: transparent;
+}
+.infinity-merchant-workspace .mw-fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.infinity-merchant-workspace [data-merchant-panel][hidden],
+.infinity-merchant-workspace .mw-list__row[hidden],
+.infinity-merchant-workspace [data-merchant-no-match][hidden] {
+  display: none;
+}
+.infinity-merchant-workspace .mw-shell--directory .mw-list {
+  padding: 8px;
+}
+.infinity-merchant-workspace .mw-directory-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  width: 100%;
+}
+.infinity-merchant-workspace .mw-list__items {
+  padding: 6px 0;
 }

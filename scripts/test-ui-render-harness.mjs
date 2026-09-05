@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  96,
+  106,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -449,7 +449,7 @@ assert.match(
   closedMerchantWorkspaceView.html,
   /data-action="closeAllSessions"/,
 );
-assert.match(closedMerchantWorkspaceView.html, /2 saved sessions/);
+assert.match(closedMerchantWorkspaceView.html, /saved sessions/);
 
 const merchantWorkspaceSaveErrorView = views.find(
   (view) => view.id === "merchant-workspace-save-error",

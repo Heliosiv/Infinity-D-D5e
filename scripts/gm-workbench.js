@@ -50,6 +50,7 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
     const { workbench = null, ...applicationOptions } = options;
     super(applicationOptions);
+    this._standaloneWindow = workbench === false;
     this._gmWorkbenchTarget = normalizeGmWorkbenchTarget(
       workbench,
       this.constructor.WORKBENCH_ROUTE ?? DEFAULT_GM_WORKBENCH_ROUTE,
@@ -82,6 +83,7 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender?.(context, options);
+    if (this._standaloneWindow) return;
     if (typeof this.captureWorkbenchTarget !== "function") return;
     if (this._gmWorkbenchSwitching) {
       void this.close?.({ animate: false });
@@ -101,6 +103,10 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _onClose(options) {
+    if (this._standaloneWindow) {
+      super._onClose?.(options);
+      return;
+    }
     if (typeof this.captureWorkbenchTarget === "function") {
       const target = this.captureWorkbenchTarget();
       rememberedTargets.set(target.route, target);

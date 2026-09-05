@@ -83,7 +83,7 @@ import { confirmInfinityDialog } from "./dialog-contract.js";
 import {
   applyVisualPrefs,
   bindFullGmWindowGuard,
-  navigateToAppSection,
+  bindFocusRestoration,
   openSingleton,
 } from "./infinity-app.js";
 import {
@@ -102,6 +102,11 @@ import {
   PRIVATE_STATE_CHANGED_HOOK,
   onPrivateStateChanged,
 } from "./private-state.js";
+import {
+  merchantTabContext,
+  selectMerchantTab,
+  bindMerchantTabKeys,
+} from "./merchant/editor-tabs.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
@@ -119,7 +124,7 @@ const SELF_SERVICE_LABELS = {
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
   { key: "list", selector: ".mw-list" },
-  { key: "edit", selector: ".mw-edit" },
+  { key: "edit", selector: ".mw-tab-content" },
 ];
 const MERCHANT_WRITE_ACTIONS = new Set([
   "newMerchant",
@@ -202,6 +207,7 @@ async function saveBeforeMerchantAction(app, merchantId) {
 
 export class MerchantWorkspaceApp extends GmWorkbenchApp {
   static _instance = null;
+  static _editors = new Map();
   static WORKBENCH_ROUTE = "merchants";
 
   static DEFAULT_OPTIONS = {
@@ -213,7 +219,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       icon: "fa-solid fa-store",
       resizable: true,
     },
-    position: { width: 1000, height: 720 },
+    position: { width: 720, height: 600 },
     actions: {
       newMerchant: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onNewMerchant,
@@ -266,7 +272,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       recheckTransaction: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onRecheckTransaction,
       ),
-      selectSection: navigateToAppSection,
+      selectSection: MerchantWorkspaceApp._onSelectSection,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
@@ -276,6 +282,14 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     workbench: { template: GM_WORKBENCH_TEMPLATE_PATH },
     body: { template: TEMPLATE_PATH },
   };
+
+  _configureRenderParts(options) {
+    const parts = { ...super._configureRenderParts(options) };
+    // Foundry requires a root element for each rendered part. Omit the chrome
+    // part entirely in an editor instead of rendering an empty template.
+    if (this._isMerchantEditor) delete parts.workbench;
+    return parts;
+  }
 
   static open(options = {}) {
     return runAsFullGM(() => {
@@ -289,10 +303,41 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     }, "Merchant Workspace is available to full GMs only.");
   }
 
+  static openMerchant(merchantId) {
+    return runAsFullGM(() => {
+      const merchant = findMerchant(merchantId);
+      if (!merchant) return null;
+      let app = MerchantWorkspaceApp._editors.get(merchantId);
+      if (!app) {
+        app = new MerchantWorkspaceApp({
+          merchantId,
+          workbench: false,
+          id: `infinity-merchant-${merchantId}`,
+          window: { title: merchant.name },
+          position: {
+            width: Math.min(820, (globalThis.innerWidth || 1024) - 40),
+            height: Math.min(640, (globalThis.innerHeight || 768) - 60),
+          },
+        });
+        MerchantWorkspaceApp._editors.set(merchantId, app);
+        bindFocusRestoration(app);
+      }
+      if (app.rendered) app.bringToFront?.();
+      else app.render(true);
+      return app;
+    }, "Merchant editing is available to full GMs only.");
+  }
+
   constructor(options = {}) {
     super(options);
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
-    this._selectedId = String(options.workbench?.entityId ?? "").trim() || null;
+    this._isMerchantEditor = Boolean(options.merchantId);
+    this._selectedId =
+      options.merchantId ||
+      String(options.workbench?.entityId ?? "").trim() ||
+      null;
+    this._activeMerchantTab = "basics";
+    this._merchantSearch = "";
     this._saveStatus = "All changes saved";
     this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
@@ -328,7 +373,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
   }
 
   _applyWorkbenchTarget(target) {
-    if (target?.entityId) this._selectedId = target.entityId;
+    if (target?.entityId) {
+      this._selectedId = target.entityId;
+      MerchantWorkspaceApp.openMerchant(target.entityId);
+    }
   }
 
   async _beforeWorkbenchNavigate() {
@@ -364,7 +412,13 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       );
       this._tabLeadershipHookId = null;
     }
-    MerchantWorkspaceApp._instance = null;
+    if (this._isMerchantEditor) {
+      if (MerchantWorkspaceApp._editors.get(this._selectedId) === this) {
+        MerchantWorkspaceApp._editors.delete(this._selectedId);
+      }
+    } else if (MerchantWorkspaceApp._instance === this) {
+      MerchantWorkspaceApp._instance = null;
+    }
   }
 
   /* -------------------- context -------------------- */
@@ -374,22 +428,21 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const merchants = loadMerchants();
     const merchantAccess = loadMerchantAccessState();
     const allActiveSessions = listSessions();
-    // Resolve the selection, re-anchoring to the first merchant when the stored
-    // id no longer exists (e.g. another GM client / external settings edit
-    // deleted the selected merchant, then an unrelated broadcast re-rendered
-    // this workspace). Without this, a dangling _selectedId stays truthy, so the
-    // auto-select guard never fires again and the editor is permanently blank.
+    // A focused editor stays bound to its merchant even after external deletion.
+    // Never redirect its controls to another merchant during a refresh.
     let selected = this._selectedId
       ? (merchants.find((m) => m.id === this._selectedId) ?? null)
       : null;
-    if (!selected && merchants.length > 0) {
+    if (!selected && merchants.length > 0 && !this._isMerchantEditor) {
       selected = merchants[0];
       this._selectedId = selected.id;
-    } else if (!selected) {
+    } else if (!selected && !this._isMerchantEditor) {
       this._selectedId = null;
     }
 
-    await this._refreshItemCache(merchants);
+    await this._refreshItemCache(
+      this._isMerchantEditor && selected ? [selected] : [],
+    );
 
     const merchantList = merchants.map((m) => ({
       id: m.id,
@@ -537,7 +590,11 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         };
       });
     return {
-      workbench: this.prepareWorkbenchContext?.() ?? null,
+      workbench: this._isMerchantEditor
+        ? null
+        : (this.prepareWorkbenchContext?.() ?? null),
+      isMerchantEditor: this._isMerchantEditor,
+      ...merchantTabContext(this._selectedId, this._activeMerchantTab),
       moduleId: MODULE_ID,
       hasMerchants: merchants.length > 0,
       merchants: merchantList,
@@ -658,6 +715,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
     // Honor the existing animation + rarity-glow client settings.
     applyVisualPrefs(this.element, "mw-");
+    bindMerchantTabKeys(this.element, (key) => this._selectMerchantTab(key));
+    this._wireMerchantSearch();
 
     if (context?.canManageMerchants) {
       this._wireFormChange();
@@ -731,6 +790,35 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         );
       }
     });
+  }
+
+  _wireMerchantSearch() {
+    const input = this.element?.querySelector?.("[data-merchant-search]");
+    if (!input) return;
+    input.value = this._merchantSearch;
+    const filter = () => {
+      this._merchantSearch = input.value;
+      const query = input.value.trim().toLocaleLowerCase();
+      let count = 0;
+      for (const row of this.element.querySelectorAll(".mw-list__row")) {
+        row.hidden = !row
+          .querySelector(".mw-list__name")
+          .textContent.toLocaleLowerCase()
+          .includes(query);
+        if (!row.hidden) count++;
+      }
+      this.element.querySelector("[data-merchant-no-match]").hidden = count > 0;
+    };
+    input.addEventListener("input", filter);
+    filter();
+  }
+
+  _selectMerchantTab(key) {
+    if (selectMerchantTab(this.element, key)) this._activeMerchantTab = key;
+  }
+
+  static _onSelectSection(_event, target) {
+    this._selectMerchantTab(target?.dataset?.merchantTab);
   }
 
   /**
@@ -976,6 +1064,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this._selectedId = blank.id;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     this.render(false);
+    MerchantWorkspaceApp.openMerchant(blank.id);
   }
 
   static async _onRecheckTransaction(_event, target) {
@@ -1024,45 +1113,20 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     if (!merchant) return;
     const copy = duplicateMerchant(merchant);
     await upsertMerchant(copy);
-    this._selectedId = copy.id;
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     ui.notifications?.info(
       `Duplicated ${merchant.name}. The new merchant's inventory is empty.`,
     );
     this.render(false);
+    MerchantWorkspaceApp._instance?.render(false);
+    MerchantWorkspaceApp.openMerchant(copy.id);
   }
 
   static async _onSelectMerchant(_event, target) {
     const id = target?.dataset?.merchantId;
-    if (
-      !id ||
-      id === this._selectedId ||
-      this._merchantSelecting ||
-      this._gmWorkbenchSwitching
-    )
-      return;
-    this._merchantSelecting = true;
-    try {
-      if (
-        this._selectedId &&
-        isAuthoritativeGM() &&
-        hasMerchantTabLeadership()
-      ) {
-        if (!(await saveBeforeMerchantAction(this, this._selectedId))) return;
-      }
-      if (!findMerchant(id)) {
-        notify(
-          "warn",
-          "That merchant is no longer available. Choose another merchant.",
-        );
-        return;
-      }
-      this._selectedId = id;
-      playModuleSound(SOUND_EVENTS.ITEM_OPEN);
-      this.render(false);
-    } finally {
-      this._merchantSelecting = false;
-    }
+    if (!id || this._gmWorkbenchSwitching) return;
+    playModuleSound(SOUND_EVENTS.ITEM_OPEN);
+    return MerchantWorkspaceApp.openMerchant(id);
   }
 
   static async _onSave() {
@@ -1097,9 +1161,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const deletedId = merchant.id;
     await deleteMerchant(deletedId);
     pushCloseAllSessionsFor(deletedId);
-    this._selectedId = null;
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    this.render(false);
+    MerchantWorkspaceApp._instance?.render(false);
+    if (this._isMerchantEditor) await this.close();
+    else this.render(false);
   }
 
   static async _onAddFromPack() {
