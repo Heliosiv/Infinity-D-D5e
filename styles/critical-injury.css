@@ -18,6 +18,29 @@
   padding: 18px;
 }
 
+.ci-injury-calendar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ci-injury-calendar button {
+  width: auto;
+}
+.ci-rule-details {
+  margin-top: 10px;
+  border-top: 1px solid var(--lf-border);
+}
+.ci-rule-details summary {
+  cursor: pointer;
+  padding: 10px 0;
+  min-height: var(--lf-control-size, 44px);
+  box-sizing: border-box;
+  color: var(--lf-muted);
+}
+
 .ci-shell button {
   min-height: var(--lf-control-size, 44px);
   padding: 6px 10px;

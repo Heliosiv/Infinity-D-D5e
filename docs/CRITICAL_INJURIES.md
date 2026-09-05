@@ -1,5 +1,53 @@
 # Critical Injury Table V2
 
+## Injury board, canvas badges, and saved log
+
+Open **Infinity → Injuries** as a GM. **Party & rolls** shows injured characters
+first beside the reviews that need attention. Search by character or injury,
+then use **View & treat**, **Sheet**, or **Calendar** directly. **Log injury**
+opens and focuses an exceptional review; select a character and its player,
+then **Start review** and **Send roll**. Confirmed rolls save automatically.
+**Injury log** shows the original roll, campaign date, effect, current active
+status, and number of completed treatment attempts. It reads the existing
+GM-private ledger, which retains up to 200 recent completed injury records;
+it is not an unlimited historical archive. Removed effects show **No longer
+active**, because removal alone does not prove how an injury ended.
+
+Linked player-character tokens display a red **! count** badge in the lower
+right corner. Click it to open that character's injuries. Permanent injuries
+count too. The badge updates when injuries change and disappears when the last
+one is removed. It is visible only to full GMs, assigned players, and owners.
+It inherits the token's visibility and does not alter token art or conditions.
+Unlinked synthetic tokens are excluded because their effects may differ from
+the world character opened by the injury window. The body HUD and `Shift+J`
+remain alternative entry points.
+
+New injuries receive a Simple Calendar Reborn note through the existing roll
+workflow. The active GM can use **Sync injuries** to check and repair missing
+entries, including after a note was deleted or a calendar outage. Repair
+requires the saved GM receipt, reuses matching notes, and updates only the
+calendar link. It does not reroll injuries, spend kit charges, or reset recovery.
+Unconfirmed or changing injuries are skipped. Calendar outages show a retryable
+message. Repaired notes start at the original in-game injury date; recovery
+labels count down from the current campaign time. **View calendar** opens the
+recovery date without advancing time. The adapter supports the documented
+[Simple Calendar API](https://simplecalendar.info/docs/developing-with-sc/api/namespaces/SimpleCalendar.api/)
+and both Reborn and legacy module IDs.
+
+Recovery rules and integration details in the player window are collapsible;
+effects, dates, calendar status, and treatment actions stay visible.
+
+### Developer verification
+
+Run `npm run check`, `npm run ui:audit`, `npm run ui:audit:a11y`, and
+`npm run ui:audit:keyboard`. The optional
+`node scripts/audit-injury-journey.mjs --pixi path/to/pixi.min.js` journey
+accepts a local PIXI 7 browser bundle (verified with 7.4.3). It exercises the
+actual search and view controllers, recipient selection, and PIXI badge click
+and cleanup in a local browser fixture. Screenshots go to
+`output/playwright/injury-ui`. This does not log in to or change a Foundry world;
+installed-world acceptance remains a separate check.
+
 ## v0.3.1 interface quick start
 
 Players open **Home → Track the Campaign → Critical Injuries** or press `Shift+J`. The window and HUD identify the controlled character and share the same treatment status. HUD markers retain hover, focus, pin, touch, and Escape behavior with enlarged targets. Pending, offline, busy, successful, uncertain, and retry states explain whether the authoritative GM changed anything and what the player should do next.
@@ -228,6 +276,12 @@ Simple Calendar Reborn notes. They preserve real Actor effects, ability scores,
 original calendar dates, and permissions. Recovered and uncertain historical
 injuries can be recorded without creating a new d100 roll.
 
+The saved injury log and the owner's character injury window include these
+records. Canvas badges include active, permanent, and needs-review records,
+exclude recovered records, and count an injury only once when the record
+references an automated injury effect. Historical records display their saved
+status and notes; they do not enable automated treatment or invent dice results.
+
 The full-GM API is
 `game.modules.get("infinity-dnd5e").api.criticalInjuries.records`:
 
@@ -253,3 +307,5 @@ never changes inventory, effects, ownership, or time, and never creates native
 V2 treatment receipts. Native V2 injury automation remains separate. Actor flags
 are display data that an owner can edit, so no privileged treatment or healing
 action trusts these historical records.
+
+Recorded-injury calendar links use persistent HTML data attributes because Foundry removes HTML comments. An exact, uniquely matching partial record from preview.9 can be recovered in its explicitly selected calendar note without creating a duplicate.

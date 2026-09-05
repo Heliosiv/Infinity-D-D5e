@@ -168,16 +168,12 @@ const injuryHudTemplate = read("templates/critical-injury-hud.hbs");
 assert.match(injuryScript, /treatmentMessage:/);
 assert.match(injuryTemplate, /ci-treatment-message/);
 assert.match(injuryTemplate, /Injury actions are offline/);
-assert.match(injuryTemplate, /else if outcomeUncertain/);
+assert.match(injuryTemplate, /#if outcomeUncertain/);
 assert.match(injuryHudTemplate, /class="ci-hud-actor"/);
 assert.match(injuryHudTemplate, /data-action="pinRegion"/);
 assert.match(injuryHudTemplate, /data-action="closeRegion"/);
-assert.match(injuryHudTemplate, /Safe next step:/);
-assert.match(
-  injuryHudTemplate,
-  /review the Actor and chat receipt with the GM/,
-);
-assert.match(injuryHudTemplate, /do not repeat treatment/);
+assert.match(injuryHudTemplate, /View all injuries/);
+assert.match(injuryHudTemplate, /Do not repeat it while the GM reconnects/);
 
 const containerStyles = [
   ["styles/shop-picker.css", "shop-picker"],

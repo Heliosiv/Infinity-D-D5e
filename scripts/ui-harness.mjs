@@ -866,6 +866,14 @@ export function buildHarnessViews() {
       { width: 760, height: 640 },
     ),
     view(
+      "critical-injury-log",
+      "Saved injury log (GM)",
+      "infinity-critical-injury-triage",
+      "templates/critical-injury-triage.hbs",
+      { ...criticalInjuryTriageContext(), showLog: true },
+      { width: 760, height: 640 },
+    ),
+    view(
       "critical-injury-hud",
       "Critical Injury Body HUD (player overlay)",
       "infinity-critical-injury-hud",
@@ -4752,6 +4760,33 @@ function forageOfflineContext() {
 
 function criticalInjuryTriageContext() {
   return {
+    activeCount: 1,
+    calendarActive: true,
+    calendarMissingCount: 1,
+    logCount: 2,
+    logRows: [
+      {
+        actorId: "actor-bryn",
+        actorName: "Bryn",
+        name: "Shattered Knee",
+        effect: "Speed is halved.",
+        date: "12 Eleasis, 1492 DR",
+        roll: 47,
+        active: true,
+        status: "Active",
+        treatments: 1,
+      },
+      {
+        actorId: "actor-aric",
+        actorName: "Aric",
+        name: "Concussion",
+        effect: "Disadvantage on checks.",
+        date: "8 Eleasis, 1492 DR",
+        roll: 26,
+        active: false,
+        status: "No longer active",
+      },
+    ],
     accessDenied: false,
     reviewCount: 1,
     pendingCount: 1,
@@ -4773,6 +4808,7 @@ function criticalInjuryTriageContext() {
     rows: [
       {
         pendingId: "pending-review-aric",
+        actorId: "actor-aric",
         actorName: "Aric",
         actorImg: "icons/svg/mystery-man.svg",
         state: "review",
@@ -4787,6 +4823,7 @@ function criticalInjuryTriageContext() {
       },
       {
         pendingId: "pending-player-bryn",
+        actorId: "actor-bryn",
         actorName: "Bryn",
         actorImg: "icons/svg/mystery-man.svg",
         state: "approved",
@@ -4808,22 +4845,32 @@ function criticalInjuryTriageContext() {
     ],
     partyRows: [
       {
-        name: "Aric",
-        img: "icons/svg/mystery-man.svg",
-        injuries: [],
-        recordedInjuries: [
+        id: "actor-bryn",
+        name: "Bryn",
+        img: iconDataUri("#6f4656", "B"),
+        injuries: [
           {
-            name: "Heavy scarring",
-            recovery: "Permanent · Recorded: Shadowfall 21, 53",
-            notes:
-              "Wolf bite along the right jaw. Existing persuasion and intimidation adjustments preserved; original injury date unknown.",
+            name: "Shattered Knee",
+            recovery: "7 days remaining",
+            effect: "Speed is halved.",
+            dueLabel: "19 Eleasis, 1492 DR",
+            calendarLinked: false,
           },
         ],
       },
       {
-        name: "Bryn",
-        img: "icons/svg/mystery-man.svg",
-        injuries: [{ name: "Shattered Knee", recovery: "7 day(s) remaining" }],
+        id: "actor-aric",
+        name: "Aric",
+        img: iconDataUri("#446579", "A"),
+        injuries: [],
+        recordedInjuries: [
+          {
+            name: "Heavy scarring",
+            status: "permanent",
+            recovery: "Permanent · Recorded: Shadowfall 21, 53",
+            notes: "Existing scar; original injury date unknown.",
+          },
+        ],
       },
     ],
   };

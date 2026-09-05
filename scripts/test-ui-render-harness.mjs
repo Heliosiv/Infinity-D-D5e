@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  106,
+  107,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -792,7 +792,7 @@ assert.doesNotMatch(
 
 const injuryView = views.find((view) => view.id === "critical-injury");
 assert.ok(injuryView, "harness includes the player Critical Injuries view");
-assert.match(injuryView.html, /Critical Injury Table V2/);
+assert.match(injuryView.html, /Injuries &amp; recovery/);
 assert.match(injuryView.html, /data-action="rollInjury"/);
 assert.match(injuryView.html, /active GM securely rolls and applies/i);
 assert.match(injuryView.html, /data-action="requestTreatment"/);
@@ -806,7 +806,7 @@ assert.ok(
   injuryTriageView,
   "harness includes the GM Critical Injury triage view",
 );
-assert.match(injuryTriageView.html, /GM control surface/);
+assert.match(injuryTriageView.html, /Party care/);
 assert.match(injuryTriageView.html, /Needs GM review/);
 assert.match(injuryTriageView.html, /data-action="sendReview"/);
 assert.match(injuryTriageView.html, /data-action="dismissReview"/);
@@ -820,10 +820,7 @@ assert.ok(
   injuryUncertainView,
   "harness includes the player injury uncertainty view",
 );
-assert.match(
-  injuryUncertainView.html,
-  /review the Actor and chat\s+receipt with the GM; do not repeat the injury action/i,
-);
+assert.match(injuryUncertainView.html, /Do not repeat the injury action/i);
 
 const injuryHudView = views.find((view) => view.id === "critical-injury-hud");
 assert.ok(injuryHudView, "harness includes the player injury body HUD");
@@ -835,11 +832,7 @@ assert.match(injuryHudView.html, /data-action="closeRegion"/);
 assert.match(injuryHudView.html, /data-action="openInjuries"/);
 assert.match(injuryHudView.html, /data-action="requestTreatment"/);
 assert.match(injuryHudView.html, /Treat with Healer's Kit/);
-assert.match(injuryHudView.html, /Safe next step:/);
-assert.match(
-  injuryHudView.html,
-  /Treatment remains an explicit request to the active GM/,
-);
+assert.match(injuryHudView.html, /View all injuries/);
 assert.match(injuryHudView.html, /Lost Limb/);
 assert.match(injuryHudView.html, /Permanent/);
 
@@ -852,7 +845,7 @@ assert.ok(
 );
 assert.match(
   injuryHudUncertainView.html,
-  /reconnect, then review the Actor and chat\s+receipt with the GM; do not repeat treatment/i,
+  /Do not repeat it while the GM reconnects/i,
 );
 assert.match(
   documentHtml,

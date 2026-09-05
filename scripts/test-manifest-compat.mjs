@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { validateReleaseVersion } from "./release-version.mjs";
 
 const manifest = JSON.parse(readFileSync("module.json", "utf8"));
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
@@ -31,81 +32,35 @@ assert.equal(
   'module.json must declare "socket": true or all cross-client features break',
 );
 
-// Release-state guard: development builds must be newer than the latest
-// released tag. Equality is only valid when HEAD is that exact tagged commit.
-// This catches a diverged checkout or forgotten version bump that would ship
-// the same or an older version than what is already published, breaking Forge
-// manifest-URL installs and updates.
-// Graceful when git/tags are unavailable (e.g. a tarball checkout).
-function parseSemver(value) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(value).trim());
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function compareSemver(a, b) {
-  for (let i = 0; i < 3; i += 1) {
-    if (a[i] !== b[i]) return a[i] - b[i];
-  }
-  return 0;
-}
-
+// Release versions include prerelease identifiers; stable builds sort after previews.
 const tagResult = spawnSync("git", ["tag", "--list", "v*"], {
   encoding: "utf8",
 });
-if (tagResult.status === 0 && tagResult.stdout.trim()) {
-  const tags = tagResult.stdout
-    .split(/\r?\n/)
-    .map((name) => ({ name, version: parseSemver(name) }))
-    .filter((tag) => tag.version);
-  if (tags.length > 0) {
-    const latest = tags.reduce((max, tag) =>
-      compareSemver(tag.version, max.version) > 0 ? tag : max,
-    );
-    const current = parseSemver(manifest.version);
-    assert.ok(current, `manifest version is not semver: ${manifest.version}`);
-    const comparison = compareSemver(current, latest.version);
-    assert.ok(
-      comparison >= 0,
-      `manifest version ${manifest.version} is behind the latest released ` +
-        `tag ${latest.name} — the working tree looks stale/diverged. ` +
-        `Sync to origin or bump the version before releasing.`,
-    );
-    if (comparison === 0) {
-      const headResult = spawnSync("git", ["rev-parse", "HEAD"], {
-        encoding: "utf8",
-      });
-      const tagCommitResult = spawnSync(
-        "git",
-        ["rev-list", "-n", "1", latest.name],
-        { encoding: "utf8" },
-      );
-      if (headResult.status === 0 && tagCommitResult.status === 0) {
-        const atReleasedTag =
-          headResult.stdout.trim() === tagCommitResult.stdout.trim();
-        if (process.env.INFINITY_REQUIRE_RELEASE_VERSION === "1") {
-          assert.ok(
-            atReleasedTag,
-            `manifest version ${manifest.version} is already released as ` +
-              `${latest.name}, but HEAD contains unreleased work. Bump the ` +
-              `package and manifest versions before building a release.`,
-          );
-        } else if (!atReleasedTag) {
-          process.stdout.write(
-            "  (development branch uses the current released version; " +
-              "the exact-tag check runs for release builds)\n",
-          );
-        }
-      } else {
-        process.stdout.write(
-          "  (exact HEAD-to-tag check skipped: git history unavailable)\n",
-        );
-      }
-    }
-  }
+const headTagResult = spawnSync("git", ["tag", "--points-at", "HEAD"], {
+  encoding: "utf8",
+});
+const requireExactTag = process.env.INFINITY_REQUIRE_RELEASE_VERSION === "1";
+if (requireExactTag) {
+  assert.equal(tagResult.status, 0, "Release verification requires git tags");
+  assert.equal(
+    headTagResult.status,
+    0,
+    "Release verification requires HEAD history",
+  );
+}
+if (tagResult.status === 0) {
+  validateReleaseVersion({
+    version: manifest.version,
+    tags: tagResult.stdout.trim().split(/\r?\n/).filter(Boolean),
+    headTags: (headTagResult.stdout ?? "")
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean),
+    requireExactTag,
+  });
 } else {
   process.stdout.write(
-    "  (manifest release-state check skipped: git tags unavailable)\n",
+    "  (development release-state check skipped: git tags unavailable)\n",
   );
 }
 

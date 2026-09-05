@@ -132,8 +132,8 @@
   gap: 10px;
 }
 .ci-triage-party-card {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  align-content: start;
   gap: 10px;
   min-width: 0;
   padding: 11px;
@@ -158,8 +158,211 @@
 .ci-triage-party-card ul {
   display: grid;
   gap: 4px;
-  padding-left: 16px;
+  padding: 0;
+  list-style: none;
   font-size: 0.82rem;
+}
+
+.ci-triage-shell h3 {
+  margin: 0;
+}
+.ci-triage-shell {
+  padding: 12px;
+  gap: 10px;
+}
+.ci-triage-shell > .ci-status {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+.ci-triage-hero {
+  padding: 12px;
+}
+.ci-triage-hero h2 {
+  font-size: 1.25rem;
+}
+.ci-triage-hero > div:first-child {
+  flex: 1 1 240px;
+}
+.ci-triage-hero > div:first-child > p:last-child {
+  font-size: 0.85rem;
+  color: var(--lf-muted);
+}
+.ci-triage-counts {
+  gap: 5px;
+  font-size: 0.75rem;
+}
+.ci-triage-current {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.ci-triage-attention {
+  order: 2;
+}
+.ci-triage-current > :only-child {
+  grid-column: 1 / -1;
+}
+.ci-triage-current .ci-triage-row {
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+.ci-triage-current .ci-triage-row > img {
+  display: none;
+}
+.ci-triage-current .ci-triage-row__main {
+  flex-basis: auto;
+}
+.ci-triage-current .ci-triage-row__actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  min-width: 0;
+  width: 100%;
+}
+.ci-triage-current .ci-triage-row__actions button {
+  flex: 1 1 95px;
+}
+@container critical-injury-triage (max-width: 620px) {
+  .ci-triage-current {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ci-triage-hero > div:first-child {
+    flex-basis: auto;
+  }
+}
+.ci-triage-shell [hidden] {
+  display: none !important;
+}
+.ci-triage-toolbar,
+.ci-triage-views,
+.ci-triage-calendar,
+.ci-triage-party-card header,
+.ci-triage-party-card footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ci-triage-toolbar {
+  flex-wrap: wrap;
+}
+.ci-triage-views {
+  flex: 1 1 auto;
+}
+.ci-triage-views button {
+  width: auto;
+}
+.ci-triage-views button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--lf-gold-soft) 16%, var(--lf-bg));
+  border-color: var(--lf-gold-soft);
+  color: var(--lf-text);
+}
+.ci-triage-toolbar > button {
+  width: auto;
+}
+.ci-triage-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ci-triage-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--lf-control-size, 44px);
+}
+.ci-triage-party-card--injured {
+  border-top: 3px solid var(--lf-danger, #ef6f74);
+  background: var(--lf-surface);
+}
+.ci-triage-party-card li {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+}
+.ci-triage-party-card li + li {
+  border-top: 1px solid var(--lf-border);
+}
+.ci-triage-party-card small {
+  color: var(--lf-muted);
+}
+.ci-triage-party-card footer {
+  margin-top: auto;
+}
+.ci-triage-party-card footer button {
+  flex: 1;
+  min-width: 0;
+}
+.ci-triage-calendar,
+.ci-triage-log-row {
+  padding: 14px;
+  border: 1px solid var(--lf-border);
+  border-radius: 10px;
+}
+.ci-triage-calendar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.ci-triage-calendar p {
+  margin: 4px 0 0;
+}
+.ci-triage-calendar > div {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.ci-triage-calendar button {
+  width: auto;
+}
+.ci-triage-manual {
+  border: 1px solid var(--lf-border);
+  border-radius: 10px;
+}
+.ci-triage-manual summary {
+  padding: 12px;
+  min-height: var(--lf-control-size, 44px);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.ci-triage-manual summary span {
+  margin-left: 8px;
+}
+.ci-triage-start {
+  border: 0;
+  margin: 0;
+}
+.ci-triage-start > p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.ci-triage-log-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.ci-triage-log-row > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ci-triage-log-row h4,
+.ci-triage-log-row p {
+  margin: 6px 0 0;
+}
+.ci-triage-log-row button {
+  width: auto;
+}
+@container critical-injury-triage (max-width: 620px) {
+  .ci-triage-log-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ci-triage-row__main {
+    flex-basis: auto;
+  }
+  .ci-triage-start > div {
+    flex-basis: auto;
+  }
 }
 @container critical-injury-triage (max-width: 620px) {
   .ci-triage-hero,

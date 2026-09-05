@@ -9,9 +9,17 @@ import {
   openSingleton,
 } from "../infinity-app.js";
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "../gm-workbench.js";
-import { formatInjuryTimestamp } from "./calendar.js";
+import {
+  formatInjuryTimestamp,
+  injuryRecoveryLabel,
+  isSimpleCalendarAvailable,
+  openInjuryCalendar,
+} from "./calendar.js";
+import { syncCriticalInjuryCalendar } from "./calendar-sync.js";
+import { getCriticalInjuryLogRows } from "./injury-log.js";
+import { CriticalInjuryApp } from "./injury-app.js";
 import { isAssignedPlayerCharacter } from "./actors.js";
-import { getRecordedInjuryRows } from "./recorded-injuries.js";
+import { getStandaloneRecordedInjuryRows } from "./recorded-injuries.js";
 import {
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
@@ -44,6 +52,12 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
       sendReview: CriticalInjuryTriageApp._onSendReview,
       dismissReview: CriticalInjuryTriageApp._onDismissReview,
       refresh: CriticalInjuryTriageApp._onRefresh,
+      openCharacter: CriticalInjuryTriageApp._onOpenCharacter,
+      openSheet: CriticalInjuryTriageApp._onOpenSheet,
+      openCalendar: CriticalInjuryTriageApp._onOpenCalendar,
+      syncCalendar: CriticalInjuryTriageApp._onSyncCalendar,
+      showView: CriticalInjuryTriageApp._onShowView,
+      startManualReview: CriticalInjuryTriageApp._onStartManualReview,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
@@ -76,6 +90,11 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
     this._message = "";
     this._tone = "ready";
     this._actionInFlight = false;
+    this._view = "triage";
+    this._manualActorId = "";
+    this._manualRecipientId = "";
+    this._manualOpen = false;
+    this._search = "";
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._refreshHookIds = [
       [
@@ -104,6 +123,10 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
         "updateUser",
         globalThis.Hooks?.on?.("updateUser", () => this._refresh()),
       ],
+      [
+        "updateWorldTime",
+        globalThis.Hooks?.on?.("updateWorldTime", () => this._refresh()),
+      ],
     ].filter(([, id]) => id != null);
   }
 
@@ -114,6 +137,30 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
   _onRender(context, options) {
     super._onRender?.(context, options);
     this._wireManualRecipient(this.element);
+    const search = this.element?.querySelector?.('[data-role="injury-search"]');
+    if (search) {
+      search.value = this._search;
+      search.addEventListener("input", () => {
+        this._search = search.value;
+        this._filterRows();
+      });
+      this._filterRows();
+    }
+    const manual = this.element?.querySelector?.(".ci-triage-manual");
+    if (manual) {
+      manual.open = this._manualOpen;
+      manual.addEventListener("toggle", () => {
+        this._manualOpen = manual.open;
+      });
+    }
+    if (this._focusSearchAfterRender) {
+      this._focusSearchAfterRender = false;
+      search?.focus?.();
+    }
+    if (this._focusManualAfterRender) {
+      this._focusManualAfterRender = false;
+      manual?.querySelector?.('[name="actorId"]')?.focus?.();
+    }
   }
 
   async _prepareContext() {
@@ -145,19 +192,26 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
         name: String(actor.name ?? "Character"),
         img: actor.img ?? "icons/svg/mystery-man.svg",
         owners: eligibleOwners(actor),
-        recordedInjuries: getRecordedInjuryRows(actor),
+        recordedInjuries: getStandaloneRecordedInjuryRows(actor),
         injuries: getActorCriticalInjuryEffects(actor)
           .map((effect) => getCriticalInjuryData(effect))
           .filter(Boolean)
           .map((injury) => ({
             name: String(injury.injuryName ?? "Critical injury"),
-            recovery: injury.permanent
-              ? "Permanent"
-              : `${Math.max(0, Number(injury.remainingDays) || 0)} day(s) remaining`,
+            recovery: injuryRecoveryLabel(injury),
+            dueLabel: injury.permanent
+              ? ""
+              : formatInjuryTimestamp(injury.recoveryDueTs),
+            calendarLinked: Boolean(injury.calendarEntryId),
+            effect: injury.effect,
           })),
       }))
       .filter((actor) => actor.id && actor.owners.length > 0)
-      .sort((left, right) => left.name.localeCompare(right.name));
+      .sort(
+        (left, right) =>
+          right.injuries.length - left.injuries.length ||
+          left.name.localeCompare(right.name),
+      );
     this._manualOwnersByActor = new Map(
       playerCharacters.map((actor) => [
         actor.id,
@@ -170,18 +224,51 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
         id: String(user.id ?? ""),
         name: String(user.name ?? "Player"),
       }));
-    const reviewCount = rows.filter((row) => row.state === "review").length;
+    const pendingReviewCount = rows.filter(
+      (row) => row.state === "review",
+    ).length;
+    const reviewCount =
+      pendingReviewCount +
+      playerCharacters.reduce(
+        (count, actor) =>
+          count +
+          actor.recordedInjuries.filter((record) => record.status === "review")
+            .length,
+        0,
+      );
+    const logRows = getCriticalInjuryLogRows();
     return {
       workbench: this.prepareWorkbenchContext?.() ?? null,
       rows,
       hasRows: rows.length > 0,
       reviewCount,
-      pendingCount: rows.length - reviewCount,
+      pendingCount: rows.length - pendingReviewCount,
       playerCharacters,
       hasPlayerCharacters: playerCharacters.length > 0,
       playerUsers,
       hasPlayerUsers: playerUsers.length > 0,
       partyRows: playerCharacters,
+      activeCount: playerCharacters.reduce(
+        (total, actor) =>
+          total +
+          actor.injuries.length +
+          actor.recordedInjuries.filter(
+            (record) =>
+              record.status === "active" || record.status === "permanent",
+          ).length,
+        0,
+      ),
+      calendarMissingCount: playerCharacters.reduce(
+        (total, actor) =>
+          total +
+          actor.injuries.filter((injury) => !injury.calendarLinked).length,
+        0,
+      ),
+      calendarActive: isSimpleCalendarAvailable(),
+      showLog: this._view === "history",
+      logRows,
+      hasLogRows: logRows.length > 0,
+      logCount: logRows.length,
       canMutate,
       actionInFlight: this._actionInFlight,
       message: this._message,
@@ -190,7 +277,81 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
   }
 
   _captureWorkbenchTarget() {
-    return { route: CriticalInjuryTriageApp.WORKBENCH_ROUTE };
+    return {
+      route: CriticalInjuryTriageApp.WORKBENCH_ROUTE,
+      subview: this._view ?? "triage",
+    };
+  }
+
+  _applyWorkbenchTarget(target) {
+    this._view = target.subview === "history" ? "history" : "triage";
+  }
+
+  _filterRows() {
+    const query = String(this._search ?? "")
+      .trim()
+      .toLocaleLowerCase();
+    const rows = [
+      ...(this.element?.querySelectorAll?.("[data-injury-search]") ?? []),
+    ];
+    let visible = 0;
+    for (const row of rows) {
+      row.hidden = !String(row.dataset.injurySearch)
+        .toLocaleLowerCase()
+        .includes(query);
+      if (!row.hidden) visible++;
+    }
+    const empty = this.element?.querySelector?.(
+      '[data-role="injury-no-matches"]',
+    );
+    if (empty) empty.hidden = !query || visible > 0;
+  }
+
+  static _onShowView(_event, target) {
+    this._view = target?.dataset?.view === "history" ? "history" : "triage";
+    this._search = "";
+    this._focusSearchAfterRender = true;
+    return this.render(false);
+  }
+
+  static _onStartManualReview() {
+    if (!isAuthoritativeGM()) return;
+    this._view = "triage";
+    this._manualOpen = true;
+    this._focusManualAfterRender = true;
+    return this.render(false);
+  }
+
+  static _onOpenCharacter(_event, target) {
+    if (!isFullGM()) return;
+    return CriticalInjuryApp.open({ actorId: target?.dataset?.actorId });
+  }
+
+  static _onOpenSheet(_event, target) {
+    if (!isFullGM()) return;
+    const actor = globalThis.game?.actors?.get?.(target?.dataset?.actorId);
+    if (isAssignedPlayerCharacter(actor)) return actor.sheet?.render?.(true);
+  }
+
+  static async _onOpenCalendar() {
+    try {
+      await openInjuryCalendar();
+    } catch (error) {
+      this._message = error.message;
+      this._tone = "warning";
+      await this.render(false);
+    }
+  }
+
+  static async _onSyncCalendar() {
+    return this._run(async () => {
+      const result = await syncCriticalInjuryCalendar();
+      if (result.failed || result.skipped) {
+        throw new Error(
+          `${result.linked} calendar link(s) saved; ${result.failed} could not sync and ${result.skipped} need their pending work or saved receipt checked. No injury rolls were repeated.`,
+        );
+      }
+    }, "Calendar checked. All eligible active injuries have calendar entries.");
   }
 
   async _run(action, successMessage) {
@@ -217,6 +378,10 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
     const actorSelect = form?.elements?.actorId;
     const recipientSelect = form?.elements?.targetUserId;
     if (!actorSelect || !recipientSelect) return;
+    if (this._manualOwnersByActor?.has(this._manualActorId))
+      actorSelect.value = this._manualActorId;
+    if (this._manualRecipientId)
+      recipientSelect.value = this._manualRecipientId;
     const syncRecipient = () => {
       const ownerIds =
         this._manualOwnersByActor?.get(String(actorSelect.value ?? "")) ??
@@ -232,8 +397,13 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
         );
         if (firstEligible) recipientSelect.value = firstEligible.value;
       }
+      this._manualActorId = actorSelect.value;
+      this._manualRecipientId = recipientSelect.value;
     };
     actorSelect.addEventListener("change", syncRecipient);
+    recipientSelect.addEventListener("change", () => {
+      this._manualRecipientId = recipientSelect.value;
+    });
     syncRecipient();
   }
 
@@ -309,6 +479,7 @@ function buildTriageRow(record) {
         : `${Math.max(0, Number(injury.remainingDays) || 0)} day(s) remaining${injury.recoveryDueTs ? ` · due ${formatInjuryTimestamp(injury.recoveryDueTs)}` : ""}`,
     }));
   return {
+    actorId: record.actorId,
     pendingId: record.pendingId,
     actorName: String(actor.name ?? "Character"),
     actorImg: actor.img ?? "icons/svg/mystery-man.svg",
@@ -323,7 +494,7 @@ function buildTriageRow(record) {
     targetName:
       globalThis.game?.users?.get?.(record.targetUserId)?.name ??
       "Assigned player",
-    createdLabel: formatInjuryTimestamp(record.approvedAt),
+    createdLabel: new Date(record.approvedAt).toLocaleString(),
     injuries,
     hasInjuries: injuries.length > 0,
     injuryCount: injuries.length,

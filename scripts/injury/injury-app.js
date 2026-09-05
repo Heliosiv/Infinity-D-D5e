@@ -19,7 +19,13 @@ import {
   getCriticalInjuryData,
 } from "./effects.js";
 import { getActorPendingCriticalInjuries } from "./service.js";
-import { formatInjuryTimestamp } from "./calendar.js";
+import { getStandaloneRecordedInjuryRows } from "./recorded-injuries.js";
+import {
+  formatInjuryTimestamp,
+  isSimpleCalendarAvailable,
+  openInjuryCalendar,
+  injuryRecoveryLabel,
+} from "./calendar.js";
 import { treatmentSkillLabel } from "./table.js";
 import { bindFocusRestoration } from "../infinity-app.js";
 import {
@@ -57,6 +63,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       rollInjury: CriticalInjuryApp._onRollInjury,
       requestTreatment: CriticalInjuryApp._onRequestTreatment,
       dismiss: CriticalInjuryApp._onDismiss,
+      openCalendar: CriticalInjuryApp._onOpenCalendar,
     },
   };
 
@@ -191,6 +198,22 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
   _resolveActor() {
     const actor = globalThis.game?.actors?.get?.(this._actorId) ?? null;
     return canCurrentUserOperateCriticalInjuryActor(actor) ? actor : null;
+  }
+
+  static async _onOpenCalendar(_event, target) {
+    const actor = this._resolveActor();
+    if (!actor) return;
+    const injury = getCriticalInjuryData(
+      findActorCriticalInjuryEffect(actor, target?.dataset?.injuryId),
+    );
+    try {
+      await openInjuryCalendar(
+        injury?.permanent ? null : injury?.recoveryDueTs,
+      );
+    } catch (error) {
+      this._statusMessage = error.message;
+      await this.render(false);
+    }
   }
 
   _onClose(options) {
@@ -364,6 +387,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
         : null,
       hasLatestResult: Boolean(this._latestResult),
       activeInjuries,
+      recordedInjuries: actor ? getStandaloneRecordedInjuryRows(actor) : [],
       hasActiveInjuries: activeInjuries.length > 0,
       statusMessage,
       statusTone,
@@ -561,6 +585,9 @@ export function registerCriticalInjuryApp() {
     Hooks.on("createActiveEffect", refreshEffectActor);
     Hooks.on("updateActiveEffect", refreshEffectActor);
     Hooks.on("deleteActiveEffect", refreshEffectActor);
+    Hooks.on("updateWorldTime", () => {
+      for (const app of instances.values()) if (app.rendered) app.render(false);
+    });
     Hooks.on("updateActor", (actor) => {
       instances.get(String(actor?.id ?? ""))?.render?.(false);
     });
@@ -898,9 +925,9 @@ function buildInjuryView(effect, treatmentState) {
     name: injury.injuryName,
     effect: injury.effect,
     recoveryRule: injury.recoveryRule,
-    recoveryLabel: injury.permanent
-      ? "Permanent"
-      : `${injury.remainingDays} recovery day(s)${injury.stabilized ? " — stabilized" : ""}`,
+    recoveryLabel: injuryRecoveryLabel(injury),
+    calendarLinked: Boolean(injury.calendarEntryId),
+    calendarActive: isSimpleCalendarAvailable(),
     dueLabel:
       !injury.permanent && Number.isFinite(Number(injury.recoveryDueTs))
         ? formatInjuryTimestamp(injury.recoveryDueTs)

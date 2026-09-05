@@ -100,6 +100,7 @@ const TARGETS = Object.freeze([
       "critical-injury-offline",
       "critical-injury-uncertain",
       "critical-injury-triage",
+      "critical-injury-log",
       "critical-injury-hud",
       "critical-injury-hud-offline",
       "critical-injury-hud-uncertain",

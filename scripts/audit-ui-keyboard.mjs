@@ -245,6 +245,14 @@ async function auditQueueKeyboardActions(page) {
 }
 
 async function auditCriticalInjuryTriageKeyboardActions(page) {
+  const manual = page.locator(".ci-triage-manual > summary");
+  await manual.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(
+    await page.locator(".ci-triage-manual").getAttribute("open"),
+    "",
+    "manual review expands with the keyboard",
+  );
   const start = page.locator('button[data-action="startReview"]');
   const send = page.locator('button[data-action="sendReview"]');
   const dismiss = page.locator('button[data-action="dismissReview"]');

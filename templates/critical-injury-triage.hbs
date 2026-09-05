@@ -1,55 +1,77 @@
 <div class="ci-triage-shell">
   <header class="ci-triage-hero">
-    <div>
-      <p class="ci-eyebrow">GM control surface</p>
-      <h2>Critical Injury Triage</h2>
-      <p>Review recoveries, send private player rolls, and track party recovery.</p>
-    </div>
-    <div class="ci-triage-counts" aria-label="Triage summary">
-      <span><strong>{{reviewCount}}</strong> review</span>
-      <span><strong>{{pendingCount}}</strong> pending</span>
-    </div>
+    <div><p class="ci-eyebrow">Party care</p><h2>Injuries &amp; recovery</h2><p>Recovery, treatment &amp; the next roll.</p></div>
+    <div class="ci-triage-counts" aria-label="Triage summary"><span><strong>{{activeCount}}</strong> active</span><span><strong>{{reviewCount}}</strong> to review</span><span><strong>{{pendingCount}}</strong> awaiting rolls</span></div>
   </header>
-
   {{#if accessDenied}}
     <p class="ci-notice ci-notice--danger" role="alert">This workspace is available to full Game Masters only.</p>
   {{else}}
     <p class="ci-status ci-status--{{tone}}" role="status" aria-live="polite">{{message}}</p>
-    {{#unless canMutate}}<p class="ci-notice ci-notice--warning" role="status">This is a read-only view. The active GM controls injury review actions; this window refreshes when authority changes.</p>{{/unless}}
-    <p class="infinity-session-context"><i class="fa-solid fa-compass" aria-hidden="true"></i><span><strong>Safe next step:</strong> review newly recovered characters, then send their private d100 prompt when ready. Active injuries remain governed by the existing recovery and treatment rules.</span></p>
-
-    <form class="ci-triage-start" aria-label="Start a manual injury review">
-      <div>
-        <p class="ci-eyebrow">Exceptional case</p>
-        <h3>Start an injury review</h3>
-      </div>
-      <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
-      <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
-      <button type="button" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-plus" aria-hidden="true"></i> Start review</button>
-    </form>
-
-    <section class="ci-triage-list" aria-labelledby="ci-triage-list-heading">
-      <div class="ci-section-heading"><div><p class="ci-eyebrow">Party status</p><h3 id="ci-triage-list-heading">Open injury work</h3></div><button type="button" data-action="refresh"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh</button></div>
-      {{#if hasRows}}
-        {{#each rows}}
-          <article class="ci-triage-row ci-triage-row--{{state}}">
-            <img src="{{actorImg}}" alt="" />
-            <div class="ci-triage-row__main"><div class="ci-triage-row__heading"><h4>{{actorName}}</h4><span class="ci-tag {{#if sent}}ci-tag--success{{else}}ci-tag--danger{{/if}}">{{stateLabel}}</span></div><p><strong>Roll recipient:</strong> {{targetName}} · created {{createdLabel}}</p>
-              {{#if hasInjuries}}<ul class="ci-triage-injuries">{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}{{#if permanent}} <span>Permanent</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No active injury has been applied from this item yet.</p>{{/if}}
-            </div>
-            <div class="ci-triage-row__actions">
-              {{#unless sent}}<button type="button" class="ci-primary" data-action="sendReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send roll</button><button type="button" data-action="dismissReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}><i class="fa-solid fa-xmark" aria-hidden="true"></i> No injury</button>{{else}}<span class="ci-triage-muted">{{stateLabel}}</span>{{/unless}}
-            </div>
+    {{#unless canMutate}}<p class="ci-notice" role="status">Read-only: the active GM controls injury reviews and calendar sync.</p>{{/unless}}
+    <div class="ci-triage-toolbar">
+      <nav class="ci-triage-views" aria-label="Injury views">
+        <button type="button" data-action="showView" data-view="triage" aria-pressed="{{#if showLog}}false{{else}}true{{/if}}">Party &amp; rolls</button>
+        <button type="button" data-action="showView" data-view="history" aria-pressed="{{#if showLog}}true{{else}}false{{/if}}">Injury log <span class="ci-triage-muted">{{logCount}}</span></button>
+      </nav>
+      <button type="button" class="ci-primary" data-action="startManualReview" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Log injury</button>
+      <button type="button" data-action="openCalendar" {{#unless calendarActive}}disabled{{/unless}}><i class="fa-regular fa-calendar" aria-hidden="true"></i> Calendar</button>
+      <button type="button" data-action="refresh" aria-label="Refresh injury board" title="Refresh injury board"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+    </div>
+    <label class="ci-triage-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-role="injury-search" aria-label="Find a character or injury" placeholder="Find a character or injury…" /></label>
+    {{#if showLog}}
+      <section class="ci-triage-list" aria-labelledby="ci-triage-log-heading">
+        <div><h3 id="ci-triage-log-heading">Saved injury log</h3><p class="ci-triage-muted">Recent confirmed rolls remain here after their effects are removed. Up to 200 completed rolls are retained by the existing ledger; recorded injuries are included separately.</p></div>
+        {{#each logRows}}
+          <article class="ci-triage-log-row" data-injury-search="{{actorName}} {{name}} {{effect}}">
+            <div><span class="ci-tag {{#if active}}ci-tag--danger{{/if}}">{{status}}</span><h4>{{name}}</h4><p><strong>{{actorName}}</strong> · {{date}}{{#if roll}} · d100 {{roll}}{{/if}}</p><p class="ci-triage-muted">{{effect}}</p>{{#if treatments}}<p class="ci-triage-muted">{{treatments}} confirmed treatment attempt(s)</p>{{/if}}</div>
+            <button type="button" data-action="openCharacter" data-actor-id="{{actorId}}" aria-label="Open injuries for {{actorName}}">View character</button>
           </article>
-        {{/each}}
-      {{else}}
-        <div class="ci-empty"><i class="fa-solid fa-shield-heart" aria-hidden="true"></i><p>No Critical Injury reviews or player rolls are open.</p></div>
+        {{else}}<div class="ci-empty"><i class="fa-solid fa-book-medical" aria-hidden="true"></i><p>Confirmed injury rolls will appear here automatically.</p></div>{{/each}}
+      </section>
+    {{else}}
+      <div class="ci-triage-current">
+      {{#if hasRows}}
+        <section class="ci-triage-list ci-triage-attention" aria-labelledby="ci-triage-list-heading">
+          <h3 id="ci-triage-list-heading">Needs attention</h3>
+          {{#each rows}}
+            <article class="ci-triage-row ci-triage-row--{{state}}" data-injury-search="{{actorName}} {{#each injuries}}{{name}} {{/each}}">
+              <img src="{{actorImg}}" alt="" />
+              <div class="ci-triage-row__main"><div class="ci-triage-row__heading"><h4>{{actorName}}</h4><span class="ci-tag {{#if sent}}ci-tag--success{{else}}ci-tag--danger{{/if}}">{{stateLabel}}</span></div><p class="ci-triage-muted">{{targetName}} · {{createdLabel}}</p></div>
+              <div class="ci-triage-row__actions">
+                {{#unless sent}}<button type="button" class="ci-primary" data-action="sendReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Send roll</button><button type="button" data-action="dismissReview" data-pending-id="{{pendingId}}" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>No injury</button>{{else}}<button type="button" data-action="openCharacter" data-actor-id="{{actorId}}" aria-label="Open injuries for {{actorName}}">View character</button>{{/unless}}
+              </div>
+            </article>
+          {{/each}}
+        </section>
       {{/if}}
-    </section>
-    <section class="ci-triage-list" aria-labelledby="ci-triage-party-heading">
-      <div class="ci-section-heading"><div><p class="ci-eyebrow">Visible party status</p><h3 id="ci-triage-party-heading">Character recovery</h3></div></div>
-      {{#if hasPlayerCharacters}}<div class="ci-triage-party-grid">{{#each partyRows}}<article class="ci-triage-party-card"><img src="{{img}}" alt="" /><div><h4>{{name}}</h4>{{#if injuries.length}}<ul>{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No automated critical injuries.</p>{{/if}}{{#if recordedInjuries}}<h5>Recorded injuries and history</h5><ul>{{#each recordedInjuries}}<li><strong>{{name}}</strong> — {{recovery}}<p>{{notes}}</p></li>{{/each}}</ul>{{/if}}</div></article>{{/each}}</div>
-      {{else}}<p class="ci-triage-muted">No player characters are assigned. Select each player's character in User Configuration.</p>{{/if}}
-    </section>
+      <section class="ci-triage-list" aria-labelledby="ci-triage-party-heading">
+        <div class="ci-section-heading"><h3 id="ci-triage-party-heading">Character recovery</h3><span>{{activeCount}} active</span></div>
+        {{#if hasPlayerCharacters}}
+          <div class="ci-triage-party-grid">{{#each partyRows}}
+            <article class="ci-triage-party-card {{#if injuries.length}}ci-triage-party-card--injured{{/if}}" data-injury-search="{{name}} {{#each injuries}}{{name}} {{effect}} {{/each}} {{#each recordedInjuries}}{{name}} {{notes}} {{/each}}">
+              <header><img src="{{img}}" alt="" /><div><h4>{{name}}</h4><p class="ci-triage-muted">{{#if injuries.length}}{{injuries.length}} active{{else}}{{#if recordedInjuries}}Recorded injuries below{{else}}No active critical injuries{{/if}}{{/if}}</p></div></header>
+              {{#if injuries.length}}<ul>{{#each injuries}}<li><strong>{{name}}</strong><span>{{recovery}}</span><small>{{#if dueLabel}}{{dueLabel}} · {{/if}}{{#if calendarLinked}}Calendar linked{{else}}Calendar entry needed{{/if}}</small></li>{{/each}}</ul>{{/if}}
+              {{#if recordedInjuries}}<details class="ci-rule-details"><summary>Recorded injuries and history</summary><ul>{{#each recordedInjuries}}<li><strong>{{name}}</strong><span>{{recovery}}</span><small>{{notes}}</small></li>{{/each}}</ul></details>{{/if}}
+              <footer><button type="button" data-action="openCharacter" data-actor-id="{{id}}" aria-label="View injuries for {{name}}">{{#if injuries.length}}View &amp; treat{{else}}View injuries{{/if}}</button><button type="button" data-action="openSheet" data-actor-id="{{id}}" aria-label="Open character sheet for {{name}}">Sheet</button></footer>
+            </article>
+          {{/each}}</div>
+        {{else}}<p class="ci-triage-muted">No player characters are assigned. Select each player's character in User Configuration.</p>{{/if}}
+      </section>
+      </div>
+      <details class="ci-triage-manual">
+        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i> Log an injury <span class="ci-triage-muted">Start a manual review</span></summary>
+        <form class="ci-triage-start" aria-label="Start a manual injury review">
+          <p class="ci-triage-muted">Choose the character and roll recipient. Review first, then send the private d100 prompt.</p>
+          <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+          <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
+          <button type="button" class="ci-primary" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Start review</button>
+        </form>
+      </details>
+    {{/if}}
+    <p data-role="injury-no-matches" class="ci-empty" role="status" hidden>No matching characters or injuries. Clear the search to see everything.</p>
+    <footer class="ci-triage-calendar">
+      <div><strong>{{#if calendarActive}}Simple Calendar connected{{else}}Calendar unavailable{{/if}}</strong><p class="ci-triage-muted">{{#if calendarActive}}{{#if calendarMissingCount}}{{calendarMissingCount}} active injury / injuries need a calendar entry.{{else}}Check and repair missing injury entries here.{{/if}}{{else}}Enable Simple Calendar Reborn to show injury and recovery dates.{{/if}}</p></div>
+      <button type="button" data-action="syncCalendar" {{#unless calendarActive}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Sync injuries</button>
+    </footer>
   {{/if}}
 </div>

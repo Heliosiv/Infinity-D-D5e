@@ -58,17 +58,68 @@ export function getRemainingInjuryCalendarDays(
 }
 
 export function formatInjuryTimestamp(timestamp) {
+  if (timestamp == null || !Number.isFinite(Number(timestamp)))
+    return "Date unavailable";
   const value = Number(timestamp);
   const api = resolveSimpleCalendarApi();
   if (typeof api?.formatTimestamp === "function") {
     try {
       const formatted = api.formatTimestamp(value);
-      if (formatted) return String(formatted);
+      if (typeof formatted === "string" && formatted) return formatted;
+      if (formatted?.date)
+        return [formatted.date, formatted.time].filter(Boolean).join(" · ");
     } catch {
       // Fall through.
     }
   }
   return `world time ${Math.floor(value)}`;
+}
+
+/** Open the calendar without changing campaign time. */
+export function openInjuryCalendar(timestamp = null) {
+  const api = resolveSimpleCalendarApi();
+  if (typeof api?.showCalendar !== "function") {
+    throw new Error(
+      "The connected calendar is unavailable. Enable Simple Calendar Reborn and try again.",
+    );
+  }
+  const date =
+    timestamp == null ? null : toCalendarDate(api, Number(timestamp));
+  return api.showCalendar(date, false);
+}
+
+/** Null means discovery was unavailable, never proof that a note is missing. */
+export async function readInjuryCalendarNotes() {
+  const api = resolveSimpleCalendarApi();
+  if (typeof api?.getNotes !== "function") return null;
+  try {
+    const notes = await api.getNotes();
+    return notes == null ? null : Array.from(notes);
+  } catch {
+    return null;
+  }
+}
+
+export function findInjuryCalendarNote(notes, actor, injury) {
+  return findCriticalInjuryNote(
+    notes,
+    buildCriticalInjuryNoteMarker(actor, injury),
+  );
+}
+
+export function injuryRecoveryLabel(injury) {
+  if (injury?.permanent) return "Permanent";
+  const days =
+    injury?.recoveryDueTs == null
+      ? null
+      : getRemainingInjuryCalendarDays(injury.recoveryDueTs);
+  const label =
+    days == null
+      ? `${Math.max(0, Number(injury?.remainingDays) || 0)} recovery day(s)`
+      : days === 0
+        ? "Recovery due now"
+        : `${days} day${days === 1 ? "" : "s"} remaining`;
+  return `${label}${injury?.stabilized ? " · stabilized" : ""}`;
 }
 
 export async function scheduleCriticalInjuryNote({
@@ -77,6 +128,7 @@ export async function scheduleCriticalInjuryNote({
   existingEntryId = "",
   verifiedReplacement = false,
   operationId = "",
+  startTimestamp = null,
 } = {}) {
   if (!isSimpleCalendarAvailable()) {
     return calendarNoteResult({ reason: "calendar-inactive" });
@@ -138,11 +190,14 @@ export async function scheduleCriticalInjuryNote({
   }
 
   const now = getCurrentInjuryTimestamp();
-  const due = Number(injury?.recoveryDueTs);
-  const safeDue = Number.isFinite(due)
-    ? Math.max(now, due)
-    : addInjuryCalendarDays(now, injury?.permanent ? 1 : 0);
-  const startDate = toCalendarDate(api, now);
+  const start =
+    startTimestamp != null && Number.isFinite(Number(startTimestamp))
+      ? Math.min(now, Number(startTimestamp))
+      : now;
+  const due =
+    injury?.recoveryDueTs == null ? NaN : Number(injury.recoveryDueTs);
+  const safeDue = Number.isFinite(due) ? Math.max(now, due) : now;
+  const startDate = toCalendarDate(api, start);
   const endDate = toCalendarDate(api, safeDue);
   if (!startDate || !endDate) {
     return calendarNoteResult({ reason: "date-conversion-failed" });

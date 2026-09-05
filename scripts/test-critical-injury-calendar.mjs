@@ -6,6 +6,9 @@ import {
   isSimpleCalendarAvailable,
   removeCriticalInjuryNote,
   scheduleCriticalInjuryNote,
+  formatInjuryTimestamp,
+  openInjuryCalendar,
+  injuryRecoveryLabel,
 } from "./injury/calendar.js";
 
 const calls = [];
@@ -85,6 +88,31 @@ const injury = {
 };
 
 const created = await scheduleCriticalInjuryNote({ actor, injury });
+
+SimpleCalendar.api.formatTimestamp = () => ({
+  date: "12 Eleasis",
+  time: "08:30",
+});
+assert.equal(formatInjuryTimestamp(1000), "12 Eleasis · 08:30");
+SimpleCalendar.api.formatTimestamp = () => "12 Eleasis";
+assert.equal(formatInjuryTimestamp(1000), "12 Eleasis");
+assert.equal(formatInjuryTimestamp(null), "Date unavailable");
+assert.equal(
+  injuryRecoveryLabel({ ...injury, recoveryDueTs: 1100 }),
+  "1 day remaining",
+);
+assert.equal(
+  injuryRecoveryLabel({ ...injury, recoveryDueTs: 1000 }),
+  "Recovery due now",
+);
+let openedDate;
+SimpleCalendar.api.showCalendar = (date) => {
+  openedDate = date;
+};
+openInjuryCalendar(1700);
+assert.equal(openedDate.day, 17);
+openInjuryCalendar();
+assert.equal(openedDate, null, "opening the calendar does not advance time");
 
 assert.deepEqual(created, {
   scheduled: true,

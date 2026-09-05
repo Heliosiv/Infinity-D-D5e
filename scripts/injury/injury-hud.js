@@ -6,7 +6,8 @@ import {
   indexCriticalInjuriesByBodyRegion,
   resolveCriticalInjuryBodyLocation,
 } from "./body-regions.js";
-import { formatInjuryTimestamp } from "./calendar.js";
+import { formatInjuryTimestamp, injuryRecoveryLabel } from "./calendar.js";
+import { registerCriticalInjuryTokenBadges } from "./token-badge.js";
 import {
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
@@ -244,6 +245,7 @@ export class CriticalInjuryHudApp extends HandlebarsApplicationMixin(
 }
 
 export function registerCriticalInjuryHud() {
+  registerCriticalInjuryTokenBadges();
   if (registered) return true;
   registered = true;
 
@@ -360,9 +362,7 @@ function buildHudInjuryView(actor, effect, { offline = false } = {}) {
     detail: injury.detail ?? null,
     name: String(injury.injuryName ?? "Critical Injury"),
     effect: String(injury.effect ?? ""),
-    recoveryLabel: permanent
-      ? "Permanent"
-      : `${Math.max(0, Number(injury.remainingDays) || 0)} recovery day(s)${stabilized ? " — stabilized" : ""}`,
+    recoveryLabel: injuryRecoveryLabel(injury),
     dueLabel:
       !permanent && Number.isFinite(Number(injury.recoveryDueTs))
         ? formatInjuryTimestamp(injury.recoveryDueTs)

@@ -2,7 +2,7 @@
   <header class="ci-hero">
     <img class="ci-portrait" src="{{actorImg}}" alt="" />
     <div>
-      <p class="ci-eyebrow">Critical Injury Table V2</p>
+      <p class="ci-eyebrow">Injuries &amp; recovery</p>
       <h2>{{actorName}}</h2>
       <p>Roll approved injuries, follow recovery, and request treatment.</p>
       {{#if hasActorOptions}}
@@ -54,42 +54,12 @@
         {{/if}}
       </div>
     {{/if}}
-    {{#unless integrations.automationReady}}
-      <div class="ci-notice">
-        Midi-QOL and DAE are recommended for automatic penalties. The injury
-        record and recovery rules will still be applied without them.
-      </div>
-    {{/unless}}
-    {{#unless integrations.calendarActive}}
-      <div class="ci-notice">
-        Simple Calendar is not active, so recovery dates cannot be added to the
-        campaign calendar.
-      </div>
-    {{/unless}}
-
     <p
       class="ci-status ci-status--{{statusTone}}"
       role="status"
       aria-live="polite"
       aria-atomic="true"
     >{{statusMessage}}</p>
-
-    <p class="infinity-session-context" role="status">
-      <i class="fa-solid fa-compass" aria-hidden="true"></i>
-      <span><strong>Safe next step:</strong>
-        {{#if waitingForRoll}}wait for the active GM's confirmed injury result
-          before requesting anything else.
-        {{else if outcomeUncertain}}reconnect, then review the Actor and chat
-          receipt with the GM; do not repeat the injury action.
-        {{else if offline}}reconnect, then refresh this character's saved injury
-          state; do not repeat an interrupted request.
-        {{else if hasPending}}use the approved roll when ready; the active GM
-          securely applies the result.
-        {{else}}review this character's recovery and treatment status. Nothing
-          changes until you use an available action.
-        {{/if}}
-      </span>
-    </p>
 
     {{#if hasPending}}
       <section
@@ -136,7 +106,7 @@
       <section class="ci-result" aria-labelledby="ci-result-heading-{{domId}}">
         <div class="ci-result-roll">{{latestResult.injuryRoll}}</div>
         <div>
-          <p class="ci-eyebrow">GM-authoritative result</p>
+          <p class="ci-eyebrow">Latest result</p>
           <h3 id="ci-result-heading-{{domId}}">{{latestResult.injuryName}}</h3>
           {{#if latestResult.detailLabel}}
             <p><strong>{{latestResult.detailLabel}}</strong></p>
@@ -180,11 +150,9 @@
 
             {{#if detailLabel}}<p><strong>{{detailLabel}}</strong></p>{{/if}}
             <p>{{effect}}</p>
-            <dl class="ci-facts">
-              <div>
-                <dt>Recovery</dt>
-                <dd>{{recoveryLabel}}{{#if dueLabel}} · {{dueLabel}}{{/if}}</dd>
-              </div>
+            <p class="ci-recovery"><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{recoveryLabel}}{{#if dueLabel}} · {{dueLabel}}{{/if}}</p>
+            <div class="ci-injury-calendar"><span class="ci-triage-muted">{{#if calendarLinked}}Calendar linked{{else}}Calendar entry needed — ask the GM to sync injuries{{/if}}</span>{{#if calendarActive}}<button type="button" data-action="openCalendar" data-injury-id="{{id}}" aria-label="View calendar for {{name}}">View calendar</button>{{/if}}</div>
+            <details class="ci-rule-details"><summary>Recovery rules &amp; penalties</summary><dl class="ci-facts">
               <div>
                 <dt>Rule</dt>
                 <dd>{{recoveryRule}}</dd>
@@ -195,7 +163,7 @@
                   <dd>{{automatedChanges}} character penalty change(s)</dd>
                 </div>
               {{/if}}
-            </dl>
+            </dl></details>
 
             {{#if canTreat}}
               <div class="ci-treatment" aria-busy="{{treating}}">
@@ -233,10 +201,12 @@
       {{else}}
         <div class="ci-empty">
           <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
-          <p>No active critical injuries. No action is needed.</p>
+          <p>No automated critical injuries.{{#if recordedInjuries}} See recorded injuries below.{{else}} No action is needed.{{/if}}</p>
         </div>
       {{/if}}
     </section>
+    {{#if recordedInjuries}}<section class="ci-active-list" aria-label="Recorded injuries and history"><h3>Recorded injuries &amp; history</h3>{{#each recordedInjuries}}<article class="ci-injury"><h4>{{name}}</h4><p class="ci-recovery">{{recovery}}</p><p>{{notes}}</p></article>{{/each}}</section>{{/if}}
+    {{#unless integrations.automationReady}}<details class="ci-rule-details"><summary>Automation availability</summary><p>Midi-QOL and DAE enable automatic penalties. Injury records and recovery still work without them.</p></details>{{/unless}}
   {{/if}}
 
   <footer class="ci-footer">

@@ -94,6 +94,7 @@
 }
 
 /* Keep tool switching visible without a separate utility row on narrow windows. */
+
 .infinity-dnd5e .gmw-chrome {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "brand utilities" "routes routes";
@@ -519,5 +520,13 @@
 
   .infinity-dnd5e .gmw-route.is-active .infinity-emblem {
     background: HighlightText;
+  }
+}
+
+@container (min-width: 920px) {
+  .infinity-dnd5e .gmw-chrome {
+    grid-template-columns: minmax(120px, 0.7fr) minmax(0, 3fr) auto;
+    grid-template-areas: "brand routes utilities";
+    align-items: center;
   }
 }
