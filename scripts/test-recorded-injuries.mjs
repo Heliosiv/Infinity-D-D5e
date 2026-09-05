@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import Handlebars from "handlebars";
 globalThis.crypto ??= webcrypto;
 const clone = (v) => structuredClone(v);
+const sanitizeJournalHtml = (html) => html.replace(/<!--[\s\S]*?-->/g, "");
 const hash = async (v) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const aid = "abcdefghijklmnop";
@@ -91,13 +92,13 @@ function fixture() {
     const id = String(journal.length + 1).padStart(16, "0");
     const p = {
       type: "text",
-      text: { content },
+      text: { content: sanitizeJournalHtml(content) },
       toObject() {
         return { text: clone(this.text) };
       },
       async update(c) {
         writes++;
-        this.text.content = c["text.content"];
+        this.text.content = sanitizeJournalHtml(c["text.content"]);
       },
     };
     const n = {
@@ -265,6 +266,51 @@ for (const mutation of [
   assert.deepEqual(note.flags, before);
   assert.match(note.pages[0].text.content, /Original/);
   assert.equal(f.journal.length, 1);
+}
+{
+  const f = fixture();
+  const date = { year: 53, month: 0, day: 23 };
+  const note = await f.addNote(
+    "Existing recovery",
+    "<section>Original</section>",
+    date,
+    date,
+    true,
+    0,
+    [],
+    "default",
+  );
+  const input = {
+    ...f.input,
+    date: undefined,
+    calendarUuid: note.uuid,
+    status: "active",
+    dateMeaning: "recovery",
+  };
+  const first = await f.api.preview(input);
+  // Reproduce the real partial write: Foundry retained visible content but removed old comments.
+  note.pages[0].text.content = first.proposed.calendarContent.replace(
+    / data-infinity-recorded-injury="[^"]+"/,
+    "",
+  );
+  const recovered = await f.api.apply(await f.api.preview(input));
+  assert.equal(f.journal.length, 1);
+  assert.equal(
+    recovered.calendar.content.split("<h2>Injury record:").length - 1,
+    1,
+  );
+  assert.match(recovered.calendar.content, /data-infinity-recorded-injury=/);
+  assert.ok(
+    recovered.calendar.content.startsWith("<section>Original</section>"),
+  );
+  await f.api.apply(
+    await f.api.preview({ ...input, notes: "Updated recovery note." }),
+  );
+  assert.equal(
+    note.pages[0].text.content.split("<h2>Injury record:").length - 1,
+    1,
+  );
+  assert.match(note.pages[0].text.content, /Updated recovery note/);
 }
 console.log(
   "Recorded injury transactions: authority, input bounds, preview, concurrency, replay, partial-write recovery, date preservation, and unchanged mechanics passed.",

@@ -253,3 +253,5 @@ never changes inventory, effects, ownership, or time, and never creates native
 V2 treatment receipts. Native V2 injury automation remains separate. Actor flags
 are display data that an owner can edit, so no privileged treatment or healing
 action trusts these historical records.
+
+Recorded-injury calendar links use persistent HTML data attributes because Foundry removes HTML comments. An exact, uniquely matching partial record from preview.9 can be recovered in its explicitly selected calendar note without creating a duplicate.

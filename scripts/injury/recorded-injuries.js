@@ -177,8 +177,9 @@ export function createRecordedInjuryApi(env) {
       throw new Error("RecordedInjuryCalendarUnavailable");
     const calendar = await api.getCurrentCalendar();
     const id = (await hash([input.actorUuid, input.sourceUuid])).slice(0, 24);
-    const startMarker = `<!-- infinity-recorded-injury:${id}:start -->`;
-    const endMarker = `<!-- infinity-recorded-injury:${id}:end -->`;
+    // Foundry removes HTML comments when saving JournalEntryPage content.
+    const startMarker = `<section data-infinity-recorded-injury="${id}">`;
+    const endMarker = "</section>";
     const matches = notes().filter((j) => pageText(j).includes(startMarker));
     const previous =
       actor.flags?.[MODULE_ID]?.[RECORDED_INJURY_FLAG]?.[id] ?? null;
@@ -217,17 +218,25 @@ export function createRecordedInjuryApi(env) {
       throw new Error("RecordedInjuryCalendarDateInvalid");
     const calendarLabel = `${input.dateMeaning === "historical" ? "Historical calendar entry" : input.dateMeaning === "recorded" ? "Recorded" : input.dateMeaning === "recovery" ? "Recovery" : "Injury"}: ${months[date.month].name} ${date.day + 1}, ${date.year}`;
     const beforeText = note ? pageText(note) : "";
-    const block = `${startMarker}<section><h2>Injury record: ${escape(actor.name)}</h2><p><strong>${escape(input.label)}</strong> — ${escape(input.status)}</p><p>${escape(input.notes)}</p><p>${escape(calendarLabel)}. ${input.dateMeaning === "recorded" ? "This is the recording date; the original injury date is unknown." : "Existing campaign date preserved."}</p><p>Source: @UUID[${input.sourceUuid}]</p></section>${endMarker}`;
+    const block = `${startMarker}<h2>Injury record: ${escape(actor.name)}</h2><p><strong>${escape(input.label)}</strong> — ${escape(input.status)}</p><p>${escape(input.notes)}</p><p>${escape(calendarLabel)}. ${input.dateMeaning === "recorded" ? "This is the recording date; the original injury date is unknown." : "Existing campaign date preserved."}</p><p>Source: @UUID[${input.sourceUuid}]</p>${endMarker}`;
     const start = beforeText.indexOf(startMarker);
-    const end = beforeText.indexOf(endMarker);
-    if (start >= 0 !== end >= 0 || (start >= 0 && end < start))
+    const end = start < 0 ? -1 : beforeText.indexOf(endMarker, start);
+    if (start >= 0 && end < start)
       throw new Error("RecordedInjuryCalendarMarkerMalformed");
+    // Recover the exact preview.9 partial write after Foundry stripped its comments.
+    // Require an explicit note and an exact unique content match before adopting it.
+    const legacyBlock = block.replace(startMarker, "<section>");
+    const legacyMatches = beforeText.split(legacyBlock).length - 1;
+    if (legacyMatches > 1)
+      throw new Error("RecordedInjuryDuplicateLegacyBlock");
     const content =
       start >= 0
         ? beforeText.slice(0, start) +
           block +
           beforeText.slice(end + endMarker.length)
-        : beforeText + block;
+        : input.calendarUuid && !previous && legacyMatches === 1
+          ? beforeText.replace(legacyBlock, block)
+          : beforeText + block;
     if (
       !previous &&
       Object.keys(actor.flags?.[MODULE_ID]?.[RECORDED_INJURY_FLAG] ?? {})
