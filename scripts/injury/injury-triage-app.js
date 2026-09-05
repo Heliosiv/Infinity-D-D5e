@@ -11,6 +11,7 @@ import {
 import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "../gm-workbench.js";
 import { formatInjuryTimestamp } from "./calendar.js";
 import { isAssignedPlayerCharacter } from "./actors.js";
+import { getRecordedInjuryRows } from "./recorded-injuries.js";
 import {
   getActorCriticalInjuryEffects,
   getCriticalInjuryData,
@@ -144,6 +145,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
         name: String(actor.name ?? "Character"),
         img: actor.img ?? "icons/svg/mystery-man.svg",
         owners: eligibleOwners(actor),
+        recordedInjuries: getRecordedInjuryRows(actor),
         injuries: getActorCriticalInjuryEffects(actor)
           .map((effect) => getCriticalInjuryData(effect))
           .filter(Boolean)

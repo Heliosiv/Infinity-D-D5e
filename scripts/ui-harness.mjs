@@ -4811,6 +4811,14 @@ function criticalInjuryTriageContext() {
         name: "Aric",
         img: "icons/svg/mystery-man.svg",
         injuries: [],
+        recordedInjuries: [
+          {
+            name: "Heavy scarring",
+            recovery: "Permanent · Recorded: Shadowfall 21, 53",
+            notes:
+              "Wolf bite along the right jaw. Existing persuasion and intimidation adjustments preserved; original injury date unknown.",
+          },
+        ],
       },
       {
         name: "Bryn",

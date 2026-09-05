@@ -21,6 +21,7 @@ export function createModuleApi(bindings) {
     CriticalInjuryApp,
     CriticalInjuryHudApp,
     CriticalInjuryTriageApp,
+    recordedInjuryApi,
     ReputationWorkspaceApp,
     ReputationViewApp,
     DowntimeWorkspaceApp,
@@ -96,6 +97,7 @@ export function createModuleApi(bindings) {
     CriticalInjuryHudApp,
     CriticalInjuryTriageApp,
     criticalInjuries: {
+      records: recordedInjuryApi,
       tableVersion: CRITICAL_INJURY_TABLE_VERSION,
       table: CRITICAL_INJURY_TABLE,
     },

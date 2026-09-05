@@ -48,7 +48,7 @@
     </section>
     <section class="ci-triage-list" aria-labelledby="ci-triage-party-heading">
       <div class="ci-section-heading"><div><p class="ci-eyebrow">Visible party status</p><h3 id="ci-triage-party-heading">Character recovery</h3></div></div>
-      {{#if hasPlayerCharacters}}<div class="ci-triage-party-grid">{{#each partyRows}}<article class="ci-triage-party-card"><img src="{{img}}" alt="" /><div><h4>{{name}}</h4>{{#if injuries.length}}<ul>{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No active critical injuries.</p>{{/if}}</div></article>{{/each}}</div>
+      {{#if hasPlayerCharacters}}<div class="ci-triage-party-grid">{{#each partyRows}}<article class="ci-triage-party-card"><img src="{{img}}" alt="" /><div><h4>{{name}}</h4>{{#if injuries.length}}<ul>{{#each injuries}}<li><strong>{{name}}</strong> — {{recovery}}</li>{{/each}}</ul>{{else}}<p class="ci-triage-muted">No automated critical injuries.</p>{{/if}}{{#if recordedInjuries}}<h5>Recorded injuries and history</h5><ul>{{#each recordedInjuries}}<li><strong>{{name}}</strong> — {{recovery}}<p>{{notes}}</p></li>{{/each}}</ul>{{/if}}</div></article>{{/each}}</div>
       {{else}}<p class="ci-triage-muted">No player characters are assigned. Select each player's character in User Configuration.</p>{{/if}}
     </section>
   {{/if}}

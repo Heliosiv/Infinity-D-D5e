@@ -33,6 +33,7 @@ import {
   registerCriticalInjuryHud,
 } from "../injury/injury-hud.js";
 import { CriticalInjuryTriageApp } from "../injury/injury-triage-app.js";
+import { recordedInjuryApi } from "../injury/recorded-injury-service.js";
 import { registerCriticalInjurySocket } from "../injury/socket.js";
 import { registerCriticalInjuryService } from "../injury/service.js";
 import {
@@ -201,6 +202,7 @@ export const runtimeBindings = Object.freeze({
   registerCriticalInjuryApp,
   CriticalInjuryHudApp,
   CriticalInjuryTriageApp,
+  recordedInjuryApi,
   registerCriticalInjuryHud,
   registerCriticalInjurySocket,
   registerCriticalInjuryService,

@@ -543,7 +543,7 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function resolveSimpleCalendarApi(gameRef = globalThis.game) {
+export function resolveSimpleCalendarApi(gameRef = globalThis.game) {
   for (const moduleId of SIMPLE_CALENDAR_IDS) {
     const calendarModule = gameRef?.modules?.get?.(moduleId);
     if (calendarModule?.active !== true) continue;

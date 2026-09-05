@@ -219,3 +219,37 @@ These modules are recommended, not hard requirements. Without Midi-QOL/DAE,
 the injury record and core-compatible changes still exist; without Simple
 Calendar, the recovery timestamp remains on the Actor and is processed from
 Foundry world time.
+
+## Recording existing injuries
+
+GM Injury Triage now shows **Recorded injuries and history** under each assigned
+character. These records link older manually managed injuries to existing or new
+Simple Calendar Reborn notes. They preserve real Actor effects, ability scores,
+original calendar dates, and permissions. Recovered and uncertain historical
+injuries can be recorded without creating a new d100 roll.
+
+The full-GM API is
+`game.modules.get("infinity-dnd5e").api.criticalInjuries.records`:
+
+- `read()` returns the assigned roster, existing injury effects, recorded history,
+  and a bounded recent injury-chat scan.
+- `preview({actorUuid, sourceUuid, label, status, notes, calendarUuid, date, dateMeaning, reason})`
+  returns exact before/proposed record and calendar content, source evidence,
+  connected users, a complete concurrency hash, and a ten-minute preview ID.
+- `apply({previewId})` requires the same authoritative full GM and campaign tab
+  leader, rechecks source/Actor/calendar data, writes the reviewed record and note,
+  and returns canonical read-back. Completed retries reuse the existing result.
+
+Use an exact source Actor ActiveEffect or calendar Journal UUID. `status` is
+`active`, `permanent`, `recovered`, or `review`. Supply `calendarUuid` for an
+existing one-time note, or a new note's `date: {year, month, day}` using zero-based
+month and day. `dateMeaning` is `injury`, `recovery`, or `recorded`; the last
+explicitly identifies a documentation date when the original injury date is
+unknown. A passed deadline alone does not prove healing.
+
+A fresh preview after an interrupted operation reuses the deterministic note
+marker. Conflicting, recurring, or macro-bearing notes fail closed. This lane
+never changes inventory, effects, ownership, or time, and never creates native
+V2 treatment receipts. Native V2 injury automation remains separate. Actor flags
+are display data that an owner can edit, so no privileged treatment or healing
+action trusts these historical records.
