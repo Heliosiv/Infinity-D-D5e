@@ -205,9 +205,18 @@
                   <span><strong>{{label}}</strong>{{#if hasRoll}} <small>{{rollLabel}}</small>{{/if}}</span>
                   <em class="dt-result dt-result--{{tone}}">{{outcome}}</em>
                   {{#if workSummary}}<p class="dt-operation-cost" data-work-summary>{{workSummary}}</p>{{/if}}
+                  {{#if benefitSummary}}<p class="dt-operation-cost" data-benefit-summary>{{benefitSummary}}</p>{{/if}}
                   {{#if hasOutcomeOptions}}
                   {{#if ../../currentBlock.canApply}}
                   <div class="dt-chip-grid" data-operation-id="{{id}}" data-outcome-index="{{selectedOutcomeIndex}}" aria-label="Choose result for {{label}}">
+                    {{#if needsBenefitTarget}}
+                    <label class="dt-field dt-field--wide"><span>Patient and injury</span>
+                      <select data-benefit-target data-saved-target="{{benefitTarget}}" {{#if ../../busy}}disabled{{/if}}>
+                        <option value="">Choose a timed injury</option>
+                        {{#each benefitTargets}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                      </select>
+                    </label>
+                    {{/if}}
                     {{#each outcomeOptions}}
                     <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
                     {{/each}}
@@ -434,10 +443,6 @@
           <li><button type="button" data-action="selectGuidedTemplate" data-template-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}><strong>{{name}}</strong><span>{{description}}</span></button></li>
           {{/each}}
         </ul>
-        <div class="dt-form__actions" aria-label="Crafting presets">
-          <button type="button" class="dt-button" data-action="craftingPreset" data-recipe="arrows" {{#if busy}}disabled{{/if}}>Add arrow crafting</button>
-          <button type="button" class="dt-button" data-action="craftingPreset" data-recipe="scroll" {{#if busy}}disabled{{/if}}>Add scroll scribing</button>
-        </div>
       </aside>
       <form class="dt-form" data-form="guided-template" aria-labelledby="dt-template-editor-heading">
         <div class="dt-form__head">
@@ -482,6 +487,9 @@
           <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../busy}}disabled{{/if}} /></label>
           <label class="dt-field dt-field--wide"><span>Player report</span><textarea name="outcomeReport" aria-label="Player report for result {{number}}" rows="3" maxlength="800" required {{#if ../busy}}disabled{{/if}}>{{report}}</textarea></label>
           <label class="dt-field"><span>Reward (gp)</span><input type="number" name="outcomeReward" min="0" max="100000" step="0.01" value="{{rewardGp}}" required {{#if ../busy}}disabled{{/if}} /></label>
+          <label class="dt-field dt-field--wide"><span>Extra benefit</span><select name="outcomeBenefit" {{#if ../busy}}disabled{{/if}}>
+            {{#each benefitOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+          </select></label>
         </fieldset>
         {{/each}}
         <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedTemplate" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save activity</button></footer>

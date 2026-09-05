@@ -770,6 +770,217 @@ try {
   );
   delete actor.rollSkill;
 
+  // Guided benefit review uses the real service, ledger, and player receipt.
+  {
+    const injuryEffects = await import("./injury/effects.js");
+    const benefitActor = makeActor({ id: "benefit-actor" });
+    benefitActor.flags = {};
+    benefitActor.effects = { contents: [] };
+    const currencyUpdate = benefitActor.update.bind(benefitActor);
+    benefitActor.update = async (changes) => {
+      await currencyUpdate(changes);
+      for (const [path, value] of Object.entries(changes)) {
+        if (!path.startsWith("flags.")) continue;
+        if (value.state === "applied" && benefitActor.failBenefitReceipt) {
+          benefitActor.failBenefitReceipt = false;
+          throw new Error("simulated interrupted benefit receipt");
+        }
+        const parts = path.split(".");
+        let current = benefitActor;
+        for (const part of parts.slice(0, -1)) current = current[part] ??= {};
+        current[parts.at(-1)] = clone(value);
+      }
+      return benefitActor;
+    };
+    benefitActor.createEmbeddedDocuments = async (type, sources) => {
+      assert.equal(type, "ActiveEffect");
+      const created = sources.map((source) => ({
+        id: source._id,
+        ...clone(source),
+      }));
+      benefitActor.effects.contents.push(...created);
+      return created;
+    };
+    actors.set(benefitActor.id, benefitActor);
+    game.modules = new Map(
+      ["dae", "midi-qol", "times-up"].map((id) => [id, { active: true }]),
+    );
+    game.time.worldTime = 1000;
+    const reviewBenefit = async (templateId, skill) => {
+      let block = await service.openDowntimeBlock({
+        mode: "guided",
+        locationName: "Camp",
+        hours: 8,
+        actorIds: [benefitActor.id],
+        templateIds: [templateId],
+      });
+      await service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: `benefit-${templateId}`,
+        blockId: block.id,
+        actorId: benefitActor.id,
+        queue: [
+          {
+            id: "benefit-choice",
+            activityId: templateId,
+            hours: 8,
+            skill,
+            guidedRoll: { total: 20, formula: "1d20 + 5" },
+          },
+        ],
+      });
+      await service.lockActiveDowntimeBlock(block.id);
+      block = await service.planActiveDowntimeBlock(block.id);
+      return service.chooseGuidedDowntimeOutcome({
+        blockId: block.id,
+        operationId: block.plan.operations[0].operationId,
+        outcomeIndex: 2,
+      });
+    };
+    let benefitBlock = await reviewBenefit("guided-train-spar", "ath");
+    assert.equal(
+      await service.inspectDowntimeOperation(benefitBlock.plan.operations[0]),
+      "unapplied",
+      "zero GP is not evidence that an effect reward already applied",
+    );
+    game.modules.get("dae").active = false;
+    await assert.rejects(
+      service.applyActiveDowntimeBlock(benefitBlock.id),
+      /Sparring needs/,
+    );
+    assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+    game.modules.get("dae").active = true;
+    benefitActor.failBenefitReceipt = true;
+    benefitBlock = await service.applyActiveDowntimeBlock(benefitBlock.id);
+    assert.equal(benefitBlock.state, "needs-review");
+    assert.equal(benefitActor.effects.contents.length, 1);
+    benefitBlock = await service.recoverActiveDowntimeBlock(benefitBlock.id);
+    assert.equal(benefitBlock.state, "completed");
+    assert.equal(benefitActor.effects.contents.length, 1);
+    const benefitReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: benefitActor.id,
+    });
+    assert.match(
+      benefitReceipt.receipt.activities[0].rewardLabel,
+      /first attack roll/,
+    );
+    benefitActor.effects.contents = [];
+    await service.applyActiveDowntimeBlock(benefitBlock.id);
+    assert.equal(benefitActor.effects.contents.length, 0);
+
+    const injurySource = {
+      _id: "care-effect",
+      ...injuryEffects.buildCriticalInjuryEffectData(
+        {
+          id: "care-injury",
+          actorId: benefitActor.id,
+          injuryKey: "test-injury",
+          injuryName: "Bruised ribs",
+          effect: "Rest",
+          recoveryRule: "Rest",
+          remainingDays: 4,
+          recoveryDueTs: 346600,
+          permanent: false,
+        },
+        { startTime: 1000 },
+      ),
+    };
+    const wound = {
+      id: injurySource._id,
+      ...clone(injurySource),
+      toObject() {
+        const { id: _id, toObject: _toObject, update: _update, ...data } = this;
+        return clone(data);
+      },
+      async update(changes) {
+        Object.assign(this, clone(changes));
+        return this;
+      },
+    };
+    benefitActor.effects.contents.push(wound);
+    benefitBlock = await reviewBenefit("guided-tend-sick", "med");
+    await assert.rejects(
+      service.applyActiveDowntimeBlock(benefitBlock.id),
+      /Select a patient/,
+    );
+    assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+    assert.ok(
+      JSON.stringify(await service.getWorkspaceProjection()).includes(
+        "benefit-actor|care-injury",
+      ),
+    );
+    benefitBlock = await service.chooseGuidedDowntimeOutcome({
+      blockId: benefitBlock.id,
+      operationId: benefitBlock.plan.operations[0].operationId,
+      outcomeIndex: 2,
+      benefitTarget: "benefit-actor|care-injury",
+    });
+    const immutableBenefitPlan = clone(benefitBlock.plan);
+    immutableBenefitPlan.operations[0].check.total++;
+    await assert.rejects(
+      workflow.updateGuidedDowntimePlan(benefitBlock.id, immutableBenefitPlan),
+      /PlanImmutable/,
+    );
+    benefitBlock = await service.applyActiveDowntimeBlock(benefitBlock.id);
+    assert.equal(benefitBlock.state, "completed");
+    assert.equal(
+      injuryEffects.getCriticalInjuryData(wound).recoveryDueTs,
+      260200,
+    );
+    const careReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: benefitActor.id,
+    });
+    assert.match(
+      careReceipt.receipt.activities[0].rewardLabel,
+      /shortened by one calendar day/,
+    );
+    let sharedCare = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Camp",
+      hours: 8,
+      actorIds: [benefitActor.id, actor.id],
+      templateIds: ["guided-tend-sick"],
+    });
+    for (const participant of [benefitActor, actor])
+      await service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: `shared-care-${participant.id}`,
+        blockId: sharedCare.id,
+        actorId: participant.id,
+        queue: [
+          {
+            id: "shared-care",
+            activityId: "guided-tend-sick",
+            hours: 8,
+            skill: "med",
+            guidedRoll: { total: 20, formula: "1d20 + 5" },
+          },
+        ],
+      });
+    await service.lockActiveDowntimeBlock(sharedCare.id);
+    sharedCare = await service.planActiveDowntimeBlock(sharedCare.id);
+    for (const operation of sharedCare.plan.operations)
+      await service.chooseGuidedDowntimeOutcome({
+        blockId: sharedCare.id,
+        operationId: operation.operationId,
+        outcomeIndex: 2,
+        benefitTarget: "benefit-actor|care-injury",
+      });
+    await assert.rejects(
+      service.applyActiveDowntimeBlock(sharedCare.id),
+      /Two reports target the same injury/,
+    );
+    assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+    assert.equal(
+      injuryEffects.getCriticalInjuryData(wound).recoveryDueTs,
+      260200,
+    );
+    await service.cancelActiveDowntimeBlock(sharedCare.id);
+    actors.delete(benefitActor.id);
+  }
+
   // The GM can maintain an activity library without changing work that has
   // already been assigned. Players receive descriptions and skills, never the
   // unpublished result options, and an activity can intentionally skip a roll.

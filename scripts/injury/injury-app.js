@@ -2,6 +2,10 @@
 
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { isFullGM } from "../permissions.js";
+import {
+  isPlayerOwnedCriticalInjuryActor,
+  hasEffectiveOwnerPermission,
+} from "./actors.js";
 import { authoritativeGMId } from "../socket-authority.js";
 import {
   CRITICAL_INJURY_EVENTS,
@@ -1008,23 +1012,14 @@ export function canCurrentUserOperateCriticalInjuryActor(
   return hasEffectiveOwnerPermission(actor, user.id);
 }
 
+export { isPlayerOwnedCriticalInjuryActor };
+
 function hasDirectOwnerPermission(actor, userId) {
   const id = String(userId ?? "");
   if (!id) return false;
   const ownership = actor?.ownership ?? {};
   if (!Object.hasOwn(ownership, id)) return false;
   const level = ownership[id];
-  const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
-  return Number(level) >= Number(OWNER);
-}
-
-function hasEffectiveOwnerPermission(actor, userId) {
-  const id = String(userId ?? "");
-  if (!id) return false;
-  const ownership = actor?.ownership ?? {};
-  const level = Object.hasOwn(ownership, id)
-    ? ownership[id]
-    : ownership.default;
   const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
   return Number(level) >= Number(OWNER);
 }

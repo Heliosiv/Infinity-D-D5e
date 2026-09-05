@@ -57,7 +57,7 @@ import {
    configured template and skill. */
 {
   const templates = defaultGuidedDowntimeTemplates();
-  assert.equal(templates.length, 11);
+  assert.equal(templates.length, 13);
   assert.deepEqual(
     Object.fromEntries(
       templates.map((template) => [
@@ -77,6 +77,8 @@ import {
       "guided-service": [0, 0, 0],
       "guided-animal-care": [0, 0, 0],
       "guided-reflection": [0, 0, 0],
+      "guided-craft-arrows": [0, 0, 0],
+      "guided-scribe-scroll": [0, 0, 0],
     },
     "the shipped guided rewards stay within the modest one-day balance budget",
   );
@@ -102,7 +104,7 @@ import {
     normalizeGuidedDowntimeTemplates([
       { id: "invalid", name: "Invalid", outcomes: [] },
     ]).length,
-    11,
+    13,
   );
   for (const template of templates.slice(3)) {
     const choice = normalizeGuidedDowntimeSelection(
@@ -122,7 +124,7 @@ import {
   const expanded = normalizeGuidedDowntimeLibrary(original);
   assert.deepEqual(expanded.slice(0, 3), before);
   assert.deepEqual(original, before, "expansion never mutates saved records");
-  assert.equal(expanded.length, 11);
+  assert.equal(expanded.length, 13);
   assert.deepEqual(normalizeGuidedDowntimeLibrary(expanded), expanded);
   assert.deepEqual(
     normalizeGuidedDowntimeTemplates(original),
@@ -141,7 +143,7 @@ import {
     expanded,
     "customized built-ins take precedence over shipped content",
   );
-  const full = Array.from({ length: 24 }, (_, index) => ({
+  const full = Array.from({ length: 28 }, (_, index) => ({
     ...templates[0],
     id: `custom-${index}`,
   }));

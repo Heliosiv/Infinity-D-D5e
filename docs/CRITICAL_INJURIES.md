@@ -10,6 +10,12 @@ removed.
 
 ## Player and GM flow
 
+Successful **Tend the Sick** downtime can shorten one selected timed injury by
+one calendar day after at least eight hours of care. The GM selects the patient
+and injury while reviewing result 3. This updates the existing effect and
+calendar reminder, and excludes permanent injuries and untreated deadlines
+that can become permanent. See [campaign downtime benefits](DOWNTIME_SYSTEM.md#campaign-benefits).
+
 1. An owned `character` Actor moves from 0 HP to a positive HP value, or its
    dead/unconscious/defeated state is removed while it has positive HP.
 2. The active full GM receives a **Critical Injury?** Yes/No prompt. No injury

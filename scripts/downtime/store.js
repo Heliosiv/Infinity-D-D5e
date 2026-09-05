@@ -12,6 +12,7 @@ import {
   setPrivateState,
 } from "../private-state.js";
 import { isFullGM } from "../permissions.js";
+import { includeCampaignDowntimeTemplates } from "./dispatch.js";
 import { authoritativeGMId, isAuthoritativeGM } from "../socket-authority.js";
 import {
   assertSupportedPersistedVersion,
@@ -40,6 +41,7 @@ const LEGACY_DOWNTIME_CONFIG_VERSION = 2;
 const GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION = 3;
 const PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION = 4;
 const PREVIOUS_DOWNTIME_CONFIG_VERSION = 5;
+const PRE_BENEFIT_DOWNTIME_CONFIG_VERSION = 6;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -175,6 +177,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
       GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION,
       PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
       PREVIOUS_DOWNTIME_CONFIG_VERSION,
+      PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
   ) {
@@ -368,6 +371,13 @@ function parsePersistedDowntimeConfig(raw) {
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
   } else if (
+    persistedVersionEquals(raw.version, PRE_BENEFIT_DOWNTIME_CONFIG_VERSION)
+  ) {
+    persistedShape = {
+      ...current,
+      version: PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
+    };
+  } else if (
     persistedVersionEquals(raw.version, PREVIOUS_DOWNTIME_CONFIG_VERSION)
   ) {
     persistedShape = {
@@ -434,6 +444,11 @@ function parsePersistedDowntimeConfig(raw) {
     return null;
   }
   if (!persistedValuesEqual(raw, persistedShape)) return null;
+  if (!persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
+    current.guidedTemplates = includeCampaignDowntimeTemplates(
+      current.guidedTemplates,
+    );
+  }
   return {
     raw: clone(persistedShape),
     current: clone(current),
@@ -1542,6 +1557,8 @@ function guidedPlanIdentity(plan) {
       "walletBefore",
       "walletAfter",
       "summary",
+      "benefit",
+      "benefitTarget",
     ])
       delete result[field];
     return result;

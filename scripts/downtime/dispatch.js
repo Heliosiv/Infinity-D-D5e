@@ -7,11 +7,12 @@
  * privileged document data.
  */
 
-import { normalizeGuidedWork } from "./work.js";
+import { normalizeGuidedWork, guidedWorkPreset } from "./work.js";
+import { normalizeDowntimeBenefit } from "./benefit-rules.js";
 import { ADDITIONAL_GUIDED_ACTIVITIES } from "./activity-library.js";
 
 export const GUIDED_DOWNTIME_MODE = "guided";
-export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 24;
+export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 28;
 export const GUIDED_DOWNTIME_OUTCOME_MINIMUM = 3;
 export const GUIDED_DOWNTIME_OUTCOME_MAXIMUM = 6;
 
@@ -124,9 +125,9 @@ const DEFAULT_TEMPLATES = Object.freeze([
 ]);
 
 export function defaultGuidedDowntimeTemplates() {
-  return [...DEFAULT_TEMPLATES, ...ADDITIONAL_GUIDED_ACTIVITIES].map(
+  return includeCampaignDowntimeTemplates([...DEFAULT_TEMPLATES, ...ADDITIONAL_GUIDED_ACTIVITIES].map(
     (template) => normalizeGuidedDowntimeTemplate(template),
-  );
+  ));
 }
 
 /** Extend the campaign library only; assigned block snapshots stay unchanged. */
@@ -139,7 +140,99 @@ export function normalizeGuidedDowntimeLibrary(raw) {
     templates.push(normalizeGuidedDowntimeTemplate(entry));
     ids.add(entry.id);
   }
-  return templates;
+  return includeCampaignDowntimeTemplates(templates);
+}
+
+export function campaignDowntimeTemplates() {
+  return [
+    {
+      id: "guided-train-spar",
+      name: "Train & Spar",
+      description:
+        "Practice footwork and timing. A strong result readies your next attack for up to 12 hours.",
+      image: "icons/skills/melee/weapons-crossed-swords-yellow.webp",
+      skills: ["ath", "acr"],
+      outcomes: [
+        {
+          label: "Finding your footing",
+          report: "Practice exposed a few habits to work on.",
+          rewardGp: 0,
+        },
+        {
+          label: "Solid practice",
+          report: "You leave with a better feel for your technique.",
+          rewardGp: 0,
+        },
+        {
+          label: "Ready for the fight",
+          report:
+            "Your next attack gains +1. The benefit expires after that attack or 12 in-game hours.",
+          rewardGp: 0,
+          benefit: "sparring",
+        },
+      ],
+    },
+    {
+      id: "guided-tend-sick",
+      name: "Tend the Sick",
+      description:
+        "Care for an injured companion. A strong result after eight hours can shorten one timed injury by a day.",
+      image: "icons/skills/wounds/injury-face-impact-orange.webp",
+      skills: ["med"],
+      outcomes: [
+        {
+          label: "Comfort and rest",
+          report:
+            "Your patient is more comfortable, but recovery takes its normal course.",
+          rewardGp: 0,
+        },
+        {
+          label: "Steady care",
+          report: "You keep the patient rested and cared for.",
+          rewardGp: 0,
+        },
+        {
+          label: "Recovery progress",
+          report: "Your skilled care helped your patient rest and recover.",
+          rewardGp: 0,
+          benefit: "injury-care",
+        },
+      ],
+    },
+    { ...guidedWorkPreset("arrows"), id: "guided-craft-arrows" },
+    { ...guidedWorkPreset("scroll"), id: "guided-scribe-scroll" },
+  ];
+}
+
+/** Add missing campaign entries while retaining saved names, prose and recipes. */
+export function includeCampaignDowntimeTemplates(templates) {
+  const result = structuredClone(templates);
+  const nameKey = (name) =>
+    name
+      .toLowerCase()
+      .replace(/\band\b/g, "")
+      .replace(/[^a-z]/g, "");
+  for (const builtin of campaignDowntimeTemplates()) {
+    const existing = result.find(
+      (entry) =>
+        entry.id === builtin.id ||
+        nameKey(entry.name) === nameKey(builtin.name) ||
+        (builtin.work && entry.work?.output === builtin.work.output),
+    );
+    if (existing) {
+      // Only supply the requested third-result benefit when not configured yet.
+      if (
+        builtin.outcomes[2].benefit &&
+        existing.outcomes[2] &&
+        !Object.hasOwn(existing.outcomes[2], "benefit")
+      ) {
+        existing.outcomes[2].benefit = builtin.outcomes[2].benefit;
+      }
+    } else if (result.length < GUIDED_DOWNTIME_TEMPLATE_LIMIT) {
+      result.push(normalizeGuidedDowntimeTemplate(builtin));
+    }
+  }
+  return result;
 }
 
 export function normalizeGuidedDowntimeTemplates(raw) {
@@ -186,6 +279,9 @@ export function normalizeGuidedDowntimeOutcome(raw = {}) {
     label,
     report,
     rewardGp: decimal(raw.rewardGp, 0, 100000),
+    ...(Object.hasOwn(raw, "benefit")
+      ? { benefit: normalizeDowntimeBenefit(raw.benefit) }
+      : {}),
   };
 }
 

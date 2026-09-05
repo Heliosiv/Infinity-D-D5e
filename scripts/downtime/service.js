@@ -9,6 +9,13 @@ import {
   recoverGuidedWork,
   verifyGuidedWorkBefore,
 } from "./work.js";
+import {
+  buildDowntimeBenefitPlan,
+  applyDowntimeBenefit,
+  inspectDowntimeBenefit,
+} from "./benefits.js";
+import { downtimeBenefitLabel } from "./benefit-rules.js";
+import { downtimeCareTargets } from "../injury/downtime-care.js";
 import { DOWNTIME_MAX_BLOCK_HOURS as MAX_BLOCK_HOURS } from "./limits.js";
 import { DOWNTIME_OUTCOME_TIERS, getFencingValueCapCp } from "./math.js";
 import {
@@ -1570,6 +1577,7 @@ export async function chooseGuidedDowntimeOutcome({
   operationId,
   outcomeIndex,
   report,
+  benefitTarget,
 } = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
@@ -1607,6 +1615,10 @@ export async function chooseGuidedDowntimeOutcome({
           skill: operation.check?.skill ?? "",
           targetId: operation.targetId,
           existingWork: operation.work,
+          benefitTarget:
+            benefitTarget === undefined
+              ? operation.benefitTarget
+              : String(benefitTarget),
           roll: {
             ok: true,
             total: operation.check?.total ?? 0,
@@ -1997,6 +2009,7 @@ async function buildGuidedDowntimeOperation({
   projectSuccesses = null,
   targetId = "",
   existingWork = null,
+  benefitTarget = "",
 }) {
   const outcome = activity.outcomes[selectedOutcomeIndex];
   const report = cleanGuidedReport(reportOverride) || outcome.report;
@@ -2113,6 +2126,13 @@ async function buildGuidedDowntimeOperation({
   const walletAfter = planWalletDeltaCp(walletRead.wallet, currencyDeltaCp);
   if (!walletAfter)
     throw new Error(`${actor.name}'s reward could not be prepared.`);
+  const benefit = buildDowntimeBenefitPlan({
+    actor,
+    benefit: outcome.benefit,
+    hours: block.budgetHours,
+    operationId: operationId || `guided-${block.id}-${actor.id}`,
+    target: benefitTarget,
+  });
   return {
     operationId: operationId || `guided-${block.id}-${actor.id}`,
     kind: work ? "guided-work" : "currency",
@@ -2128,10 +2148,11 @@ async function buildGuidedDowntimeOperation({
     outcomeLabel: outcome.label,
     report,
     ...(work ? { work, targetId } : {}),
+    ...(benefit ? { benefit, benefitTarget } : {}),
     currencyDeltaCp,
     walletBefore: walletRead.wallet,
     walletAfter,
-    summary: `${outcome.label}: ${report}${work ? ` ${work.detail}` : ""}${outcome.rewardGp > 0 ? ` Reward: ${formatCp(Math.round(outcome.rewardGp * 100))}.` : ""}`,
+    summary: `${outcome.label}: ${report}${work ? ` ${work.detail}` : ""}${benefit ? ` ${benefit.detail}` : ""}${outcome.rewardGp > 0 ? ` Reward: ${formatCp(Math.round(outcome.rewardGp * 100))}.` : ""}`,
     check: {
       skill,
       total,
@@ -2301,11 +2322,40 @@ async function applyBlockInternal(blockId) {
   }
   if (block.state === "planned") {
     if (block.mode === GUIDED_DOWNTIME_MODE) {
+      const reviewedInjuries = new Set();
       for (const operation of block.plan.operations ?? []) {
         const actor = actorById(operation.actorId);
         if (!actor)
           throw new Error(
             "An assigned character is no longer available. Cancel this block and choose the remaining characters.",
+          );
+        if (operation.benefit?.needsTarget)
+          throw new Error(
+            "Select a patient and injury, then save the report before applying care.",
+          );
+        if (operation.benefit?.type === "injury-care") {
+          const target = operation.benefitTarget;
+          if (reviewedInjuries.has(target))
+            throw new Error(
+              "Two reports target the same injury. Choose a different patient, injury or result before applying together.",
+            );
+          reviewedInjuries.add(target);
+        }
+        if (
+          operation.benefit?.type === "sparring" &&
+          !["dae", "midi-qol", "times-up"].every(
+            (id) => globalThis.game?.modules?.get?.(id)?.active,
+          )
+        )
+          throw new Error(
+            "Sparring needs DAE, Midi QOL and Times Up for its one-attack and 12-hour expiry.",
+          );
+        if (
+          operation.benefit &&
+          inspectDowntimeBenefit(actor, operation) === "uncertain"
+        )
+          throw new Error(
+            "The reviewed benefit or injury changed. Save the report again to review current state.",
           );
         if (
           operation.kind === "guided-work" &&
@@ -2573,6 +2623,12 @@ async function applyPlannedOperation(
       return { ok: false, reason: "unknown-operation", provenUnapplied: true };
   }
   if (!primary.ok) return primary;
+  if (operation.benefit) {
+    const benefit = await applyDowntimeBenefit(actor, operation, {
+      authorizeWrite,
+    });
+    if (!benefit.ok) return benefit;
+  }
   const consequences = await applyOperationConsequences(operation, {
     allowAlreadyApplied,
     authorizeWrite,
@@ -3411,6 +3467,15 @@ export async function recoverActiveDowntimeBlock(blockId) {
       await reconcileInterruptedStolenLedgerWrite(operation, {
         authorizeWrite: recoveryAuthority,
       });
+      if (
+        operation.benefit &&
+        (await inspectDowntimeOperation({ ...operation, benefit: null })) ===
+          "applied"
+      ) {
+        await applyDowntimeBenefit(actorById(operation.actorId), operation, {
+          authorizeWrite: recoveryAuthority,
+        });
+      }
       const inspection = await inspectDowntimeOperation(operation);
       if (inspection === "applied") {
         if (record.state === "needs-review") {
@@ -3539,6 +3604,8 @@ export async function inspectDowntimeOperation(operation) {
         : walletsEqual(wallet.wallet, operation.walletBefore)
           ? "unapplied"
           : "uncertain";
+      if (walletsEqual(operation.walletBefore, operation.walletAfter))
+        primaryRequired = false;
       break;
     }
     case "craft-ammunition": {
@@ -3663,6 +3730,13 @@ export async function inspectDowntimeOperation(operation) {
       break;
     default:
       return "uncertain";
+  }
+  if (operation.benefit && operation.benefit.type !== "none") {
+    const benefit = inspectDowntimeBenefit(actor, operation);
+    if (!primaryRequired) {
+      primary = benefit;
+      primaryRequired = true;
+    } else if (primary !== benefit) primary = "uncertain";
   }
   const consequence = inspectDowntimeOperationConsequences(operation);
   if (!primaryRequired) {
@@ -4000,6 +4074,16 @@ function projectWorkspaceBlock(block) {
                   : `${operation.report} ${block.state === "completed" ? guidedWorkReceipt(operation.work) : operation.work.detail}`
                 : "",
               report: operation.report ?? "",
+              benefitSummary: operation.benefit?.detail ?? "",
+              benefitTarget: operation.benefitTarget ?? "",
+              benefitTargets:
+                operation.benefit?.type === "injury-care"
+                  ? downtimeCareTargets().map((target) => ({
+                      ...target,
+                      selected: target.id === operation.benefitTarget,
+                    }))
+                  : [],
+              needsBenefitTarget: operation.benefit?.type === "injury-care",
               tone: operation.check?.outcomeTier ?? "neutral",
               outcomeOptions:
                 block.mode === GUIDED_DOWNTIME_MODE
@@ -4015,11 +4099,20 @@ function projectWorkspaceBlock(block) {
                       report: outcome.report,
                       rewardLabel: operation.project
                         ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
-                        : outcome.rewardGp > 0
-                          ? `${outcome.rewardGp} gp`
-                          : operation.work
-                            ? "No reward"
-                            : "No currency",
+                        : outcome.benefit
+                          ? [
+                              downtimeBenefitLabel(outcome.benefit),
+                              outcome.rewardGp > 0
+                                ? `${outcome.rewardGp} gp`
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : outcome.rewardGp > 0
+                            ? `${outcome.rewardGp} gp`
+                            : operation.work
+                              ? "No reward"
+                              : "No currency",
                       selected: index === operation.selectedOutcomeIndex,
                     }))
                   : [],
@@ -4985,13 +5078,17 @@ function buildCompletedResult(block) {
       tone: operation.check?.outcomeTier ?? "neutral",
       image: operation.activityImage ?? "",
       report: operation.report ?? "",
-      rewardLabel: operation.project
-        ? `${operation.project.contributedHours} hours contributed to ${operation.project.name}.${operation.project.successesAdded ? " The check succeeded." : operation.project.requiredSuccesses ? " The check did not add a success." : ""}${operation.project.costCp ? ` ${formatCp(operation.project.costCp)} paid.` : ""}`
-        : operation.work
-          ? guidedWorkReceipt(operation.work)
-          : Number(operation.currencyDeltaCp) > 0
-            ? `${formatCp(operation.currencyDeltaCp)} added to your character.`
-            : "No currency was added.",
+      rewardLabel:
+        (operation.benefit ? `${operation.benefit.detail} ` : "") +
+        (operation.project
+          ? `${operation.project.contributedHours} hours contributed to ${operation.project.name}.${operation.project.successesAdded ? " The check succeeded." : operation.project.requiredSuccesses ? " The check did not add a success." : ""}${operation.project.costCp ? ` ${formatCp(operation.project.costCp)} paid.` : ""}`
+          : operation.work
+            ? guidedWorkReceipt(operation.work)
+            : Number(operation.currencyDeltaCp) > 0
+              ? `${formatCp(operation.currencyDeltaCp)} added to your character.`
+              : operation.benefit
+                ? ""
+                : "No currency was added."),
     }));
     playerReceipts[character.actorId] = {
       settlementName: block.settlementName,

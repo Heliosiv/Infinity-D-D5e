@@ -44,8 +44,8 @@ Players who own multiple participating characters can use the character tabs
 to switch between their latest completed reports. Each character receives its
 own state update, and report access follows current Actor ownership.
 
-The library ships with eleven editable activities: **Paid Work**,
-**Research & Rumors**, **Thievery**, and the eight choices below. No campaign
+The library ships with thirteen editable activities: **Paid Work**,
+**Research & Rumors**, **Thievery**, the eight choices below, **Craft Arrows**, and **Scribe a Spell Scroll**. No campaign
 time is advanced by this workflow.
 
 | Activity             | Player skills                       | Cost and possible benefit                                                |
@@ -59,24 +59,49 @@ time is advanced by this workflow.
 | Care for Animals     | Animal Handling, Medicine, Nature   | No fee; care and progress toward an agreed training goal.                |
 | Rest & Reflect       | No roll                             | No fee; a personal takeaway or resolution.                               |
 
-These are original campaign templates with three editable reports each.
-Narrative benefits do not automatically change HP, injuries, conditions,
-proficiencies, faction standing, or rest resources. Daily costs scale with
-assigned time at eight productive hours per workday and appear before submission;
-the GM applies costs and the chosen report through the normal review workflow.
+### Campaign benefits
 
-Existing libraries offer the eight additions automatically when space remains,
-keeping saved activities, their order, and customized versions of the new choices.
-A full 24-activity library is preserved. This does not rewrite stored checkpoints
-just to display the additions. Current blocks keep their original activity list;
-tick the new choices when opening the next block. Saving an activity records the
-expanded library through the normal save path.
+| Activity              | Result                            | Benefit when the GM applies it                                                               |
+| --------------------- | --------------------------------- | -------------------------------------------------------------------------------------------- |
+| Train & Spar          | 3                                 | +1 to the first weapon or spell attack roll, expiring after that attack or 12 in-game hours. |
+| Tend the Sick         | 3, with at least 8 assigned hours | Shorten one selected patient's timed injury by one calendar day.                             |
+| Craft Arrows          | Any result                        | Craft usable ammunition through the saved recipe and accumulated hours.                      |
+| Scribe a Spell Scroll | Any result                        | Spend the recorded costs and hours to produce a usable scroll.                               |
+
+Sparring creates an Actor Active Effect using DAE's one-attack duration, Midi
+QOL's attack completion, and Times Up's time expiry. All three modules must be
+active before applying. The twelve hours begin when the reward is applied;
+another successful block cannot stack or refresh an active sparring bonus.
+
+For care, choose **Patient and injury** in the GM report. Patients follow the
+existing player-character injury roster. At least eight hours
+are required, and each result shortens only one injury by one day, even in a
+longer block. Permanent injuries and untreated deadlines that can become
+permanent are excluded. The existing effect and Simple Calendar recovery note
+are updated; completing the last day removes the recovered injury. Without
+Simple Calendar, recovery uses Foundry world time. Review again if the injury
+changes before applying.
+Reports applied together must select different injuries; the same injury cannot
+be shortened twice from one reviewed snapshot.
+
+Successful benefits have a saved receipt. Recovery cannot grant a consumed or
+expired sparring bonus again or shorten an injury twice. An interrupted,
+ambiguous effect grant stops for GM review. Calendar interruptions can resume
+from the saved injury change without repeating the reduction.
+
+Earlier libraries gain these four activities automatically on upgrade. Matching
+campaign activity names and crafting recipes are reused, preserving their text
+and costs. Matching Train & Spar and Tend the Sick activities receive the result
+3 benefit unless it was explicitly configured already. Open blocks retain
+their assigned snapshots; start a new block to use the updated library.
 
 ### Edit the activity library
 
 Open **Downtime → Activities** to edit a saved activity or click **New activity**
 to create one. Set the player description, optional image, applicable skills,
-and three possible results with their player reports and rewards. Existing
+and three possible results with their player reports and rewards. **Extra
+benefit** can attach sparring or injury care to a result, or leave it narrative
+only. Existing
 templates with up to six results retain all of them in the editor. Result
 rewards apply once per assigned block; they are not multiplied by its hours.
 Put the results in order from least to most successful. The GM can choose any
@@ -91,14 +116,13 @@ the transport privacy limitation below before storing confidential material.
 Activity drafts survive in-window refreshes and switching tabs or activities.
 **Save activity** updates the library for future blocks. An open block keeps
 the descriptions, skills, and rewards assigned when it began. The library
-supports 24 saved activities.
+supports 28 saved activities.
 
 ### Crafting, scribing, and resource costs
 
-In **Downtime → Activities**, use **Add arrow crafting** or **Add scroll
-scribing**, adjust the recipe, and **Save activity**. These buttons prepare a new
-editable activity; they never overwrite your existing library. Include the saved
-activity when opening the next block. Ordinary activities can also use the
+In **Downtime → Activities**, select the included **Craft Arrows** or **Scribe a
+Spell Scroll** activity, adjust its recipe if needed, and **Save activity**.
+Include the activity when opening the next block. Ordinary activities can also use the
 **Costs, supplies & crafting** section without producing an item.
 
 - **Fee per block** is charged once per submitted block.

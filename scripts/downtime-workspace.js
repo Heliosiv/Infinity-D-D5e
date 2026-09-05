@@ -18,7 +18,8 @@ import {
   GUIDED_PROJECT_PRESETS,
   guidedProjectPreset,
 } from "./downtime/projects.js";
-import { guidedWorkPreset, WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
+import { WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
+import { DOWNTIME_BENEFITS } from "./downtime/benefit-rules.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
 
@@ -180,7 +181,6 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       projectPreset: DowntimeWorkspaceApp._onProjectPreset,
       selectGuidedTemplate: DowntimeWorkspaceApp._onSelectGuidedTemplate,
       newGuidedTemplate: DowntimeWorkspaceApp._onNewGuidedTemplate,
-      craftingPreset: DowntimeWorkspaceApp._onCraftingPreset,
       saveGuidedTemplate: DowntimeWorkspaceApp._onSaveGuidedTemplate,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
@@ -398,6 +398,18 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
     this._bindActorSelector(context);
+    for (const select of this.element?.querySelectorAll?.(
+      "[data-benefit-target]",
+    ) ?? []) {
+      select.addEventListener("change", (event) => {
+        if (!this._busy)
+          void DowntimeWorkspaceApp._onSaveGuidedReport.call(
+            this,
+            event,
+            select,
+          );
+      });
+    }
     const setup = this.element?.querySelector?.('[data-form="new-block"]');
     for (const event of ["input", "change"]) {
       setup?.addEventListener(event, () => this._captureNewBlockDraft(setup));
@@ -912,7 +924,15 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const reports = [
       ...(this.element?.querySelectorAll?.("[data-guided-report]") ?? []),
     ]
-      .filter((field) => field.value !== field.dataset.savedReport)
+      .filter((field) => {
+        const target = field
+          .closest("[data-operation-id]")
+          ?.querySelector("[data-benefit-target]");
+        return (
+          field.value !== field.dataset.savedReport ||
+          (target && target.value !== target.dataset.savedTarget)
+        );
+      })
       .map((field) => ({
         blockId: this._currentBlockId(),
         operationId: field.closest("[data-operation-id]")?.dataset.operationId,
@@ -920,6 +940,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
           field.closest("[data-operation-id]")?.dataset.outcomeIndex,
         ),
         report: field.value,
+        benefitTarget: field
+          .closest("[data-operation-id]")
+          ?.querySelector("[data-benefit-target]")?.value,
       }));
     for (const payload of reports) {
       const saved = await this._runCommand("chooseGuidedOutcome", payload, {
@@ -1010,6 +1033,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         operationId,
         outcomeIndex: Number(card.dataset.outcomeIndex),
         report: String(card.querySelector("[data-guided-report]")?.value ?? ""),
+        benefitTarget: card.querySelector("[data-benefit-target]")?.value,
       },
       {
         pending: "Saving player report...",
@@ -1133,16 +1157,6 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
 
   static _onNewGuidedTemplate() {
     if (this._busy) return;
-    this._selectedTemplateId = null;
-    this._creatingTemplate = true;
-    this._pendingFocus = '[data-form="guided-template"] input[name="name"]';
-    this.render(false);
-  }
-
-  static _onCraftingPreset(_event, target) {
-    if (this._busy) return;
-    this._templateDrafts ??= new Map();
-    this._templateDrafts.set("new", guidedWorkPreset(target?.dataset?.recipe));
     this._selectedTemplateId = null;
     this._creatingTemplate = true;
     this._pendingFocus = '[data-form="guided-template"] input[name="name"]';
@@ -1279,6 +1293,7 @@ function readGuidedTemplateForm(form) {
       label: String(label),
       report: String(data.getAll("outcomeReport")[index] ?? ""),
       rewardGp: String(data.getAll("outcomeReward")[index] ?? "0"),
+      benefit: String(data.getAll("outcomeBenefit")[index] ?? ""),
     })),
   };
 }
@@ -1383,6 +1398,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     outcomes: array(templateSource.outcomes).map((outcome, index) => ({
       ...outcome,
       number: index + 1,
+      benefitOptions: DOWNTIME_BENEFITS.map((option) => ({
+        ...option,
+        selected: option.id === (outcome.benefit ?? ""),
+      })),
     })),
     skillOptions: GUIDED_DOWNTIME_SKILLS.map(({ id, label }) => ({
       id,
@@ -2077,6 +2096,14 @@ function normalizeCurrentBlock(workflow, root) {
         rollLabel: String(operation?.rollLabel ?? operation?.roll ?? ""),
         hasRoll: Boolean(operation?.rollLabel ?? operation?.roll),
         workSummary: String(operation?.workSummary ?? ""),
+        benefitSummary: String(operation?.benefitSummary ?? ""),
+        benefitTarget: String(operation?.benefitTarget ?? ""),
+        needsBenefitTarget: operation?.needsBenefitTarget === true,
+        benefitTargets: array(operation?.benefitTargets).map((target) => ({
+          id: String(target.id),
+          label: String(target.label),
+          selected: target.selected === true,
+        })),
         outcome: String(
           operation?.outcome ??
             operation?.outcomeLabel ??

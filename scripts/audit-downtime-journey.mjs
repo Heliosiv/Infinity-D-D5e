@@ -204,6 +204,11 @@ try {
           option.selected = option === outcome;
         operation.report = payload.report ?? outcome.report;
         operation.outcome = outcome.label;
+        if (payload.benefitTarget !== undefined) {
+          operation.benefitTarget = payload.benefitTarget;
+          for (const target of operation.benefitTargets ?? [])
+            target.selected = target.id === payload.benefitTarget;
+        }
         state.saved.push(payload);
         return state.block;
       },
@@ -393,6 +398,18 @@ try {
   );
 
   await page.locator('[data-action="setView"][data-view="activities"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(await page.locator('[data-action="craftingPreset"]').count(), 0);
+  await page
+    .locator(
+      '[data-action="selectGuidedTemplate"][data-template-id="guided-train-spar"]',
+    )
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.locator('[name="outcomeBenefit"]').nth(2).inputValue(),
+    "sparring",
+  );
   await page.locator('[data-action="newGuidedTemplate"]').click();
   await page.evaluate(() => journey.app.rendering);
   await page
@@ -460,7 +477,9 @@ try {
   await page.locator('[data-action="saveGuidedTemplate"]').click();
   await page.waitForFunction(() => journey.state.activitySaves === 1);
   await page
-    .locator('[data-action="craftingPreset"][data-recipe="arrows"]')
+    .locator(
+      '[data-action="selectGuidedTemplate"][data-template-id="guided-craft-arrows"]',
+    )
     .click();
   await page.evaluate(() => journey.app.rendering);
   assert.equal(
@@ -491,7 +510,9 @@ try {
   await page.locator('[data-action="saveGuidedTemplate"]').click();
   await page.waitForFunction(() => journey.state.activitySaves === 2);
   await page
-    .locator('[data-action="craftingPreset"][data-recipe="scroll"]')
+    .locator(
+      '[data-action="selectGuidedTemplate"][data-template-id="guided-scribe-scroll"]',
+    )
     .click();
   await page.evaluate(() => journey.app.rendering);
   assert.equal(
@@ -693,8 +714,74 @@ try {
   });
   assert.equal(await page.evaluate(() => journey.state.error ?? ""), "");
   assert.deepEqual(errors, []);
+  await page.evaluate(async () => {
+    journey.state.block.status = "planned";
+    const operation = journey.state.block.plan.characters[0].operations[0];
+    operation.label = "Tend the Sick";
+    operation.rollLabel = "Medicine roll: 20";
+    operation.outcome = "Recovery progress";
+    operation.report =
+      "Your skilled care helped your patient rest and recover.";
+    operation.outcomeOptions = [
+      {
+        index: 0,
+        label: "Comfort and rest",
+        report: "Your patient is more comfortable.",
+        rewardLabel: "No currency",
+        selected: false,
+      },
+      {
+        index: 1,
+        label: "Steady care",
+        report: "You keep your patient rested.",
+        rewardLabel: "No currency",
+        selected: false,
+      },
+      {
+        index: 2,
+        label: "Recovery progress",
+        report: operation.report,
+        rewardLabel: "Reduce one injury by 1 day (8 hours of care)",
+        selected: true,
+      },
+    ];
+    operation.needsBenefitTarget = true;
+    operation.benefitTarget = "";
+    operation.benefitSummary =
+      "Select one patient and timed injury before applying.";
+    operation.benefitTargets = [
+      { id: "mira|ribs", label: "Mira — Bruised ribs" },
+      { id: "mira|ankle", label: "Mira — Twisted ankle" },
+    ];
+    await journey.mount("workspace");
+  });
+  await page.locator("[data-benefit-target]").selectOption("mira|ribs");
+  await page.waitForFunction(
+    () => journey.state.saved.at(-1)?.benefitTarget === "mira|ribs",
+  );
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.locator("[data-benefit-target]").inputValue(),
+    "mira|ribs",
+  );
+  await page.setViewportSize({ width: 900, height: 760 });
+  await page.screenshot({
+    path: path.join(out, "gm-injury-care.png"),
+    fullPage: true,
+  });
+  // Applying also saves a changed selection whose change event has not fired.
+  await page.locator("[data-benefit-target]").evaluate((select) => {
+    select.value = "mira|ankle";
+  });
+  await page.locator('[data-action="applyBlock"]').click();
+  await page.waitForFunction(() => journey.state.applied === 2);
+  assert.equal(
+    await page.evaluate(() => journey.state.saved.at(-1).benefitTarget),
+    "mira|ankle",
+  );
+  assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "Downtime browser gauntlet passed: editable project preset, setup, replacement choice, 240-hour roll, individual GM review, draft refresh, failed-save stop, save, apply, receipt; 3 responsive/accessibility sizes.",
+    "Downtime browser gauntlet passed: included crafting, benefit selector, patient selection and save-before-apply, project preset, setup, 240-hour roll, individual GM review, draft refresh, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
   );
 } catch (error) {
   const page = browser.contexts()[0]?.pages()[0];

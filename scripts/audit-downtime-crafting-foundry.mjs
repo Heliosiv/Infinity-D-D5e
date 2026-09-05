@@ -134,7 +134,9 @@ export async function runCraftingFoundryJourney({
   async function savePreset(kind, name, material, quantity) {
     await gm.locator('[data-action="setView"][data-view="activities"]').click();
     await gm
-      .locator(`[data-action="craftingPreset"][data-recipe="${kind}"]`)
+      .locator(
+        `[data-action="selectGuidedTemplate"][data-template-id="guided-${kind === "arrows" ? "craft-arrows" : "scribe-scroll"}"]`,
+      )
       .click();
     await gm.getByLabel("Activity name", { exact: true }).fill(name);
     if (kind === "arrows")

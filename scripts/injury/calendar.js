@@ -409,6 +409,22 @@ export async function removeCriticalInjuryNote(
   }
 }
 
+/** Exact read-back for resumable care; an already absent note is also complete. */
+export async function removeCriticalInjuryNoteVerified(entryId, context) {
+  const id = String(entryId ?? "").trim();
+  if (!id) return true;
+  await removeCriticalInjuryNote(id, context);
+  const api = resolveSimpleCalendarApi();
+  if (typeof api?.getNotes !== "function") return false;
+  try {
+    return !Array.from(await api.getNotes()).some(
+      (note) => extractDocumentId(note) === id,
+    );
+  } catch {
+    return false;
+  }
+}
+
 function toCalendarDate(api, timestamp) {
   if (typeof api?.timestampToDate === "function") {
     try {
