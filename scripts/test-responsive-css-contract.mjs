@@ -68,6 +68,31 @@ try {
       `${fixture} lets ${selector} scroll in the stacked layout`,
     );
   }
+  await finePage.setViewportSize({ width: 1440, height: 500 });
+  const factionWindow = finePage.locator(
+    '[data-harness-window="reputation-workspace"]',
+  );
+  // Font metrics vary across operating systems. Force extra header wrapping
+  // so a short frame must scroll instead of collapsing the editor to zero.
+  await factionWindow.locator(".rw-head__hint").evaluate((hint) => {
+    hint.style.fontSize = "24px";
+  });
+  for (const width of [380, 720, 1040]) {
+    await applyScenario(finePage, { width, density: "comfortable" });
+    for (const action of ["save", "newFaction"]) {
+      await factionWindow.locator(`[data-action="${action}"]`).click({
+        timeout: 5000,
+      });
+      assert.deepEqual(
+        await finePage.evaluate(() => {
+          const last = window.__uiClicks.at(-1);
+          return { action: last?.action, window: last?.window };
+        }),
+        { action, window: "reputation-workspace" },
+        `short ${width}px faction window reaches ${action} after header wrapping`,
+      );
+    }
+  }
   await fineContext.close();
 
   const coarseContext = await browser.newContext({

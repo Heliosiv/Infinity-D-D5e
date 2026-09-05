@@ -40,7 +40,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.14 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
+Version 0.3.15 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI release requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -55,7 +55,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.14 — Injury care and release fixes** - Adds a searchable injury board, saved injury history, clickable token badges, and calendar repair while retaining recorded injuries and the preview fixes. Corrects prerelease ordering and exact-tag verification.
+**v0.3.15 — Injury care and release fixes** - Adds a searchable injury board, saved injury history, clickable token badges, and calendar repair while retaining recorded injuries and the preview fixes. Corrects prerelease ordering and exact-tag verification. On short screens, Factions uses a full-window scroll path so wrapped headers cannot hide the editor or Save button.
 
 **v0.3.14-preview.10 — Existing injury reconciliation** - Adds a guarded read/preview/apply API for recording historical injuries in GM triage and Simple Calendar Reborn. Existing effects and mechanical penalties remain intact; records do not invent rolls or treatment receipts. Existing calendar dates are preserved. See [Critical Injuries](docs/CRITICAL_INJURIES.md).
 

@@ -687,6 +687,33 @@
   transition: none !important;
 }
 
+/* On short screens the header can consume the pane height, especially with
+   larger platform fonts. Let the whole workspace scroll in normal flow. */
+@media (max-height: 640px) {
+  .infinity-dnd5e.infinity-reputation-workspace .window-content {
+    overflow-y: auto;
+  }
+
+  .infinity-reputation-workspace .rw-shell {
+    flex: 0 0 auto;
+    height: auto;
+  }
+
+  .infinity-reputation-workspace .rw-body {
+    flex: none;
+  }
+
+  .infinity-reputation-workspace .rw-edit {
+    overflow: visible;
+    max-height: none;
+  }
+
+  .infinity-reputation-workspace .rw-section-nav,
+  .infinity-reputation-workspace .rw-form__foot {
+    position: static;
+  }
+}
+
 @container reputation-workspace (max-width: 720px) {
   .infinity-reputation-workspace .rw-body {
     grid-template-columns: minmax(0, 1fr);
