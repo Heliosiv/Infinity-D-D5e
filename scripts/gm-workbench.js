@@ -26,6 +26,15 @@ let activeApplication = null;
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+export function canContinueWorkbenchAction(app) {
+  if (!app || app._gmWorkbenchSwitching) return false;
+  if (app.rendered !== false) return true;
+  // ApplicationV2 reports rendered=false while a successful save refreshes it.
+  // Only that transient state may continue; closed or closing windows may not.
+  const rendering = app.constructor?.RENDER_STATES?.RENDERING;
+  return rendering !== undefined && app.state === rendering;
+}
+
 export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     actions: {
@@ -111,7 +120,7 @@ export class GmWorkbenchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       const ready = await this._beforeWorkbenchNavigate?.();
       if (ready === false) return null;
-      if (this._gmWorkbenchSwitching || this.rendered === false) return null;
+      if (!canContinueWorkbenchAction(this)) return null;
       return openGmWorkbench({
         route,
         ...(target?.dataset?.workbenchSubview !== undefined ? { subview } : {}),

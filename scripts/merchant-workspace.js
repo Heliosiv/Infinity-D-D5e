@@ -86,7 +86,11 @@ import {
   navigateToAppSection,
   openSingleton,
 } from "./infinity-app.js";
-import { GM_WORKBENCH_TEMPLATE_PATH, GmWorkbenchApp } from "./gm-workbench.js";
+import {
+  GM_WORKBENCH_TEMPLATE_PATH,
+  GmWorkbenchApp,
+  canContinueWorkbenchAction,
+} from "./gm-workbench.js";
 import { runAsFullGM } from "./permissions.js";
 import { isAuthoritativeGM } from "./socket-authority.js";
 import {
@@ -169,8 +173,7 @@ async function confirmMerchantWriteAuthority(app) {
 function isCurrentMerchantAction(app, merchantId) {
   if (
     app._selectedId === merchantId &&
-    app.rendered !== false &&
-    !app._gmWorkbenchSwitching &&
+    canContinueWorkbenchAction(app) &&
     findMerchant(merchantId)
   )
     return true;
@@ -330,6 +333,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
   async _beforeWorkbenchNavigate() {
     if (!this._selectedId || !this.rendered) return true;
+    // Browsing a follower window must not enter the campaign write path.
+    // Its form is disabled, so there are no editable fields to flush.
+    if (!isAuthoritativeGM() || !hasMerchantTabLeadership()) return true;
     await this._saveFromForm();
     return true;
   }
@@ -569,7 +575,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       merchantAuthorityReason: canManageMerchants
         ? ""
         : isAuthoritativeGM()
-          ? "This window is read-only because another tab for this GM account owns Merchant changes. Close the other tab or wait for leadership to transfer."
+          ? "This window is read-only because another tab for this GM account owns Merchant changes. You can browse and switch tools here; close the other tab to edit here."
           : "This window is read-only. Make Merchant changes from the active full GM window.",
       merchantAccessClosed: merchantAccess.closed,
       merchantAccessOpen: !merchantAccess.closed,
@@ -606,7 +612,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
               : !canManageMerchants
                 ? "Only the active full GM can host a live session."
                 : "",
-      saveStatus: this._saveStatus,
+      saveStatus: canManageMerchants
+        ? this._saveStatus
+        : "Read-only — browsing available",
     };
   }
 

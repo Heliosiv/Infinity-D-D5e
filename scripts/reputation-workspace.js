@@ -135,6 +135,10 @@ export class ReputationWorkspaceApp extends GmWorkbenchApp {
 
   async _beforeWorkbenchNavigate() {
     if (!this._selectedId || !this.rendered) return true;
+    const form = this.element?.querySelector?.('[data-form="faction-edit"]');
+    if (!form) return true;
+    if (JSON.stringify(readFormFields(form)) === this._savedFormData)
+      return true;
     await this._saveFromForm();
     return true;
   }
@@ -217,6 +221,8 @@ export class ReputationWorkspaceApp extends GmWorkbenchApp {
 
   _onRender(context, options) {
     super._onRender?.(context, options);
+    const form = this.element?.querySelector?.('[data-form="faction-edit"]');
+    this._savedFormData = form ? JSON.stringify(readFormFields(form)) : null;
 
     applyVisualPrefs(this.element, "rw-");
 
@@ -318,6 +324,7 @@ export class ReputationWorkspaceApp extends GmWorkbenchApp {
         this._setSaveStatus("Faction no longer available");
         return;
       }
+      this._savedFormData = JSON.stringify(data);
       this._setSaveStatus("Saved");
     } catch (error) {
       this._setSaveStatus("Save failed — retry");

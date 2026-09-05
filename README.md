@@ -19,7 +19,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.14-preview.3 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
+Version 0.3.14-preview.4 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -33,6 +33,16 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
 ## Status
+
+**v0.3.14-preview.4 — Read-only navigation fix** - A GM window that does
+not own editing control can browse merchants and switch Workbench tools without
+attempting a save. Its status explains that browsing is available instead of
+showing a save failure. Editable windows still stop navigation when a real
+save fails. Closing a duplicate GM tab transfers editing control to the remaining
+tab. Factions also skips saving an unchanged form when switching tools. Successful
+saves can refresh an open window without cancelling merchant selection or tool
+navigation. The gauntlet covers these refreshes, read-only navigation, unchanged
+factions, and failed editable drafts.
 
 **v0.3.14-preview.3 — Merchant and player recovery gauntlet** - Switching
 merchants saves pending edits first and stays on the current merchant if saving

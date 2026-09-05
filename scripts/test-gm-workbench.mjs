@@ -273,6 +273,42 @@ assert.equal(
   "route buttons retain the remembered subview when they do not request a new one",
 );
 
+const refreshing = openGmWorkbench({ route: "merchants" });
+refreshing.constructor = { RENDER_STATES: { RENDERING: 1 } };
+refreshing._beforeWorkbenchNavigate = async () => {
+  refreshing.rendered = false;
+  refreshing.state = 1;
+  return true;
+};
+await GmWorkbenchApp._onNavigate.call(refreshing, null, {
+  dataset: { workbenchRoute: "factions" },
+});
+assert.equal(
+  getActiveGmWorkbenchApplication().route,
+  "factions",
+  "a save-triggered Foundry render must not cancel navigation",
+);
+assert.equal(refreshing.closeCalls, 1);
+
+for (const state of [-3, -2, -1, 0, undefined]) {
+  const closing = openGmWorkbench({ route: "merchants" });
+  closing.constructor = { RENDER_STATES: { RENDERING: 1 } };
+  closing._beforeWorkbenchNavigate = async () => {
+    closing.rendered = false;
+    closing.state = state;
+    return true;
+  };
+  const count = opened.length;
+  await GmWorkbenchApp._onNavigate.call(closing, null, {
+    dataset: { workbenchRoute: "factions" },
+  });
+  assert.equal(
+    opened.length,
+    count,
+    "inactive windows must not reopen a route",
+  );
+}
+
 globalThis.game.user = { id: "assistant", isGM: true, role: 3 };
 assert.equal(openGmWorkbench({ route: "injuries" }), null);
 assert.match(warnings.at(-1), /full Game Masters only/);

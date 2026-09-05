@@ -295,6 +295,42 @@ await check("merchant selection saves once before switching", async () => {
   assert.equal(app._selectedId, "b");
   assert.equal(app.renders, 1);
 });
+await check(
+  "merchant selection survives a save-triggered refresh",
+  async () => {
+    const app = fixture();
+    app.constructor = { RENDER_STATES: { RENDERING: 1 } };
+    app._saveFromForm = async () => {
+      app.rendered = false;
+      app.state = 1;
+    };
+    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+      app,
+      null,
+      { dataset: { merchantId: "b" } },
+    );
+    assert.equal(app._selectedId, "b");
+    assert.equal(app.renders, 1);
+  },
+);
+await check(
+  "closed merchant window cannot resume a pending selection",
+  async () => {
+    const app = fixture();
+    app.constructor = { RENDER_STATES: { RENDERING: 1 } };
+    app._saveFromForm = async () => {
+      app.rendered = false;
+      app.state = -1;
+    };
+    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+      app,
+      null,
+      { dataset: { merchantId: "b" } },
+    );
+    assert.equal(app._selectedId, "a");
+    assert.equal(app.renders, 0);
+  },
+);
 await check("read-only merchant browsing does not save", async () => {
   const app = fixture();
   const savedUser = game.user;
@@ -310,6 +346,37 @@ await check("read-only merchant browsing does not save", async () => {
   } finally {
     game.user = savedUser;
   }
+});
+await check("read-only Workbench navigation does not save", async () => {
+  const app = fixture();
+  const savedUser = game.user;
+  game.user = { id: "secondary", role: 4, isGM: true, active: true };
+  try {
+    assert.equal(await app._beforeWorkbenchNavigate(), true);
+    assert.equal(writes, 0);
+    assert.deepEqual(notifications, []);
+  } finally {
+    game.user = savedUser;
+  }
+});
+await check("same-GM follower can leave Merchants without saving", async () => {
+  const app = fixture();
+  globalThis.window = { document: {} };
+  globalThis.JournalEntry = { create() {} };
+  try {
+    assert.equal(await app._beforeWorkbenchNavigate(), true);
+    assert.equal(writes, 0);
+    assert.deepEqual(notifications, []);
+  } finally {
+    delete globalThis.window;
+    delete globalThis.JournalEntry;
+  }
+});
+await check("writable Workbench preserves a failed draft", async () => {
+  const app = fixture();
+  await assert.rejects(app._beforeWorkbenchNavigate(), /Interrupted form save/);
+  assert.equal(app._selectedId, "a");
+  assert.equal(app.renders, 0);
 });
 await check("item lookup selection change", async () => {
   const app = fixture();

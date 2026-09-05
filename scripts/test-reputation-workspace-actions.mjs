@@ -102,6 +102,32 @@ try {
     "the faction image field persists through the normal save path",
   );
 
+  const navigationApp = {
+    ...saveApp,
+    rendered: true,
+    _savedFormData: JSON.stringify(Object.fromEntries(imageForm.entries())),
+    async _saveFromForm() {
+      throw new Error("Editing belongs to another tab");
+    },
+  };
+  const writesBeforeNavigation = writeCount;
+  assert.equal(
+    await ReputationWorkspaceApp.prototype._beforeWorkbenchNavigate.call(
+      navigationApp,
+    ),
+    true,
+    "an unchanged faction must not require editing control to switch tools",
+  );
+  assert.equal(writeCount, writesBeforeNavigation);
+  navigationApp._savedFormData = JSON.stringify({ name: "Old faction name" });
+  await assert.rejects(
+    ReputationWorkspaceApp.prototype._beforeWorkbenchNavigate.call(
+      navigationApp,
+    ),
+    /Editing belongs to another tab/,
+    "an edited faction must retain its draft when saving is blocked",
+  );
+
   function actionFixture(rawValue) {
     const attributes = new Map();
     let focused = false;

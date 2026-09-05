@@ -6,6 +6,7 @@ import path from "node:path";
 import Handlebars from "handlebars";
 import { chromium } from "playwright";
 import { auditPlayerRequests } from "./workbench-player-journey.mjs";
+import { auditFactionNavigation } from "./workbench-faction-journey.mjs";
 
 const root = path.resolve(".");
 const outputRoot = path.resolve("output/playwright");
@@ -21,6 +22,10 @@ const renderPlayers = Object.fromEntries(
     `/render/${surface}`,
     Handlebars.compile(readFileSync(`templates/${surface}.hbs`, "utf8")),
   ]),
+);
+renderPlayers["/render/factions"] = Handlebars.compile(
+  readFileSync("templates/gm-workbench-nav.hbs", "utf8") +
+    readFileSync("templates/reputation-workspace.hbs", "utf8"),
 );
 const server = createServer(async (request, response) => {
   try {
@@ -392,11 +397,44 @@ try {
       await page.evaluate(() => journey.state.actionError ?? ""),
       "",
     );
+    // A read-only GM can open Merchants, browse, and leave without a write.
+    await page.evaluate(async () => {
+      game.user = { id: "secondary-gm", isGM: true, role: 4, active: true };
+      journey.state.failSave = true;
+      journey.state.writes = 0;
+      journey.state.routeOpens = [];
+      journey.app.rendered = true;
+      journey.app._gmWorkbenchSwitching = false;
+      journey.app.element.hidden = false;
+      journey.app._saveStatus = "Save failed — retry";
+      document.getElementById("notices").textContent = "";
+      await journey.app.render();
+    });
+    assert.equal(await page.locator('input[name="name"]').isDisabled(), true);
+    assert.match(
+      await page.locator("[data-save-status]").textContent(),
+      /Read-only.*browsing available/,
+    );
+    await page
+      .locator('[data-action="selectMerchant"][data-merchant-id="b"]')
+      .click();
+    await page.waitForFunction(
+      () => journey.app._selectedId === "b" && !journey.app._merchantSelecting,
+    );
+    await page.evaluate(() => journey.app.rendering);
+    await page.locator('[data-workbench-route="injuries"]').click();
+    await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
+    assert.deepEqual(await page.evaluate(() => journey.state.routeOpens), [
+      "injuries",
+    ]);
+    assert.equal(await page.evaluate(() => journey.state.writes), 0);
+    assert.equal(await page.locator("#notices").textContent(), "");
+    await auditFactionNavigation(page);
     await auditPlayerRequests(page, width, out);
     assert.deepEqual(errors, []);
     await page.close();
     console.log(
-      `Workbench functional journey passed at ${width}px: failed save, draft recovery, filter retry, stale confirmation, failed route, repeated navigation.`,
+      `Workbench functional journey passed at ${width}px: failed save, draft recovery, filter retry, stale confirmation, failed route, repeated navigation, read-only merchant navigation, unchanged factions, faction draft retry.`,
     );
   }
   console.log(`Workbench journey evidence: ${out}`);
