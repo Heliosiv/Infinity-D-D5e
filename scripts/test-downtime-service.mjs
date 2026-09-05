@@ -773,7 +773,10 @@ try {
   // Guided benefit review uses the real service, ledger, and player receipt.
   {
     const injuryEffects = await import("./injury/effects.js");
-    const benefitActor = makeActor({ id: "benefit-actor" });
+    const benefitActor = makeActor({
+      id: "benefit-actor",
+      currency: { pp: 0, gp: 100, ep: 0, sp: 0, cp: 0 },
+    });
     benefitActor.flags = {};
     benefitActor.effects = { contents: [] };
     const currencyUpdate = benefitActor.update.bind(benefitActor);
@@ -837,7 +840,7 @@ try {
         outcomeIndex: 2,
       });
     };
-    let benefitBlock = await reviewBenefit("guided-train-spar", "ath");
+    let benefitBlock = await reviewBenefit("guided-training", "ath");
     assert.equal(
       await service.inspectDowntimeOperation(benefitBlock.plan.operations[0]),
       "unapplied",
@@ -899,7 +902,7 @@ try {
       },
     };
     benefitActor.effects.contents.push(wound);
-    benefitBlock = await reviewBenefit("guided-tend-sick", "med");
+    benefitBlock = await reviewBenefit("guided-care", "med");
     await assert.rejects(
       service.applyActiveDowntimeBlock(benefitBlock.id),
       /Select a patient/,
@@ -941,7 +944,7 @@ try {
       locationName: "Camp",
       hours: 8,
       actorIds: [benefitActor.id, actor.id],
-      templateIds: ["guided-tend-sick"],
+      templateIds: ["guided-care"],
     });
     for (const participant of [benefitActor, actor])
       await service.submitQueueAuthoritatively({
@@ -952,7 +955,7 @@ try {
         queue: [
           {
             id: "shared-care",
-            activityId: "guided-tend-sick",
+            activityId: "guided-care",
             hours: 8,
             skill: "med",
             guidedRoll: { total: 20, formula: "1d20 + 5" },
@@ -1157,6 +1160,12 @@ try {
     );
   for (const activity of ADDITIONAL_GUIDED_ACTIVITIES) {
     for (const [outcomeIndex, hours] of [1, 8, 240].entries()) {
+      // Third-result benefits have dedicated Actor/effect/patient journeys above.
+      if (
+        outcomeIndex === 2 &&
+        ["guided-training", "guided-care"].includes(activity.id)
+      )
+        continue;
       const newBlock = await service.openDowntimeBlock({
         mode: "guided",
         locationName: "Activity testing",

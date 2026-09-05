@@ -63,9 +63,13 @@ settings.set("merchants", [
 ]);
 
 const directory = MerchantWorkspaceApp.open();
-const first = MerchantWorkspaceApp._onSelectMerchant.call(directory, null, {
-  dataset: { merchantId: "a" },
-});
+const first = await MerchantWorkspaceApp._onSelectMerchant.call(
+  directory,
+  null,
+  {
+    dataset: { merchantId: "a" },
+  },
+);
 const second = MerchantWorkspaceApp.openMerchant("b");
 assert.deepEqual(
   Object.keys(first._configureRenderParts({})),

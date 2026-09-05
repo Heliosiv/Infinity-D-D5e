@@ -148,13 +148,25 @@ function injury(a, extra = {}) {
 
 // Existing libraries gain the four activities without replacing campaign prose or recipes.
 const defaults = defaultGuidedDowntimeTemplates();
-assert.equal(defaults.length, 7);
+assert.equal(defaults.length, 13);
 assert.equal(
   defaults.find((row) => row.work?.output === "arrows").work.batchHours,
   8,
 );
-const training = defaults.find((row) => row.id === "guided-train-spar");
+const training = defaults.find((row) => row.id === "guided-training");
 assert.equal(training.outcomes[2].benefit, "sparring");
+const previousTraining = clone(training);
+previousTraining.description =
+  "Practice footwork, endurance, or technique with a willing partner or instructor. Instruction costs 1 gp per workday. The GM records progress; this does not automatically grant proficiency or combat bonuses.";
+assert.equal(
+  includeCampaignDowntimeTemplates([previousTraining])[0].description,
+  training.description,
+);
+previousTraining.description = "A custom campaign training rule.";
+assert.equal(
+  includeCampaignDowntimeTemplates([previousTraining])[0].description,
+  previousTraining.description,
+);
 assert.equal(
   Object.hasOwn(projectGuidedDowntimeTemplate(training), "outcomes"),
   false,

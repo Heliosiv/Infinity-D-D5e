@@ -1124,7 +1124,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
   static async _onSelectMerchant(_event, target) {
     const id = target?.dataset?.merchantId;
-    if (!id || this._gmWorkbenchSwitching) return;
+    if (!id || !canContinueWorkbenchAction(this)) return;
     playModuleSound(SOUND_EVENTS.ITEM_OPEN);
     return MerchantWorkspaceApp.openMerchant(id);
   }

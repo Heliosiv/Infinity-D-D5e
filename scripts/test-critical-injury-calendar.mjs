@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   addInjuryCalendarDays,
   getRemainingInjuryCalendarDays,
+  isSimpleCalendarAvailable,
   removeCriticalInjuryNote,
   scheduleCriticalInjuryNote,
 } from "./injury/calendar.js";
@@ -10,8 +11,13 @@ import {
 const calls = [];
 const notes = [];
 let throwAfterAdd = false;
+const rebornCalendarModule = { active: true, api: null };
+const legacyCalendarModule = { active: false, api: null };
 globalThis.game = {
-  modules: new Map([["foundryvtt-simple-calendar", { active: true }]]),
+  modules: new Map([
+    ["foundryvtt-simple-calendar-reborn", rebornCalendarModule],
+    ["foundryvtt-simple-calendar", legacyCalendarModule],
+  ]),
   time: { worldTime: 1000 },
 };
 globalThis.SimpleCalendar = {
@@ -54,7 +60,14 @@ globalThis.SimpleCalendar = {
     },
   },
 };
+rebornCalendarModule.api = globalThis.SimpleCalendar.api;
+legacyCalendarModule.api = globalThis.SimpleCalendar.api;
 
+assert.equal(
+  isSimpleCalendarAvailable(),
+  true,
+  "the active Simple Calendar Reborn package is available",
+);
 assert.equal(addInjuryCalendarDays(1000, 4), 1400);
 assert.equal(getRemainingInjuryCalendarDays(1350, 1000), 4);
 assert.equal(getRemainingInjuryCalendarDays(1000, 1000), 0);
@@ -340,7 +353,28 @@ assert.ok(
 );
 assert.deepEqual(calls[oldNoteRemovalIndex], ["remove", "note-old"]);
 
+const calendarApi = globalThis.SimpleCalendar.api;
 delete globalThis.SimpleCalendar;
+assert.equal(
+  isSimpleCalendarAvailable(),
+  true,
+  "Reborn's module API works when no compatibility global is exposed",
+);
+assert.equal(addInjuryCalendarDays(1000, 1), 1100);
+rebornCalendarModule.active = false;
+legacyCalendarModule.active = true;
+assert.equal(
+  isSimpleCalendarAvailable(),
+  true,
+  "the active legacy Simple Calendar package remains supported",
+);
+assert.equal(calendarApi.timestamp(), 1000);
+legacyCalendarModule.active = false;
+assert.equal(
+  isSimpleCalendarAvailable(),
+  false,
+  "inactive calendar packages do not expose scheduling",
+);
 delete globalThis.game;
 
 process.stdout.write("critical injury calendar validation passed\n");

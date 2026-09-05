@@ -32,7 +32,7 @@ export const ADDITIONAL_GUIDED_ACTIVITIES = Object.freeze([
     id: "guided-training",
     name: "Train & Spar",
     description:
-      "Practice footwork, endurance, or technique with a willing partner or instructor. Instruction costs 1 gp per workday. The GM records progress; this does not automatically grant proficiency or combat bonuses.",
+      "Practice with a partner or instructor for 1 gp per workday. Result 3 grants +1 to your next attack within 12 hours.",
     image: "icons/svg/combat.svg",
     skills: ["ath", "acr", "ins"],
     work: { output: "none", gpPerDay: 1 },
@@ -118,7 +118,7 @@ export const ADDITIONAL_GUIDED_ACTIVITIES = Object.freeze([
     id: "guided-care",
     name: "Tend the Sick",
     description:
-      "Assist a healer, prepare clean dressings, and care for people who need help. Supplies cost 0.5 gp per workday. The GM decides any recovery; no HP, conditions, or injuries change automatically.",
+      "Care for a patient for 0.5 gp per workday. After eight hours, result 3 removes one recovery day from a selected timed injury.",
     image: "icons/svg/heal.svg",
     skills: ["med", "nat", "ins"],
     work: { output: "none", gpPerDay: 0.5 },

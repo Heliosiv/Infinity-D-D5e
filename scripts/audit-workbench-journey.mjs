@@ -100,7 +100,44 @@ try {
         utils: { deepClone: (value) => structuredClone(value) },
         applications: {
           api: {
-            ApplicationV2: class {},
+            ApplicationV2: class {
+              constructor(options) {
+                this.options = options;
+                this.element = document.createElement("section");
+                this.element.id = options.id;
+                this.element.className =
+                  "infinity-dnd5e infinity-merchant-workspace";
+                this.element.style.cssText =
+                  "height:760px;max-width:820px;margin:16px auto";
+                this.element.innerHTML =
+                  '<div class="application-content"></div>';
+                document.body.append(this.element);
+                this.element.addEventListener("click", async (event) => {
+                  const target = event.target.closest("[data-action]");
+                  if (!target || target.disabled) return;
+                  try {
+                    await this.constructor.DEFAULT_OPTIONS.actions[
+                      target.dataset.action
+                    ].call(this, event, target);
+                    state.actions.push(target.dataset.action);
+                  } catch (error) {
+                    state.actionError = error.message;
+                  }
+                });
+              }
+              render() {
+                this.rendered = true;
+                return globalThis.renderMerchantApp(this);
+              }
+              bringToFront() {
+                this.element.scrollIntoView();
+              }
+              async close() {
+                this.rendered = false;
+                this.element.hidden = true;
+                this._onClose({});
+              }
+            },
             HandlebarsApplicationMixin: (Base) => class extends Base {},
             DialogV2: {
               confirm: async () => {
@@ -174,6 +211,7 @@ try {
       Object.assign(app, {
         element: document.getElementById("app"),
         _selectedId: "a",
+        _merchantSearch: "",
         rendered: true,
         _reviewIdentities: new Map(),
         _itemCache: new Map(
@@ -198,7 +236,7 @@ try {
         ...GmWorkbenchApp.DEFAULT_OPTIONS.actions,
         ...MerchantWorkspaceApp.DEFAULT_OPTIONS.actions,
       };
-      app.render = () => {
+      globalThis.renderMerchantApp = (app) => {
         app.rendering = (app.rendering ?? Promise.resolve()).then(async () => {
           const context = await app._prepareContext();
           const response = await fetch("/render", {
@@ -211,6 +249,7 @@ try {
         });
         return app.rendering;
       };
+      app.render = () => renderMerchantApp(app);
       app.element.addEventListener("click", async (event) => {
         const button = event.target.closest("[data-action]");
         if (!button || button.disabled) return;
@@ -251,12 +290,23 @@ try {
         settings,
         findMerchant,
         getActiveGmWorkbenchApplication,
+        MerchantWorkspaceApp,
       };
       await app.render();
     });
+    const directory = page.locator("#app");
+    assert.equal(await directory.locator('input[name="name"]').count(), 0);
+    await directory
+      .locator('[data-action="selectMerchant"][data-merchant-id="a"]')
+      .click();
+    await page.waitForSelector('#infinity-merchant-a input[name="name"]');
+    const editor = page.locator("#infinity-merchant-a");
+    const selectTab = async (key) => {
+      await editor.locator(`[data-merchant-tab="${key}"]`).click();
+    };
     const clickAction = async (action) => {
       const count = await page.evaluate(() => journey.state.actions.length);
-      await page.locator(`[data-action="${action}"]`).first().click();
+      await editor.locator(`[data-action="${action}"]`).first().click();
       await page.waitForFunction(
         (before) =>
           journey.state.actions.length > before || journey.state.actionError,
@@ -266,17 +316,18 @@ try {
         await page.evaluate(() => journey.state.actionError ?? ""),
         "",
       );
-      await page.evaluate(() => journey.app.rendering);
+      await page.evaluate(
+        () => journey.MerchantWorkspaceApp._editors.get("a").rendering,
+      );
     };
-
-    // Failed writes must leave the user's form and stored filter intact.
     await page.evaluate(() => {
       journey.state.failSave = true;
     });
-    await page.locator('input[name="name"]').fill("Draft merchant name");
+    await editor.locator('input[name="name"]').fill("Draft merchant name");
+    await selectTab("buys");
     await clickAction("copyStockToBuyFilter");
     assert.equal(
-      await page.locator('input[name="name"]').inputValue(),
+      await editor.locator('input[name="name"]').inputValue(),
       "Draft merchant name",
     );
     assert.equal(await page.evaluate(() => journey.state.writes), 0);
@@ -285,34 +336,20 @@ try {
       ["loot.armor.mundane"],
     );
     assert.match(await page.locator("#notices").textContent(), /Save now/);
-    const selectionsBefore = await page.evaluate(
-      () =>
-        journey.state.actions.filter((action) => action === "selectMerchant")
-          .length,
-    );
-    await page
+    await directory
       .locator('[data-action="selectMerchant"][data-merchant-id="b"]')
       .click();
-    await page.waitForFunction(
-      (before) =>
-        journey.state.actions.filter((action) => action === "selectMerchant")
-          .length > before,
-      selectionsBefore,
-    );
-    assert.equal(await page.evaluate(() => journey.app._selectedId), "a");
+    await page.waitForSelector('#infinity-merchant-b input[name="name"]');
     assert.equal(
-      await page.locator('input[name="name"]').inputValue(),
+      await editor.locator('input[name="name"]').inputValue(),
       "Draft merchant name",
     );
-    await page.locator('[data-workbench-route="downtime"]').click();
-    await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
-    assert.equal(await page.evaluate(() => journey.app.rendered), true);
     assert.equal(
-      await page.locator('input[name="name"]').inputValue(),
-      "Draft merchant name",
+      await page
+        .locator('#infinity-merchant-b input[name="name"]')
+        .inputValue(),
+      "Merchant b",
     );
-
-    // Retry saves the actual edited fields, then copies the chosen stock filter.
     await page.evaluate(() => {
       journey.state.failSave = false;
     });
@@ -326,26 +363,14 @@ try {
       await page.evaluate(() => journey.findMerchant("a").buyFilter.lootTypes),
       ["loot.weapon.mundane"],
     );
-    for (const id of ["b", "a"]) {
-      await page
-        .locator(`[data-action="selectMerchant"][data-merchant-id="${id}"]`)
-        .click();
-      await page.waitForFunction(
-        (id) =>
-          journey.app._selectedId === id && !journey.app._merchantSelecting,
-        id,
-      );
-      await page.evaluate(() => journey.app.rendering);
-    }
-
-    // A confirmation can outlive its selected merchant; never retarget it.
     const beforePrompt = await page.evaluate(() =>
       JSON.stringify(journey.settings.get("merchants")),
     );
-    await page.locator('[data-action="clearInventory"]').click();
+    await selectTab("stock");
+    await editor.locator('[data-action="clearInventory"]').click();
     await page.waitForFunction(() => journey.state.confirmPending);
-    await page.evaluate(() => {
-      journey.app._selectedId = "b";
+    await page.evaluate(async () => {
+      await journey.MerchantWorkspaceApp._editors.get("a").close();
       journey.state.confirm(true);
     });
     await page.waitForFunction(() =>
@@ -357,47 +382,26 @@ try {
       ),
       beforePrompt,
     );
-    await page.evaluate(async () => {
-      journey.app._selectedId = "a";
-      await journey.app.render();
-    });
-
-    // A failed route leaves the current workspace usable, including its draft.
-    await page.locator('[data-workbench-route="injuries"]').click();
+    await directory.locator('[data-workbench-route="injuries"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
-    assert.equal(await page.evaluate(() => journey.app.rendered), true);
+    assert.equal(await directory.isVisible(), true);
     assert.match(await page.locator("#notices").textContent(), /did not open/);
-    await page
-      .locator("#app")
-      .screenshot({ path: path.join(out, `merchant-recovered-${width}.png`) });
-
-    // Two route clicks during one delayed save open only the first destination.
+    await directory.screenshot({
+      path: path.join(out, `merchant-directory-${width}.png`),
+    });
     await page.evaluate(() => {
       journey.state.failRoute = false;
-      journey.state.holdSave = true;
     });
-    await page.locator('[data-workbench-route="downtime"]').click();
-    await page.waitForFunction(() => journey.state.savePending);
-    await page.locator('[data-workbench-route="injuries"]').click();
-    await page.evaluate(() => journey.state.releaseSave());
+    await directory.locator('[data-workbench-route="downtime"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
     assert.deepEqual(await page.evaluate(() => journey.state.routeOpens), [
       "downtime",
     ]);
     assert.equal(
-      await page.evaluate(
-        () =>
-          journey.getActiveGmWorkbenchApplication().captureWorkbenchTarget()
-            .route,
-      ),
-      "downtime",
+      await page.locator("#infinity-merchant-b").isVisible(),
+      true,
+      "focused editor survives Workbench navigation",
     );
-    assert.deepEqual(errors, []);
-    assert.equal(
-      await page.evaluate(() => journey.state.actionError ?? ""),
-      "",
-    );
-    // A read-only GM can open Merchants, browse, and leave without a write.
     await page.evaluate(async () => {
       game.user = { id: "secondary-gm", isGM: true, role: 4, active: true };
       journey.state.failSave = true;
@@ -406,35 +410,37 @@ try {
       journey.app.rendered = true;
       journey.app._gmWorkbenchSwitching = false;
       journey.app.element.hidden = false;
-      journey.app._saveStatus = "Save failed — retry";
       document.getElementById("notices").textContent = "";
       await journey.app.render();
+      await journey.MerchantWorkspaceApp._editors.get("b").render();
     });
-    assert.equal(await page.locator('input[name="name"]').isDisabled(), true);
-    assert.match(
-      await page.locator("[data-save-status]").textContent(),
-      /Read-only.*browsing available/,
+    assert.equal(
+      await page
+        .locator('#infinity-merchant-b input[name="name"]')
+        .isDisabled(),
+      true,
     );
-    await page
-      .locator('[data-action="selectMerchant"][data-merchant-id="b"]')
-      .click();
-    await page.waitForFunction(
-      () => journey.app._selectedId === "b" && !journey.app._merchantSelecting,
-    );
-    await page.evaluate(() => journey.app.rendering);
-    await page.locator('[data-workbench-route="injuries"]').click();
+    await directory.locator('[data-workbench-route="injuries"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
     assert.deepEqual(await page.evaluate(() => journey.state.routeOpens), [
       "injuries",
     ]);
     assert.equal(await page.evaluate(() => journey.state.writes), 0);
-    assert.equal(await page.locator("#notices").textContent(), "");
+    assert.deepEqual(errors, []);
+    assert.equal(
+      await page.evaluate(() => journey.state.actionError ?? ""),
+      "",
+    );
+    await page.evaluate(async () => {
+      for (const editor of journey.MerchantWorkspaceApp._editors.values())
+        await editor.close();
+    });
     await auditFactionNavigation(page);
     await auditPlayerRequests(page, width, out);
     assert.deepEqual(errors, []);
     await page.close();
     console.log(
-      `Workbench functional journey passed at ${width}px: failed save, draft recovery, filter retry, stale confirmation, failed route, repeated navigation, read-only merchant navigation, unchanged factions, faction draft retry.`,
+      `Workbench functional journey passed at ${width}px: independent editors, failed save, draft recovery, filter retry, closed confirmation, failed route, persistent editor, read-only navigation, unchanged factions, faction draft retry.`,
     );
   }
   console.log(`Workbench journey evidence: ${out}`);

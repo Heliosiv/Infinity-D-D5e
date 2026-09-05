@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**In development - focused merchant windows:** Merchants opens a searchable
+**Focused merchant windows:** Merchants opens a searchable
 directory. Click a merchant to open its own window with ten tabs: Profile,
 Prices, Bargaining, Charm, Inventory, Generate, Buys, Access, Sessions, and Manage.
 Only the selected tab is visible. Edits save automatically; Save now retries a
@@ -16,7 +16,7 @@ Compact navigation, readable supply cards, and continuous shop scrolling improve
 smaller windows. All art ships with the module; see
 [UI artwork and provenance](assets/ui/PROVENANCE.md).
 
-**In development — campaign downtime benefits:** Train & Spar result 3 grants
+**Campaign downtime benefits:** Train & Spar result 3 grants
 +1 to the first attack within 12 in-game hours through DAE, Midi QOL, and Times
 Up. Tend the Sick result 3 after eight hours can shorten one selected timed
 injury by a calendar day. Arrow crafting and scroll scribing are included in
@@ -32,7 +32,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.14-preview.6 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
+Version 0.3.14-preview.7 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI preview requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
@@ -47,7 +47,7 @@ See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keybo
 
 ## Status
 
-**v0.3.14-preview.6 — Repeated navigation and budget validation** - Clicking
+**v0.3.14-preview.7 — Repeated navigation and budget validation** - Clicking
 the current Workbench tool during a save refresh keeps the window open and
 allows the next tool switch. Downtime setup rejects fractional or out-of-range
 hour budgets rather than rounding them. The installed-world gauntlet covers

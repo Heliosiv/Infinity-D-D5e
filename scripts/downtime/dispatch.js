@@ -125,9 +125,11 @@ const DEFAULT_TEMPLATES = Object.freeze([
 ]);
 
 export function defaultGuidedDowntimeTemplates() {
-  return includeCampaignDowntimeTemplates([...DEFAULT_TEMPLATES, ...ADDITIONAL_GUIDED_ACTIVITIES].map(
-    (template) => normalizeGuidedDowntimeTemplate(template),
-  ));
+  return includeCampaignDowntimeTemplates(
+    [...DEFAULT_TEMPLATES, ...ADDITIONAL_GUIDED_ACTIVITIES].map((template) =>
+      normalizeGuidedDowntimeTemplate(template),
+    ),
+  );
 }
 
 /** Extend the campaign library only; assigned block snapshots stay unchanged. */
@@ -220,6 +222,17 @@ export function includeCampaignDowntimeTemplates(templates) {
         (builtin.work && entry.work?.output === builtin.work.output),
     );
     if (existing) {
+      const previousDescriptions = {
+        "guided-training":
+          "Practice footwork, endurance, or technique with a willing partner or instructor. Instruction costs 1 gp per workday. The GM records progress; this does not automatically grant proficiency or combat bonuses.",
+        "guided-care":
+          "Assist a healer, prepare clean dressings, and care for people who need help. Supplies cost 0.5 gp per workday. The GM decides any recovery; no HP, conditions, or injuries change automatically.",
+      };
+      if (existing.description === previousDescriptions[existing.id]) {
+        existing.description = ADDITIONAL_GUIDED_ACTIVITIES.find(
+          (entry) => entry.id === existing.id,
+        ).description;
+      }
       // Only supply the requested third-result benefit when not configured yet.
       if (
         builtin.outcomes[2].benefit &&

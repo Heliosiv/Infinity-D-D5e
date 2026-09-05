@@ -1,19 +1,21 @@
 /** Simple Calendar adapter for Critical Injury recovery notes. */
 
 const MODULE_ID = "infinity-dnd5e";
-const SIMPLE_CALENDAR_ID = "foundryvtt-simple-calendar";
+const SIMPLE_CALENDAR_IDS = Object.freeze([
+  "foundryvtt-simple-calendar-reborn",
+  "foundryvtt-simple-calendar",
+]);
 const FALLBACK_SECONDS_PER_DAY = 86_400;
 const INJURY_NOTE_MARKER_PREFIX = `${MODULE_ID}:critical-injury:v1`;
 const TREATMENT_NOTE_MARKER_PREFIX = `${MODULE_ID}:critical-injury-treatment:v1`;
 const MAX_TREATMENT_NOTE_RECONCILIATION_PASSES = 3;
 
 export function isSimpleCalendarAvailable() {
-  const module = globalThis.game?.modules?.get?.(SIMPLE_CALENDAR_ID);
-  return module?.active === true && Boolean(globalThis.SimpleCalendar?.api);
+  return Boolean(resolveSimpleCalendarApi());
 }
 
 export function getCurrentInjuryTimestamp() {
-  const api = globalThis.SimpleCalendar?.api;
+  const api = resolveSimpleCalendarApi();
   if (typeof api?.timestamp === "function") {
     try {
       const timestamp = Number(api.timestamp());
@@ -29,7 +31,7 @@ export function getCurrentInjuryTimestamp() {
 export function addInjuryCalendarDays(timestamp, days) {
   const start = Number(timestamp);
   const amount = Math.max(0, Math.ceil(Number(days) || 0));
-  const api = globalThis.SimpleCalendar?.api;
+  const api = resolveSimpleCalendarApi();
   if (typeof api?.timestampPlusInterval === "function") {
     try {
       const result = Number(api.timestampPlusInterval(start, { day: amount }));
@@ -57,7 +59,7 @@ export function getRemainingInjuryCalendarDays(
 
 export function formatInjuryTimestamp(timestamp) {
   const value = Number(timestamp);
-  const api = globalThis.SimpleCalendar?.api;
+  const api = resolveSimpleCalendarApi();
   if (typeof api?.formatTimestamp === "function") {
     try {
       const formatted = api.formatTimestamp(value);
@@ -79,7 +81,7 @@ export async function scheduleCriticalInjuryNote({
   if (!isSimpleCalendarAvailable()) {
     return calendarNoteResult({ reason: "calendar-inactive" });
   }
-  const api = globalThis.SimpleCalendar?.api;
+  const api = resolveSimpleCalendarApi();
   if (typeof api?.addNote !== "function") {
     return calendarNoteResult({ reason: "add-note-unavailable" });
   }
@@ -166,7 +168,7 @@ export async function scheduleCriticalInjuryNote({
   ].join("");
 
   try {
-    const repeatNever = globalThis.SimpleCalendar?.api?.NoteRepeat?.Never;
+    const repeatNever = api?.NoteRepeat?.Never;
     const note = await api.addNote(
       title,
       content,
@@ -388,7 +390,7 @@ export async function removeCriticalInjuryNote(
 ) {
   const id = String(entryId ?? "").trim();
   if (!id || !isSimpleCalendarAvailable()) return false;
-  const api = globalThis.SimpleCalendar?.api;
+  const api = resolveSimpleCalendarApi();
   const marker = buildCriticalInjuryNoteMarker(actor, injury);
   if (
     !marker ||
@@ -539,4 +541,13 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function resolveSimpleCalendarApi(gameRef = globalThis.game) {
+  for (const moduleId of SIMPLE_CALENDAR_IDS) {
+    const calendarModule = gameRef?.modules?.get?.(moduleId);
+    if (calendarModule?.active !== true) continue;
+    return globalThis.SimpleCalendar?.api ?? calendarModule.api ?? null;
+  }
+  return null;
 }

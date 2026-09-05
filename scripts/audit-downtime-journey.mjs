@@ -402,7 +402,7 @@ try {
   assert.equal(await page.locator('[data-action="craftingPreset"]').count(), 0);
   await page
     .locator(
-      '[data-action="selectGuidedTemplate"][data-template-id="guided-train-spar"]',
+      '[data-action="selectGuidedTemplate"][data-template-id="guided-training"]',
     )
     .click();
   await page.evaluate(() => journey.app.rendering);

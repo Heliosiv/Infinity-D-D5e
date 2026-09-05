@@ -256,97 +256,62 @@ for (const action of ["clearInventory", "restock"]) {
     assert.equal(writes, 1);
   });
 }
-await check("merchant selection preserves a failed draft", async () => {
+const originalOpenMerchant = MerchantWorkspaceApp.openMerchant;
+let openedMerchant = null;
+MerchantWorkspaceApp.openMerchant = (id) => {
+  openedMerchant = id;
+  return { merchantId: id };
+};
+for (const readOnly of [false, true]) {
+  await check(
+    `merchant browsing opens a separate editor (${readOnly ? "read-only" : "primary"})`,
+    async () => {
+      const app = fixture();
+      const savedUser = game.user;
+      if (readOnly)
+        game.user = { id: "secondary", role: 4, isGM: true, active: true };
+      let saves = 0;
+      app._saveFromForm = async () => {
+        saves++;
+        throw new Error("unsaved draft");
+      };
+      try {
+        openedMerchant = null;
+        const editor =
+          await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
+            app,
+            null,
+            { dataset: { merchantId: "b" } },
+          );
+        assert.equal(openedMerchant, "b");
+        assert.equal(editor.merchantId, "b");
+        assert.equal(
+          app._selectedId,
+          "a",
+          "existing editor and its draft stay on their own merchant",
+        );
+        assert.equal(app.renders, 0);
+        assert.equal(saves, 0);
+        assert.equal(writes, 0);
+      } finally {
+        game.user = savedUser;
+      }
+    },
+  );
+}
+await check("closed directory cannot open an editor", async () => {
   const app = fixture();
+  app.rendered = false;
+  app.state = -1;
+  openedMerchant = null;
   await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
     app,
     null,
     { dataset: { merchantId: "b" } },
   );
-  assert.equal(
-    app._selectedId,
-    "a",
-    "failed edits must not disappear when choosing another merchant",
-  );
-  assert.equal(app.renders, 0);
+  assert.equal(openedMerchant, null);
 });
-await check("merchant selection saves once before switching", async () => {
-  const app = fixture();
-  let saves = 0;
-  let release;
-  const pending = new Promise((resolve) => {
-    release = resolve;
-  });
-  app._saveFromForm = async () => {
-    saves++;
-    await pending;
-  };
-  const action = () =>
-    MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
-      app,
-      null,
-      { dataset: { merchantId: "b" } },
-    );
-  const first = action();
-  const repeated = action();
-  release();
-  await Promise.all([first, repeated]);
-  assert.equal(saves, 1);
-  assert.equal(app._selectedId, "b");
-  assert.equal(app.renders, 1);
-});
-await check(
-  "merchant selection survives a save-triggered refresh",
-  async () => {
-    const app = fixture();
-    app.constructor = { RENDER_STATES: { RENDERING: 1 } };
-    app._saveFromForm = async () => {
-      app.rendered = false;
-      app.state = 1;
-    };
-    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
-      app,
-      null,
-      { dataset: { merchantId: "b" } },
-    );
-    assert.equal(app._selectedId, "b");
-    assert.equal(app.renders, 1);
-  },
-);
-await check(
-  "closed merchant window cannot resume a pending selection",
-  async () => {
-    const app = fixture();
-    app.constructor = { RENDER_STATES: { RENDERING: 1 } };
-    app._saveFromForm = async () => {
-      app.rendered = false;
-      app.state = -1;
-    };
-    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
-      app,
-      null,
-      { dataset: { merchantId: "b" } },
-    );
-    assert.equal(app._selectedId, "a");
-    assert.equal(app.renders, 0);
-  },
-);
-await check("read-only merchant browsing does not save", async () => {
-  const app = fixture();
-  const savedUser = game.user;
-  game.user = { id: "secondary", role: 4, isGM: true, active: true };
-  try {
-    await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.selectMerchant.call(
-      app,
-      null,
-      { dataset: { merchantId: "b" } },
-    );
-    assert.equal(app._selectedId, "b");
-    assert.equal(writes, 0);
-  } finally {
-    game.user = savedUser;
-  }
-});
+MerchantWorkspaceApp.openMerchant = originalOpenMerchant;
 await check("read-only Workbench navigation does not save", async () => {
   const app = fixture();
   const savedUser = game.user;
