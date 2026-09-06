@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.17 — city-wide pricing:** **City Pricing** can now set shared customer
+markups, merchant sell-back ratios, bargaining rules, and charm pricing for
+every shop in one location—or any hand-picked merchant group. Every change is
+previewed before one atomic save, and item-specific price overrides remain
+untouched unless the GM explicitly clears them.
+
 **v0.3.16 — simpler shops by location:** Choose a city or location,
 then **Open All**, **Close All**, **Restock All**, **Generate All**, or **Clear All
 Inventory** for its merchants. Several locations can stay open at once. Village,

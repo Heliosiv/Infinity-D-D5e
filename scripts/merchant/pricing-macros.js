@@ -109,9 +109,7 @@ export function resolveMerchantPricingTargets(
         throw new Error(`LocationNotFound: ${scopeId || "(blank)"}`);
       }
       targetIds = merchants
-        .filter(
-          (merchant) => cleanId(merchant?.shop?.locationId) === scopeId,
-        )
+        .filter((merchant) => cleanId(merchant?.shop?.locationId) === scopeId)
         .map((merchant) => merchant.id);
     }
   }
