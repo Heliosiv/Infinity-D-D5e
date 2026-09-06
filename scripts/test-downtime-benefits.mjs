@@ -4,6 +4,7 @@ import {
   applyDowntimeBenefit,
   inspectDowntimeBenefit,
 } from "./downtime/benefits.js";
+import { DOWNTIME_BENEFITS } from "./downtime/benefit-rules.js";
 import {
   downtimeCareTargets,
   planDowntimeCare,
@@ -146,15 +147,45 @@ function injury(a, extra = {}) {
   });
 }
 
-// Existing libraries gain the four activities without replacing campaign prose or recipes.
+// Existing libraries gain the campaign activities without replacing saved prose or recipes.
 const defaults = defaultGuidedDowntimeTemplates();
-assert.equal(defaults.length, 13);
+assert.equal(defaults.length, 17);
 assert.equal(
   defaults.find((row) => row.work?.output === "arrows").work.batchHours,
   8,
 );
 const training = defaults.find((row) => row.id === "guided-training");
 assert.equal(training.outcomes[2].benefit, "sparring");
+assert.equal(
+  defaults.find((row) => row.id === "guided-focused-study").outcomes[2].benefit,
+  "focused-study",
+);
+assert.equal(
+  defaults.find((row) => row.id === "guided-trail-conditioning").outcomes[2]
+    .benefit,
+  "trail-ready",
+);
+assert.equal(
+  defaults.find((row) => row.id === "guided-seek-blessing").outcomes[2].benefit,
+  "blessed-resolve",
+);
+assert.equal(
+  defaults.find((row) => row.id === "guided-defensive-drills").outcomes[2]
+    .benefit,
+  "guarded-drills",
+);
+assert.deepEqual(
+  DOWNTIME_BENEFITS.map(({ id }) => id),
+  [
+    "",
+    "sparring",
+    "focused-study",
+    "blessed-resolve",
+    "guarded-drills",
+    "trail-ready",
+    "injury-care",
+  ],
+);
 const previousTraining = clone(training);
 previousTraining.description =
   "Practice footwork, endurance, or technique with a willing partner or instructor. Instruction costs 1 gp per workday. The GM records progress; this does not automatically grant proficiency or combat bonuses.";
@@ -188,7 +219,7 @@ custom.name = "Train and Spar";
 delete custom.outcomes[2].benefit;
 custom.outcomes[2].report = "Keep my campaign report";
 const upgraded = includeCampaignDowntimeTemplates([custom]);
-assert.equal(upgraded.length, 4);
+assert.equal(upgraded.length, 8);
 assert.equal(upgraded[0].outcomes[2].report, "Keep my campaign report");
 assert.equal(upgraded[0].outcomes[2].benefit, "sparring");
 custom.outcomes[2].benefit = "";
@@ -242,7 +273,15 @@ const first = await applyDowntimeBenefit(fighter, spar, authorized);
 assert.equal(first.ok, true, first.reason);
 const buff = fighter.effects.contents[0];
 assert.equal(buff.duration.seconds, 43200);
-assert.equal(buff.duration.startTime, 1000);
+assert.equal(buff.duration.startTime, 87400);
+assert.deepEqual(buff.flags[moduleId].downtimeBenefit.timing, {
+  grantedAt: 1000,
+  startsAt: 87400,
+  expiresAt: 130600,
+  durationSeconds: 43200,
+  productiveDays: 1,
+  productiveHoursPerDay: 8,
+});
 assert.deepEqual(buff.flags.dae.specialDuration, ["1Attack"]);
 assert.deepEqual(
   buff.changes.map((row) => row.key),
@@ -251,6 +290,30 @@ assert.deepEqual(
   ),
 );
 assert.ok(buff.changes.every((row) => row.value === "1" && row.mode === 2));
+
+for (const [type, expectedKey, expectedValue] of [
+  ["focused-study", "system.bonuses.abilities.check", "1"],
+  ["blessed-resolve", "system.bonuses.abilities.save", "1"],
+  ["guarded-drills", "system.attributes.ac.bonus", "1"],
+  ["trail-ready", "system.attributes.movement.walk", "5"],
+]) {
+  const recipient = actor(`recipient-${type}`);
+  const benefitOperation = operation(recipient, type, {
+    operationId: `operation-${type}`,
+    blockHours: 40,
+  });
+  assert.equal(
+    (await applyDowntimeBenefit(recipient, benefitOperation, authorized)).ok,
+    true,
+  );
+  const effect = recipient.effects.contents[0];
+  assert.equal(effect.duration.startTime, 433000);
+  assert.equal(effect.duration.seconds, 28800);
+  assert.equal(effect.flags[moduleId].downtimeBenefit.timing.productiveDays, 5);
+  assert.deepEqual(effect.flags.dae.specialDuration, []);
+  assert.equal(effect.changes[0].key, expectedKey);
+  assert.equal(effect.changes[0].value, expectedValue);
+}
 assert.equal(
   operation(fighter, "sparring", { operationId: "second-block" }).benefit.type,
   "none",
@@ -326,7 +389,33 @@ assert.equal(
   false,
 );
 assert.equal(noMidi.writes, 0);
+const daeOnlyBenefit = actor("dae-only-benefit");
+assert.equal(
+  (
+    await applyDowntimeBenefit(
+      daeOnlyBenefit,
+      operation(daeOnlyBenefit, "focused-study"),
+      authorized,
+    )
+  ).ok,
+  true,
+  "a timed DAE modifier does not require Midi QOL when it has no roll expiry",
+);
 game.modules.get("midi-qol").active = true;
+game.modules.get("dae").active = false;
+const noDae = actor("no-dae");
+assert.equal(
+  (
+    await applyDowntimeBenefit(
+      noDae,
+      operation(noDae, "focused-study"),
+      authorized,
+    )
+  ).ok,
+  false,
+);
+assert.equal(noDae.writes, 0);
+game.modules.get("dae").active = true;
 
 const healer = actor("healer");
 const patient = actor("patient");
@@ -404,6 +493,9 @@ let failRemoval = false;
 const calendarApi = {
   NoteRepeat: { Never: 0 },
   timestamp: () => game.time.worldTime,
+  getCurrentCalendar: () => ({
+    time: { hoursInDay: 10, minutesInHour: 10, secondsInMinute: 1 },
+  }),
   timestampPlusInterval: (timestamp, interval) =>
     timestamp + interval.day * 100,
   timestampToDate: (timestamp) => ({
@@ -435,6 +527,29 @@ game.modules.set("foundryvtt-simple-calendar-reborn", {
   active: true,
   api: calendarApi,
 });
+globalThis.SimpleCalendar = { api: calendarApi };
+const calendarBenefitActor = actor("calendar-benefit");
+const calendarBenefit = operation(calendarBenefitActor, "focused-study", {
+  operationId: "calendar-benefit-op",
+  blockHours: 16,
+});
+assert.equal(
+  (
+    await applyDowntimeBenefit(
+      calendarBenefitActor,
+      calendarBenefit,
+      authorized,
+    )
+  ).ok,
+  true,
+);
+assert.equal(calendarBenefitActor.effects.contents[0].duration.startTime, 1200);
+assert.equal(calendarBenefitActor.effects.contents[0].duration.seconds, 80);
+assert.equal(
+  calendarBenefitActor.effects.contents[0].flags[moduleId].downtimeBenefit
+    .timing.expiresAt,
+  1280,
+);
 const calendarPatient = actor("calendar-patient");
 const calendarWound = injury(calendarPatient, {
   recoveryDueTs: 1400,

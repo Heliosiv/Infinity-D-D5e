@@ -63,11 +63,13 @@ Compact navigation, readable supply cards, and continuous shop scrolling improve
 smaller windows. All art ships with the module; see
 [UI artwork and provenance](assets/ui/PROVENANCE.md).
 
-**Campaign downtime benefits:** Train & Spar result 3 grants
-+1 to the first attack within 12 in-game hours through DAE, Midi QOL, and Times
-Up. Tend the Sick result 3 after eight hours can shorten one selected timed
-injury by a calendar day. Arrow crafting and scroll scribing are included in
-the activity library. See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
+**Campaign downtime benefits:** Reviewed results can now create automatic,
+calendar-timed DAE effects for attacks, checks, saves, Armour Class, and walking
+speed. Times Up expires them against campaign time; Midi QOL consumes the
+sparring bonus after its first attack. Their expiry window begins after the
+whole downtime block's expected calendar passage, so resolving reports before
+advancing the day does not spend the reward. Tend the Sick can still shorten a
+selected timed injury. See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
 
 **Resource-based downtime:** Activities now support GP per
 workday, flat fees, required tools, consumed inventory materials, and crafted

@@ -15,6 +15,7 @@ import {
   inspectDowntimeBenefit,
 } from "./benefits.js";
 import { downtimeBenefitLabel } from "./benefit-rules.js";
+import { downtimeBenefitIntegrationError } from "./benefit-effects.js";
 import { downtimeCareTargets } from "../injury/downtime-care.js";
 import { DOWNTIME_MAX_BLOCK_HOURS as MAX_BLOCK_HOURS } from "./limits.js";
 import { DOWNTIME_OUTCOME_TIERS, getFencingValueCapCp } from "./math.js";
@@ -2191,6 +2192,7 @@ async function buildGuidedDowntimeOperation({
     actor,
     benefit: outcome.benefit,
     hours,
+    blockHours: block.budgetHours,
     operationId: operationId || `guided-${block.id}-${actor.id}`,
     target: benefitTarget,
   });
@@ -2483,15 +2485,10 @@ async function applyBlockInternal(blockId) {
             );
           reviewedInjuries.add(target);
         }
-        if (
-          operation.benefit?.type === "sparring" &&
-          !["dae", "midi-qol", "times-up"].every(
-            (id) => globalThis.game?.modules?.get?.(id)?.active,
-          )
-        )
-          throw new Error(
-            "Sparring needs DAE, Midi QOL and Times Up for its one-attack and 12-hour expiry.",
-          );
+        const integrationError = downtimeBenefitIntegrationError(
+          operation.benefit?.type,
+        );
+        if (integrationError) throw new Error(integrationError);
         if (
           operation.benefit &&
           inspectDowntimeBenefit(actor, operation) === "uncertain"

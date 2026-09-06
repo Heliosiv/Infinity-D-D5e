@@ -45,9 +45,11 @@ Players who own multiple participating characters can use the character tabs
 to switch between their latest completed reports. Each character receives its
 own state update, and report access follows current Actor ownership.
 
-The library ships with thirteen editable activities: **Paid Work**,
-**Research & Rumors**, **Thievery**, the eight choices below, **Craft Arrows**, and **Scribe a Spell Scroll**. No campaign
-time is advanced by this workflow.
+The library ships with seventeen editable activities: **Paid Work**,
+**Research & Rumors**, **Thievery**, the eight choices below, **Craft Arrows**,
+**Scribe a Spell Scroll**, **Focused Study**, **Seek a Blessing**, **Trail
+Conditioning**, and **Defensive Drills**. No campaign time is advanced by this
+workflow.
 
 | Activity             | Time block | Player skills                       | Cost and possible benefit                                                |
 | -------------------- | ---------- | ----------------------------------- | ------------------------------------------------------------------------ |
@@ -82,14 +84,31 @@ completion of a larger research, training, or project goal.
 | Activity              | Result                            | Benefit when the GM applies it                                                               |
 | --------------------- | --------------------------------- | -------------------------------------------------------------------------------------------- |
 | Train & Spar          | 3                                 | +1 to the first weapon or spell attack roll, expiring after that attack or 12 in-game hours. |
+| Focused Study         | 3                                 | +1 to ability and skill checks for 8 in-game hours.                                          |
+| Seek a Blessing       | 3                                 | +1 to saving throws for 8 in-game hours.                                                     |
+| Defensive Drills      | 3                                 | +1 Armour Class for 8 in-game hours.                                                         |
+| Trail Conditioning    | 3                                 | +5 feet to walking speed for 8 in-game hours.                                                |
 | Tend the Sick         | 3, with at least 8 assigned hours | Shorten one selected patient's timed injury by one calendar day.                             |
 | Craft Arrows          | Any result                        | Craft usable ammunition through the saved recipe and accumulated hours.                      |
 | Scribe a Spell Scroll | Any result                        | Spend the recorded costs and hours to produce a usable scroll.                               |
 
-Sparring creates an Actor Active Effect using DAE's one-attack duration, Midi
-QOL's attack completion, and Times Up's time expiry. All three modules must be
-active before applying. The twelve hours begin when the reward is applied;
-another successful block cannot stack or refresh an active sparring bonus.
+Every timed reward creates a typed Actor Active Effect; activity templates can
+choose only the reviewed benefit catalogue and cannot provide arbitrary effect
+paths or macros. DAE applies the numeric modifier and Times Up expires it from
+campaign time. Sparring additionally uses Midi QOL and DAE's `1Attack` expiry
+to consume the effect after the first weapon or spell attack. A missing required
+integration stops the GM before any reward write.
+
+The effect records the exact granted, start, and expiry campaign timestamps.
+Its start is placed after the whole block's expected calendar passage, using
+one calendar day per eight productive hours. With Simple Calendar active, its
+calendar math and custom day/hour lengths are used; otherwise Foundry world
+time uses the normal 24-hour day. The modifier is usable immediately, but the
+8- or 12-hour expiry window is not consumed while the GM advances the calendar
+through the downtime that just finished. Advancing a multi-day block one day at
+a time is safe. If the GM advances beyond the block end plus the benefit's full
+duration, Times Up correctly expires it. A benefit of the same type cannot
+stack or refresh while its earlier effect is still active.
 
 For care, choose **Patient and injury** in the GM report. Patients follow the
 existing player-character injury roster. At least eight hours
@@ -103,23 +122,25 @@ Reports applied together must select different injuries; the same injury cannot
 be shortened twice from one reviewed snapshot.
 
 Successful benefits have a saved receipt. Recovery cannot grant a consumed or
-expired sparring bonus again or shorten an injury twice. An interrupted,
+expired timed benefit again or shorten an injury twice. An interrupted,
 ambiguous effect grant stops for GM review. Calendar interruptions can resume
 from the saved injury change without repeating the reduction.
 
-Earlier libraries gain these four activities automatically on upgrade. Matching
-campaign activity names and crafting recipes are reused, preserving their text
-and costs. Matching Train & Spar and Tend the Sick activities receive the result
-3 benefit unless it was explicitly configured already. Open blocks retain
-their assigned snapshots; start a new block to use the updated library.
+Earlier libraries gain these eight campaign activities automatically when
+space is available. Matching campaign activity names and crafting recipes are
+reused, preserving their text and costs. Matching Train & Spar and Tend the Sick
+activities receive the result 3 benefit unless it was explicitly configured
+already. Open blocks retain their assigned snapshots; start a new block to use
+the updated library.
 
 ### Edit the activity library
 
 Open **Downtime → Activities** to edit a saved activity or click **New activity**
 to create one. Set the player description, optional image, applicable skills,
 hours per allocation block, and three possible results with their player
-reports and rewards. **Extra benefit** can attach sparring or injury care to a
-result, or leave it narrative only. Existing
+reports and rewards. **Extra benefit** can attach the first-attack,
+ability-check, saving-throw, Armour Class, walking-speed, or injury-care reward
+to a result, or leave it narrative only. Existing
 templates with up to six results retain all of them in the editor. Result
 rewards apply once per submitted allocation; they are not multiplied by its hours.
 Put the results in order from least to most successful. The GM can choose any

@@ -925,7 +925,7 @@ try {
     game.modules.get("dae").active = false;
     await assert.rejects(
       service.applyActiveDowntimeBlock(benefitBlock.id),
-      /Sparring needs/,
+      /requires active DAE/,
     );
     assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
     game.modules.get("dae").active = true;
@@ -933,6 +933,16 @@ try {
     benefitBlock = await service.applyActiveDowntimeBlock(benefitBlock.id);
     assert.equal(benefitBlock.state, "needs-review");
     assert.equal(benefitActor.effects.contents.length, 1);
+    assert.equal(
+      benefitActor.effects.contents[0].duration.startTime,
+      87_400,
+      "the reward timer starts after the reviewed one-day downtime block",
+    );
+    assert.equal(
+      benefitActor.effects.contents[0].flags[MODULE_ID].downtimeBenefit.timing
+        .expiresAt,
+      130_600,
+    );
     benefitBlock = await service.recoverActiveDowntimeBlock(benefitBlock.id);
     assert.equal(benefitBlock.state, "completed");
     assert.equal(benefitActor.effects.contents.length, 1);

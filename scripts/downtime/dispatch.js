@@ -204,6 +204,121 @@ export function campaignDowntimeTemplates() {
     },
     { ...guidedWorkPreset("arrows"), id: "guided-craft-arrows" },
     { ...guidedWorkPreset("scroll"), id: "guided-scribe-scroll" },
+    {
+      id: "guided-focused-study",
+      name: "Focused Study",
+      description:
+        "Organize notes, rehearse difficult procedures, and prepare a clear plan. A strong result grants +1 to ability and skill checks for 8 hours after the block ends.",
+      image: "icons/sundries/books/book-open-purple.webp",
+      skills: ["arc", "his", "inv", "nat", "rel"],
+      outcomes: [
+        {
+          label: "Notes in progress",
+          report:
+            "You sorted the material and identified what still needs investigation.",
+          rewardGp: 0,
+        },
+        {
+          label: "Clear preparation",
+          report: "Your notes now give you a reliable plan for the work ahead.",
+          rewardGp: 0,
+        },
+        {
+          label: "Prepared mind",
+          report:
+            "A careful breakthrough left the important details clear and ready to use.",
+          rewardGp: 0,
+          benefit: "focused-study",
+        },
+      ],
+    },
+    {
+      id: "guided-seek-blessing",
+      name: "Seek a Blessing",
+      description:
+        "Pray, meditate, or seek counsel within a spiritual tradition. A strong result grants +1 to saving throws for 8 hours after the block ends.",
+      image: "icons/magic/holy/prayer-hands-glowing-yellow.webp",
+      skills: ["rel", "ins", "per"],
+      outcomes: [
+        {
+          label: "Quiet observance",
+          report:
+            "The observance offered calm, though no clear sign or answer followed.",
+          rewardGp: 0,
+        },
+        {
+          label: "Steady counsel",
+          report:
+            "The ritual and counsel helped you face the next challenge with purpose.",
+          rewardGp: 0,
+        },
+        {
+          label: "Blessed resolve",
+          report:
+            "You leave the observance with an unusual steadiness of mind and spirit.",
+          rewardGp: 0,
+          benefit: "blessed-resolve",
+        },
+      ],
+    },
+    {
+      id: "guided-trail-conditioning",
+      name: "Trail Conditioning",
+      description:
+        "Practice loaded marches, route pacing, and efficient movement. A strong result grants +5 feet of walking speed for 8 hours after the block ends.",
+      image: "icons/skills/movement/feet-winged-boots-blue.webp",
+      skills: ["ath", "sur", "acr"],
+      outcomes: [
+        {
+          label: "Heavy legs",
+          report:
+            "The route exposed where your pace and equipment still need adjustment.",
+          rewardGp: 0,
+        },
+        {
+          label: "Measured pace",
+          report:
+            "You found a sustainable rhythm and corrected some wasted movement.",
+          rewardGp: 0,
+        },
+        {
+          label: "Trail ready",
+          report:
+            "The conditioning session left your stride quick, controlled, and efficient.",
+          rewardGp: 0,
+          benefit: "trail-ready",
+        },
+      ],
+    },
+    {
+      id: "guided-defensive-drills",
+      name: "Defensive Drills",
+      description:
+        "Practice guard positions, coordinated movement, and recovering safely after a committed attack.",
+      image: "icons/equipment/shield/heater-steel-sword-yellow-black.webp",
+      skills: ["ath", "acr", "ins"],
+      outcomes: [
+        {
+          label: "Openings exposed",
+          report:
+            "The drills revealed a few defensive habits that still need work.",
+          rewardGp: 0,
+        },
+        {
+          label: "Steady guard",
+          report:
+            "Repeated practice made your guard more consistent under pressure.",
+          rewardGp: 0,
+        },
+        {
+          label: "Guarded and ready",
+          report:
+            "Your defensive reactions are sharp and ready for the next challenge.",
+          rewardGp: 0,
+          benefit: "guarded-drills",
+        },
+      ],
+    },
   ];
 }
 

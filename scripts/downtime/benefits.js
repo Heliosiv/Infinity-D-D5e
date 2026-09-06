@@ -8,41 +8,29 @@ import {
 } from "../injury/downtime-care.js";
 import { normalizeDowntimeBenefit } from "./benefit-rules.js";
 import { runWithActorMutex } from "../merchant/session-state.js";
+import {
+  activeDowntimeBenefitEffect,
+  downtimeBenefitEffectData,
+  downtimeBenefitEffectMatches,
+  downtimeBenefitIntegrationError,
+  downtimeEffectBenefitDefinition,
+  downtimeOperationEffect,
+  isDowntimeEffectBenefit,
+} from "./benefit-effects.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const FLAG = "downtimeBenefits";
-const effectSource = (effect) => effect?.toObject?.() ?? effect;
-const effects = (actor) =>
-  Array.from(
-    actor?.effects?.contents ??
-      actor?.effects?.values?.() ??
-      actor?.effects ??
-      [],
-  );
 const receiptKey = (operation) =>
   merchantItemId(`${operation.operationId}:benefit`);
 const receipt = (actor, operation) =>
   actor.getFlag?.(MODULE_ID, FLAG)?.[receiptKey(operation)] ??
   actor.flags?.[MODULE_ID]?.[FLAG]?.[receiptKey(operation)];
-const sparEffect = (actor, plan) =>
-  effects(actor).find((effect) => (effect.id ?? effect._id) === plan.effectId);
-const activeSparringEffect = (actor) =>
-  effects(actor).find((effect) => {
-    const data = effectSource(effect);
-    return (
-      !data.disabled &&
-      !effect.isSuppressed &&
-      data.flags?.[MODULE_ID]?.downtimeSparring &&
-      Number(data.duration?.startTime ?? 0) +
-        Number(data.duration?.seconds ?? 43200) >
-        Number(globalThis.game?.time?.worldTime ?? 0)
-    );
-  });
 
 export function buildDowntimeBenefitPlan({
   actor,
   benefit,
   hours,
+  blockHours = hours,
   operationId,
   target = "",
 }) {
@@ -64,64 +52,27 @@ export function buildDowntimeBenefitPlan({
     const care = planDowntimeCare(target, operationId);
     return { type, care, detail: care.detail };
   }
-  const active = activeSparringEffect(actor);
+  const definition = downtimeEffectBenefitDefinition(type);
+  if (!definition) throw new Error("Choose a supported downtime benefit.");
+  const active = activeDowntimeBenefitEffect(actor, type);
   if (active)
     return {
       type: "none",
-      detail:
-        "Already ready from sparring; this bonus does not stack or refresh.",
+      detail: `Already has ${definition.label}; this benefit does not stack or refresh.`,
     };
   return {
     type,
-    effectId: merchantItemId(`${operationId}:sparring`),
-    detail:
-      "+1 to the first attack roll, expiring on that attack or after 12 in-game hours.",
+    effectId: merchantItemId(`${operationId}:${type}`),
+    blockHours: Math.max(
+      1,
+      Math.ceil(Number(blockHours) || Number(hours) || 8),
+    ),
+    detail: definition.detail,
   };
 }
 
 export function sparringEffectData(operation) {
-  return {
-    _id: operation.benefit.effectId,
-    name: "Sparring — Ready for the Fight",
-    img: "icons/skills/melee/weapons-crossed-swords-yellow.webp",
-    disabled: false,
-    transfer: false,
-    description:
-      "+1 to the first attack roll within 12 in-game hours. Does not stack.",
-    duration: {
-      seconds: 43200,
-      startTime: Number(globalThis.game?.time?.worldTime ?? 0),
-    },
-    changes: ["mwak", "rwak", "msak", "rsak"].map((kind) => ({
-      key: `system.bonuses.${kind}.attack`,
-      mode: 2,
-      value: "1",
-      priority: 20,
-    })),
-    flags: {
-      [MODULE_ID]: { downtimeSparring: { operationId: operation.operationId } },
-      dae: {
-        specialDuration: ["1Attack"],
-        stackable: "noneName",
-        showIcon: true,
-      },
-      "times-up": { isPassive: false },
-    },
-  };
-}
-
-function sparMatches(effect, operation) {
-  const data = effectSource(effect);
-  const expected = sparringEffectData(operation);
-  return Boolean(
-    data &&
-    data.flags?.[MODULE_ID]?.downtimeSparring?.operationId ===
-      operation.operationId &&
-    data.duration?.seconds === 43200 &&
-    !data.disabled &&
-    persistedValuesEqual(data.changes, expected.changes) &&
-    persistedValuesEqual(data.flags?.dae?.specialDuration, ["1Attack"]),
-  );
+  return downtimeBenefitEffectData(operation);
 }
 
 // Actor flags are player-readable. Keep clinical snapshots in the private plan.
@@ -146,8 +97,9 @@ export function inspectDowntimeBenefit(actor, operation) {
     return "uncertain";
   if (saved?.state === "applied") return "applied";
   if (saved) return "uncertain"; // An expired/consumed effect must never be regranted.
-  if (plan.type === "sparring")
-    return sparEffect(actor, plan) || activeSparringEffect(actor)
+  if (isDowntimeEffectBenefit(plan.type))
+    return downtimeOperationEffect(actor, operation) ||
+      activeDowntimeBenefitEffect(actor, plan.type)
       ? "uncertain"
       : "unapplied";
   return inspectDowntimeCare(plan.care) === "unapplied"
@@ -193,33 +145,37 @@ async function applyBenefitLocked(actor, operation, { authorizeWrite }) {
     if (!saved) {
       if (inspectDowntimeBenefit(actor, operation) !== "unapplied")
         throw new Error("The reviewed benefit target changed.");
-      if (
-        plan.type === "sparring" &&
-        !["dae", "midi-qol", "times-up"].every(
-          (id) => globalThis.game?.modules?.get?.(id)?.active,
-        )
-      )
-        throw new Error(
-          "Sparring requires active DAE, Midi QOL and Times Up to expire after one attack or 12 hours.",
-        );
+      const integrationError = downtimeBenefitIntegrationError(plan.type);
+      if (integrationError) throw new Error(integrationError);
       await writeReceipt(actor, operation, "applying", authorizeWrite);
-      if (plan.type === "sparring") {
+      if (isDowntimeEffectBenefit(plan.type)) {
         if (!authorizeWrite()) throw new Error("Downtime authority changed.");
         try {
           await actor.createEmbeddedDocuments(
             "ActiveEffect",
-            [sparringEffectData(operation)],
+            [downtimeBenefitEffectData(operation)],
             { keepId: true },
           );
         } catch (error) {
-          if (!sparMatches(sparEffect(actor, plan), operation)) throw error;
+          if (
+            !downtimeBenefitEffectMatches(
+              downtimeOperationEffect(actor, operation),
+              operation,
+            )
+          )
+            throw error;
         }
       }
     }
-    if (plan.type === "sparring") {
-      if (!sparMatches(sparEffect(actor, plan), operation))
+    if (isDowntimeEffectBenefit(plan.type)) {
+      if (
+        !downtimeBenefitEffectMatches(
+          downtimeOperationEffect(actor, operation),
+          operation,
+        )
+      )
         throw new Error(
-          "The sparring effect is absent or changed after application began. It will not be granted again automatically.",
+          "The timed benefit is absent or changed after application began. It will not be granted again automatically.",
         );
     } else
       await applyDowntimeCare(plan.care, operation.operationId, authorizeWrite);
