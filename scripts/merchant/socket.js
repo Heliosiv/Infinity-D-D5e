@@ -1266,20 +1266,32 @@ async function handleDurableMerchantCommit(payload, side) {
             : replay;
         return replayWhileLocked;
       }
-      const planned =
-        side === "buy"
-          ? await buildDurableBuyRecord(
-              payload,
-              session.merchantId,
-              actor.id,
-              identity.requestFingerprint,
-            )
-          : buildDurableSaleRecord(
-              payload,
-              session.merchantId,
-              actor.id,
-              identity.requestFingerprint,
-            );
+      let planned;
+      try {
+        planned =
+          side === "buy"
+            ? await buildDurableBuyRecord(
+                payload,
+                session.merchantId,
+                actor.id,
+                identity.requestFingerprint,
+              )
+            : buildDurableSaleRecord(
+                payload,
+                session.merchantId,
+                actor.id,
+                identity.requestFingerprint,
+              );
+      } catch (error) {
+        // Planning has not reserved a seal or written any campaign data. A
+        // definite rejection must reach the player instead of timing out as
+        // an uncertain trade. Persistence/drive failures remain recoverable.
+        console.warn(
+          `${MODULE_ID} | durable ${side} record planning failed`,
+          error,
+        );
+        return { status: "rejected", reason: "transaction-plan-rejected" };
+      }
       if (!planned?.ok) {
         return {
           status: "rejected",

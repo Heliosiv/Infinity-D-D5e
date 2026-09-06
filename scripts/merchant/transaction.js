@@ -724,7 +724,26 @@ function normalizeMerchantActorItemSnapshot(item, expectedItemId = "") {
   if (!actual || (expected && actual !== expected)) return null;
   snapshot._id = expected || actual;
   for (const field of VOLATILE_ACTOR_ITEM_FIELDS) delete snapshot[field];
+  omitUndefinedItemFields(snapshot);
   return snapshot;
+}
+
+/** Match stored document JSON without rejecting unfilled D&D5e source fields.
+ * Only omit undefined object properties; leave invalid values for the ledger's
+ * strict validation. Apply this to both planned and canonical Item snapshots.
+ */
+function omitUndefinedItemFields(value) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const entry of value) omitUndefinedItemFields(entry);
+    return;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) delete value[key];
+    else omitUndefinedItemFields(entry);
+  }
 }
 
 function merchantActorItemWithoutQuantity(item) {

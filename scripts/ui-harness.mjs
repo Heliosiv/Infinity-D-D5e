@@ -2245,7 +2245,7 @@ function merchantSessionContext(activeTab = "buy") {
     transactionTone: "ready",
     transactionTitle: "Ready to trade",
     transactionMessage:
-      "Choose an item and quantity. Your wallet and the shop update only after the GM confirms the transaction.",
+      "Choose a quantity, then buy or sell. Trades complete automatically; no GM approval is needed.",
     searchQuery: "",
     sessionSpentValue: "48.00 gp",
     sessionEarnedValue: "9.00 gp",
@@ -2359,9 +2359,9 @@ function merchantSessionPendingContext() {
   context.transactionBusy = true;
   context.actorSwitchLocked = true;
   context.transactionTone = "pending";
-  context.transactionTitle = "Waiting for the GM to confirm";
+  context.transactionTitle = "Processing trade";
   context.transactionMessage =
-    "The request was sent. Do not repeat it while the authoritative result is pending.";
+    "1 trade is processing automatically. No GM approval is needed.";
   context.buyRows = context.buyRows.map((row) => ({
     ...row,
     cannotBuy: true,
@@ -2377,7 +2377,7 @@ function merchantSessionCompletedContext() {
   context.transactionTone = "success";
   context.transactionTitle = "Trade confirmed";
   context.transactionMessage =
-    "The active GM confirmed the purchase. Aric's wallet, inventory, and the shop stock now show the saved result.";
+    "The purchase completed automatically. Aric's wallet, inventory, and the shop stock now show the saved result.";
   context.walletLabel = "6 gp · 5 sp";
   context.sessionSpentValue = "84.00 gp";
   context.sessionSpentLabel = "84.00 gp";

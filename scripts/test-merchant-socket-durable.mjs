@@ -66,6 +66,16 @@ function makeHooks() {
 
 function makeEmbeddedItem(actor, input) {
   const source = clone(input);
+  // Foundry/D&D5e source snapshots retain optional fields as undefined, even
+  // after creating an Item from a JSON-safe transaction plan.
+  source.system.source = {
+    book: undefined,
+    page: undefined,
+    license: undefined,
+  };
+  source.system.activities ??= {
+    utility: { range: { value: undefined, units: "self" }, name: undefined },
+  };
   source._id = String(source._id ?? source.id ?? "");
   delete source.id;
   return {
@@ -370,6 +380,13 @@ try {
     system: {
       quantity: 1,
       price: { value: 10, denomination: "gp" },
+      source: { book: undefined, page: undefined, license: undefined },
+      activities: {
+        utility: {
+          range: { value: undefined, units: "self" },
+          name: undefined,
+        },
+      },
     },
     flags: {},
     toObject() {
@@ -437,8 +454,36 @@ try {
     itemUuid: itemByUser.p1,
     id: commitId(1),
   });
+  const originalFromUuid = globalThis.fromUuid;
+  globalThis.fromUuid = async (uuid) => {
+    const document = await originalFromUuid(uuid);
+    const source = document.toObject();
+    source.system.invalidNumber = NaN;
+    return { toObject: () => clone(source) };
+  };
+  const p1RejectedResults = results.length;
+  await receiveMerchantPayload({ ...p1Frame, commitId: commitId(94) }, "p1");
+  assert.equal(results.length, p1RejectedResults + 1);
+  assert.equal(results.at(-1)?.reason, "transaction-plan-rejected");
+  assert.equal(actors.get("actor-p1").system.currency.gp, 100);
+  assert.equal(actors.get("actor-p1").createCalls, 0);
+  assert.equal(getPrivateState("merchantTransactions").records.length, 0);
+  globalThis.fromUuid = originalFromUuid;
   await receiveMerchantPayload(p1Frame, "p1");
   assert.equal(results.at(-1)?.ok, true);
+  const p1Record = store.updateCalls
+    .flatMap(
+      (patch) =>
+        patch[`flags.${MODULE_ID}.merchantTransactions`]?.records ?? [],
+    )
+    .find(
+      (record) =>
+        record.commitId === p1Frame.commitId && record.stage === "prepared",
+    );
+  assert.deepEqual(p1Record.actor.after.item.system.source, {});
+  assert.deepEqual(p1Record.actor.after.item.system.activities.utility, {
+    range: { units: "self" },
+  });
   assert.equal(actors.get("actor-p1").system.currency.gp, 90);
   assert.equal(
     flags.merchants.find((entry) => entry.id === "shop-p1").items[0].qty,
@@ -573,6 +618,20 @@ try {
     totalGp: 10,
     commitId: commitId(7),
   };
+  const saleItem = actors.get("actor-p7").items.get("sale-item-p7");
+  const saleToObject = saleItem.toObject;
+  saleItem.toObject = () => {
+    const source = saleToObject();
+    source.system.invalidNumber = Infinity;
+    return source;
+  };
+  const p7RejectedResults = results.length;
+  await receiveMerchantPayload({ ...p7Frame, commitId: commitId(78) }, "p7");
+  assert.equal(results.length, p7RejectedResults + 1);
+  assert.equal(results.at(-1)?.reason, "transaction-plan-rejected");
+  assert.equal(actors.get("actor-p7").system.currency.gp, 100);
+  assert.ok(actors.get("actor-p7").items.get("sale-item-p7"));
+  saleItem.toObject = saleToObject;
   await receiveMerchantPayload(
     { ...p7Frame, commitId: commitId(77), totalGp: 9 },
     "p7",
@@ -593,6 +652,33 @@ try {
     flags.merchants.find((entry) => entry.id === "shop-p7").goldOnHand,
     90,
   );
+  await receiveMerchantPayload(p7Frame, "p7");
+  assert.equal(results.at(-1)?.ok, true, "a sale retry replays automatically");
+  assert.equal(actors.get("actor-p7").system.currency.gp, 110);
+
+  actors.get("actor-p7").seedItem({
+    ...saleToObject(),
+    system: { ...saleToObject().system, quantity: 3 },
+  });
+  const partialSale = { ...p7Frame, commitId: commitId(79) };
+  await receiveMerchantPayload(partialSale, "p7");
+  assert.equal(
+    results.at(-1)?.ok,
+    true,
+    "partial stacks also sell automatically",
+  );
+  assert.equal(
+    actors.get("actor-p7").items.get("sale-item-p7").system.quantity,
+    2,
+  );
+  assert.equal(actors.get("actor-p7").system.currency.gp, 120);
+  await receiveMerchantPayload(partialSale, "p7");
+  assert.equal(results.at(-1)?.ok, true);
+  assert.equal(
+    actors.get("actor-p7").items.get("sale-item-p7").system.quantity,
+    2,
+  );
+  assert.equal(actors.get("actor-p7").system.currency.gp, 120);
 
   const p8Session = openSession({
     merchantId: "shop-p8",

@@ -157,6 +157,8 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "no-target": "That item isn't available anymore.",
   "out-of-stock": "That item just sold out.",
   "no-price": "That item has no price set.",
+  "transaction-plan-rejected":
+    "The item data could not be prepared for trading. Nothing was charged or transferred.",
   "invalid-price":
     "That price is too large or invalid. Ask your GM to correct it.",
   "no-value": "That item has no resale value.",

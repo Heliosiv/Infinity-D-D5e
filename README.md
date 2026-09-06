@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.16 candidate — automatic merchant trades:** Purchases and sales now
+handle unfilled optional D&D5e Item fields without crashing. Trades process
+automatically, including partial-stack sales and safe retries. Preparation
+errors return a clear failure without charging or transferring anything. The
+shop status now explains that no GM approval is needed for ordinary trades.
+
 **Quicker injury care:** The injury board now puts character
 recovery beside pending rolls, with search, direct character and sheet buttons,
 and a separate saved injury log. Manual reviews and detailed rules expand only

@@ -767,21 +767,21 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
           ? offline
             ? "GM offline — confirmation is still uncertain"
             : "Unconfirmed — retry this same sale safely"
-          : "Waiting for GM confirmation";
+          : "Processing sale automatically";
       } else {
         row.cannotBuy = !entry.timedOut || offline;
         row.cannotBuyReason = entry.timedOut
           ? offline
             ? "GM offline — confirmation is still uncertain"
             : "Unconfirmed — retry this same purchase safely"
-          : "Waiting for GM confirmation";
+          : "Processing purchase automatically";
       }
     }
     const latestLog = this._log.at(-1) ?? null;
     let transactionTone = "ready";
     let transactionTitle = "Ready to trade";
     let transactionMessage =
-      "Choose a quantity, then buy or sell. The GM confirms every completed trade.";
+      "Choose a quantity, then buy or sell. Trades complete automatically; no GM approval is needed.";
     if (uncertain.length > 0) {
       transactionTone = "uncertain";
       transactionTitle = "A trade is not yet confirmed";
@@ -792,10 +792,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
       transactionTone = offline ? "uncertain" : "pending";
       transactionTitle = offline
         ? "Trade confirmation was interrupted"
-        : "Waiting for the GM";
+        : "Processing trade";
       transactionMessage = offline
         ? `${waiting.length} trade${waiting.length === 1 ? " may" : "s may"} already have completed. Do not repeat the action. Keep this window open; it will show a safe retry if confirmation times out.`
-        : `${waiting.length} trade${waiting.length === 1 ? " is" : "s are"} being confirmed. Do not repeat the action.`;
+        : `${waiting.length} trade${waiting.length === 1 ? " is" : "s are"} processing automatically. No GM approval is needed.`;
     } else if (offline) {
       transactionTone = "offline";
       transactionTitle = "Trading is offline";

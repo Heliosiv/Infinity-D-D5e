@@ -18,6 +18,16 @@ so the normal active-GM election can choose one authority.
 
 ## Durable purchases and sales
 
+Purchases and sales complete automatically. The connected GM client processes
+them in the background; the GM does not approve individual trades. Stock,
+prices, funds, and character ownership are still checked. The separate
+**Knock** access mode requests permission to enter a shop, not to trade.
+
+Unfilled optional D&D5e Item fields are omitted from transaction snapshots,
+matching their saved JSON representation. A failure while preparing a new
+transaction returns a clear rejection before any character or shop write,
+rather than leaving the player waiting for a result that cannot arrive.
+
 Before a buy or sell request leaves the player's browser, Infinity D&D5e saves
 the exact request locally. The active GM then stores an exact transaction plan
 in the restricted campaign Journal before changing the character sheet or the
