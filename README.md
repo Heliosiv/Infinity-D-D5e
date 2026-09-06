@@ -303,8 +303,9 @@ both registered and active.
 ### Downtime and city actions
 
 The default guided flow is **Workbench → Downtime → Open block → Open for
-players**. Each player chooses one activity and clicks **Roll & submit**;
-choosing another activity replaces their selection. As soon as any character
+players**. Each player splits their assigned hours among the available activity
+and project time blocks, then clicks **Roll & submit**. Unallocated hours are
+forfeited, and each skill-based allocation makes one character roll. As soon as any character
 submits, the GM can click **Review** for that character, choose the outcome,
 edit the report, and click **Apply results & send report**. That character gets
 the receipt immediately and the same block reopens for everyone still
@@ -335,10 +336,11 @@ shoplifting, fencing stolen goods, and laying low. Routine activities repeat in
 fixed batches; commerce and crime offer bounded extra time where the rules
 allow it.
 
-For a guided downtime block, a player selects the one available activity and
-clicks **Roll & submit**. Their controlled Actor makes the visible Foundry
-check; its recorded total is what the GM reviews before choosing the report and
-approved reward.
+For a guided downtime block, a player can add multiple available activities or
+projects, choose a permitted multiple of each saved hour block, reorder or
+remove allocations, and submit any total up to their budget. Their controlled
+Actor makes a visible Foundry check for each skill-based allocation; the saved
+totals are what the GM reviews before choosing each report and approved reward.
 
 The **Projects** tab provides editable presets for crafting or commissioning,
 research, and training. A project defines its total productive hours, total GP

@@ -377,7 +377,7 @@ try {
   assert.doesNotMatch(offlineDraftHtml, /data-action="submitQueue"/);
   for (const [skill, buttonText] of [
     ["ath", "Roll &amp; submit"],
-    ["", "Submit activity"],
+    ["", "Submit allocation"],
   ]) {
     const guidedPlayer = activitiesModule.normalizePlayerDowntimeProjection(
       {

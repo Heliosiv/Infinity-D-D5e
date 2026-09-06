@@ -1199,6 +1199,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._projectDraft = {
       name: "",
       description: "",
+      blockHours: "8",
       requiredHours: "40",
       requiredGp: "100",
       requiredSuccesses: "3",
@@ -1258,6 +1259,7 @@ function readGuidedProjectForm(form) {
     id: cleanId(data.get("id")),
     name: String(data.get("name") ?? ""),
     description: String(data.get("description") ?? ""),
+    blockHours: String(data.get("blockHours") ?? "8"),
     requiredHours: String(data.get("requiredHours") ?? ""),
     requiredGp: String(data.get("requiredGp") ?? ""),
     requiredSuccesses: String(data.get("requiredSuccesses") ?? ""),
@@ -1273,6 +1275,7 @@ function readGuidedTemplateForm(form) {
     name: String(data.get("name") ?? ""),
     description: String(data.get("description") ?? ""),
     image: String(data.get("image") ?? ""),
+    blockHours: String(data.get("blockHours") ?? "8"),
     skills: data.getAll("skills").map(String),
     work: {
       output: String(data.get("workOutput") ?? "none"),
@@ -1358,6 +1361,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     };
   const templateEditor = {
     ...templateSource,
+    blockHours: String(templateSource.blockHours ?? 8),
     work: {
       gpPerBlock: 0,
       gpPerDay: 0,
@@ -1417,6 +1421,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       name: String(project?.name ?? "Project"),
       description: String(project?.description ?? ""),
       requiredHours: positiveInteger(project?.requiredHours, 1),
+      blockHours: positiveInteger(project?.blockHours, 1),
       requiredGp: Number(project?.requiredGp ?? 0),
       requiredSuccesses: positiveInteger(project?.requiredSuccesses, 0),
       checkDc: positiveInteger(project?.checkDc, 15),
@@ -1445,6 +1450,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     (uiState.creatingProject === false ? selectedProject?.source : null) ?? {
       name: "",
       description: "",
+      blockHours: 8,
       requiredHours: 40,
       requiredGp: 100,
       requiredSuccesses: 3,
@@ -1458,6 +1464,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         : "",
     name: String(projectSource.name ?? ""),
     description: String(projectSource.description ?? ""),
+    blockHours: String(projectSource.blockHours ?? 8),
     requiredHours: String(projectSource.requiredHours ?? 40),
     requiredGp: String(projectSource.requiredGp ?? 100),
     requiredSuccesses: String(projectSource.requiredSuccesses ?? 3),
@@ -1517,7 +1524,11 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   if (guided) {
     const groups = [
       ["Set up", "Choose hours, characters, and activities.", [0]],
-      ["Player rolls", "Each player chooses one activity and rolls.", [1]],
+      [
+        "Player rolls",
+        "Each player allocates hours and makes required rolls.",
+        [1],
+      ],
       ["GM review", "Choose a result and edit each player report.", [2, 3]],
       ["Results", "Apply results and send the finished reports.", [4, 5]],
     ];

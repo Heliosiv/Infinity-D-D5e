@@ -7,7 +7,7 @@ import { normalizeStolenGoodsLedger } from "./stolen-ledger.js";
 import { normalizeGuidedDowntimeTemplates } from "./dispatch.js";
 import { normalizeGuidedDowntimeProjects } from "./projects.js";
 
-export const DOWNTIME_CONFIG_VERSION = 7;
+export const DOWNTIME_CONFIG_VERSION = 8;
 export const NON_SETTLEMENT_DOWNTIME_CONTEXT_ID =
   "downtime-away-from-settlement";
 export const DEFAULT_NON_SETTLEMENT_LOCATION_NAME = "Camp or wilderness";

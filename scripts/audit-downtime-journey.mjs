@@ -117,7 +117,15 @@ try {
         label: template.name,
         description: template.description,
         available: true,
-        fixedHours: state.block.hours,
+        fixedHours: 0,
+        hourOptions: Array.from(
+          {
+            length: Math.floor(
+              state.block.hours / Math.max(1, template.blockHours ?? 8),
+            ),
+          },
+          (_, index) => (index + 1) * Math.max(1, template.blockHours ?? 8),
+        ),
         skills: template.skills.map((id) => ({ id, label: id })),
         category: "guided",
       })),
@@ -162,20 +170,23 @@ try {
         return state.block;
       },
       planBlock: async () => {
-        const activity = templates.find(
-          (entry) => entry.id === state.queue[0].activityId,
-        );
         state.block.status = "planned";
         state.block.plan = {
           characters: [
             {
               actorId: actor.id,
               name: actor.name,
-              operations: [
-                {
-                  id: "result",
+              operations: state.queue.map((entry, entryIndex) => {
+                const activity = templates.find(
+                  (candidate) => candidate.id === entry.activityId,
+                );
+                return {
+                  id: `result-${entryIndex + 1}`,
                   label: activity.name,
-                  rollLabel: "Athletics roll: 17",
+                  hours: entry.hours,
+                  rollLabel: entry.skill
+                    ? `${entry.skill} roll: 17`
+                    : "No skill check",
                   report: activity.outcomes[1].report,
                   outcome: activity.outcomes[1].label,
                   outcomeOptions: activity.outcomes.map((option, index) => ({
@@ -184,8 +195,8 @@ try {
                     selected: index === 1,
                     rewardLabel: `${option.rewardGp} gp`,
                   })),
-                },
-              ],
+                };
+              }),
             },
           ],
         };
@@ -198,7 +209,9 @@ try {
       chooseGuidedOutcome: async (payload) => {
         if (state.failSave)
           throw new Error("Test report save interrupted. Refresh and retry.");
-        const operation = state.block.plan.characters[0].operations[0];
+        const operation = state.block.plan.characters[0].operations.find(
+          (entry) => entry.id === payload.operationId,
+        );
         const outcome = operation.outcomeOptions[payload.outcomeIndex];
         for (const option of operation.outcomeOptions)
           option.selected = option === outcome;
@@ -215,18 +228,17 @@ try {
       applyBlock: async () => {
         state.applied += 1;
         state.block.status = "completed";
-        const operation = state.block.plan.characters[0].operations[0];
         state.receipt = {
           completedAt: Date.parse("2026-09-03T15:00:00Z"),
           summary: "Downtime complete",
-          activities: [
-            {
-              id: "result",
+          activities: state.block.plan.characters[0].operations.map(
+            (operation) => ({
+              id: operation.id,
               label: operation.label,
               report: operation.report,
               rewardLabel: "4 gp",
-            },
-          ],
+            }),
+          ),
         };
         return state.block;
       },
@@ -244,7 +256,7 @@ try {
           ...state.block.participants[0],
           submitted: true,
           queue,
-          usedHours: state.block.hours,
+          usedHours: queue.reduce((sum, entry) => sum + entry.hours, 0),
           canPrepare: true,
           resolutionLabel: "Ready for GM review",
         };
@@ -385,6 +397,7 @@ try {
     name: "Restore the observatory",
     description:
       "Make, repair, or commission a substantial item over several downtime blocks.",
+    blockHours: "8",
     requiredHours: "80",
     requiredGp: "100",
     requiredSuccesses: "3",
@@ -568,48 +581,31 @@ try {
     () =>
       document.querySelector('[data-action="submitQueue"]')?.disabled === false,
   );
-  for (const id of [
-    "guided-performance",
-    "guided-training",
-    "guided-contacts",
-    "guided-scouting",
-    "guided-care",
-    "guided-service",
-    "guided-animal-care",
-    "guided-reflection",
-  ]) {
-    await page
-      .locator(`[data-activity-id="${id}"] [data-action="addActivity"]`)
-      .click();
-    await page.waitForFunction(
-      (activityId) =>
-        document.querySelector(
-          `[data-activity-id="${activityId}"] [aria-pressed="true"]`,
-        ),
-      id,
-    );
-    assert.equal(await page.locator("[data-queue-entry-id]").count(), 1);
-    assert.match(
-      await page.locator('[data-action="submitQueue"]').innerText(),
-      id === "guided-reflection" ? /Submit activity/ : /Roll & submit/,
-    );
-  }
+  await page
+    .locator('[data-activity-id="guided-reflection"] [name="hours"]')
+    .selectOption("1");
+  await page
+    .locator(
+      '[data-activity-id="guided-reflection"] [data-action="addActivity"]',
+    )
+    .click();
   await page
     .locator('[data-activity-id="guided-labor"] [data-action="addActivity"]')
     .click();
   await page.waitForFunction(() =>
-    document.querySelector(
-      '[data-activity-id="guided-labor"] [aria-pressed="true"]',
-    ),
+    document.querySelector(".dt-time-meter")?.textContent.includes("17 / 240"),
   );
-  assert.equal(await page.locator("[data-queue-entry-id]").count(), 1);
-  assert.equal(await page.locator('[data-action="moveActivityUp"]').count(), 0);
-  assert.match(await page.locator(".dt-time-meter").innerText(), /240 \/ 240/);
+  assert.equal(await page.locator("li[data-queue-entry-id]").count(), 3);
+  assert.equal(await page.locator('[data-action="moveActivityUp"]').count(), 3);
+  assert.match(await page.locator(".dt-time-meter").innerText(), /17 \/ 240/);
   await page.locator('[data-action="submitQueue"]').focus();
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => journey.state.queue?.length === 1);
-  assert.equal(await page.evaluate(() => journey.state.rolls), 1);
-  assert.equal(await page.evaluate(() => journey.state.queue[0].hours), 240);
+  await page.waitForFunction(() => journey.state.queue?.length === 3);
+  assert.equal(await page.evaluate(() => journey.state.rolls), 2);
+  assert.deepEqual(
+    await page.evaluate(() => journey.state.queue.map((entry) => entry.hours)),
+    [8, 1, 8],
+  );
   await page.evaluate(() => journey.mount("workspace"));
   await page.locator('[data-action="prepareParticipant"]').first().click();
   await page.waitForFunction(() =>
@@ -624,6 +620,7 @@ try {
   );
   await page
     .locator('[data-action="chooseGuidedOutcome"][data-outcome-index="2"]')
+    .first()
     .click();
   await page.waitForFunction(
     () =>
@@ -635,11 +632,11 @@ try {
   );
   const report =
     "Mira rebuilt the harbor crane and earned the foreman's thanks.";
-  await page.locator("[data-guided-report]").fill(report);
+  await page.locator("[data-guided-report]").first().fill(report);
   await page.locator('[data-action="refresh"]').click();
   await page.evaluate(() => journey.app.rendering);
   assert.equal(
-    await page.locator("[data-guided-report]").inputValue(),
+    await page.locator("[data-guided-report]").first().inputValue(),
     report,
     "refresh retains report edits",
   );
@@ -682,11 +679,14 @@ try {
     0,
     "failed report save stops application",
   );
-  assert.equal(await page.locator("[data-guided-report]").inputValue(), report);
+  assert.equal(
+    await page.locator("[data-guided-report]").first().inputValue(),
+    report,
+  );
   await page.evaluate(() => {
     journey.state.failSave = false;
   });
-  await page.locator('[data-action="saveGuidedReport"]').click();
+  await page.locator('[data-action="saveGuidedReport"]').first().click();
   await page.waitForFunction(() =>
     journey.state.saved.some((payload) =>
       payload.report?.includes("harbor crane"),
@@ -694,6 +694,7 @@ try {
   );
   await page
     .locator("[data-guided-report]")
+    .first()
     .fill(`${report} The workshop will welcome her back.`);
   await page.locator('[data-action="applyBlock"]').click();
   await page.waitForFunction(() => journey.state.applied === 1);
@@ -781,7 +782,7 @@ try {
   );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "Downtime browser gauntlet passed: included crafting, benefit selector, patient selection and save-before-apply, project preset, setup, 240-hour roll, individual GM review, draft refresh, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
+    "Downtime browser gauntlet passed: included crafting, benefit selector, patient selection and save-before-apply, project preset, setup, a three-entry split allocation with forfeited hours, individual GM review, draft refresh, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
   );
 } catch (error) {
   const page = browser.contexts()[0]?.pages()[0];

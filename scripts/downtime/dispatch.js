@@ -15,6 +15,7 @@ export const GUIDED_DOWNTIME_MODE = "guided";
 export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 28;
 export const GUIDED_DOWNTIME_OUTCOME_MINIMUM = 3;
 export const GUIDED_DOWNTIME_OUTCOME_MAXIMUM = 6;
+export const GUIDED_DOWNTIME_DEFAULT_BLOCK_HOURS = 8;
 
 const DEFAULT_IMAGE = "icons/svg/d20.svg";
 export const GUIDED_DOWNTIME_SKILLS = Object.freeze([
@@ -277,6 +278,10 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
     name,
     description: text(raw.description, 400),
     image: imagePath(raw.image),
+    blockHours: guidedBlockHours(
+      raw.blockHours,
+      id === "guided-reflection" ? 1 : GUIDED_DOWNTIME_DEFAULT_BLOCK_HOURS,
+    ),
     skills: normalizeSkills(raw.skills),
     outcomes,
     ...(work ? { work } : {}),
@@ -329,9 +334,14 @@ export function projectGuidedDowntimeTemplate(template) {
     name: template.name,
     description: template.description,
     image: template.image,
+    blockHours: template.blockHours,
     skills: [...template.skills],
     ...(template.work ? { work: structuredClone(template.work) } : {}),
   };
+}
+
+export function guidedDowntimeBlockHours(value, fallback = 8) {
+  return guidedBlockHours(value, fallback);
 }
 
 function normalizeSkills(raw) {
@@ -347,6 +357,14 @@ function decimal(value, minimum, maximum) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return minimum;
   return Math.max(minimum, Math.min(maximum, Math.round(numeric * 100) / 100));
+}
+
+function guidedBlockHours(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 1 || numeric > 240) {
+    return fallback;
+  }
+  return numeric;
 }
 
 function imagePath(value) {

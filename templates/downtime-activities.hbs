@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Choose one activity for the downtime the GM assigned, then submit it. If it uses a skill, you will roll your check. Your GM will review the result and send your report.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
+      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Split the assigned hours among any available activities. Each choice uses whole time blocks; unallocated hours are forfeited when you submit. You will roll once for each activity that uses a skill.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -26,7 +26,7 @@
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
       {{else if completed}}read your completed report below. Your GM will open another block when it is time for more downtime.
-      {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if retrySubmission}}retry your submission. Your choice and any check are saved in this window and will not be rolled again.{{else if guided}}{{#if hasQueue}}click {{#if requiresRoll}}Roll &amp; submit{{else}}Submit activity{{/if}}, or choose another activity to replace your selection.{{else}}choose one activity and an approach for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
+      {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if retrySubmission}}retry your submission. Completed checks are saved in this window and will not be rolled again.{{else if guided}}{{#if hasQueue}}review the allocation, add more activities if wanted, then submit.{{else}}allocate at least one activity for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
       {{else}}wait for the GM to open a downtime block; no activity was submitted.
       {{/if}}
     </span>
@@ -79,7 +79,7 @@
         <div class="dt-time-meter">
           <div><span>Time budget</span><strong>{{usedHours}} / {{budgetHours}} hours</strong></div>
           <progress max="{{budgetHours}}" value="{{usedHours}}" aria-label="{{usedHours}} of {{budgetHours}} downtime hours used">{{progressPercent}}%</progress>
-          <small>{{#if guided}}Your chosen activity uses all {{budgetHours}} hours.{{else}}{{remainingHours}} hours unassigned · unused time is allowed{{/if}}</small>
+          <small>{{remainingHours}} hours unassigned · {{#if guided}}this time will be forfeited on submission{{else}}unused time is allowed{{/if}}</small>
         </div>
         {{#unless guided}}{{#if hasSettlement}}
         <div class="dt-heat" title="Heat is personal and applies only in this settlement">
@@ -180,8 +180,8 @@
                   </label>
                   {{/if}}
                 </div>
-                <button type="button" class="dt-button dt-button--primary dt-activity-card__add" data-action="addActivity" aria-label="{{#if ../guided}}Choose {{label}}{{else}}Add {{label}} to queue{{/if}}" {{#if ../guided}}aria-pressed="{{#if selected}}true{{else}}false{{/if}}"{{/if}} {{#if ../busy}}disabled{{/if}}>
-                  <i class="fa-solid {{#if selected}}fa-check{{else}}fa-plus{{/if}}" aria-hidden="true"></i> {{#if ../guided}}{{#if selected}}Selected · update approach{{else}}Choose activity{{/if}}{{else}}Add to queue{{/if}}
+                <button type="button" class="dt-button dt-button--primary dt-activity-card__add" data-action="addActivity" aria-label="{{#if ../guided}}Allocate {{label}}{{else}}Add {{label}} to queue{{/if}}" {{#if ../busy}}disabled{{/if}}>
+                  <i class="fa-solid {{#if selected}}fa-pen{{else}}fa-plus{{/if}}" aria-hidden="true"></i> {{#if ../guided}}{{#if selected}}Update allocation{{else}}Add allocation{{/if}}{{else}}Add to queue{{/if}}
                 </button>
                 {{else}}
                 <div class="dt-prerequisite" role="note">
@@ -204,7 +204,7 @@
 
         <aside class="dt-queue" aria-labelledby="dt-queue-heading">
           <details class="dt-queue__drawer" open>
-          <summary id="dt-queue-heading"><span><i class="fa-solid fa-list-check" aria-hidden="true"></i><span><small>{{#if guided}}One activity for this block{{else}}Resolves in order{{/if}}</small><strong>{{#if guided}}Your choice{{else}}Your Queue{{/if}}</strong></span></span><strong>{{usedHours}}h</strong></summary>
+          <summary id="dt-queue-heading"><span><i class="fa-solid fa-list-check" aria-hidden="true"></i><span><small>Resolves in order</small><strong>{{#if guided}}Your allocation{{else}}Your Queue{{/if}}</strong></span></span><strong>{{usedHours}}h</strong></summary>
           {{#if hasQueue}}
           <ol class="dt-queue__list" data-queue-list tabindex="-1">
             {{#each queue}}
@@ -213,7 +213,6 @@
               <span class="dt-queue__icon"><i class="{{icon}}" aria-hidden="true"></i></span>
               <div><strong>{{label}}</strong><span class="dt-queue__detail" {{#if detail}}title="{{detail}}"{{/if}}>{{hours}} hours{{#if detail}} · {{detail}}{{/if}}</span></div>
               <div class="dt-queue__actions">
-                {{#unless ../guided}}
                 <button type="button" data-action="moveActivityUp" data-queue-entry-id="{{id}}" title="Move earlier" aria-label="Move {{label}} earlier" {{#unless canMoveUp}}disabled{{/unless}} {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
                 </button>
@@ -223,13 +222,12 @@
                 <button type="button" class="is-danger" data-action="removeActivity" data-queue-entry-id="{{id}}" title="Remove" aria-label="Remove {{label}}" {{#unless ../editable}}disabled{{/unless}} {{#if ../busy}}disabled{{/if}}>
                   <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
-                {{/unless}}
               </div>
             </li>
             {{/each}}
           </ol>
           {{else}}
-          <p class="dt-inline-empty">{{#if guided}}Choose an activity. You can change your choice before submitting.{{else}}Choose an activity to start your queue.{{/if}}</p>
+          <p class="dt-inline-empty">Choose an activity to start your {{#if guided}}allocation{{else}}queue{{/if}}.</p>
           {{/if}}
 
           <footer class="dt-queue__footer">
@@ -244,7 +242,7 @@
               {{/if}}
             {{else}}
             <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit activity{{else}}Submit queue{{/if}}
+              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit allocation{{else}}Submit queue{{/if}}
             </button>
             {{/if}}
           </footer>

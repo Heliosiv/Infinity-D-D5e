@@ -100,8 +100,8 @@
           <div>
             <p class="dt-eyebrow">{{currentBlock.dayLabel}}</p>
             <h3 id="dt-current-heading">{{currentBlock.locationName}}</h3>
-            <p>{{#if guided}}One activity per character{{else}}{{#if currentBlock.hasSettlement}}Settlement downtime{{else}}Away from a settlement{{/if}}{{/if}}</p>
-            <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. {{#if guided}}Their chosen activity uses this full budget.{{else}}Unused time is allowed.{{/if}}</p>
+            <p>{{#if guided}}Player-controlled hour allocation{{else}}{{#if currentBlock.hasSettlement}}Settlement downtime{{else}}Away from a settlement{{/if}}{{/if}}</p>
+            <p>Every eligible character has <strong>{{currentBlock.hours}} hours</strong>. {{#if guided}}They may split it among activity blocks; unallocated time is forfeited.{{else}}Unused time is allowed.{{/if}}</p>
           </div>
           <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
         </div>
@@ -257,7 +257,7 @@
           </div>
           <ol>
             <li><strong>Set up:</strong> choose a location, hours, characters, and activities.</li>
-            <li><strong>Player rolls:</strong> open the window for players; each chooses one activity and clicks Roll &amp; submit.</li>
+            <li><strong>Player allocation:</strong> open the window for players; each splits their hours, rolls any required checks, and submits.</li>
             <li><strong>GM review:</strong> review and apply each submitted character on their own. The block stays open for everyone else.</li>
           </ol>
           <p><i class="fa-solid fa-life-ring" aria-hidden="true"></i> Use Recovery only when this workspace reports an interrupted Apply. Restore this guide from Infinity Settings.</p>
@@ -390,7 +390,7 @@
           </fieldset>
           <fieldset class="dt-fieldset" aria-describedby="dt-template-help">
             <legend>Applicable activities</legend>
-            <p id="dt-template-help">Players choose one of these saved activity templates. Settlement, faction, Heat, and escalation rules are not part of this guided flow.</p>
+            <p id="dt-template-help">Players split their assigned hours among these activities in each activity's saved time blocks. Unallocated hours are forfeited when they submit.</p>
             {{#if hasGuidedTemplates}}
             <div class="dt-chip-grid">
               {{#each guidedTemplates}}
@@ -403,7 +403,7 @@
           </fieldset>
           <fieldset class="dt-fieldset" aria-describedby="dt-project-help">
             <legend>Long-term projects</legend>
-            <p id="dt-project-help">Any selected character can spend this block on the same project. Each assigned hour counts once after the GM applies the block.</p>
+            <p id="dt-project-help">Any selected character can allocate one or more saved contribution blocks to the same project. Each allocated hour counts once after the GM applies the result.</p>
             {{#if hasGuidedProjects}}
             <div class="dt-chip-grid">
               {{#each guidedProjects}}
@@ -453,6 +453,7 @@
         <label class="dt-field dt-field--wide"><span>Activity name</span><input name="name" value="{{templateEditor.name}}" maxlength="80" required {{#if busy}}disabled{{/if}} /></label>
         <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Player description" rows="3" maxlength="400" {{#if busy}}disabled{{/if}}>{{templateEditor.description}}</textarea></label>
         <label class="dt-field dt-field--wide"><span>Activity image (optional)</span><input name="image" value="{{templateEditor.image}}" maxlength="500" placeholder="Image path or URL" {{#if busy}}disabled{{/if}} /><small>Leave blank to use the default activity icon.</small></label>
+        <label class="dt-field"><span>Hours per allocation block</span><input type="number" name="blockHours" min="1" max="240" step="1" value="{{#if (lookup templateEditor "blockHours")}}{{lookup templateEditor "blockHours"}}{{else}}8{{/if}}" required {{#if busy}}disabled{{/if}} /><small>Players may allocate one or more whole blocks. Official downtime and crafting workdays are 8 hours.</small></label>
         <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one of these skills. Leave all unchecked for an activity without a roll.</p><div class="dt-chip-grid">{{#each templateEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
         <fieldset class="dt-fieldset"><legend>Costs, supplies &amp; crafting</legend>
           <p>Costs apply to every result, after your review. One workday is 8 productive hours. GP/day is prorated and rounded up to copper; whole materials per day round up. Earlier rounded charges count toward later blocks, so splitting a day adds no extra cost. No costs are taken on submission.</p>
@@ -481,7 +482,7 @@
             {{/each}}
           </details>
         </fieldset>
-        <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per full assigned block.</p></div>
+        <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per submitted allocation.</p></div>
         {{#each templateEditor.outcomes}}
         <fieldset class="dt-fieldset" data-template-outcome><legend>Result {{number}}</legend>
           <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../busy}}disabled{{/if}} /></label>
@@ -525,6 +526,7 @@
         </div>
         <label class="dt-field dt-field--wide"><span>Project name</span><input type="text" name="name" value="{{projectEditor.name}}" maxlength="80" required placeholder="Learn Draconic, rebuild the watchtower..." {{#if busy}}disabled{{/if}} /></label>
         <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Project description" rows="3" maxlength="400" placeholder="What the characters are working toward." {{#if busy}}disabled{{/if}}>{{projectEditor.description}}</textarea></label>
+        <label class="dt-field"><span>Hours per contribution block</span><input type="number" name="blockHours" aria-label="Hours per contribution block" min="1" max="240" step="1" value="{{#if (lookup projectEditor "blockHours")}}{{lookup projectEditor "blockHours"}}{{else}}8{{/if}}" required {{#if busy}}disabled{{/if}} /><small>Eight productive hours is one D&amp;D workday.</small></label>
         <label class="dt-field"><span>Total productive hours</span><input type="number" name="requiredHours" aria-label="Total productive hours" min="1" max="10000" step="1" value="{{projectEditor.requiredHours}}" required {{#if busy}}disabled{{/if}} /><small>Eight productive hours is one workday.</small></label>
         <label class="dt-field"><span>Total project cost (gp)</span><input type="number" name="requiredGp" aria-label="Total project cost (gp)" min="0" max="100000" step="0.01" value="{{projectEditor.requiredGp}}" required {{#if busy}}disabled{{/if}} /><small>This total is divided across the required hours.</small></label>
         <label class="dt-field"><span>Successful checks required</span><input type="number" name="requiredSuccesses" aria-label="Successful checks required" min="0" max="1000" step="1" value="{{projectEditor.requiredSuccesses}}" required {{#if busy}}disabled{{/if}} /><small>Use 0 for a project that only needs time and GP.</small></label>

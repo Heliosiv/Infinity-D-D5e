@@ -768,6 +768,16 @@ export async function saveGuidedDowntimeTemplate(payload = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
     const outcomes = Array.isArray(payload.outcomes) ? payload.outcomes : [];
+    const blockHours = Number(payload.blockHours ?? 8);
+    if (
+      !Number.isSafeInteger(blockHours) ||
+      blockHours < 1 ||
+      blockHours > MAX_BLOCK_HOURS
+    ) {
+      throw new Error(
+        `Enter allocation block hours as a whole number from 1 to ${MAX_BLOCK_HOURS}.`,
+      );
+    }
     if (
       outcomes.length < GUIDED_DOWNTIME_OUTCOME_MINIMUM ||
       outcomes.length > GUIDED_DOWNTIME_OUTCOME_MAXIMUM
@@ -824,9 +834,19 @@ export async function saveGuidedDowntimeProject(payload = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
     const requiredHours = Number(payload.requiredHours);
+    const blockHours = Number(payload.blockHours ?? 8);
     const requiredGp = Number(payload.requiredGp ?? 0);
     const requiredSuccesses = Number(payload.requiredSuccesses ?? 0);
     const checkDc = Number(payload.checkDc ?? 15);
+    if (
+      !Number.isSafeInteger(blockHours) ||
+      blockHours < 1 ||
+      blockHours > MAX_BLOCK_HOURS
+    ) {
+      throw new Error(
+        `Enter contribution block hours as a whole number from 1 to ${MAX_BLOCK_HOURS}.`,
+      );
+    }
     if (
       !Number.isSafeInteger(requiredHours) ||
       requiredHours < 1 ||
@@ -1490,62 +1510,61 @@ async function buildGuidedDowntimePlan(block, { actorIds = [] } = {}) {
   }
   for (const participant of participants) {
     const actor = actorById(participant.actorId);
-    const selection = normalizeGuidedActivitySelection(
-      participant.guidedSelection,
-      block.guidedTemplates,
-      block.guidedProjects,
-    );
-    if (!actor || !selection) {
+    if (!actor) {
       throw new Error(
         `${participant.actorName}'s activity choice is missing or invalid.`,
       );
     }
-    const activity = guidedActivityById(
-      block.guidedTemplates,
-      block.guidedProjects,
-      selection.templateId,
-    );
-    const roll = selection.skill
-      ? normalizeGuidedPlayerRoll(participant.guidedRoll)
-      : { ok: true, total: 0, formula: "" };
-    if (!roll.ok) {
-      throw new Error(`${participant.actorName}'s player check is missing.`);
-    }
-    const selectedOutcomeIndex = guidedOutcomeIndex(
-      roll.total,
-      activity.outcomes.length,
-    );
-    const operation = await buildGuidedDowntimeOperation({
-      block,
-      actor,
-      activity,
-      skill: selection.skill,
-      targetId: selection.targetId,
-      roll,
-      selectedOutcomeIndex,
-      createdAt,
-      projectProgress,
-      projectSuccesses,
-    });
-    if (operation.project) {
-      projectProgress.set(
-        operation.project.id,
-        operation.project.progressAfterHours,
+    const submitted = normalizeGuidedSubmittedQueue(block, participant.queue);
+    const wallet = readWalletStrict(actor.system?.currency);
+    if (!wallet.ok)
+      throw new Error(
+        `${participant.actorName}'s currency could not be verified.`,
       );
-    }
-    if (operation.project) {
-      projectSuccesses.set(
-        operation.project.id,
-        operation.project.successesAfter,
+    let projectedWallet = wallet.wallet;
+    const characterOperations = [];
+    for (let index = 0; index < submitted.length; index += 1) {
+      const entry = submitted[index];
+      const selectedOutcomeIndex = guidedOutcomeIndex(
+        entry.roll.total,
+        entry.activity.outcomes.length,
       );
+      const operation = await buildGuidedDowntimeOperation({
+        block,
+        actor,
+        activity: entry.activity,
+        hours: entry.hours,
+        skill: entry.selection.skill,
+        targetId: entry.selection.targetId,
+        roll: entry.roll,
+        selectedOutcomeIndex,
+        createdAt,
+        operationId: `guided-${block.id}-${actor.id}-${index + 1}`,
+        projectProgress,
+        projectSuccesses,
+        walletBeforeOverride: projectedWallet,
+      });
+      projectedWallet = operation.walletAfter ?? projectedWallet;
+      if (operation.project) {
+        projectProgress.set(
+          operation.project.id,
+          operation.project.progressAfterHours,
+        );
+        projectSuccesses.set(
+          operation.project.id,
+          operation.project.successesAfter,
+        );
+      }
+      operations.push(operation);
+      characterOperations.push(operation);
     }
-    operations.push(operation);
+    const usedHours = sumHours(participant.queue);
     characters.push({
       actorId: actor.id,
       actorName: actor.name,
-      usedHours: block.budgetHours,
-      remainingHours: 0,
-      operations: [operation],
+      usedHours,
+      remainingHours: Math.max(0, block.budgetHours - usedHours),
+      operations: characterOperations,
     });
   }
   return {
@@ -1612,6 +1631,7 @@ export async function chooseGuidedDowntimeOutcome({
           block,
           actor,
           activity,
+          hours: operation.hours,
           skill: operation.check?.skill ?? "",
           targetId: operation.targetId,
           existingWork: operation.work,
@@ -1627,6 +1647,7 @@ export async function chooseGuidedDowntimeOutcome({
           selectedOutcomeIndex: index,
           createdAt: operation.createdAt ?? now(),
           operationId: operation.operationId,
+          walletBeforeOverride: operation.walletBefore,
           reportOverride:
             report === undefined
               ? index === operation.selectedOutcomeIndex
@@ -1653,21 +1674,55 @@ export async function chooseGuidedDowntimeOutcome({
     ) {
       throw new Error("That downtime result no longer exists.");
     }
-    const byActor = new Map(
-      operations.map((operation) => [operation.actorId, operation]),
-    );
+    const rechainedOperations = rechainGuidedOperationWallets(operations);
     const plan = {
       ...block.plan,
-      operations,
+      operations: rechainedOperations,
       characters: (block.plan.characters ?? []).map((character) => ({
         ...character,
-        operations: [byActor.get(character.actorId)].filter(Boolean),
+        operations: rechainedOperations.filter(
+          (operation) => operation.actorId === character.actorId,
+        ),
       })),
     };
     const updated = await updateGuidedDowntimePlan(block.id, plan);
     notifyServiceChanged("guided-outcome-select");
     await broadcastPlayerState(updated);
     return updated;
+  });
+}
+
+function rechainGuidedOperationWallets(operations) {
+  const projectedWallets = new Map();
+  return operations.map((operation) => {
+    if (!["currency", "guided-work"].includes(operation.kind)) {
+      return operation;
+    }
+    const actor = actorById(operation.actorId);
+    const initial = projectedWallets.get(operation.actorId);
+    const walletRead = initial
+      ? { ok: true, wallet: initial }
+      : readWalletStrict(actor?.system?.currency);
+    if (!walletRead.ok) {
+      throw new Error(
+        `${operation.activityLabel}'s character currency could not be verified.`,
+      );
+    }
+    const walletAfter = planWalletDeltaCp(
+      walletRead.wallet,
+      Number(operation.currencyDeltaCp) || 0,
+    );
+    if (!walletAfter) {
+      throw new Error(
+        `${actor?.name ?? "The character"} cannot afford the reviewed activity sequence.`,
+      );
+    }
+    projectedWallets.set(operation.actorId, walletAfter);
+    return {
+      ...operation,
+      walletBefore: walletRead.wallet,
+      walletAfter,
+    };
   });
 }
 
@@ -1999,6 +2054,7 @@ async function buildGuidedDowntimeOperation({
   block,
   actor,
   activity,
+  hours = block.budgetHours,
   skill,
   roll,
   selectedOutcomeIndex,
@@ -2010,6 +2066,7 @@ async function buildGuidedDowntimeOperation({
   targetId = "",
   existingWork = null,
   benefitTarget = "",
+  walletBeforeOverride = null,
 }) {
   const outcome = activity.outcomes[selectedOutcomeIndex];
   const report = cleanGuidedReport(reportOverride) || outcome.report;
@@ -2024,7 +2081,7 @@ async function buildGuidedDowntimeOperation({
       activity.id,
     );
     const contributedHours = Math.min(
-      block.budgetHours,
+      hours,
       Math.max(0, activity.requiredHours - progressBeforeHours),
     );
     const progressAfterHours = progressBeforeHours + contributedHours;
@@ -2043,7 +2100,9 @@ async function buildGuidedDowntimeOperation({
       progressBeforeHours,
       progressAfterHours,
     );
-    const walletRead = readWalletStrict(actor.system?.currency);
+    const walletRead = walletBeforeOverride
+      ? { ok: true, wallet: walletBeforeOverride }
+      : readWalletStrict(actor.system?.currency);
     if (!walletRead.ok)
       throw new Error(`${actor.name}'s currency could not be verified.`);
     const walletAfter = planWalletDeltaCp(walletRead.wallet, -costCp);
@@ -2079,7 +2138,7 @@ async function buildGuidedDowntimeOperation({
       activityId: activity.id,
       activityLabel: activity.name,
       activityImage: activity.image,
-      hours: block.budgetHours,
+      hours,
       createdAt,
       selectedOutcomeIndex,
       outcomeLabel: outcome.label,
@@ -2104,7 +2163,9 @@ async function buildGuidedDowntimeOperation({
       },
     };
   }
-  const walletRead = readWalletStrict(actor.system?.currency);
+  const walletRead = walletBeforeOverride
+    ? { ok: true, wallet: walletBeforeOverride }
+    : readWalletStrict(actor.system?.currency);
   if (!walletRead.ok)
     throw new Error(`${actor.name}'s currency could not be verified.`);
   const work =
@@ -2112,7 +2173,7 @@ async function buildGuidedDowntimeOperation({
     (await buildGuidedWorkPlan({
       actor,
       activity,
-      hours: block.budgetHours,
+      hours,
       targetId,
       progress: loadDowntimeWorkflowStore().workProgress ?? {},
       operationId: operationId || `guided-${block.id}-${actor.id}`,
@@ -2129,7 +2190,7 @@ async function buildGuidedDowntimeOperation({
   const benefit = buildDowntimeBenefitPlan({
     actor,
     benefit: outcome.benefit,
-    hours: block.budgetHours,
+    hours,
     operationId: operationId || `guided-${block.id}-${actor.id}`,
     target: benefitTarget,
   });
@@ -2142,7 +2203,7 @@ async function buildGuidedDowntimeOperation({
     activityId: activity.id,
     activityLabel: activity.name,
     activityImage: activity.image,
-    hours: block.budgetHours,
+    hours,
     createdAt,
     selectedOutcomeIndex,
     outcomeLabel: outcome.label,
@@ -2186,6 +2247,86 @@ function normalizeGuidedActivitySelection(raw, templates, projects) {
     templateId: project.id,
     skill: project.skills.length > 0 ? skill : "",
   };
+}
+
+function guidedActivityBlockHours(activity) {
+  const value = Number(activity?.blockHours);
+  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_BLOCK_HOURS
+    ? value
+    : 8;
+}
+
+function normalizeGuidedSubmittedQueue(block, rawQueue) {
+  const source = Array.isArray(rawQueue) ? rawQueue : [];
+  if (source.length < 1 || source.length > DOWNTIME_SUBMISSION_MAX_ACTIONS) {
+    throw new Error(
+      `Allocate between 1 and ${DOWNTIME_SUBMISSION_MAX_ACTIONS} activities.`,
+    );
+  }
+  const activityIds = new Set();
+  const normalized = source.map((entry, index) => {
+    const selection = normalizeGuidedActivitySelection(
+      {
+        templateId: entry?.activityId,
+        skill: entry?.skill,
+        targetId: entry?.targetId,
+      },
+      block.guidedTemplates,
+      block.guidedProjects,
+    );
+    const activity = selection
+      ? guidedActivityById(
+          block.guidedTemplates,
+          block.guidedProjects,
+          selection.templateId,
+        )
+      : null;
+    const hours = Number(entry?.hours);
+    const blockHours = guidedActivityBlockHours(activity);
+    if (
+      !selection ||
+      !activity ||
+      !Number.isSafeInteger(hours) ||
+      hours < blockHours ||
+      hours % blockHours !== 0
+    ) {
+      throw new Error(
+        `Allocation ${index + 1} must use a valid activity and whole ${blockHours}-hour blocks.`,
+      );
+    }
+    if (activityIds.has(activity.id)) {
+      throw new Error(
+        "Allocate each activity once. Update its hours instead of adding it twice.",
+      );
+    }
+    activityIds.add(activity.id);
+    const roll = selection.skill
+      ? normalizeGuidedPlayerRoll(entry?.guidedRoll)
+      : { ok: true, total: 0, formula: "" };
+    if (!roll.ok) {
+      throw new Error(
+        `Roll the selected downtime check for ${activity.name} before submitting.`,
+      );
+    }
+    return { activity, selection, hours, roll };
+  });
+  const usedHours = normalized.reduce((sum, entry) => sum + entry.hours, 0);
+  if (usedHours > block.budgetHours) {
+    throw new Error(
+      `The allocation uses ${usedHours} hours, more than the ${block.budgetHours} hours assigned.`,
+    );
+  }
+  const resourceWork = normalized.filter(
+    ({ activity }) =>
+      activity.work &&
+      (activity.work.output !== "none" || activity.work.materials?.length > 0),
+  );
+  if (resourceWork.length > 1) {
+    throw new Error(
+      "Choose at most one crafting or material-consuming activity in the same allocation so its inventory transaction can be verified safely.",
+    );
+  }
+  return normalized;
 }
 
 function guidedProjectProgressFromStore(store) {
@@ -2323,6 +2464,7 @@ async function applyBlockInternal(blockId) {
   if (block.state === "planned") {
     if (block.mode === GUIDED_DOWNTIME_MODE) {
       const reviewedInjuries = new Set();
+      const projectedWallets = new Map();
       for (const operation of block.plan.operations ?? []) {
         const actor = actorById(operation.actorId);
         if (!actor)
@@ -2368,15 +2510,25 @@ async function applyBlockInternal(blockId) {
             `${actor.name}'s crafting supplies or source changed during review. Restore the reviewed supplies, or cancel this block and submit again.`,
           );
         if (!["currency", "guided-work"].includes(operation.kind)) continue;
-        const current = readWalletStrict(actor.system?.currency);
-        if (
-          !current.ok ||
-          !walletsEqual(current.wallet, operation.walletBefore)
-        ) {
-          throw new Error(
-            `${actor.name}'s currency changed during review. Save their report again, then apply the results.`,
-          );
+        const projected = projectedWallets.get(actor.id);
+        if (projected) {
+          if (!walletsEqual(projected, operation.walletBefore)) {
+            throw new Error(
+              `${actor.name}'s reviewed activity sequence has inconsistent currency checkpoints. Review the character again.`,
+            );
+          }
+        } else {
+          const current = readWalletStrict(actor.system?.currency);
+          if (
+            !current.ok ||
+            !walletsEqual(current.wallet, operation.walletBefore)
+          ) {
+            throw new Error(
+              `${actor.name}'s currency changed during review. Save their report again, then apply the results.`,
+            );
+          }
         }
+        projectedWallets.set(actor.id, operation.walletAfter);
       }
     }
     block = await beginDowntimeApplication(block.id);
@@ -4219,15 +4371,29 @@ export async function getPlayerProjectionForUser({
       usedHours: sumHours(queue),
       remainingHours: Math.max(0, active.budgetHours - sumHours(queue)),
       activities: [
-        ...active.guidedTemplates.map((template) => ({
-          ...projectGuidedActivity(template, active.budgetHours),
-          ...projectGuidedWork(
-            actor,
+        ...active.guidedTemplates.map((template) => {
+          const allocation = projectGuidedActivity(
             template,
             active.budgetHours,
+          );
+          const work = projectGuidedWork(
+            actor,
+            template,
+            Math.min(template.blockHours, active.budgetHours),
             store.workProgress ?? {},
-          ),
-        })),
+          );
+          return {
+            ...allocation,
+            ...work,
+            available:
+              allocation.available && (work.available ?? true) !== false,
+            unavailableReason:
+              allocation.unavailableReason || work.unavailableReason || "",
+            limitLabel: [allocation.limitLabel, work.limitLabel]
+              .filter(Boolean)
+              .join(" "),
+          };
+        }),
         ...(active.guidedProjects ?? []).map((project) =>
           projectGuidedActivity(
             { ...project, kind: "project" },
@@ -4537,42 +4703,18 @@ async function submitGuidedDowntimeChoice({
   revision,
 }) {
   const source = Array.isArray(queue) ? queue : [];
-  if (source.length !== 1) {
-    throw new Error("Choose exactly one activity for this downtime block.");
-  }
-  const entry = source[0] ?? {};
-  const selection = normalizeGuidedActivitySelection(
-    {
-      templateId: entry.activityId,
-      skill: entry.skill,
-      targetId: entry.targetId,
-    },
-    block.guidedTemplates,
-    block.guidedProjects,
-  );
-  if (!selection || Number(entry.hours) !== Number(block.budgetHours)) {
-    throw new Error(
-      "Choose one available activity and use the assigned downtime.",
-    );
-  }
-  const guidedRoll = selection.skill
-    ? normalizeGuidedPlayerRoll(entry.guidedRoll)
-    : { ok: true, total: 0, formula: "" };
-  if (!guidedRoll.ok) {
-    throw new Error("Roll the selected downtime check before submitting.");
-  }
-  const digest = queueDigest([
-    {
-      id: "guided-choice",
-      activityId: selection.templateId,
-      hours: block.budgetHours,
-      skill: selection.skill,
-      ...(selection.targetId ? { targetId: selection.targetId } : {}),
-      guidedRoll: selection.skill
-        ? { total: guidedRoll.total, formula: guidedRoll.formula }
-        : undefined,
-    },
-  ]);
+  const allocation = normalizeGuidedSubmittedQueue(block, source);
+  const canonicalQueue = allocation.map((entry, index) => ({
+    id: `guided-choice-${index + 1}`,
+    activityId: entry.activity.id,
+    hours: entry.hours,
+    skill: entry.selection.skill,
+    ...(entry.selection.targetId ? { targetId: entry.selection.targetId } : {}),
+    guidedRoll: entry.selection.skill
+      ? { total: entry.roll.total, formula: entry.roll.formula }
+      : undefined,
+  }));
+  const digest = queueDigest(canonicalQueue);
   const prior = block.requests?.[requestId];
   if (prior) {
     if (
@@ -4601,61 +4743,51 @@ async function submitGuidedDowntimeChoice({
       "Recall your submitted activity before choosing and rolling again.",
     );
   }
-  const activity = guidedActivityById(
-    block.guidedTemplates,
-    block.guidedProjects,
-    selection.templateId,
-  );
-  if (activity?.kind === "project") {
-    const store = loadDowntimeWorkflowStore();
-    const progressHours = projectProgressHours(
-      guidedProjectProgressFromStore(store),
-      activity.id,
-    );
-    const afterHours = Math.min(
-      activity.requiredHours,
-      progressHours + block.budgetHours,
-    );
-    const costCp = guidedProjectContributionCostCp(
-      activity,
-      progressHours,
-      afterHours,
-    );
-    const wallet = readWalletStrict(actor.system?.currency);
-    if (!wallet.ok || totalWalletCp(wallet.wallet) < costCp) {
-      throw new Error(
-        `${actor.name} needs ${formatCp(costCp)} available for this project contribution.`,
+  const store = loadDowntimeWorkflowStore();
+  const progress = guidedProjectProgressFromStore(store);
+  let totalCostCp = 0;
+  for (const entry of allocation) {
+    if (entry.activity.kind === "project") {
+      const progressHours = projectProgressHours(progress, entry.activity.id);
+      const afterHours = Math.min(
+        entry.activity.requiredHours,
+        progressHours + entry.hours,
       );
+      totalCostCp += guidedProjectContributionCostCp(
+        entry.activity,
+        progressHours,
+        afterHours,
+      );
+      progress.set(entry.activity.id, afterHours);
     }
+    const workQuote = quoteGuidedWork({
+      actor,
+      activity: entry.activity,
+      hours: entry.hours,
+      targetId: entry.selection.targetId,
+      progress: store.workProgress ?? {},
+    });
+    if (workQuote && !workQuote.ok) {
+      throw new Error(workQuote.problems.join(" "));
+    }
+    totalCostCp += workQuote?.costCp ?? 0;
   }
-  const workQuote = quoteGuidedWork({
-    actor,
-    activity,
-    hours: block.budgetHours,
-    targetId: selection.targetId,
-    progress: loadDowntimeWorkflowStore().workProgress ?? {},
-  });
-  if (workQuote && !workQuote.ok) throw new Error(workQuote.problems.join(" "));
+  const wallet = readWalletStrict(actor.system?.currency);
+  if (!wallet.ok || totalWalletCp(wallet.wallet) < totalCostCp) {
+    throw new Error(
+      `${actor.name} needs ${formatCp(totalCostCp)} available for the full downtime allocation.`,
+    );
+  }
+  const first = allocation[0];
   const participants = block.participants.map((entry) =>
     entry.actorId === actor.id
       ? {
           ...entry,
-          guidedSelection: selection,
-          guidedRoll: selection.skill
-            ? { total: guidedRoll.total, formula: guidedRoll.formula }
+          guidedSelection: first.selection,
+          guidedRoll: first.selection.skill
+            ? { total: first.roll.total, formula: first.roll.formula }
             : null,
-          queue: [
-            {
-              id: "guided-choice",
-              activityId: activity.id,
-              hours: block.budgetHours,
-              skill: selection.skill,
-              ...(selection.targetId ? { targetId: selection.targetId } : {}),
-              guidedRoll: selection.skill
-                ? { total: guidedRoll.total, formula: guidedRoll.formula }
-                : undefined,
-            },
-          ],
+          queue: canonicalQueue,
           submitted: true,
           submittedAt: now(),
           submittedBy: userId,
@@ -5115,8 +5247,14 @@ function projectGuidedActivity(
   actor = null,
 ) {
   const project = activity.kind === "project";
+  const blockHours = Math.max(
+    1,
+    Math.min(MAX_BLOCK_HOURS, Math.floor(Number(activity.blockHours) || 8)),
+  );
+  const hourOptions = guidedAllocationHourOptions(blockHours, hours);
+  const previewHours = hourOptions[0]?.value ?? blockHours;
   const afterHours = project
-    ? Math.min(activity.requiredHours, progressHours + hours)
+    ? Math.min(activity.requiredHours, progressHours + previewHours)
     : progressHours;
   const projectCostCp = project
     ? guidedProjectContributionCostCp(activity, progressHours, afterHours)
@@ -5134,8 +5272,10 @@ function projectGuidedActivity(
       : activity.description,
     category: project ? "project" : "guided",
     icon: "fa-solid fa-compass",
-    available: affordable,
-    fixedHours: hours,
+    available: affordable && hourOptions.length > 0,
+    fixedHours: 0,
+    hourOptions,
+    limitLabel: `Allocate in ${blockHours}-hour blocks.`,
     skills: activity.skills.map((skill) => ({
       id: skill,
       label: guidedDowntimeSkillLabel(skill),
@@ -5150,8 +5290,10 @@ function projectGuidedActivity(
             projectCostCp > 0
               ? `Spend ${formatCp(projectCostCp)} for this contribution`
               : "No GP due for this contribution",
-          availabilityReason: affordable
-            ? ""
+          unavailableReason: affordable
+            ? hourOptions.length
+              ? ""
+              : `This activity needs a ${blockHours}-hour block, more than the assigned budget.`
             : `You need ${formatCp(projectCostCp)} available for this contribution.`,
           progressHours,
           progressSuccesses,
@@ -5161,6 +5303,19 @@ function projectGuidedActivity(
         }
       : {}),
   };
+}
+
+function guidedAllocationHourOptions(blockHours, budgetHours) {
+  const block = Math.max(1, Math.floor(Number(blockHours) || 1));
+  const budget = Math.max(0, Math.floor(Number(budgetHours) || 0));
+  const options = [];
+  for (let value = block; value <= budget; value += block) {
+    options.push({
+      value,
+      label: `${value} ${value === 1 ? "hour" : "hours"} (${value / block} ${block === 1 ? "hour" : `${block}-hour`} ${value === block ? "block" : "blocks"})`,
+    });
+  }
+  return options;
 }
 
 function guidedProjectProgressLabel(project, hours, successes) {

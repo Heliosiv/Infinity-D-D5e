@@ -516,6 +516,93 @@ try {
   assert.equal(longChoice.canSubmit, true);
   guidedAdapter.destroy();
 
+  let multiState = guidedProjection({
+    blockId: "multi-guided",
+    budgetHours: 24,
+    activities: [
+      {
+        id: "guided-labor",
+        label: "Paid Work",
+        category: "guided",
+        available: true,
+        hourOptions: [8, 16, 24],
+        skills: [{ id: "ath", label: "Athletics" }],
+      },
+      {
+        id: "guided-research",
+        label: "Research & Rumors",
+        category: "guided",
+        available: true,
+        hourOptions: [8, 16, 24],
+        skills: [{ id: "inv", label: "Investigation" }],
+      },
+      {
+        id: "guided-reflection",
+        label: "Rest & Reflect",
+        category: "guided",
+        available: true,
+        hourOptions: Array.from({ length: 24 }, (_, index) => index + 1),
+        skills: [],
+      },
+    ],
+  });
+  const rolledSkills = [];
+  let multiSubmission;
+  const multiAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: makeBus().subscribe,
+    registerSocket: () => true,
+    isAuthority: () => true,
+    getCurrentUserId: () => "player-1",
+    requestIdFactory: (prefix) => `multi-${prefix}`,
+    getDirectProjection: async () => structuredClone(multiState),
+    getActor: () => ({ id: "actor-1" }),
+    rollSkill: async (_actor, skill) => {
+      rolledSkills.push(skill);
+      return { ok: true, total: 15, roll: { formula: "1d20 + 4" } };
+    },
+    submitDirect: async (payload) => {
+      multiSubmission = structuredClone(payload);
+      multiState = guidedProjection({
+        ...multiState,
+        rawQueue: payload.queue,
+        queue: payload.queue,
+        submitted: true,
+        canSubmit: false,
+      });
+    },
+  });
+  await multiAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-labor",
+    hours: 8,
+    skill: "ath",
+  });
+  await multiAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-research",
+    hours: 8,
+    skill: "inv",
+  });
+  await multiAdapter.queueActivity({
+    actorId: "actor-1",
+    activityId: "guided-reflection",
+    hours: 1,
+  });
+  const multiDraft = await multiAdapter.getPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.equal(multiDraft.queue.length, 3);
+  assert.equal(multiDraft.usedHours, 17);
+  assert.equal(multiDraft.remainingHours, 7);
+  assert.equal(multiDraft.canSubmit, true);
+  await multiAdapter.submitQueue({ actorId: "actor-1" });
+  assert.deepEqual(rolledSkills, ["ath", "inv"]);
+  assert.equal(multiSubmission.queue.length, 3);
+  assert.ok(multiSubmission.queue[0].guidedRoll);
+  assert.ok(multiSubmission.queue[1].guidedRoll);
+  assert.equal(multiSubmission.queue[2].guidedRoll, undefined);
+  multiAdapter.destroy();
+
   const cancelledAdapter = createDowntimePlayerAdapter({
     subscribeSocket: makeBus().subscribe,
     registerSocket: () => true,

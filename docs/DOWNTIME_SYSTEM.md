@@ -6,15 +6,16 @@ The default GM flow is intentionally small and has no settlement, faction,
 Heat, theft, or escalation data. Open **Workbench → Downtime**,
 enter a location and a productive-hour budget, choose the player
 characters, then tick the saved activity templates that apply. Each player
-chooses exactly one activity and an applicable skill, then clicks **Roll &
-submit**. This makes the check on the player's controlled Actor and records its
-total with the submission; the assigned hours are used as one downtime
-activity. Choosing a different activity replaces the previous choice. All
-assigned hours are retained, including blocks up to 240 hours.
+allocates their character's hours among any of those activities, in the saved
+time block for each activity, then clicks **Roll & submit**. An activity can be
+added once and its hours can be changed before submission. The controlled Actor
+makes one check for every skill-based allocation. No-roll activities require no
+check. Unallocated hours are accepted and forfeited when the player submits;
+they do not carry into another block.
 
 The GM's unfinished setup survives in-window refreshes and switching workspace
 tabs. Invalid hours are highlighted before a request is sent. Selecting an
-activity moves keyboard focus to **Roll & submit**. On narrow windows, the
+activity moves keyboard focus to the allocation panel. On narrow windows, the
 submission panel stays in the page flow so it cannot cover activity buttons.
 
 If a submission reply is interrupted, **Retry submission** reuses the exact
@@ -48,16 +49,33 @@ The library ships with thirteen editable activities: **Paid Work**,
 **Research & Rumors**, **Thievery**, the eight choices below, **Craft Arrows**, and **Scribe a Spell Scroll**. No campaign
 time is advanced by this workflow.
 
-| Activity             | Player skills                       | Cost and possible benefit                                                |
-| -------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
-| Perform for a Crowd  | Performance, Acrobatics, Persuasion | No fee; 0, 2, or 4 gp in tips per block.                                 |
-| Train & Spar         | Athletics, Acrobatics, Insight      | 1 gp per workday; a training lesson or milestone described by the GM.    |
-| Build Local Contacts | Persuasion, Insight, Deception      | 1 gp per workday; introductions, information, or a modest favor.         |
-| Scout & Map          | Survival, Perception, Nature        | No fee; a local route, hazard, or discovery chosen by the GM.            |
-| Tend the Sick        | Medicine, Nature, Insight           | 0.5 gp per workday; care, gratitude, and connections with local healers. |
-| Religious Service    | Religion, Insight, Persuasion       | No fee; community trust, guidance, or a request for service.             |
-| Care for Animals     | Animal Handling, Medicine, Nature   | No fee; care and progress toward an agreed training goal.                |
-| Rest & Reflect       | No roll                             | No fee; a personal takeaway or resolution.                               |
+| Activity             | Time block | Player skills                       | Cost and possible benefit                                                |
+| -------------------- | ---------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| Perform for a Crowd  | 8 hours    | Performance, Acrobatics, Persuasion | No fee; 0, 2, or 4 gp in tips per allocation.                            |
+| Train & Spar         | 8 hours    | Athletics, Acrobatics, Insight      | 1 gp per workday; a training lesson or milestone described by the GM.    |
+| Build Local Contacts | 8 hours    | Persuasion, Insight, Deception      | 1 gp per workday; introductions, information, or a modest favor.         |
+| Scout & Map          | 8 hours    | Survival, Perception, Nature        | No fee; a local route, hazard, or discovery chosen by the GM.            |
+| Tend the Sick        | 8 hours    | Medicine, Nature, Insight           | 0.5 gp per workday; care, gratitude, and connections with local healers. |
+| Religious Service    | 8 hours    | Religion, Insight, Persuasion       | No fee; community trust, guidance, or a request for service.             |
+| Care for Animals     | 8 hours    | Animal Handling, Medicine, Nature   | No fee; care and progress toward an agreed training goal.                |
+| Rest & Reflect       | 1 hour     | No roll                             | No fee; a personal takeaway or resolution.                               |
+
+### Time-block source basis
+
+The default work block is eight hours. The official
+[2014 Basic Rules downtime rules](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/adventuring#DowntimeActivities)
+count a downtime day only after at least eight hours of activity, and the
+[2024 Basic Rules crafting rules](https://www.dndbeyond.com/sources/dnd/br-2024/equipment#CraftingEquipment)
+also define each crafting day as eight hours. Spell-scroll work uses the same
+eight-hour days and the official level-based total durations.
+
+**Rest & Reflect** uses a one-hour campaign block, based on the official
+[minimum short-rest duration](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/adventuring#ShortRest).
+It records narrative reflection only; it does not automatically grant a short
+rest, restore resources, or advance Foundry time. For activities whose rules do
+not define a smaller increment, the GM may save a custom whole-hour block from
+1 to 240 hours. That setting controls allocation increments, not automatic
+completion of a larger research, training, or project goal.
 
 ### Campaign benefits
 
@@ -99,11 +117,11 @@ their assigned snapshots; start a new block to use the updated library.
 
 Open **Downtime → Activities** to edit a saved activity or click **New activity**
 to create one. Set the player description, optional image, applicable skills,
-and three possible results with their player reports and rewards. **Extra
-benefit** can attach sparring or injury care to a result, or leave it narrative
-only. Existing
+hours per allocation block, and three possible results with their player
+reports and rewards. **Extra benefit** can attach sparring or injury care to a
+result, or leave it narrative only. Existing
 templates with up to six results retain all of them in the editor. Result
-rewards apply once per assigned block; they are not multiplied by its hours.
+rewards apply once per submitted allocation; they are not multiplied by its hours.
 Put the results in order from least to most successful. The GM can choose any
 result during review.
 
@@ -197,7 +215,8 @@ Use **Downtime Workspace → Projects** and choose **Craft or commission**,
 **Research a lead**, or **Train or learn** for an editable starting point. You
 can also create a blank project or select a saved project to edit it. Set the
 total productive hours, total GP cost, required successful checks, check DC,
-and skills players may use. Set successful checks to 0 for work that only needs
+hours per contribution block, and skills players may use. Set successful checks
+to 0 for work that only needs
 time and GP. For automatic ammunition delivery, use the **arrow crafting**
 activity in the Activities tab; a project can track a larger commission or
 other shared multi-block goal.
@@ -210,8 +229,8 @@ another addition explicitly rather than reporting success and dropping it.
 When opening a guided block, select any unfinished projects that characters may
 work on. GP is divided across the required hours and rounded cumulatively to
 copper, so splitting work across blocks does not increase the total. Each
-applied contribution adds up to its assigned hours; a roll at or above the DC
-adds one success. A failed check still spends the assigned downtime and pays
+applied contribution adds its allocated hours; a roll at or above the DC
+adds one success. A failed check still spends the allocated downtime and pays
 that contribution's GP. If all hours are complete before all successes are
 earned, later attempts can add successes without paying the project GP again.
 A project completes only when both targets are met. Progress is checkpointed
@@ -259,17 +278,19 @@ Foundry world time and Quartermaster upkeep.
 7. Apply the preview. Review each character's receipt or use recovery if an
    external write was interrupted.
 
-Guided blocks use the same saved states, but each player chooses one allowed
-activity and clicks **Roll & submit** instead of building a queue. The player's
-normal Foundry skill roll is recorded with that submission; the GM does not
-roll it again during preview. The GM still selects the final outcome, narrative,
-and reward before application.
+Guided blocks use the same saved states, but each player builds an allocation
+from the allowed activities and projects. Every selection must be a multiple of
+that entry's saved time block, the total cannot exceed the assigned budget, and
+unused hours are forfeited at submission. The player's normal Foundry skill
+roll is recorded once for each skill-based allocation; the GM does not roll it
+again during review. The GM selects the final outcome, narrative, and reward for
+each allocation before applying the character's complete result.
 
 ## Repeatable downtime gauntlet
 
 Run `npm run ui:audit:downtime` for the browser journey through project presets,
-activity editing, draft retention, invalid reward handling, setup, a changed
-player choice, a 240-hour submission, individual GM review, report editing, a
+activity editing, draft retention, invalid reward handling, setup, a three-entry
+split allocation with forfeited hours, individual GM review, report editing, a
 failed save, application, and the player receipt. It uses the real screen controllers and
 player adapter with isolated campaign doubles. It also checks review layout and
 accessibility at 1040, 720, and 380 pixels. Screenshots are written to

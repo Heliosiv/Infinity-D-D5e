@@ -205,6 +205,7 @@ export const ADDITIONAL_GUIDED_ACTIVITIES = Object.freeze([
     description:
       "Take quiet time to journal, meditate, or talk through recent events. No roll or fee. Agree on a personal takeaway with the GM; this does not automatically apply rest benefits or remove conditions.",
     image: "icons/svg/sleep.svg",
+    blockHours: 1,
     skills: [],
     outcomes: [
       {

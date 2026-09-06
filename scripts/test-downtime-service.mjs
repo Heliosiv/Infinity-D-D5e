@@ -770,6 +770,82 @@ try {
   );
   delete actor.rollSkill;
 
+  // Guided players may divide their personal budget into activity-sized blocks.
+  {
+    const allocationActor = makeActor({
+      id: "guided-allocation-actor",
+      currency: { pp: 0, gp: 100, ep: 0, sp: 0, cp: 0 },
+    });
+    actors.set(allocationActor.id, allocationActor);
+    let allocationBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "The Lantern District",
+      hours: 24,
+      actorIds: [allocationActor.id],
+      templateIds: ["guided-labor", "guided-research", "guided-reflection"],
+    });
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-multi-allocation",
+      blockId: allocationBlock.id,
+      actorId: allocationActor.id,
+      queue: [
+        {
+          id: "labor",
+          activityId: "guided-labor",
+          hours: 8,
+          skill: "ath",
+          guidedRoll: { total: 11, formula: "1d20 + 3" },
+        },
+        {
+          id: "research",
+          activityId: "guided-research",
+          hours: 8,
+          skill: "inv",
+          guidedRoll: { total: 20, formula: "1d20 + 5" },
+        },
+        {
+          id: "reflection",
+          activityId: "guided-reflection",
+          hours: 1,
+          skill: "",
+        },
+      ],
+    });
+    allocationBlock = await service.prepareGuidedDowntimeParticipant({
+      blockId: allocationBlock.id,
+      actorId: allocationActor.id,
+    });
+    assert.equal(allocationBlock.plan.operations.length, 3);
+    assert.equal(
+      new Set(allocationBlock.plan.operations.map((row) => row.operationId))
+        .size,
+      3,
+    );
+    assert.equal(allocationBlock.plan.characters[0].usedHours, 17);
+    assert.equal(allocationBlock.plan.characters[0].remainingHours, 7);
+    assert.deepEqual(
+      allocationBlock.plan.operations.map((row) => row.hours),
+      [8, 8, 1],
+    );
+    assert.deepEqual(
+      allocationBlock.plan.operations[1].walletBefore,
+      allocationBlock.plan.operations[0].walletAfter,
+      "multiple results use a sequential wallet checkpoint",
+    );
+    allocationBlock = await service.applyActiveDowntimeBlock(
+      allocationBlock.id,
+    );
+    assert.equal(allocationBlock.state, "completed");
+    const allocationReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: allocationActor.id,
+    });
+    assert.equal(allocationReceipt.receipt.activities.length, 3);
+    assert.equal(allocationActor.system.currency.gp, 101);
+    actors.delete(allocationActor.id);
+  }
+
   // Guided benefit review uses the real service, ledger, and player receipt.
   {
     const injuryEffects = await import("./injury/effects.js");
@@ -990,6 +1066,7 @@ try {
   const libraryActivity = {
     name: "Tend the community garden",
     description: "Spend the assigned time growing useful herbs.",
+    blockHours: 4,
     skills: [],
     outcomes: [
       {
@@ -1039,6 +1116,15 @@ try {
     }),
     /player report/,
   );
+  for (const blockHours of [0, 1.5, 241]) {
+    await assert.rejects(
+      service.saveGuidedDowntimeTemplate({
+        ...libraryActivity,
+        blockHours,
+      }),
+      /allocation block hours.*whole number.*1.*240/i,
+    );
+  }
   const savedActivity =
     await service.saveGuidedDowntimeTemplate(libraryActivity);
   assert.deepEqual(
@@ -1059,6 +1145,10 @@ try {
     actorId: actor.id,
   });
   assert.equal(Object.hasOwn(customPlayer.activities[0], "outcomes"), false);
+  assert.deepEqual(
+    customPlayer.activities[0].hourOptions.map((option) => option.value),
+    [4],
+  );
   await service.saveGuidedDowntimeTemplate({
     ...savedActivity,
     name: "Revised garden",
@@ -1068,6 +1158,23 @@ try {
     workflow.getActiveDowntimeBlock().guidedTemplates[0],
     savedActivity,
     "editing the library preserves the active block snapshot",
+  );
+  await assert.rejects(
+    service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "garden-invalid-allocation",
+      blockId: customBlock.id,
+      actorId: actor.id,
+      queue: [
+        {
+          id: "garden-choice",
+          activityId: savedActivity.id,
+          hours: 2,
+          skill: "",
+        },
+      ],
+    }),
+    /whole 4-hour blocks/,
   );
   await service.submitQueueAuthoritatively({
     userId: player.id,
@@ -1159,7 +1266,8 @@ try {
       0,
     );
   for (const activity of ADDITIONAL_GUIDED_ACTIVITIES) {
-    for (const [outcomeIndex, hours] of [1, 8, 240].entries()) {
+    for (const outcomeIndex of [0, 1, 2]) {
+      const hours = (activity.blockHours ?? 8) * (outcomeIndex + 1);
       // Third-result benefits have dedicated Actor/effect/patient journeys above.
       if (
         outcomeIndex === 2 &&
@@ -1247,6 +1355,17 @@ try {
       }),
       /whole number.*1.*10,000/,
       "invalid project hours must not be silently clamped into a saved project",
+    );
+  }
+  for (const blockHours of [0, 1.5, 241]) {
+    await assert.rejects(
+      service.saveGuidedDowntimeProject({
+        name: "Invalid contribution block",
+        requiredHours: 8,
+        blockHours,
+        skills: [],
+      }),
+      /contribution block hours.*whole number.*1.*240/i,
     );
   }
   await assert.rejects(
@@ -1346,7 +1465,9 @@ try {
       category: "project",
       icon: "fa-solid fa-compass",
       available: true,
-      fixedHours: 8,
+      fixedHours: 0,
+      hourOptions: [{ value: 8, label: "8 hours (1 8-hour block)" }],
+      limitLabel: "Allocate in 8-hour blocks.",
       skills: [
         { id: "arc", label: "Arcana", selected: false },
         { id: "his", label: "History", selected: false },
@@ -1355,7 +1476,7 @@ try {
       image: languageProject.image,
       project: true,
       costLabel: "Spend 1 gp for this contribution",
-      availabilityReason: "",
+      unavailableReason: "",
       progressHours: 0,
       progressSuccesses: 0,
       requiredHours: 16,
@@ -1635,6 +1756,7 @@ try {
     });
     const crafting = await service.saveGuidedDowntimeTemplate({
       ...workModule.guidedWorkPreset("arrows"),
+      blockHours: 4,
       work: {
         ...workModule.guidedWorkPreset("arrows").work,
         gpPerDay: 2,

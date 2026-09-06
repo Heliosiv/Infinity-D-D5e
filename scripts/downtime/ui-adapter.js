@@ -568,24 +568,33 @@ export class DowntimePlayerAdapter {
     this._assertEditable(projection, actorId);
     const key = this._draftKey(projection.blockId, actorId);
     const draft = this._ensureDraft(key, projection.rawQueue);
-    if (
-      projection.mode !== "guided" &&
-      draft.queue.length >= MAX_DRAFT_ACTIONS
-    ) {
-      throw new Error("A downtime queue can contain at most 64 activities.");
-    }
     const activityId = cleanId(payload.activityId);
     const guided = projection.mode === "guided";
-    const hours = guided
-      ? projection.budgetHours
-      : safeInteger(payload.hours, 0, DOWNTIME_MAX_BLOCK_HOURS);
-    if (!activityId || hours < 1)
-      throw new Error("Choose a valid activity and time.");
     const activity = projection.activities.find(
       (candidate) => candidate.id === activityId,
     );
+    const requestedHours = safeInteger(
+      payload.hours,
+      0,
+      DOWNTIME_MAX_BLOCK_HOURS,
+    );
+    const hours =
+      guided && requestedHours < 1
+        ? (activity?.hourOptions?.[0]?.value ??
+          activity?.fixedHours ??
+          projection.budgetHours)
+        : requestedHours;
+    if (!activityId || hours < 1)
+      throw new Error("Choose a valid activity and time.");
     if (guided && (!activity || !activity.available)) {
       throw new Error("Choose an available activity assigned by your GM.");
+    }
+    if (
+      guided &&
+      activity.hourOptions.length > 0 &&
+      !activity.hourOptions.some((option) => option.value === hours)
+    ) {
+      throw new Error("Choose one of this activity's available time blocks.");
     }
     const targetIds = activity?.multiTarget
       ? sanitizeTargetIds(payload.targetIds)
@@ -623,8 +632,36 @@ export class DowntimePlayerAdapter {
     if (targetId) entry.targetId = targetId;
     if (targetIds.length > 0) entry.targetIds = targetIds;
     if (stakeCp > 0) entry.stakeCp = stakeCp;
-    if (guided) draft.queue = [entry];
-    else draft.queue.push(entry);
+    if (guided) {
+      const existing = draft.queue.findIndex(
+        (candidate) => candidate.activityId === activityId,
+      );
+      if (existing < 0 && draft.queue.length >= MAX_DRAFT_ACTIONS) {
+        throw new Error("A downtime queue can contain at most 64 activities.");
+      }
+      const nextQueue = [...draft.queue];
+      if (existing >= 0) {
+        entry.id = nextQueue[existing].id;
+        nextQueue[existing] = entry;
+      } else {
+        nextQueue.push(entry);
+      }
+      const usedHours = nextQueue.reduce(
+        (sum, candidate) => sum + candidate.hours,
+        0,
+      );
+      if (usedHours > projection.budgetHours) {
+        throw new Error(
+          `That allocation would use ${usedHours} hours, more than the ${projection.budgetHours} hours assigned.`,
+        );
+      }
+      draft.queue = nextQueue;
+    } else {
+      if (draft.queue.length >= MAX_DRAFT_ACTIONS) {
+        throw new Error("A downtime queue can contain at most 64 activities.");
+      }
+      draft.queue.push(entry);
+    }
     draft.dirty = true;
     this._notify("draft-change", actorId);
     return clone(entry);
@@ -697,14 +734,24 @@ export class DowntimePlayerAdapter {
     let attempt = draft.submissionAttempt;
     const queueKey = JSON.stringify(queue);
     if (projection.mode !== "guided" || attempt?.queueKey !== queueKey) {
-      const submittedQueue =
-        projection.mode === "guided"
-          ? await this._preparePlayerClickedGuidedRoll({
-              projection,
-              actorId: actor,
-              queue,
-            })
-          : queue;
+      let submittedQueue;
+      try {
+        submittedQueue =
+          projection.mode === "guided"
+            ? await this._preparePlayerClickedGuidedRoll({
+                projection,
+                actorId: actor,
+                queue,
+              })
+            : queue;
+      } catch (error) {
+        if (projection.mode === "guided" && error?.partialQueue) {
+          draft.queue = sanitizeDowntimeSubmissionQueue(error.partialQueue);
+          draft.dirty = true;
+          this._notify("draft-change", actor);
+        }
+        throw error;
+      }
       attempt = {
         queueKey,
         queue: submittedQueue,
@@ -746,47 +793,58 @@ export class DowntimePlayerAdapter {
 
   async _preparePlayerClickedGuidedRoll({ projection, actorId, queue }) {
     if (projection.mode !== "guided") return queue;
-    if (queue.length !== 1) {
-      throw new Error("Choose exactly one activity before rolling.");
+    if (queue.length < 1) {
+      throw new Error("Allocate at least one activity before submitting.");
     }
-    const entry = queue[0];
-    const activity = projection.activities.find(
-      (option) => option.id === entry.activityId,
-    );
-    if (
-      !activity?.available ||
-      (activity.targets.length &&
-        !activity.targets.some(
-          (option) => option.id === entry.targetId && !option.disabled,
-        ))
-    )
-      throw new Error(
-        "This activity's costs or supplies are no longer available. Refresh and review your choice before submitting.",
-      );
-    if (!entry.skill) return queue;
     const actor = this._getActor(actorId);
     if (!actor)
       throw new Error("Your assigned character is no longer available.");
-    const result = await this._rollSkill(actor, entry.skill, {
-      chatMessage: true,
-      fastForward: false,
-    });
-    if (!result?.ok) {
-      const error = new Error(
-        "Your downtime check was cancelled. Choose Roll & submit to try again.",
+    const prepared = [];
+    for (let index = 0; index < queue.length; index += 1) {
+      const entry = queue[index];
+      const activity = projection.activities.find(
+        (option) => option.id === entry.activityId,
       );
-      error.code = "DOWNTIME_ROLL_CANCELLED";
-      throw error;
-    }
-    return [
-      {
+      if (
+        !activity?.available ||
+        (activity.hourOptions.length > 0 &&
+          !activity.hourOptions.some(
+            (option) => option.value === entry.hours,
+          )) ||
+        (activity.targets.length &&
+          !activity.targets.some(
+            (option) => option.id === entry.targetId && !option.disabled,
+          ))
+      ) {
+        throw new Error(
+          "An activity's time block, costs, or supplies are no longer available. Refresh and review the allocation before submitting.",
+        );
+      }
+      if (!entry.skill || entry.guidedRoll) {
+        prepared.push(entry);
+        continue;
+      }
+      const result = await this._rollSkill(actor, entry.skill, {
+        chatMessage: true,
+        fastForward: false,
+      });
+      if (!result?.ok) {
+        const error = new Error(
+          "A downtime check was cancelled. Completed checks are kept; submit again when ready.",
+        );
+        error.code = "DOWNTIME_ROLL_CANCELLED";
+        error.partialQueue = [...prepared, ...queue.slice(index)];
+        throw error;
+      }
+      prepared.push({
         ...entry,
         guidedRoll: {
           total: Number(result.total),
           formula: cleanText(result.roll?.formula, 160),
         },
-      },
-    ];
+      });
+    }
+    return prepared;
   }
 
   async recallSubmission({ actorId = "" } = {}) {
@@ -1099,7 +1157,7 @@ export class DowntimePlayerAdapter {
       !projection.noGm &&
       projection.status === "collecting" &&
       !projection.submitted &&
-      (projection.mode !== "guided" || queue.length === 1) &&
+      (projection.mode !== "guided" || queue.length >= 1) &&
       projection.usedHours <= projection.budgetHours,
     );
     projection.retrySubmission = Boolean(

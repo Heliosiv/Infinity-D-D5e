@@ -21,6 +21,7 @@ export const GUIDED_PROJECT_PRESETS = Object.freeze([
       name: "Craft or Commission an Item",
       description:
         "Make, repair, or commission a substantial item over several downtime blocks.",
+      blockHours: 8,
       requiredHours: 40,
       requiredGp: 100,
       requiredSuccesses: 3,
@@ -35,6 +36,7 @@ export const GUIDED_PROJECT_PRESETS = Object.freeze([
       name: "Research a Lead",
       description:
         "Gather sources, follow clues, and turn them into a useful campaign lead.",
+      blockHours: 8,
       requiredHours: 24,
       requiredGp: 25,
       requiredSuccesses: 3,
@@ -49,6 +51,7 @@ export const GUIDED_PROJECT_PRESETS = Object.freeze([
       name: "Train or Learn",
       description:
         "Work toward a language, tool, contact, or other GM-approved training goal.",
+      blockHours: 8,
       requiredHours: 80,
       requiredGp: 50,
       requiredSuccesses: 5,
@@ -88,12 +91,14 @@ export function normalizeGuidedDowntimeProject(
   const requiredHours = wholeNumber(raw.requiredHours, 1, 10_000, 0);
   if (!id || !name || !requiredHours) return null;
   const requiredSuccesses = wholeNumber(raw.requiredSuccesses, 0, 1_000, 0);
+  const legacyBlockHours = requiredHours % 8 === 0 ? 8 : 1;
   return {
     id,
     name,
     description: text(raw.description, 400),
     image: imagePath(raw.image),
     skills: normalizeGuidedDowntimeSkills(raw.skills),
+    blockHours: wholeNumber(raw.blockHours, 1, 240, legacyBlockHours),
     requiredHours,
     requiredGp: decimal(raw.requiredGp, 0, 100_000, 0),
     requiredSuccesses,
@@ -115,6 +120,7 @@ export function projectGuidedDowntimeProject(project) {
     description: project.description,
     image: project.image,
     skills: [...project.skills],
+    blockHours: project.blockHours,
     requiredHours: project.requiredHours,
     requiredGp: project.requiredGp,
     requiredSuccesses: project.requiredSuccesses,

@@ -374,6 +374,12 @@ try {
   const historicalV5Config = {
     ...structuredClone(canonicalCheckpoint.config.value),
     version: 5,
+    guidedTemplates: canonicalCheckpoint.config.value.guidedTemplates.map(
+      (template) => {
+        const { blockHours: _blockHours, ...historicalTemplate } = template;
+        return historicalTemplate;
+      },
+    ),
     guidedProjects: [
       {
         id: "project-smith-arrows",
@@ -385,6 +391,45 @@ try {
       },
     ],
   };
+  const historicalV7Config = {
+    ...structuredClone(canonicalCheckpoint.config.value),
+    version: 7,
+    guidedTemplates: canonicalCheckpoint.config.value.guidedTemplates.map(
+      (template) => {
+        const { blockHours: _blockHours, ...historicalTemplate } = template;
+        return historicalTemplate;
+      },
+    ),
+    guidedProjects: canonicalCheckpoint.config.value.guidedProjects.map(
+      (project) => {
+        const { blockHours: _blockHours, ...historicalProject } = project;
+        return historicalProject;
+      },
+    ),
+  };
+  seedCompositeConfig(historicalV7Config);
+  assert.equal(
+    workflow.isDowntimeWorkflowReady(),
+    false,
+    "v7 libraries stay read-only until allocation block hours are migrated",
+  );
+  const compatibleV7Config = workflow.loadDowntimeConfig();
+  assert.equal(
+    compatibleV7Config.guidedTemplates.find(
+      (template) => template.id === "guided-reflection",
+    ).blockHours,
+    1,
+  );
+  assert.equal(
+    compatibleV7Config.guidedTemplates.find(
+      (template) => template.id === "guided-labor",
+    ).blockHours,
+    8,
+  );
+  await workflow.ensureDowntimeWorkflowAuthority();
+  assert.equal(settings.get("downtimeConfig").version, DOWNTIME_CONFIG_VERSION);
+  assert.equal(workflow.isDowntimeWorkflowReady(), true);
+
   seedCompositeConfig(historicalV5Config);
   assert.equal(
     workflow.isDowntimeWorkflowReady(),
@@ -396,6 +441,7 @@ try {
     compatibleV5Config.guidedProjects[0],
     {
       ...historicalV5Config.guidedProjects[0],
+      blockHours: 8,
       requiredGp: 0,
       requiredSuccesses: 0,
       checkDc: 15,

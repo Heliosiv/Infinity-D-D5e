@@ -203,15 +203,31 @@ const oldConfig = normalizeDowntimeConfig({
     name: `Custom ${i}`,
   })),
 });
+oldConfig.guidedTemplates = oldConfig.guidedTemplates.map((template) => {
+  const { blockHours: _blockHours, ...historicalTemplate } = template;
+  return historicalTemplate;
+});
+oldConfig.guidedProjects = oldConfig.guidedProjects.map((project) => {
+  const { blockHours: _blockHours, ...historicalProject } = project;
+  return historicalProject;
+});
 oldConfig.version = 6;
 settings.set("downtimeConfig", clone(oldConfig));
 resetDowntimeWorkflowStoreForTests();
 const migrated = loadDowntimeConfig();
-assert.equal(migrated.version, 7);
+assert.equal(migrated.version, 8);
 assert.equal(migrated.guidedTemplates.length, 28);
 assert.deepEqual(
-  migrated.guidedTemplates.slice(0, 24),
+  migrated.guidedTemplates.slice(0, 24).map((template) => {
+    const { blockHours: _blockHours, ...historicalTemplate } = template;
+    return historicalTemplate;
+  }),
   oldConfig.guidedTemplates,
+);
+assert.ok(
+  migrated.guidedTemplates
+    .slice(0, 24)
+    .every(({ blockHours }) => blockHours === 8),
 );
 assert.deepEqual(
   settings.get("downtimeConfig"),

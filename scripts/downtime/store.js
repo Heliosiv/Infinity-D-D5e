@@ -42,6 +42,7 @@ const GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION = 3;
 const PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION = 4;
 const PREVIOUS_DOWNTIME_CONFIG_VERSION = 5;
 const PRE_BENEFIT_DOWNTIME_CONFIG_VERSION = 6;
+const PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION = 7;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -178,6 +179,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
       PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
       PREVIOUS_DOWNTIME_CONFIG_VERSION,
       PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
+      PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
   ) {
@@ -367,23 +369,41 @@ function normalizeStoredDowntimeConfig(raw) {
 function parsePersistedDowntimeConfig(raw) {
   if (!isPlainObject(raw)) return null;
   const current = normalizeStoredDowntimeConfig(raw);
+  const preBlockHoursShape = {
+    ...current,
+    guidedTemplates: current.guidedTemplates.map((template) => {
+      const { blockHours: _blockHours, ...previousTemplate } = template;
+      return previousTemplate;
+    }),
+    guidedProjects: current.guidedProjects.map((project) => {
+      const { blockHours: _blockHours, ...previousProject } = project;
+      return previousProject;
+    }),
+  };
   let persistedShape;
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
   } else if (
+    persistedVersionEquals(raw.version, PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION)
+  ) {
+    persistedShape = {
+      ...preBlockHoursShape,
+      version: PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION,
+    };
+  } else if (
     persistedVersionEquals(raw.version, PRE_BENEFIT_DOWNTIME_CONFIG_VERSION)
   ) {
     persistedShape = {
-      ...current,
+      ...preBlockHoursShape,
       version: PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
     };
   } else if (
     persistedVersionEquals(raw.version, PREVIOUS_DOWNTIME_CONFIG_VERSION)
   ) {
     persistedShape = {
-      ...current,
+      ...preBlockHoursShape,
       version: PREVIOUS_DOWNTIME_CONFIG_VERSION,
-      guidedProjects: current.guidedProjects.map((project) => {
+      guidedProjects: preBlockHoursShape.guidedProjects.map((project) => {
         const {
           requiredGp: _requiredGp,
           requiredSuccesses: _requiredSuccesses,
@@ -399,7 +419,8 @@ function parsePersistedDowntimeConfig(raw) {
       PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
     )
   ) {
-    const { guidedProjects: _guidedProjects, ...previousShape } = current;
+    const { guidedProjects: _guidedProjects, ...previousShape } =
+      preBlockHoursShape;
     persistedShape = {
       ...previousShape,
       version: PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION,
@@ -411,7 +432,7 @@ function parsePersistedDowntimeConfig(raw) {
       guidedTemplates: _guidedTemplates,
       guidedProjects: _guidedProjects,
       ...previousShape
-    } = current;
+    } = preBlockHoursShape;
     persistedShape = {
       ...previousShape,
       version: GUIDED_TEMPLATE_DOWNTIME_CONFIG_VERSION,

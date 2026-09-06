@@ -598,7 +598,7 @@ assert.match(downtimeEmptyView.html, /8 productive hours per day/);
 assert.match(downtimeEmptyView.html, /Applicable activities/);
 assert.match(
   downtimeEmptyView.html,
-  /Settlement, faction, Heat, and escalation rules/,
+  /Players split their assigned hours among these activities/,
 );
 assert.match(downtimeEmptyView.html, /name="locationName"/);
 

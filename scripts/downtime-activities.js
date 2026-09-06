@@ -305,9 +305,9 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
         ...values,
       },
       {
-        pending: this._guided ? "Selecting activity..." : "Adding activity...",
+        pending: this._guided ? "Saving allocation..." : "Adding activity...",
         success: this._guided
-          ? "Activity selected. Submit when ready."
+          ? "Time allocated. Add more activities or submit when ready."
           : "Activity added to your queue.",
         focus: this._guided
           ? '[data-action="submitQueue"]'
@@ -377,10 +377,10 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
         pending: this._retrySubmission
           ? "Retrying the saved downtime check..."
           : this._requiresRoll
-            ? "Rolling and submitting your downtime activity..."
+            ? "Rolling and submitting your downtime activities..."
             : "Submitting your queue...",
         success: this._guided
-          ? "Your activity is submitted. The GM can now review the result."
+          ? "Your allocation is submitted. The GM can now review the results."
           : "Your queue is submitted for GM review.",
         focus: '[data-action="recallSubmission"]',
       },
@@ -476,7 +476,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
   const canSubmit =
     editable &&
     withinBudget &&
-    (!guided || queue.length === 1) &&
+    (!guided || queue.length >= 1) &&
     Boolean(source.canSubmit ?? true);
   const progressPercent =
     budgetHours > 0
@@ -489,7 +489,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status,
     completed: status === "completed",
     guided,
-    requiresRoll: guided && (queue.length === 0 || Boolean(queue[0]?.skill)),
+    requiresRoll: guided && queue.some((entry) => Boolean(entry.skill)),
     retrySubmission: source.retrySubmission === true,
     statusLabel: playerStatusLabel(status, submitted),
     statusTone: playerStatusTone(status),
@@ -527,6 +527,13 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
       return {
         ...activity,
         selected: Boolean(choice),
+        selectedHoursLabel: choice
+          ? `${choice.hours} ${choice.hours === 1 ? "hour" : "hours"}`
+          : activity.selectedHoursLabel,
+        hourOptions: activity.hourOptions.map((option) => ({
+          ...option,
+          selected: option.value === choice?.hours,
+        })),
         skills: choice
           ? activity.skills.map((skill) => ({
               ...skill,
@@ -547,8 +554,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
         ? submitted
           ? "Your queue is already submitted."
           : "Submissions are not open."
-        : guided && queue.length !== 1
-          ? "Choose one activity, then submit it."
+        : guided && queue.length < 1
+          ? "Allocate at least one activity, then submit. Unallocated hours will be forfeited."
           : usedHours > budgetHours
             ? "Your queue exceeds the time budget."
             : ""),
