@@ -62,6 +62,12 @@ The former full-GM Home, Session Focus, Continue list, and Campaign Data panel a
 
 See the [UI quick start](docs/UI_QUICK_START.md) for role-based workflows, keyboard and touch use, settings, and recovery guidance.
 
+If you run the game with multiple GM profiles, give each the **Gamemaster** role
+in Foundry's User Management. **Gamemaster** and **Test GM** receive the same
+Infinity access when both have that role. An **Assistant Gamemaster** receives
+the player launcher; changing a display name does not grant GM access. See
+[using two GM profiles](docs/UI_QUICK_START.md#use-two-gm-profiles).
+
 ## Status
 
 **v0.3.15 — Injury care and release fixes** - Adds a searchable injury board, saved injury history, clickable token badges, and calendar repair while retaining recorded injuries and the preview fixes. Corrects prerelease ordering and exact-tag verification. On short screens, Factions uses a full-window scroll path so wrapped headers cannot hide the editor or Save button.

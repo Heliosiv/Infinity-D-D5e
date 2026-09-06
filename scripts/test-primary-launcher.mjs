@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { openInfinityPrimaryLauncher } from "./primary-launcher.js";
+import { isFullGM } from "./permissions.js";
 
 function fixture({ fullGm, state = "ready" }) {
   const calls = [];
@@ -36,6 +37,40 @@ for (const fullGm of [false, undefined]) {
   const player = fixture({ fullGm });
   openInfinityPrimaryLauncher(player.bindings);
   assert.deepEqual(player.calls, ["player-launcher"]);
+}
+
+/* Both GM profiles follow their current Foundry role, including role changes. */
+{
+  const originalGame = globalThis.game;
+  const originalConst = globalThis.CONST;
+  globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
+  try {
+    for (const name of ["Gamemaster", "Test GM", "Another GM"]) {
+      const user = { id: `user-${name}`, name, role: 3, isGM: true };
+      globalThis.game = { user };
+      const current = fixture({ fullGm: false });
+      current.bindings.isFullGM = () => isFullGM();
+
+      openInfinityPrimaryLauncher(current.bindings);
+      assert.deepEqual(current.calls.splice(0), ["player-launcher"], name);
+
+      user.role = 4;
+      openInfinityPrimaryLauncher(current.bindings);
+      assert.deepEqual(current.calls.splice(0), ["gm-workbench"], name);
+
+      current.bindings.getPrivateStateStatus = () => ({ state: "blocked" });
+      openInfinityPrimaryLauncher(current.bindings);
+      assert.deepEqual(current.calls.splice(0), ["campaign-recovery"], name);
+
+      user.role = 2;
+      user.isGM = false;
+      openInfinityPrimaryLauncher(current.bindings);
+      assert.deepEqual(current.calls.splice(0), ["player-launcher"], name);
+    }
+  } finally {
+    globalThis.game = originalGame;
+    globalThis.CONST = originalConst;
+  }
 }
 
 process.stdout.write("primary launcher routing validation passed\n");
