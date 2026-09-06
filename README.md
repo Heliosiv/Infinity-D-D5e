@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Unreleased — stable merchant editing:** Auto-saving merchant settings no
+longer rebuilds the same editor window. Expanded sections, keyboard focus, and
+the current scroll position stay in place while adjusting stock generation,
+pricing, access, and other merchant controls.
+
 **v0.3.19 — direct city pricing:** Multi-merchant pricing now applies without
 the read-only-array crash. The separate **Preview changes** action is gone;
 the exact merchant changes update automatically while editing, followed by one

@@ -391,6 +391,56 @@ try {
       await page.evaluate(() => journey.findMerchant("a").buyFilter.lootTypes),
       ["loot.weapon.mundane"],
     );
+
+    // Auto-saving a stock-generation number must not rebuild the editor that
+    // initiated the write. Rebuilding collapses the disclosure, drops focus,
+    // and forces the GM to find their place after every spinner/key change.
+    await selectTab("advanced");
+    const stockGeneration = editor
+      .locator("details")
+      .filter({ hasText: "Stock generation settings" });
+    await stockGeneration.locator("summary").click();
+    const balanceInput = stockGeneration.locator(
+      '[name="poolRarityWeight.common"]',
+    );
+    await balanceInput.scrollIntoViewIfNeeded();
+    const scrollBeforeBalanceEdit = await editor
+      .locator(".mw-tab-content")
+      .evaluate((element) => element.scrollTop);
+    const writesBeforeBalanceEdit = await page.evaluate(
+      () => journey.state.writes,
+    );
+    await balanceInput.focus();
+    await balanceInput.press("ArrowUp");
+    await page.waitForFunction(
+      (before) => journey.state.writes > before,
+      writesBeforeBalanceEdit,
+    );
+    await page.evaluate(
+      () => journey.MerchantWorkspaceApp._editors.get("a").rendering,
+    );
+    assert.equal(
+      await stockGeneration.getAttribute("open"),
+      "",
+      "stock-generation settings stay expanded after their autosave",
+    );
+    assert.equal(
+      await balanceInput.evaluate(
+        (element) => document.activeElement === element,
+      ),
+      true,
+      "the edited stock-generation number keeps focus after autosave",
+    );
+    assert.equal(
+      await editor
+        .locator(".mw-tab-content")
+        .evaluate(
+          (element, expected) => Math.abs(element.scrollTop - expected) <= 1,
+          scrollBeforeBalanceEdit,
+        ),
+      true,
+      "stock-generation autosave preserves the editor viewpoint",
+    );
     const beforePrompt = await page.evaluate(() =>
       JSON.stringify(journey.settings.get("merchants")),
     );

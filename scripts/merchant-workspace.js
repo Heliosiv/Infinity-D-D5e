@@ -357,12 +357,24 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this._selectedLocationId = null;
     this._locationBusy = false;
     this._saveStatus = "All changes saved";
+    this._formSaveDepth = 0;
     this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
     // Re-render on stock changes AND on session open/close so the "Active
     // Sessions" list stays accurate even when a player closes their own window.
     this._unsubs = [
-      subscribe(MERCHANT_EVENTS.STATE_UPDATE, () => this.render(false)),
+      subscribe(MERCHANT_EVENTS.STATE_UPDATE, (payload) => {
+        // The current form already contains the values it just saved. Replacing
+        // that same DOM would collapse open disclosures, drop focus, and move
+        // the GM away from the field after every number/checkbox change.
+        if (
+          this._formSaveDepth > 0 &&
+          payload?.merchantId === this._selectedId
+        ) {
+          return;
+        }
+        this.render(false);
+      }),
       subscribe(MERCHANT_EVENTS.SESSION_OPEN, () => this.render(false)),
       subscribe(MERCHANT_EVENTS.SESSION_CLOSE, () => this.render(false)),
     ];
@@ -374,6 +386,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ) {
         return;
       }
+      if (this._formSaveDepth > 0 && payload?.reason === "local-write") return;
       if (this.rendered) this.render(false);
     });
     this._tabLeadershipHookId = globalThis.Hooks?.on?.(
@@ -1075,6 +1088,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     // mutex so a concurrent player purchase (which decrements stock under the
     // same lock) isn't clobbered back by this config save's stale snapshot.
     this._setSaveStatus("Saving…");
+    this._formSaveDepth = (Number(this._formSaveDepth) || 0) + 1;
     try {
       await commitMerchantWrite(
         this._selectedId,
@@ -1149,6 +1163,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     } catch (error) {
       this._setSaveStatus("Save failed — retry");
       throw error;
+    } finally {
+      this._formSaveDepth = Math.max(0, this._formSaveDepth - 1);
     }
   }
 
