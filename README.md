@@ -3,6 +3,13 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.21 — flexible downtime hours:** Players can split each assigned
+downtime budget among multiple activities and projects, using the saved hourly
+block for each choice. Unallocated hours are forfeited at submission, and every
+skill-based allocation records its own player roll for GM review. Existing
+campaign libraries migrate to eight-hour work blocks, while Rest & Reflect uses
+a one-hour narrative block.
+
 **v0.3.20 — stable merchant editing:** Auto-saving merchant settings no
 longer rebuilds the same editor window. Expanded sections, keyboard focus, and
 the current scroll position stay in place while adjusting stock generation,
@@ -72,7 +79,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.15 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this UI release requires its own installed-world acceptance.
+Version 0.3.21 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this downtime release requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
