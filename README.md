@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**v0.3.16 candidate — simpler shops by location:** Choose a city or location,
+**v0.3.16 — simpler shops by location:** Choose a city or location,
 then **Open All**, **Close All**, **Restock All**, **Generate All**, or **Clear All
 Inventory** for its merchants. Several locations can stay open at once. Village,
 town, and city templates include stock, prices, and purchasing gold; custom
