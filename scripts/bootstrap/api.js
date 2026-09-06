@@ -13,6 +13,8 @@ export function createModuleApi(bindings) {
     LootStudioApp,
     InfinitySettingsApp,
     MerchantWorkspaceApp,
+    MerchantPricingApp,
+    applyMerchantPricingMacro,
     MerchantSessionApp,
     ShopPickerApp,
     ResourceManagerApp,
@@ -67,6 +69,10 @@ export function createModuleApi(bindings) {
       runAsFullGM(() =>
         GmWorkbenchApp.open({ route: "merchants", ...options }),
       ),
+    openMerchantPricing: (options = {}) =>
+      runAsFullGM(() => MerchantPricingApp.open(options)),
+    applyMerchantPricingMacro: (options = {}) =>
+      runAsFullGM(() => applyMerchantPricingMacro(options)),
     openShops: () => ShopPickerApp.open(),
     openResourceManager: (options = {}) =>
       runAsFullGM(() =>

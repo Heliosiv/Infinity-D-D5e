@@ -30,6 +30,7 @@ import {
 } from "./merchant/store.js";
 import { rollMerchantStock } from "./merchant/pool.js";
 import { MerchantSessionApp } from "./merchant-session.js";
+import { MerchantPricingApp } from "./merchant/pricing-app.js";
 import {
   captureScroll,
   restoreScroll,
@@ -244,6 +245,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       assignLocation: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onAssignLocation,
       ),
+      openPricingMacros: MerchantWorkspaceApp._onOpenPricingMacros,
       selectMerchant: MerchantWorkspaceApp._onSelectMerchant,
       save: requireMerchantWriteAuthority(MerchantWorkspaceApp._onSave),
       deleteMerchant: requireMerchantWriteAuthority(
@@ -1315,6 +1317,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       );
       this._selectedLocationId = destination;
     });
+  }
+
+  static _onOpenPricingMacros() {
+    return MerchantPricingApp.open();
   }
 
   static async _onRecheckTransaction(_event, target) {

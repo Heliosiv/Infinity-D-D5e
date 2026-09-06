@@ -395,6 +395,14 @@ export function buildHarnessViews() {
       merchantWorkspaceSaveErrorContext(),
       { width: 1000, height: 720 },
     ),
+    view(
+      "merchant-pricing",
+      "Merchant City Pricing",
+      "infinity-merchant-pricing",
+      "templates/merchant-pricing.hbs",
+      merchantPricingContext(),
+      { width: 840, height: 720 },
+    ),
     ...MERCHANT_EDITOR_TABS.map(([key, label]) =>
       view(
         `merchant-editor-${key}`,
@@ -2230,6 +2238,93 @@ function merchantWorkspaceContext() {
     accessLabel: "All players",
   }));
   return context;
+}
+
+function merchantPricingContext() {
+  return {
+    cityOptions: [
+      {
+        id: "all",
+        name: "All merchants",
+        merchantCount: 3,
+        merchantCountIsOne: false,
+        selected: false,
+      },
+      {
+        id: "haven",
+        name: "Haven",
+        merchantCount: 2,
+        merchantCountIsOne: false,
+        selected: true,
+      },
+    ],
+    hasCities: true,
+    hasMerchants: true,
+    merchants: [
+      {
+        id: "m-curios",
+        name: "Yannick's Curios",
+        art: "icons/svg/chest.svg",
+        defaultMarkup: "1.20",
+        sellRatio: "0.50",
+        bargainDC: 15,
+        checked: true,
+      },
+      {
+        id: "m-smith",
+        name: "The Iron Rest",
+        art: "icons/svg/anvil.svg",
+        defaultMarkup: "1.10",
+        sellRatio: "0.45",
+        bargainDC: 14,
+        checked: true,
+      },
+      {
+        id: "m-apothecary",
+        name: "Moonwater Apothecary",
+        art: "icons/svg/potion.svg",
+        defaultMarkup: "1.30",
+        sellRatio: "0.40",
+        bargainDC: 16,
+        checked: false,
+      },
+    ],
+    draft: {
+      scopeId: "haven",
+      includePricing: true,
+      includeBargaining: true,
+      includeCharm: true,
+      clearItemPriceOverrides: false,
+      defaultMarkup: 1.25,
+      sellRatio: 0.45,
+      bargainDC: 15,
+      bargainSuccessPct: 10,
+      bargainFailPct: 10,
+      passiveHaggle: true,
+      passivePctPerPoint: 2,
+      passiveCapPct: 20,
+    },
+    selectedCount: 2,
+    preview: {
+      changedCount: 2,
+      changes: [
+        {
+          merchantName: "Yannick's Curios",
+          summary: "Buy price 1.20× → 1.25×; Sell-back 0.50× → 0.45×",
+        },
+        {
+          merchantName: "The Iron Rest",
+          summary: "Buy price 1.10× → 1.25×; Bargain DC 14 → 15",
+        },
+      ],
+    },
+    hasPreview: true,
+    canApply: true,
+    canManage: true,
+    authorityReason: "",
+    status: "Review 2 merchant changes below.",
+    statusTone: "attention",
+  };
 }
 
 function merchantWorkspaceSaveErrorContext() {

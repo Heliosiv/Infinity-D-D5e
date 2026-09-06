@@ -7,6 +7,8 @@ import { openInfinityPrimaryLauncher } from "../primary-launcher.js";
 import { LootStudioApp } from "../loot-studio.js";
 import { InfinitySettingsApp } from "../settings-app.js";
 import { MerchantWorkspaceApp } from "../merchant-workspace.js";
+import { MerchantPricingApp } from "../merchant/pricing-app.js";
+import { applyMerchantPricingMacro } from "../merchant/pricing-macros.js";
 import {
   MerchantSessionApp,
   registerMerchantSessionAutoOpen,
@@ -187,6 +189,8 @@ export const runtimeBindings = Object.freeze({
   LootStudioApp,
   InfinitySettingsApp,
   MerchantWorkspaceApp,
+  MerchantPricingApp,
+  applyMerchantPricingMacro,
   MerchantSessionApp,
   registerMerchantSessionAutoOpen,
   ShopPickerApp,

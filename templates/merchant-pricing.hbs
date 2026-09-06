@@ -1,0 +1,133 @@
+<form class="mp-shell" data-merchant-pricing-form autocomplete="off">
+  <header class="mp-head">
+    <div>
+      <p class="mp-eyebrow">Merchant macro</p>
+      <h2>City Pricing</h2>
+      <p>Set shared prices for a whole city, then keep any merchant different by selecting it on its own.</p>
+    </div>
+    <span class="mp-status" data-pricing-status data-tone="{{statusTone}}" role="status" aria-live="polite">{{status}}</span>
+  </header>
+
+  {{#unless canManage}}
+  <div class="mp-notice" role="status">
+    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+    <span>{{authorityReason}}</span>
+  </div>
+  {{/unless}}
+
+  <section class="mp-card" aria-labelledby="mp-target-heading">
+    <div class="mp-card__head">
+      <div>
+        <p class="mp-eyebrow">1 · Choose the group</p>
+        <h3 id="mp-target-heading">Cities and merchants</h3>
+      </div>
+      <span class="mp-count" data-selected-count>{{selectedCount}} selected</span>
+    </div>
+    <label class="mp-field mp-field--wide">
+      <span>City or group</span>
+      <select name="scopeId">
+        {{#each cityOptions}}
+        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}} · {{merchantCount}} merchant{{#unless merchantCountIsOne}}s{{/unless}}</option>
+        {{/each}}
+      </select>
+    </label>
+    {{#unless hasCities}}
+    <p class="mp-help">No saved cities are available yet, so this starts with all merchants. Link merchants from Downtime → Settlements to create city groups.</p>
+    {{/unless}}
+    <div class="mp-inline-actions">
+      <button type="button" data-action="selectAll">Select all</button>
+      <button type="button" data-action="selectNone">Select none</button>
+    </div>
+    {{#if hasMerchants}}
+    <div class="mp-merchants" role="group" aria-label="Merchants included in this pricing change">
+      {{#each merchants}}
+      <label class="mp-merchant">
+        <input type="checkbox" name="merchantIds" value="{{id}}" {{#if checked}}checked{{/if}} />
+        <span class="mp-merchant__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
+        <span class="mp-merchant__copy">
+          <strong>{{name}}</strong>
+          <small>Buy {{defaultMarkup}}× · Sell {{sellRatio}}× · DC {{bargainDC}}</small>
+        </span>
+      </label>
+      {{/each}}
+    </div>
+    {{else}}
+    <p class="mp-empty">Create merchants before building a pricing macro.</p>
+    {{/if}}
+  </section>
+
+  <section class="mp-card" aria-labelledby="mp-rules-heading">
+    <div class="mp-card__head">
+      <div>
+        <p class="mp-eyebrow">2 · Set the rules</p>
+        <h3 id="mp-rules-heading">Pricing to copy</h3>
+      </div>
+    </div>
+
+    <fieldset class="mp-rule-group">
+      <legend><label><input type="checkbox" name="includePricing" {{#if draft.includePricing}}checked{{/if}} /> Buy and sell prices</label></legend>
+      <div class="mp-grid">
+        <label class="mp-field">
+          <span>Buy price ×</span>
+          <input type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{draft.defaultMarkup}}" />
+          <small>1.20 means players pay 20% above list price.</small>
+        </label>
+        <label class="mp-field">
+          <span>Sell-back ×</span>
+          <input type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{draft.sellRatio}}" />
+          <small>0.50 means the merchant pays half list price.</small>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="mp-rule-group">
+      <legend><label><input type="checkbox" name="includeBargaining" {{#if draft.includeBargaining}}checked{{/if}} /> Bargaining</label></legend>
+      <div class="mp-grid mp-grid--three">
+        <label class="mp-field"><span>Bargain DC</span><input type="number" name="bargainDC" min="5" max="30" step="1" value="{{draft.bargainDC}}" /></label>
+        <label class="mp-field"><span>Success discount %</span><input type="number" name="bargainSuccessPct" min="0" max="100" step="1" value="{{draft.bargainSuccessPct}}" /></label>
+        <label class="mp-field"><span>Failure penalty %</span><input type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{draft.bargainFailPct}}" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="mp-rule-group">
+      <legend><label><input type="checkbox" name="includeCharm" {{#if draft.includeCharm}}checked{{/if}} /> Charm-based pricing</label></legend>
+      <div class="mp-grid mp-grid--three">
+        <label class="mp-toggle"><input type="checkbox" name="passiveHaggle" {{#if draft.passiveHaggle}}checked{{/if}} /><span>Charm affects prices</span></label>
+        <label class="mp-field"><span>Shift per point %</span><input type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{draft.passivePctPerPoint}}" /></label>
+        <label class="mp-field"><span>Maximum shift %</span><input type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{draft.passiveCapPct}}" /></label>
+      </div>
+    </fieldset>
+
+    <label class="mp-danger-option">
+      <input type="checkbox" name="clearItemPriceOverrides" {{#if draft.clearItemPriceOverrides}}checked{{/if}} />
+      <span><strong>Clear individual item price overrides</strong><small>Use the shared buy multiplier for every stocked item. Leave this off to preserve hand-priced items.</small></span>
+    </label>
+  </section>
+
+  <section class="mp-card" aria-labelledby="mp-review-heading">
+    <div class="mp-card__head">
+      <div>
+        <p class="mp-eyebrow">3 · Review and apply</p>
+        <h3 id="mp-review-heading">Exact changes</h3>
+      </div>
+      <button type="button" class="mp-primary" data-action="preview" {{#unless hasMerchants}}disabled{{/unless}}>Preview changes</button>
+    </div>
+    {{#if hasPreview}}
+      {{#if preview.changedCount}}
+      <ul class="mp-preview-list">
+        {{#each preview.changes}}
+        <li><strong>{{merchantName}}</strong><span>{{summary}}</span></li>
+        {{/each}}
+      </ul>
+      {{else}}
+      <p class="mp-empty">No changes are needed for the selected merchants.</p>
+      {{/if}}
+    {{else}}
+    <p class="mp-empty">Nothing changes until you preview, review, and apply.</p>
+    {{/if}}
+    <div class="mp-apply-row">
+      <p>City rules copy onto each selected merchant. You can still open any merchant afterward and adjust it individually.</p>
+      <button type="button" class="mp-primary" data-action="apply" {{#unless canApply}}disabled{{/unless}}>Apply reviewed pricing</button>
+    </div>
+  </section>
+</form>

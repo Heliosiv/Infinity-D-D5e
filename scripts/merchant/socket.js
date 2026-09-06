@@ -1974,7 +1974,6 @@ export async function commitMerchantBatch(merchantIds, mutator) {
   if (saved) pushMerchantAccessRefresh();
   return saved;
 }
-
 function buildCommitResult(commitPayload, ok, reason = "", details = {}) {
   return {
     targetUserId: commitPayload.originUserId,

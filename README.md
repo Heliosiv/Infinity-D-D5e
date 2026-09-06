@@ -25,7 +25,9 @@ repaired with **Sync injuries**. See the
 own window with four tabs: **Setup**, **Inventory**, **Access**, and **Advanced**.
 Normal setup needs only a name, location, and restock gold amount. Edits save
 automatically; Save now retries a failed save. Advanced rules expand only when
-needed. Multiple merchant windows can remain open.
+needed. Multiple merchant windows can remain open. **City Pricing** opens a
+separate reviewed batch tool that can copy buy, sell-back, bargain, and charm
+rules to every shop in a location or to a hand-picked set of merchants.
 
 **Campaign Atlas UI preview:** Original map artwork and nine custom emblems give
 the GM Workbench, player launcher, and focused windows a shared visual identity.
@@ -190,7 +192,18 @@ api.openGmWorkbench({ route: "quartermaster", subview: "setup" });
 api.openPerEncounterLoot(); // Existing Encounter alias.
 api.openHoardLoot(); // Existing Hoard alias.
 api.openPerCreatureLoot(); // Existing Creature alias.
+api.openMerchantPricing({ locationId: "haven" });
+await api.applyMerchantPricingMacro({
+  locationId: "haven", // Or use merchantIds: ["merchant-id"]
+  patch: { defaultMarkup: 1.2, sellRatio: 0.5 },
+});
 ```
+
+Merchant pricing macros require a full GM and use the same authoritative,
+verified merchant-write path as the UI. A settlement targets its currently
+linked merchants. Omitted patch fields are preserved, and
+`clearItemPriceOverrides: true` must be explicit before shared markup replaces
+hand-priced stock.
 
 ### Magic Bias
 

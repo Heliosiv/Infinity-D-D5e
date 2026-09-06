@@ -78,6 +78,12 @@ const CHECKS = [
     script: "./merchant-workspace.js",
   },
   {
+    name: "merchant pricing macros",
+    template: "templates/merchant-pricing.hbs",
+    script: "./merchant/pricing-app.js",
+    className: "MerchantPricingApp",
+  },
+  {
     name: "merchant session",
     template: "templates/merchant-session.hbs",
     script: "./merchant-session.js",

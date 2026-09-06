@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  101,
+  102,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -434,6 +434,16 @@ assert.ok(
 );
 assert.match(merchantWorkspaceView.html, /Drakmor/);
 assert.match(merchantWorkspaceView.html, /data-operation="close"/);
+assert.match(merchantWorkspaceView.html, /data-action="openPricingMacros"/);
+
+const merchantPricingView = views.find(
+  (view) => view.id === "merchant-pricing",
+);
+assert.ok(merchantPricingView, "harness includes city merchant pricing");
+assert.match(merchantPricingView.html, /Haven/);
+assert.match(merchantPricingView.html, /data-action="preview"/);
+assert.match(merchantPricingView.html, /data-action="apply"/);
+assert.match(merchantPricingView.html, /Yannick&#x27;s Curios/);
 
 const closedMerchantWorkspaceView = views.find(
   (view) => view.id === "merchant-workspace-closed",

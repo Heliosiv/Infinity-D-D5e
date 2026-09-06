@@ -26,6 +26,9 @@ function apiFixture() {
     LootStudioApp: appStub("loot", calls),
     InfinitySettingsApp: appStub("settings", calls),
     MerchantWorkspaceApp: appStub("merchants", calls),
+    MerchantPricingApp: appStub("merchant-pricing", calls),
+    applyMerchantPricingMacro: (options) =>
+      calls.push(["apply-merchant-pricing", options]),
     MerchantSessionApp: class MerchantSessionApp {},
     ShopPickerApp: appStub("shops", calls),
     ResourceManagerApp: appStub("quartermaster", calls),
@@ -102,6 +105,8 @@ function apiFixture() {
     "openHoardLoot",
     "openPerCreatureLoot",
     "openMerchantWorkspace",
+    "openMerchantPricing",
+    "applyMerchantPricingMacro",
     "openShops",
     "openResourceManager",
     "openPartySupplies",
@@ -153,6 +158,11 @@ function apiFixture() {
   api.openHoardLoot();
   api.openPerCreatureLoot();
   api.openMerchantWorkspace({ entityId: "merchant-1" });
+  api.openMerchantPricing({ locationId: "city-1" });
+  api.applyMerchantPricingMacro({
+    locationId: "city-1",
+    patch: { defaultMarkup: 1.2 },
+  });
   api.openResourceManager({ subview: "setup" });
   api.openCriticalInjuryTriage();
   api.openReputation({ entityId: "faction-1" });
@@ -182,6 +192,19 @@ function apiFixture() {
       ["workbench", { route: "downtime" }],
     ],
     "legacy GM launchers deep-link through the bounded Workbench contract",
+  );
+  assert.deepEqual(
+    fixture.calls.filter(([name]) => name === "merchant-pricing"),
+    [["merchant-pricing", { locationId: "city-1" }]],
+  );
+  assert.deepEqual(
+    fixture.calls.filter(([name]) => name === "apply-merchant-pricing"),
+    [
+      [
+        "apply-merchant-pricing",
+        { locationId: "city-1", patch: { defaultMarkup: 1.2 } },
+      ],
+    ],
   );
 
   fixture.setFullGm(false);

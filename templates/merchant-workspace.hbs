@@ -6,6 +6,11 @@
   {{#unless isMerchantEditor}}
   <header class="mw-head">
     <div class="mw-head__title"><h2>Shops</h2><p class="mw-hint">Choose a location. Stock, gold, and opening hours are managed together.</p></div>
+    <div class="mw-head__actions">
+      <button type="button" class="mw-btn" data-action="openPricingMacros" title="Set shared buy, sell, bargain, and charm pricing for a city or selected merchants">
+        <i class="fa-solid fa-coins" aria-hidden="true"></i> City Pricing
+      </button>
+    </div>
   </header>
   <details class="mw-location-create" {{#unless hasLocations}}open{{/unless}}>
     <summary>Add a city or location</summary>

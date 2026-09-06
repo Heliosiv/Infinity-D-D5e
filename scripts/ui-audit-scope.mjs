@@ -39,9 +39,10 @@ const TARGETS = Object.freeze([
   {
     name: "Merchant workspace",
     match:
-      /^(?:templates\/merchant-workspace\.hbs|styles\/merchant-workspace\.css|scripts\/merchant-workspace\.js|scripts\/merchant\/)/,
+      /^(?:templates\/merchant-(?:workspace|pricing)\.hbs|styles\/merchant-workspace\.css|scripts\/merchant-workspace\.js|scripts\/merchant\/)/,
     fixtures: [
       "merchant-workspace",
+      "merchant-pricing",
       "merchant-workspace-closed",
       "merchant-workspace-save-error",
       "merchant-editor-basics",

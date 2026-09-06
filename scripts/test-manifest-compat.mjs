@@ -110,6 +110,7 @@ for (const stylesheet of ["styles/downtime.css"]) {
 for (const template of [
   "templates/downtime-workspace.hbs",
   "templates/downtime-activities.hbs",
+  "templates/merchant-pricing.hbs",
 ]) {
   assert.ok(
     manifest.templates?.includes(template),

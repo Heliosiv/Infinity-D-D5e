@@ -45,6 +45,7 @@
     "templates/hoard-loot.hbs",
     "templates/per-creature-loot.hbs",
     "templates/merchant-workspace.hbs",
+    "templates/merchant-pricing.hbs",
     "templates/merchant-session.hbs",
     "templates/shop-picker.hbs",
     "templates/resource-manager.hbs",
