@@ -1,15 +1,9 @@
 /** Focused merchant tabs keep hidden controls mounted for complete form saves. */
 export const MERCHANT_EDITOR_TABS = Object.freeze([
-  ["basics", "Profile"],
-  ["pricing", "Prices"],
-  ["bargaining", "Bargaining"],
-  ["charm", "Charm"],
+  ["basics", "Setup"],
   ["stock", "Inventory"],
-  ["generate", "Generate"],
-  ["buys", "Buys"],
   ["access", "Access"],
-  ["sessions", "Sessions"],
-  ["manage", "Manage"],
+  ["advanced", "Advanced"],
 ]);
 
 export function merchantTabContext(merchantId, active = "basics") {

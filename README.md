@@ -3,11 +3,15 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**v0.3.16 candidate — automatic merchant trades:** Purchases and sales now
-handle unfilled optional D&D5e Item fields without crashing. Trades process
-automatically, including partial-stack sales and safe retries. Preparation
-errors return a clear failure without charging or transferring anything. The
-shop status now explains that no GM approval is needed for ordinary trades.
+**v0.3.16 candidate — simpler shops by location:** Choose a city or location,
+then **Open All**, **Close All**, **Restock All**, **Generate All**, or **Clear All
+Inventory** for its merchants. Several locations can stay open at once. Village,
+town, and city templates include stock, prices, and purchasing gold; custom
+shops keep optional player restrictions. Every stock reset restores the merchant
+purses too. Existing merchants appear under **Unassigned shops** until moved.
+Purchases and sales process automatically, including optional D&D5e Item fields,
+partial-stack sales, and safe retries. Settings saves preserve current trading
+gold. See the [Shops guide](docs/MERCHANT_SESSIONS.md).
 
 **Quicker injury care:** The injury board now puts character
 recovery beside pending rolls, with search, direct character and sheet buttons,
@@ -17,12 +21,11 @@ to the GM and character owners. Missing Simple Calendar Reborn entries can be
 repaired with **Sync injuries**. See the
 [injury guide](docs/CRITICAL_INJURIES.md) for visibility and logging details.
 
-**Focused merchant windows:** Merchants opens a searchable
-directory. Click a merchant to open its own window with ten tabs: Profile,
-Prices, Bargaining, Charm, Inventory, Generate, Buys, Access, Sessions, and Manage.
-Only the selected tab is visible. Edits save automatically; Save now retries a
-failed save. Multiple merchants can stay open, and reopening the same merchant
-returns to its existing window.
+**Focused merchant windows:** Click a merchant inside a location to open its
+own window with four tabs: **Setup**, **Inventory**, **Access**, and **Advanced**.
+Normal setup needs only a name, location, and restock gold amount. Edits save
+automatically; Save now retries a failed save. Advanced rules expand only when
+needed. Multiple merchant windows can remain open.
 
 **Campaign Atlas UI preview:** Original map artwork and nine custom emblems give
 the GM Workbench, player launcher, and focused windows a shared visual identity.
@@ -154,7 +157,7 @@ For a direct Forge installation, open **My Foundry → Summon Import Wizard**, t
 - **Hoard Loot**: a single treasure cache with threat tier, hoard scale, pile bias, coin breakdown, scale-shaped rarity defaults, and filter-aware chips while preserving valid coin-only rolls.
 - **Per-Creature Loot**: a roster of defeated creatures, each with its own bundle and reroll action; chip availability names partial coverage across mixed roster tiers.
 - Saved loot presets, roll history, and session state restore through bounded current schemas so legacy or damaged values cannot break a loot window.
-- **Merchant Workspace**: GM-curated inventories, markup, bargain checks, player access, self-service shops, and durable authoritative buy/sell transactions. Each player request is saved before sending; the active GM checkpoints the exact Actor and merchant plan before the first campaign write, then resumes only operations proven incomplete after reload or authority handoff. Unexpected third-state data is pinned for GM review instead of guessed or rolled back. A persistent global lock can close every shop, remember live player sessions without changing per-shop access modes, and restore valid sessions later; see [Merchant Sessions and Global Access](docs/MERCHANT_SESSIONS.md).
+- **Shops**: Locations with template or custom merchants, automatic buy/sell transactions, per-player access, and bulk stock/purse/open/close controls. Trades preserve durable checkpoints across reconnects and safe retries. See [Shops and Merchant Trading](docs/MERCHANT_SESSIONS.md).
 - **Downtime & City Actions**: the GM assigns the same hour budget to each eligible character; players queue several routine, commerce, and crime activities; the GM locks an immutable hidden-roll preview before applying exact receipts. Local Heat and stolen-goods provenance persist by settlement.
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, review-before-activation environment choices, and versioned custom-region export/import with a complete validation preview. Players retain a read-only **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.

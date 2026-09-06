@@ -63,22 +63,25 @@ function assertOrdered(source, needles, label) {
   }
 }
 
-/* Merchant: same bindings, clearer master/detail sections. */
+/* Shops: locations first, four focused tabs, optional advanced controls. */
 assertOrdered(
   merchantTemplate,
   [
     'data-merchant-panel="basics"',
-    'data-merchant-panel="pricing"',
     'data-merchant-panel="stock"',
     'data-merchant-panel="access"',
-    'data-merchant-panel="sessions"',
+    'data-merchant-panel="advanced"',
   ],
   "merchant sections",
 );
 assertActions(
   `${workbenchTemplate}\n${merchantTemplate}`,
   [
-    "newMerchant",
+    "selectLocation",
+    "createLocation",
+    "addLocationShop",
+    "locationOperation",
+    "assignLocation",
     "selectMerchant",
     "save",
     "deleteMerchant",
@@ -94,8 +97,6 @@ assertActions(
     "previewSession",
     "openSession",
     "closeSession",
-    "closeAllSessions",
-    "reopenSessions",
     "invRemove",
     "openInventoryItem",
     "recheckTransaction",
@@ -112,7 +113,10 @@ for (const field of [
   "sellRatio",
   "bargainDC",
   "allowedUserIds",
-  "selfServiceMode",
+  "shopOpen",
+  "accessAll",
+  "shopLocationId",
+  "startingGold",
   "poolLootTypes",
   "poolRarities",
   "buyFilterLootTypes",
@@ -142,16 +146,13 @@ assert.match(
   /recheckDurableMerchantTransaction[\s\S]*?deliverDurableMerchantTerminalResult/,
   "safe review completion is delivered through the durable result path",
 );
-assert.match(
-  merchantTemplate,
-  /merchantReopenInterrupted[\s\S]*?Resume restoring/,
-  "an interrupted global reopen remains resumable instead of offering Close All",
-);
-assert.match(
-  merchantScript,
-  /!current\.closed && current\.suspendedSessions\.length === 0/,
-  "open access with saved sessions continues the restore path",
-);
+for (const operation of ["open", "close", "restock", "generate", "clear"]) {
+  assert.match(
+    merchantTemplate,
+    new RegExp(`data-operation="${operation}"`),
+    "location controls cover the complete shop workflow",
+  );
+}
 assert.match(
   merchantScript,
   /requireMerchantWriteAuthority[\s\S]*?active full GM window/,
@@ -180,11 +181,6 @@ assert.match(
   "Merchant directory retains one bounded scrolling region",
 );
 assert.doesNotMatch(merchantStyle, /@media\s*\(max-width/);
-assert.match(
-  merchantScript,
-  /if \(current\.closed\)[\s\S]*?await pushCloseAllMerchantSessions\(\)/,
-  "an already-closed global gate still closes stale merchant windows",
-);
 assert.doesNotMatch(
   merchantScript,
   /idxKeydownBound|\.key\s*!==\s*["']Enter["'][\s\S]*?_onGenerateStock/,

@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  107,
+  101,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -432,8 +432,8 @@ assert.ok(
   merchantWorkspaceView,
   "harness includes the open merchant workspace",
 );
-assert.match(merchantWorkspaceView.html, /Global access open/);
-assert.match(merchantWorkspaceView.html, /data-action="closeAllSessions"/);
+assert.match(merchantWorkspaceView.html, /Drakmor/);
+assert.match(merchantWorkspaceView.html, /data-operation="close"/);
 
 const closedMerchantWorkspaceView = views.find(
   (view) => view.id === "merchant-workspace-closed",
@@ -442,14 +442,12 @@ assert.ok(
   closedMerchantWorkspaceView,
   "harness includes the globally closed merchant workspace",
 );
-assert.match(closedMerchantWorkspaceView.html, /All shops closed/);
-assert.match(closedMerchantWorkspaceView.html, /data-action="reopenSessions"/);
-assert.match(closedMerchantWorkspaceView.html, /Close Stale/);
+assert.match(closedMerchantWorkspaceView.html, /Shops are globally closed/);
+assert.match(closedMerchantWorkspaceView.html, /data-operation="open"/);
 assert.match(
   closedMerchantWorkspaceView.html,
-  /data-action="closeAllSessions"/,
+  /Choose a location and use Open All/,
 );
-assert.match(closedMerchantWorkspaceView.html, /saved sessions/);
 
 const merchantWorkspaceSaveErrorView = views.find(
   (view) => view.id === "merchant-workspace-save-error",

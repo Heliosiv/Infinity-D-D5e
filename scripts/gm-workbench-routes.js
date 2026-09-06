@@ -18,11 +18,11 @@ export const DEFAULT_GM_WORKBENCH_ROUTE = GM_WORKBENCH_ROUTES[0];
 export const GM_WORKBENCH_ROUTE_DEFINITIONS = Object.freeze([
   Object.freeze({
     route: "merchants",
-    label: "Merchants",
-    shortLabel: "Merchants",
+    label: "Shops",
+    shortLabel: "Shops",
     icon: "fa-solid fa-store",
     description:
-      "Curate inventories and access, then open safe player shopping sessions.",
+      "Manage shops by location, with automatic trades and stock resets.",
     theme: "merchant",
   }),
   Object.freeze({

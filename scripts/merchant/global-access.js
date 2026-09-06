@@ -47,6 +47,22 @@ export function normalizeMerchantAccessState(value) {
     suspendedSessions: normalizeSuspendedMerchantSessions(
       raw.suspendedSessions,
     ),
+    ...(Array.isArray(raw.locations)
+      ? {
+          locations: raw.locations
+            .filter(
+              (row, index, rows) =>
+                toId(row?.id) &&
+                toId(row?.name) &&
+                rows.findIndex((other) => toId(other?.id) === toId(row.id)) ===
+                  index,
+            )
+            .map((row) => ({
+              id: toId(row.id),
+              name: toId(row.name).slice(0, 100),
+            })),
+        }
+      : {}),
   };
 }
 
@@ -140,11 +156,37 @@ async function saveMerchantAccessStateAuthorized(normalized) {
 
 /** Persist global access through the same restricted store as merchant data. */
 export function saveMerchantAccessState(value) {
-  const normalized = normalizeMerchantAccessState(value);
-  const result = accessWriteChain.then(
-    () => saveMerchantAccessStateAuthorized(normalized),
-    () => saveMerchantAccessStateAuthorized(normalized),
-  );
+  // Treat callers as patches. Global close/reopen must not discard locations,
+  // and adding a location must not restore a stale global access flag.
+  const save = () =>
+    saveMerchantAccessStateAuthorized(
+      normalizeMerchantAccessState({ ...loadMerchantAccessState(), ...value }),
+    );
+  const result = accessWriteChain.then(save, save);
   accessWriteChain = result.catch(() => {});
   return result.then(normalizeMerchantAccessState);
+}
+
+export function addMerchantLocation(location) {
+  const save = () => {
+    const current = loadMerchantAccessState();
+    const locations = current.locations ?? [];
+    if (
+      locations.some(
+        (row) =>
+          row.name.toLocaleLowerCase() === location.name.toLocaleLowerCase(),
+      )
+    ) {
+      throw new Error("That location already exists. Select it to add shops.");
+    }
+    return saveMerchantAccessStateAuthorized(
+      normalizeMerchantAccessState({
+        ...current,
+        locations: [...locations, location],
+      }),
+    );
+  };
+  const result = accessWriteChain.then(save, save);
+  accessWriteChain = result.catch(() => {});
+  return result;
 }

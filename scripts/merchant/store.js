@@ -207,6 +207,11 @@ export function normalizeMerchant(input) {
     name: toStr(raw.name, "Unnamed Merchant"),
     art: toStr(raw.art),
     description: toStr(raw.description),
+    // Optional metadata preserves the exact shape of legacy transaction
+    // checkpoints until a GM explicitly sets up that merchant in Shops.
+    ...(raw.shop && typeof raw.shop === "object"
+      ? { shop: normalizeShopSetup(raw.shop) }
+      : {}),
     defaultMarkup: Math.max(0, toNumber(raw.defaultMarkup, DEFAULT_MARKUP)),
     sellRatio: Math.max(0, toNumber(raw.sellRatio, DEFAULT_SELL_RATIO)),
     bargainDC: Math.max(0, toInt(raw.bargainDC, DEFAULT_BARGAIN_DC)),
@@ -248,6 +253,54 @@ export function normalizeMerchant(input) {
     // legacy data that ever doubled an item onto two rows.
     items: mergeStockRows(inventory.map(normalizeInventoryRow).filter(Boolean)),
   };
+}
+
+function normalizeShopSetup(raw) {
+  return {
+    locationId: toStr(raw.locationId),
+    templateId: toStr(raw.templateId, "custom"),
+    startingGold: normalizeGold(raw.startingGold),
+    open: raw.open !== false,
+    access: raw.access === "all" ? "all" : "selected",
+  };
+}
+
+/** Legacy shops retain their current permissions and purse until configured. */
+export function shopSetup(merchant) {
+  return merchant?.shop
+    ? normalizeShopSetup(merchant.shop)
+    : {
+        locationId: "",
+        templateId: "custom",
+        startingGold: normalizeGold(merchant?.goldOnHand),
+        open: getSelfServiceMode(merchant) !== "off",
+        access: "selected",
+      };
+}
+
+export function isShopOpen(merchant) {
+  return Boolean(merchant) && merchant.shop?.open !== false;
+}
+
+export function allowedMerchantUserIds(merchant) {
+  if (merchant?.shop?.access !== "all") return merchant?.allowedUserIds ?? [];
+  const users = globalThis.game?.users;
+  const values = Array.isArray(users)
+    ? users
+    : (users?.contents ?? users?.filter?.(() => true) ?? []);
+  return values
+    .filter((user) => Number(user?.role) > 0 && !isUserIdFullGM(user.id))
+    .map((user) => user.id);
+}
+
+/** Inventory operations replenish the purse as well as the shelves. */
+export function resetMerchantPurse(merchant) {
+  const shop = shopSetup(merchant);
+  return normalizeMerchant({
+    ...merchant,
+    shop,
+    goldOnHand: shop.startingGold,
+  });
 }
 
 /**
@@ -621,9 +674,7 @@ function isUserIdFullGM(userId) {
 export function isUserAllowed(merchant, userId) {
   if (!merchant || !userId) return false;
   if (isUserIdFullGM(userId)) return false;
-  const list = Array.isArray(merchant.allowedUserIds)
-    ? merchant.allowedUserIds
-    : [];
+  const list = allowedMerchantUserIds(merchant);
   return list.includes(userId);
 }
 
@@ -651,7 +702,11 @@ export function isSelfServiceReachable(merchant) {
  * the authoritative GM re-checks this policy.
  */
 export function canSelfOpen(merchant, userId) {
-  return isUserAllowed(merchant, userId) && isSelfServiceReachable(merchant);
+  return (
+    isShopOpen(merchant) &&
+    isUserAllowed(merchant, userId) &&
+    isSelfServiceReachable(merchant)
+  );
 }
 
 /**
@@ -950,6 +1005,34 @@ function createMerchantWriteFenceToken() {
 /** Persist the full merchant list through the process-wide write queue. */
 export function saveMerchants(merchants) {
   return runStoreWrite(() => writeMerchants(merchants));
+}
+
+/** A GM edit must never erase the merchant checkpoint of an unfinished trade. */
+export function assertMerchantsEditable(ids) {
+  const raw = getPrivateState("merchantTransactions");
+  if (raw === undefined && !isFoundryEnvironment()) return;
+  const wanted = new Set(ids);
+  const pending = normalizeMerchantTransactionLedger(raw).records.find(
+    (record) =>
+      record.stage !== "terminal" && wanted.has(record.merchant.merchantId),
+  );
+  if (pending) {
+    const merchant = findMerchant(pending.merchant.merchantId);
+    throw new Error(
+      `${merchant?.name ?? "This shop"} has an unfinished trade. Let it finish before changing its stock or setup.`,
+    );
+  }
+}
+
+/** Batch GM changes share one canonical write and the transaction write fence. */
+export function mutateMerchants(mutation, { protectedIds = [] } = {}) {
+  return runStoreWrite(async () => {
+    assertMerchantsEditable(protectedIds);
+    const next = await mutation(loadMerchants());
+    if (next == null) return null;
+    if (!Array.isArray(next)) throw new TypeError("Expected a merchant list");
+    return writeMerchants(next);
+  });
 }
 
 /** Insert-or-replace a single merchant; returns the saved list. */

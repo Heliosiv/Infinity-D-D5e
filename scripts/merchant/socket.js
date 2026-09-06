@@ -22,16 +22,21 @@
 
 import {
   adjustMerchantGold,
+  allowedMerchantUserIds,
+  assertMerchantsEditable,
   buildMerchantBargainTiers,
   canSelfOpen,
   decrementInventory,
   findMerchant,
   getSelfServiceMode,
   loadMerchants,
+  isShopOpen,
+  mutateMerchants,
   merchantCanAfford,
   normalizeMerchant,
   roundGp,
   sanitizeMerchantForList,
+  updateMerchant,
   upsertMerchant,
 } from "./store.js";
 import {
@@ -312,7 +317,7 @@ function consumeMalformedCloseAuditLimit(originUserId, now = Date.now()) {
   });
 }
 
-function runMerchantAccessOperation(operation) {
+export function runMerchantAccessOperation(operation) {
   const next = merchantAccessOperationTail
     .catch(() => undefined)
     .then(operation);
@@ -1801,10 +1806,9 @@ function authorizedSessionMerchant(session) {
   if (!session?.merchantId || !session?.viewerUserId) return null;
   const merchant = findMerchant(session.merchantId);
   const user = globalThis.game?.users?.get?.(session.viewerUserId);
-  const allowed = Array.isArray(merchant?.allowedUserIds)
-    ? merchant.allowedUserIds
-    : [];
-  if (!merchant || !user || isFullGM(user)) return null;
+  const allowed = allowedMerchantUserIds(merchant);
+  if (!merchant || !isShopOpen(merchant) || !user || isFullGM(user))
+    return null;
   return allowed.includes(session.viewerUserId) ? merchant : null;
 }
 
@@ -1936,14 +1940,39 @@ export async function commitMerchantWrite(
   { broadcast = false } = {},
 ) {
   return runWithMerchantMutex(merchantId, async () => {
-    const current = findMerchant(merchantId);
-    if (!current) return null;
-    const next = await mutator(current);
+    const next = await updateMerchant(merchantId, (current) => {
+      assertMerchantsEditable([merchantId]);
+      return mutator(current);
+    });
     if (!next) return null;
-    await upsertMerchant(next);
     if (broadcast) await broadcastState(next);
     return next;
   });
+}
+
+/** Lock in a stable order, then apply all location changes in one store write. */
+export async function commitMerchantBatch(merchantIds, mutator) {
+  assertMerchantSessionWriteAuthority();
+  const ids = [...new Set(merchantIds)].sort();
+  const update = async () => {
+    const saved = await mutateMerchants(mutator, { protectedIds: ids });
+    if (saved) {
+      // Publish while still holding the shop locks. A player's newer purchase
+      // must not be followed by an older bulk-stock snapshot in their window.
+      for (const merchant of saved.filter((row) => ids.includes(row.id))) {
+        if (!isShopOpen(merchant)) pushCloseAllSessionsFor(merchant.id);
+        else await broadcastStateBestEffort(merchant, "shop update");
+      }
+    }
+    return saved;
+  };
+  const lock = (index) =>
+    index < ids.length
+      ? runWithMerchantMutex(ids[index], () => lock(index + 1))
+      : update();
+  const saved = await lock(0);
+  if (saved) pushMerchantAccessRefresh();
+  return saved;
 }
 
 function buildCommitResult(commitPayload, ok, reason = "", details = {}) {
@@ -2275,12 +2304,10 @@ function handleSessionResumeRequest(payload) {
 export function pushOpenSession({ merchant, targetUserIds }) {
   assertMerchantSessionWriteAuthority();
   if (!merchant) throw new Error("pushOpenSession needs merchant");
-  if (isMerchantAccessClosed()) return [];
+  if (isMerchantAccessClosed() || !isShopOpen(merchant)) return [];
   const ids = Array.isArray(targetUserIds) ? targetUserIds : [];
   if (ids.length === 0) return [];
-  const allowed = Array.isArray(merchant.allowedUserIds)
-    ? merchant.allowedUserIds
-    : [];
+  const allowed = allowedMerchantUserIds(merchant);
   const sessionDescriptors = [];
   const skipped = [];
   for (const userId of ids) {

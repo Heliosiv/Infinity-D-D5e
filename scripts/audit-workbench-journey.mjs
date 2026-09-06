@@ -141,6 +141,8 @@ try {
             HandlebarsApplicationMixin: (Base) => class extends Base {},
             DialogV2: {
               confirm: async () => {
+                state.confirmationCount = (state.confirmationCount ?? 0) + 1;
+                if (state.autoConfirm) return true;
                 state.confirmPending = true;
                 return new Promise((resolve) => {
                   state.confirm = resolve;
@@ -165,6 +167,24 @@ try {
         user: gm,
         users,
         actors: [],
+        packs: {
+          get: () => ({
+            getDocuments: async () =>
+              ["loot.equipment", "loot.weapon.mundane", "loot.reagent"].map(
+                (lootType, index) => ({
+                  _id: `stock-${index}`,
+                  name: `Shop stock ${index}`,
+                  type: "loot",
+                  system: {
+                    rarity: "common",
+                    quantity: 1,
+                    price: { value: 5, denomination: "gp" },
+                  },
+                  flags: { "infinity-dnd5e": { lootType } },
+                }),
+              ),
+          }),
+        },
         socket: { emit() {} },
         settings: {
           get: (_module, key) => settings.get(key),
@@ -306,6 +326,14 @@ try {
     };
     const clickAction = async (action) => {
       const count = await page.evaluate(() => journey.state.actions.length);
+      if (
+        action === "copyStockToBuyFilter" &&
+        !(await editor.locator(`[data-action="${action}"]`).isVisible())
+      ) {
+        await editor
+          .getByText("What this merchant buys", { exact: true })
+          .click();
+      }
       await editor.locator(`[data-action="${action}"]`).first().click();
       await page.waitForFunction(
         (before) =>
@@ -324,7 +352,7 @@ try {
       journey.state.failSave = true;
     });
     await editor.locator('input[name="name"]').fill("Draft merchant name");
-    await selectTab("buys");
+    await selectTab("advanced");
     await clickAction("copyStockToBuyFilter");
     assert.equal(
       await editor.locator('input[name="name"]').inputValue(),
@@ -382,6 +410,126 @@ try {
       ),
       beforePrompt,
     );
+
+    // The real location-first controllers: create pre-stocked shops, keep two
+    // locations open, then reset stock and purses through the main page.
+    await page.evaluate(() => {
+      journey.state.autoConfirm = true;
+    });
+    const directoryAction = async (selector) => {
+      const before = await page.evaluate(() => journey.state.actions.length);
+      await directory.locator(selector).click();
+      await page.waitForFunction(
+        (count) =>
+          journey.state.actions.length > count || journey.state.actionError,
+        before,
+      );
+      await page.evaluate(() => journey.app.rendering);
+      assert.equal(
+        await page.evaluate(() => journey.state.actionError ?? ""),
+        "",
+      );
+    };
+    const createLocation = async (name) => {
+      await directory.locator(".mw-location-create > summary").click();
+      await directory.locator('[name="locationName"]').fill(name);
+      await directory
+        .locator('[name="locationTemplate"]')
+        .selectOption("village");
+      await directoryAction('[data-action="createLocation"]');
+      assert.equal(
+        await directory.locator(".mw-location-heading h3").textContent(),
+        name,
+      );
+      assert.equal(await directory.locator(".mw-list__row").count(), 3);
+      return page.evaluate(() => journey.app._selectedLocationId);
+    };
+    const harbor = await createLocation("Harbor");
+    const beforeOpenConfirms = await page.evaluate(
+      () => journey.state.confirmationCount,
+    );
+    await directoryAction('[data-operation="open"]');
+    assert.equal(
+      await page.evaluate(() => journey.state.confirmationCount),
+      beforeOpenConfirms,
+      "Open All has no approval step",
+    );
+    const river = await createLocation("River village");
+    await directoryAction('[data-operation="open"]');
+    const openIn = (id) =>
+      page.evaluate(
+        (locationId) =>
+          journey.settings
+            .get("merchants")
+            .filter((row) => row.shop?.locationId === locationId)
+            .every((row) => row.shop.open),
+        id,
+      );
+    assert.equal(await openIn(harbor), true);
+    assert.equal(await openIn(river), true);
+    await directoryAction('[data-operation="close"]');
+    assert.equal(
+      await openIn(harbor),
+      true,
+      "closing River village leaves Harbor open",
+    );
+    assert.equal(await openIn(river), false);
+    await directoryAction(
+      `[data-action="selectLocation"][data-location-id="${harbor}"]`,
+    );
+    await page.evaluate(async (locationId) => {
+      const { commitMerchantWrite } =
+        await import("/scripts/merchant/socket.js");
+      const merchant = journey.settings
+        .get("merchants")
+        .find((row) => row.shop?.locationId === locationId);
+      await commitMerchantWrite(merchant.id, (fresh) => ({
+        ...fresh,
+        goldOnHand: 1,
+        items: fresh.items.map((item) => ({ ...item, qty: 0 })),
+      }));
+    }, harbor);
+    await directoryAction('[data-operation="restock"]');
+    assert.equal(
+      await page.evaluate(
+        (locationId) =>
+          journey.settings
+            .get("merchants")
+            .filter((row) => row.shop?.locationId === locationId)
+            .every(
+              (row) =>
+                row.goldOnHand === 250 &&
+                row.items.every((item) => item.qty === item.startingQty),
+            ),
+        harbor,
+      ),
+      true,
+    );
+    await directoryAction('[data-operation="clear"]');
+    assert.equal(
+      await page.evaluate(
+        (locationId) =>
+          journey.settings
+            .get("merchants")
+            .filter((row) => row.shop?.locationId === locationId)
+            .every((row) => row.items.length === 0 && row.goldOnHand === 250),
+        harbor,
+      ),
+      true,
+    );
+    await directoryAction('[data-operation="generate"]');
+    assert.equal(
+      await page.evaluate(
+        (locationId) =>
+          journey.settings
+            .get("merchants")
+            .filter((row) => row.shop?.locationId === locationId)
+            .every((row) => row.items.length > 0 && row.goldOnHand === 250),
+        harbor,
+      ),
+      true,
+    );
+    assert.equal(await openIn(river), false);
     await directory.locator('[data-workbench-route="injuries"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
     assert.equal(await directory.isVisible(), true);

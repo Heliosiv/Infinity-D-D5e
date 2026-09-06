@@ -8,11 +8,10 @@
 
 import {
   BARGAIN_SKILLS,
+  allowedMerchantUserIds,
   clearInventory,
   computeBuyPriceGp,
-  createBlankMerchant,
   createInventoryRow,
-  deleteMerchant,
   duplicateMerchant,
   findMerchant,
   getSelfServiceMode,
@@ -23,6 +22,8 @@ import {
   removeInventoryRow,
   resolveStockQty,
   restockAll,
+  resetMerchantPurse,
+  shopSetup,
   SELF_SERVICE_MODES,
   upsertInventoryRow,
   upsertMerchant,
@@ -54,13 +55,13 @@ import {
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
+  commitMerchantBatch,
   deliverDurableMerchantTerminalResult,
   MERCHANT_EVENTS,
-  pushCloseAllMerchantSessions,
   pushCloseAllSessionsFor,
   pushCloseSession,
   pushOpenSession,
-  pushReopenMerchantSessions,
+  pushMerchantAccessRefresh,
   subscribe,
 } from "./merchant/socket.js";
 import {
@@ -70,6 +71,14 @@ import {
 import { listSessions } from "./merchant/session-state.js";
 import { readMerchantActorBoundary } from "./merchant/transaction.js";
 import { loadMerchantAccessState } from "./merchant/global-access.js";
+import {
+  SHOP_TEMPLATES,
+  LOCATION_TEMPLATES,
+  locationDirectory,
+  createShopLocation,
+  addShopToLocation,
+  applyLocationOperation,
+} from "./merchant/locations.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
   bindRowDoubleClickOpen,
@@ -127,7 +136,10 @@ const SCROLL_TARGETS = [
   { key: "edit", selector: ".mw-tab-content" },
 ];
 const MERCHANT_WRITE_ACTIONS = new Set([
-  "newMerchant",
+  "createLocation",
+  "addLocationShop",
+  "locationOperation",
+  "assignLocation",
   "save",
   "deleteMerchant",
   "duplicateMerchant",
@@ -141,8 +153,6 @@ const MERCHANT_WRITE_ACTIONS = new Set([
   "pickArt",
   "openSession",
   "closeSession",
-  "closeAllSessions",
-  "reopenSessions",
   "invRemove",
   "recheckTransaction",
 ]);
@@ -215,14 +225,24 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     tag: "section",
     classes: ["infinity-dnd5e", "infinity-merchant-workspace"],
     window: {
-      title: "Infinity D&D5e — Merchant Workspace",
+      title: "Infinity D&D5e — Shops",
       icon: "fa-solid fa-store",
       resizable: true,
     },
     position: { width: 720, height: 600 },
     actions: {
-      newMerchant: requireMerchantWriteAuthority(
-        MerchantWorkspaceApp._onNewMerchant,
+      selectLocation: MerchantWorkspaceApp._onSelectLocation,
+      createLocation: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onCreateLocation,
+      ),
+      addLocationShop: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onAddLocationShop,
+      ),
+      locationOperation: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onLocationOperation,
+      ),
+      assignLocation: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onAssignLocation,
       ),
       selectMerchant: MerchantWorkspaceApp._onSelectMerchant,
       save: requireMerchantWriteAuthority(MerchantWorkspaceApp._onSave),
@@ -258,12 +278,6 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ),
       closeSession: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onCloseSession,
-      ),
-      closeAllSessions: requireMerchantWriteAuthority(
-        MerchantWorkspaceApp._onCloseAllSessions,
-      ),
-      reopenSessions: requireMerchantWriteAuthority(
-        MerchantWorkspaceApp._onReopenSessions,
       ),
       invRemove: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onInvRemove,
@@ -338,6 +352,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       null;
     this._activeMerchantTab = "basics";
     this._merchantSearch = "";
+    this._selectedLocationId = null;
+    this._locationBusy = false;
     this._saveStatus = "All changes saved";
     this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
@@ -350,6 +366,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     ];
     this._privateStateHookId = onPrivateStateChanged((payload) => {
       if (
+        !payload?.keys?.includes?.("merchants") &&
         !payload?.keys?.includes?.("merchantAccess") &&
         !payload?.keys?.includes?.("merchantTransactions")
       ) {
@@ -427,6 +444,15 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     await ensureMerchantTabLeadership();
     const merchants = loadMerchants();
     const merchantAccess = loadMerchantAccessState();
+    const locations = locationDirectory(merchants, merchantAccess);
+    if (
+      !locations.some((location) => location.id === this._selectedLocationId)
+    ) {
+      this._selectedLocationId = locations[0]?.id ?? null;
+    }
+    const selectedLocation =
+      locations.find((location) => location.id === this._selectedLocationId) ??
+      null;
     const allActiveSessions = listSessions();
     // A focused editor stays bound to its merchant even after external deletion.
     // Never redirect its controls to another merchant during a refresh.
@@ -452,6 +478,19 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       itemCountIsOne: m.items.length === 1,
       allowedCount: m.allowedUserIds.length,
       allowedCountIsOne: m.allowedUserIds.length === 1,
+      locationId: m.shop?.locationId ?? "",
+      accessLabel:
+        m.shop?.access === "all"
+          ? "All players"
+          : `${m.allowedUserIds.length} allowed players`,
+      status:
+        !merchantAccess.closed &&
+        shopSetup(m).open &&
+        m.selfServiceMode !== "off"
+          ? "Open"
+          : "Closed",
+      purseLabel:
+        m.goldOnHand == null ? "Unlimited gold" : `${m.goldOnHand} gp`,
       selected: m.id === this._selectedId,
     }));
 
@@ -598,9 +637,42 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       moduleId: MODULE_ID,
       hasMerchants: merchants.length > 0,
       merchants: merchantList,
+      locations: locations.map((location) => ({
+        ...location,
+        selected: location.id === this._selectedLocationId,
+      })),
+      hasLocations: locations.length > 0,
+      selectedLocation,
+      locationMerchants: merchantList.filter(
+        (merchant) => merchant.locationId === this._selectedLocationId,
+      ),
+      locationHasShops: Boolean(selectedLocation?.count),
+      locationBusy: this._locationBusy,
+      locationTemplates: LOCATION_TEMPLATES.map((row) => ({
+        ...row,
+        selected: row.id === (this._newLocationTemplate ?? "town"),
+      })),
+      newLocationName: this._newLocationName ?? "",
+      shopTemplates: SHOP_TEMPLATES,
+      locationOptions: [
+        { id: "", name: "Unassigned shops" },
+        ...locations.filter((location) => location.id),
+      ].map((location) => ({
+        ...location,
+        selected: location.id === (selected?.shop?.locationId ?? ""),
+      })),
+      assignLocationOptions: locations.filter(
+        (location) => location.id && location.id !== this._selectedLocationId,
+      ),
       selected: selected
         ? {
             ...selected,
+            setup: shopSetup(selected),
+            accessAll: selected.shop?.access === "all",
+            currentGoldLabel:
+              selected.goldOnHand == null
+                ? "Unlimited"
+                : `${selected.goldOnHand} gp`,
             art: selected.art || FALLBACK_ART,
             itemCountIsOne: selected.items.length === 1,
           }
@@ -654,7 +726,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       canOpenSession:
         Boolean(selected) &&
         !merchantAccess.closed &&
-        selected.allowedUserIds.length > 0 &&
+        shopSetup(selected).open &&
+        allowedMerchantUserIds(selected).length > 0 &&
         Boolean(globalThis.game?.users?.activeGM) &&
         canManageMerchants,
       // Why the Open Session button is disabled, so the button can say so.
@@ -662,13 +735,15 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         ? "Select a merchant first."
         : merchantAccess.closed
           ? "Merchant access is globally closed. Reopen shops first."
-          : selected.allowedUserIds.length === 0
-            ? "Add at least one Allowed Player to open a session."
-            : !globalThis.game?.users?.activeGM
-              ? "An active GM must be online to host."
-              : !canManageMerchants
-                ? "Only the active full GM can host a live session."
-                : "",
+          : !shopSetup(selected).open
+            ? "Open this shop in Access, or open its location."
+            : allowedMerchantUserIds(selected).length === 0
+              ? "Add at least one Allowed Player to open a session."
+              : !globalThis.game?.users?.activeGM
+                ? "An active GM must be online to host."
+                : !canManageMerchants
+                  ? "Only the active full GM can host a live session."
+                  : "",
       saveStatus: canManageMerchants
         ? this._saveStatus
         : "Read-only — browsing available",
@@ -717,6 +792,14 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     applyVisualPrefs(this.element, "mw-");
     bindMerchantTabKeys(this.element, (key) => this._selectMerchantTab(key));
     this._wireMerchantSearch();
+    this.element
+      ?.querySelector?.("[data-location-form]")
+      ?.addEventListener("submit", (event) => event.preventDefault());
+    if (this._locationBusy)
+      for (const control of this.element?.querySelectorAll?.(
+        "[data-location-control]",
+      ) ?? [])
+        control.disabled = true;
 
     if (context?.canManageMerchants) {
       this._wireFormChange();
@@ -1011,7 +1094,18 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
               data.passivePctPerPoint ?? fresh.passivePctPerPoint,
             ),
             passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
-            goldOnHand: data.goldOnHand,
+            // A settings save must never replay an older trading purse.
+            shop: {
+              ...shopSetup(fresh),
+              locationId: data.shopLocationId ?? shopSetup(fresh).locationId,
+              startingGold: data.startingGold ?? shopSetup(fresh).startingGold,
+              open:
+                data.shopOpen === undefined &&
+                !form.querySelector('[name="shopOpen"]')
+                  ? shopSetup(fresh).open
+                  : data.shopOpen === "on",
+              access: data.accessAll === "on" ? "all" : "selected",
+            },
             allowedSkills: data.allowedSkills,
             allowedUserIds: data.allowedUserIds,
             // First time a shop gains an allowed player, flip it from the default
@@ -1019,11 +1113,13 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
             // tick a player, see nothing, and conclude "players can't open shops".
             // Only auto-promote on the no-players → has-players step; a GM who
             // wants a GM-pull-only shop can still set "off"/"knock".
-            selfServiceMode: promoteSelfServiceMode(
-              data.selfServiceMode,
-              (fresh.allowedUserIds?.length ?? 0) > 0,
-              (data.allowedUserIds?.length ?? 0) > 0,
-            ),
+            selfServiceMode: form.querySelector('[name="shopOpen"]')
+              ? "open"
+              : promoteSelfServiceMode(
+                  data.selfServiceMode,
+                  (fresh.allowedUserIds?.length ?? 0) > 0,
+                  (data.allowedUserIds?.length ?? 0) > 0,
+                ),
             pool: {
               lootTypes: data.poolLootTypes,
               rarities: data.poolRarities,
@@ -1044,6 +1140,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         { broadcast: true },
       );
       this._setSaveStatus("Saved");
+      const saved = findMerchant(this._selectedId);
+      if (saved?.shop?.open === false) pushCloseAllSessionsFor(saved.id);
+      pushMerchantAccessRefresh();
     } catch (error) {
       this._setSaveStatus("Save failed — retry");
       throw error;
@@ -1058,13 +1157,164 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
 
   /* -------------------- actions -------------------- */
 
-  static async _onNewMerchant() {
-    const blank = createBlankMerchant({ name: "New Merchant" });
-    await upsertMerchant(blank);
-    this._selectedId = blank.id;
-    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+  static _onSelectLocation(_event, target) {
+    if (this._locationBusy || target?.dataset?.locationId == null) return;
+    this._selectedLocationId = target.dataset.locationId;
+    this._merchantSearch = "";
     this.render(false);
-    MerchantWorkspaceApp.openMerchant(blank.id);
+  }
+
+  async _runLocationAction(operation) {
+    if (this._locationBusy) return;
+    this._locationBusy = true;
+    for (const control of this.element?.querySelectorAll?.(
+      "[data-location-control]",
+    ) ?? [])
+      control.disabled = true;
+    const status = this.element?.querySelector?.("[data-location-status]");
+    if (status) status.textContent = "Updating shops…";
+    try {
+      if (!(await confirmMerchantWriteAuthority(this))) return;
+      await operation();
+    } catch (error) {
+      notify(
+        "error",
+        error?.message ?? "The shops could not be updated. Please try again.",
+      );
+    } finally {
+      this._locationBusy = false;
+      this.render(false);
+    }
+  }
+
+  static async _onCreateLocation() {
+    const form = this.element?.querySelector?.("[data-location-form]");
+    if (!form?.reportValidity?.()) return;
+    const name = form.querySelector('[name="locationName"]').value;
+    const templateId = form.querySelector('[name="locationTemplate"]').value;
+    this._newLocationName = name;
+    this._newLocationTemplate = templateId;
+    await this._runLocationAction(async () => {
+      const items = templateId === "empty" ? [] : await loadCompendiumItems();
+      if (
+        !canContinueWorkbenchAction(this) ||
+        !(await confirmMerchantWriteAuthority(this))
+      )
+        return;
+      const created = await createShopLocation({ name, templateId, items });
+      this._selectedLocationId = created.id;
+      this._newLocationName = "";
+      notify(
+        "info",
+        `${created.name} is ready with ${created.count} shops. Open All when the party arrives.`,
+      );
+    });
+  }
+
+  static async _onAddLocationShop() {
+    const locationId = this._selectedLocationId;
+    if (locationId == null) return;
+    const templateId =
+      this.element?.querySelector?.('[name="shopTemplate"]')?.value ?? "custom";
+    await this._runLocationAction(async () => {
+      const items = templateId === "custom" ? [] : await loadCompendiumItems();
+      if (
+        !canContinueWorkbenchAction(this) ||
+        this._selectedLocationId !== locationId ||
+        !(await confirmMerchantWriteAuthority(this))
+      )
+        return;
+      const merchant = await addShopToLocation({
+        locationId,
+        templateId,
+        items,
+      });
+      if (templateId === "custom")
+        MerchantWorkspaceApp.openMerchant(merchant.id);
+      notify(
+        "info",
+        `${merchant.name} added. Use Open All to make it available.`,
+      );
+    });
+  }
+
+  static async _onLocationOperation(_event, target) {
+    const locationId = this._selectedLocationId;
+    const location = locationDirectory().find((row) => row.id === locationId);
+    if (!location) return;
+    const operation = target?.dataset?.operation;
+    const expectedIds = loadMerchants()
+      .filter((row) => (row.shop?.locationId ?? "") === locationId)
+      .map((row) => row.id);
+    await this._runLocationAction(async () => {
+      if (["generate", "clear"].includes(operation)) {
+        const confirmed = await confirmInfinityDialog({
+          window: {
+            title: `${operation === "generate" ? "Generate" : "Clear"} all — ${location.name}`,
+          },
+          content: `<p>${operation === "generate" ? "Replace the inventory" : "Remove the inventory"} in all ${expectedIds.length} shops in <strong>${escapeHtml(location.name)}</strong>? Each merchant's gold will reset to its restock amount.</p>`,
+          yes: {
+            label:
+              operation === "generate" ? "Generate All" : "Clear All Inventory",
+          },
+          defaultYes: false,
+        });
+        if (!confirmed) return;
+      }
+      const items = operation === "generate" ? await loadCompendiumItems() : [];
+      if (
+        !canContinueWorkbenchAction(this) ||
+        this._selectedLocationId !== locationId ||
+        !(await confirmMerchantWriteAuthority(this))
+      )
+        return;
+      const result = await applyLocationOperation({
+        locationId,
+        operation,
+        expectedIds,
+        items,
+      });
+      const messages = {
+        open: "opened",
+        close: "closed",
+        restock: "restocked; merchant gold reset",
+        generate: "generated; merchant gold reset",
+        clear: "emptied; merchant gold reset",
+      };
+      notify(
+        "info",
+        `${location.name}: ${result.count} shops ${messages[operation]}.`,
+      );
+    });
+  }
+
+  static async _onAssignLocation() {
+    const source = this._selectedLocationId;
+    const destination = this.element?.querySelector?.(
+      '[name="assignLocation"]',
+    )?.value;
+    if (
+      !destination ||
+      !locationDirectory().some((row) => row.id === destination)
+    )
+      return;
+    const ids = loadMerchants()
+      .filter((row) => (row.shop?.locationId ?? "") === source)
+      .map((row) => row.id);
+    await this._runLocationAction(async () => {
+      await commitMerchantBatch(ids, (current) =>
+        current.map((merchant) =>
+          ids.includes(merchant.id) &&
+          (merchant.shop?.locationId ?? "") === source
+            ? normalizeMerchant({
+                ...merchant,
+                shop: { ...shopSetup(merchant), locationId: destination },
+              })
+            : merchant,
+        ),
+      );
+      this._selectedLocationId = destination;
+    });
   }
 
   static async _onRecheckTransaction(_event, target) {
@@ -1159,7 +1409,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     if (!(await confirmMerchantWriteAuthority(this))) return;
     if (!isCurrentMerchantAction(this, merchant.id)) return;
     const deletedId = merchant.id;
-    await deleteMerchant(deletedId);
+    await commitMerchantBatch([deletedId], (current) =>
+      current.filter((row) => row.id !== deletedId),
+    );
     pushCloseAllSessionsFor(deletedId);
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     MerchantWorkspaceApp._instance?.render(false);
@@ -1321,7 +1573,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       (fresh) => {
         let next = replace ? clearInventory(fresh) : fresh;
         for (const row of rows) next = upsertInventoryRow(next, row);
-        return next;
+        return resetMerchantPurse(next);
       },
       { broadcast: true },
     );
@@ -1372,9 +1624,13 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     if (!confirmed) return;
     if (!(await confirmMerchantWriteAuthority(this))) return;
     if (!isCurrentMerchantAction(this, merchant.id)) return;
-    await commitMerchantWrite(merchant.id, (fresh) => clearInventory(fresh), {
-      broadcast: true,
-    });
+    await commitMerchantWrite(
+      merchant.id,
+      (fresh) => resetMerchantPurse(clearInventory(fresh)),
+      {
+        broadcast: true,
+      },
+    );
     playModuleSound(SOUND_EVENTS.CLEAR_RESET);
     this.render(false);
   }
@@ -1424,9 +1680,13 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     }
     if (!(await confirmMerchantWriteAuthority(this))) return;
     if (!isCurrentMerchantAction(this, merchant.id)) return;
-    await commitMerchantWrite(merchant.id, (fresh) => restockAll(fresh), {
-      broadcast: true,
-    });
+    await commitMerchantWrite(
+      merchant.id,
+      (fresh) => resetMerchantPurse(restockAll(fresh)),
+      {
+        broadcast: true,
+      },
+    );
     playModuleSound(SOUND_EVENTS.ROLL_START);
     ui.notifications?.info(`${merchant.name} restocked.`);
     this.render(false);
@@ -1461,7 +1721,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       this.render(false);
       return;
     }
-    if (!merchant.allowedUserIds.length) {
+    const allowedIds = allowedMerchantUserIds(merchant);
+    if (!allowedIds.length) {
       ui.notifications?.warn(
         "Tag at least one Allowed Player before opening a session.",
       );
@@ -1481,8 +1742,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     // Single allowed player: skip the redundant re-pick (mirrors the skill
     // picker's single-option short-circuit).
     const picked =
-      merchant.allowedUserIds.length === 1
-        ? [merchant.allowedUserIds[0]]
+      allowedIds.length === 1
+        ? [allowedIds[0]]
         : await promptPlayerPicker(merchant);
     if (!picked || picked.length === 0) return;
     if (!(await confirmMerchantWriteAuthority(this))) return;
@@ -1490,7 +1751,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     // canonical record before opening anything so a revoked player never gets a
     // session (or a stale merchant projection) from the pre-picker snapshot.
     const currentMerchant = findMerchant(merchant.id);
-    const currentAllowed = new Set(currentMerchant?.allowedUserIds ?? []);
+    const currentAllowed = new Set(allowedMerchantUserIds(currentMerchant));
     const currentPicked = picked.filter(
       (id) => currentAllowed.has(id) && globalThis.game?.users?.get?.(id),
     );
@@ -1538,97 +1799,6 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     if (!sessionId) return;
     pushCloseSession(sessionId);
     playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
-    this.render(false);
-  }
-
-  static async _onCloseAllSessions() {
-    const current = loadMerchantAccessState();
-    if (current.closed) {
-      // The persisted gate can already be closed while a player still has a
-      // stale window (for example, after a private-store schema lock). Run the
-      // idempotent close path so those windows and the sanitized Shops list are
-      // refreshed without rewriting the canonical access record.
-      try {
-        const result = await pushCloseAllMerchantSessions();
-        ui.notifications?.info(
-          result.closedCount > 0
-            ? `Merchant access was already closed. Closed ${result.closedCount} stale session${result.closedCount === 1 ? "" : "s"}.`
-            : "All merchant access is already closed.",
-        );
-      } catch (error) {
-        console.error(
-          `${MODULE_ID} | failed to refresh closed merchant sessions`,
-          error,
-        );
-        ui.notifications?.error(
-          "Merchant access is locked, but stale shop windows could not be refreshed. Players cannot complete transactions while the lock remains active.",
-        );
-      }
-      this.render(false);
-      return;
-    }
-    if (current.suspendedSessions.length > 0) {
-      ui.notifications?.warn(
-        "Finish restoring the saved Merchant sessions before closing all shops again.",
-      );
-      this.render(false);
-      return;
-    }
-
-    const activeCount = listSessions().length;
-    const confirmed = await confirmInfinityDialog({
-      window: {
-        title: "Close every shop?",
-        icon: "fa-solid fa-shop-lock",
-      },
-      content: `<p>This closes every live merchant window and blocks all self-service shops until you reopen them globally.</p><p><strong>${activeCount}</strong> active session${activeCount === 1 ? "" : "s"} will be remembered and restored later. Each merchant's Open, Knock, or Off setting stays unchanged.</p>`,
-      rejectClose: false,
-    });
-    if (!confirmed) return;
-    if (!(await confirmMerchantWriteAuthority(this))) return;
-
-    try {
-      const result = await pushCloseAllMerchantSessions();
-      playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
-      ui.notifications?.info(
-        `All shops are closed. ${result.suspendedCount} session${result.suspendedCount === 1 ? " was" : "s were"} saved for reopening.`,
-      );
-    } catch (error) {
-      console.error(
-        `${MODULE_ID} | failed to close all merchant sessions`,
-        error,
-      );
-      ui.notifications?.error(
-        "Merchant access could not be closed safely; no completion was reported.",
-      );
-    }
-    this.render(false);
-  }
-
-  static async _onReopenSessions() {
-    const current = loadMerchantAccessState();
-    if (!current.closed && current.suspendedSessions.length === 0) {
-      ui.notifications?.info("Merchant access is already open.");
-      this.render(false);
-      return;
-    }
-
-    try {
-      if (!(await confirmMerchantWriteAuthority(this))) return;
-      const result = await pushReopenMerchantSessions();
-      playModuleSound(SOUND_EVENTS.MERCHANT_SESSION_OPEN);
-      const skipped = result.skippedCount
-        ? ` ${result.skippedCount} saved session${result.skippedCount === 1 ? " was" : "s were"} skipped because its merchant or player access changed.`
-        : "";
-      ui.notifications?.info(
-        `Shops reopened globally. Restored ${result.openedCount} session${result.openedCount === 1 ? "" : "s"}.${skipped}`,
-      );
-    } catch (error) {
-      console.error(`${MODULE_ID} | failed to reopen merchant sessions`, error);
-      ui.notifications?.error(
-        "Merchant sessions could not be fully reopened. Review the global status and try again.",
-      );
-    }
     this.render(false);
   }
 
@@ -1880,7 +2050,7 @@ async function promptPreviewActor() {
 /** Choose only users already allowlisted on this merchant. */
 async function promptPlayerPicker(merchant) {
   const allowed = new Set(
-    (Array.isArray(merchant?.allowedUserIds) ? merchant.allowedUserIds : [])
+    allowedMerchantUserIds(merchant)
       .map((id) => String(id))
       .filter(Boolean),
   );

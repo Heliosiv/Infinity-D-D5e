@@ -2031,6 +2031,9 @@ function merchantWorkspaceContext() {
     bargainDC: 15,
     bargainAdvantage: false,
     goldOnHand: 320,
+    currentGoldLabel: "320 gp",
+    setup: { locationId: "city", startingGold: 1000, open: true },
+    accessAll: true,
     bargainSuccessPct: 10,
     bargainFailPct: 10,
     passiveHaggle: true,
@@ -2039,7 +2042,41 @@ function merchantWorkspaceContext() {
     items: [{}, {}, {}],
     itemCountIsOne: false,
   };
-  return {
+  const locations = [
+    {
+      id: "city",
+      name: "Drakmor",
+      count: 2,
+      openCount: 2,
+      status: "Open",
+      selected: true,
+    },
+    {
+      id: "village",
+      name: "Riverbend",
+      count: 3,
+      openCount: 0,
+      status: "Closed",
+    },
+  ];
+  const context = {
+    locations,
+    newLocationName: "",
+    hasLocations: true,
+    selectedLocation: locations[0],
+    locationHasShops: true,
+    locationOptions: locations,
+    assignLocationOptions: [locations[1]],
+    locationTemplates: [
+      { id: "village", name: "Village — 3 everyday shops" },
+      { id: "town", name: "Town — 5 shops", selected: true },
+      { id: "city", name: "City — 7 shops, including magic & fine goods" },
+      { id: "empty", name: "Empty location — add your own shops" },
+    ],
+    shopTemplates: [
+      { id: "general", name: "Sundries & General Goods" },
+      { id: "custom", name: "Custom Merchant" },
+    ],
     moduleId: "infinity-dnd5e",
     hasMerchants: true,
     merchants: [
@@ -2186,6 +2223,13 @@ function merchantWorkspaceContext() {
     canOpenSession: true,
     saveStatus: "Saved",
   };
+  context.locationMerchants = context.merchants.map((row) => ({
+    ...row,
+    status: "Open",
+    purseLabel: "320 gp",
+    accessLabel: "All players",
+  }));
+  return context;
 }
 
 function merchantWorkspaceSaveErrorContext() {

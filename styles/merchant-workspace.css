@@ -49,6 +49,8 @@
    out" on clicks). Promote each scroller to a stable own-layer so it always
    composites cleanly over the canvas. */
 .infinity-dnd5e.infinity-merchant-workspace .mw-list,
+.infinity-dnd5e.infinity-merchant-workspace .mw-location-content,
+.infinity-dnd5e.infinity-merchant-workspace .mw-location-rail,
 .infinity-dnd5e.infinity-merchant-workspace .mw-edit {
   transform: translateZ(0);
   will-change: transform;
@@ -1257,4 +1259,135 @@
 }
 .infinity-merchant-workspace .mw-list__items {
   padding: 6px 0;
+}
+
+/* Location controls stay together while long merchant lists scroll. */
+.infinity-merchant-workspace .mw-shell--directory {
+  overflow-y: auto;
+}
+.infinity-merchant-workspace .mw-shell--directory .mw-body {
+  flex: 0 0 auto;
+  display: block;
+}
+.infinity-merchant-workspace .mw-shell--directory .mw-head {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+}
+.infinity-merchant-workspace .mw-shell--directory .mw-directory-search {
+  position: static;
+}
+.infinity-merchant-workspace .mw-locations-layout {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(0, 2fr);
+  gap: 14px;
+  min-height: 0;
+  min-width: 0;
+  align-items: start;
+}
+.infinity-merchant-workspace .mw-location-rail,
+.infinity-merchant-workspace .mw-location-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.infinity-merchant-workspace .mw-location-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 500px;
+}
+.infinity-merchant-workspace .mw-location-content {
+  overflow: visible;
+}
+.infinity-merchant-workspace .mw-location {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 64px;
+  padding: 12px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--lf-surface);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+.infinity-merchant-workspace .mw-location.is-selected {
+  border-color: var(--ms-brass);
+  box-shadow: inset 3px 0 var(--ms-brass);
+  background: var(--lf-surface-elev);
+}
+.infinity-merchant-workspace .mw-location span {
+  font-size: 0.8rem;
+}
+.infinity-merchant-workspace .mw-location-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.infinity-merchant-workspace .mw-location-heading h3 {
+  margin: 0;
+  border: 0;
+}
+.infinity-merchant-workspace .mw-location-actions,
+.infinity-merchant-workspace .mw-location-add,
+.infinity-merchant-workspace .mw-location-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 10px 0;
+}
+.infinity-merchant-workspace .mw-location-add > .mw-field,
+.infinity-merchant-workspace .mw-location-form > .mw-field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.infinity-merchant-workspace .mw-location-actions .mw-btn {
+  flex: 1 1 auto;
+  width: auto;
+}
+.infinity-merchant-workspace .mw-location-create,
+.infinity-merchant-workspace .mw-advanced {
+  padding: 10px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+  margin-bottom: 8px;
+}
+.infinity-merchant-workspace .mw-location-create {
+  flex: 0 0 auto;
+}
+.infinity-merchant-workspace summary {
+  cursor: pointer;
+  padding: 4px;
+  font-weight: 600;
+}
+.infinity-merchant-workspace .mw-advanced[open] > summary {
+  margin-bottom: 12px;
+}
+.infinity-merchant-workspace .mw-location-content .mw-list {
+  overflow: visible;
+}
+.infinity-merchant-workspace .mw-location-content .mw-list__name {
+  white-space: normal;
+}
+@container merchant-workspace (max-width: 550px) {
+  .infinity-merchant-workspace .mw-locations-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .infinity-merchant-workspace .mw-location-rail {
+    flex-direction: row;
+    max-height: 110px;
+  }
+  .infinity-merchant-workspace .mw-location {
+    flex: 0 0 150px;
+  }
+  .infinity-merchant-workspace .mw-location-content {
+    overflow: visible;
+  }
 }

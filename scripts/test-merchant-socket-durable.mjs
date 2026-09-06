@@ -25,6 +25,7 @@ import {
   merchantCommitRequestFingerprint,
 } from "./merchant/transaction-ledger.js";
 import { normalizeMerchant } from "./merchant/store.js";
+import { applyLocationOperation } from "./merchant/locations.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const saved = {
@@ -169,6 +170,17 @@ function makeMerchant(id, userId, itemUuid) {
     sellRatio: 0.5,
     passiveHaggle: false,
     goldOnHand: 100,
+    ...(id === "shop-p1"
+      ? {
+          shop: {
+            locationId: "test-city",
+            startingGold: 100,
+            templateId: "general",
+            open: true,
+            access: "selected",
+          },
+        }
+      : {}),
     allowedUserIds: [userId],
     selfServiceMode: "open",
     items: [
@@ -1064,6 +1076,29 @@ try {
     "needs-review",
   );
   assert.ok(notices.some((message) => message.includes("shop-p3")));
+  const beforeProtectedEdit = clone(getPrivateState("merchants"));
+  await assert.rejects(
+    commitMerchantWrite("shop-p3", (merchant) => ({
+      ...merchant,
+      goldOnHand: 999,
+    })),
+    /unfinished trade/,
+  );
+  await assert.rejects(
+    applyLocationOperation({
+      locationId: "",
+      operation: "clear",
+      expectedIds: beforeProtectedEdit
+        .filter((merchant) => !merchant.shop?.locationId)
+        .map((merchant) => merchant.id),
+    }),
+    /unfinished trade/,
+  );
+  assert.deepEqual(
+    getPrivateState("merchants"),
+    beforeProtectedEdit,
+    "bulk and individual edits cannot erase recovery checkpoints",
+  );
 
   const p3BlockedSession = openSession({
     merchantId: "shop-p3",

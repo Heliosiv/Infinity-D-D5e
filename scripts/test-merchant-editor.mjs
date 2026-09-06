@@ -215,7 +215,7 @@ try {
     before,
     "switching tabs preserves all controls, including hidden checkboxes and settings",
   );
-  await root.locator('[data-merchant-tab="manage"]').focus();
+  await root.locator('[data-merchant-tab="advanced"]').focus();
   await page.keyboard.press("Home");
   assert.equal(
     await root
@@ -225,12 +225,12 @@ try {
   );
   await page.keyboard.press("ArrowRight");
   assert.equal(
-    await root.locator('[data-merchant-panel="pricing"]').isVisible(),
+    await root.locator('[data-merchant-panel="stock"]').isVisible(),
     true,
   );
   await page.keyboard.press("End");
   assert.equal(
-    await root.locator('[data-merchant-panel="manage"]').isVisible(),
+    await root.locator('[data-merchant-panel="advanced"]').isVisible(),
     true,
   );
   const one = merchantTabContext("one"),
@@ -252,5 +252,5 @@ try {
   await browser.close();
 }
 console.log(
-  "merchant directory, independent editor lifecycle, ten tabs, keyboard, narrow layout, and form preservation passed",
+  "merchant directory, independent editor lifecycle, four tabs, keyboard, narrow layout, and form preservation passed",
 );

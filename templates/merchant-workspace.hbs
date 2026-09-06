@@ -5,43 +5,17 @@
 <div class="mw-shell {{#if isMerchantEditor}}mw-shell--editor{{else}}mw-shell--directory{{/if}}">
   {{#unless isMerchantEditor}}
   <header class="mw-head">
-    <div class="mw-head__title">
-      <h2>Merchants</h2>
-    </div>
-    <div class="mw-head__actions">
-      <span class="mw-global-status {{merchantAccessStatusClass}}" role="status">
-        <i class="fa-solid {{merchantAccessStatusIcon}}" aria-hidden="true"></i>
-        {{merchantAccessStatusLabel}}
-      </span>
-      {{#if merchantAccessClosed}}
-      {{#if globalActiveSessionCount}}
-      <button type="button" class="mw-btn mw-btn--danger" data-action="closeAllSessions" title="Close stale player merchant windows without changing the saved global lock">
-        <i class="fa-solid fa-window-close" aria-hidden="true"></i> Close Stale
-        ({{globalActiveSessionCount}})
-      </button>
-      {{/if}}
-      <button type="button" class="mw-btn mw-btn--primary" data-action="reopenSessions" title="Restore global shop access and reopen the saved player sessions">
-        <i class="fa-solid fa-store" aria-hidden="true"></i> Reopen All
-        {{#if suspendedSessionCount}}({{suspendedSessionCount}}){{/if}}
-      </button>
-      {{else}}
-      {{#if merchantReopenInterrupted}}
-      <button type="button" class="mw-btn mw-btn--primary" data-action="reopenSessions" title="Continue restoring the saved player sessions before starting another global close">
-        <i class="fa-solid fa-rotate" aria-hidden="true"></i> Resume restoring
-        ({{suspendedSessionCount}})
-      </button>
-      {{else}}
-      <button type="button" class="mw-btn mw-btn--danger" data-action="closeAllSessions" title="Close every player merchant window and block all shop access">
-        <i class="fa-solid fa-shop-lock" aria-hidden="true"></i> Close All
-        {{#if globalActiveSessionCount}}({{globalActiveSessionCount}}){{/if}}
-      </button>
-      {{/if}}
-      {{/if}}
-      <button type="button" class="mw-btn mw-btn--primary" data-action="newMerchant" title="Create a new merchant">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> New Merchant
-      </button>
-    </div>
+    <div class="mw-head__title"><h2>Shops</h2><p class="mw-hint">Choose a location. Stock, gold, and opening hours are managed together.</p></div>
   </header>
+  <details class="mw-location-create" {{#unless hasLocations}}open{{/unless}}>
+    <summary>Add a city or location</summary>
+    <form data-location-form class="mw-location-form">
+      <label class="mw-field"><span class="mw-field__label">Location name</span><input class="mw-input" name="locationName" aria-label="Location name" value="{{newLocationName}}" maxlength="100" required placeholder="City, village, camp…" data-location-control /></label>
+      <label class="mw-field"><span class="mw-field__label">Starting shops</span><select class="mw-input" name="locationTemplate" data-location-control>{{#each locationTemplates}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+      <button type="button" class="mw-btn mw-btn--primary" data-action="createLocation" data-location-control>Create location</button>
+    </form>
+    <p class="mw-hint">Templates include stock, prices, and spending gold. Shops start closed; all players are allowed by default.</p>
+  </details>
   {{else}}
   <header class="mw-person-head">
     <h2>{{#if selected}}{{selected.name}}{{else}}Merchant unavailable{{/if}}</h2>
@@ -61,7 +35,7 @@
   {{#if merchantAccessClosed}}
   <div class="mw-global-notice" role="status">
     <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-    <span>All shops are closed to players. Reopen All restores access and saved sessions.</span>
+    <span>Shops are globally closed. Choose a location and use Open All to resume shopping there.</span>
   </div>
   {{/if}}
 
@@ -109,28 +83,44 @@
   {{/unless}}
   <div class="mw-body">
     {{#unless isMerchantEditor}}
-    {{!-- Left rail: merchant list --}}
-    <aside class="mw-list" aria-label="Merchants">
-      {{#if hasMerchants}}
-        <input type="search" class="mw-input mw-directory-search" data-merchant-search placeholder="Find a merchant…" aria-label="Find a merchant" />
-        <p class="mw-empty" data-merchant-no-match hidden>No merchants match.</p>
-        <ul class="mw-list__items">
-          {{#each merchants}}
-          <li class="mw-list__row">
-            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-haspopup="dialog">
+    <div class="mw-locations-layout">
+      <aside class="mw-location-rail" aria-label="Shop locations">
+        {{#each locations}}
+        <button type="button" class="mw-location {{#if selected}}is-selected{{/if}}" data-action="selectLocation" data-location-id="{{id}}" data-location-control aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+          <strong>{{name}}</strong><span>{{count}} shops · {{status}}</span>
+        </button>
+        {{else}}<p class="mw-empty">Create your first location above.</p>{{/each}}
+      </aside>
+      <section class="mw-location-content" aria-label="Selected location shops">
+        {{#if selectedLocation}}
+        <div class="mw-location-heading"><h3>{{selectedLocation.name}}</h3><span class="mw-save-status" role="status" aria-live="polite" data-location-status>{{#if locationBusy}}Updating shops…{{else}}{{selectedLocation.openCount}} of {{selectedLocation.count}} shops open{{/if}}</span></div>
+        <div class="mw-location-actions" role="group" aria-label="Actions for {{selectedLocation.name}}">
+          <button type="button" class="mw-btn mw-btn--primary" data-action="locationOperation" data-operation="open" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Open All</button>
+          <button type="button" class="mw-btn" data-action="locationOperation" data-operation="close" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Close All</button>
+          <button type="button" class="mw-btn" data-action="locationOperation" data-operation="restock" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Restock All</button>
+          <button type="button" class="mw-btn" data-action="locationOperation" data-operation="generate" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Generate All</button>
+          <button type="button" class="mw-btn mw-btn--danger" data-action="locationOperation" data-operation="clear" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Clear All Inventory</button>
+        </div>
+        <p class="mw-hint">Restock refills the existing shelves. Generate replaces them. All stock actions reset merchant gold. Other locations stay as they are.</p>
+        <div class="mw-location-add"><label class="mw-field"><span class="mw-field__label">Add a shop</span><select class="mw-input" name="shopTemplate" data-location-control>{{#each shopTemplates}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label><button type="button" class="mw-btn" data-action="addLocationShop" data-location-control>Add shop</button></div>
+        <div class="mw-list" aria-label="Merchants in {{selectedLocation.name}}">
+          {{#if locationHasShops}}
+          <input type="search" class="mw-input mw-directory-search" data-merchant-search placeholder="Find a merchant…" aria-label="Find a merchant" />
+          <p class="mw-empty" data-merchant-no-match hidden>No merchants match.</p>
+          <ul class="mw-list__items">{{#each locationMerchants}}
+            <li class="mw-list__row"><button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-haspopup="dialog">
               <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
-              <span class="mw-list__copy">
-                <strong class="mw-list__name">{{name}}</strong>
-                <span class="mw-list__meta">{{itemCount}} item{{#unless itemCountIsOne}}s{{/unless}} · {{allowedCount}} player{{#unless allowedCountIsOne}}s{{/unless}}</span>
-              </span>
-            </button>
-          </li>
-          {{/each}}
-        </ul>
-      {{else}}
-        <p class="mw-empty">No merchants yet. Click <strong>New Merchant</strong> to start.</p>
-      {{/if}}
-    </aside>
+              <span class="mw-list__copy"><strong class="mw-list__name">{{name}}</strong><span class="mw-list__meta">{{status}} · {{itemCount}} items · {{purseLabel}} · {{accessLabel}}</span></span>
+            </button></li>
+          {{/each}}</ul>
+          {{else}}<p class="mw-empty">No shops here yet. Add a template or custom merchant above.</p>{{/if}}
+        </div>
+        {{#if locationHasShops}}{{#if assignLocationOptions.length}}
+        <details class="mw-advanced"><summary>Move these shops to another location</summary><div class="mw-location-add"><label class="mw-field"><span class="mw-field__label">Destination</span><select class="mw-input" name="assignLocation" data-location-control>{{#each assignLocationOptions}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label><button type="button" class="mw-btn" data-action="assignLocation" data-location-control>Move all shops</button></div><p class="mw-hint">Stock, gold, and player restrictions are preserved. To move one shop, open its Setup tab.</p></details>
+        {{/if}}{{/if}}
+        {{else}}<p class="mw-empty">Your locations and merchants will appear here.</p>{{/if}}
+      </section>
+    </div>
     {{else}}
 
     {{!-- Right pane: editor --}}
@@ -169,72 +159,16 @@
           <span class="mw-field__label">Description / Flavor</span>
           <textarea class="mw-textarea" name="description" rows="2" placeholder="Optional flavor text shown to players.">{{selected.description}}</textarea>
         </label>
-        </section>
 
-        <section data-merchant-panel="pricing" id="{{merchantPanels.pricing.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.pricing.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.pricing.active}}hidden{{/unless}}>
 <div class="mw-form__grid">
-          <label class="mw-field">
-            <span class="mw-field__label">Buy price ×</span>
-            <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" title="Multiplier on the listed price players pay. 1.0 = list price, 1.2 = +20%, 2.0 = double." />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Sell-back ×</span>
-            <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" title="Fraction of an item's value players get when selling to this merchant. 0.5 = half (standard 5e)." />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Gold on Hand</span>
-            <input class="mw-input" type="number" name="goldOnHand" min="0" step="1" value="{{selected.goldOnHand}}" placeholder="∞ unlimited" title="Blank = unlimited purse. A literal 0 means the merchant can't buy anything from players." />
-          </label>
-</div>        </section>
-
-        <section data-merchant-panel="bargaining" id="{{merchantPanels.bargaining.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.bargaining.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.bargaining.active}}hidden{{/unless}}>
-<div class="mw-form__grid">
-          <label class="mw-field">
-            <span class="mw-field__label">Bargain DC</span>
-            <input class="mw-input" type="number" name="bargainDC" min="5" max="30" step="1" value="{{selected.bargainDC}}" />
-          </label>
-          <label class="mw-field mw-field--toggle">
-            <span class="mw-field__label">Advantage on Bargain</span>
-            <input type="checkbox" name="bargainAdvantage" {{#if selected.bargainAdvantage}}checked{{/if}} />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Discount if Bargain Succeeds</span>
-            <input class="mw-input" type="number" name="bargainSuccessPct" min="0" max="100" step="1" value="{{selected.bargainSuccessPct}}" />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Penalty if Bargain Fails</span>
-            <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
-          </label>
-</div>        <fieldset class="mw-fieldset">
-          <legend>Allowed Skills</legend>
-          <div class="mw-chiprow">
-            {{#each skillOptions}}
-            <label class="mw-chip">
-              <input type="checkbox" name="allowedSkills" value="{{id}}" {{#if checked}}checked{{/if}} />
-              <span>{{label}}</span>
-            </label>
-            {{/each}}
-          </div>
-        </fieldset>
-
-        </section>
-        <section data-merchant-panel="charm" id="{{merchantPanels.charm.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.charm.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.charm.active}}hidden{{/unless}}>
-<div class="mw-form__grid">
-          <label class="mw-field mw-field--toggle">
-            <span class="mw-field__label">Charm affects prices</span>
-            <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} title="On by default: a charismatic shopper automatically shifts prices before any bargain roll." />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Price shift per skill point</span>
-            <input class="mw-input" type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{selected.passivePctPerPoint}}" title="Price shift per point of passive social skill above/below the commoner baseline of 10." />
-          </label>
-          <label class="mw-field">
-            <span class="mw-field__label">Most a price can shift</span>
-            <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Cap on the automatic passive price shift, in either direction." />
-          </label>
+  <label class="mw-field"><span class="mw-field__label">Location</span><select class="mw-input" name="shopLocationId">{{#each locationOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+  <label class="mw-field"><span class="mw-field__label">Gold after restock</span><input class="mw-input" type="number" name="startingGold" min="0" step="0.01" value="{{selected.setup.startingGold}}" placeholder="Unlimited" /></label>
 </div>
-        </section>
-        <section data-merchant-panel="stock" id="{{merchantPanels.stock.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.stock.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.stock.active}}hidden{{/unless}}>
+<p class="mw-hint">Blank gold means unlimited. Restock, Generate, and Clear reset this purse. Current merchant gold: <strong>{{selected.currentGoldLabel}}</strong>.</p>
+<button type="button" class="mw-btn" data-action="previewSession">Preview shop</button>
+<p class="mw-hint">Buying and selling process automatically. Use Access for player restrictions; Advanced settings are optional.</p>
+</section>
+<section data-merchant-panel="stock" id="{{merchantPanels.stock.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.stock.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.stock.active}}hidden{{/unless}}>
         <fieldset class="mw-fieldset mw-fieldset--inv">
           <legend>Inventory <small>({{selected.items.length}} {{#if selected.itemCountIsOne}}row{{else}}rows{{/if}})</small></legend>
           {{#if inventoryRows.length}}
@@ -282,21 +216,88 @@
               <p class="mw-empty">Drag items from the sidebar / item library here, or click <strong>Add From Library</strong>.</p>
             {{/if}}
           </div>
-          <div class="mw-inv__actions">
+          <div class="mw-inv__actions"><button type="button" class="mw-btn mw-btn--primary" data-action="regenerateStock">Generate stock</button>
             <button type="button" class="mw-btn" data-action="addFromPack">
               <i class="fa-solid fa-box-open" aria-hidden="true"></i> Add From Library
             </button>
             <button type="button" class="mw-btn" data-action="restock">
-              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock All
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Restock
             </button>
             <button type="button" class="mw-btn mw-btn--danger" data-action="clearInventory">
-              <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Clear All
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i> Clear Inventory
             </button>
           </div>
         </fieldset>
 
         </section>
-        <section data-merchant-panel="generate" id="{{merchantPanels.generate.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.generate.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.generate.active}}hidden{{/unless}}>
+<section data-merchant-panel="access" id="{{merchantPanels.access.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.access.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.access.active}}hidden{{/unless}}>
+<label class="mw-field mw-field--toggle"><span class="mw-field__label">Shop open</span><input type="checkbox" name="shopOpen" {{#if selected.setup.open}}checked{{/if}} /></label>
+<p class="mw-hint">Allowed players enter and trade automatically while this shop is open.</p>
+<label class="mw-field mw-field--toggle"><span class="mw-field__label">Allow all players</span><input type="checkbox" name="accessAll" {{#if selected.accessAll}}checked{{/if}} /></label>
+<fieldset class="mw-fieldset"><legend>Selected players</legend><p class="mw-hint">Used only when Allow all players is off. This list also includes offline players.</p><div class="mw-chiprow">{{#each playerOptions}}<label class="mw-chip"><input type="checkbox" name="allowedUserIds" value="{{id}}" {{#if checked}}checked{{/if}} /><span>{{name}}</span></label>{{else}}<p class="mw-empty">No player accounts yet.</p>{{/each}}</div></fieldset>
+</section>
+<section data-merchant-panel="advanced" id="{{merchantPanels.advanced.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.advanced.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.advanced.active}}hidden{{/unless}}>
+<p class="mw-hint">Ready-to-use defaults are already set. Change these only when a merchant needs something special.</p>
+<details class="mw-advanced"><summary>Prices</summary>
+<div class="mw-form__grid">
+          <label class="mw-field">
+            <span class="mw-field__label">Buy price ×</span>
+            <input class="mw-input" type="number" name="defaultMarkup" min="0.1" max="5" step="0.05" value="{{selected.defaultMarkup}}" title="Multiplier on the listed price players pay. 1.0 = list price, 1.2 = +20%, 2.0 = double." />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Sell-back ×</span>
+            <input class="mw-input" type="number" name="sellRatio" min="0" max="1.5" step="0.05" value="{{selected.sellRatio}}" title="Fraction of an item's value players get when selling to this merchant. 0.5 = half (standard 5e)." />
+          </label>
+
+</div>        </details>
+<details class="mw-advanced"><summary>Bargaining</summary>
+<div class="mw-form__grid">
+          <label class="mw-field">
+            <span class="mw-field__label">Bargain DC</span>
+            <input class="mw-input" type="number" name="bargainDC" min="5" max="30" step="1" value="{{selected.bargainDC}}" />
+          </label>
+          <label class="mw-field mw-field--toggle">
+            <span class="mw-field__label">Advantage on Bargain</span>
+            <input type="checkbox" name="bargainAdvantage" {{#if selected.bargainAdvantage}}checked{{/if}} />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Discount if Bargain Succeeds</span>
+            <input class="mw-input" type="number" name="bargainSuccessPct" min="0" max="100" step="1" value="{{selected.bargainSuccessPct}}" />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Penalty if Bargain Fails</span>
+            <input class="mw-input" type="number" name="bargainFailPct" min="0" max="100" step="1" value="{{selected.bargainFailPct}}" />
+          </label>
+</div>        <fieldset class="mw-fieldset">
+          <legend>Allowed Skills</legend>
+          <div class="mw-chiprow">
+            {{#each skillOptions}}
+            <label class="mw-chip">
+              <input type="checkbox" name="allowedSkills" value="{{id}}" {{#if checked}}checked{{/if}} />
+              <span>{{label}}</span>
+            </label>
+            {{/each}}
+          </div>
+        </fieldset>
+
+        </details>
+<details class="mw-advanced"><summary>Charm</summary>
+<div class="mw-form__grid">
+          <label class="mw-field mw-field--toggle">
+            <span class="mw-field__label">Charm affects prices</span>
+            <input type="checkbox" name="passiveHaggle" {{#if selected.passiveHaggle}}checked{{/if}} title="On by default: a charismatic shopper automatically shifts prices before any bargain roll." />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Price shift per skill point</span>
+            <input class="mw-input" type="number" name="passivePctPerPoint" min="0" max="20" step="0.5" value="{{selected.passivePctPerPoint}}" title="Price shift per point of passive social skill above/below the commoner baseline of 10." />
+          </label>
+          <label class="mw-field">
+            <span class="mw-field__label">Most a price can shift</span>
+            <input class="mw-input" type="number" name="passiveCapPct" min="0" max="100" step="1" value="{{selected.passiveCapPct}}" title="Cap on the automatic passive price shift, in either direction." />
+          </label>
+</div>
+        </details>
+<details class="mw-advanced"><summary>Stock generation settings</summary>
         <fieldset class="mw-fieldset">
           <legend>Random Stock <small>auto-generated inventory</small></legend>
           <p class="mw-hint">Generate adds stock. Re-Generate replaces it. Ammunition comes in stacks of 20.</p>
@@ -384,8 +385,8 @@
         </fieldset>
 
 
-        </section>
-        <section data-merchant-panel="buys" id="{{merchantPanels.buys.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.buys.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.buys.active}}hidden{{/unless}}>
+        </details>
+<details class="mw-advanced"><summary>What this merchant buys</summary>
         <fieldset class="mw-fieldset">
           <legend>Buys From Players <small>what this merchant will purchase</small></legend>
           <p class="mw-hint">Pick the item types and/or rarities this merchant buys back from players. Leave everything unchecked to buy anything sellable.{{#if buysAnything}} <strong>Currently buys anything.</strong>{{/if}}</p>
@@ -421,38 +422,8 @@
         </fieldset>
 
 
-        </section>
-        <section data-merchant-panel="access" id="{{merchantPanels.access.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.access.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.access.active}}hidden{{/unless}}>
-          <fieldset class="mw-fieldset">
-            <legend>Allowed Players</legend>
-            {{#if hasPlayers}}
-            <div class="mw-chiprow">
-              {{#each playerOptions}}
-              <label class="mw-chip">
-                <input type="checkbox" name="allowedUserIds" value="{{id}}" {{#if checked}}checked{{/if}} />
-                <span>{{name}}</span>
-              </label>
-              {{/each}}
-            </div>
-            {{else}}
-            <p class="mw-empty">No active player users.</p>
-            {{/if}}
-            <label class="mw-field mw-field--inline mw-field--selfservice">
-              <span class="mw-field__label">Self-Service</span>
-              <select class="mw-input" name="selfServiceMode">
-                {{#each selfServiceOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            {{#if selfServiceOffWithPlayers}}
-            <p class="mw-warn">Self-Service is Off. Players need you to open a session.</p>
-            {{/if}}
-            <p class="mw-hint">With <strong>Knock</strong>, when a player asks to enter you'll get an Approve / Deny prompt on your screen.</p>
-          </fieldset>
-        </section>
-
-        <section data-merchant-panel="sessions" id="{{merchantPanels.sessions.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.sessions.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.sessions.active}}hidden{{/unless}}>
+        </details>
+<details class="mw-advanced"><summary>Player windows</summary>
         <div class="mw-form__foot">
           <div class="mw-form__foot-right">
             <button type="button" class="mw-btn" data-action="previewSession" title="Open a sandbox shop window to see how buying, selling, and bargaining work — nothing real changes">
@@ -488,8 +459,8 @@
         {{else}}
         <p class="mw-empty mw-empty--session">No live sessions for this merchant. Preview does not change campaign data.</p>
         {{/if}}
-        </section>
-        <section data-merchant-panel="manage" id="{{merchantPanels.manage.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.manage.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.manage.active}}hidden{{/unless}}>
+        </details>
+<details class="mw-advanced"><summary>Duplicate or delete merchant</summary>
           <div class="mw-form__foot">
             <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate
@@ -498,7 +469,9 @@
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Merchant
             </button>
           </div>
-        </section>
+        </details>
+</section>
+
         </div>
       </form>
       {{else}}
