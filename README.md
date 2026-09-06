@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.18 — directory-first Shops:** Opening or returning to **Shops** now
+shows the location and merchant directory without automatically reopening the
+first highlighted merchant. Clicking a merchant still opens its focused editor,
+and explicit merchant links remain supported.
+
 **v0.3.17 — city-wide pricing:** **City Pricing** can now set shared customer
 markups, merchant sell-back ratios, bargaining rules, and charm pricing for
 every shop in one location—or any hand-picked merchant group. Every change is

@@ -63,6 +63,17 @@ settings.set("merchants", [
 ]);
 
 const directory = MerchantWorkspaceApp.open();
+await directory._prepareContext();
+assert.equal(
+  directory._selectedId,
+  "a",
+  "the directory may highlight its first merchant for rendering",
+);
+assert.deepEqual(
+  directory.captureWorkbenchTarget(),
+  { route: "merchants" },
+  "the directory highlight is not remembered as an explicit merchant deep-link",
+);
 const first = await MerchantWorkspaceApp._onSelectMerchant.call(
   directory,
   null,

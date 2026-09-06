@@ -385,9 +385,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
   }
 
   _captureWorkbenchTarget() {
+    // A selected row is only a directory highlight. Remembering it as an
+    // entity target would reopen that merchant whenever Shops is revisited.
     return {
       route: MerchantWorkspaceApp.WORKBENCH_ROUTE,
-      entityId: this._selectedId ?? "",
     };
   }
 
