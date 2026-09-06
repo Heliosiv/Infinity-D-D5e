@@ -441,8 +441,9 @@ const merchantPricingView = views.find(
 );
 assert.ok(merchantPricingView, "harness includes city merchant pricing");
 assert.match(merchantPricingView.html, /Haven/);
-assert.match(merchantPricingView.html, /data-action="preview"/);
+assert.doesNotMatch(merchantPricingView.html, /data-action="preview"/);
 assert.match(merchantPricingView.html, /data-action="apply"/);
+assert.match(merchantPricingView.html, />Apply pricing</);
 assert.match(merchantPricingView.html, /Yannick&#x27;s Curios/);
 
 const closedMerchantWorkspaceView = views.find(

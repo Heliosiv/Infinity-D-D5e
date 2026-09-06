@@ -107,12 +107,12 @@
   <section class="mp-card" aria-labelledby="mp-review-heading">
     <div class="mp-card__head">
       <div>
-        <p class="mp-eyebrow">3 · Review and apply</p>
+        <p class="mp-eyebrow">3 · Apply</p>
         <h3 id="mp-review-heading">Exact changes</h3>
       </div>
-      <button type="button" class="mp-primary" data-action="preview" {{#unless hasMerchants}}disabled{{/unless}}>Preview changes</button>
     </div>
-    {{#if hasPreview}}
+    <div data-pricing-preview>
+    {{#if preview}}
       {{#if preview.changedCount}}
       <ul class="mp-preview-list">
         {{#each preview.changes}}
@@ -123,11 +123,12 @@
       <p class="mp-empty">No changes are needed for the selected merchants.</p>
       {{/if}}
     {{else}}
-    <p class="mp-empty">Nothing changes until you preview, review, and apply.</p>
+    <p class="mp-empty">Choose at least one merchant and one pricing rule.</p>
     {{/if}}
+    </div>
     <div class="mp-apply-row">
-      <p>City rules copy onto each selected merchant. You can still open any merchant afterward and adjust it individually.</p>
-      <button type="button" class="mp-primary" data-action="apply" {{#unless canApply}}disabled{{/unless}}>Apply reviewed pricing</button>
+      <p>Exact changes update automatically. Nothing changes until you apply. You can still adjust any merchant individually afterward.</p>
+      <button type="button" class="mp-primary" data-action="apply" {{#unless canApply}}disabled{{/unless}}>Apply pricing</button>
     </div>
   </section>
 </form>

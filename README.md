@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.19 — direct city pricing:** Multi-merchant pricing now applies without
+the read-only-array crash. The separate **Preview changes** action is gone;
+the exact merchant changes update automatically while editing, followed by one
+**Apply pricing** action and the existing final confirmation.
+
 **v0.3.18 — directory-first Shops:** Opening or returning to **Shops** now
 shows the location and merchant directory without automatically reopening the
 first highlighted merchant. Clicking a merchant still opens its focused editor,
@@ -11,8 +16,8 @@ and explicit merchant links remain supported.
 **v0.3.17 — city-wide pricing:** **City Pricing** can now set shared customer
 markups, merchant sell-back ratios, bargaining rules, and charm pricing for
 every shop in one location—or any hand-picked merchant group. Every change is
-previewed before one atomic save, and item-specific price overrides remain
-untouched unless the GM explicitly clears them.
+shown automatically before one atomic save, and item-specific price overrides
+remain untouched unless the GM explicitly clears them.
 
 **v0.3.16 — simpler shops by location:** Choose a city or location,
 then **Open All**, **Close All**, **Restock All**, **Generate All**, or **Clear All

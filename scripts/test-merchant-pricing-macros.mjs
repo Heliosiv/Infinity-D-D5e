@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 
 import {
   applyMerchantPricingPatch,
-  merchantPricingMacroSignature,
   normalizeMerchantPricingPatch,
   planMerchantPricingMacro,
   resolveMerchantPricingTargets,
@@ -116,18 +115,6 @@ assert.throws(
   /Choose at least one pricing rule/,
 );
 
-assert.equal(
-  merchantPricingMacroSignature({
-    merchantIds: ["curios", "smith", "curios"],
-    patch: { sellRatio: 0.45, defaultMarkup: 1.25 },
-  }),
-  merchantPricingMacroSignature({
-    merchantIds: ["smith", "curios"],
-    patch: { defaultMarkup: 1.25, sellRatio: 0.45 },
-  }),
-  "preview signatures ignore target ordering and duplicate ids",
-);
-
 process.stdout.write(
-  "merchant city pricing groups, individual overrides, validation, and preview signatures passed\n",
+  "merchant city pricing groups, individual overrides, and validation passed\n",
 );

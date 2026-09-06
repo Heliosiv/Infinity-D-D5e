@@ -7,6 +7,7 @@ import {
   locationDirectory,
   LOCATION_TEMPLATES,
 } from "./merchant/locations.js";
+import { applyMerchantPricingMacro } from "./merchant/pricing-macros.js";
 import {
   loadMerchantAccessState,
   saveMerchantAccessState,
@@ -129,6 +130,19 @@ const act = (location, operation, extra = {}) =>
     items,
     ...extra,
   });
+
+const pricingTargets = ids(village).slice(0, 2);
+const pricingResult = await applyMerchantPricingMacro({
+  merchantIds: pricingTargets,
+  patch: { defaultMarkup: 1.37, sellRatio: 0.42 },
+});
+assert.equal(pricingResult.changedCount, 2);
+assert.equal(pricingResult.verified, true);
+for (const merchantId of pricingTargets) {
+  const merchant = loadMerchants().find((row) => row.id === merchantId);
+  assert.equal(merchant.defaultMarkup, 1.37);
+  assert.equal(merchant.sellRatio, 0.42);
+}
 
 await act(village, "open");
 await act(town, "open");

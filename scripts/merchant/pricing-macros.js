@@ -162,19 +162,8 @@ export function planMerchantPricingMacro(
   });
 }
 
-/** Stable signature used to invalidate an on-screen preview after edits. */
-export function merchantPricingMacroSignature({
-  merchantIds = [],
-  patch = {},
-}) {
-  return JSON.stringify({
-    merchantIds: uniqueIds(merchantIds).sort(),
-    patch: normalizeMerchantPricingPatch(patch),
-  });
-}
-
 /**
- * Apply a reviewed macro against fresh records under all target shop locks,
+ * Apply a macro against fresh records under all target shop locks,
  * then return a canonical read-back plan.
  */
 export async function applyMerchantPricingMacro(options = {}) {
@@ -192,10 +181,12 @@ export async function applyMerchantPricingMacro(options = {}) {
 
   const expectedIds = [...merchantIds].sort();
   await commitMerchantBatch(merchantIds, (current) => {
-    const freshIds = resolveMerchantPricingTargets(options, {
-      merchants: current,
-      locations,
-    }).sort();
+    const freshIds = [
+      ...resolveMerchantPricingTargets(options, {
+        merchants: current,
+        locations,
+      }),
+    ].sort();
     if (JSON.stringify(freshIds) !== JSON.stringify(expectedIds)) {
       throw new Error("MerchantPricingTargetsChanged");
     }

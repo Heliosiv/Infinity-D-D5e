@@ -2318,11 +2318,10 @@ function merchantPricingContext() {
         },
       ],
     },
-    hasPreview: true,
     canApply: true,
     canManage: true,
     authorityReason: "",
-    status: "Review 2 merchant changes below.",
+    status: "2 merchant changes ready to apply.",
     statusTone: "attention",
   };
 }

@@ -12,7 +12,6 @@ import { isAuthoritativeGM } from "../socket-authority.js";
 import { notify } from "../ui-util.js";
 import {
   applyMerchantPricingMacro,
-  merchantPricingMacroSignature,
   planMerchantPricingMacro,
 } from "./pricing-macros.js";
 import { locationDirectory } from "./locations.js";
@@ -47,7 +46,6 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     actions: {
       selectAll: MerchantPricingApp._onSelectAll,
       selectNone: MerchantPricingApp._onSelectNone,
-      preview: MerchantPricingApp._onPreview,
       apply: MerchantPricingApp._onApply,
     },
   };
@@ -67,7 +65,6 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
       if (existing && options.locationId != null) {
         app._requestedScopeId = cleanId(options.locationId);
         app._draft = null;
-        app._preview = null;
         app.render(false);
       }
       return app;
@@ -79,8 +76,8 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
     this._requestedScopeId = cleanId(options.locationId);
     this._draft = null;
-    this._preview = null;
-    this._status = "Choose a city or merchants, then preview the changes.";
+    this._status =
+      "Choose merchants and pricing. Exact changes update automatically.";
     this._statusTone = "neutral";
     this._cityTargetMap = new Map();
   }
@@ -128,6 +125,18 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     const canManage = isAuthoritativeGM() && hasMerchantTabLeadership();
     const selectedIds = new Set(this._draft.merchantIds);
     const scopeId = this._draft.scopeId;
+    let plan = null;
+    if (merchants.length > 0) {
+      try {
+        plan = planMerchantPricingMacro(merchants, {
+          merchantIds: this._draft.merchantIds,
+          patch: pricingPatchFromDraft(this._draft),
+        });
+      } catch (error) {
+        this._status = pricingErrorMessage(error);
+        this._statusTone = "danger";
+      }
+    }
     const cityOptions = [
       {
         id: ALL_MERCHANTS_SCOPE,
@@ -163,10 +172,8 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
       draft: this._draft,
       selectedCount: selectedIds.size,
       selectedCountIsOne: selectedIds.size === 1,
-      preview: this._preview,
-      hasPreview: Boolean(this._preview),
-      canApply:
-        canManage && Boolean(this._preview) && this._preview.changedCount > 0,
+      preview: plan,
+      canApply: canManage && Boolean(plan) && plan.changedCount > 0,
       canManage,
       authorityReason: canManage
         ? ""
@@ -186,12 +193,10 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     form
       .querySelector('[name="scopeId"]')
       ?.addEventListener("change", (event) => {
-        this._selectScope(event.target?.value, { updateDom: true });
+        this._selectScope(event.target?.value);
       });
-    form.addEventListener("input", () => this._markPreviewStale());
-    form.addEventListener("change", (event) => {
-      if (event.target?.name !== "scopeId") this._markPreviewStale();
-      this._refreshSelectedCount();
+    form.addEventListener("input", (event) => {
+      if (event.target?.name !== "scopeId") this._refreshPlanFromForm();
     });
   }
 
@@ -199,34 +204,65 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     return this.element?.querySelector?.("[data-merchant-pricing-form]");
   }
 
-  _selectScope(value, { updateDom = false } = {}) {
+  _selectScope(value) {
     const scopeId = this._cityTargetMap.has(cleanId(value))
       ? cleanId(value)
       : ALL_MERCHANTS_SCOPE;
     const merchantIds = [...(this._cityTargetMap.get(scopeId) ?? [])];
     this._requestedScopeId = scopeId;
     this._draft = { ...(this._draft ?? defaultDraft()), scopeId, merchantIds };
-    this._preview = null;
     this._status = `${merchantIds.length} merchant${merchantIds.length === 1 ? "" : "s"} selected from this group.`;
     this._statusTone = "neutral";
-    if (!updateDom) return;
     const selected = new Set(merchantIds);
     for (const checkbox of this._form()?.querySelectorAll?.(
       'input[name="merchantIds"]',
     ) ?? []) {
       checkbox.checked = selected.has(checkbox.value);
     }
-    this._updateStatusDom();
-    this._refreshSelectedCount();
+    this._refreshPlanFromForm();
   }
 
-  _markPreviewStale() {
-    if (!this._preview) return;
-    this._status = "Selections changed. Preview again before applying.";
-    this._statusTone = "attention";
-    const apply = this.element?.querySelector?.('[data-action="apply"]');
-    if (apply) apply.disabled = true;
-    this._updateStatusDom();
+  _refreshPlanFromForm() {
+    const form = this._form();
+    this._refreshSelectedCount();
+    if (!form?.checkValidity?.()) {
+      this._status = "Fix the highlighted pricing value before applying.";
+      this._statusTone = "danger";
+      this._renderPlanDom(null);
+      const apply = this.element?.querySelector?.('[data-action="apply"]');
+      if (apply) apply.disabled = true;
+      this._updateStatusDom();
+      return;
+    }
+    try {
+      const draft = readPricingDraft(form);
+      const plan = planMerchantPricingMacro(loadMerchants(), {
+        merchantIds: draft.merchantIds,
+        patch: draft.patch,
+      });
+      this._draft = draft;
+      this._status =
+        plan.changedCount > 0
+          ? `${plan.changedCount} merchant change${plan.changedCount === 1 ? "" : "s"} ready to apply.`
+          : "Every selected merchant already matches these rules.";
+      this._statusTone = plan.changedCount > 0 ? "attention" : "success";
+      this._renderPlanDom(plan);
+      const apply = this.element?.querySelector?.('[data-action="apply"]');
+      if (apply) {
+        apply.disabled =
+          plan.changedCount === 0 ||
+          !isAuthoritativeGM() ||
+          !hasMerchantTabLeadership();
+      }
+      this._updateStatusDom();
+    } catch (error) {
+      this._status = pricingErrorMessage(error);
+      this._statusTone = "danger";
+      this._renderPlanDom(null);
+      const apply = this.element?.querySelector?.('[data-action="apply"]');
+      if (apply) apply.disabled = true;
+      this._updateStatusDom();
+    }
   }
 
   _refreshSelectedCount() {
@@ -235,6 +271,38 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
         .length ?? 0;
     const label = this.element?.querySelector?.("[data-selected-count]");
     if (label) label.textContent = `${count} selected`;
+  }
+
+  _renderPlanDom(plan) {
+    const host = this.element?.querySelector?.("[data-pricing-preview]");
+    if (!host) return;
+    host.replaceChildren();
+    if (!plan) {
+      const empty = document.createElement("p");
+      empty.className = "mp-empty";
+      empty.textContent = "Choose at least one merchant and one pricing rule.";
+      host.append(empty);
+      return;
+    }
+    if (plan.changedCount === 0) {
+      const empty = document.createElement("p");
+      empty.className = "mp-empty";
+      empty.textContent = "No changes are needed for the selected merchants.";
+      host.append(empty);
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "mp-preview-list";
+    for (const change of plan.changes) {
+      const item = document.createElement("li");
+      const name = document.createElement("strong");
+      name.textContent = change.merchantName;
+      const summary = document.createElement("span");
+      summary.textContent = change.summary;
+      item.append(name, summary);
+      list.append(item);
+    }
+    host.append(list);
   }
 
   _updateStatusDom() {
@@ -251,8 +319,7 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     ) ?? []) {
       checkbox.checked = true;
     }
-    this._markPreviewStale();
-    this._refreshSelectedCount();
+    this._refreshPlanFromForm();
   }
 
   /** @this {MerchantPricingApp} */
@@ -262,12 +329,11 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
     ) ?? []) {
       checkbox.checked = false;
     }
-    this._markPreviewStale();
-    this._refreshSelectedCount();
+    this._refreshPlanFromForm();
   }
 
   /** @this {MerchantPricingApp} */
-  static async _onPreview() {
+  static async _onApply() {
     const form = this._form();
     if (!form?.reportValidity?.()) return;
     try {
@@ -276,41 +342,12 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
         merchantIds: draft.merchantIds,
         patch: draft.patch,
       });
-      this._draft = draft;
-      this._preview = {
-        ...plan,
-        signature: merchantPricingMacroSignature({
-          merchantIds: draft.merchantIds,
-          patch: draft.patch,
-        }),
-      };
-      this._status =
-        plan.changedCount > 0
-          ? `Review ${plan.changedCount} merchant change${plan.changedCount === 1 ? "" : "s"} below.`
-          : "Every selected merchant already matches these rules.";
-      this._statusTone = plan.changedCount > 0 ? "attention" : "success";
-      playModuleSound(SOUND_EVENTS.PRESET_APPLY);
-      this.render(false);
-    } catch (error) {
-      this._status = pricingErrorMessage(error);
-      this._statusTone = "danger";
-      this._updateStatusDom();
-      notify("warn", this._status);
-    }
-  }
-
-  /** @this {MerchantPricingApp} */
-  static async _onApply() {
-    const form = this._form();
-    if (!form?.reportValidity?.() || !this._preview) return;
-    try {
-      const draft = readPricingDraft(form);
-      const signature = merchantPricingMacroSignature({
-        merchantIds: draft.merchantIds,
-        patch: draft.patch,
-      });
-      if (signature !== this._preview.signature) {
-        throw new Error("Selections changed. Preview again before applying.");
+      if (plan.changedCount === 0) {
+        this._draft = draft;
+        this._status = "Every selected merchant already matches these rules.";
+        this._statusTone = "success";
+        this.render(false);
+        return;
       }
       if (
         !isAuthoritativeGM() ||
@@ -327,7 +364,7 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
           title: "Apply city pricing?",
           icon: "fa-solid fa-coins",
         },
-        content: `<p>Apply the reviewed pricing rules to <strong>${this._preview.changedCount}</strong> merchant${this._preview.changedCount === 1 ? "" : "s"}? Individual merchants can still be edited afterward.</p>`,
+        content: `<p>Apply these pricing rules to <strong>${plan.changedCount}</strong> merchant${plan.changedCount === 1 ? "" : "s"}? Individual merchants can still be edited afterward.</p>`,
         rejectClose: false,
       });
       if (!confirmed) return;
@@ -340,7 +377,6 @@ export class MerchantPricingApp extends HandlebarsApplicationMixin(
         patch: draft.patch,
       });
       this._draft = draft;
-      this._preview = null;
       this._status = `${result.changedCount} merchant${result.changedCount === 1 ? "" : "s"} updated and verified.`;
       this._statusTone = "success";
       playModuleSound(SOUND_EVENTS.LOCK_TOGGLE);
@@ -414,6 +450,28 @@ function defaultDraft(scopeId = ALL_MERCHANTS_SCOPE, merchantIds = []) {
   };
 }
 
+function pricingPatchFromDraft(draft = {}) {
+  const patch = {};
+  if (draft.includePricing) {
+    patch.defaultMarkup = Number(draft.defaultMarkup);
+    patch.sellRatio = Number(draft.sellRatio);
+  }
+  if (draft.includeBargaining) {
+    patch.bargainDC = Number(draft.bargainDC);
+    patch.bargainSuccessPct = Number(draft.bargainSuccessPct);
+    patch.bargainFailPct = Number(draft.bargainFailPct);
+  }
+  if (draft.includeCharm) {
+    patch.passiveHaggle = draft.passiveHaggle === true;
+    patch.passivePctPerPoint = Number(draft.passivePctPerPoint);
+    patch.passiveCapPct = Number(draft.passiveCapPct);
+  }
+  if (draft.clearItemPriceOverrides) {
+    patch.clearItemPriceOverrides = true;
+  }
+  return patch;
+}
+
 function numberValue(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -426,13 +484,13 @@ function cleanId(value) {
 function pricingErrorMessage(error) {
   const message = String(error?.message ?? error ?? "").trim();
   if (message.startsWith("MerchantNotFound")) {
-    return "A selected merchant changed or was removed. Reopen this window and preview again.";
+    return "A selected merchant changed or was removed. Reopen this window and apply again.";
   }
   if (message.startsWith("LocationNotFound")) {
     return "That city or location is no longer available. Choose another group.";
   }
   if (message === "MerchantPricingTargetsChanged") {
-    return "The shops in that location changed. Preview the group again.";
+    return "The shops in that location changed. Review the group and apply again.";
   }
   return message || "Merchant pricing could not be changed.";
 }
