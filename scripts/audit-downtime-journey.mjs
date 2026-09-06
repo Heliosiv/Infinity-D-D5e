@@ -96,7 +96,13 @@ try {
       applied: 0,
       saved: [],
       failSave: false,
+      previewHeadingFocusCount: 0,
     };
+    document.addEventListener("focusin", (event) => {
+      if (event.target?.id === "dt-preview-heading") {
+        state.previewHeadingFocusCount += 1;
+      }
+    });
     const playerProjection = () => ({
       mode: "guided",
       status: state.block.status,
@@ -607,12 +613,16 @@ try {
     [8, 1, 8],
   );
   await page.evaluate(() => journey.mount("workspace"));
+  const plannedFocusCount = await page.evaluate(
+    () => journey.state.previewHeadingFocusCount,
+  );
   await page.locator('[data-action="prepareParticipant"]').first().click();
   await page.waitForFunction(() =>
     document.querySelector("[data-guided-report]"),
   );
   await page.waitForFunction(
-    () => document.activeElement?.id === "dt-preview-heading",
+    (previousCount) => journey.state.previewHeadingFocusCount > previousCount,
+    plannedFocusCount,
   );
   assert.equal(
     await page.evaluate(() => journey.state.block.status),
@@ -696,10 +706,14 @@ try {
     .locator("[data-guided-report]")
     .first()
     .fill(`${report} The workshop will welcome her back.`);
+  const appliedFocusCount = await page.evaluate(
+    () => journey.state.previewHeadingFocusCount,
+  );
   await page.locator('[data-action="applyBlock"]').click();
   await page.waitForFunction(() => journey.state.applied === 1);
   await page.waitForFunction(
-    () => document.activeElement?.id === "dt-preview-heading",
+    (previousCount) => journey.state.previewHeadingFocusCount > previousCount,
+    appliedFocusCount,
   );
   await page.evaluate(async () => {
     journey.playerAdapter.invalidate();
