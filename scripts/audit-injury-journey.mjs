@@ -136,13 +136,15 @@ try {
   await board.getByRole("searchbox").fill("");
   await page.screenshot({ path: path.join(out, "injury-log.png") });
   await board.getByRole("button", { name: "Party & rolls" }).click();
-  await board.getByRole("button", { name: "Log injury", exact: true }).click();
+  await board
+    .getByRole("button", { name: "New injury roll", exact: true })
+    .click();
   assert.equal(
     await board
       .locator('[name="actorId"]')
       .evaluate((element) => element === document.activeElement),
     true,
-    "Log injury opens and focuses manual review directly",
+    "New injury roll opens and focuses manual review directly",
   );
   await board.locator('[name="actorId"]').selectOption("actor-bryn");
   assert.equal(

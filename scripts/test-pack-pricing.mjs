@@ -39,6 +39,28 @@ assert.equal(
   `price/gpValue mismatches:\n  ${offenders.slice(0, 40).join("\n  ")}`,
 );
 
+const greaterHealingPotions = items.filter((item) => {
+  const normalizedName = String(item.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^potion of /, "")
+    .replace(/ potion$/, "");
+  return normalizedName === "greater healing";
+});
+
+assert.equal(
+  greaterHealingPotions.length,
+  1,
+  `expected one Greater Healing Potion, found ${greaterHealingPotions
+    .map((item) => `${item.name} (${item._id})`)
+    .join(", ")}`,
+);
+assert.equal(
+  greaterHealingPotions[0].system?.price?.value,
+  150,
+  "Greater Healing Potion should use the canonical 150 gp price",
+);
+
 process.stdout.write(
   `pack pricing check passed (${checked} priced items consistent)\n`,
 );

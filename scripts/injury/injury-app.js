@@ -3,6 +3,7 @@
 import { SETTING_KEYS, getSetting } from "../settings.js";
 import { isFullGM } from "../permissions.js";
 import {
+  isAssignedPlayerCharacter,
   isPlayerOwnedCriticalInjuryActor,
   hasEffectiveOwnerPermission,
 } from "./actors.js";
@@ -75,7 +76,11 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     const id = String(actorId ?? "").trim();
     if (!id) return null;
     const actor = globalThis.game?.actors?.get?.(id) ?? null;
-    if (actor && !canCurrentUserOperateCriticalInjuryActor(actor)) {
+    if (
+      actor &&
+      (!isPlayerOwnedCriticalInjuryActor(actor) ||
+        !canCurrentUserOperateCriticalInjuryActor(actor))
+    ) {
       globalThis.ui?.notifications?.warn?.(
         "You no longer control that character. Nothing changed; choose a character you control.",
       );
@@ -112,7 +117,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     const actor = resolveCurrentUserActor();
     if (!actor) {
       ui.notifications?.warn?.(
-        "No player character is assigned to you and no owned character was found.",
+        "No current player character is available to you. Select each player's character in User Configuration.",
       );
       return null;
     }
@@ -197,7 +202,10 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
 
   _resolveActor() {
     const actor = globalThis.game?.actors?.get?.(this._actorId) ?? null;
-    return canCurrentUserOperateCriticalInjuryActor(actor) ? actor : null;
+    return isPlayerOwnedCriticalInjuryActor(actor) &&
+      canCurrentUserOperateCriticalInjuryActor(actor)
+      ? actor
+      : null;
   }
 
   static async _onOpenCalendar(_event, target) {
@@ -298,9 +306,7 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
     const midiActive =
       globalThis.game?.modules?.get?.("midi-qol")?.active === true;
     const daeActive = globalThis.game?.modules?.get?.("dae")?.active === true;
-    const calendarActive =
-      globalThis.game?.modules?.get?.("foundryvtt-simple-calendar")?.active ===
-      true;
+    const calendarActive = isSimpleCalendarAvailable();
     const offline = !Boolean(authoritativeGMId());
     for (const injury of activeInjuries) {
       const treatmentDisabled = Boolean(injury.treating || offline);
@@ -978,7 +984,7 @@ export function getControlledCriticalInjuryActors() {
   return documents
     .filter(
       (actor) =>
-        actor?.type === "character" &&
+        isAssignedPlayerCharacter(actor) &&
         canCurrentUserOperateCriticalInjuryActor(actor, user),
     )
     .sort((left, right) =>
@@ -1001,23 +1007,30 @@ export function resolveCurrentUserActor() {
   if (
     assigned &&
     typeof assigned !== "string" &&
+    isAssignedPlayerCharacter(assigned) &&
     canCurrentUserOperateCriticalInjuryActor(assigned)
   ) {
     return assigned;
   }
   if (typeof assigned === "string") {
     const actor = globalThis.game?.actors?.get?.(assigned);
-    if (canCurrentUserOperateCriticalInjuryActor(actor)) return actor;
+    if (
+      isAssignedPlayerCharacter(actor) &&
+      canCurrentUserOperateCriticalInjuryActor(actor)
+    ) {
+      return actor;
+    }
   }
   const user = globalThis.game?.user;
   const directlyOwned =
     (globalThis.game?.actors?.contents ?? []).find(
       (actor) =>
-        actor?.type === "character" &&
+        isAssignedPlayerCharacter(actor) &&
         hasDirectOwnerPermission(actor, user?.id),
     ) ?? null;
   if (directlyOwned) return directlyOwned;
   const controlled = getControlledCriticalInjuryActors();
+  if (isFullGM(user)) return controlled[0] ?? null;
   return controlled.length === 1 ? controlled[0] : null;
 }
 

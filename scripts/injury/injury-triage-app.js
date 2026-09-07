@@ -420,7 +420,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
     }
     return this._run(
       () => startCriticalInjuryReview({ actorId, targetUserId }),
-      "Manual injury review added. Send the roll when the table is ready.",
+      "Review queued; no injury added. Choose Send roll to prompt the player, or No injury to cancel.",
     );
   }
 

@@ -220,9 +220,25 @@ try {
   player.character = null;
   assert.equal(resolveCurrentUserHudActor(), fallbackActor);
   assert.deepEqual(
+    getControlledCriticalInjuryActors(),
+    [],
+    "extra owned characters do not appear without a player assignment",
+  );
+  assert.equal(CriticalInjuryApp.openForCurrentUser(), null);
+  const rosterPlayers = [fallbackActor, defaultOnlyCharacter].map(
+    (actor, index) => ({
+      id: `roster-player-${index}`,
+      role: 1,
+      isGM: false,
+      active: false,
+      character: actor.id,
+    }),
+  );
+  users.push(...rosterPlayers);
+  assert.deepEqual(
     getControlledCriticalInjuryActors().map((actor) => actor.id),
-    [assignedActor.id, defaultOnlyCharacter.id, fallbackActor.id],
-    "the full app selector includes only controlled characters and mirrors effective Owner permission",
+    [defaultOnlyCharacter.id, fallbackActor.id],
+    "the selector includes only current assigned PCs that the viewer controls",
   );
   assert.equal(
     canCurrentUserOperateCriticalInjuryActor(unownedCharacter),
@@ -237,7 +253,7 @@ try {
   assert.equal(
     fullAppSelection?._actorId,
     fallbackActor.id,
-    "the full injury log and compact HUD choose the same directly owned fallback",
+    "launch can select a directly owned current PC assigned to another player",
   );
   const fullAppContext = await fullAppSelection._prepareContext();
   assert.equal(fullAppContext.hasActorOptions, true);
@@ -310,6 +326,7 @@ try {
   assert.deepEqual(selectorOpens, [{ actorId: defaultOnlyCharacter.id }]);
   assert.equal(fullAppSelection.rendered, false);
   CriticalInjuryApp.open = realSelectorOpen;
+  users.splice(users.indexOf(rosterPlayers[0]), rosterPlayers.length);
 
   player.character = assignedActor;
   delete assignedActor.ownership[player.id];

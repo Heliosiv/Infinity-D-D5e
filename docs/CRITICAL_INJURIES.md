@@ -4,9 +4,11 @@
 
 Open **Infinity → Injuries** as a GM. **Party & rolls** shows injured characters
 first beside the reviews that need attention. Search by character or injury,
-then use **View & treat**, **Sheet**, or **Calendar** directly. **Log injury**
+then use **View & treat**, **Sheet**, or **Calendar** directly. **New injury roll**
 opens and focuses an exceptional review; select a character and its player,
-then **Start review** and **Send roll**. Confirmed rolls save automatically.
+then **Start review**. This queues a request for GM approval without adding an
+injury. **Send roll** sends the private d100 prompt; **No injury** cancels the
+request. The completed roll applies the injury and saves it automatically.
 **Injury log** shows the original roll, campaign date, effect, current active
 status, and number of completed treatment attempts. It reads the existing
 GM-private ledger, which retains up to 200 recent completed injury records;
@@ -50,7 +52,7 @@ installed-world acceptance remains a separate check.
 
 ## v0.3.1 interface quick start
 
-Players open **Home → Track the Campaign → Critical Injuries** or press `Shift+J`. The window and HUD identify the controlled character and share the same treatment status. HUD markers retain hover, focus, pin, touch, and Escape behavior with enlarged targets. Pending, offline, busy, successful, uncertain, and retry states explain whether the authoritative GM changed anything and what the player should do next.
+Players open **Home → Track the Campaign → Critical Injuries** or press `Shift+J`. The window and HUD identify the controlled player character and share the same treatment status. The character selector includes only the current `character` Actor assigned to each non-GM player in **User Configuration**, subject to the viewer's control permissions. Offline players remain included; extra owned characters, copies, NPCs, and GM assignments are excluded. Existing injuries and direct access to an owned character's saved injury details are retained. HUD markers retain hover, focus, pin, touch, and Escape behavior with enlarged targets. Pending, offline, busy, successful, uncertain, and retry states explain whether the authoritative GM changed anything and what the player should do next.
 
 Infinity D&D5e owns the full recovery workflow for player characters who get
 back up after reaching 0 hit points or having their dead/unconscious state

@@ -13,7 +13,7 @@
         <button type="button" data-action="showView" data-view="triage" aria-pressed="{{#if showLog}}false{{else}}true{{/if}}">Party &amp; rolls</button>
         <button type="button" data-action="showView" data-view="history" aria-pressed="{{#if showLog}}true{{else}}false{{/if}}">Injury log <span class="ci-triage-muted">{{logCount}}</span></button>
       </nav>
-      <button type="button" class="ci-primary" data-action="startManualReview" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Log injury</button>
+      <button type="button" class="ci-primary" data-action="startManualReview" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>New injury roll</button>
       <button type="button" data-action="openCalendar" {{#unless calendarActive}}disabled{{/unless}}><i class="fa-regular fa-calendar" aria-hidden="true"></i> Calendar</button>
       <button type="button" data-action="refresh" aria-label="Refresh injury board" title="Refresh injury board"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
     </div>
@@ -59,9 +59,9 @@
       </section>
       </div>
       <details class="ci-triage-manual">
-        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i> Log an injury <span class="ci-triage-muted">Start a manual review</span></summary>
+        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i> New injury roll <span class="ci-triage-muted">Start a manual review</span></summary>
         <form class="ci-triage-start" aria-label="Start a manual injury review">
-          <p class="ci-triage-muted">Choose the character and roll recipient. Review first, then send the private d100 prompt.</p>
+          <p class="ci-triage-muted">Start review queues a request for your approval; it does not add an injury. Then choose Send roll to privately prompt the player to roll d100, or No injury to cancel. The completed roll applies and logs the injury.</p>
           <label><span>Character</span><select name="actorId" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerCharacters}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
           <label><span>Player</span><select name="targetUserId" {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>{{#each playerUsers}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label>
           <button type="button" class="ci-primary" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Start review</button>

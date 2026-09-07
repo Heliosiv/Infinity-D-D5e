@@ -3,6 +3,15 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.27 — current-PC injuries and compendium cleanup:** The landing-page
+injury picker now follows each non-GM player's assigned character, including
+offline players, and excludes spare owned characters and copies. **New injury
+roll** explains that Start review queues approval, Send roll prompts the player,
+and the completed roll applies and logs the injury. Injury integration status
+recognizes Simple Calendar Reborn. The compendium keeps one Greater Healing
+Potion at its canonical 150 gp price. All fixes and features through v0.3.26
+are retained. See the [injury guide](docs/CRITICAL_INJURIES.md).
+
 **v0.3.26 — live player-hub supplies:** The landing-page Party Supplies button
 now uses the same live food and water coverage as the Supplies window. Inventory,
 party roster, supply settings, and completed upkeep changes refresh its text;

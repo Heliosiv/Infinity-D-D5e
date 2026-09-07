@@ -4,8 +4,8 @@ Selective generated-art plan. Shared impact batch 1 explicitly replaces source i
 
 ## Counts
 
-- Pack items scanned: 1637
-- Existing artwork preserved: 1620
+- Pack items scanned: 1636
+- Existing artwork preserved: 1619
 - Items missing source artwork: 17
 - Shared impact batch: shared-impact-1
 - Shared batch item assignments: 487

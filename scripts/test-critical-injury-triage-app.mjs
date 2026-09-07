@@ -184,6 +184,9 @@ try {
     readFileSync("templates/critical-injury-triage.hbs", "utf8"),
   );
   const html = render(context);
+  assert.match(html, />New injury roll<\/button>/);
+  assert.match(html, /does not add an injury/);
+  assert.match(html, /completed roll applies and logs the injury/);
   assert.match(html, /<h4>actor-assigned<\/h4>/);
   assert.doesNotMatch(
     html,
