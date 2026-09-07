@@ -3812,6 +3812,12 @@ function downtimeWorkspaceActivityEditorContext() {
         isBatch: false,
         isItem: false,
         isScroll: false,
+        isLearning: false,
+        learning: { uuid: "", sourceName: "", bookName: "Spellbook" },
+        learningSources: [
+          { id: "notes", label: "GM-approved notes", selected: true },
+          { id: "scroll", label: "Owned scroll", selected: false },
+        ],
         outputOptions: WORK_OUTPUT_OPTIONS.map((option) => ({
           ...option,
           selected: option.id === "none",

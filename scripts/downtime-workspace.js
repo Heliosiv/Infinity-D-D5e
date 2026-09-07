@@ -1305,6 +1305,12 @@ function readGuidedTemplateForm(form) {
       batchHours: String(data.get("workBatchHours") ?? "8"),
       quantity: String(data.get("workQuantity") ?? "1"),
       itemUuid: String(data.get("workItemUuid") ?? ""),
+      learning: {
+        uuid: String(data.get("learningUuid") ?? ""),
+        sourceType: String(data.get("learningSourceType") ?? "notes"),
+        sourceName: String(data.get("learningSourceName") ?? ""),
+        bookName: String(data.get("learningBookName") ?? "Spellbook"),
+      },
       tool: String(data.get("workTool") ?? ""),
       requiredTools: data.getAll("workRequiredTools").map(String),
       materials: data.getAll("materialName").map((name, index) => ({
@@ -1403,6 +1409,21 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       ),
       isItem: templateSource.work?.output === "item",
       isScroll: templateSource.work?.output === "scroll",
+      isLearning: templateSource.work?.output === "learn-spell",
+      learning: {
+        uuid: "",
+        sourceName: "",
+        bookName: "Spellbook",
+        ...templateSource.work?.learning,
+      },
+      learningSources: ["notes", "scroll"].map((id) => ({
+        id,
+        label:
+          id === "notes"
+            ? "GM-approved written notes / borrowed spellbook (kept)"
+            : "Owned spell scroll (consumed on success or failure)",
+        selected: id === (templateSource.work?.learning?.sourceType ?? "notes"),
+      })),
       outputOptions: WORK_OUTPUT_OPTIONS.map((option) => ({
         ...option,
         selected: option.id === (templateSource.work?.output ?? "none"),

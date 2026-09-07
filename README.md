@@ -3,6 +3,17 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.24 — protected Wizard spellbooks:** Add **Learn Spell — Copy into
+Spellbook** to downtime. The GM selects a discovered Wizard spell and its
+written/scroll source in the activity editor. Players allocate one-hour blocks,
+carry their configured spellbook, and pay copying costs as work progresses.
+Completed learning delivers an unprepared, usable Wizard spell and a permanent
+campaign receipt. **Wizard Notes** in the character sheet's header controls
+provides the log, missing-spell recovery, and GM-only Forget/relink actions.
+DDB reimports preserve protected spells; missing ones are reconciled after
+import completion by the active GM. This does not add spells to the DDB website.
+See [spellbook learning and DDB](docs/WIZARD_SPELLBOOK.md).
+
 **Selectable crafting tools:** In Downtime → Activities → Costs, supplies &
 crafting, select the kits a character must carry. Craft Arrows defaults to
 Fletcher's Tools, a reusable campaign kit included in the Items compendium and

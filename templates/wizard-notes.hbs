@@ -1,0 +1,14 @@
+<section class="wizard-notes-body" aria-label="Learned spellbook">
+  <p>Spells learned during downtime are kept here and protected from DDB reimports. Learning does not prepare a spell or grant extra spell slots.</p>
+  <p>DDB does not receive these learned spells automatically. Add them to the DDB spellbook separately if you want both sheets to match. Ask the GM to forget or recover an entry.</p>
+  {{#if gm}}<button type="button" data-action="reconcile">Check and restore missing spells</button>{{/if}}
+  {{#each rows}}
+  <article class="wizard-notes-entry">
+    <h3>{{name}} · Level {{level}}</h3>
+    <p>{{status}}</p>
+    <p>Book: {{book}}<br>Source: {{source}}<br>Recorded: {{date}}</p>
+    {{#if canRelink}}<button type="button" data-action="relink" data-operation-id="{{operationId}}">Link and restore to this character</button>{{/if}}
+    {{#if canForget}}<button type="button" data-action="forget" data-operation-id="{{operationId}}">Forget this downtime spell</button>{{/if}}
+  </article>
+  {{else}}<p>No downtime-learned spells recorded for this character yet.</p>{{/each}}
+</section>

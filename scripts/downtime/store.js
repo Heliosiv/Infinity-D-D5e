@@ -44,6 +44,7 @@ const PREVIOUS_DOWNTIME_CONFIG_VERSION = 5;
 const PRE_BENEFIT_DOWNTIME_CONFIG_VERSION = 6;
 const PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION = 7;
 const PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION = 8;
+const PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION = 9;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -182,6 +183,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
       PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
       PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION,
       PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION,
+      PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
   ) {
@@ -385,6 +387,13 @@ function parsePersistedDowntimeConfig(raw) {
   let persistedShape;
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
+  } else if (
+    persistedVersionEquals(raw.version, PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION)
+  ) {
+    persistedShape = {
+      ...current,
+      version: PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION,
+    };
   } else if (
     persistedVersionEquals(
       raw.version,
@@ -896,6 +905,7 @@ export function normalizeDowntimeWorkflowStore(raw) {
     ...(raw.workProgress
       ? { workProgress: normalizeWorkProgress(raw.workProgress) }
       : {}),
+    ...(raw.spellbooks ? { spellbooks: sanitizeJson(raw.spellbooks) } : {}),
     history: history.slice(-MAX_HISTORY),
   };
 }
@@ -2392,7 +2402,31 @@ function applyCompletedPlanProgress(store, block) {
       throw new Error("DowntimeCraftingProgressDrift");
     store.workProgress[work.key] =
       work.progressBeforeHours + work.contributedHours;
+    if (work.config?.output === "learn-spell" && work.delivery) {
+      store.spellbooks ??= {};
+      // Independent of capped history and of the Actor's importer-managed Items.
+      store.spellbooks[operation.operationId] ??= {
+        actorId: operation.actorId,
+        operationId: operation.operationId,
+        snapshot: clone(work.delivery.snapshot),
+        forgotten: false,
+        costCp: work.costCp,
+        learnedAt: operation.createdAt,
+      };
+    }
   }
+}
+
+/** Full-GM spellbook maintenance, serialized through the existing durable checkpoint. */
+export async function updateSpellbookRecord(operationId, patch) {
+  return mutateWorkflow((store) => {
+    const record = store.spellbooks?.[operationId];
+    if (!record) throw new Error("The spellbook record no longer exists.");
+    if (Object.hasOwn(patch, "forgotten"))
+      record.forgotten = patch.forgotten === true;
+    if (patch.actorId) record.actorId = toId(patch.actorId);
+    return { result: clone(record) };
+  });
 }
 
 /**

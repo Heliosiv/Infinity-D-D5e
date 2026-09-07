@@ -24,6 +24,13 @@ import {
   normalizeRequiredTools,
   requiredToolNames,
 } from "./tool-requirements.js";
+import {
+  learningProblems,
+  learningRates,
+  normalizeSpellLearning,
+  prepareLearnedSpell,
+  spellEdition,
+} from "./spell-learning.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const WORK_DAY_HOURS = 8;
@@ -48,6 +55,7 @@ export const WORK_OUTPUT_OPTIONS = Object.freeze(
     ["needles", "Blowgun needles (20 per batch)"],
     ["sling-bullets", "Sling bullets (20 per batch)"],
     ["scroll", "Scribe an owned spell or copy an owned spell scroll"],
+    ["learn-spell", "Learn Spell — Copy into Spellbook"],
     ["item", "Craft a configured item"],
   ].map(([id, label]) => Object.freeze({ id, label })),
 );
@@ -99,6 +107,9 @@ export function normalizeGuidedWork(raw) {
   const requiredTools = normalizeRequiredTools(raw.requiredTools);
   const work = {
     output,
+    ...(output === "learn-spell"
+      ? { learning: normalizeSpellLearning(raw.learning) }
+      : {}),
     gpPerBlock: number(raw.gpPerBlock, "GP per block"),
     gpPerDay: number(raw.gpPerDay, "GP per day"),
     batchGp: number(raw.batchGp, "GP per finished batch"),
@@ -156,7 +167,7 @@ export function normalizeGuidedWork(raw) {
     throw new Error(
       "For an activity without crafted items, consume materials per block or per workday.",
     );
-  if (["none", "scroll"].includes(output)) work.batchGp = 0;
+  if (["none", "scroll", "learn-spell"].includes(output)) work.batchGp = 0;
   if (
     output === "item" &&
     !/^(Item\.[A-Za-z0-9]+|Compendium\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.Item\.[A-Za-z0-9]+)$/.test(
@@ -181,6 +192,27 @@ export function normalizeGuidedWork(raw) {
 }
 
 export function guidedWorkPreset(output) {
+  if (output === "learn-spell")
+    return {
+      id: "guided-learn-spell",
+      name: "Learn Spell — Copy into Spellbook",
+      blockHours: 1,
+      description:
+        "Copy a GM-approved Wizard spell into your carried spellbook. Learning is permanent and protected from DDB reimports; preparation is separate.",
+      image: "icons/sundries/books/book-open-purple.webp",
+      skills: [],
+      work: normalizeGuidedWork({ output }),
+      outcomes: [
+        "Study recorded",
+        "Careful transcription",
+        "Spellbook progress",
+      ].map((label) => ({
+        label,
+        report:
+          "Your recorded study advances the spellbook project. Completion and any scroll check are listed below.",
+        rewardGp: 0,
+      })),
+    };
   const scroll = output === "scroll";
   const ammo = AMMUNITION_RECIPES[output];
   if (!scroll && !ammo) throw new Error("Unknown crafting preset.");
@@ -285,19 +317,41 @@ export function quoteGuidedWork({
   const config = normalizeGuidedWork(activity.work);
   if (!config) return null;
   const problems = [];
+  const learning = config.output === "learn-spell";
+  if (learning) problems.push(...learningProblems(actor, config.learning));
+  const learningScroll = learning && config.learning?.sourceType === "scroll";
   const source =
-    config.output === "scroll" ? findActorItem(actor, targetId) : null;
+    config.output === "scroll" || learningScroll
+      ? findActorItem(actor, targetId)
+      : null;
   const level = scrollSourceLevel(source);
   if (config.output === "scroll" && level === null)
     problems.push(
       "Choose an owned spell or a spell scroll with a recorded spell level.",
     );
-  const requiredHours =
-    config.output === "scroll" && level !== null
+  if (
+    learningScroll &&
+    (!source ||
+      source.type !== "consumable" ||
+      source.system?.type?.value !== "scroll" ||
+      !Number.isInteger(quantityOf(source)) ||
+      quantityOf(source) < 1 ||
+      normalizeItemName(source.name) !==
+        normalizeItemName(config.learning.sourceName) ||
+      level !== config.learning.level)
+  )
+    problems.push(
+      "Choose the carried scroll specified by the GM for this spell and edition.",
+    );
+  const rates = learningRates(actor, config.learning);
+  const requiredHours = learning
+    ? rates.hours
+    : config.output === "scroll" && level !== null
       ? SCROLL_WORK[level][0] * 8
       : config.batchHours;
-  const batchCostCp =
-    config.output === "scroll" && level !== null
+  const batchCostCp = learning
+    ? rates.gp * 100
+    : config.output === "scroll" && level !== null
       ? SCROLL_WORK[level][1] * 100
       : Math.round(config.batchGp * 100);
   const key = merchantItemId(
@@ -318,6 +372,10 @@ export function quoteGuidedWork({
   )
     throw new Error("Crafting time could not be verified.");
   const after = before + hours;
+  if (learning && hours > requiredHours - (before % requiredHours))
+    problems.push(
+      `Allocate at most ${requiredHours - (before % requiredHours)} more hours to this spell. It can be learned only once.`,
+    );
   const batches =
     config.output === "none"
       ? 0
@@ -346,7 +404,10 @@ export function quoteGuidedWork({
       `Required tools: ${ammo.toolKeys.map((key) => ({ smith: "Smith's Tools", woodcarver: "Woodcarver's Tools", tinker: "Tinker's Tools" })[key]).join(" or ")}.`,
     );
   const tools = [];
-  for (const name of requiredToolNames(config)) {
+  for (const name of [
+    ...requiredToolNames(config),
+    ...(learning && config.learning ? [config.learning.bookName] : []),
+  ]) {
     const matches = matchMaterial(actor, name);
     if (!matches.length)
       problems.push(
@@ -376,6 +437,18 @@ export function quoteGuidedWork({
   const materials = [];
   const materialRequirements = [];
   const materialLabels = [];
+  if (learningScroll && source && level !== null && batches > 0) {
+    materials.push({
+      itemId: targetId,
+      name: source.name,
+      before: quantityOf(source),
+      after: quantityOf(source) - 1,
+      identity: identity(source),
+    });
+    materialLabels.push(
+      `1 × ${source.name} (destroyed whether copying succeeds or fails)`,
+    );
+  }
   for (const requirement of config.materials) {
     const count =
       requirement.per === "day"
@@ -419,14 +492,17 @@ export function quoteGuidedWork({
   }
   const outputQuantity =
     batches *
-    (ammo?.batchSize ?? (config.output === "scroll" ? 1 : config.quantity));
+    (ammo?.batchSize ??
+      (config.output === "scroll" || learning ? 1 : config.quantity));
   const outputName =
     ammo?.label ??
-    (config.output === "scroll"
-      ? source?.type === "consumable"
-        ? source.name
-        : `Spell Scroll: ${source?.name ?? "choose a spell"}`
-      : activity.name);
+    (learning
+      ? (config.learning?.name ?? "choose a spell")
+      : config.output === "scroll"
+        ? source?.type === "consumable"
+          ? source.name
+          : `Spell Scroll: ${source?.name ?? "choose a spell"}`
+        : activity.name);
   const remainingHours = config.output === "none" ? 0 : after % requiredHours;
   const detail = [
     `Spend ${money(costCp)} this block (${hours}h / ${Number((hours / 8).toFixed(3))} workdays).`,
@@ -440,9 +516,11 @@ export function quoteGuidedWork({
     requiredToolNames(config).length
       ? `Keep: ${requiredToolNames(config).join(", ")}.`
       : "",
-    config.output !== "none"
-      ? `${outputQuantity ? `Receive ${outputQuantity} × ${outputName}. ` : "No finished items yet. "}${remainingHours}/${requiredHours}h toward the next batch.`
-      : "",
+    learning
+      ? `${batches ? "Finish the copying attempt" : `Study progress: ${after % requiredHours}/${requiredHours}h`} for ${outputName}. ${learningScroll ? `On completion: Arcana DC ${10 + (config.learning?.level ?? 0)}; one scroll is destroyed on success or failure.` : "The written source is kept; no check is required."} Learning does not prepare the spell.`
+      : config.output !== "none"
+        ? `${outputQuantity ? `Receive ${outputQuantity} × ${outputName}. ` : "No finished items yet. "}${remainingHours}/${requiredHours}h toward the next batch.`
+        : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -473,7 +551,33 @@ export function quoteGuidedWork({
 
 export function projectGuidedWork(actor, activity, hours, progress = {}) {
   if (!activity.work) return {};
-  const scroll = activity.work.output === "scroll";
+  const learning = activity.work.output === "learn-spell";
+  const scroll =
+    activity.work.output === "scroll" ||
+    (learning && activity.work.learning?.sourceType === "scroll");
+  const learningDetail = (quote) => {
+    if (!quote.config.learning)
+      return "The GM must select an approved spell first.";
+    const rates = learningRates(actor, quote.config.learning);
+    return [
+      `Copy ${quote.outputName}: ${money((rates.gp * 100) / rates.hours)} per study hour; ${quote.progressBeforeHours % quote.requiredHours}/${quote.requiredHours}h already studied toward this attempt.`,
+      scroll
+        ? `On completion: Arcana DC ${10 + quote.config.learning.level}; one scroll is destroyed on success or failure.`
+        : "The written source is kept; no check is required.",
+      quote.config.gpPerBlock
+        ? `Additional recipe cost: ${quote.config.gpPerBlock} gp per allocation.`
+        : "",
+      quote.config.gpPerDay
+        ? `Additional recipe cost: ${quote.config.gpPerDay} gp per 8h.`
+        : "",
+      quote.config.materials.length
+        ? `Required materials: ${quote.config.materials.map((r) => `${r.quantity} × ${r.name} per ${r.per}`).join(", ")}.`
+        : "",
+      "Learning does not prepare the spell.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  };
   const targets = scroll
     ? collectionValues(actor.items)
         .filter((item) => scrollSourceLevel(item) !== null)
@@ -487,8 +591,8 @@ export function projectGuidedWork(actor, activity, hours, progress = {}) {
           });
           return {
             id: item.id,
-            label: `${item.name} · level ${scrollSourceLevel(item)} · ${money(quote.costCp)} this block`,
-            detail: `${quote.detail} ${quote.problems.join(" ")}`,
+            label: `${item.name} · level ${scrollSourceLevel(item)}${learning ? "" : ` · ${money(quote.costCp)} this block`}`,
+            detail: `${learning ? learningDetail(quote) : quote.detail} ${quote.problems.join(" ")}`,
             disabled: !quote.ok,
           };
         })
@@ -504,13 +608,19 @@ export function projectGuidedWork(actor, activity, hours, progress = {}) {
         : "Add a spell or a spell scroll with a recorded spell level to your sheet."
       : quote.problems.join(" "),
     costLabel:
-      quote?.detail ??
-      "Choose a source to see this block's GP, materials, and progress. Your original spell or scroll is kept.",
-    limitLabel: scroll
-      ? "2024 scroll time and base cost by spell level. GM confirms scribing prerequisites, permission to copy scrolls, and spell components; add consumed components as materials."
-      : "Costs apply with every result. Tools are kept. Progress carries between blocks using this recipe.",
+      (quote ? (learning ? learningDetail(quote) : quote.detail) : null) ??
+      (learning
+        ? "Choose a carried scroll to see costs and progress. On completion, one scroll is destroyed whether copying succeeds or fails."
+        : "Choose a source to see this block's GP, materials, and progress. Your original spell or scroll is kept."),
+    limitLabel: learning
+      ? "Wizard copying: 2h and 50 gp per spell level; 2014 school Savant halves both. Carry the configured spellbook. The GM approves access and Wizard-list eligibility. Other special copying features need GM review."
+      : scroll
+        ? "2024 scroll time and base cost by spell level. GM confirms scribing prerequisites, permission to copy scrolls, and spell components; add consumed components as materials."
+        : "Costs apply with every result. Tools are kept. Progress carries between blocks using this recipe.",
     targets,
-    targetLabel: "Spell or scroll to scribe",
+    targetLabel: learning
+      ? "Scroll to copy into your spellbook"
+      : "Spell or scroll to scribe",
     targetField: "targetId",
   };
 }
@@ -530,7 +640,47 @@ export async function buildGuidedWorkPlan(options) {
     throw new Error(`${options.actor.name}: ${work.problems.join(" ")}`);
   if (work.config.output !== "none") {
     let snapshot;
-    if (work.config.output === "scroll") {
+    if (work.config.output === "learn-spell") {
+      const learning = work.config.learning;
+      snapshot = await resolveItemSnapshot(learning.uuid);
+      if (
+        snapshot?.type !== "spell" ||
+        snapshot.name !== learning.name ||
+        Number(snapshot.system?.level) !== learning.level ||
+        String(snapshot.system?.school ?? "") !== learning.school ||
+        spellEdition(snapshot) !== learning.edition
+      )
+        throw new Error(
+          "The approved spell source changed or is unavailable. Ask the GM to save the learning activity again.",
+        );
+      if (work.outputQuantity && learning.sourceType === "scroll") {
+        const total = Number(options.checkTotal);
+        if (!Number.isFinite(total) || options.checkTotal == null)
+          throw new Error(
+            "An Arcana roll is required to finish copying this scroll.",
+          );
+        work.copyCheck = {
+          total,
+          dc: 10 + learning.level,
+          success: total >= 10 + learning.level,
+        };
+        if (!work.copyCheck.success) work.outputQuantity = 0;
+        work.detail += ` Arcana ${total} vs DC ${work.copyCheck.dc}: ${work.copyCheck.success ? "spell learned" : "copying failed; the scroll is spent and no spell is learned"}.`;
+      } else if (work.outputQuantity)
+        work.detail += ` Learned ${learning.name}.`;
+      snapshot = prepareLearnedSpell(snapshot, {
+        operationId: options.operationId,
+        learning,
+        actor: options.actor,
+        dateLabel: options.dateLabel ?? "",
+        worldTime: Number(globalThis.game?.time?.worldTime ?? 0),
+      });
+      const implementation = globalThis.CONFIG?.Item?.documentClass;
+      if (typeof implementation === "function")
+        snapshot = new implementation(snapshot, {
+          parent: options.actor,
+        }).toObject();
+    } else if (work.config.output === "scroll") {
       const item = findActorItem(options.actor, options.targetId);
       if (item.type === "spell") {
         const implementation =
@@ -560,6 +710,7 @@ export async function buildGuidedWorkPlan(options) {
         "tool",
         "loot",
         "container",
+        "spell",
       ].includes(snapshot.type) ||
       !snapshot.system
     )
@@ -575,8 +726,10 @@ export async function buildGuidedWorkPlan(options) {
     for (const key of ["id", "folder", "ownership", "sort", "_stats"])
       delete snapshot[key];
     snapshot._id = merchantItemId(`${options.operationId}:guided-work`);
-    snapshot.system.quantity = work.outputQuantity;
-    snapshot.system.container = null;
+    if (snapshot.type !== "spell") {
+      snapshot.system.quantity = work.outputQuantity;
+      snapshot.system.container = null;
+    }
     if (snapshot.system.uses) snapshot.system.uses.spent = 0;
     snapshot.flags ??= {};
     snapshot.flags[MODULE_ID] ??= {};
@@ -599,6 +752,11 @@ export async function buildGuidedWorkPlan(options) {
 
 function requirementsPresent(actor, work) {
   if (
+    work.config.output === "learn-spell" &&
+    learningProblems(actor, work.config.learning).length
+  )
+    return false;
+  if (
     !(work.materialRequirements ?? []).every(
       (requirement) =>
         matchMaterial(
@@ -615,7 +773,9 @@ function requirementsPresent(actor, work) {
     if (
       !item ||
       identity(item) !== work.source.identity ||
-      scrollSourceLevel(item) === null
+      scrollSourceLevel(item) === null ||
+      (work.config.output === "learn-spell" &&
+        (!Number.isInteger(quantityOf(item)) || quantityOf(item) < 1))
     )
       return false;
   }
@@ -674,7 +834,8 @@ function componentStates(actor, operation) {
       identity(item) === identity(expected) &&
       sourceOf(item).flags?.[MODULE_ID]?.downtimeCraft?.operationId ===
         operation.operationId &&
-      quantityOf(item) === work.delivery.quantity;
+      (expected.type === "spell" ||
+        quantityOf(item) === work.delivery.quantity);
     states.push(state(!item, matches));
   }
   return states;

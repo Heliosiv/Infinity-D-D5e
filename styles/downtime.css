@@ -1,5 +1,38 @@
 /* Infinity D&D5e - Downtime Workspace and Downtime Activities. */
 
+.infinity-wizard-notes {
+  color: #e7ecf6;
+  background: #1d2330;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+}
+.infinity-wizard-notes .window-content {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px;
+}
+.infinity-wizard-notes .wizard-notes-entry {
+  padding: 12px;
+  margin-block: 12px;
+  border: 1px solid #687895;
+  border-radius: 8px;
+  background: #242b3b;
+  overflow-wrap: anywhere;
+}
+.infinity-wizard-notes h3 {
+  color: #f6f7fb;
+}
+.infinity-wizard-notes button {
+  color: #f6f7fb;
+  background: #364159;
+  min-height: 36px;
+  white-space: normal;
+}
+.infinity-wizard-notes button:focus-visible {
+  outline: 2px solid #f0a55f;
+  outline-offset: 2px;
+}
+
 :is(.infinity-downtime-workspace, .infinity-downtime-activities) {
   --dt-accent: var(--lf-accent, #f0a55f);
   --dt-accent-contrast: var(--lf-accent-contrast, #20150c);

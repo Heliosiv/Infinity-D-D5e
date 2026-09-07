@@ -738,6 +738,21 @@ try {
         actorId: "actor-1",
         activityId: "craft-ammunition",
         order: 1,
+        work: {
+          key: "0123456789abcdef",
+          config: { output: "learn-spell" },
+          contributedHours: 4,
+          progressBeforeHours: 0,
+          costCp: 10000,
+          delivery: {
+            snapshot: {
+              _id: "learnedWeb000001",
+              name: "Web",
+              type: "spell",
+              system: { level: 2 },
+            },
+          },
+        },
         project: {
           id: "project-language",
           contributedHours: 8,
@@ -994,6 +1009,19 @@ try {
     at: 1_400,
   });
   assert.equal(completed.state, "completed");
+  assert.equal(
+    workflow.loadDowntimeWorkflowStore().spellbooks["operation-2"].snapshot
+      .name,
+    "Web",
+  );
+  assert.equal(
+    workflow.normalizeDowntimeWorkflowStore({
+      ...workflow.loadDowntimeWorkflowStore(),
+      history: [],
+    }).spellbooks["operation-2"].snapshot.name,
+    "Web",
+    "learning is not lost when old history is pruned",
+  );
   assert.equal(workflow.getActiveDowntimeBlock(), null);
   assert.deepEqual(completed.plan, plan, "history retains the immutable plan");
   assert.deepEqual(

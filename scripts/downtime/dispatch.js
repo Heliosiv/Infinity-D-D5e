@@ -204,6 +204,7 @@ export function campaignDowntimeTemplates() {
     },
     { ...guidedWorkPreset("arrows"), id: "guided-craft-arrows" },
     { ...guidedWorkPreset("scroll"), id: "guided-scribe-scroll" },
+    guidedWorkPreset("learn-spell"),
     {
       id: "guided-focused-study",
       name: "Focused Study",
@@ -438,7 +439,7 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   return {
     templateId,
     skill: template.skills.length > 0 ? skill : "",
-    ...(template.work?.output === "scroll"
+    ...(["scroll", "learn-spell"].includes(template.work?.output)
       ? { targetId: idValue(raw.targetId) }
       : {}),
   };

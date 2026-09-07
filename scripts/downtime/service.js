@@ -16,6 +16,12 @@ import {
 } from "./benefits.js";
 import { downtimeBenefitLabel } from "./benefit-rules.js";
 import { downtimeBenefitIntegrationError } from "./benefit-effects.js";
+import { normalizeSpellLearning, spellEdition } from "./spell-learning.js";
+import { registerSpellbookHooks, reconcileSpellbook } from "./spellbook.js";
+import {
+  formatInjuryTimestamp,
+  getCurrentInjuryTimestamp,
+} from "../injury/calendar.js";
 import { downtimeCareTargets } from "../injury/downtime-care.js";
 import { DOWNTIME_MAX_BLOCK_HOURS as MAX_BLOCK_HOURS } from "./limits.js";
 import { DOWNTIME_OUTCOME_TIERS, getFencingValueCapCp } from "./math.js";
@@ -696,10 +702,14 @@ export function registerDowntimeService() {
   subscribeDowntime(DOWNTIME_EVENTS.SHARPEN_DAMAGE, handleSharpenDamage);
   subscribeDowntime(DOWNTIME_EVENTS.LONG_REST, handleLongRest);
   registerSharpeningLifecycleAuthorityHooks();
+  registerSpellbookHooks();
   serviceRegistered = true;
   if (isAuthoritativeGM()) {
     void ensureDowntimeWorkflowAuthority()
-      .then(() => scheduleSharpeningLifecycleReconciliation(0))
+      .then(() => {
+        scheduleSharpeningLifecycleReconciliation(0);
+        return reconcileSpellbook();
+      })
       .catch((error) =>
         console.warn(`${MODULE_ID} | downtime workflow authority`, error),
       );
@@ -768,6 +778,26 @@ export async function deleteSettlementProfile(settlementId) {
 export async function saveGuidedDowntimeTemplate(payload = {}) {
   return runServiceMutation(async () => {
     assertAuthority();
+    if (payload.work?.output === "learn-spell") {
+      const source = await resolveItemSnapshot(payload.work.learning?.uuid);
+      if (source?.type !== "spell")
+        throw new Error(
+          "Choose a world or compendium spell for learning, not a scroll item.",
+        );
+      const learning = normalizeSpellLearning({
+        ...payload.work.learning,
+        name: source.name,
+        level: source.system?.level,
+        school: source.system?.school,
+        edition: spellEdition(source),
+      });
+      payload = {
+        ...payload,
+        blockHours: 1,
+        skills: learning.sourceType === "scroll" ? ["arc"] : [],
+        work: { ...payload.work, learning },
+      };
+    }
     const outcomes = Array.isArray(payload.outcomes) ? payload.outcomes : [];
     const blockHours = Number(payload.blockHours ?? 8);
     if (
@@ -2178,6 +2208,8 @@ async function buildGuidedDowntimeOperation({
       targetId,
       progress: loadDowntimeWorkflowStore().workProgress ?? {},
       operationId: operationId || `guided-${block.id}-${actor.id}`,
+      checkTotal: total,
+      dateLabel: formatInjuryTimestamp(getCurrentInjuryTimestamp()),
     }));
   if (work && !planWalletDeltaCp(walletRead.wallet, -work.costCp))
     throw new Error(
