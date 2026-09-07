@@ -385,7 +385,7 @@ export const SETTINGS = Object.freeze([
     hint:
       "When a new in-game day begins (via Simple Calendar or the world clock), " +
       "automatically prompt foraging and consume the party's food, water, and " +
-      "light. Turn off to only run upkeep from Quartermaster's Use Daily Supplies button.",
+      "light. Turn off to ask the GM which supplies to use or skip at each day change.",
     scope: "world",
     config: true,
     type: Boolean,

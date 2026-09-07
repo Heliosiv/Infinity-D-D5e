@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Daily supplies (next release):** With Auto-run off, day changes ask the GM
+which supplies to use or skip. **Use Daily Supplies** also offers independent
+food, water, and light/torch choices. Only checked supplies are consumed and
+assessed for shortages. See the [resource guide](docs/RESOURCE_SYSTEM.md).
+
 **Downtime locations (next release):** New blocks offer Adventuring, Wilderness
 camp, Village, Town/city, and Custom presets. Select a saved settlement to use
 its own editable activity list and linked shops. Activities unavailable at the

@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  102,
+  103,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -198,6 +198,7 @@ for (const expectedId of [
   "resource-manager-locked",
   "resource-manager-recent-runs",
   "resource-manager-custom-environment",
+  "daily-supplies-dialog",
   "forage-drive-dialog",
   "resource-overview",
   "resource-overview-offline",
