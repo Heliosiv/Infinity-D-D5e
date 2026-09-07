@@ -20,6 +20,13 @@ async function main() {
 
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/scripts/search-picker.js") {
+      response.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+      });
+      response.end(readFileSync("scripts/search-picker.js", "utf8"));
+      return;
+    }
     if (url.pathname === "/scripts/dialog-contract.js") {
       response.writeHead(200, {
         "content-type": "text/javascript; charset=utf-8",
@@ -71,12 +78,63 @@ async function main() {
 
     await openFixture(page, harnessUrl, "critical-injury-triage");
     await auditCriticalInjuryTriageKeyboardActions(page);
+
+    await openFixture(page, harnessUrl, "search-picker");
+    await auditSearchPickerJourney(page);
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
   }
 
   process.stdout.write("keyboard UI journeys passed\n");
+}
+
+async function auditSearchPickerJourney(page) {
+  await page.evaluate(async () => {
+    globalThis.foundry = {
+      applications: {
+        api: {
+          ApplicationV2: class {},
+          HandlebarsApplicationMixin: (Base) => Base,
+        },
+      },
+    };
+    const { SearchPickerApp } = await import("/scripts/search-picker.js");
+    const picker = new SearchPickerApp();
+    picker.element = document.querySelector(".ix-search-picker");
+    picker._options = [{ id: "item-1" }, { id: "item-2" }, { id: "item-3" }];
+    picker._onRender({}, {});
+  });
+  const search = page.locator("[data-search-picker-query]");
+  const empty = page.locator("[data-search-picker-empty]");
+  const visible = page.locator("[data-search-option]:visible");
+  await search.fill("consumable healing");
+  assert.equal(await visible.count(), 1);
+  assert.equal(await visible.first().getAttribute("data-option-id"), "item-1");
+  await search.press("ArrowDown");
+  assert.equal(
+    await visible.first().evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await search.fill("no such item");
+  assert.equal(await visible.count(), 0);
+  assert.equal(await empty.isVisible(), true);
+  await search.press("ArrowDown");
+  assert.equal(
+    await search.evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await search.fill("");
+  assert.equal(await visible.count(), 3);
+  assert.equal(await empty.isVisible(), false);
+  await search.press("ArrowUp");
+  assert.equal(
+    await page
+      .locator('[data-option-id="item-2"]')
+      .evaluate((el) => el === document.activeElement),
+    true,
+    "disabled results are skipped",
+  );
 }
 
 async function openFixture(page, harnessUrl, fixtureId) {

@@ -42,6 +42,13 @@ assert.deepEqual(
   [],
   "unmatched search is empty",
 );
+assert.deepEqual(
+  filterSearchOptions(raw, "BOW arcane rare").map((option) => option.id),
+  ["a"],
+  "all words match across name, description and keywords in any order",
+);
+assert.equal(filterSearchOptions(raw, "arcane gear").length, 0);
+assert.equal(filterSearchOptions(raw, "   ").length, 2);
 
 {
   const calls = [];
@@ -73,6 +80,18 @@ assert.deepEqual(
     ["preventDefault", "focus:b"],
     "arrow navigation follows the option controls after removing nested buttons",
   );
+  for (const [key, expected] of [
+    ["ArrowDown", "a"],
+    ["ArrowUp", "c"],
+  ]) {
+    calls.length = 0;
+    picker._onListKeyDown({
+      key,
+      target: { closest: () => null },
+      preventDefault: () => calls.push("preventDefault"),
+    });
+    assert.deepEqual(calls, ["preventDefault", `focus:${expected}`]);
+  }
 }
 
 {
@@ -83,6 +102,7 @@ assert.deepEqual(
       focus() {},
     };
     const status = { textContent: "" };
+    const empty = { hidden: true };
     const list = { addEventListener() {} };
     const rows = normalized.map((option) => ({
       dataset: { optionId: option.id, searchText: option.searchText },
@@ -93,6 +113,7 @@ assert.deepEqual(
       querySelector(selector) {
         if (selector === "[data-search-picker-query]") return input;
         if (selector === "[data-search-picker-status]") return status;
+        if (selector === "[data-search-picker-empty]") return empty;
         if (selector === "[data-search-picker-list]") return list;
         const id = selector.match(/^\[data-option-id="(.+)"\]$/)?.[1];
         return id
@@ -104,7 +125,7 @@ assert.deepEqual(
         return rows;
       },
     };
-    return { root, input, status, rows };
+    return { root, input, status, rows, empty };
   }
 
   const picker = Object.create(SearchPickerApp.prototype);
@@ -114,6 +135,16 @@ assert.deepEqual(
   picker._query = "";
   let rendered = createPickerRoot();
   picker.element = rendered.root;
+  picker._filter("bow arcane");
+  assert.equal(rendered.rows[0].hidden, false);
+  assert.equal(rendered.rows[1].hidden, true);
+  assert.equal(rendered.empty.hidden, true);
+  picker._filter("unmatched");
+  assert.equal(rendered.empty.hidden, false);
+  assert.match(rendered.status.textContent, /^0 of 2 options shown$/);
+  picker._filter("");
+  assert.equal(rendered.empty.hidden, true);
+  assert.ok(rendered.rows.every((row) => !row.hidden));
   picker._filter("arcane");
   assert.equal(rendered.rows[1].hidden, true);
 

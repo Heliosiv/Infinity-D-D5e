@@ -86,6 +86,10 @@ export class SearchPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     search?.addEventListener?.("input", (event) => {
       this._filter(String(event.target?.value ?? ""));
     });
+    search?.addEventListener?.("keydown", (event) => {
+      if (["ArrowDown", "ArrowUp"].includes(event.key))
+        this._onListKeyDown(event);
+    });
     this._filter(this._query);
     search?.focus?.();
 
@@ -95,13 +99,12 @@ export class SearchPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _filter(query) {
     this._query = String(query ?? "").slice(0, MAX_TEXT);
-    const needle = normalizeSearchText(this._query);
+    const terms = searchTerms(this._query);
     let visible = 0;
     for (const row of this.element?.querySelectorAll?.(
       "[data-search-option]",
     ) ?? []) {
-      const matches =
-        !needle || String(row.dataset.searchText ?? "").includes(needle);
+      const matches = matchesSearchTerms(row.dataset.searchText, terms);
       row.hidden = !matches;
       if (matches) visible += 1;
     }
@@ -109,6 +112,8 @@ export class SearchPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (status) {
       status.textContent = `${visible} of ${this._options.length} option${this._options.length === 1 ? "" : "s"} shown`;
     }
+    const empty = this.element?.querySelector?.("[data-search-picker-empty]");
+    if (empty) empty.hidden = visible > 0 || this._options.length === 0;
   }
 
   _onListKeyDown(event) {
@@ -214,11 +219,19 @@ export function normalizeSearchOptions(options) {
 }
 
 export function filterSearchOptions(options, query) {
-  const needle = normalizeSearchText(query);
+  const terms = searchTerms(query);
   const normalized = normalizeSearchOptions(options);
-  return needle
-    ? normalized.filter((option) => option.searchText.includes(needle))
-    : normalized;
+  return normalized.filter((option) =>
+    matchesSearchTerms(option.searchText, terms),
+  );
+}
+
+function searchTerms(query) {
+  return normalizeSearchText(query).split(" ").filter(Boolean);
+}
+
+function matchesSearchTerms(text, terms) {
+  return terms.every((term) => String(text ?? "").includes(term));
 }
 
 function normalizeSearchText(value) {
