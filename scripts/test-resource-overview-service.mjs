@@ -6,7 +6,11 @@ import {
   _resetResourceOverviewServiceForTests,
   registerResourceOverviewService,
 } from "./resource/overview-service.js";
-import { RESOURCE_EVENTS, receiveResourcePayload } from "./resource/socket.js";
+import {
+  RESOURCE_EVENTS,
+  receiveResourcePayload,
+  subscribe,
+} from "./resource/socket.js";
 
 const saved = {
   game: globalThis.game,
@@ -55,6 +59,22 @@ try {
   };
 
   registerResourceOverviewService();
+  let localInvalidations = 0;
+  const unsubscribe = subscribe(RESOURCE_EVENTS.STATE_UPDATE, () => {
+    localInvalidations += 1;
+  });
+  for (const hook of ["createItem", "updateItem", "deleteItem"]) {
+    globalThis.Hooks.call(hook, { parent: { documentName: "Actor" } });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 160));
+  assert.equal(
+    localInvalidations,
+    1,
+    "inventory burst reaches local hub subscribers once",
+  );
+  assert.equal(emitted[0].reason, "inventory");
+  unsubscribe();
+  emitted.length = 0;
   globalThis.Hooks.call(PRIVATE_STATE_CHANGED_HOOK, {
     keys: ["merchants"],
     reason: "journal-update",

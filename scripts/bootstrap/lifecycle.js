@@ -198,6 +198,10 @@ export function createModuleBootstrap(bindings) {
         }),
       );
       safeInitializeSubsystem(
+        "player-hub supplies sync",
+        bindings.registerPlayerHubSuppliesSync,
+      );
+      safeInitializeSubsystem(
         "downtime socket",
         bindings.registerDowntimeSocket,
       );

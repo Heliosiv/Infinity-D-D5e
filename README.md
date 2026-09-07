@@ -3,6 +3,14 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.26 — live player-hub supplies:** The landing-page Party Supplies button
+now uses the same live food and water coverage as the Supplies window. Inventory,
+party roster, supply settings, and completed upkeep changes refresh its text;
+startup, canvas readiness, and GM authority recovery repair stale labels. This
+does not consume supplies, advance time, or enable automatic daily consumption.
+Only the authoritative GM writes the uniquely marked label; its layout and tile
+action are preserved, and unchanged totals do not create redundant writes.
+
 **v0.3.25 — clearer reusable item art:** The curated compendium now uses
 purpose-built icons for Crowbar, Tinderbox, Viol, and Brewer's Supplies. Lance,
 Grappling Hook, Climber's Kit, Manacles, and Dimensional Shackles now use
@@ -116,7 +124,7 @@ blocks; the GM approves spending and item delivery together. See
 
 A focused rewrite of the Foundry workflows formerly bundled inside `party-operations`. It ships a curated 1,636-item compendium, pre-tagged with rarity, tier, value band, magic type, and folder taxonomy under the `po-loot-v3` schema. Full GMs enter one persistent Infinity Game Master Workbench; players and Assistant GMs receive a separate permission-scoped launcher without widening any player data projection.
 
-Version 0.3.25 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; this item-art release requires its own installed-world acceptance.
+Version 0.3.26 targets Foundry VTT 13.351 and retains the v0.3.13 baseline's verified D&D5e 4.4.4 compatibility. The manifest keeps D&D5e 4.0.0 as its minimum for existing worlds; use a D&D5e release that declares Foundry 13 compatibility when creating a new Foundry 13 world. The baseline's installed downtime journeys were also exercised on D&D5e 5.3.3; each release requires its own installed-world acceptance.
 
 Open the primary Infinity interface in either of these ways:
 
