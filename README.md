@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**GM injury table (next release):** Open **Injuries → Injury table** to browse
+all d100 outcomes, recovery rules, and automation/GM follow-up notes. The
+[entry-by-entry audit](docs/INJURY_TABLE_AUDIT.md) identifies missing effects,
+recovery mismatches, and proposed additions. The V2 rules are unchanged.
+
 **Daily supplies (next release):** With Auto-run off, day changes ask the GM
 which supplies to use or skip. **Use Daily Supplies** also offers independent
 food, water, and light/torch choices. Only checked supplies are consumed and

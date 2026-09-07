@@ -192,6 +192,48 @@ try {
     html,
     /actor-copy|actor-owned|gm-character|assistant-character|assigned-npc/,
   );
+  // The table is available without party mutations, including secondary GMs.
+  contextApp._view = "table";
+  const tableContext = await prepare();
+  assert.equal(tableContext.tableRows.length, 18);
+  assert.equal(tableContext.showTable, true);
+  const tableHtml = render(tableContext);
+  assert.match(tableHtml, /Critical Injury Table V2/);
+  assert.match(tableHtml, /Soul-Shaken/);
+  assert.match(
+    tableHtml,
+    /Fear\/charm-only save disadvantage is not implemented/,
+  );
+  assert.match(tableHtml, /Midi-QOL is inactive/);
+  assert.doesNotMatch(tableHtml, /class="ci-triage-start"/);
+  assert.doesNotMatch(tableHtml, /class="ci-triage-party-card/);
+  const secondaryGm = { id: "secondary-gm", role: 4, isGM: true, active: true };
+  game.users.contents.push(secondaryGm);
+  game.users.activeGM = gm;
+  game.user = secondaryGm;
+  const secondaryContext = await prepare();
+  assert.equal(secondaryContext.canMutate, false);
+  assert.equal(secondaryContext.tableRows.length, 18);
+  game.user = assignedPlayer;
+  const deniedContext = await prepare();
+  assert.equal(deniedContext.accessDenied, true);
+  assert.equal(deniedContext.tableRows, undefined);
+  game.user = gm;
+  const viewApp = { _search: "old query", render: () => true };
+  CriticalInjuryTriageApp._onShowView.call(viewApp, null, {
+    dataset: { view: "table" },
+  });
+  assert.equal(viewApp._view, "table");
+  assert.equal(viewApp._search, "");
+  CriticalInjuryTriageApp.prototype._applyWorkbenchTarget.call(viewApp, {
+    subview: "table",
+  });
+  assert.equal(
+    CriticalInjuryTriageApp.prototype._captureWorkbenchTarget.call(viewApp)
+      .subview,
+    "table",
+  );
+  contextApp._view = "triage";
   offlineOwner.character = characters[0];
   assert.equal(
     (await prepare()).partyRows.length,
