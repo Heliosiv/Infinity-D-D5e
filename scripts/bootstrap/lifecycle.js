@@ -192,6 +192,11 @@ export function createModuleBootstrap(bindings) {
         "player-surface SocketLib",
         bindings.registerPlayerSurfaceSocket,
       );
+      safeInitializeSubsystem("player-hub calendar sync", () =>
+        bindings.registerPlayerHubCalendarSync({
+          isWriteAuthority: bindings.isAuthoritativeGM,
+        }),
+      );
       safeInitializeSubsystem(
         "downtime socket",
         bindings.registerDowntimeSocket,

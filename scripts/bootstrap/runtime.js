@@ -88,6 +88,7 @@ import {
   openCalendar,
   registerPlayerSurfaceSocket,
 } from "../player-surface.js";
+import { registerPlayerHubCalendarSync } from "../player-hub-calendar-sync.js";
 import { SETTINGS, migrateEncounterBalanceDefaults } from "../settings.js";
 import { registerTool } from "../tool-registry.js";
 import { computeLootBudget } from "../loot/budget.js";
@@ -244,6 +245,7 @@ export const runtimeBindings = Object.freeze({
   getPlayerSurfaceStatus,
   openCalendar,
   registerPlayerSurfaceSocket,
+  registerPlayerHubCalendarSync,
   SETTINGS,
   migrateEncounterBalanceDefaults,
   registerTool,

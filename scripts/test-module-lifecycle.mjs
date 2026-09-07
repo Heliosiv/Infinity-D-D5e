@@ -132,6 +132,7 @@ function createFixture({
 
     registerMonksActiveTilesCompat: record("matt"),
     registerPlayerSurfaceSocket: record("player-surface-socket"),
+    registerPlayerHubCalendarSync: record("player-hub-calendar-sync"),
     registerUiFoundationHooks: record("ui-foundation"),
     registerInfinityItemUuidRedirects: record("uuid-redirects"),
     getDowntimePlayerAdapter: () => ({}),
@@ -286,6 +287,7 @@ function createFixture({
     "spell-components",
     "sound-automation",
     "player-surface-socket",
+    "player-hub-calendar-sync",
     "downtime-socket",
     "downtime-auto-open",
     "sharpening-hooks",
