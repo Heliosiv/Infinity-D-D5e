@@ -16,6 +16,41 @@ import {
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const PLAN_PATH = "assets/item-art-plan.json";
 
+const EXPECTED_REUSABLE_ITEM_ART = new Map([
+  [
+    "V5UAjT3ed6sDNtgm",
+    "modules/infinity-dnd5e/assets/item-art/shared/crowbar-v1.webp",
+  ],
+  [
+    "baoe3U5BfMMMxhCU",
+    "modules/infinity-dnd5e/assets/item-art/shared/viol-v1.webp",
+  ],
+  [
+    "Y9S75go1hLMXUD48",
+    "modules/infinity-dnd5e/assets/item-art/shared/brewers-supplies-v1.webp",
+  ],
+  [
+    "DNOSEAvF4Oh1DlWy",
+    "modules/infinity-dnd5e/assets/item-art/shared/tinderbox-v1.webp",
+  ],
+  ["RnuxdHUAIgxccVwj", "icons/weapons/polearms/spear-simple-engraved.webp"],
+  ["tfDxZIKDpOkz6pbx", "icons/tools/fishing/hook-multi-steel-brown.webp"],
+  [
+    "ugzwHl8vYaPu2GNd",
+    "icons/sundries/survival/climbing-anchor-steel-grey.webp",
+  ],
+  ["KTvBW6HNAMAoqEN7", "icons/equipment/shoulder/shoulderpad-fur-leather.webp"],
+  [
+    "mcmslMRPq0C6m4ze",
+    "modules/infinity-dnd5e/assets/item-art/unique/scarlet-token-mcmslMRPq0C6m4ze.webp",
+  ],
+  ["tWJLHIL6ZIZUez9k", "icons/sundries/survival/cuffs-shackles-steel.webp"],
+  [
+    "wGKykLRS8UqChNXI",
+    "icons/magic/control/debuff-chains-shackles-movement-blue.webp",
+  ],
+]);
+
 const packItems = readFileSync(PACK_PATH, "utf8")
   .split(/\r?\n/)
   .filter((line) => line.trim().length > 0)
@@ -39,6 +74,16 @@ const replacementAssignments = assignments.filter(
   (assignment) => assignment.replaceExisting === true,
 );
 let curatedGeneratedReplacements = 0;
+
+for (const [itemId, expectedImg] of EXPECTED_REUSABLE_ITEM_ART) {
+  const item = packItemById.get(itemId);
+  assert.ok(item, `expected reusable item is missing from the pack ${itemId}`);
+  assert.equal(
+    item.img,
+    expectedImg,
+    `${item.name} should use the approved reusable inventory art`,
+  );
+}
 
 assert.equal(
   plan.schema,

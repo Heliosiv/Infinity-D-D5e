@@ -9,7 +9,7 @@
     "id": "shared-impact-1",
     "sequence": 1,
     "selection": "highest-assignment-count",
-    "maxAssets": 5,
+    "maxAssets": 9,
     "assignedItems": 487
   },
   "counts": {
@@ -19,9 +19,9 @@
     "items": 504,
     "reusableAssignments": 487,
     "bespokeAssignments": 17,
-    "sharedAssets": 5,
+    "sharedAssets": 9,
     "uniqueAssets": 17,
-    "totalAssetsToGenerate": 22
+    "totalAssetsToGenerate": 26
   },
   "sharedAssets": [
     {
@@ -421,7 +421,6 @@
         "t7GfyRp3dB3lqS9i",
         "thkvJ5QBRORIwkkV",
         "vZdLYfHlLcZqQ8zc",
-        "wGKykLRS8UqChNXI",
         "zDJ4oEt5HArN1xmP"
       ],
       "prompt": "Use case: stylized-concept\nAsset type: Foundry VTT item icon, square game UI inventory art\nPrimary request: Create a polished shared fantasy RPG icon representing consumable consumables arcane consumables: one palm-sized sealed crystal phial with a wax stopper and a narrow rune-etched silver band, holding a restrained violet-blue magical glow.\nStyle/medium: premium hand-painted fantasy inventory icon; crisp silhouette; richly textured but uncluttered; consistent with a serious D&D compendium.\nComposition/framing: centered single object in three-quarter view, generous padding, fully visible, unmistakable at 64px.\nLighting/mood: soft dramatic rim light, restrained highlights or magical glow when appropriate, high local contrast around the silhouette.\nScene/backdrop: dark neutral charcoal-brown vignette, opaque and quiet.\nConstraints: exactly one primary item; no text, letters, numbers, watermark, logo, UI frame, hands, characters, creatures, scenery, or cropped edges.\nAvoid: photorealistic product photography, neon saturation, excessive particles, ornate border, clutter.\nContext: item type consumable, rarity uncommon, folder consumables/arcane-consumables.",
@@ -443,7 +442,6 @@
         "5fJn3LQ2eQG7luEO",
         "85mRD0d5phAfu2XN",
         "9G9QGSPgpZDSsm37",
-        "DNOSEAvF4Oh1DlWy",
         "DVXmyetZuvxbzAwW",
         "F6GwSqjErX1u35Re",
         "G7LqGzKR5ts0WlJ9",
@@ -456,7 +454,6 @@
         "RMi9efrW9ouHVLI2",
         "SuQmsJfxyJl2hPcM",
         "V13fjV5oSmvbRdgP",
-        "V5UAjT3ed6sDNtgm",
         "WCafDVKITxwnlf2x",
         "WFQS2vT8ddrFjTJg",
         "X5knPtrQAT8GePJ4",
@@ -470,7 +467,6 @@
         "l794iywHk8Wc6Uvi",
         "odV5cq2HSLSCH69k",
         "qWlXDEgqdmdZWoab",
-        "tfDxZIKDpOkz6pbx",
         "tut1jbW3UCsrUjCG",
         "uVm7MiB71QblfnoY",
         "uuh4UH3Jx5CsFjdA",
@@ -570,6 +566,46 @@
       "batchId": "shared-impact-1",
       "priority": 5,
       "impact": 29
+    },
+    {
+      "id": "shared/crowbar-v1",
+      "key": "crowbar-v1",
+      "label": "Crowbar",
+      "path": "assets/item-art/shared/crowbar-v1.webp",
+      "assignedItemIds": [
+        "V5UAjT3ed6sDNtgm"
+      ],
+      "prompt": "Foundry VTT item icon, square inventory art of one forged iron crowbar with a hooked claw and pry end, centered on a dark charcoal background, polished painterly fantasy RPG style, realistic metal, no text, border, frame, hands, logo, or watermark."
+    },
+    {
+      "id": "shared/tinderbox-v1",
+      "key": "tinderbox-v1",
+      "label": "Tinderbox",
+      "path": "assets/item-art/shared/tinderbox-v1.webp",
+      "assignedItemIds": [
+        "DNOSEAvF4Oh1DlWy"
+      ],
+      "prompt": "Foundry VTT item icon, square inventory art of an open wooden tinderbox containing flint, fire steel, char cloth, and dry tinder, centered on a dark charcoal background, polished painterly fantasy RPG style, no text, border, frame, hands, logo, or watermark."
+    },
+    {
+      "id": "shared/viol-v1",
+      "key": "viol-v1",
+      "label": "Viol",
+      "path": "assets/item-art/shared/viol-v1.webp",
+      "assignedItemIds": [
+        "baoe3U5BfMMMxhCU"
+      ],
+      "prompt": "Foundry VTT item icon, square inventory art of a clearly readable wooden viol and its bow, centered on a dark charcoal background, polished painterly fantasy RPG style, realistic instrument craftsmanship, no text, border, frame, hands, logo, or watermark."
+    },
+    {
+      "id": "shared/brewers-supplies-v1",
+      "key": "brewers-supplies-v1",
+      "label": "Brewer's Supplies",
+      "path": "assets/item-art/shared/brewers-supplies-v1.webp",
+      "assignedItemIds": [
+        "Y9S75go1hLMXUD48"
+      ],
+      "prompt": "Foundry VTT item icon, square inventory art showing a compact brewer's supplies still life: small oak keg, mash paddle, copper measuring cup, and hops, centered on a dark charcoal background, polished painterly fantasy RPG style, no text, border, frame, hands, logo, or watermark."
     }
   ],
   "uniqueAssets": [
@@ -5017,17 +5053,6 @@
       "batchId": "shared-impact-1"
     },
     {
-      "itemId": "wGKykLRS8UqChNXI",
-      "name": "Dimensional Shackles",
-      "mode": "reusable",
-      "assetId": "shared/consumable-consumables-arcane-consumables-batch-1",
-      "path": "assets/item-art/shared/consumable-consumables-arcane-consumables-batch-1.webp",
-      "currentImg": "icons/magic/unholy/orb-swirling-teal.webp",
-      "absenceReason": "",
-      "replaceExisting": true,
-      "batchId": "shared-impact-1"
-    },
-    {
       "itemId": "zDJ4oEt5HArN1xmP",
       "name": "Elemental Gem of Air",
       "mode": "reusable",
@@ -5122,17 +5147,6 @@
       "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
       "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
       "currentImg": "icons/tools/smithing/hammer-sledge-steel-grey.webp",
-      "absenceReason": "",
-      "replaceExisting": true,
-      "batchId": "shared-impact-1"
-    },
-    {
-      "itemId": "DNOSEAvF4Oh1DlWy",
-      "name": "Tinderbox",
-      "mode": "reusable",
-      "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
-      "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
-      "currentImg": "icons/sundries/lights/torch-black.webp",
       "absenceReason": "",
       "replaceExisting": true,
       "batchId": "shared-impact-1"
@@ -5265,17 +5279,6 @@
       "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
       "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
       "currentImg": "icons/tools/cooking/fork-steel-tan.webp",
-      "absenceReason": "",
-      "replaceExisting": true,
-      "batchId": "shared-impact-1"
-    },
-    {
-      "itemId": "V5UAjT3ed6sDNtgm",
-      "name": "Crowbar",
-      "mode": "reusable",
-      "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
-      "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
-      "currentImg": "icons/tools/hand/pickaxe-steel-white.webp",
       "absenceReason": "",
       "replaceExisting": true,
       "batchId": "shared-impact-1"
@@ -5419,17 +5422,6 @@
       "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
       "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
       "currentImg": "icons/tools/hand/shovel-spade-steel-grey.webp",
-      "absenceReason": "",
-      "replaceExisting": true,
-      "batchId": "shared-impact-1"
-    },
-    {
-      "itemId": "tfDxZIKDpOkz6pbx",
-      "name": "Grappling Hook",
-      "mode": "reusable",
-      "assetId": "shared/loot-sundries-adventuring-gear-general-loot-batch-1",
-      "path": "assets/item-art/shared/loot-sundries-adventuring-gear-general-loot-batch-1.webp",
-      "currentImg": "icons/weapons/sickles/sickle-hooked-wood.webp",
       "absenceReason": "",
       "replaceExisting": true,
       "batchId": "shared-impact-1"
@@ -6200,6 +6192,50 @@
       "assetId": "shared/equipment-sundries-wondrous-items-apparel-accessories-batch-1",
       "path": "assets/item-art/shared/equipment-sundries-wondrous-items-apparel-accessories-batch-1.webp",
       "currentImg": "icons/creatures/webs/web-spider-glowing-purple.webp",
+      "absenceReason": "",
+      "replaceExisting": true,
+      "batchId": "shared-impact-1"
+    },
+    {
+      "itemId": "V5UAjT3ed6sDNtgm",
+      "name": "Crowbar",
+      "mode": "reusable",
+      "assetId": "shared/crowbar-v1",
+      "path": "assets/item-art/shared/crowbar-v1.webp",
+      "currentImg": "",
+      "absenceReason": "",
+      "replaceExisting": true,
+      "batchId": "shared-impact-1"
+    },
+    {
+      "itemId": "DNOSEAvF4Oh1DlWy",
+      "name": "Tinderbox",
+      "mode": "reusable",
+      "assetId": "shared/tinderbox-v1",
+      "path": "assets/item-art/shared/tinderbox-v1.webp",
+      "currentImg": "",
+      "absenceReason": "",
+      "replaceExisting": true,
+      "batchId": "shared-impact-1"
+    },
+    {
+      "itemId": "baoe3U5BfMMMxhCU",
+      "name": "Viol",
+      "mode": "reusable",
+      "assetId": "shared/viol-v1",
+      "path": "assets/item-art/shared/viol-v1.webp",
+      "currentImg": "",
+      "absenceReason": "",
+      "replaceExisting": true,
+      "batchId": "shared-impact-1"
+    },
+    {
+      "itemId": "Y9S75go1hLMXUD48",
+      "name": "Brewer's Supplies",
+      "mode": "reusable",
+      "assetId": "shared/brewers-supplies-v1",
+      "path": "assets/item-art/shared/brewers-supplies-v1.webp",
+      "currentImg": "",
       "absenceReason": "",
       "replaceExisting": true,
       "batchId": "shared-impact-1"
