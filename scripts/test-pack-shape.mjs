@@ -22,6 +22,7 @@ import {
   CRAFTING_TOOL_OPTIONS,
   FLETCHERS_TOOLS_ID,
 } from "./downtime/tool-requirements.js";
+import { CRAFTING_MATERIAL_OPTIONS } from "./downtime/material-options.js";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const DEFAULT_IMAGE_PATHS = new Set([
@@ -290,6 +291,11 @@ for (const name of CRAFTING_TOOL_OPTIONS) {
   );
 }
 const fletcherTools = itemsById.get(FLETCHERS_TOOLS_ID);
+for (const name of CRAFTING_MATERIAL_OPTIONS)
+  assert.ok(
+    [...itemsById.values()].some((item) => item.name === name),
+    `Selectable material ${name} must exist in the shipped pack`,
+  );
 assert.equal(fletcherTools.name, "Fletcher's Tools");
 assert.equal(fletcherTools.system.quantity, 1);
 assert.match(fletcherTools.system.source.custom, /homebrew/);

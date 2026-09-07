@@ -147,7 +147,11 @@ export async function runCraftingFoundryJourney({
       .locator("summary")
       .filter({ hasText: "Inventory materials to consume" })
       .click();
-    await gm.locator('[name="materialName"]').first().fill(material);
+    await gm
+      .locator('[name="materialName"]')
+      .first()
+      .selectOption("__custom__");
+    await gm.locator('[name="materialCustomName"]').first().fill(material);
     await gm
       .locator('[name="materialQuantity"]')
       .first()

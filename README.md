@@ -10,6 +10,12 @@ tool-shop catalog. Missing kits prevent allocation, and inventory is checked
 again before costs or rewards are applied. Existing open blocks keep their
 original recipes. See the [crafting guide](docs/DOWNTIME_SYSTEM.md).
 
+Ordinary materials can be covered by GP: Craft Arrows keeps its 0.5 gp materials
+cost and requires Fletcher's Tools. For activities needing physical supplies,
+the optional **Material name** picker offers existing compendium items and a
+custom inventory name. Required quantities must be carried and are consumed
+when the reviewed work is applied; tools are kept.
+
 **v0.3.22 — flexible downtime hours:** Players can split each assigned
 downtime budget among multiple activities and projects, using the saved hourly
 block for each choice. Unallocated hours are forfeited at submission, and every

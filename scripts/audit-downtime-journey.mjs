@@ -543,7 +543,17 @@ try {
     .locator("summary")
     .filter({ hasText: "Inventory materials to consume" })
     .click();
-  await page.locator('[name="materialName"]').nth(0).fill("Iron");
+  await page.locator('[name="materialName"]').nth(0).selectOption("Iron");
+  assert.equal(
+    await page
+      .getByLabel("Material 1 custom inventory name", { exact: true })
+      .isVisible(),
+    false,
+  );
+  await page.locator('[name="materialName"]').nth(1).selectOption("__custom__");
+  await page
+    .getByLabel("Material 2 custom inventory name", { exact: true })
+    .fill("Workshop binding resin");
   await page.locator('[name="materialQuantity"]').nth(0).fill("3");
   await page.locator('[data-action="refresh"]').click();
   await page.evaluate(() => journey.app.rendering);
@@ -557,8 +567,42 @@ try {
     await page.locator('[name="materialName"]').nth(0).inputValue(),
     "Iron",
   );
+  assert.equal(
+    await page
+      .getByLabel("Material 2 custom inventory name", { exact: true })
+      .inputValue(),
+    "Workshop binding resin",
+  );
+  await page
+    .locator("summary")
+    .filter({ hasText: "Inventory materials to consume" })
+    .click();
+  for (const width of [1040, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page
+      .getByLabel("Material 1 name", { exact: true })
+      .scrollIntoViewIfNeeded();
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      ),
+      false,
+    );
+    await page.screenshot({
+      path: path.join(out, `gm-material-picker-${width}.png`),
+    });
+  }
+  await page.setViewportSize({ width: 1100, height: 1000 });
   await page.locator('[data-action="saveGuidedTemplate"]').click();
   await page.waitForFunction(() => journey.state.activitySaves === 2);
+  assert.deepEqual(
+    await page.evaluate(() =>
+      journey.state.lastActivitySave.work.materials
+        .slice(0, 2)
+        .map((material) => material.name),
+    ),
+    ["Iron", "Workshop binding resin"],
+  );
   assert.deepEqual(
     await page.evaluate(
       () => journey.state.lastActivitySave.work.requiredTools,
@@ -845,6 +889,12 @@ try {
           system: { quantity: 1 },
         },
         { id: "iron", name: "Iron", type: "loot", system: { quantity: 3 } },
+        {
+          id: "resin",
+          name: "Workshop binding resin",
+          type: "loot",
+          system: { quantity: 1 },
+        },
       ],
     };
     journey.state.block.status = "collecting";
@@ -888,6 +938,25 @@ try {
   assert.match(
     await page.locator(".dt-queue__list").innerText(),
     /Craft Arrows/,
+  );
+  await page.evaluate(async () => {
+    const { projectGuidedWork } = await import("/scripts/downtime/work.js");
+    journey.toolActor.items.find(
+      (item) => item.name === "Iron",
+    ).system.quantity = 2;
+    journey.state.toolQuote = projectGuidedWork(
+      journey.toolActor,
+      journey.templates.find((entry) => entry.id === "guided-craft-arrows"),
+      8,
+    );
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  assert.match(await arrowCard.innerText(), /Missing 1 × Iron/);
+  assert.equal(
+    await arrowCard.locator('[data-action="addActivity"]').count(),
+    0,
+    "insufficient material quantity prevents crafting",
   );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(

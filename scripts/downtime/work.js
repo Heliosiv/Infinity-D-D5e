@@ -374,6 +374,7 @@ export function quoteGuidedWork({
     }
   }
   const materials = [];
+  const materialRequirements = [];
   const materialLabels = [];
   for (const requirement of config.materials) {
     const count =
@@ -382,8 +383,28 @@ export function quoteGuidedWork({
           Math.ceil((before * requirement.quantity) / WORK_DAY_HOURS)
         : requirement.quantity * (requirement.per === "batch" ? batches : 1);
     let remaining = Math.ceil(count);
+    const requiredQuantity =
+      requirement.per === "batch"
+        ? requirement.quantity *
+          (Math.ceil(after / requiredHours) -
+            Math.floor(before / requiredHours))
+        : Math.ceil(count);
+    const matching = matchMaterial(actor, requirement.name, excluded);
+    const carriedQuantity = matching.reduce(
+      (total, item) => total + quantityOf(item),
+      0,
+    );
+    if (carriedQuantity < requiredQuantity)
+      problems.push(
+        `Missing ${requiredQuantity - carriedQuantity} × ${requirement.name}. Carry the required materials on this character.`,
+      );
+    materialRequirements.push({
+      name: requirement.name,
+      quantity: requiredQuantity,
+      excludedItemIds: [...excluded].filter(Boolean),
+    });
     materialLabels.push(`${Math.ceil(count)} × ${requirement.name}`);
-    for (const item of matchMaterial(actor, requirement.name, excluded)) {
+    for (const item of matching) {
       if (!remaining) break;
       const take = Math.min(remaining, quantityOf(item));
       materials.push({
@@ -395,8 +416,6 @@ export function quoteGuidedWork({
       });
       remaining -= take;
     }
-    if (remaining > 0)
-      problems.push(`Missing ${remaining} × ${requirement.name}.`);
   }
   const outputQuantity =
     batches *
@@ -413,6 +432,11 @@ export function quoteGuidedWork({
     `Spend ${money(costCp)} this block (${hours}h / ${Number((hours / 8).toFixed(3))} workdays).`,
     config.gpPerDay ? `${config.gpPerDay} gp/day.` : "",
     materialLabels.length ? `Consume: ${materialLabels.join(", ")}.` : "",
+    materialRequirements.some((entry) => entry.quantity > 0) &&
+    batches === 0 &&
+    config.output !== "none"
+      ? `Carry the materials for the unfinished batch; they are consumed when it finishes.`
+      : "",
     requiredToolNames(config).length
       ? `Keep: ${requiredToolNames(config).join(", ")}.`
       : "",
@@ -435,6 +459,7 @@ export function quoteGuidedWork({
     remainingHours,
     costCp,
     materials,
+    ...(materialRequirements.length ? { materialRequirements } : {}),
     source: source ? { itemId: targetId, identity: identity(source) } : null,
     tools: tools.map((item) => ({
       itemId: item.id ?? item._id,
@@ -573,6 +598,18 @@ export async function buildGuidedWorkPlan(options) {
 }
 
 function requirementsPresent(actor, work) {
+  if (
+    !(work.materialRequirements ?? []).every(
+      (requirement) =>
+        matchMaterial(
+          actor,
+          requirement.name,
+          new Set(requirement.excludedItemIds ?? []),
+        ).reduce((total, item) => total + quantityOf(item), 0) >=
+        requirement.quantity,
+    )
+  )
+    return false;
   if (work.source) {
     const item = findActorItem(actor, work.source.itemId);
     if (

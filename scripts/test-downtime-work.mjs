@@ -171,6 +171,12 @@ try {
     /duplicate/,
   );
   const arrow = guidedWorkPreset("arrows");
+  assert.equal(arrow.work.batchGp, 0.5, "arrows use GP for ordinary materials");
+  assert.deepEqual(
+    arrow.work.materials,
+    [],
+    "ordinary arrow supplies need no separate inventory item",
+  );
   assert.deepEqual(arrow.work.requiredTools, ["Fletcher's Tools"]);
   const missingTools = actor();
   missingTools.items.clear();
@@ -322,6 +328,63 @@ try {
       materials: [{ name: "Iron", quantity: 3, per: "batch" }],
     },
   };
+  const partialMaterialActor = actor();
+  assert.equal(
+    projectGuidedWork(partialMaterialActor, charged, 4).available,
+    false,
+    "an explicit physical-material requirement also gates unfinished work",
+  );
+  const partOne = material(partialMaterialActor, "one", 1);
+  const partTwo = material(partialMaterialActor, "two", 2);
+  assert.equal(
+    projectGuidedWork(partialMaterialActor, charged, 4).available,
+    true,
+    "carried stacks combine to meet the requirement",
+  );
+  const partialMaterialPlan = await operation(
+    args(partialMaterialActor, charged, { hours: 4 }),
+  );
+  partTwo.system.quantity = 1;
+  assert.equal(
+    verifyGuidedWorkBefore(partialMaterialActor, partialMaterialPlan),
+    false,
+  );
+  assert.equal(
+    (
+      await applyGuidedWork(
+        partialMaterialActor,
+        partialMaterialPlan,
+        authorized,
+      )
+    ).ok,
+    false,
+  );
+  assert.equal(
+    partialMaterialActor.writes,
+    0,
+    "removing materials after review blocks costs and output",
+  );
+  partTwo.system.quantity = 2;
+  assert.equal(
+    (
+      await applyGuidedWork(
+        partialMaterialActor,
+        partialMaterialPlan,
+        authorized,
+      )
+    ).ok,
+    true,
+  );
+  assert.equal(
+    partOne.system.quantity + partTwo.system.quantity,
+    3,
+    "unfinished batch materials are held, not prematurely consumed",
+  );
+  assert.equal(
+    quoteGuidedWork(args(partialMaterialActor, charged, { hours: 12 })).ok,
+    false,
+    "a finished batch plus another started batch needs both sets of materials",
+  );
   material(crafter, "iron1", 1);
   material(crafter, "iron2", 4);
   const plan = await operation(args(crafter, charged));

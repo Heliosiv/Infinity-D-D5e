@@ -12,6 +12,7 @@ import { formatValueRange, marketTierOptions } from "./loot/value-filter.js";
 import { presentRecentRuns } from "./resource/history.js";
 import { escapeHtml } from "./ui-util.js";
 import { WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
+import { materialPickerOptions } from "./downtime/material-options.js";
 import {
   defaultGuidedDowntimeTemplates,
   GUIDED_DOWNTIME_SKILLS,
@@ -3818,6 +3819,9 @@ function downtimeWorkspaceActivityEditorContext() {
         materials: Array.from({ length: 4 }, (_, index) => ({
           number: index + 1,
           name: "",
+          nameOptions: materialPickerOptions(),
+          customName: "",
+          isCustom: false,
           quantity: 1,
           perOptions: [{ id: "block", label: "Per block", selected: true }],
         })),

@@ -20,6 +20,11 @@ import {
 } from "./downtime/projects.js";
 import { WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
 import { CRAFTING_TOOL_OPTIONS } from "./downtime/tool-requirements.js";
+import {
+  CUSTOM_MATERIAL_VALUE,
+  CRAFTING_MATERIAL_OPTIONS,
+  materialPickerOptions,
+} from "./downtime/material-options.js";
 import { DOWNTIME_BENEFITS } from "./downtime/benefit-rules.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
@@ -429,6 +434,20 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       ?.querySelector('[name="workOutput"]')
       ?.addEventListener("change", showWorkFields);
     showWorkFields();
+    const showCustomMaterials = () => {
+      for (const row of templateForm?.querySelectorAll("[data-material-row]") ??
+        []) {
+        const custom =
+          row.querySelector('[name="materialName"]')?.value ===
+          CUSTOM_MATERIAL_VALUE;
+        const field = row.querySelector("[data-custom-material]");
+        if (field) field.hidden = !custom;
+        const input = row.querySelector('[name="materialCustomName"]');
+        if (input) input.required = custom;
+      }
+    };
+    templateForm?.addEventListener("change", showCustomMaterials);
+    showCustomMaterials();
     for (const event of ["input", "change"]) {
       templateForm?.addEventListener(event, () => {
         const draft = readGuidedTemplateForm(templateForm);
@@ -1289,7 +1308,11 @@ function readGuidedTemplateForm(form) {
       tool: String(data.get("workTool") ?? ""),
       requiredTools: data.getAll("workRequiredTools").map(String),
       materials: data.getAll("materialName").map((name, index) => ({
-        name: String(name),
+        name: String(
+          name === CUSTOM_MATERIAL_VALUE
+            ? (data.getAll("materialCustomName")[index] ?? "")
+            : name,
+        ),
         quantity: String(data.getAll("materialQuantity")[index] ?? "1"),
         per: String(data.getAll("materialPer")[index] ?? "batch"),
       })),
@@ -1393,6 +1416,13 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         return {
           ...material,
           number: index + 1,
+          nameOptions: materialPickerOptions(material.name),
+          customName: CRAFTING_MATERIAL_OPTIONS.includes(material.name)
+            ? ""
+            : material.name,
+          isCustom: Boolean(
+            material.name && !CRAFTING_MATERIAL_OPTIONS.includes(material.name),
+          ),
           perOptions: [
             ["batch", "Per finished batch"],
             ["block", "Per block"],

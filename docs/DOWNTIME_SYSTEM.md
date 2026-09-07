@@ -178,11 +178,28 @@ Include the activity when opening the next block. Ordinary activities can also u
   with none selected, legacy ammunition still needs smith's, woodcarver's, or
   tinker's tools. **Additional custom tool** requires one more exact inventory
   name. All tools are kept. The GM confirms proficiency and workspace access.
-- Up to four **inventory materials** match names on the character sheet, combining
+- Up to four optional **inventory materials** offer a **Material name** picker
+  with existing compendium supplies (Iron, Copper, Silver, Gold, Ink Bottle,
+  Paper, Parchment, Powdered Silver, and Sealing Wax). **Custom inventory item**
+  preserves other campaign names. **No material required** clears that row.
+  These requirements match names on the character sheet, combining
   matching stacks. Consume them per block, per workday, or per finished batch.
   Whole materials round up; prior daily consumption is credited in later blocks.
   Depleted stacks remain at quantity zero. Required tools and the original
   scribing source are kept.
+
+Use the GP fields to cover ordinary materials without tracking physical items.
+Craft Arrows remains 0.5 gp per 20 arrows plus a carried Fletcher's Tools kit;
+there is no separate arrow-materials item or default inventory requirement.
+The same GP-funded approach is available for other activities. Add physical
+materials only for supplies you actually want tracked; they are additional to
+any configured GP charge.
+
+When physical materials are explicitly required per batch, the character must
+carry enough for every batch being worked on, even when the allocation only
+partly completes it. The materials are consumed on completion of that batch.
+The GM rechecks the carried requirement before applying work, including partial
+progress, so removing supplies after review blocks payment and output.
 
 Arrow crafting starts at **20 arrows per 8 hours, for 0.5 gp**. Other ammunition
 types are in the crafting-result picker. For other equipment, select **Craft a
