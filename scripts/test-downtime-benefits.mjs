@@ -246,7 +246,7 @@ oldConfig.version = 6;
 settings.set("downtimeConfig", clone(oldConfig));
 resetDowntimeWorkflowStoreForTests();
 const migrated = loadDowntimeConfig();
-assert.equal(migrated.version, 8);
+assert.equal(migrated.version, 9);
 assert.equal(migrated.guidedTemplates.length, 28);
 assert.deepEqual(
   migrated.guidedTemplates.slice(0, 24).map((template) => {

@@ -43,6 +43,7 @@ const PRE_GUIDED_PROJECT_DOWNTIME_CONFIG_VERSION = 4;
 const PREVIOUS_DOWNTIME_CONFIG_VERSION = 5;
 const PRE_BENEFIT_DOWNTIME_CONFIG_VERSION = 6;
 const PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION = 7;
+const PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION = 8;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -180,6 +181,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
       PREVIOUS_DOWNTIME_CONFIG_VERSION,
       PRE_BENEFIT_DOWNTIME_CONFIG_VERSION,
       PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION,
+      PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
   ) {
@@ -383,6 +385,16 @@ function parsePersistedDowntimeConfig(raw) {
   let persistedShape;
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
+  } else if (
+    persistedVersionEquals(
+      raw.version,
+      PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION,
+    )
+  ) {
+    persistedShape = {
+      ...current,
+      version: PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION,
+    };
   } else if (
     persistedVersionEquals(raw.version, PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION)
   ) {

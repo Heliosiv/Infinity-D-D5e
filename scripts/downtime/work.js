@@ -19,6 +19,11 @@ import {
   planWalletDeltaCp,
   resolveItemSnapshot,
 } from "./items.js";
+import {
+  FLETCHERS_TOOLS_NAME,
+  normalizeRequiredTools,
+  requiredToolNames,
+} from "./tool-requirements.js";
 
 const MODULE_ID = "infinity-dnd5e";
 export const WORK_DAY_HOURS = 8;
@@ -91,6 +96,7 @@ export function normalizeGuidedWork(raw) {
   );
   if (materials.length > 4)
     throw new Error("Use at most four material requirements.");
+  const requiredTools = normalizeRequiredTools(raw.requiredTools);
   const work = {
     output,
     gpPerBlock: number(raw.gpPerBlock, "GP per block"),
@@ -112,6 +118,7 @@ export function normalizeGuidedWork(raw) {
       .trim()
       .slice(0, 300),
     tool: cleanName(raw.tool),
+    ...(requiredTools.length ? { requiredTools } : {}),
     materials: materials.map((entry) => {
       const per = String(entry.per ?? "batch");
       if (!["block", "day", "batch"].includes(per))
@@ -134,9 +141,10 @@ export function normalizeGuidedWork(raw) {
     throw new Error("Combine duplicate material names into one requirement.");
   }
   if (
-    work.tool &&
-    work.materials.some(
-      (entry) => normalizeItemName(entry.name) === normalizeItemName(work.tool),
+    work.materials.some((entry) =>
+      requiredToolNames(work).some(
+        (name) => normalizeItemName(entry.name) === normalizeItemName(name),
+      ),
     )
   ) {
     throw new Error("A required tool cannot also be consumed as a material.");
@@ -165,7 +173,8 @@ export function normalizeGuidedWork(raw) {
     !work.gpPerDay &&
     !work.batchGp &&
     !work.materials.length &&
-    !work.tool
+    !work.tool &&
+    !requiredTools.length
   )
     return null;
   return work;
@@ -191,6 +200,7 @@ export function guidedWorkPreset(output) {
         ? 0
         : Math.ceil((ammo.unitMarketCp * ammo.batchSize) / 2) / 100,
       batchHours: 8,
+      ...(output === "arrows" ? { requiredTools: [FLETCHERS_TOOLS_NAME] } : {}),
     }),
     outcomes: ["Work completed", "Careful work", "Fine craftsmanship"].map(
       (label) => ({
@@ -327,13 +337,23 @@ export function quoteGuidedWork({
       `You need ${money(costCp)} available before the GM applies this work.`,
     );
   const ammo = AMMUNITION_RECIPES[config.output];
-  if (ammo && !actorHasAnyTool(actor, ammo.toolKeys))
+  if (
+    ammo &&
+    !config.requiredTools?.length &&
+    !actorHasAnyTool(actor, ammo.toolKeys)
+  )
     problems.push(
       `Required tools: ${ammo.toolKeys.map((key) => ({ smith: "Smith's Tools", woodcarver: "Woodcarver's Tools", tinker: "Tinker's Tools" })[key]).join(" or ")}.`,
     );
-  const tools = config.tool ? matchMaterial(actor, config.tool) : [];
-  if (config.tool && !tools.length)
-    problems.push(`Required tool: ${config.tool} (kept).`);
+  const tools = [];
+  for (const name of requiredToolNames(config)) {
+    const matches = matchMaterial(actor, name);
+    if (!matches.length)
+      problems.push(
+        `Required tools: carry ${name} in your character's inventory (kept).`,
+      );
+    else if (!tools.includes(matches[0])) tools.push(matches[0]);
+  }
   const excluded = new Set([
     targetId,
     ...tools.map((item) => item.id ?? item._id),
@@ -393,7 +413,9 @@ export function quoteGuidedWork({
     `Spend ${money(costCp)} this block (${hours}h / ${Number((hours / 8).toFixed(3))} workdays).`,
     config.gpPerDay ? `${config.gpPerDay} gp/day.` : "",
     materialLabels.length ? `Consume: ${materialLabels.join(", ")}.` : "",
-    config.tool ? `Keep: ${config.tool}.` : "",
+    requiredToolNames(config).length
+      ? `Keep: ${requiredToolNames(config).join(", ")}.`
+      : "",
     config.output !== "none"
       ? `${outputQuantity ? `Receive ${outputQuantity} × ${outputName}. ` : "No finished items yet. "}${remainingHours}/${requiredHours}h toward the next batch.`
       : "",
@@ -414,7 +436,7 @@ export function quoteGuidedWork({
     costCp,
     materials,
     source: source ? { itemId: targetId, identity: identity(source) } : null,
-    tools: tools.slice(0, 1).map((item) => ({
+    tools: tools.map((item) => ({
       itemId: item.id ?? item._id,
       identity: identity(item),
     })),
@@ -563,12 +585,21 @@ function requirementsPresent(actor, work) {
   if (
     !work.tools.every((tool) => {
       const item = findActorItem(actor, tool.itemId);
-      return item && quantityOf(item) > 0 && identity(item) === tool.identity;
+      return (
+        item &&
+        Number.isInteger(quantityOf(item)) &&
+        quantityOf(item) >= 1 &&
+        identity(item) === tool.identity
+      );
     })
   )
     return false;
   const ammo = AMMUNITION_RECIPES[work.config.output];
-  return !ammo || actorHasAnyTool(actor, ammo.toolKeys);
+  return (
+    Boolean(work.config.requiredTools?.length) ||
+    !ammo ||
+    actorHasAnyTool(actor, ammo.toolKeys)
+  );
 }
 
 function componentStates(actor, operation) {

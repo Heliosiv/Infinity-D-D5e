@@ -171,9 +171,13 @@ Include the activity when opening the next block. Ordinary activities can also u
 - **Base materials cost per batch** is paid as the character works, on top of
   any block or daily fee. Set it to zero when inventory materials replace that
   GP cost; otherwise the two are additional costs.
-- **Required tool** matches an inventory name and is kept. Ammunition also
-  checks for the appropriate smith's, woodcarver's, or tinker's tools. The GM
-  confirms proficiency and access to the workspace before applying the result.
+- **Required tools** lets the GM select up to eight kits. Every selected kit
+  must have positive quantity on that character's sheet; equipped status is not
+  required, and a carried backpack is fine. Other characters and shared stashes
+  do not count. Selected kits replace the default ammunition tool alternatives;
+  with none selected, legacy ammunition still needs smith's, woodcarver's, or
+  tinker's tools. **Additional custom tool** requires one more exact inventory
+  name. All tools are kept. The GM confirms proficiency and workspace access.
 - Up to four **inventory materials** match names on the character sheet, combining
   matching stacks. Consume them per block, per workday, or per finished batch.
   Whole materials round up; prior daily consumption is credited in later blocks.
@@ -185,6 +189,24 @@ types are in the crafting-result picker. For other equipment, select **Craft a
 configured item**, paste its world or compendium Item UUID, and set hours, GP,
 and quantity per batch. Finished items are added as separate usable inventory
 stacks. Multiple batches can finish in one block; leftover hours carry forward.
+
+**Craft Arrows requires Fletcher's Tools by default.** Find the reusable kit in
+the Infinity D&D5e Items compendium, under Tools / Artisan Tools, and drag it onto
+the character's sheet. It is also tagged for tool-shop and loot selection.
+This campaign item costs 1 gp, weighs 5 lb, and uses Woodcarver's Tools proficiency
+for checks; it does not grant proficiency. These are homebrew kit details.
+Every selectable kit exists in the bundled compendium.
+
+Players see a missing-tool explanation instead of the allocation button. The
+GM rechecks inventory at submission, planning, and application, so dropping,
+transferring, or reducing a required tool to zero after review cannot bypass the
+requirement or spend crafting costs. Refresh the player window after inventory
+changes if its existing card has not refreshed yet.
+
+Configuration v9 adds Fletcher's Tools to the stock arrow recipe when it has no
+configured custom tool. Saved custom requirements remain intact. Open blocks
+retain their snapshotted recipes and tool rules. A changed recipe uses separate
+crafting progress; previously paid progress is retained under its original recipe.
 
 Scribing offers spells and spell scrolls already on the selected character's
 sheet. A source scroll must have recorded spell-level metadata. Scribing uses

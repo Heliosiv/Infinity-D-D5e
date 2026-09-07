@@ -3,6 +3,13 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Selectable crafting tools:** In Downtime → Activities → Costs, supplies &
+crafting, select the kits a character must carry. Craft Arrows defaults to
+Fletcher's Tools, a reusable campaign kit included in the Items compendium and
+tool-shop catalog. Missing kits prevent allocation, and inventory is checked
+again before costs or rewards are applied. Existing open blocks keep their
+original recipes. See the [crafting guide](docs/DOWNTIME_SYSTEM.md).
+
 **v0.3.22 — flexible downtime hours:** Players can split each assigned
 downtime budget among multiple activities and projects, using the saved hourly
 block for each choice. Unallocated hours are forfeited at submission, and every

@@ -18,6 +18,10 @@ import {
   getItemTier,
 } from "./loot/tag-vocabulary.js";
 import { LEGACY_INFINITY_ITEM_ID_ALIASES } from "./item-uuid-compat.js";
+import {
+  CRAFTING_TOOL_OPTIONS,
+  FLETCHERS_TOOLS_ID,
+} from "./downtime/tool-requirements.js";
 
 const PACK_PATH = "packs/infinity-dnd5e-items.db";
 const DEFAULT_IMAGE_PATHS = new Set([
@@ -275,6 +279,22 @@ assert.ok(
 assert.ok(
   coverage(withGpValue) >= 80,
   `only ${coverage(withGpValue).toFixed(1)}% of items have gpValue`,
+);
+
+for (const name of CRAFTING_TOOL_OPTIONS) {
+  assert.ok(
+    [...itemsById.values()].some(
+      (item) => item.name === name && item.type === "tool",
+    ),
+    `Selectable tool ${name} must exist in the shipped item pack`,
+  );
+}
+const fletcherTools = itemsById.get(FLETCHERS_TOOLS_ID);
+assert.equal(fletcherTools.name, "Fletcher's Tools");
+assert.equal(fletcherTools.system.quantity, 1);
+assert.match(fletcherTools.system.source.custom, /homebrew/);
+assert.ok(
+  fletcherTools.flags["infinity-dnd5e"].merchantCategories.includes("tools"),
 );
 
 process.stdout.write(

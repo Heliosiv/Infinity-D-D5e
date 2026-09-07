@@ -74,8 +74,8 @@ function actor(gp = 100) {
     },
   };
   result.add({
-    _id: "smith",
-    name: "Smith's Tools",
+    _id: "fletcher",
+    name: "Fletcher's Tools",
     type: "tool",
     system: { quantity: 1 },
   });
@@ -171,6 +171,110 @@ try {
     /duplicate/,
   );
   const arrow = guidedWorkPreset("arrows");
+  assert.deepEqual(arrow.work.requiredTools, ["Fletcher's Tools"]);
+  const missingTools = actor();
+  missingTools.items.clear();
+  missingTools.add({
+    _id: "smith",
+    name: "Smith's Tools",
+    type: "tool",
+    system: { quantity: 1 },
+  });
+  assert.equal(
+    projectGuidedWork(missingTools, arrow, 8).available,
+    false,
+    "Smith's Tools alone cannot unlock the Fletcher recipe",
+  );
+  assert.match(
+    projectGuidedWork(missingTools, arrow, 8).unavailableReason,
+    /Fletcher's Tools/,
+  );
+  const carriedKit = missingTools.add({
+    _id: "fletcher",
+    name: "Fletcher’s Tools",
+    type: "tool",
+    system: { quantity: 0 },
+  });
+  assert.equal(
+    projectGuidedWork(missingTools, arrow, 8).available,
+    false,
+    "empty stacks do not count",
+  );
+  carriedKit.system.quantity = 1;
+  assert.equal(
+    projectGuidedWork(missingTools, arrow, 8).available,
+    true,
+    "a carried kit unlocks arrows, including typographic apostrophes",
+  );
+  const multipleTools = {
+    ...arrow,
+    work: {
+      ...arrow.work,
+      requiredTools: ["Fletcher's Tools", "Smith's Tools"],
+    },
+  };
+  assert.equal(
+    projectGuidedWork(actor(), multipleTools, 8).available,
+    false,
+    "every selected tool is required",
+  );
+  const multiPlan = await operation(args(missingTools, multipleTools));
+  assert.equal(multiPlan.work.tools.length, 2);
+  carriedKit.system.quantity = 0;
+  assert.equal(verifyGuidedWorkBefore(missingTools, multiPlan), false);
+  assert.equal(
+    (await applyGuidedWork(missingTools, multiPlan, authorized)).ok,
+    false,
+  );
+  assert.equal(
+    missingTools.writes,
+    0,
+    "losing tools after review stops all costs and output",
+  );
+  carriedKit.system.quantity = 0.5;
+  assert.equal(
+    verifyGuidedWorkBefore(missingTools, multiPlan),
+    false,
+    "a fraction of a kit cannot satisfy the requirement after review",
+  );
+  carriedKit.system.quantity = 1;
+  assert.equal(
+    (await applyGuidedWork(missingTools, multiPlan, authorized)).ok,
+    true,
+  );
+  assert.equal(carriedKit.system.quantity, 1, "required kits are reusable");
+  assert.throws(
+    () => normalizeGuidedWork({ requiredTools: ["Not a catalog tool"] }),
+    /tool list/,
+  );
+  assert.throws(
+    () => normalizeGuidedWork({ requiredTools: "Fletcher's Tools" }),
+    /eight/,
+  );
+  assert.throws(
+    () =>
+      normalizeGuidedWork({
+        output: "arrows",
+        requiredTools: ["Fletcher's Tools"],
+        materials: [{ name: "Fletcher's Tools", quantity: 1 }],
+      }),
+    /cannot also be consumed/,
+  );
+  const legacyRecipe = { ...arrow, work: { ...arrow.work } };
+  delete legacyRecipe.work.requiredTools;
+  const legacyCrafter = actor();
+  legacyCrafter.items.clear();
+  legacyCrafter.add({
+    _id: "smith",
+    name: "Smith's Tools",
+    type: "tool",
+    system: { quantity: 1 },
+  });
+  assert.equal(
+    projectGuidedWork(legacyCrafter, legacyRecipe, 8).available,
+    true,
+    "existing block snapshots retain their legacy tool rules",
+  );
   globalThis.fromUuid = async () => null;
   await assert.rejects(
     buildGuidedWorkPlan(args(actor(), arrow, { hours: 4 })),
@@ -235,7 +339,7 @@ try {
   assert.equal(inspectGuidedWork(crafter, plan), "applied");
   assert.equal(crafter.items.get("iron1").system.quantity, 0);
   assert.equal(crafter.items.get("iron2").system.quantity, 2);
-  assert.equal(crafter.items.get("smith").system.quantity, 1);
+  assert.equal(crafter.items.get("fletcher").system.quantity, 1);
   assert.equal(
     crafter.items.get(plan.work.delivery.itemId).system.quantity,
     20,

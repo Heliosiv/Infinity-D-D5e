@@ -1001,6 +1001,11 @@
   font: inherit;
 }
 
+.infinity-downtime-workspace select[name="workRequiredTools"] {
+  height: auto;
+  min-height: 9rem;
+}
+
 .infinity-downtime-workspace .dt-hours-row {
   display: grid;
   grid-template-columns: minmax(90px, 1fr) repeat(3, auto);

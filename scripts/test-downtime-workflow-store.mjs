@@ -407,6 +407,45 @@ try {
       },
     ),
   };
+  const historicalV8Config = structuredClone(canonicalCheckpoint.config.value);
+  historicalV8Config.version = 8;
+  const oldArrows = historicalV8Config.guidedTemplates.find(
+    (entry) => entry.id === "guided-craft-arrows",
+  );
+  if (oldArrows) delete oldArrows.work.requiredTools;
+  seedCompositeConfig(historicalV8Config);
+  assert.equal(workflow.isDowntimeWorkflowReady(), false);
+  await workflow.ensureDowntimeWorkflowAuthority();
+  assert.equal(settings.get("downtimeConfig").version, DOWNTIME_CONFIG_VERSION);
+  assert.deepEqual(
+    settings
+      .get("downtimeConfig")
+      .guidedTemplates.find((entry) => entry.id === "guided-craft-arrows").work
+      .requiredTools,
+    ["Fletcher's Tools"],
+  );
+  assert.deepEqual(
+    settings.get("downtimeWorkflow").activeBlock,
+    canonicalPrimary.activeBlock,
+    "tool migration preserves an open block and its immutable recipes",
+  );
+
+  const customV8Config = structuredClone(historicalV8Config);
+  customV8Config.guidedTemplates.find(
+    (entry) => entry.id === "guided-craft-arrows",
+  ).work.tool = "My Bowyer Kit";
+  seedCompositeConfig(customV8Config);
+  await workflow.ensureDowntimeWorkflowAuthority();
+  const retainedRecipe = settings
+    .get("downtimeConfig")
+    .guidedTemplates.find((entry) => entry.id === "guided-craft-arrows");
+  assert.equal(retainedRecipe.work.tool, "My Bowyer Kit");
+  assert.equal(
+    retainedRecipe.work.requiredTools,
+    undefined,
+    "migration preserves a configured custom tool requirement",
+  );
+
   seedCompositeConfig(historicalV7Config);
   assert.equal(
     workflow.isDowntimeWorkflowReady(),

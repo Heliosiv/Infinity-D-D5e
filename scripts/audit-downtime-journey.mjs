@@ -134,6 +134,7 @@ try {
         ),
         skills: template.skills.map((id) => ({ id, label: id })),
         category: "guided",
+        ...(template.id === "guided-craft-arrows" ? state.toolQuote : {}),
       })),
       receipt: state.receipt,
     });
@@ -152,6 +153,7 @@ try {
         if (index < 0) templates.push(saved);
         else templates[index] = saved;
         state.activitySaves = (state.activitySaves || 0) + 1;
+        state.lastActivitySave = structuredClone(payload);
         return saved;
       },
       getWorkspaceProjection: async () => ({
@@ -325,7 +327,7 @@ try {
       globalThis.journey.app = app;
       await app.render();
     }
-    globalThis.journey = { state, mount, playerAdapter };
+    globalThis.journey = { state, mount, playerAdapter, templates };
     await mount("workspace");
   });
 
@@ -510,6 +512,30 @@ try {
     "arrows",
   );
   assert.equal(await page.locator('[name="workBatchGp"]').inputValue(), "0.5");
+  const toolPicker = page.getByLabel("Required tools (all selected are kept)", {
+    exact: true,
+  });
+  assert.deepEqual(
+    await toolPicker.locator("option:checked").allTextContents(),
+    ["Fletcher's Tools"],
+    await toolPicker.evaluate((select) => select.outerHTML),
+  );
+  await toolPicker.selectOption(["Fletcher's Tools", "Smith's Tools"]);
+  for (const width of [1040, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await toolPicker.scrollIntoViewIfNeeded();
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      ),
+      false,
+      `tool picker fits ${width}px`,
+    );
+    await page.screenshot({
+      path: path.join(out, `gm-tool-requirements-${width}.png`),
+    });
+  }
+  await page.setViewportSize({ width: 1100, height: 1000 });
   await page
     .getByLabel("Additional cost per workday (gp)", { exact: true })
     .fill("2");
@@ -522,12 +548,23 @@ try {
   await page.locator('[data-action="refresh"]').click();
   await page.evaluate(() => journey.app.rendering);
   assert.equal(await page.locator('[name="workGpPerDay"]').inputValue(), "2");
+  assert.deepEqual(
+    await toolPicker.locator("option:checked").allTextContents(),
+    ["Fletcher's Tools", "Smith's Tools"],
+    "tool selections survive refresh",
+  );
   assert.equal(
     await page.locator('[name="materialName"]').nth(0).inputValue(),
     "Iron",
   );
   await page.locator('[data-action="saveGuidedTemplate"]').click();
   await page.waitForFunction(() => journey.state.activitySaves === 2);
+  assert.deepEqual(
+    await page.evaluate(
+      () => journey.state.lastActivitySave.work.requiredTools,
+    ),
+    ["Fletcher's Tools", "Smith's Tools"],
+  );
   await page
     .locator(
       '[data-action="selectGuidedTemplate"][data-template-id="guided-scribe-scroll"]',
@@ -793,6 +830,64 @@ try {
   assert.equal(
     await page.evaluate(() => journey.state.saved.at(-1).benefitTarget),
     "mira|ankle",
+  );
+  assert.equal(errors.length, 0, errors.join("\n"));
+  await page.evaluate(async () => {
+    const { projectGuidedWork } = await import("/scripts/downtime/work.js");
+    journey.toolActor = {
+      id: "mira",
+      system: { currency: { pp: 0, gp: 100, ep: 0, sp: 0, cp: 0 } },
+      items: [
+        {
+          id: "smith",
+          name: "Smith's Tools",
+          type: "tool",
+          system: { quantity: 1 },
+        },
+        { id: "iron", name: "Iron", type: "loot", system: { quantity: 3 } },
+      ],
+    };
+    journey.state.block.status = "collecting";
+    journey.state.queue = null;
+    journey.state.receipt = null;
+    journey.state.toolQuote = projectGuidedWork(
+      journey.toolActor,
+      journey.templates.find((entry) => entry.id === "guided-craft-arrows"),
+      8,
+    );
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  const arrowCard = page.locator('[data-activity-id="guided-craft-arrows"]');
+  assert.match(await arrowCard.innerText(), /Fletcher's Tools/);
+  assert.equal(
+    await arrowCard.locator('[data-action="addActivity"]').count(),
+    0,
+    "missing required kit prevents selecting Craft Arrows",
+  );
+  await page.evaluate(async () => {
+    const { projectGuidedWork } = await import("/scripts/downtime/work.js");
+    journey.toolActor.items.push({
+      id: "fletcher",
+      name: "Fletcher's Tools",
+      type: "tool",
+      system: { quantity: 1 },
+    });
+    journey.state.toolQuote = projectGuidedWork(
+      journey.toolActor,
+      journey.templates.find((entry) => entry.id === "guided-craft-arrows"),
+      8,
+    );
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  await arrowCard
+    .getByRole("button", { name: "Allocate Craft Arrows", exact: true })
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.match(
+    await page.locator(".dt-queue__list").innerText(),
+    /Craft Arrows/,
   );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(

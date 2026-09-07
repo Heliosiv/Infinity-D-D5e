@@ -46,7 +46,7 @@ export async function runCraftingFoundryJourney({
     const inkName = `Gauntlet spell ink ${foundry.utils.randomID(6)}`;
     const spellName = "Gauntlet scribing spell";
     const sources = [
-      { name: "Smith's Tools", type: "tool", system: { quantity: 1 } },
+      { name: "Fletcher's Tools", type: "tool", system: { quantity: 1 } },
       {
         name: timberName,
         type: "loot",
@@ -79,7 +79,7 @@ export async function runCraftingFoundryJourney({
       if (!item) throw Error(`Missing created crafting fixture: ${name}`);
       return item;
     };
-    const tool = byName("Smith's Tools");
+    const tool = byName("Fletcher's Tools");
     const timber = byName(timberName);
     const ink = byName(inkName);
     const spell = byName(spellName);

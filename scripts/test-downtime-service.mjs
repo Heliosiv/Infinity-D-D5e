@@ -1754,7 +1754,7 @@ try {
     actors.set(crafter.id, crafter);
     crafter.addItem({
       _id: "craft-tool",
-      name: "Smith's Tools",
+      name: "Fletcher's Tools",
       type: "tool",
       system: { quantity: 1 },
     });
@@ -1794,6 +1794,28 @@ try {
         actorId: crafter.id,
       });
       assert.match(projected.activities[0].costLabel, /Spend 1.25 gp/);
+      const kit = crafter.items.get("craft-tool");
+      kit.system.quantity = 0;
+      const missingKitProjection = await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: crafter.id,
+      });
+      assert.equal(missingKitProjection.activities[0].available, false);
+      assert.match(
+        missingKitProjection.activities[0].unavailableReason,
+        /Fletcher's Tools/,
+      );
+      await assert.rejects(
+        service.submitQueueAuthoritatively({
+          userId: player.id,
+          requestId: `missing-kit-${pass}`,
+          blockId: opened.id,
+          actorId: crafter.id,
+          queue: [{ activityId: crafting.id, hours: 4 }],
+        }),
+        /Fletcher's Tools/,
+      );
+      kit.system.quantity = 1;
       assert.equal(
         "work" in projected.activities[0],
         false,

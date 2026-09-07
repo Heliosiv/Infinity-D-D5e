@@ -338,6 +338,15 @@ export function includeCampaignDowntimeTemplates(templates) {
         (builtin.work && entry.work?.output === builtin.work.output),
     );
     if (existing) {
+      // Upgrade the stock arrow recipe only. Saved custom tools and open-block
+      // snapshots remain authoritative; a recipe change has separate progress.
+      if (
+        existing.id === "guided-craft-arrows" &&
+        existing.work?.output === "arrows" &&
+        !existing.work.tool &&
+        !Object.hasOwn(existing.work, "requiredTools")
+      )
+        existing.work.requiredTools = [...builtin.work.requiredTools];
       const previousDescriptions = {
         "guided-training":
           "Practice footwork, endurance, or technique with a willing partner or instructor. Instruction costs 1 gp per workday. The GM records progress; this does not automatically grant proficiency or combat bonuses.",

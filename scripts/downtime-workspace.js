@@ -19,6 +19,7 @@ import {
   guidedProjectPreset,
 } from "./downtime/projects.js";
 import { WORK_OUTPUT_OPTIONS } from "./downtime/work.js";
+import { CRAFTING_TOOL_OPTIONS } from "./downtime/tool-requirements.js";
 import { DOWNTIME_BENEFITS } from "./downtime/benefit-rules.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
@@ -1286,6 +1287,7 @@ function readGuidedTemplateForm(form) {
       quantity: String(data.get("workQuantity") ?? "1"),
       itemUuid: String(data.get("workItemUuid") ?? ""),
       tool: String(data.get("workTool") ?? ""),
+      requiredTools: data.getAll("workRequiredTools").map(String),
       materials: data.getAll("materialName").map((name, index) => ({
         name: String(name),
         quantity: String(data.getAll("materialQuantity")[index] ?? "1"),
@@ -1369,6 +1371,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       batchHours: 8,
       quantity: 1,
       ...templateSource.work,
+      toolOptions: CRAFTING_TOOL_OPTIONS.map((name) => ({
+        name,
+        selected: templateSource.work?.requiredTools?.includes(name) === true,
+      })),
       isBatch: ["arrows", "bolts", "needles", "sling-bullets", "item"].includes(
         templateSource.work?.output,
       ),
