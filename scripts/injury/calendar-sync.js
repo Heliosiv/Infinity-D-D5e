@@ -17,13 +17,28 @@ import {
   readInjuryCalendarNotes,
   removeCriticalInjuryNoteVerified,
   scheduleCriticalInjuryNote,
+  synchronizeCriticalInjuryNoteRange,
 } from "./calendar.js";
 
 let syncInFlight = null;
+let syncRequested = false;
 
 export function syncCriticalInjuryCalendar() {
-  if (syncInFlight) return syncInFlight;
-  syncInFlight = synchronize().finally(() => {
+  if (syncInFlight) {
+    syncRequested = true;
+    return syncInFlight;
+  }
+  syncInFlight = (async () => {
+    const total = { linked: 0, skipped: 0, failed: 0 };
+    do {
+      syncRequested = false;
+      const result = await synchronize();
+      total.linked += result.linked;
+      total.skipped = Math.max(total.skipped, result.skipped);
+      total.failed = Math.max(total.failed, result.failed);
+    } while (syncRequested);
+    return total;
+  })().finally(() => {
     syncInFlight = null;
   });
   return syncInFlight;
@@ -63,8 +78,30 @@ async function synchronize() {
       if (
         existing &&
         String(existing.id ?? existing._id) === injury.calendarEntryId
-      )
+      ) {
+        try {
+          const synchronized = await synchronizeCriticalInjuryNoteRange({
+            actor,
+            injury,
+            startTimestamp: receipt.resolution.recoveryStartTs,
+            authorizeWrite: () =>
+              isAuthoritativeGM() &&
+              persistedValuesEqual(getCriticalInjuryData(effect), injury) &&
+              !getCriticalInjuryWorkflowRecord(
+                injury.pendingId,
+              )?.treatments?.some((entry) => entry.state !== "completed"),
+          });
+          if (!synchronized) result.failed++;
+        } catch (error) {
+          assertAuthority();
+          result.failed++;
+          console.warn(
+            "infinity-dnd5e | injury calendar range sync failed",
+            error,
+          );
+        }
         continue;
+      }
       try {
         const calendar = await scheduleCriticalInjuryNote({
           actor,
@@ -106,6 +143,26 @@ async function synchronize() {
           getCriticalInjuryData(current)?.calendarEntryId !== calendar.entryId
         ) {
           throw new Error("Calendar link did not save.");
+        }
+        if (calendar.reused) {
+          const linkedInjury = { ...injury, calendarEntryId: calendar.entryId };
+          if (
+            !(await synchronizeCriticalInjuryNoteRange({
+              actor,
+              injury: linkedInjury,
+              startTimestamp: receipt.resolution.recoveryStartTs,
+              authorizeWrite: () =>
+                isAuthoritativeGM() &&
+                persistedValuesEqual(
+                  getCriticalInjuryData(current),
+                  linkedInjury,
+                ) &&
+                !getCriticalInjuryWorkflowRecord(
+                  injury.pendingId,
+                )?.treatments?.some((entry) => entry.state !== "completed"),
+            }))
+          )
+            result.failed++;
         }
         result.linked++;
       } catch (error) {

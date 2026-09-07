@@ -107,6 +107,110 @@ export function findInjuryCalendarNote(notes, actor, injury) {
   );
 }
 
+/** Update only a verified Infinity note; preserve its calendar and visibility. */
+export async function synchronizeCriticalInjuryNoteRange({
+  actor,
+  injury,
+  startTimestamp = injury?.recoveryStartTs,
+  completed = false,
+  completionTimestamp = null,
+  recovered = true,
+  authorizeWrite = () => false,
+} = {}) {
+  const api = resolveSimpleCalendarApi();
+  if (typeof api?.getNotes !== "function") return false;
+  const entryId = String(injury?.calendarEntryId ?? "");
+  if (!entryId) return completed;
+  const read = async () =>
+    findInjuryCalendarNote(
+      Array.from(await api.getNotes()).filter(
+        (note) => extractDocumentId(note) === entryId,
+      ),
+      actor,
+      injury,
+    );
+  const availableNotes = Array.from(await api.getNotes());
+  const note = findInjuryCalendarNote(
+    availableNotes.filter((entry) => extractDocumentId(entry) === entryId),
+    actor,
+    injury,
+  );
+  if (!note)
+    return (
+      completed &&
+      !availableNotes.some((entry) => extractDocumentId(entry) === entryId)
+    );
+  const scope = SIMPLE_CALENDAR_IDS.find((id) => note.flags?.[id]?.noteData);
+  const data = note.flags?.[scope]?.noteData;
+  if (!data) return false;
+  const savedEnd =
+    note.flags?.[MODULE_ID]?.criticalInjuryCalendar?.completedAtTs;
+  const now = getCurrentInjuryTimestamp();
+  const due = injury?.recoveryDueTs;
+  const endTimestamp = completed
+    ? (savedEnd ??
+      Math.min(
+        Number(completionTimestamp ?? now),
+        due == null ? Number(completionTimestamp ?? now) : Number(due),
+      ))
+    : due;
+  const startDate =
+    startTimestamp == null
+      ? data.startDate
+      : toCalendarDate(api, Number(startTimestamp));
+  let endDate =
+    !completed && injury?.permanent
+      ? startDate
+      : endTimestamp == null
+        ? null
+        : toCalendarDate(api, Number(endTimestamp));
+  if (!startDate || !endDate) return false;
+  for (const key of ["year", "month", "day", "hour", "minute", "seconds"]) {
+    const difference = Number(endDate[key] ?? 0) - Number(startDate[key] ?? 0);
+    if (difference > 0) break;
+    if (difference < 0) {
+      endDate = startDate;
+      break;
+    }
+  }
+  const sameDate = (left, right) =>
+    ["year", "month", "day", "hour", "minute", "seconds"].every(
+      (key) => Number(left?.[key] ?? 0) === Number(right?.[key] ?? 0),
+    );
+  const title = `${actor?.name ?? "Unknown Character"} — ${injury?.injuryName ?? "Critical Injury"}${completed ? (recovered ? " (Recovered)" : " (Ended)") : injury?.permanent ? " (Permanent)" : ""}`;
+  const matches = (entry) => {
+    const current = entry?.flags?.[scope]?.noteData;
+    return (
+      current?.allDay === true &&
+      sameDate(current.startDate, startDate) &&
+      sameDate(current.endDate, endDate) &&
+      (!completed ||
+        (entry.name === title &&
+          entry.flags?.[MODULE_ID]?.criticalInjuryCalendar?.completedAtTs ===
+            endTimestamp))
+    );
+  };
+  if (matches(note)) return true;
+  if (typeof note.update !== "function" || !authorizeWrite()) return false;
+  const patch = {
+    [`flags.${scope}.noteData.startDate`]: startDate,
+    [`flags.${scope}.noteData.endDate`]: endDate,
+    [`flags.${scope}.noteData.allDay`]: true,
+  };
+  if (completed) {
+    patch.name = title;
+    patch[`flags.${MODULE_ID}.criticalInjuryCalendar.completedAtTs`] =
+      endTimestamp;
+  }
+  try {
+    await note.update(patch);
+  } catch {
+    // A committed update can lose its reply. Discovery decides whether it saved.
+  }
+  if (!authorizeWrite()) return false;
+  return matches(await read());
+}
+
 export function injuryRecoveryLabel(injury) {
   if (injury?.permanent) return "Permanent";
   const days =
@@ -191,12 +295,13 @@ export async function scheduleCriticalInjuryNote({
 
   const now = getCurrentInjuryTimestamp();
   const start =
-    startTimestamp != null && Number.isFinite(Number(startTimestamp))
-      ? Math.min(now, Number(startTimestamp))
+    (startTimestamp ?? injury?.recoveryStartTs) != null &&
+    Number.isFinite(Number(startTimestamp ?? injury?.recoveryStartTs))
+      ? Number(startTimestamp ?? injury.recoveryStartTs)
       : now;
   const due =
     injury?.recoveryDueTs == null ? NaN : Number(injury.recoveryDueTs);
-  const safeDue = Number.isFinite(due) ? Math.max(now, due) : now;
+  const safeDue = Number.isFinite(due) ? Math.max(start, due) : start;
   const startDate = toCalendarDate(api, start);
   const endDate = toCalendarDate(api, safeDue);
   if (!startDate || !endDate) {
@@ -486,7 +591,20 @@ function toCalendarDate(api, timestamp) {
   if (typeof api?.timestampToDate === "function") {
     try {
       const date = api.timestampToDate(timestamp);
-      if (date && Number.isFinite(Number(date.year))) return date;
+      if (
+        date &&
+        [date.year, date.month, date.day].every((part) =>
+          Number.isFinite(Number(part)),
+        )
+      )
+        return {
+          year: Number(date.year),
+          month: Number(date.month),
+          day: Number(date.day),
+          hour: Number(date.hour ?? 0),
+          minute: Number(date.minute ?? 0),
+          seconds: Number(date.seconds ?? date.second ?? 0),
+        };
     } catch {
       // Return null below.
     }

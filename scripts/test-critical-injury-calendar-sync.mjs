@@ -90,10 +90,13 @@ await store.completeCriticalInjuryWorkflow("pending", {
 const notes = [];
 let afterAdd = null;
 let additions = 0;
+let calendarWrites = 0;
+let afterCalendarUpdate = null;
+let rejectCalendarUpdate = false;
 const api = {
   timestamp: () => 1000,
   timestampToDate: (timestamp) => ({ year: 1, month: 0, day: timestamp / 100 }),
-  getNotes: () => structuredClone(notes),
+  getNotes: () => notes,
   removeNote: async (id) => {
     const index = notes.findIndex((note) => note.id === id);
     if (index >= 0) notes.splice(index, 1);
@@ -102,7 +105,27 @@ const api = {
   async addNote(_title, content, start, end) {
     assert.equal(start.day, 9, "repair preserves the original injury date");
     assert.equal(end.day, 18);
-    const note = { id: `note-${++additions}`, content };
+    const note = {
+      id: `note-${++additions}`,
+      content,
+      flags: {
+        "foundryvtt-simple-calendar-reborn": {
+          noteData: { startDate: start, endDate: end, allDay: true },
+        },
+      },
+      async update(patch) {
+        if (rejectCalendarUpdate) throw new Error("calendar unavailable");
+        calendarWrites++;
+        for (const [path, value] of Object.entries(patch)) {
+          const keys = path.split(".");
+          const key = keys.pop();
+          let target = this;
+          for (const part of keys) target = target[part] ??= {};
+          target[key] = value;
+        }
+        afterCalendarUpdate?.();
+      },
+    };
     notes.push(note);
     afterAdd?.();
     return note;
@@ -120,6 +143,44 @@ assert.equal(left, right, "double clicks share one repair run");
 assert.deepEqual(await left, { linked: 1, skipped: 0, failed: 0 });
 assert.equal(injury.calendarEntryId, "note-1");
 assert.equal(effectWrites, 1);
+injury.recoveryDueTs = 1700;
+assert.deepEqual(await syncCriticalInjuryCalendar(), {
+  linked: 0,
+  skipped: 0,
+  failed: 0,
+});
+assert.equal(
+  notes[0].flags["foundryvtt-simple-calendar-reborn"].noteData.endDate.day,
+  17,
+  "linked events follow changed recovery dates",
+);
+assert.equal(
+  notes[0].flags["foundryvtt-simple-calendar-reborn"].noteData.startDate.day,
+  9,
+);
+assert.equal(calendarWrites, 1);
+await syncCriticalInjuryCalendar();
+assert.equal(
+  calendarWrites,
+  1,
+  "repeated synchronization leaves unchanged events alone",
+);
+injury.recoveryDueTs = 1800;
+await syncCriticalInjuryCalendar();
+assert.equal(calendarWrites, 2, "longer recovery also extends the same event");
+injury.recoveryDueTs = 1500;
+afterCalendarUpdate = () => {
+  afterCalendarUpdate = null;
+  injury.recoveryDueTs = 1700;
+  void syncCriticalInjuryCalendar();
+};
+await syncCriticalInjuryCalendar();
+assert.equal(
+  notes[0].flags["foundryvtt-simple-calendar-reborn"].noteData.endDate.day,
+  17,
+  "an update during synchronization receives a follow-up pass",
+);
+injury.recoveryDueTs = 1800;
 await syncCriticalInjuryCalendar();
 assert.equal(additions, 1, "repeated sync adds no duplicates");
 assert.equal(effectWrites, 1);
@@ -224,3 +285,36 @@ assert.equal(
   "owner-writable flags cannot authorize calendar repair",
 );
 console.log("injury calendar repair and saved log checks passed");
+
+injury.pendingId = "pending";
+await syncCriticalInjuryCalendar();
+const expiryNote = notes.find((note) => note.id === injury.calendarEntryId);
+effect.delete = async () => {
+  actor.effects.contents = [];
+};
+api.timestamp = () => 1900;
+game.time.worldTime = 1900;
+const { processExpiredCriticalInjuries } = await import("./injury/service.js");
+rejectCalendarUpdate = true;
+await processExpiredCriticalInjuries();
+assert.equal(
+  actor.effects.contents.length,
+  1,
+  "calendar failure leaves automatic recovery retryable",
+);
+rejectCalendarUpdate = false;
+await processExpiredCriticalInjuries();
+assert.equal(actor.effects.contents.length, 0);
+assert.equal(
+  expiryNote.flags["foundryvtt-simple-calendar-reborn"].noteData.endDate.day,
+  18,
+  "late expiry processing retains the actual due date",
+);
+assert.match(expiryNote.name, /\(Recovered\)$/);
+assert.ok(
+  notes.includes(expiryNote),
+  "automatic recovery retains its completed interval",
+);
+console.log(
+  "Automatic injury expiry saves its completed event before removing penalties",
+);
