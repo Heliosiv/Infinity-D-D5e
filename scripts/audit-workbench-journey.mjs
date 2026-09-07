@@ -7,6 +7,7 @@ import Handlebars from "handlebars";
 import { chromium } from "playwright";
 import { auditPlayerRequests } from "./workbench-player-journey.mjs";
 import { auditFactionNavigation } from "./workbench-faction-journey.mjs";
+import { auditShopOrganization } from "./workbench-shop-directory-journey.mjs";
 
 const root = path.resolve(".");
 const outputRoot = path.resolve("output/playwright");
@@ -468,6 +469,11 @@ try {
     });
     const directoryAction = async (selector) => {
       const before = await page.evaluate(() => journey.state.actions.length);
+      const closedDetails = directory
+        .locator(selector)
+        .locator("xpath=ancestor::details[not(@open)]");
+      if (await closedDetails.count())
+        await closedDetails.locator(":scope > summary").click();
       await directory.locator(selector).click();
       await page.waitForFunction(
         (count) =>
@@ -580,6 +586,13 @@ try {
       true,
     );
     assert.equal(await openIn(river), false);
+    await auditShopOrganization({
+      page,
+      directory,
+      directoryAction,
+      harbor,
+      river,
+    });
     await directory.locator('[data-workbench-route="injuries"]').click();
     await page.waitForFunction(() => !journey.app._gmWorkbenchNavigating);
     assert.equal(await directory.isVisible(), true);

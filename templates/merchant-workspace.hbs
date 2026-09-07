@@ -90,11 +90,15 @@
     {{#unless isMerchantEditor}}
     <div class="mw-locations-layout">
       <aside class="mw-location-rail" aria-label="Shop locations">
+        <input type="search" class="mw-input" data-location-search placeholder="Find a location…" aria-label="Find a location" />
+        <p class="mw-empty" data-location-no-match hidden>No locations match.</p>
+        <div class="mw-location-entries">
         {{#each locations}}
         <button type="button" class="mw-location {{#if selected}}is-selected{{/if}}" data-action="selectLocation" data-location-id="{{id}}" data-location-control aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
           <strong>{{name}}</strong><span>{{count}} shops · {{status}}</span>
         </button>
         {{else}}<p class="mw-empty">Create your first location above.</p>{{/each}}
+        </div>
       </aside>
       <section class="mw-location-content" aria-label="Selected location shops">
         {{#if selectedLocation}}
@@ -102,26 +106,57 @@
         <div class="mw-location-actions" role="group" aria-label="Actions for {{selectedLocation.name}}">
           <button type="button" class="mw-btn mw-btn--primary" data-action="locationOperation" data-operation="open" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Open All</button>
           <button type="button" class="mw-btn" data-action="locationOperation" data-operation="close" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Close All</button>
+        </div>
+        <div class="mw-list" aria-label="Merchants in {{selectedLocation.name}}">
+          {{#if locationHasShops}}
+          <div class="mw-directory-tools">
+            <input type="search" class="mw-input mw-directory-search" data-merchant-search placeholder="Find a merchant…" aria-label="Find a merchant" data-location-control />
+            <label class="mw-field"><span class="mw-field__label">Show</span><select class="mw-input" data-merchant-filter data-location-control><option value="all">All shops</option><option value="open">Open shops</option><option value="closed">Closed shops</option><option value="empty">Empty inventory</option></select></label>
+            <label class="mw-field"><span class="mw-field__label">Sort</span><select class="mw-input" data-merchant-sort data-location-control><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="open">Open first</option><option value="stock">Most item types</option></select></label>
+          </div>
+          <p class="mw-hint" role="status" data-merchant-result-count></p>
+          <div class="mw-selection-bar">
+            <label class="mw-select-all"><input type="checkbox" data-select-visible data-location-control /> Select shown</label>
+            <span class="mw-hint" role="status" data-selection-count>0 selected</span>
+            <div class="mw-selection-actions" data-selection-actions hidden>
+            {{#if assignLocationOptions.length}}
+            <select class="mw-input" name="selectedDestination" aria-label="Move selected shops to" data-location-control>{{#each assignLocationOptions}}<option value="{{id}}">{{name}}</option>{{/each}}</select>
+            <button type="button" class="mw-btn" data-action="moveSelectedShops" data-selected-action data-location-control disabled>Move selected</button>
+            {{/if}}
+            <button type="button" class="mw-btn mw-btn--danger" data-action="deleteSelectedShops" data-selected-action data-location-control disabled>Delete selected</button>
+            </div>
+          </div>
+          <p class="mw-empty" data-merchant-no-match hidden>No merchants match.</p>
+          <ul class="mw-list__items">{{#each locationMerchants}}
+            <li class="mw-list__row mw-shop-row" data-shop-id="{{id}}" data-shop-status="{{status}}" data-item-count="{{itemCount}}">
+            <input type="checkbox" data-shop-select="{{id}}" aria-label="Select {{name}}" data-location-control />
+            <button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-haspopup="dialog" data-location-control>
+              <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
+              <span class="mw-list__copy"><strong class="mw-list__name">{{name}}</strong><span class="mw-list__meta">{{status}} · {{itemCount}} items · {{purseLabel}} · {{accessLabel}}</span></span>
+            </button><button type="button" class="mw-btn mw-btn--danger mw-shop-delete" data-action="deleteMerchant" data-merchant-id="{{id}}" data-location-control aria-label="Delete {{name}}" title="Delete {{name}}"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete</span></button></li>
+          {{/each}}</ul>
+          {{else}}<p class="mw-empty">No shops here yet. Open Stock &amp; add shops below to add a template or custom merchant.</p>{{/if}}
+        </div>
+        <details class="mw-advanced mw-stock-setup"><summary>Stock &amp; add shops</summary>
+        <div class="mw-location-actions">
           <button type="button" class="mw-btn" data-action="locationOperation" data-operation="restock" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Restock All</button>
           <button type="button" class="mw-btn" data-action="locationOperation" data-operation="generate" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Generate All</button>
           <button type="button" class="mw-btn mw-btn--danger" data-action="locationOperation" data-operation="clear" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Clear All Inventory</button>
         </div>
         <p class="mw-hint">Restock refills the existing shelves. Generate replaces them. All stock actions reset merchant gold. Other locations stay as they are.</p>
         <div class="mw-location-add"><label class="mw-field"><span class="mw-field__label">Add a shop</span><select class="mw-input" name="shopTemplate" data-location-control>{{#each shopTemplates}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label><button type="button" class="mw-btn" data-action="addLocationShop" data-location-control>Add shop</button></div>
-        <div class="mw-list" aria-label="Merchants in {{selectedLocation.name}}">
-          {{#if locationHasShops}}
-          <input type="search" class="mw-input mw-directory-search" data-merchant-search placeholder="Find a merchant…" aria-label="Find a merchant" />
-          <p class="mw-empty" data-merchant-no-match hidden>No merchants match.</p>
-          <ul class="mw-list__items">{{#each locationMerchants}}
-            <li class="mw-list__row"><button type="button" class="mw-list__btn" data-action="selectMerchant" data-merchant-id="{{id}}" aria-haspopup="dialog">
-              <span class="mw-list__art" style="background-image:url('{{art}}');" aria-hidden="true"></span>
-              <span class="mw-list__copy"><strong class="mw-list__name">{{name}}</strong><span class="mw-list__meta">{{status}} · {{itemCount}} items · {{purseLabel}} · {{accessLabel}}</span></span>
-            </button></li>
-          {{/each}}</ul>
-          {{else}}<p class="mw-empty">No shops here yet. Add a template or custom merchant above.</p>{{/if}}
-        </div>
+        </details>
+        {{#if canEditLocation}}
+        <details class="mw-advanced"><summary>Manage location</summary>
+          <div class="mw-location-add">
+            <label class="mw-field"><span class="mw-field__label">Location name</span><input class="mw-input" name="renameLocation" value="{{selectedLocation.name}}" maxlength="100" data-location-control /></label>
+            <button type="button" class="mw-btn" data-action="renameLocation" data-location-control>Rename</button>
+            <button type="button" class="mw-btn mw-btn--danger" data-action="removeLocation" data-location-control>Remove location</button>
+          </div><p class="mw-hint">Removing a location keeps its shops in Unassigned shops. Use Delete on a shop to remove the shop itself.</p>
+        </details>
+        {{/if}}
         {{#if locationHasShops}}{{#if assignLocationOptions.length}}
-        <details class="mw-advanced"><summary>Move these shops to another location</summary><div class="mw-location-add"><label class="mw-field"><span class="mw-field__label">Destination</span><select class="mw-input" name="assignLocation" data-location-control>{{#each assignLocationOptions}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label><button type="button" class="mw-btn" data-action="assignLocation" data-location-control>Move all shops</button></div><p class="mw-hint">Stock, gold, and player restrictions are preserved. To move one shop, open its Setup tab.</p></details>
+        <details class="mw-advanced"><summary>Move these shops to another location</summary><div class="mw-location-add"><label class="mw-field"><span class="mw-field__label">Destination</span><select class="mw-input" name="assignLocation" data-location-control>{{#each assignLocationOptions}}<option value="{{id}}">{{name}}</option>{{/each}}</select></label><button type="button" class="mw-btn" data-action="assignLocation" data-location-control>Move all shops</button></div><p class="mw-hint">Stock, gold, and player restrictions are preserved. To move a smaller group, check shops and use Move selected.</p></details>
         {{/if}}{{/if}}
         {{else}}<p class="mw-empty">Your locations and merchants will appear here.</p>{{/if}}
       </section>

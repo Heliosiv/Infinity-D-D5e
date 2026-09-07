@@ -2073,9 +2073,10 @@ function merchantWorkspaceContext() {
     newLocationName: "",
     hasLocations: true,
     selectedLocation: locations[0],
+    canEditLocation: true,
     locationHasShops: true,
     locationOptions: locations,
-    assignLocationOptions: [locations[1]],
+    assignLocationOptions: [{ id: "", name: "Unassigned shops" }, locations[1]],
     locationTemplates: [
       { id: "village", name: "Village — 3 everyday shops" },
       { id: "town", name: "Town — 5 shops", selected: true },

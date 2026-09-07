@@ -56,13 +56,13 @@ import {
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
-  commitMerchantBatch,
   deliverDurableMerchantTerminalResult,
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
   pushCloseSession,
   pushOpenSession,
   pushMerchantAccessRefresh,
+  runMerchantAccessOperation,
   subscribe,
 } from "./merchant/socket.js";
 import {
@@ -80,6 +80,14 @@ import {
   addShopToLocation,
   applyLocationOperation,
 } from "./merchant/locations.js";
+import {
+  assertShopLocation,
+  deleteDirectoryShops,
+  filterDirectoryShops,
+  moveDirectoryShops,
+  removeShopLocation,
+  renameShopLocation,
+} from "./merchant/directory.js";
 import { loadCompendiumItems } from "./loot/pack.js";
 import {
   bindRowDoubleClickOpen,
@@ -141,6 +149,10 @@ const MERCHANT_WRITE_ACTIONS = new Set([
   "addLocationShop",
   "locationOperation",
   "assignLocation",
+  "moveSelectedShops",
+  "deleteSelectedShops",
+  "renameLocation",
+  "removeLocation",
   "save",
   "deleteMerchant",
   "duplicateMerchant",
@@ -244,6 +256,18 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ),
       assignLocation: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onAssignLocation,
+      ),
+      moveSelectedShops: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onMoveSelectedShops,
+      ),
+      deleteSelectedShops: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onDeleteSelectedShops,
+      ),
+      renameLocation: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onRenameLocation,
+      ),
+      removeLocation: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onRemoveLocation,
       ),
       openPricingMacros: MerchantWorkspaceApp._onOpenPricingMacros,
       selectMerchant: MerchantWorkspaceApp._onSelectMerchant,
@@ -354,6 +378,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       null;
     this._activeMerchantTab = "basics";
     this._merchantSearch = "";
+    this._merchantFilter = "all";
+    this._merchantSort = "name";
+    this._selectedShopIds = new Set();
+    this._locationSearch = "";
     this._selectedLocationId = null;
     this._locationBusy = false;
     this._saveStatus = "All changes saved";
@@ -460,7 +488,17 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     await ensureMerchantTabLeadership();
     const merchants = loadMerchants();
     const merchantAccess = loadMerchantAccessState();
-    const locations = locationDirectory(merchants, merchantAccess);
+    const locations = locationDirectory(merchants, merchantAccess).sort(
+      (a, b) =>
+        !a.id
+          ? -1
+          : !b.id
+            ? 1
+            : a.name.localeCompare(b.name, undefined, {
+                numeric: true,
+                sensitivity: "base",
+              }),
+    );
     if (
       !locations.some((location) => location.id === this._selectedLocationId)
     ) {
@@ -664,6 +702,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ),
       locationHasShops: Boolean(selectedLocation?.count),
       locationBusy: this._locationBusy,
+      canEditLocation: Boolean(selectedLocation?.id),
       locationTemplates: LOCATION_TEMPLATES.map((row) => ({
         ...row,
         selected: row.id === (this._newLocationTemplate ?? "town"),
@@ -677,9 +716,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         ...location,
         selected: location.id === (selected?.shop?.locationId ?? ""),
       })),
-      assignLocationOptions: locations.filter(
-        (location) => location.id && location.id !== this._selectedLocationId,
-      ),
+      assignLocationOptions: [
+        { id: "", name: "Unassigned shops" },
+        ...locations.filter((row) => row.id),
+      ].filter((location) => location.id !== this._selectedLocationId),
       selected: selected
         ? {
             ...selected,
@@ -892,24 +932,120 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
   }
 
   _wireMerchantSearch() {
+    const locationSearch = this.element?.querySelector?.(
+      "[data-location-search]",
+    );
+    if (locationSearch) {
+      locationSearch.value = this._locationSearch ?? "";
+      const searchLocations = () => {
+        this._locationSearch = locationSearch.value;
+        const query = locationSearch.value.trim().toLocaleLowerCase();
+        let count = 0;
+        for (const row of this.element.querySelectorAll(".mw-location")) {
+          row.hidden = !row
+            .querySelector("strong")
+            .textContent.toLocaleLowerCase()
+            .includes(query);
+          if (!row.hidden) count++;
+        }
+        this.element.querySelector("[data-location-no-match]").hidden =
+          count > 0;
+      };
+      locationSearch.addEventListener("input", searchLocations);
+      searchLocations();
+    }
     const input = this.element?.querySelector?.("[data-merchant-search]");
     if (!input) return;
-    input.value = this._merchantSearch;
-    const filter = () => {
+    this._selectedShopIds ??= new Set();
+    input.value = this._merchantSearch ?? "";
+    const filterInput = this.element.querySelector("[data-merchant-filter]");
+    const sortInput = this.element.querySelector("[data-merchant-sort]");
+    filterInput.value = this._merchantFilter ?? "all";
+    sortInput.value = this._merchantSort ?? "name";
+    const filter = (clearSelection = false) => {
+      if (clearSelection) this._selectedShopIds.clear();
       this._merchantSearch = input.value;
-      const query = input.value.trim().toLocaleLowerCase();
-      let count = 0;
-      for (const row of this.element.querySelectorAll(".mw-list__row")) {
-        row.hidden = !row
-          .querySelector(".mw-list__name")
-          .textContent.toLocaleLowerCase()
-          .includes(query);
-        if (!row.hidden) count++;
+      this._merchantFilter = filterInput.value;
+      this._merchantSort = sortInput.value;
+      const rows = [...this.element.querySelectorAll(".mw-list__row")];
+      const visible = filterDirectoryShops(
+        rows.map((row) => ({
+          id: row.dataset.shopId,
+          name: row.querySelector(".mw-list__name").textContent,
+          status: row.dataset.shopStatus,
+          itemCount: Number(row.dataset.itemCount),
+        })),
+        {
+          query: this._merchantSearch,
+          filter: this._merchantFilter,
+          sort: this._merchantSort,
+        },
+      );
+      const visibleIds = new Set(visible.map((row) => row.id));
+      for (const id of this._selectedShopIds) {
+        if (!visibleIds.has(id)) this._selectedShopIds.delete(id);
       }
-      this.element.querySelector("[data-merchant-no-match]").hidden = count > 0;
+      for (const row of rows) {
+        row.hidden = !visibleIds.has(row.dataset.shopId);
+        row.querySelector("[data-shop-select]").checked =
+          this._selectedShopIds.has(row.dataset.shopId);
+      }
+      const list = this.element.querySelector(".mw-list__items");
+      for (const row of visible) {
+        list.append(rows.find((element) => element.dataset.shopId === row.id));
+      }
+      this.element.querySelector("[data-merchant-no-match]").hidden =
+        visible.length > 0;
+      this.element.querySelector("[data-merchant-result-count]").textContent =
+        `${visible.length} of ${rows.length} shops shown`;
+      this._updateShopSelection();
     };
-    input.addEventListener("input", filter);
+    input.addEventListener("input", () => filter(true));
+    filterInput.addEventListener("change", () => filter(true));
+    sortInput.addEventListener("change", () => filter());
+    for (const checkbox of this.element.querySelectorAll(
+      "[data-shop-select]",
+    )) {
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked)
+          this._selectedShopIds.add(checkbox.dataset.shopSelect);
+        else this._selectedShopIds.delete(checkbox.dataset.shopSelect);
+        this._updateShopSelection();
+      });
+    }
+    this.element
+      .querySelector("[data-select-visible]")
+      .addEventListener("change", (event) => {
+        for (const row of this.element.querySelectorAll(
+          ".mw-list__row:not([hidden])",
+        )) {
+          const checkbox = row.querySelector("[data-shop-select]");
+          checkbox.checked = event.target.checked;
+          if (checkbox.checked)
+            this._selectedShopIds.add(checkbox.dataset.shopSelect);
+          else this._selectedShopIds.delete(checkbox.dataset.shopSelect);
+        }
+        this._updateShopSelection();
+      });
     filter();
+  }
+
+  _updateShopSelection() {
+    const count = this._selectedShopIds?.size ?? 0;
+    const root = this.element;
+    root.querySelector("[data-selection-count]").textContent =
+      `${count} selected`;
+    root.querySelector("[data-selection-actions]").hidden = count === 0;
+    const visible = root.querySelectorAll(".mw-list__row:not([hidden])").length;
+    const selectAll = root.querySelector("[data-select-visible]");
+    selectAll.checked = visible > 0 && count === visible;
+    selectAll.indeterminate = count > 0 && count < visible;
+    for (const button of root.querySelectorAll("[data-selected-action]"))
+      button.disabled =
+        !count ||
+        Boolean(this._locationBusy) ||
+        !isAuthoritativeGM() ||
+        !hasMerchantTabLeadership();
   }
 
   _selectMerchantTab(key) {
@@ -1090,71 +1226,80 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this._setSaveStatus("Saving…");
     this._formSaveDepth = (Number(this._formSaveDepth) || 0) + 1;
     try {
-      await commitMerchantWrite(
-        this._selectedId,
-        (fresh) =>
-          normalizeMerchant({
-            ...fresh,
-            name: data.name ?? fresh.name,
-            art: data.art ?? fresh.art,
-            description: data.description ?? fresh.description,
-            defaultMarkup: Number(data.defaultMarkup ?? fresh.defaultMarkup),
-            sellRatio: Number(data.sellRatio ?? fresh.sellRatio),
-            bargainDC: Number(data.bargainDC ?? fresh.bargainDC),
-            bargainAdvantage: data.bargainAdvantage === "on",
-            bargainSuccessPct: Number(
-              data.bargainSuccessPct ?? fresh.bargainSuccessPct,
-            ),
-            bargainFailPct: Number(data.bargainFailPct ?? fresh.bargainFailPct),
-            passiveHaggle: data.passiveHaggle === "on",
-            passivePctPerPoint: Number(
-              data.passivePctPerPoint ?? fresh.passivePctPerPoint,
-            ),
-            passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
-            // A settings save must never replay an older trading purse.
-            shop: {
-              ...shopSetup(fresh),
-              locationId: data.shopLocationId ?? shopSetup(fresh).locationId,
-              startingGold: data.startingGold ?? shopSetup(fresh).startingGold,
-              open:
-                data.shopOpen === undefined &&
-                !form.querySelector('[name="shopOpen"]')
-                  ? shopSetup(fresh).open
-                  : data.shopOpen === "on",
-              access: data.accessAll === "on" ? "all" : "selected",
-            },
-            allowedSkills: data.allowedSkills,
-            allowedUserIds: data.allowedUserIds,
-            // First time a shop gains an allowed player, flip it from the default
-            // "off" to "open" so it appears in that player's Shops door — else GMs
-            // tick a player, see nothing, and conclude "players can't open shops".
-            // Only auto-promote on the no-players → has-players step; a GM who
-            // wants a GM-pull-only shop can still set "off"/"knock".
-            selfServiceMode: form.querySelector('[name="shopOpen"]')
-              ? "open"
-              : promoteSelfServiceMode(
-                  data.selfServiceMode,
-                  (fresh.allowedUserIds?.length ?? 0) > 0,
-                  (data.allowedUserIds?.length ?? 0) > 0,
-                ),
-            pool: {
-              lootTypes: data.poolLootTypes,
-              rarities: data.poolRarities,
-              // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
-              count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
-              budgetGp:
-                data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
-              rarityBalance: data.poolRarityBalance,
-              rarityWeights: data.poolRarityWeights,
-              minGp: Number(data.poolMinGp ?? fresh.pool?.minGp ?? 0),
-              maxGp: Number(data.poolMaxGp ?? fresh.pool?.maxGp ?? 0),
-            },
-            buyFilter: {
-              lootTypes: data.buyFilterLootTypes,
-              rarities: data.buyFilterRarities,
-            },
-          }),
-        { broadcast: true },
+      await runMerchantAccessOperation(() =>
+        commitMerchantWrite(
+          merchant.id,
+          (fresh) => {
+            assertShopLocation(
+              data.shopLocationId ?? shopSetup(fresh).locationId,
+            );
+            return normalizeMerchant({
+              ...fresh,
+              name: data.name ?? fresh.name,
+              art: data.art ?? fresh.art,
+              description: data.description ?? fresh.description,
+              defaultMarkup: Number(data.defaultMarkup ?? fresh.defaultMarkup),
+              sellRatio: Number(data.sellRatio ?? fresh.sellRatio),
+              bargainDC: Number(data.bargainDC ?? fresh.bargainDC),
+              bargainAdvantage: data.bargainAdvantage === "on",
+              bargainSuccessPct: Number(
+                data.bargainSuccessPct ?? fresh.bargainSuccessPct,
+              ),
+              bargainFailPct: Number(
+                data.bargainFailPct ?? fresh.bargainFailPct,
+              ),
+              passiveHaggle: data.passiveHaggle === "on",
+              passivePctPerPoint: Number(
+                data.passivePctPerPoint ?? fresh.passivePctPerPoint,
+              ),
+              passiveCapPct: Number(data.passiveCapPct ?? fresh.passiveCapPct),
+              // A settings save must never replay an older trading purse.
+              shop: {
+                ...shopSetup(fresh),
+                locationId: data.shopLocationId ?? shopSetup(fresh).locationId,
+                startingGold:
+                  data.startingGold ?? shopSetup(fresh).startingGold,
+                open:
+                  data.shopOpen === undefined &&
+                  !form.querySelector('[name="shopOpen"]')
+                    ? shopSetup(fresh).open
+                    : data.shopOpen === "on",
+                access: data.accessAll === "on" ? "all" : "selected",
+              },
+              allowedSkills: data.allowedSkills,
+              allowedUserIds: data.allowedUserIds,
+              // First time a shop gains an allowed player, flip it from the default
+              // "off" to "open" so it appears in that player's Shops door — else GMs
+              // tick a player, see nothing, and conclude "players can't open shops".
+              // Only auto-promote on the no-players → has-players step; a GM who
+              // wants a GM-pull-only shop can still set "off"/"knock".
+              selfServiceMode: form.querySelector('[name="shopOpen"]')
+                ? "open"
+                : promoteSelfServiceMode(
+                    data.selfServiceMode,
+                    (fresh.allowedUserIds?.length ?? 0) > 0,
+                    (data.allowedUserIds?.length ?? 0) > 0,
+                  ),
+              pool: {
+                lootTypes: data.poolLootTypes,
+                rarities: data.poolRarities,
+                // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
+                count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
+                budgetGp:
+                  data.poolBudgetGp === "" ? 0 : Number(data.poolBudgetGp ?? 0),
+                rarityBalance: data.poolRarityBalance,
+                rarityWeights: data.poolRarityWeights,
+                minGp: Number(data.poolMinGp ?? fresh.pool?.minGp ?? 0),
+                maxGp: Number(data.poolMaxGp ?? fresh.pool?.maxGp ?? 0),
+              },
+              buyFilter: {
+                lootTypes: data.buyFilterLootTypes,
+                rarities: data.buyFilterRarities,
+              },
+            });
+          },
+          { broadcast: true },
+        ),
       );
       this._setSaveStatus("Saved");
       const saved = findMerchant(this._selectedId);
@@ -1180,6 +1325,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     if (this._locationBusy || target?.dataset?.locationId == null) return;
     this._selectedLocationId = target.dataset.locationId;
     this._merchantSearch = "";
+    this._selectedShopIds?.clear();
     this.render(false);
   }
 
@@ -1202,7 +1348,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       );
     } finally {
       this._locationBusy = false;
-      this.render(false);
+      if (this.rendered) this.render(false);
     }
   }
 
@@ -1223,6 +1369,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       const created = await createShopLocation({ name, templateId, items });
       this._selectedLocationId = created.id;
       this._newLocationName = "";
+      this._locationSearch = "";
+      this._merchantSearch = "";
+      this._merchantFilter = "all";
+      this._selectedShopIds?.clear();
       notify(
         "info",
         `${created.name} is ready with ${created.count} shops. Open All when the party arrives.`,
@@ -1312,27 +1462,136 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const destination = this.element?.querySelector?.(
       '[name="assignLocation"]',
     )?.value;
-    if (
-      !destination ||
-      !locationDirectory().some((row) => row.id === destination)
-    )
-      return;
-    const ids = loadMerchants()
-      .filter((row) => (row.shop?.locationId ?? "") === source)
-      .map((row) => row.id);
+    if (destination == null) return;
+    const expectedShops = loadMerchants().filter(
+      (row) => (row.shop?.locationId ?? "") === source,
+    );
     await this._runLocationAction(async () => {
-      await commitMerchantBatch(ids, (current) =>
-        current.map((merchant) =>
-          ids.includes(merchant.id) &&
-          (merchant.shop?.locationId ?? "") === source
-            ? normalizeMerchant({
-                ...merchant,
-                shop: { ...shopSetup(merchant), locationId: destination },
-              })
-            : merchant,
-        ),
-      );
+      await moveDirectoryShops({ expectedShops, destination });
+      this._selectedShopIds?.clear();
       this._selectedLocationId = destination;
+      this._locationSearch = "";
+    });
+  }
+
+  static async _onMoveSelectedShops() {
+    const expectedShops = this._directorySelection();
+    const destination = this.element?.querySelector?.(
+      '[name="selectedDestination"]',
+    )?.value;
+    if (!expectedShops.length || destination == null) return;
+    await this._runLocationAction(async () => {
+      await moveDirectoryShops({ expectedShops, destination });
+      this._selectedShopIds.clear();
+      this._selectedLocationId = destination;
+      this._merchantSearch = "";
+      this._merchantFilter = "all";
+      this._locationSearch = "";
+      notify(
+        "info",
+        `${expectedShops.length} shops moved. Stock, gold, and access settings were kept.`,
+      );
+    });
+  }
+
+  _directorySelection() {
+    return loadMerchants().filter(
+      (row) =>
+        this._selectedShopIds?.has(row.id) &&
+        (row.shop?.locationId ?? "") === this._selectedLocationId,
+    );
+  }
+
+  static async _onDeleteSelectedShops() {
+    return this._deleteShops(this._directorySelection());
+  }
+
+  async _deleteShops(merchants) {
+    if (!merchants.length) return;
+    const selectedId = this._selectedId;
+    const locationId = this._selectedLocationId;
+    await this._runLocationAction(async () => {
+      const confirmed = await confirmInfinityDialog({
+        window: {
+          title: `Delete ${merchants.length === 1 ? merchants[0].name : `${merchants.length} shops`}?`,
+          icon: "fa-solid fa-trash",
+        },
+        content: `<p>Permanently delete these shops, their stock, gold, and settings?</p><ul>${merchants.map((row) => `<li>${escapeHtml(row.name)}</li>`).join("")}</ul><p>Their open shopping sessions will close. Compendium items and character inventories are untouched. This cannot be undone.</p>`,
+        yes: { label: "Delete shops" },
+        defaultYes: false,
+      });
+      if (
+        !confirmed ||
+        this._selectedId !== selectedId ||
+        this._selectedLocationId !== locationId ||
+        !canContinueWorkbenchAction(this) ||
+        !(await confirmMerchantWriteAuthority(this))
+      )
+        return;
+      const ids = await deleteDirectoryShops(merchants);
+      this._selectedShopIds?.clear();
+      for (const id of ids) {
+        const editor = MerchantWorkspaceApp._editors.get(id);
+        if (editor && editor !== this) await editor.close();
+      }
+      playModuleSound(SOUND_EVENTS.CLEAR_RESET);
+      notify("info", `${ids.length} shops deleted.`);
+      MerchantWorkspaceApp._instance?.render(false);
+      if (this._isMerchantEditor) await this.close();
+    });
+  }
+
+  static async _onRenameLocation() {
+    const location = locationDirectory().find(
+      (row) => row.id === this._selectedLocationId,
+    );
+    const name = this.element?.querySelector?.(
+      '[name="renameLocation"]',
+    )?.value;
+    if (!location?.id) return;
+    await this._runLocationAction(async () => {
+      await renameShopLocation({
+        locationId: location.id,
+        expectedName: location.name,
+        name,
+      });
+      this._locationSearch = "";
+      notify("info", "Location renamed.");
+    });
+  }
+
+  static async _onRemoveLocation() {
+    const location = locationDirectory().find(
+      (row) => row.id === this._selectedLocationId,
+    );
+    if (!location?.id) return;
+    const expectedShops = loadMerchants().filter(
+      (row) => row.shop?.locationId === location.id,
+    );
+    await this._runLocationAction(async () => {
+      const confirmed = await confirmInfinityDialog({
+        window: { title: `Remove ${location.name}?` },
+        content: `<p>Remove <strong>${escapeHtml(location.name)}</strong> from your locations?</p><p>${expectedShops.length ? `All ${expectedShops.length} shops will move to <strong>Unassigned shops</strong>, keeping their stock, gold, and access settings.` : "This location has no shops."} No shops will be deleted.</p>`,
+        yes: { label: "Remove location" },
+        defaultYes: false,
+      });
+      if (
+        !confirmed ||
+        !canContinueWorkbenchAction(this) ||
+        !(await confirmMerchantWriteAuthority(this))
+      )
+        return;
+      await removeShopLocation({
+        locationId: location.id,
+        expectedName: location.name,
+        expectedShops,
+      });
+      this._selectedLocationId = expectedShops.length ? "" : null;
+      this._selectedShopIds?.clear();
+      this._merchantSearch = "";
+      this._merchantFilter = "all";
+      this._locationSearch = "";
+      notify("info", "Location removed. Its shops were kept.");
     });
   }
 
@@ -1385,7 +1644,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const merchant = findMerchant(this._selectedId);
     if (!merchant) return;
     const copy = duplicateMerchant(merchant);
-    await upsertMerchant(copy);
+    await runMerchantAccessOperation(async () => {
+      assertShopLocation(copy.shop?.locationId ?? "");
+      await upsertMerchant(copy);
+    });
     playModuleSound(SOUND_EVENTS.PRESET_APPLY);
     ui.notifications?.info(
       `Duplicated ${merchant.name}. The new merchant's inventory is empty.`,
@@ -1416,30 +1678,17 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     }
   }
 
-  static async _onDeleteMerchant() {
-    if (!this._selectedId) return;
-    const merchant = findMerchant(this._selectedId);
+  static async _onDeleteMerchant(_event, target) {
+    const id = target?.dataset?.merchantId ?? this._selectedId;
+    const merchant = findMerchant(id);
     if (!merchant) return;
-    const confirmed = await confirmInfinityDialog({
-      window: {
-        title: `Delete "${merchant.name}"?`,
-        icon: "fa-solid fa-trash",
-      },
-      content: `<p>This will remove <strong>${escapeHtml(merchant.name)}</strong> and close any open sessions for them. Item compendium entries are untouched.</p>`,
-      rejectClose: false,
-    });
-    if (!confirmed) return;
-    if (!(await confirmMerchantWriteAuthority(this))) return;
-    if (!isCurrentMerchantAction(this, merchant.id)) return;
-    const deletedId = merchant.id;
-    await commitMerchantBatch([deletedId], (current) =>
-      current.filter((row) => row.id !== deletedId),
-    );
-    pushCloseAllSessionsFor(deletedId);
-    playModuleSound(SOUND_EVENTS.CLEAR_RESET);
-    MerchantWorkspaceApp._instance?.render(false);
-    if (this._isMerchantEditor) await this.close();
-    else this.render(false);
+    if (
+      target?.dataset?.merchantId &&
+      !this._isMerchantEditor &&
+      (merchant.shop?.locationId ?? "") !== this._selectedLocationId
+    )
+      return;
+    return this._deleteShops([merchant]);
   }
 
   static async _onAddFromPack() {
