@@ -1,3 +1,4 @@
+import { DOWNTIME_RECIPES } from "./downtime/recipes.js";
 import assert from "node:assert/strict";
 
 import {
@@ -57,7 +58,7 @@ import {
    configured template and skill. */
 {
   const templates = defaultGuidedDowntimeTemplates();
-  assert.equal(templates.length, 18);
+  assert.equal(templates.length, 26);
   assert.deepEqual(
     Object.fromEntries(
       templates.map((template) => [
@@ -66,6 +67,7 @@ import {
       ]),
     ),
     {
+      ...Object.fromEntries(DOWNTIME_RECIPES.map((r) => [r.id, [0, 0, 0]])),
       "guided-labor": [1, 2, 4],
       "guided-research": [0, 0, 0],
       "guided-thievery": [0, 2, 6],
@@ -109,7 +111,7 @@ import {
     normalizeGuidedDowntimeTemplates([
       { id: "invalid", name: "Invalid", outcomes: [] },
     ]).length,
-    18,
+    26,
   );
   for (const template of templates.slice(3)) {
     const choice = normalizeGuidedDowntimeSelection(
@@ -129,7 +131,7 @@ import {
   const expanded = normalizeGuidedDowntimeLibrary(original);
   assert.deepEqual(expanded.slice(0, 3), before);
   assert.deepEqual(original, before, "expansion never mutates saved records");
-  assert.equal(expanded.length, 18);
+  assert.equal(expanded.length, 26);
   assert.deepEqual(normalizeGuidedDowntimeLibrary(expanded), expanded);
   assert.deepEqual(
     normalizeGuidedDowntimeTemplates(original),
@@ -148,7 +150,7 @@ import {
     expanded,
     "customized built-ins take precedence over shipped content",
   );
-  const full = Array.from({ length: 28 }, (_, index) => ({
+  const full = Array.from({ length: 64 }, (_, index) => ({
     ...templates[0],
     id: `custom-${index}`,
   }));

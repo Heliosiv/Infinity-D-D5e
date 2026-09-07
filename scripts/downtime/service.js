@@ -1,3 +1,11 @@
+import { guidedRewardCp } from "./recipes.js";
+import { collectDowntimeJournal } from "./journal.js";
+import {
+  approveTrainingReward,
+  registerTrainingHooks,
+  trainingAwardStatus,
+} from "./training.js";
+import { validateTrainingProject } from "./training-rules.js";
 import { DOWNTIME_ACTIVITY_IDS, getDowntimeActivity } from "./catalog.js";
 import {
   applyGuidedWork,
@@ -703,6 +711,7 @@ export function registerDowntimeService() {
   subscribeDowntime(DOWNTIME_EVENTS.LONG_REST, handleLongRest);
   registerSharpeningLifecycleAuthorityHooks();
   registerSpellbookHooks();
+  registerTrainingHooks();
   serviceRegistered = true;
   if (isAuthoritativeGM()) {
     void ensureDowntimeWorkflowAuthority()
@@ -909,6 +918,19 @@ export async function saveGuidedDowntimeProject(payload = {}) {
     if (!Number.isSafeInteger(checkDc) || checkDc < 5 || checkDc > 40) {
       throw new Error("Enter a check DC as a whole number from 5 to 40.");
     }
+    if (["feat", "technique"].includes(payload.reward?.kind)) {
+      const prior = loadDowntimeConfig().guidedProjects.find(
+        (p) => p.id === payload.id,
+      );
+      const snapshot =
+        prior?.reward?.itemUuid === payload.reward.itemUuid &&
+        prior.reward.snapshot
+          ? prior.reward.snapshot
+          : await resolveItemSnapshot(payload.reward.itemUuid);
+      if (snapshot?.type !== "feat")
+        throw new Error("Choose a usable feat Item for this training plan.");
+      payload = { ...payload, reward: { ...payload.reward, snapshot } };
+    }
     const project = normalizeGuidedDowntimeProject(payload, {
       fallbackId: payload.id || newId("project"),
     });
@@ -918,6 +940,24 @@ export async function saveGuidedDowntimeProject(payload = {}) {
     ) {
       throw new Error(
         "Enter a project name and choose at least one skill when successful checks are required.",
+      );
+    }
+    await validateTrainingProject(project, actorById(project.actorId));
+    const store = loadDowntimeWorkflowStore();
+    const previous = guidedProjectById(
+      loadDowntimeConfig().guidedProjects,
+      project.id,
+    );
+    if (
+      previous &&
+      JSON.stringify(previous) !== JSON.stringify(project) &&
+      ((store.projectProgress?.[project.id] ?? 0) > 0 ||
+        (store.projectSuccesses?.[project.id] ?? 0) > 0 ||
+        store.trainingAwards?.[project.id] ||
+        store.activeBlock?.guidedProjects?.some((p) => p.id === project.id))
+    ) {
+      throw new Error(
+        "This project is already assigned or underway. Create a new plan to change its owner, requirements or reward.",
       );
     }
     await updateDowntimeConfig((current) => {
@@ -2103,6 +2143,8 @@ async function buildGuidedDowntimeOperation({
   const report = cleanGuidedReport(reportOverride) || outcome.report;
   const total = Number(roll?.total) || 0;
   if (activity.kind === "project") {
+    if (activity.scope === "personal" && activity.actorId !== actor.id)
+      throw new Error("This training plan belongs to another character.");
     const progressBeforeHours = projectProgressHours(
       projectProgress,
       activity.id,
@@ -2216,7 +2258,7 @@ async function buildGuidedDowntimeOperation({
       `${actor.name} needs ${formatCp(work.costCp)} available before applying this activity.`,
     );
   const currencyDeltaCp =
-    Math.round(outcome.rewardGp * 100) - (work?.costCp ?? 0);
+    guidedRewardCp(activity, outcome, hours) - (work?.costCp ?? 0);
   const walletAfter = planWalletDeltaCp(walletRead.wallet, currencyDeltaCp);
   if (!walletAfter)
     throw new Error(`${actor.name}'s reward could not be prepared.`);
@@ -2247,7 +2289,7 @@ async function buildGuidedDowntimeOperation({
     currencyDeltaCp,
     walletBefore: walletRead.wallet,
     walletAfter,
-    summary: `${outcome.label}: ${report}${work ? ` ${work.detail}` : ""}${benefit ? ` ${benefit.detail}` : ""}${outcome.rewardGp > 0 ? ` Reward: ${formatCp(Math.round(outcome.rewardGp * 100))}.` : ""}`,
+    summary: `${outcome.label}: ${report}${work ? ` ${work.detail}` : ""}${benefit ? ` ${benefit.detail}` : ""}${outcome.rewardGp > 0 ? ` Reward: ${formatCp(guidedRewardCp(activity, outcome, hours))}.` : ""}`,
     check: {
       skill,
       total,
@@ -4099,6 +4141,8 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
       const requiredHours = project.requiredHours;
       return {
         ...projectGuidedDowntimeProject(project),
+        actorName: actorById(project.actorId)?.name ?? "",
+        awardStatus: trainingAwardStatus(project),
         progressHours,
         progressSuccesses,
         remainingHours: Math.max(0, requiredHours - progressHours),
@@ -4255,6 +4299,7 @@ function projectWorkspaceBlock(block) {
                   : `${operation.report} ${block.state === "completed" ? guidedWorkReceipt(operation.work) : operation.work.detail}`
                 : "",
               report: operation.report ?? "",
+              hours: operation.hours,
               benefitSummary: operation.benefit?.detail ?? "",
               benefitTarget: operation.benefitTarget ?? "",
               benefitTargets:
@@ -4361,7 +4406,7 @@ export async function getPlayerProjectionForUser({
     const actor = actorById(participant.actorId);
     return actor && userOwnsDowntimeActor(user, actor);
   });
-  if (eligible.length === 0) {
+  if (eligible.length === 0)
     return {
       ...emptyPlayerProjection({ noGm: false }),
       status: active.state,
@@ -4371,7 +4416,6 @@ export async function getPlayerProjectionForUser({
       hasSettlement: active.hasSettlement !== false,
       blockId: active.id,
     };
-  }
   const selected =
     eligible.find((participant) => participant.actorId === actorId) ??
     eligible[0];
@@ -4423,21 +4467,27 @@ export async function getPlayerProjectionForUser({
               .join(" "),
           };
         }),
-        ...(active.guidedProjects ?? []).map((project) =>
-          projectGuidedActivity(
-            { ...project, kind: "project" },
-            active.budgetHours,
-            projectProgressHours(projectProgress, project.id),
-            projectProgressSuccesses(projectSuccesses, project.id),
-            actor,
+        ...(active.guidedProjects ?? [])
+          .filter(
+            (project) =>
+              project.scope !== "personal" || project.actorId === actor.id,
+          )
+          .map((project) =>
+            projectGuidedActivity(
+              { ...project, kind: "project" },
+              active.budgetHours,
+              projectProgressHours(projectProgress, project.id),
+              projectProgressSuccesses(projectSuccesses, project.id),
+              actor,
+            ),
           ),
-        ),
       ],
       queue: decorateGuidedQueue(
         queue,
         active.guidedTemplates,
         active.guidedProjects,
       ),
+      ...playerJournalProjection(store, config, actor.id),
       rawQueue: queue,
       submitted: selected.submitted === true,
       canSubmit:
@@ -4777,6 +4827,11 @@ async function submitGuidedDowntimeChoice({
   let totalCostCp = 0;
   for (const entry of allocation) {
     if (entry.activity.kind === "project") {
+      if (
+        entry.activity.scope === "personal" &&
+        entry.activity.actorId !== actor.id
+      )
+        throw new Error("This training plan belongs to another character.");
       const progressHours = projectProgressHours(progress, entry.activity.id);
       const afterHours = Math.min(
         entry.activity.requiredHours,
@@ -5204,8 +5259,52 @@ function completedPlayerProjection(history, user, actorId) {
       if (receipt) results.set(participant.actorId, { actor, block, receipt });
     }
   }
+  for (const [id, rows] of Object.entries(
+    collectDowntimeJournal(loadDowntimeWorkflowStore()),
+  )) {
+    const actor = actorById(id);
+    const latest = rows.at(-1);
+    if (
+      !results.has(id) &&
+      actor &&
+      userOwnsDowntimeActor(user, actor) &&
+      latest
+    )
+      results.set(id, {
+        actor,
+        receipt: latest.receipt,
+        block: {
+          id: latest.blockId,
+          mode: "guided",
+          locationName: latest.locationName,
+          hasSettlement: false,
+        },
+      });
+  }
   const selected = results.get(actorId) ?? results.values().next().value;
-  if (!selected) return emptyPlayerProjection({ noGm: false });
+  if (!selected) {
+    const actors = actorsArray().filter(
+      (actor) =>
+        actor.type === "character" && userOwnsDowntimeActor(user, actor),
+    );
+    const owned = actors.find((actor) => actor.id === actorId) ?? actors[0];
+    if (!owned) return emptyPlayerProjection({ noGm: false });
+    return {
+      ...emptyPlayerProjection({ noGm: false }),
+      selectedActorId: owned.id,
+      actors: actors.map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        img: actor.img,
+        eligible: true,
+      })),
+      ...playerJournalProjection(
+        loadDowntimeWorkflowStore(),
+        loadDowntimeConfig(),
+        owned.id,
+      ),
+    };
+  }
   return {
     ...emptyPlayerProjection({ noGm: false }),
     status: "completed",
@@ -5221,6 +5320,11 @@ function completedPlayerProjection(history, user, actorId) {
     settlementName: selected.block.settlementName,
     locationName: selected.block.locationName ?? selected.block.settlementName,
     hasSettlement: selected.block.hasSettlement !== false,
+    ...playerJournalProjection(
+      loadDowntimeWorkflowStore(),
+      loadDowntimeConfig(),
+      selected.actor.id,
+    ),
     receipt: selected.receipt,
     completionMessage: selected.receipt.summary ?? "",
   };
@@ -5234,6 +5338,7 @@ function buildCompletedResult(block) {
   for (const character of block.plan?.characters ?? []) {
     const activities = character.operations.map((operation) => ({
       id: operation.operationId,
+      hours: operation.hours,
       label: operation.activityLabel ?? "Activity",
       summary: operation.summary,
       tone: operation.check?.outcomeTier ?? "neutral",
@@ -5252,7 +5357,8 @@ function buildCompletedResult(block) {
                 : "No currency was added."),
     }));
     playerReceipts[character.actorId] = {
-      settlementName: block.settlementName,
+      settlementName: block.locationName ?? block.settlementName,
+      campaignDate: formatInjuryTimestamp(getCurrentInjuryTimestamp()),
       completedAt,
       activities,
       summary:
@@ -5299,12 +5405,24 @@ function projectGuidedActivity(
     description: project
       ? `${activity.description || "Long-term project."} ${guidedProjectProgressLabel(activity, progressHours, progressSuccesses)}.`
       : activity.description,
-    category: project ? "project" : "guided",
+    category: project
+      ? activity.scope === "personal"
+        ? "training"
+        : "project"
+      : (activity.category ??
+        (activity.work &&
+        !["none", "learn-spell"].includes(activity.work.output)
+          ? "crafting"
+          : "activities")),
     icon: "fa-solid fa-compass",
-    available: affordable && hourOptions.length > 0,
+    available:
+      affordable &&
+      hourOptions.length > 0 &&
+      (!project ||
+        !guidedProjectIsComplete(activity, progressHours, progressSuccesses)),
     fixedHours: 0,
     hourOptions,
-    limitLabel: `Allocate in ${blockHours}-hour blocks.`,
+    limitLabel: `Allocate in ${blockHours}-hour blocks.${activity.rewardBasis === "workday" ? " Rewards scale per 8 productive hours." : ""}`,
     skills: activity.skills.map((skill) => ({
       id: skill,
       label: guidedDowntimeSkillLabel(skill),
@@ -5319,11 +5437,17 @@ function projectGuidedActivity(
             projectCostCp > 0
               ? `Spend ${formatCp(projectCostCp)} for this contribution`
               : "No GP due for this contribution",
-          unavailableReason: affordable
-            ? hourOptions.length
-              ? ""
-              : `This activity needs a ${blockHours}-hour block, more than the assigned budget.`
-            : `You need ${formatCp(projectCostCp)} available for this contribution.`,
+          unavailableReason: guidedProjectIsComplete(
+            activity,
+            progressHours,
+            progressSuccesses,
+          )
+            ? "Required progress complete. Await final GM approval."
+            : affordable
+              ? hourOptions.length
+                ? ""
+                : `This activity needs a ${blockHours}-hour block, more than the assigned budget.`
+              : `You need ${formatCp(projectCostCp)} available for this contribution.`,
           progressHours,
           progressSuccesses,
           requiredHours: activity.requiredHours,
@@ -5476,6 +5600,45 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   recoverBlock: ({ blockId }) => recoverActiveDowntimeBlock(blockId),
   saveSettlement: saveSettlementProfile,
   deleteSettlement: ({ settlementId }) => deleteSettlementProfile(settlementId),
+  approveTraining: async ({ projectId }) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = await approveTrainingReward(projectId);
+      notifyServiceChanged("training-approved");
+      return result;
+    }),
   saveGuidedProject: saveGuidedDowntimeProject,
   saveGuidedTemplate: saveGuidedDowntimeTemplate,
 });
+
+function playerJournalProjection(store, config, actorId) {
+  const rows = collectDowntimeJournal(store)[actorId] ?? [];
+  const offeredProjects = new Set(
+    [...(store.history ?? []), store.activeBlock]
+      .filter((block) =>
+        block?.participants?.some((p) => p.actorId === actorId),
+      )
+      .flatMap((block) => (block.guidedProjects ?? []).map((p) => p.id)),
+  );
+  return {
+    pastReports: [...rows].reverse(),
+    ongoingProjects: config.guidedProjects
+      .filter((p) =>
+        p.scope === "personal"
+          ? p.actorId === actorId
+          : offeredProjects.has(p.id),
+      )
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        scope: p.scope,
+        prerequisites: p.prerequisites,
+        progressLabel: guidedProjectProgressLabel(
+          p,
+          store.projectProgress?.[p.id] ?? 0,
+          store.projectSuccesses?.[p.id] ?? 0,
+        ),
+        awardStatus: trainingAwardStatus(p),
+      })),
+  };
+}

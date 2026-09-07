@@ -302,6 +302,9 @@ function sanitizeReceipt(raw) {
   if (!plainObject(raw)) return null;
   return {
     settlementName: cleanText(raw.settlementName, 200),
+    ...(raw.campaignDate
+      ? { campaignDate: cleanText(raw.campaignDate, 200) }
+      : {}),
     completedAt:
       Number.isSafeInteger(Number(raw.completedAt)) &&
       Number(raw.completedAt) >= 0
@@ -320,6 +323,9 @@ function sanitizeReceipt(raw) {
         tone: cleanId(entry?.tone ?? entry?.outcomeTier) || "neutral",
         image: cleanText(entry?.image, 500),
         report: cleanText(entry?.report, 1_000),
+        ...(entry?.hours
+          ? { hours: safeInteger(entry.hours, 0, DOWNTIME_MAX_BLOCK_HOURS) }
+          : {}),
         rewardLabel: cleanText(entry?.rewardLabel, 300),
       })),
   };
@@ -381,6 +387,31 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     recoveryMessage: cleanText(source.recoveryMessage, 1_000),
     submitReason: cleanText(source.submitReason, 500),
     receipt: sanitizeReceipt(source.receipt ?? source.latestReceipt),
+    ...(source.pastReports
+      ? {
+          pastReports: array(source.pastReports)
+            .slice(0, 200)
+            .map((row) => ({
+              blockId: cleanId(row?.blockId),
+              locationName: cleanText(row?.locationName, 200),
+              receipt: sanitizeReceipt(row?.receipt),
+            }))
+            .filter((row) => row.receipt),
+        }
+      : {}),
+    ...(source.ongoingProjects
+      ? {
+          ongoingProjects: array(source.ongoingProjects)
+            .slice(0, 104)
+            .map((row) => ({
+              id: cleanId(row?.id),
+              name: cleanText(row?.name, 200),
+              progressLabel: cleanText(row?.progressLabel, 500),
+              prerequisites: cleanText(row?.prerequisites, 400),
+              awardStatus: cleanText(row?.awardStatus, 200),
+            })),
+        }
+      : {}),
     completionMessage: cleanText(source.completionMessage, 1_000),
   };
 }

@@ -1,3 +1,4 @@
+import { trainingTargetOptions } from "./downtime/training-rules.js";
 /**
  * Infinity D&D5e - Downtime Workspace (full-GM interface)
  *
@@ -181,6 +182,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       selectSettlement: DowntimeWorkspaceApp._onSelectSettlement,
       saveSettlement: DowntimeWorkspaceApp._onSaveSettlement,
       deleteSettlement: DowntimeWorkspaceApp._onDeleteSettlement,
+      approveTraining: DowntimeWorkspaceApp._onApproveTraining,
       saveGuidedProject: DowntimeWorkspaceApp._onSaveGuidedProject,
       selectGuidedProject: DowntimeWorkspaceApp._onSelectGuidedProject,
       newGuidedProject: DowntimeWorkspaceApp._onNewGuidedProject,
@@ -455,6 +457,23 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         this._templateDrafts.set(draft.id || "new", draft);
       });
     }
+    this.element
+      ?.querySelector?.("[data-training-item]")
+      ?.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        try {
+          const data = JSON.parse(event.dataTransfer.getData("text/plain"));
+          if (data.type === "Item" && data.uuid) {
+            event.target.value = data.uuid;
+            event.target.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        } catch {
+          /* Ignore non-Item drops. */
+        }
+      });
+    this.element
+      ?.querySelector?.("[data-training-item]")
+      ?.addEventListener("dragover", (event) => event.preventDefault());
     const projectForm = this.element?.querySelector?.(
       '[data-form="guided-project"]',
     );
@@ -1241,6 +1260,25 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this.render(false);
   }
 
+  static async _onApproveTraining(_event, target) {
+    const projectId = cleanId(target?.dataset?.projectId);
+    if (!projectId) return;
+    const confirmed = await confirmInfinityDialog({
+      title: "Approve permanent training",
+      content:
+        "Confirm that the saved prerequisites and training milestones are satisfied. This grants the agreed reward to the named character. A retry restores that same reward without granting it twice.",
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "approveTraining",
+      { projectId },
+      {
+        pending: "Delivering approved training...",
+        success: "Training reward verified on the character sheet.",
+      },
+    );
+  }
+
   static async _onSaveGuidedProject() {
     if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="guided-project"]');
@@ -1280,6 +1318,14 @@ function readGuidedProjectForm(form) {
     name: String(data.get("name") ?? ""),
     description: String(data.get("description") ?? ""),
     blockHours: String(data.get("blockHours") ?? "8"),
+    scope: String(data.get("scope") ?? "shared"),
+    actorId: String(data.get("actorId") ?? ""),
+    prerequisites: String(data.get("prerequisites") ?? ""),
+    reward: {
+      kind: String(data.get("rewardKind") ?? "none"),
+      key: String(data.get("rewardKey") ?? ""),
+      itemUuid: String(data.get("rewardItemUuid") ?? ""),
+    },
     requiredHours: String(data.get("requiredHours") ?? ""),
     requiredGp: String(data.get("requiredGp") ?? ""),
     requiredSuccesses: String(data.get("requiredSuccesses") ?? ""),
@@ -1295,6 +1341,7 @@ function readGuidedTemplateForm(form) {
     name: String(data.get("name") ?? ""),
     description: String(data.get("description") ?? ""),
     image: String(data.get("image") ?? ""),
+    rewardBasis: String(data.get("rewardBasis") ?? "allocation"),
     blockHours: String(data.get("blockHours") ?? "8"),
     skills: data.getAll("skills").map(String),
     work: {
@@ -1521,6 +1568,48 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         : "",
     name: String(projectSource.name ?? ""),
     description: String(projectSource.description ?? ""),
+    prerequisites: String(projectSource.prerequisites ?? ""),
+    scopeOptions: ["shared", "personal"].map((id) => ({
+      id,
+      label:
+        id === "personal"
+          ? "Personal — one character"
+          : "Shared — party project",
+      selected: (projectSource.scope ?? "shared") === id,
+    })),
+    actorOptions: [
+      { id: "", name: "Choose a character" },
+      ...array(source.actors),
+    ].map((a) => ({
+      id: a.id,
+      label: a.name,
+      selected: a.id === projectSource.actorId,
+    })),
+    rewardOptions: [
+      "none",
+      "language",
+      "tool",
+      "skill",
+      "feat",
+      "technique",
+    ].map((id) => ({
+      id,
+      label: id === "none" ? "Narrative completion only" : titleCase(id),
+      selected: (projectSource.reward?.kind ?? "none") === id,
+    })),
+    rewardKey: String(projectSource.reward?.key ?? ""),
+    rewardItemUuid: String(projectSource.reward?.itemUuid ?? ""),
+    targetOptions: ["language", "tool", "skill"].flatMap((kind) =>
+      trainingTargetOptions(kind).map((o) => ({
+        ...o,
+        label: `${kind}: ${o.label}`,
+      })),
+    ),
+    awardStatus: String(selectedProject?.source?.awardStatus ?? ""),
+    canApprove:
+      selectedProject?.complete &&
+      projectSource.reward?.kind &&
+      projectSource.reward.kind !== "none",
     blockHours: String(projectSource.blockHours ?? 8),
     requiredHours: String(projectSource.requiredHours ?? 40),
     requiredGp: String(projectSource.requiredGp ?? 100),
@@ -1659,6 +1748,12 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     templateEditor,
     hasGuidedTemplates: guidedTemplates.length > 0,
     guidedProjects,
+    rewardBasisOptions: ["allocation", "workday"].map((id) => ({
+      id,
+      label:
+        id === "workday" ? "Per 8 productive hours" : "Once per allocation",
+      selected: (templateSource.rewardBasis ?? "allocation") === id,
+    })),
     projectEditor,
     projectPresets: GUIDED_PROJECT_PRESETS.map(({ id, label }) => ({
       id,

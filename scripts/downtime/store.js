@@ -1,3 +1,4 @@
+import { collectDowntimeJournal } from "./journal.js";
 /**
  * Restricted persistence for downtime configuration and the authoritative
  * workflow. The workflow is mirrored to a checkpoint before its primary slot;
@@ -45,6 +46,7 @@ const PRE_BENEFIT_DOWNTIME_CONFIG_VERSION = 6;
 const PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION = 7;
 const PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION = 8;
 const PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION = 9;
+const PRE_EXPANSION_DOWNTIME_CONFIG_VERSION = 10;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
@@ -184,6 +186,7 @@ function assertSupportedDowntimeConfigVersion(raw, domain, codePrefix) {
       PRE_BLOCK_HOURS_DOWNTIME_CONFIG_VERSION,
       PRE_TOOL_REQUIREMENTS_DOWNTIME_CONFIG_VERSION,
       PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION,
+      PRE_EXPANSION_DOWNTIME_CONFIG_VERSION,
       DOWNTIME_CONFIG_VERSION,
     ].includes(Number(raw.version))
   ) {
@@ -387,6 +390,13 @@ function parsePersistedDowntimeConfig(raw) {
   let persistedShape;
   if (persistedVersionEquals(raw.version, DOWNTIME_CONFIG_VERSION)) {
     persistedShape = current;
+  } else if (
+    persistedVersionEquals(raw.version, PRE_EXPANSION_DOWNTIME_CONFIG_VERSION)
+  ) {
+    persistedShape = {
+      ...current,
+      version: PRE_EXPANSION_DOWNTIME_CONFIG_VERSION,
+    };
   } else if (
     persistedVersionEquals(raw.version, PRE_SPELLBOOK_DOWNTIME_CONFIG_VERSION)
   ) {
@@ -904,6 +914,10 @@ export function normalizeDowntimeWorkflowStore(raw) {
     projectSuccesses: normalizeProjectSuccesses(raw.projectSuccesses, history),
     ...(raw.workProgress
       ? { workProgress: normalizeWorkProgress(raw.workProgress) }
+      : {}),
+    ...(raw.journal ? { journal: sanitizeJson(raw.journal) } : {}),
+    ...(raw.trainingAwards
+      ? { trainingAwards: sanitizeJson(raw.trainingAwards) }
       : {}),
     ...(raw.spellbooks ? { spellbooks: sanitizeJson(raw.spellbooks) } : {}),
     history: history.slice(-MAX_HISTORY),
@@ -2511,6 +2525,7 @@ export async function continueGuidedDowntimeBlock(
         "reviewReason",
       ])
         delete next[field];
+      store.journal = collectDowntimeJournal(store, next);
       store.activeBlock = normalizeDowntimeBlock(next);
       if (!store.activeBlock)
         throw new Error("DowntimeWorkflowGuidedContinuationInvalid");
@@ -2549,6 +2564,7 @@ export async function completeDowntimeBlock(
     // Only this plan is new. Earlier individually resolved guided plans were
     // committed when their segment reopened the block.
     applyCompletedPlanProgress(store, completed);
+    store.journal = collectDowntimeJournal(store, completed);
     store.activeBlock = null;
     store.history = [...store.history, completed].slice(-MAX_HISTORY);
     return {
@@ -2824,4 +2840,18 @@ export function resetDowntimeWorkflowStoreForTests() {
   lastAcceptedEnvelope = null;
   observerRegistered = false;
   retiredAuthorityEpochs.clear();
+}
+
+/** Authority-fenced immutable reward plan; delivery can safely resume after interruption. */
+export async function saveTrainingAward(id, record) {
+  return mutateWorkflow((store) => {
+    store.trainingAwards ??= {};
+    const prior = store.trainingAwards[id];
+    if (prior && JSON.stringify(prior) !== JSON.stringify(record))
+      throw new Error(
+        "Training reward already approved; its saved plan cannot change.",
+      );
+    store.trainingAwards[id] = sanitizeJson(record);
+    return { store, result: record };
+  });
 }

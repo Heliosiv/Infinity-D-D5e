@@ -1670,6 +1670,8 @@ try {
     ),
     {
       ...languageProject,
+      actorName: "",
+      awardStatus: "Completed",
       progressHours: 16,
       progressSuccesses: 1,
       remainingHours: 0,
@@ -1689,6 +1691,49 @@ try {
     /choose at least one activity/i,
     "a completed project cannot be reopened accidentally",
   );
+  const personal = await service.saveGuidedDowntimeProject({
+    name: "Alice studies",
+    scope: "personal",
+    actorId: actor.id,
+    requiredHours: 8,
+    requiredGp: 0,
+    requiredSuccesses: 0,
+    skills: [],
+  });
+  const personalBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationName: "Library",
+    hours: 8,
+    actorIds: [actor.id, projectPartner.id],
+    projectIds: [personal.id],
+  });
+  const otherProjection = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: projectPartner.id,
+  });
+  assert.equal(
+    otherProjection.activities.some((a) => a.id === personal.id),
+    false,
+    "another character cannot see the personal training allocation",
+  );
+  await assert.rejects(
+    service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "wrong-trainee",
+      blockId: personalBlock.id,
+      actorId: projectPartner.id,
+      queue: [{ id: "choice", activityId: personal.id, hours: 8, skill: "" }],
+    }),
+    /another character/,
+  );
+  await assert.rejects(
+    service.saveGuidedDowntimeProject({
+      ...personal,
+      actorId: projectPartner.id,
+    }),
+    /already assigned or underway/,
+  );
+  await service.cancelActiveDowntimeBlock(personalBlock.id);
   const soloProject = await service.saveGuidedDowntimeProject({
     name: "Repair the Gate",
     requiredHours: 8,

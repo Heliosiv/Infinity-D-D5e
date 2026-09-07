@@ -3,6 +3,14 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.30 — crafting, personal training and downtime journals:** Browse activities
+and recipes by category or search. Eight Drakmor house recipes produce usable
+items with explicit tools, costs and saved progress. Personal training supports
+languages, tools, skills, feats and special techniques with final GM approval.
+Players can search past results and see ongoing plans. Stock Paid Work rewards
+scale per eight productive hours; custom policies and open blocks are preserved.
+See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
+
 **v0.3.27 — current-PC injuries and compendium cleanup:** The landing-page
 injury picker now follows each non-GM player's assigned character, including
 offline players, and excludes spare owned characters and copies. **New injury

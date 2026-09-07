@@ -186,7 +186,23 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
     this._wireActivityInputs();
+    this._wireJournalSearch();
     this._restoreFocus();
+  }
+
+  _wireJournalSearch() {
+    for (const input of this.element?.querySelectorAll?.(
+      "[data-downtime-search]",
+    ) ?? []) {
+      input.addEventListener("input", () => {
+        const query = input.value.toLocaleLowerCase().trim();
+        for (const row of this.element.querySelectorAll(
+          input.dataset.downtimeSearch,
+        ))
+          row.hidden =
+            query && !row.textContent.toLocaleLowerCase().includes(query);
+      });
+    }
   }
 
   _wireActivityInputs() {
@@ -565,6 +581,20 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
       submitted &&
       !noGm &&
       Boolean(source.canRecall ?? true),
+    pastReports: array(source.pastReports)
+      .filter((row) => row.blockId !== source.blockId)
+      .map((row) => ({
+        blockId: cleanId(row.blockId),
+        locationName: String(row.locationName ?? ""),
+        receipt: normalizeReceipt(row.receipt),
+      }))
+      .filter((row) => row.receipt),
+    ongoingProjects: array(source.ongoingProjects).map((row) => ({
+      name: String(row.name ?? ""),
+      progressLabel: String(row.progressLabel ?? ""),
+      awardStatus: String(row.awardStatus ?? ""),
+      prerequisites: String(row.prerequisites ?? ""),
+    })),
     receipt,
     hasReceipt: Boolean(receipt),
     completionMessage: String(source.completionMessage ?? ""),
@@ -696,11 +726,13 @@ function normalizeReceipt(receipt) {
       image: String(entry?.image ?? ""),
       hasImage: Boolean(entry?.image),
       report: String(entry?.report ?? ""),
+      hours: positiveInteger(entry?.hours, 0),
       rewardLabel: String(entry?.rewardLabel ?? ""),
     }),
   );
   return {
     settlementName: String(receipt.settlementName ?? "Settlement"),
+    campaignDate: String(receipt.campaignDate ?? ""),
     completedAt: formatDate(receipt.completedAt ?? receipt.createdAt),
     activities,
     hasActivities: activities.length > 0,
