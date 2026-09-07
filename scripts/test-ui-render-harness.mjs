@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  103,
+  104,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -232,6 +232,7 @@ for (const expectedId of [
   "critical-injury-treatment-outcome",
   "critical-injury-uncertain",
   "critical-injury-character-unavailable",
+  "critical-injury-table",
   "critical-injury-triage",
   "critical-injury-hud",
   "critical-injury-hud-offline",

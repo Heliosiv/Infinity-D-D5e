@@ -1,5 +1,18 @@
 # Critical Injury Table V2
 
+## View the complete table
+
+Open **Infinity → Injuries → Injury table** as a full GM. Search by injury,
+effect, or d100 range. Each outcome shows the exact current table text, its
+actual timer and kit path, and **Automation and GM follow-up** notes. The
+reference is read-only and available to secondary full GMs. Returning from
+another Workbench section preserves this view.
+
+The table is **not fully automatic**. See the
+[2026-09-07 automation audit and expansion proposal](INJURY_TABLE_AUDIT.md).
+The viewer does not change injury probabilities, rules, active effects, or
+existing campaign records.
+
 ## Injury board, canvas badges, and saved log
 
 Open **Infinity → Injuries** as a GM. **Party & rolls** shows injured characters

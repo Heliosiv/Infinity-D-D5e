@@ -392,3 +392,34 @@
     min-width: 0;
   }
 }
+
+.ci-injury-table {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.ci-injury-table-row {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius-sm, 6px);
+  overflow-wrap: anywhere;
+}
+.ci-injury-table-row > header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ci-injury-table-row h4 {
+  margin: 0;
+  flex: 1 1 140px;
+}
+.ci-injury-table-row p {
+  margin: 8px 0;
+}
+.ci-injury-table-row[hidden] {
+  display: none;
+}

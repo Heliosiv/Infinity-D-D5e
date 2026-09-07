@@ -10,14 +10,37 @@
     {{#unless canMutate}}<p class="ci-notice" role="status">Read-only: the active GM controls injury reviews and calendar sync.</p>{{/unless}}
     <div class="ci-triage-toolbar">
       <nav class="ci-triage-views" aria-label="Injury views">
-        <button type="button" data-action="showView" data-view="triage" aria-pressed="{{#if showLog}}false{{else}}true{{/if}}">Party &amp; rolls</button>
+        <button type="button" data-action="showView" data-view="triage" aria-pressed="{{#if showTable}}false{{else}}{{#if showLog}}false{{else}}true{{/if}}{{/if}}">Party &amp; rolls</button>
         <button type="button" data-action="showView" data-view="history" aria-pressed="{{#if showLog}}true{{else}}false{{/if}}">Injury log <span class="ci-triage-muted">{{logCount}}</span></button>
+        <button type="button" data-action="showView" data-view="table" aria-pressed="{{#if showTable}}true{{else}}false{{/if}}">Injury table</button>
       </nav>
       <button type="button" class="ci-primary" data-action="startManualReview" {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>New injury roll</button>
       <button type="button" data-action="openCalendar" {{#unless calendarActive}}disabled{{/unless}}><i class="fa-regular fa-calendar" aria-hidden="true"></i> Calendar</button>
       <button type="button" data-action="refresh" aria-label="Refresh injury board" title="Refresh injury board"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
     </div>
     <label class="ci-triage-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" data-role="injury-search" aria-label="Find a character or injury" placeholder="Find a character or injury…" /></label>
+    {{#if showTable}}
+      <section class="ci-triage-list" aria-labelledby="ci-injury-table-heading">
+        <div><h3 id="ci-injury-table-heading">Critical Injury Table V2 · d100</h3><p class="ci-triage-muted">All {{tableRows.length}} outcomes from the table used for injury rolls. Search by name, effect, or roll range.</p></div>
+        <p class="ci-notice">Some effects still need the GM. {{#if midiActive}}Midi-QOL is active for disadvantage effects.{{else}}Midi-QOL is inactive: listed disadvantage flags will not enforce rolls through Midi-QOL.{{/if}} Supported effects still need verification with your installed game system and modules.</p>
+        <p class="ci-triage-muted">Kit treatment normally stabilizes the injury and doubles recovery speed; it does not immediately remove it. Recovery differences below need a rules review.</p>
+        <ol class="ci-injury-table" aria-label="Injury roll outcomes">
+          {{#each tableRows}}
+            <li class="ci-injury-table-row" data-injury-search="{{range}} {{label}} {{effect}} {{recovery}} {{manual}}">
+              <header><span class="ci-tag">d100 {{range}}</span><h4>{{label}}</h4><span class="ci-tag">{{statusLabel}}</span></header>
+              <p><strong>Effect:</strong> {{effect}}</p>
+              <p><strong>Recovery rule:</strong> {{recovery}}</p>
+              <p class="ci-triage-muted">Current timer: {{recoveryFormula}}{{#unless permanent}} day(s){{/unless}}{{#if detailFormula}} · Detail roll: {{detailFormula}}{{/if}} · {{treatment}}</p>
+              <details class="ci-rule-details"><summary>Automation and GM follow-up{{#if recoveryNote}} · recovery mismatch{{/if}}</summary>
+                <p><strong>Supported:</strong> {{automatic}}{{#if requiresMidi}} Disadvantage requires Midi-QOL.{{/if}}</p>
+                <p><strong>GM follow-up:</strong> {{manual}}</p>
+                {{#if recoveryNote}}<p class="ci-notice"><strong>Recovery review:</strong> {{recoveryNote}}</p>{{/if}}
+              </details>
+            </li>
+          {{/each}}
+        </ol>
+      </section>
+    {{else}}
     {{#if showLog}}
       <section class="ci-triage-list" aria-labelledby="ci-triage-log-heading">
         <div><h3 id="ci-triage-log-heading">Saved injury log</h3><p class="ci-triage-muted">Recent confirmed rolls remain here after their effects are removed. Up to 200 completed rolls are retained by the existing ledger; recorded injuries are included separately.</p></div>
@@ -67,6 +90,7 @@
           <button type="button" class="ci-primary" data-action="startReview" {{#unless hasPlayerCharacters}}disabled{{/unless}} {{#unless hasPlayerUsers}}disabled{{/unless}} {{#unless canMutate}}disabled{{/unless}} {{#if actionInFlight}}disabled{{/if}}>Start review</button>
         </form>
       </details>
+    {{/if}}
     {{/if}}
     <p data-role="injury-no-matches" class="ci-empty" role="status" hidden>No matching characters or injuries. Clear the search to see everything.</p>
     <footer class="ci-triage-calendar">

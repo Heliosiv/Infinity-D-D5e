@@ -95,7 +95,7 @@ const SUBVIEW_BY_ROUTE = Object.freeze({
     "history",
   ]),
   factions: new Set(["overview", "visibility", "history"]),
-  injuries: new Set(["triage", "recovery", "history"]),
+  injuries: new Set(["triage", "recovery", "history", "table"]),
 });
 
 export function isGmWorkbenchRoute(value) {

@@ -1,3 +1,4 @@
+import { buildCriticalInjuryTableReference } from "./injury/table-reference.js";
 import { readFileSync } from "node:fs";
 
 import Handlebars from "handlebars";
@@ -889,6 +890,19 @@ export function buildHarnessViews() {
       "infinity-critical-injury-triage",
       "templates/critical-injury-triage.hbs",
       criticalInjuryTriageContext(),
+      { width: 760, height: 640 },
+    ),
+    view(
+      "critical-injury-table",
+      "Critical Injury Table (GM)",
+      "infinity-critical-injury-triage",
+      "templates/critical-injury-triage.hbs",
+      {
+        ...criticalInjuryTriageContext(),
+        showTable: true,
+        tableRows: buildCriticalInjuryTableReference(),
+        midiActive: true,
+      },
       { width: 760, height: 640 },
     ),
     view(

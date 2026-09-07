@@ -16,6 +16,7 @@ import {
   openInjuryCalendar,
 } from "./calendar.js";
 import { syncCriticalInjuryCalendar } from "./calendar-sync.js";
+import { buildCriticalInjuryTableReference } from "./table-reference.js";
 import { getCriticalInjuryLogRows } from "./injury-log.js";
 import { CriticalInjuryApp } from "./injury-app.js";
 import { isAssignedPlayerCharacter } from "./actors.js";
@@ -266,6 +267,9 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
       ),
       calendarActive: isSimpleCalendarAvailable(),
       showLog: this._view === "history",
+      showTable: this._view === "table",
+      tableRows: buildCriticalInjuryTableReference(),
+      midiActive: globalThis.game?.modules?.get?.("midi-qol")?.active === true,
       logRows,
       hasLogRows: logRows.length > 0,
       logCount: logRows.length,
@@ -284,7 +288,9 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
   }
 
   _applyWorkbenchTarget(target) {
-    this._view = target.subview === "history" ? "history" : "triage";
+    this._view = ["history", "table"].includes(target.subview)
+      ? target.subview
+      : "triage";
   }
 
   _filterRows() {
@@ -308,7 +314,9 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
   }
 
   static _onShowView(_event, target) {
-    this._view = target?.dataset?.view === "history" ? "history" : "triage";
+    this._view = ["history", "table"].includes(target?.dataset?.view)
+      ? target.dataset.view
+      : "triage";
     this._search = "";
     this._focusSearchAfterRender = true;
     return this.render(false);

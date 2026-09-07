@@ -87,7 +87,14 @@ try {
     const log = document.querySelector(
       '[data-harness-window="critical-injury-log"]',
     );
-    const views = { triage: root.innerHTML, history: log.innerHTML };
+    const table = document.querySelector(
+      '[data-harness-window="critical-injury-table"]',
+    );
+    const views = {
+      triage: root.innerHTML,
+      history: log.innerHTML,
+      table: table.innerHTML,
+    };
     const app = {
       element: root,
       _search: "",
@@ -135,6 +142,26 @@ try {
   assert.equal(await board.locator(".ci-triage-log-row:visible").count(), 1);
   await board.getByRole("searchbox").fill("");
   await page.screenshot({ path: path.join(out, "injury-log.png") });
+  await board
+    .getByRole("button", { name: "Injury table", exact: true })
+    .click();
+  assert.equal(await board.locator(".ci-injury-table-row").count(), 18);
+  await board.getByRole("searchbox").fill("nightmares");
+  assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 1);
+  await board.locator(".ci-injury-table-row:visible summary").click();
+  assert.match(
+    await board.locator(".ci-injury-table-row:visible").innerText(),
+    /not implemented/,
+  );
+  await page.screenshot({ path: path.join(out, "injury-table-search.png") });
+  await board.getByRole("searchbox").fill("no matching rule");
+  assert.equal(
+    await board.locator('[data-role="injury-no-matches"]').isVisible(),
+    true,
+  );
+  await board.getByRole("searchbox").fill("");
+  assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 18);
+  await page.screenshot({ path: path.join(out, "injury-table.png") });
   await board.getByRole("button", { name: "Party & rolls" }).click();
   await board
     .getByRole("button", { name: "New injury roll", exact: true })
@@ -236,7 +263,7 @@ try {
     "original token child interaction is restored",
   );
   console.log(
-    "Browser journeys passed: party search, no matches, injury log switching/search, character click, owner selection, real PIXI badge click and cleanup.",
+    "Browser journeys passed: party search, no matches, injury log and full table switching/search, automation disclosure, character click, owner selection, real PIXI badge click and cleanup.",
   );
 } finally {
   await browser.close();
