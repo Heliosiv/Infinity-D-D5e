@@ -112,7 +112,7 @@
             <div><p class="dt-eyebrow">Choose work</p><h3 id="dt-activity-heading">Activities</h3></div>
           </div>
           {{#if editable}}
-            <label class="dt-field"><span>Find an activity or recipe</span><input type="search" data-downtime-search="[data-activity-id]" placeholder="Potion, training, leatherwork…" /></label>
+            <label class="dt-field"><span>Find an activity or recipe</span><input type="search" data-downtime-search="[data-activity-id]" aria-label="Find an activity or recipe" placeholder="Potion, training, leatherwork…" /></label>
             {{#if hasActivities}}
             <div class="dt-activity-list" data-activity-list tabindex="-1">
               {{#each activities}}
@@ -287,7 +287,7 @@
   <section class="dt-receipt" aria-label="Ongoing work"><h3>Ongoing work &amp; training</h3><p>Continue these goals when the GM includes them in your next downtime block.</p><ul>{{#each ongoingProjects}}<li><strong>{{name}}</strong><span>{{progressLabel}} · {{awardStatus}}</span>{{#if prerequisites}}<p>{{prerequisites}}</p>{{/if}}</li>{{/each}}</ul></section>
   {{/if}}
   {{#if pastReports}}
-  <section class="dt-receipt" aria-label="Past downtime"><h3>Past downtime</h3><label class="dt-field"><span>Search your journal</span><input type="search" data-downtime-search="[data-journal-report]" placeholder="Activity, reward or location…" /></label><p>Your latest 200 reports are retained separately from the recovery history.</p>
+  <section class="dt-receipt" aria-label="Past downtime"><h3>Past downtime</h3><label class="dt-field"><span>Search your journal</span><input type="search" data-downtime-search="[data-journal-report]" aria-label="Search your journal" placeholder="Activity, reward or location…" /></label><p>Your latest 200 reports are retained separately from the recovery history.</p>
   {{#each pastReports}}<details data-journal-report><summary>{{locationName}} · {{#if receipt.campaignDate}}{{receipt.campaignDate}}{{else}}{{receipt.completedAt}}{{/if}}</summary><p>{{receipt.summary}}</p><ul>{{#each receipt.activities}}<li class="dt-result-row"><strong>{{label}}{{#if hours}} · {{hours}}h{{/if}}</strong><span>{{#if report}}{{report}}{{else}}{{summary}}{{/if}} {{rewardLabel}}</span></li>{{/each}}</ul></details>{{/each}}</section>
   {{/if}}
 </div>

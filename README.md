@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**v0.3.30 — crafting, personal training and downtime journals:** Browse activities
+**v0.3.31 — crafting, personal training and downtime journals:** Browse activities
 and recipes by category or search. Eight Drakmor house recipes produce usable
 items with explicit tools, costs and saved progress. Personal training supports
 languages, tools, skills, feats and special techniques with final GM approval.

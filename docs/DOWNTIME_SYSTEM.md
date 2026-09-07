@@ -614,7 +614,7 @@ charge consumption and long-rest removal. The compatibility damage hook remains
 available for supported D&D5e versions before 4.4.3; 4.4.3 and newer use the
 native locked damage part.
 
-## Crafting, training and journal expansion (v0.3.30)
+## Crafting, training and journal expansion (v0.3.31)
 
 In **Downtime Activities**, use the category buttons and **Find an activity or
 recipe** to browse the choices offered by the GM. The GM still chooses what is
