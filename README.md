@@ -3,10 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**Downtime locations (next release):** New blocks offer Adventuring, Wilderness
+**v0.3.34 - Downtime locations, recovery and pickers:** New blocks offer Adventuring, Wilderness
 camp, Village, Town/city, and Custom presets. Select a saved settlement to use
 its own editable activity list and linked shops. Activities unavailable at the
-location cannot be included. See the [Downtime guide](docs/DOWNTIME_SYSTEM.md).
+location cannot be included. Injury recovery now follows calendar ranges, and
+shared pickers support clearer searches and keyboard navigation. See the
+[Downtime guide](docs/DOWNTIME_SYSTEM.md).
 
 **v0.3.33 - Downtime panels:** Activities, Projects, and Settlements keep their
 lists and preset controls visible when the window is resized. On narrow windows,
