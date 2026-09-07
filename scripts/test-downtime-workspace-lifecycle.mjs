@@ -521,6 +521,7 @@ try {
     const newBlockForm = {
       fields: {
         settlementId: "haven",
+        locationPresetId: "wilderness",
         locationName: "Ignored when settled",
         hours: "16",
       },
@@ -554,6 +555,7 @@ try {
     createPayload,
     {
       settlementId: "haven",
+      locationPresetId: "wilderness",
       locationName: "Ignored when settled",
       hours: 16,
       mode: "guided",

@@ -618,6 +618,86 @@ try {
   actor.rollSkill = async () => {
     throw new Error("guided planning must not reroll a player check");
   };
+  for (const locationPresetId of ["wilderness", "adventuring"]) {
+    await assert.rejects(
+      service.openDowntimeBlock({
+        mode: "guided",
+        locationPresetId,
+        hours: 8,
+        actorIds: [actor.id],
+        templateIds: ["guided-performance"],
+      }),
+      /unavailable at this location/,
+    );
+  }
+  await assert.rejects(
+    service.openDowntimeBlock({
+      mode: "guided",
+      settlementId: "missing-settlement",
+      hours: 8,
+      actorIds: [actor.id],
+      templateIds: ["guided-labor"],
+    }),
+    /valid saved settlement/,
+  );
+  await assert.rejects(
+    service.saveSettlementProfile({
+      name: "Invalid preset",
+      locationPresetId: "not-a-preset",
+    }),
+    /valid location preset/,
+  );
+  const roadBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    locationPresetId: "adventuring",
+    hours: 8,
+    actorIds: [actor.id],
+    templateIds: ["guided-reflection"],
+  });
+  assert.equal(roadBlock.locationName, "Adventuring / on the road");
+  assert.equal(roadBlock.settlementSnapshot.locationPresetId, "adventuring");
+  await service.cancelActiveDowntimeBlock(roadBlock.id);
+  const locationProfile = await service.saveSettlementProfile({
+    name: "Location test",
+    locationPresetId: "village",
+    guidedTemplateIds: ["guided-reflection"],
+    merchantIds: [],
+  });
+  const locationBlock = await service.openDowntimeBlock({
+    mode: "guided",
+    settlementId: locationProfile.id,
+    hours: 8,
+    actorIds: [actor.id],
+    templateIds: ["guided-reflection"],
+  });
+  assert.equal(locationBlock.hasSettlement, true);
+  assert.equal(locationBlock.locationName, "Location test");
+  assert.deepEqual(locationBlock.settlementSnapshot.guidedTemplateIds, [
+    "guided-reflection",
+  ]);
+  await service.saveSettlementProfile({
+    id: locationProfile.id,
+    name: "Location changed",
+    guidedTemplateIds: [],
+    merchantIds: [],
+  });
+  assert.deepEqual(
+    (await service.getWorkspaceProjection()).workflow.guidedTemplates.map(
+      (entry) => entry.id,
+    ),
+    ["guided-reflection"],
+  );
+  await service.cancelActiveDowntimeBlock(locationBlock.id);
+  await assert.rejects(
+    service.openDowntimeBlock({
+      mode: "guided",
+      settlementId: locationProfile.id,
+      hours: 8,
+      actorIds: [actor.id],
+      templateIds: ["guided-reflection"],
+    }),
+    /unavailable at this location/,
+  );
   let guidedBlock = await service.openDowntimeBlock({
     mode: "guided",
     locationName: "The Lantern District",
