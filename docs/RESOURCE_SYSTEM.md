@@ -201,7 +201,25 @@ status remains bounded by the release gates below.
 5. If no authoritative GM is online, the window explains that live supply data
    is temporarily unavailable instead of showing stale data as current.
 
-### 3. Automatic day change
+### 3. Day change
+
+With **Auto-run off**, each forward day rollover opens **Use daily supplies?**
+for the authoritative GM. Choose any combination of enabled food, water,
+light/torches, and custom daily resources, then **Use selected supplies**, or
+choose **Skip supplies** to finish the day without consumption. Only selected
+supplies are consumed and assessed for shortages; normal exhaustion suggestions
+remain a separate GM confirmation. This path does not forage. Choices affect
+this run only, not the saved campaign rules.
+
+The prompt opens when Simple Calendar or Foundry announces the new date; it
+cannot pause an external calendar before midnight. Multi-day jumps show the
+number of completed days being charged, limited by the existing catch-up cap.
+Closing the window leaves the day pending for the next time event or reload;
+an explicit skip advances the baseline without charging. Duplicate time events
+cannot queue consumption while the prompt is open. A fresh world's initial
+clock sync and backward time changes do not charge supplies.
+
+With **Auto-run on**, the existing automatic flow remains:
 
 1. Simple Calendar or core world time crosses into a new absolute day.
 2. The authoritative GM creates a durable upkeep run for the capped number of
@@ -222,8 +240,8 @@ automation and deterministic test worlds.
 ### 4. Manual upkeep
 
 1. The GM chooses **Use Daily Supplies**.
-2. A confirmation names the roster size and explains that the world clock will
-   not change.
+2. The same supply checklist lets the GM choose any combination of enabled
+   supplies. The world clock does not change.
 3. The same durable consumption pipeline used by automatic upkeep runs for one
    day, but the manual action skips forage prompts and gathered deposits.
 4. The result appears in Quartermaster, the configured chat audience, history,

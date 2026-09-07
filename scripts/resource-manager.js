@@ -10,6 +10,7 @@
  * re-render, drop-to-tag).
  */
 
+import { promptDailySupplies } from "./daily-supplies-dialog.js";
 import {
   loadResourceConfig,
   saveResourceConfig,
@@ -856,19 +857,13 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       // Acquire the request guard before opening the dialog. Otherwise repeated
       // clicks can queue multiple confirmations that resume one at a time after
       // the service-level upkeep guard has already been released.
-      const party = discoverPartyActors();
-      const ok = await confirmInfinityDialog({
-        window: {
-          title: "Use daily supplies?",
-          icon: "fa-solid fa-utensils",
-        },
-        content: `<p>Consume one day of supplies for <strong>${party.length}</strong> character(s)?</p><p style="opacity:0.8;">This burns the configured daily resources without foraging or changing the world clock, and runs even if auto-upkeep is off.</p>`,
-        rejectClose: false,
+      const selection = await promptDailySupplies({
+        config: loadResourceConfig(),
       });
-      if (!ok) return;
+      if (!selection?.resourceIds?.length) return;
       if (!requireResourceWriteAuthority("run daily upkeep")) return;
       playModuleSound(SOUND_EVENTS.ROLL_START);
-      await advanceDayNow();
+      await advanceDayNow({ resourceIds: selection.resourceIds });
       this.render(false);
     } finally {
       manualAdvanceRequestInFlight = false;

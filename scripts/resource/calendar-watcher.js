@@ -11,6 +11,7 @@
  * here runs only on the authoritative GM.
  */
 
+import { promptDailySupplies } from "../daily-supplies-dialog.js";
 import {
   computeAbsoluteDay,
   diffDays,
@@ -174,8 +175,8 @@ function secondsPerDayFromSC(SC) {
 /**
  * The day-change reactor. Seeds on first run, re-baselines on backward travel,
  * dedupes same-day fires, and runs (capped) upkeep on a forward jump. Honors the
- * auto-trigger setting (keeping lastSeenDay in sync even when off, so enabling
- * it later doesn't replay a huge backlog).
+ * auto-trigger setting: when off, the GM selects supplies or explicitly skips.
+ * Closing the prompt leaves the day pending for a later time event/reconciliation.
  */
 async function onTimeMaybeChanged(reason) {
   try {
@@ -194,21 +195,35 @@ async function onTimeMaybeChanged(reason) {
     }
     if (elapsed <= 0) return;
 
-    if (getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false) {
-      // Auto-upkeep off: keep the baseline current so the GM's manual supplies
-      // Day stays the only path, without a backlog building up silently.
-      await setLastSeenDay(current);
-      return;
-    }
-
     const config = loadResourceConfig();
     const days = clampElapsedForUpkeep(elapsed, config.maxCatchUpDays);
     upkeepInFlight = true;
     try {
+      const prompted = getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false;
+      let selection = null;
+      if (prompted) {
+        selection = await promptDailySupplies({ config, days, rollover: true });
+        // The clock, authority, or another GM client's baseline may have changed
+        // while this dialog was open. Never apply or skip a stale day.
+        if (
+          !isAuthoritativeGM() ||
+          currentAbsoluteDay() !== current ||
+          loadRunState().lastSeenDay !== state.lastSeenDay ||
+          loadRunState().activeUpkeep
+        )
+          return;
+        if (selection === false) {
+          await setLastSeenDay(current);
+          return;
+        }
+        if (!selection?.resourceIds?.length) return;
+      }
       const result = await runDailyUpkeep({
         elapsedDays: days,
         config,
         day: current,
+        resourceIds: selection?.resourceIds ?? null,
+        skipForaging: prompted,
       });
       // A conflict is recoverable configuration work, not a completed upkeep
       // day. Keep the previous baseline so fixing the conflict can safely retry
@@ -229,7 +244,7 @@ async function onTimeMaybeChanged(reason) {
  * Manual "Use Daily Supplies" — runs one day of upkeep immediately, independent of the
  * world clock and the auto-trigger setting. GM-only.
  */
-export async function advanceDayNow() {
+export async function advanceDayNow({ resourceIds = null } = {}) {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
       "Only the active full GM can run daily upkeep. No supplies were changed.",
@@ -246,6 +261,7 @@ export async function advanceDayNow() {
     return await runDailyUpkeep({
       elapsedDays: 1,
       manual: true,
+      resourceIds,
       day: currentAbsoluteDay(),
     });
   } finally {
@@ -1394,8 +1410,20 @@ async function runDailyUpkeep({
   config = null,
   day = null,
   manual = false,
+  resourceIds = null,
+  skipForaging = false,
 } = {}) {
   let cfg = config ?? loadResourceConfig();
+  if (
+    resourceIds !== null &&
+    (!Array.isArray(resourceIds) ||
+      resourceIds.length === 0 ||
+      resourceIds.some(
+        (id) => !runtimeResourceDefinitions(cfg).some((r) => r.id === id),
+      ))
+  ) {
+    return { blocked: true, reason: "invalid-resource-selection" };
+  }
   const days = Math.max(1, Math.floor(Number(elapsedDays) || 1));
   const state = loadRunState();
   const runId = generateRunId();
@@ -1440,7 +1468,7 @@ async function runDailyUpkeep({
   //    Forage Drive owns all GM-initiated gathering.
   let foragedByActor = new Map();
   let afterCommitForageAcknowledgements = [];
-  if (shouldRunUpkeepForaging({ manual, environment: env })) {
+  if (!skipForaging && shouldRunUpkeepForaging({ manual, environment: env })) {
     const forageWindow = await runForagingWindow({ env, party, cfg });
     foragedByActor = forageWindow.foragedByActor;
     afterCommitForageAcknowledgements =
@@ -1641,12 +1669,20 @@ async function runDailyUpkeep({
     }
   }
 
+  // Keep full rules for race/conflict checks; scope consumption and receipts to
+  // this run's selection only. Unselected shortages cannot suggest exhaustion.
+  const consumptionConfig = {
+    ...cfg,
+    resources: runtimeResourceDefinitions(cfg).filter(
+      (resource) => resourceIds === null || resourceIds.includes(resource.id),
+    ),
+  };
   // 3) Consume the day's supplies across the roster.
   const report = await applyConsumption({
     roster,
     consumers,
     sourceForMember,
-    cfg,
+    cfg: consumptionConfig,
     days,
     assertWriteAllowed,
   });
@@ -1694,7 +1730,7 @@ async function runDailyUpkeep({
       runId,
     }),
     environmentId: env?.id ?? null,
-    resourceSnapshot: cfg.resources.map((resource) => ({
+    resourceSnapshot: consumptionConfig.resources.map((resource) => ({
       id: String(resource.id ?? ""),
       label: String(resource.label ?? resource.id ?? ""),
       scope: resource.scope === "party" ? "party" : "per-character",
@@ -1713,7 +1749,11 @@ async function runDailyUpkeep({
     day: result.day,
     environmentId: result.environmentId,
   });
-  await postUpkeepReport({ env, result, resources: cfg.resources });
+  await postUpkeepReport({
+    env,
+    result,
+    resources: consumptionConfig.resources,
+  });
   if (hasErrors) {
     globalThis.ui?.notifications?.error(
       "Upkeep completed with inventory write failures. Do not run it again; review the Quartermaster report before continuing.",

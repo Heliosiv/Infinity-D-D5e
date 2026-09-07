@@ -1,0 +1,15 @@
+<div class="daily-supplies-dialog">
+  {{#if rollover}}<p>The day has ended. Use supplies for the {{days}} completed day(s) before continuing?</p>
+  {{else}}<p>Consume one day of supplies for the party?</p>{{/if}}
+  <fieldset>
+    <legend>Choose supplies for this use</legend>
+    {{#each resources}}
+      <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
+        <input type="checkbox" name="dailyResource" value="{{id}}" checked />
+        <span>{{label}} — {{perDay}} per day {{#if isParty}}for the party{{else}}per character{{/if}}</span>
+      </label>
+    {{/each}}
+  </fieldset>
+  {{#unless hasResources}}<p>No daily supplies are enabled. Configure them in Quartermaster → Setup &amp; Rules.</p>{{/unless}}
+  <p>Only checked supplies are consumed, without foraging or changing the world clock. Unchecked supplies cause no shortages or exhaustion. Half-ration rules still apply.</p>
+</div>

@@ -60,13 +60,12 @@ try {
     applications: {
       handlebars: {
         async renderTemplate(path, context) {
-          assert.equal(
-            path,
-            "modules/infinity-dnd5e/templates/forage-drive-dialog.hbs",
-          );
           return Handlebars.compile(
             readFileSync(
-              new URL("../templates/forage-drive-dialog.hbs", import.meta.url),
+              new URL(
+                `../${path.replace("modules/infinity-dnd5e/", "")}`,
+                import.meta.url,
+              ),
               "utf8",
             ),
           )(context);
@@ -218,7 +217,7 @@ try {
   const requests = Array.from({ length: 250 }, () =>
     advanceDay.call(app, null, button),
   );
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.equal(
     confirmationCount,
@@ -238,7 +237,7 @@ try {
   // Make the service-level authority check fail after the dialog so this
   // focused UI test never reaches real inventory writes.
   users.activeGM = otherGm;
-  resolveConfirmation(true);
+  resolveConfirmation({ resourceIds: ["food"] });
   await Promise.all(requests);
 
   assert.equal(
@@ -253,6 +252,7 @@ try {
   );
   assert.equal(button.attributes.has("aria-busy"), false);
 
+  users.activeGM = gm;
   const originalConfirm = globalThis.foundry.applications.api.DialogV2.confirm;
   const renderCountBeforeUnavailableDialogs = renderCount;
   delete globalThis.foundry.applications.api.DialogV2.confirm;

@@ -563,6 +563,23 @@ export function buildHarnessViews() {
       { width: 880, height: 700 },
     ),
     view(
+      "daily-supplies-dialog",
+      "Use daily supplies?",
+      "infinity-dialog",
+      "templates/daily-supplies-dialog.hbs",
+      {
+        rollover: true,
+        days: 1,
+        hasResources: true,
+        resources: [
+          { id: "food", label: "Food (Rations)", perDay: 1, isParty: false },
+          { id: "water", label: "Water", perDay: 1, isParty: false },
+          { id: "light", label: "Light (Torches)", perDay: 6, isParty: true },
+        ],
+      },
+      { width: 500, height: 460, requiresActions: false },
+    ),
+    view(
       "forage-drive-dialog",
       "Forage Drive setup",
       "infinity-forage-drive-dialog",

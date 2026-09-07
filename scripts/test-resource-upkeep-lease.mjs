@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import Handlebars from "handlebars";
 
 const saved = {
   CONST: globalThis.CONST,
@@ -437,6 +439,110 @@ try {
     "competing-client-run",
   );
 
+  // Auto off still prompts at rollover; duplicate hooks cannot queue draws.
+  settings.set("resourceAutoTrigger", false);
+  globalThis.foundry.applications.handlebars = {
+    async renderTemplate(path, context) {
+      return Handlebars.compile(
+        readFileSync(
+          new URL(
+            `../${path.replace("modules/infinity-dnd5e/", "")}`,
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      )(context);
+    },
+  };
+  let supplyPromptCount = 0;
+  let resolveSupplyPrompt;
+  let supplyOptions;
+  const originalConfirm = globalThis.foundry.applications.api.DialogV2.confirm;
+  globalThis.foundry.applications.api.DialogV2.confirm = (options) => {
+    supplyPromptCount++;
+    supplyOptions = options;
+    return new Promise((resolve) => {
+      resolveSupplyPrompt = resolve;
+    });
+  };
+  globalThis.game.time.worldTime = 15 * 86400;
+  for (let i = 0; i < 100; i++) onWorldTime();
+  await waitFor(
+    () => supplyPromptCount === 1,
+    "auto-off rollover did not prompt",
+  );
+  assert.equal(updateCalls, 3, "opening the prompt consumes nothing");
+  assert.match(supplyOptions.content, /completed day/);
+  resolveSupplyPrompt(false);
+  await waitFor(
+    () => settings.get("resourceRunState").lastSeenDay === 15,
+    "explicit skip did not close the day",
+  );
+  onWorldTime();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(supplyPromptCount, 1);
+  assert.equal(updateCalls, 3);
+
+  // Empty/closed forms leave the day pending; a retry can use selected supplies.
+  globalThis.game.time.worldTime = 16 * 86400;
+  onWorldTime();
+  await waitFor(() => supplyPromptCount === 2, "next day did not prompt");
+  assert.equal(
+    supplyOptions.yes.callback(null, { form: { querySelectorAll: () => [] } }),
+    null,
+  );
+  resolveSupplyPrompt(null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(settings.get("resourceRunState").lastSeenDay, 15);
+  onWorldTime();
+  await waitFor(
+    () => supplyPromptCount === 3,
+    "closed prompt was not retryable",
+  );
+  const selection = supplyOptions.yes.callback(null, {
+    form: {
+      querySelectorAll: () => [{ value: "food" }, { value: "injected" }],
+    },
+  });
+  assert.deepEqual(selection, { resourceIds: ["food"] });
+  resolveSupplyPrompt(selection);
+  await waitFor(
+    () => settings.get("resourceRunState").lastUpkeepResult?.day === 16,
+    "selected supplies were not applied",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(updateCalls, 4);
+  assert.equal(ration.system.quantity, 17);
+  assert.deepEqual(
+    settings
+      .get("resourceRunState")
+      .lastUpkeepResult.resourceSnapshot.map((r) => r.id),
+    ["food"],
+  );
+  onWorldTime();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    updateCalls,
+    4,
+    "selected calendar supplies are consumed only once",
+  );
+
+  globalThis.game.time.worldTime = 17 * 86400;
+  onWorldTime();
+  await waitFor(() => supplyPromptCount === 4, "handoff prompt did not open");
+  users.activeGM = otherGm;
+  resolveSupplyPrompt({ resourceIds: ["food"] });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    updateCalls,
+    4,
+    "authority loss during prompt prevents consumption",
+  );
+  assert.equal(settings.get("resourceRunState").lastSeenDay, 16);
+  users.activeGM = gm;
+  globalThis.foundry.applications.api.DialogV2.confirm = originalConfirm;
+  settings.set("resourceAutoTrigger", true);
+
   // An authority change during lease persistence invalidates the old client
   // before its first Actor write.
   let switchAuthorityAfterClaim = true;
@@ -448,19 +554,106 @@ try {
     }
     return value;
   };
-  globalThis.game.time.worldTime = 15 * 86400;
+  globalThis.game.time.worldTime = 18 * 86400;
   const errorsBeforeHandoff = errorCount;
   onWorldTime();
   await waitFor(
     () => errorCount > errorsBeforeHandoff,
     "authority handoff was not observed",
   );
-  assert.equal(updateCalls, 3);
-  assert.equal(ration.system.quantity, 18);
+  assert.equal(updateCalls, 4);
+  assert.equal(ration.system.quantity, 17);
   assert.equal(
     settings.get("resourceRunState").recentRuns.length,
-    4,
+    5,
     "authority loss before Actor writes creates no receipt",
+  );
+  // Every food/water/torch combination uses the real consumption pipeline.
+  users.activeGM = gm;
+  globalThis.game.settings.set = normalSet;
+  await clearUpkeepClaim(settings.get("resourceRunState").activeUpkeep.runId);
+  settings.set("resourceWaterEnabled", true);
+  const water = {
+    id: "water-stack",
+    name: "Water ration",
+    type: "consumable",
+    system: { quantity: 30 },
+    flags: {},
+  };
+  const torch = {
+    id: "torch-stack",
+    name: "Torch",
+    type: "consumable",
+    system: { quantity: 30 },
+    flags: {},
+  };
+  hero.items.contents.push(water, torch);
+  hero.items.get = (id) => hero.items.contents.find((item) => item.id === id);
+  hero.updateEmbeddedDocuments = async (_type, updates) => {
+    for (const update of updates)
+      hero.items.get(update._id).system.quantity = update["system.quantity"];
+    return updates.map((update) => hero.items.get(update._id));
+  };
+  const configWithChoices = structuredClone(settings.get("resourceConfig"));
+  configWithChoices.resources.push(
+    {
+      id: "water",
+      label: "Water",
+      perDay: 1,
+      scope: "per-character",
+      forageYields: "water",
+      matching: { nameKeywords: ["water ration"] },
+    },
+    {
+      id: "light",
+      label: "Torches",
+      perDay: 1,
+      scope: "party",
+      forageYields: null,
+      matching: { nameKeywords: ["torch"] },
+    },
+  );
+  settings.set("resourceConfig", configWithChoices);
+  const { advanceDayNow } = await import("./resource/calendar-watcher.js");
+  const itemsByResource = { food: ration, water, light: torch };
+  for (let mask = 1; mask < 8; mask++) {
+    const resourceIds = Object.keys(itemsByResource).filter(
+      (_id, index) => mask & (1 << index),
+    );
+    const before = Object.fromEntries(
+      Object.entries(itemsByResource).map(([id, item]) => [
+        id,
+        item.system.quantity,
+      ]),
+    );
+    const result = await advanceDayNow({ resourceIds });
+    assert.equal(result.status, "complete");
+    for (const [id, item] of Object.entries(itemsByResource)) {
+      assert.equal(
+        item.system.quantity,
+        before[id] - (resourceIds.includes(id) ? 1 : 0),
+        `${resourceIds}: ${id} draw`,
+      );
+    }
+    assert.deepEqual(
+      result.resourceSnapshot.map((r) => r.id),
+      resourceIds,
+    );
+    assert.deepEqual(result.suggestions, []);
+  }
+  // Missing, unselected food/water must never create exhaustion suggestions.
+  ration.system.quantity = 0;
+  water.system.quantity = 0;
+  const torchesOnly = await advanceDayNow({ resourceIds: ["light"] });
+  assert.deepEqual(torchesOnly.suggestions, []);
+  assert.deepEqual(torchesOnly.perActor[0].canonicalShortfalls, {
+    food: 0,
+    water: 0,
+  });
+  assert.equal((await advanceDayNow({ resourceIds: [] })).blocked, true);
+  assert.equal(
+    (await advanceDayNow({ resourceIds: ["unknown"] })).blocked,
+    true,
   );
 } finally {
   console.error = originalConsoleError;
