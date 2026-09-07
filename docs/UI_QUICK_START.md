@@ -169,3 +169,12 @@ buy/sell rules, bargaining, and charm pricing can be applied together or
 independently. Individual item prices are preserved unless **Clear individual
 item price overrides** is explicitly selected. The review shows the exact
 before-and-after values for every changed merchant before anything is written.
+
+## Searchable choice pickers
+
+Search by name, description, or keyword. Multiple words can appear in any order;
+every word must match. Searches ignore capitalization and accents. If nothing
+matches, try fewer words or clear the search. Press Down or Up from the search
+field to focus the first or last available result, then use the arrow keys to
+move through results and Space or Enter to select. Confirm with **Choose** (or
+the picker’s named confirmation button).
