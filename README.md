@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.33 - Downtime panels:** Activities, Projects, and Settlements keep their
+lists and preset controls visible when the window is resized. On narrow windows,
+the panel sits above the editor; long saved lists scroll within the panel, and
+the workspace scrolls through the full editor without collapsing the panel.
+
 **v0.3.32 - Visible location naming:** Edit **Location name** directly beneath
 the selected Shops heading and click **Rename**. For **Unassigned shops**, enter
 a name and click **Name location** to move those shops into a real named location,

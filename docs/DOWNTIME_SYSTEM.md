@@ -2,6 +2,11 @@
 
 ## Guided downtime (default)
 
+The Activities, Projects, and Settlements panels sit beside their editors in a
+wide window. In a narrow window they move above the editor, with the heading and
+presets kept visible. Long saved lists scroll inside the panel; scroll the main
+workspace to reach the rest of an editor and its save button.
+
 The default GM flow is intentionally small and has no settlement, faction,
 Heat, theft, or escalation data. Open **Workbench → Downtime**,
 enter a location and a productive-hour budget, choose the player

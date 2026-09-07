@@ -276,6 +276,38 @@ async function auditPage(scenario) {
 
   // Overflow check runs with all popover menus collapsed (their default).
   for (const root of windows) {
+    // A rail can contain clickable children while its own scrollport collapses
+    // to its padding. Check the actual panel, before auto-scrolling to controls.
+    for (const layout of root.querySelectorAll(".dt-settlement-layout")) {
+      const rail = layout.querySelector(":scope > .dt-rail");
+      if (!rail) continue;
+      rail.scrollTop = 0;
+      const railBox = rail.getBoundingClientRect();
+      const headingBox = rail
+        .querySelector(".dt-rail__head")
+        ?.getBoundingClientRect();
+      if (headingBox && headingBox.bottom > railBox.bottom + 1) {
+        issues.push(
+          `${root.dataset.harnessWindow}: downtime side panel collapsed (${Math.round(railBox.height)}px high)`,
+        );
+      }
+      const presetsBox = rail
+        .querySelector(".dt-project-presets")
+        ?.getBoundingClientRect();
+      if (presetsBox && presetsBox.bottom > railBox.bottom + 1) {
+        issues.push(
+          `${root.dataset.harnessWindow}: project presets clipped inside the side panel`,
+        );
+      }
+      const layoutBox = layout.getBoundingClientRect();
+      for (const child of layout.children) {
+        if (child.getBoundingClientRect().bottom > layoutBox.bottom + 1) {
+          issues.push(
+            `${root.dataset.harnessWindow}: downtime editor extends beyond its layout`,
+          );
+        }
+      }
+    }
     const content = root.querySelector(".window-content");
     const shell = root.querySelector(
       ".infinity-app-shell, .lf-shell, .hl-shell, .pc-shell, .id-shell, .mw-shell, .ms-shell, .rm-shell, .fp-shell, .sp-shell, .rw-shell, .rv-shell, .ci-shell, .ci-triage-shell, .ci-hud-shell, .dt-shell",

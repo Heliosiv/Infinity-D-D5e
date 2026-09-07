@@ -1399,11 +1399,18 @@
 }
 
 /* Settlement editor and history. */
+.infinity-downtime-workspace .dt-main:has(> .dt-settlement-layout) {
+  /* Let the workspace scroll long editors instead of shrinking a stacked rail. */
+  flex: 0 0 auto;
+}
+
 .infinity-downtime-workspace .dt-settlement-layout {
   display: grid;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   grid-template-columns: minmax(210px, 270px) minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -2036,8 +2043,9 @@
     grid-template-columns: 1fr;
   }
 
-  .infinity-downtime-workspace .dt-rail {
+  .infinity-downtime-workspace .dt-rail__list {
     max-height: 210px;
+    overflow: auto;
   }
 }
 
