@@ -190,3 +190,19 @@ export function addMerchantLocation(location) {
   accessWriteChain = result.catch(() => {});
   return result;
 }
+
+/** Apply catalogue edits against fresh access state without overwriting gates. */
+export function updateMerchantLocations(mutator) {
+  const save = () => {
+    const current = loadMerchantAccessState();
+    return saveMerchantAccessStateAuthorized(
+      normalizeMerchantAccessState({
+        ...current,
+        locations: mutator(current.locations ?? []),
+      }),
+    );
+  };
+  const result = accessWriteChain.then(save, save);
+  accessWriteChain = result.catch(() => {});
+  return result;
+}

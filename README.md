@@ -11,6 +11,12 @@ Players can search past results and see ongoing plans. Stock Paid Work rewards
 scale per eight productive hours; custom policies and open blocks are preserved.
 See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
 
+**v0.3.29 - Shops organization:** Delete shops directly from the directory,
+or select several to move or delete together. **Manage location** renames or
+removes a city/location; removal keeps its shops in **Unassigned shops**. Find
+locations by name, filter shops by Open/Closed/Empty inventory, and sort by name,
+opening status, or item types. See the [Shops guide](docs/MERCHANT_SESSIONS.md).
+
 **v0.3.27 — current-PC injuries and compendium cleanup:** The landing-page
 injury picker now follows each non-GM player's assigned character, including
 offline players, and excludes spare owned characters and copies. **New injury

@@ -17,6 +17,8 @@ Generate and Clear ask once before replacing a whole location's inventories.
 Opening, closing, and restocking need no extra prompt. Stock changes are prepared
 before one campaign write; a failed generation cannot leave half the city empty.
 They wait for active trades and do not overwrite unresolved trade checkpoints.
+Open/Close stay above the list. Expand **Stock & add shops** below the merchants
+for stock resets and adding shops; **Manage location** is beside these setup tools.
 
 Choose **Add a city or location**, enter its name, and choose a starter set:
 
@@ -46,6 +48,39 @@ Click a merchant for four tabs:
 
 Edits save automatically. **Save now** retries a failed save. Left/Right arrows and
 Home/End move between tabs; multiple merchant windows can remain open.
+
+## Organize and clean up shops
+
+- **Find a location** searches the location list, which is alphabetized with
+  **Unassigned shops** first. **Manage location → Rename** changes a location's
+  name without touching its shops or prices, including recovered imported locations.
+- **Find a merchant** searches the selected location. **Show** filters All, Open,
+  Closed, or Empty inventory (no stock rows). **Sort** offers Name A–Z, Name Z–A,
+  Open first, and Most item types. Filters and sorting survive shop refreshes while
+  this directory is open. They do not change the saved merchant order.
+- Check one or more shops, or use **Select shown**, then choose a destination and
+  **Move selected**. **Unassigned shops** is available as a destination. Moving
+  preserves stock, current and restock gold, prices, and player access restrictions.
+  **Move all shops** still moves the entire location, regardless of search filters.
+- Use the **Delete** button beside a shop, including an unassigned shop, or
+  **Delete selected** for a checked group. The confirmation lists the exact shops.
+  Deletion permanently removes their shop stock, gold, and settings and closes
+  their shopping sessions and local editors. Compendium items, character inventories,
+  and unrelated shops are untouched. Cancel leaves everything intact.
+- **Manage location → Remove location** removes the location entry and keeps all
+  its shops in **Unassigned shops**. To delete a whole city and its shops, first
+  clear the shop filters, select all shown shops, delete them, then remove the
+  empty location. The Unassigned group disappears automatically when empty.
+
+Changing a merchant search/filter or location clears the checked selection;
+sorting keeps it. A refresh drops checked shops that are no longer shown.
+Renamed, moved, or deleted shops invalidate a pending confirmation rather than
+silently targeting a different set. Moving and deletion wait for active trades
+and refuse to change shops with unresolved trade checkpoints.
+
+Location removal saves retained shops before deleting the empty location entry.
+If the final location save fails, the shops are safe in **Unassigned shops**;
+the error explains that the remaining location can be removed again.
 
 ## Existing campaigns
 
