@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**v0.3.32 - Visible location naming:** Edit **Location name** directly beneath
+the selected Shops heading and click **Rename**. For **Unassigned shops**, enter
+a name and click **Name location** to move those shops into a real named location,
+preserving stock, gold, and access settings. The naming control is always visible.
+
 **v0.3.31 — crafting, personal training and downtime journals:** Browse activities
 and recipes by category or search. Eight Drakmor house recipes produce usable
 items with explicit tools, costs and saved progress. Personal training supports
@@ -12,7 +17,7 @@ scale per eight productive hours; custom policies and open blocks are preserved.
 See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
 
 **v0.3.29 - Shops organization:** Delete shops directly from the directory,
-or select several to move or delete together. **Manage location** renames or
+or select several to move or delete together. **Manage location**
 removes a city/location; removal keeps its shops in **Unassigned shops**. Find
 locations by name, filter shops by Open/Closed/Empty inventory, and sort by name,
 opening status, or item types. See the [Shops guide](docs/MERCHANT_SESSIONS.md).

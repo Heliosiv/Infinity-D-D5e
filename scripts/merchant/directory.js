@@ -51,7 +51,7 @@ async function moveShops(expectedShops, destination, sourceLocation = null) {
       assertShopLocation(destination);
       if (sourceLocation != null) {
         const actual = current
-          .filter((row) => row.shop?.locationId === sourceLocation)
+          .filter((row) => (row.shop?.locationId ?? "") === sourceLocation)
           .map((row) => row.id)
           .sort();
         if (
@@ -112,6 +112,58 @@ export function renameShopLocation({ locationId, expectedName, name }) {
       ];
     });
     pushMerchantAccessRefresh();
+  });
+}
+
+/** Give the current unassigned shops a real location, without generating stock. */
+export function nameUnassignedShopLocation({ name, expectedShops }) {
+  return runMerchantAccessOperation(async () => {
+    const label = String(name ?? "")
+      .trim()
+      .slice(0, 100);
+    if (!label) throw new Error("Enter a city or location name.");
+    const current = loadMerchants();
+    checkedShops(current, expectedShops);
+    if (
+      expectedShops.some((row) => row.shop?.locationId) ||
+      current.filter((row) => !row.shop?.locationId).length !==
+        expectedShops.length
+    )
+      throw new Error(
+        "The unassigned shops changed. Review the list and try again.",
+      );
+    if (
+      locationDirectory().some(
+        (row) => row.name.toLocaleLowerCase() === label.toLocaleLowerCase(),
+      )
+    )
+      throw new Error(
+        "That location name already exists. Use Move selected to move shops there.",
+      );
+    const id = globalThis.crypto.randomUUID();
+    await updateMerchantLocations((locations) => [
+      ...locations,
+      { id, name: label },
+    ]);
+    try {
+      await moveShops(expectedShops, id, "");
+    } catch (error) {
+      // A failed or blocked move must not leave a misleading empty location.
+      if (!loadMerchants().some((row) => row.shop?.locationId === id)) {
+        try {
+          await updateMerchantLocations((locations) =>
+            locations.filter((row) => row.id !== id),
+          );
+        } catch {
+          throw new Error(
+            `The shops could not be moved. An empty location named ${label} was created; refresh Shops and retry using Move selected. ${error.message}`,
+          );
+        }
+      }
+      throw error;
+    }
+    pushMerchantAccessRefresh();
+    return { id, name: label };
   });
 }
 
