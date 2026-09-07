@@ -261,9 +261,12 @@ try {
   const duplicateInjury = createInjury({
     id: "injury-duplicate",
     pendingId: "pending-duplicate",
-    injuryKey: "concussion",
-    injuryName: "Concussion",
-    injuryRoll: 12,
+    tableVersion: 3,
+    remainingDays: 3,
+    recoveryFormula: "1d3",
+    injuryKey: "sprained-ankle",
+    injuryName: "Sprained Ankle",
+    injuryRoll: 9,
     kitCharges: 1,
   });
   const duplicateEffect = createEffect(
@@ -440,6 +443,7 @@ try {
   assert.equal(calendarRemoveCount, 0);
   const appliedInjury = effects.getCriticalInjuryData(primaryEffect);
   assert.equal(appliedInjury.stabilized, true);
+  assert.equal(appliedInjury.tableVersion, 2, "legacy treatment preserves V2");
   assert.equal(appliedInjury.calendarEntryId, calendarNotes[0].id);
   await waitUntil(() => chatCount === 1, "single treatment chat receipt");
 
@@ -712,6 +716,56 @@ try {
   assert.equal(missingPayload.targetUserId, player.id);
   assert.equal(missingPayload.treatmentId, "treatment-missing-injury");
 
+  // The expanded table uses the same durable kit path, including V3 persistence.
+  const kitBeforeV3 = kit.system.uses.value;
+  const rollsBeforeV3 = skillRollCount;
+  const v3ResultPromise = waitForTreatmentResult(
+    socket,
+    "treatment-v3",
+    player.id,
+  );
+  socket.receiveCriticalInjuryPayload(
+    treatmentRequest(socket, {
+      actorId: actor.id,
+      injuryId: duplicateInjury.id,
+      treatmentId: "treatment-v3",
+      targetUserId: gmB.id,
+      sender: player,
+    }),
+    player.id,
+  );
+  const v3Result = await v3ResultPromise;
+  assert.equal(v3Result.success, true);
+  assert.equal(v3Result.consumed, 1);
+  assert.equal(kit.system.uses.value, kitBeforeV3 - 1);
+  assert.equal(
+    skillRollCount,
+    rollsBeforeV3,
+    "new sprain treatment requires no check",
+  );
+  const treatedV3 = effects.getCriticalInjuryData(duplicateEffect);
+  assert.equal(treatedV3.tableVersion, 3);
+  assert.equal(treatedV3.stabilized, true);
+  assert.equal(
+    treatedV3.recoveryDueTs,
+    1_172_800,
+    "three recovery days become two calendar days",
+  );
+  assert.deepEqual(duplicateEffect.changes, [
+    {
+      key: "system.skills.acr.bonuses.check",
+      mode: 2,
+      value: "-2",
+      priority: 20,
+    },
+  ]);
+  const v3Receipt = workflow.getCriticalInjuryTreatmentRecord(
+    duplicateInjury.pendingId,
+    "treatment-v3",
+  );
+  assert.equal(v3Receipt.state, "completed");
+  assert.equal(v3Receipt.resolution.tableVersion, 3);
+
   assert.ok(
     expectedTreatmentFailures >= 1,
     "the simulated handoff or ambiguous effect writes exercise recovery",
@@ -806,6 +860,9 @@ function createInjury({
   kitCharges,
   treatmentDc = 0,
   treatmentSkill = "",
+  tableVersion = 2,
+  remainingDays = 4,
+  recoveryFormula = "1d4",
 }) {
   return {
     id,
@@ -814,11 +871,11 @@ function createInjury({
     injuryKey,
     injuryName,
     injuryRoll,
-    tableVersion: 2,
+    tableVersion,
     effect: `${injuryName} penalties`,
     recoveryRule: "Rules-based recovery",
-    recoveryFormula: "1d4",
-    remainingDays: 4,
+    recoveryFormula,
+    remainingDays,
     permanent: false,
     stabilized: false,
     kitCharges,

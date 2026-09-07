@@ -1,3 +1,4 @@
+import { CRITICAL_INJURY_TABLE_VERSION } from "./injury/table.js";
 import { buildCriticalInjuryTableReference } from "./injury/table-reference.js";
 import { readFileSync } from "node:fs";
 
@@ -952,6 +953,7 @@ export function buildHarnessViews() {
         ...criticalInjuryTriageContext(),
         showTable: true,
         tableRows: buildCriticalInjuryTableReference(),
+        tableVersion: CRITICAL_INJURY_TABLE_VERSION,
         midiActive: true,
       },
       { width: 760, height: 640 },

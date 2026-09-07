@@ -1,5 +1,10 @@
 # Critical Injury Table V2 — automation audit and expansion proposal
 
+**Historical audit of the original 18 outcomes.** The subsequent
+[V3 expansion](INJURY_TABLE_EXPANSION.md) adds 12 temporary outcomes with
+numeric automation, bringing the current chart to 30. Those additions are
+implemented; the older effect and recovery gaps below remain unchanged.
+
 Audit date: 2026-09-07. Scope: the local Infinity D&D5e source, its existing tests,
 and the GM reference viewer. The combat rules audited were present at commit
 3535f84. This is not verification of the installed Forge world or its module

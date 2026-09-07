@@ -4,9 +4,11 @@ Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
 **GM injury table (next release):** Open **Injuries → Injury table** to browse
-all d100 outcomes, recovery rules, and automation/GM follow-up notes. The
-[entry-by-entry audit](docs/INJURY_TABLE_AUDIT.md) identifies missing effects,
-recovery mismatches, and proposed additions. The V2 rules are unchanged.
+all **30 d100 outcomes**, recovery rules, and automation/GM follow-up notes.
+The [V3 expansion](docs/INJURY_TABLE_EXPANSION.md) adds 12 temporary injuries
+with automatic penalties while preserving permanent-injury odds and saved V2
+injuries. The [original audit](docs/INJURY_TABLE_AUDIT.md) still identifies
+manual effects and recovery mismatches in the older outcomes.
 
 **Daily supplies (next release):** With Auto-run off, day changes ask the GM
 which supplies to use or skip. **Use Daily Supplies** also offers independent
@@ -292,7 +294,7 @@ For a direct Forge installation, open **My Foundry → Summon Import Wizard**, t
 - **Downtime & City Actions**: the GM assigns the same hour budget to each eligible character; players queue several routine, commerce, and crime activities; the GM locks an immutable hidden-roll preview before applying exact receipts. Local Heat and stolen-goods provenance persist by settlement.
 - **Quartermaster**: source-aware party food, water, light, and custom-resource tracking with calendar-aware daily consumption, player forage prompts, private Recent Runs receipts, review-before-activation environment choices, and versioned custom-region export/import with a complete validation preview. Players retain a read-only **Party Supplies** outlook.
 - **Reputation & Factions**: logged faction standing changes with selective player reveals and a read-only player view.
-- **Critical Injuries V2**: recovery from 0 HP or the dead state creates a durable GM triage review. The GM can send a private player d100 roll, dismiss it, or start an exceptional-case review manually; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
+- **Critical Injuries V3**: recovery from 0 HP or the dead state creates a durable GM triage review. The GM can send a private player d100 roll, dismiss it, or start an exceptional-case review manually; approved results apply Actor effects, roll their duration, schedule recovery, and appear on a body-silhouette HUD with durable Healer's Kit treatment and replay-safe Infection checks after long rests.
 - **Spell components**: every leveled spell cast spends one 1-gp component per cast level, including the chosen upcast level. Component Pouch charges are used before loose Spell Components; combined shortages block the cast before its native consumption updates are applied. Cantrips and spell-scroll item uses are exempt.
 - **Player launchers**: `Shift + I` opens the Player Launcher, `Shift + D` opens Downtime Activities, `Shift + O` opens available shops, `Shift + Q` opens Party Supplies, `Shift + R` opens revealed faction reputation, and `Shift + J` opens the character's Critical Injuries.
 - **Interactive player hubs**: with the reviewed Monk's Active Tiles 13.06 runtime enabled, its action list includes **Open Infinity player window**. The compatibility `home` action opens the Player Launcher; other allowlisted actions can open Party Supplies, Shops, Factions, Downtime, Simple Calendar Reborn, or Critical Injuries only for the player who triggered the tile. They carry no campaign projection and perform no world write.
@@ -476,7 +478,7 @@ boundaries.
 
 ### Critical injuries
 
-Enable or disable **Critical Injury Table V2** in module settings. When an owned
+Enable or disable **Critical Injury Table V3** in module settings. When an owned
 player character recovers from 0 HP or a dead/unconscious state, the active full
 GM gets a Yes/No approval prompt. Approval pushes a d100 button to the assigned
 or owning player. Clicking it sends an authenticated request only to the active

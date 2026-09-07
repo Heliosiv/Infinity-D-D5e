@@ -14,9 +14,9 @@ import {
   effectiveRecoveryCalendarDays,
 } from "./injury/effects.js";
 
-assert.equal(CRITICAL_INJURY_TABLE_VERSION, 2);
+assert.equal(CRITICAL_INJURY_TABLE_VERSION, 3);
 assert.equal(CRITICAL_INJURY_ROLL_FORMULA, "1d100");
-assert.equal(CRITICAL_INJURY_TABLE.length, 18);
+assert.equal(CRITICAL_INJURY_TABLE.length, 30);
 
 const coverage = new Map();
 for (let roll = 1; roll <= 100; roll += 1) {
@@ -30,7 +30,7 @@ for (let roll = 1; roll <= 100; roll += 1) {
 }
 assert.equal(coverage.size, 100, "every d100 face is covered exactly once");
 assert.equal(coverage.get(1), "lost-limb");
-assert.equal(coverage.get(35), "deep-cut");
+assert.equal(coverage.get(35), "pulled-back");
 assert.equal(coverage.get(100), "soul-shaken");
 
 assert.equal(

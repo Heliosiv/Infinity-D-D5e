@@ -195,10 +195,10 @@ try {
   // The table is available without party mutations, including secondary GMs.
   contextApp._view = "table";
   const tableContext = await prepare();
-  assert.equal(tableContext.tableRows.length, 18);
+  assert.equal(tableContext.tableRows.length, 30);
   assert.equal(tableContext.showTable, true);
   const tableHtml = render(tableContext);
-  assert.match(tableHtml, /Critical Injury Table V2/);
+  assert.match(tableHtml, /Critical Injury Table V3/);
   assert.match(tableHtml, /Soul-Shaken/);
   assert.match(
     tableHtml,
@@ -213,7 +213,7 @@ try {
   game.user = secondaryGm;
   const secondaryContext = await prepare();
   assert.equal(secondaryContext.canMutate, false);
-  assert.equal(secondaryContext.tableRows.length, 18);
+  assert.equal(secondaryContext.tableRows.length, 30);
   game.user = assignedPlayer;
   const deniedContext = await prepare();
   assert.equal(deniedContext.accessDenied, true);

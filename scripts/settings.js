@@ -57,7 +57,7 @@ export const SETTING_KEYS = Object.freeze({
   RESOURCE_HALF_RATIONS: "resourceHalfRations",
   RESOURCE_MAX_CATCHUP_DAYS: "resourceMaxCatchUpDays",
   RESOURCE_REPORT_MODE: "resourceReportMode",
-  // Critical Injury Table V2 workflow.
+  // Critical Injury Table V3 workflow.
   CRITICAL_INJURIES_ENABLED: "criticalInjuriesEnabled",
   CRITICAL_INJURY_HUD_ENABLED: "criticalInjuryHudEnabled",
   // Leveled-spell component consumption.
@@ -490,7 +490,7 @@ export const SETTINGS = Object.freeze([
   },
   {
     key: SETTING_KEYS.CRITICAL_INJURIES_ENABLED,
-    name: "Critical Injury Table V2",
+    name: "Critical Injury Table V3",
     hint:
       "When an owned player character recovers from 0 HP or the dead state, " +
       "ask the active GM whether to send that player a critical-injury roll.",

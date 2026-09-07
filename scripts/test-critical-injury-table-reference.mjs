@@ -11,7 +11,7 @@ import {
 import { normalizeGmWorkbenchTarget } from "./gm-workbench-routes.js";
 
 const rows = buildCriticalInjuryTableReference();
-assert.equal(rows.length, 18);
+assert.equal(rows.length, 30);
 assert.deepEqual(
   Object.keys(INJURY_AUTOMATION_AUDIT).sort(),
   CRITICAL_INJURY_TABLE.map((r) => r.key).sort(),
@@ -82,5 +82,5 @@ assert.equal(
   "table",
 );
 console.log(
-  "Injury table reference: all 18 outcomes, 100 roll bands, detail variants, audit coverage and route passed.",
+  "Injury table reference: all 30 outcomes, 100 roll bands, detail variants, audit coverage and route passed.",
 );

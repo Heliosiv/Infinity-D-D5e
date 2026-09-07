@@ -47,7 +47,8 @@ const authoritativeRolls = [
   { formula: "1d100", total: 7 },
   { formula: "1d4", total: 3 },
   { formula: "1d4", total: 2 },
-  { formula: "1d100", total: 74 },
+  { formula: "1d100", total: 29 },
+  { formula: "1d3", total: 2 },
 ];
 let effectCreateCount = 0;
 let chatCount = 0;
@@ -325,6 +326,15 @@ try {
   assert.equal(firstPayload.result.injuryRoll, 74);
   assert.equal(firstPayload.result.injuryKey, "deep-scar");
   assert.equal(
+    workflow.getCriticalInjuryWorkflowRecord("pending-1").resolution
+      .tableVersion,
+    3,
+  );
+  assert.equal(
+    effects.getCriticalInjuryData(actorOne.effects.contents[0]).tableVersion,
+    3,
+  );
+  assert.equal(
     effects.getCriticalInjuryData(actorOne.effects.contents[0]).createdBy,
     gm.id,
     "the authoritative GM is recorded as the injury creator",
@@ -540,6 +550,18 @@ try {
     "the player and requesting authoritative GM both receive the result",
   );
   assert.equal(gmPayload.targetUserId, gm.id);
+  assert.equal(gmPayload.result.injuryKey, "winded");
+  const newInjuryEffect = actorThree.effects.contents[0];
+  assert.equal(effects.getCriticalInjuryData(newInjuryEffect).tableVersion, 3);
+  assert.equal(effects.getCriticalInjuryData(newInjuryEffect).remainingDays, 2);
+  assert.deepEqual(newInjuryEffect.changes, [
+    {
+      key: "system.skills.ath.bonuses.check",
+      mode: 2,
+      value: "-2",
+      priority: 20,
+    },
+  ]);
   assert.equal(actorThree.effects.contents.length, 1);
   assert.equal(
     workflow.getCriticalInjuryWorkflowRecord("pending-3").state,
