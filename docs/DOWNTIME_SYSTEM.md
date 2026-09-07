@@ -2,10 +2,27 @@
 
 ## Guided downtime (default)
 
-The default GM flow is intentionally small and has no settlement, faction,
-Heat, theft, or escalation data. Open **Workbench → Downtime**,
-enter a location and a productive-hour budget, choose the player
-characters, then tick the saved activity templates that apply. Each player
+Open **Workbench > Downtime** and choose a **Location preset**: Adventuring,
+Wilderness camp, Village, Town/city, or Custom. Presets select applicable activities
+and disable unavailable ones; wilderness and adventuring exclude crowd performance
+and paid work. Custom lets the GM choose any saved activity. Enter an optional
+location/report name and productive-hour budget, then choose the characters.
+
+Alternatively select a saved **Settlement**. Its saved activity list replaces the
+preset restrictions. In **Manage settlements**, start from a preset, customize the
+allowed downtime activities (including campaign activities), and link existing
+shops. An empty saved activity list allows no activities. Existing settlements
+without this list initially allow all activities. Shop links identify the shops
+for this profile; they do not move shops in the Shops directory, open them, or
+change access permissions. Legacy city activities remain separately configurable.
+
+The GM can uncheck any allowed activity before opening the block. The service
+validates the selection and snapshots the settlement and selected activities;
+later profile edits do not change an open block. Long-term projects are still
+chosen independently by the GM. Selecting a settlement does not enable legacy
+Heat, faction, theft, or escalation mechanics in guided downtime.
+
+Each player
 allocates their character's hours among any of those activities, in the saved
 time block for each activity, then clicks **Roll & submit**. An activity can be
 added once and its hours can be changed before submission. The controlled Actor

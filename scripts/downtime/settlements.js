@@ -85,6 +85,12 @@ export function normalizeSettlementProfile(raw = {}, { fallbackId = "" } = {}) {
     id,
     name,
     hasSettlement: source.hasSettlement !== false,
+    ...(Array.isArray(source.guidedTemplateIds)
+      ? { guidedTemplateIds: normalizeIdList(source.guidedTemplateIds) }
+      : {}),
+    ...(source.locationPresetId
+      ? { locationPresetId: cleanId(source.locationPresetId) }
+      : {}),
     wealthTier,
     securityTier,
     marketDc: boundedInteger(source.marketDc, 1, 40, defaultMarketDc),

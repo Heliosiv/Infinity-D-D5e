@@ -95,6 +95,15 @@ try {
       rolls: 0,
       applied: 0,
       saved: [],
+      settlements: [
+        {
+          id: "haven",
+          name: "Haven",
+          locationPresetId: "village",
+          guidedTemplateIds: ["guided-performance", "guided-reflection"],
+          linkedMerchantIds: ["haven-shop"],
+        },
+      ],
       failSave: false,
       previewHeadingFocusCount: 0,
     };
@@ -139,6 +148,11 @@ try {
       receipt: state.receipt,
     });
     const gmAdapter = {
+      saveSettlement: async (payload) => {
+        const saved = { ...payload, linkedMerchantIds: payload.merchantIds };
+        state.settlements = [saved];
+        return saved;
+      },
       saveGuidedProject: async (payload) => {
         state.projectSaves = (state.projectSaves || 0) + 1;
         state.lastProjectSave = structuredClone(payload);
@@ -158,6 +172,8 @@ try {
       },
       getWorkspaceProjection: async () => ({
         actors: [actor],
+        settlements: state.settlements,
+        merchants: [{ id: "haven-shop", name: "Haven Supplies" }],
         guidedTemplates: templates,
         workflow: state.block,
         canCreateBlock: !state.block,
@@ -632,6 +648,109 @@ try {
   await page.waitForFunction(() => journey.state.activitySaves === 3);
   await page.locator('[data-action="setView"][data-view="current"]').click();
 
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-performance"]')
+      .isDisabled(),
+    true,
+  );
+  await page.screenshot({
+    path: path.join(out, "gm-location-wilderness.png"),
+    fullPage: true,
+  });
+  await page.locator('[name="locationPresetId"]').selectOption("town");
+  await page.waitForFunction(
+    () =>
+      !document.querySelector(
+        '[name="templateIds"][value="guided-performance"]',
+      ).disabled,
+  );
+  await page.locator('[name="settlementId"]').selectOption("haven");
+  await page.waitForFunction(
+    () => document.querySelector('[name="locationPresetId"]').disabled,
+  );
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-performance"]')
+      .isChecked(),
+    true,
+  );
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-labor"]')
+      .isDisabled(),
+    true,
+  );
+  assert.match(
+    await page.locator('[data-form="new-block"]').innerText(),
+    /Haven Supplies/,
+  );
+  await page
+    .locator('[data-action="setView"][data-view="settlements"]')
+    .first()
+    .click();
+  await page
+    .locator('[data-action="selectSettlement"][data-settlement-id="haven"]')
+    .click();
+  await page.evaluate(async () => {
+    await journey.app.rendering;
+  });
+  await page
+    .locator('[data-form="settlement-edit"] [name="locationPresetId"]')
+    .selectOption("wilderness");
+  assert.equal(
+    await page
+      .locator('[name="guidedTemplateIds"][value="guided-performance"]')
+      .isChecked(),
+    false,
+  );
+  await page
+    .locator('[name="guidedTemplateIds"][value="guided-performance"]')
+    .check();
+  await page.screenshot({
+    path: path.join(out, "gm-location-settlement-editor.png"),
+    fullPage: true,
+  });
+  await page.locator('[data-action="saveSettlement"]').click();
+  await page.waitForFunction(
+    () =>
+      !journey.app._busy &&
+      journey.state.settlements[0].locationPresetId === "wilderness",
+  );
+  await page.evaluate(async () => {
+    await journey.app.rendering;
+  });
+  assert.equal(
+    await page.evaluate(() =>
+      journey.state.settlements[0].guidedTemplateIds.includes(
+        "guided-craft-arrows",
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      journey.state.settlements[0].guidedTemplateIds.includes(
+        "guided-performance",
+      ),
+    ),
+    true,
+  );
+  await page.locator('[data-action="setView"][data-view="current"]').click();
+  assert.equal(
+    await page.locator('[name="settlementId"]').inputValue(),
+    "haven",
+  );
+  await page.locator('[name="settlementId"]').selectOption("");
+  await page.waitForFunction(
+    () => !document.querySelector('[name="locationPresetId"]').disabled,
+  );
+  await page.locator('[name="locationPresetId"]').selectOption("town");
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[name="templateIds"][value="guided-labor"]')
+        .disabled,
+  );
   await page.locator('[name="locationName"]').fill("Harbor workshop");
   await page.locator('[name="hours"]').fill("241");
   await page.locator('[data-action="createBlock"]').click();
@@ -783,6 +902,10 @@ try {
       payload.report?.includes("harbor crane"),
     ),
   );
+  await page.waitForFunction(() => !journey.app._busy);
+  await page.evaluate(async () => {
+    await journey.app.rendering;
+  });
   await page
     .locator("[data-guided-report]")
     .first()

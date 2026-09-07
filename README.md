@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Downtime locations (next release):** New blocks offer Adventuring, Wilderness
+camp, Village, Town/city, and Custom presets. Select a saved settlement to use
+its own editable activity list and linked shops. Activities unavailable at the
+location cannot be included. See the [Downtime guide](docs/DOWNTIME_SYSTEM.md).
+
 **Shops organization (next release):** Delete shops directly from the directory,
 or select several to move or delete together. **Manage location** renames or
 removes a city/location; removal keeps its shops in **Unassigned shops**. Find

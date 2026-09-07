@@ -1,3 +1,7 @@
+import {
+  DOWNTIME_LOCATION_PRESETS,
+  downtimeLocationActivityIds,
+} from "./location-presets.js";
 import { DOWNTIME_ACTIVITY_IDS, getDowntimeActivity } from "./catalog.js";
 import {
   applyGuidedWork,
@@ -723,6 +727,8 @@ export async function saveSettlementProfile(payload = {}) {
     const id =
       String(payload.id ?? "").trim() ||
       createSettlementIdFromName(payload.name);
+    if (payload.locationPresetId)
+      downtimeLocationActivityIds([], payload.locationPresetId);
     const merchants = new Set(loadMerchants().map((merchant) => merchant.id));
     const factions = new Set(loadFactions().map((faction) => faction.id));
     const settlement = normalizeSettlementProfile({
@@ -736,6 +742,14 @@ export async function saveSettlementProfile(payload = {}) {
         merchants.has(merchantId),
       ),
       enabledActivityIds: payload.enabledActivities,
+      guidedTemplateIds:
+        payload.guidedTemplateIds ??
+        loadDowntimeConfig().settlements.find((entry) => entry.id === id)
+          ?.guidedTemplateIds,
+      locationPresetId:
+        payload.locationPresetId ??
+        loadDowntimeConfig().settlements.find((entry) => entry.id === id)
+          ?.locationPresetId,
     });
     await updateDowntimeConfig((current) => {
       const settlements = [...current.settlements];
@@ -948,6 +962,7 @@ export async function openDowntimeBlock({
   hours,
   actorIds,
   mode = "",
+  locationPresetId = "custom",
   templateIds = [],
   projectIds = [],
 } = {}) {
@@ -958,6 +973,8 @@ export async function openDowntimeBlock({
     if (mode === GUIDED_DOWNTIME_MODE) {
       return openGuidedDowntimeBlock({
         config,
+        settlementId,
+        locationPresetId,
         locationName,
         hours,
         actorIds,
@@ -1022,6 +1039,8 @@ export async function openDowntimeBlock({
 
 async function openGuidedDowntimeBlock({
   config,
+  settlementId,
+  locationPresetId,
   locationName,
   hours,
   actorIds,
@@ -1042,6 +1061,24 @@ async function openGuidedDowntimeBlock({
     ...new Set(Array.isArray(templateIds) ? templateIds.map(String) : []),
   ];
   const library = normalizeGuidedDowntimeLibrary(config.guidedTemplates);
+  const settlement = config.settlements.find(
+    (entry) => entry.id === settlementId,
+  );
+  if (settlementId && !settlement)
+    throw new Error("Choose a valid saved settlement or no settlement.");
+  const presetId = settlement
+    ? (settlement.locationPresetId ?? "town")
+    : locationPresetId;
+  const allowedIds = downtimeLocationActivityIds(library, presetId, settlement);
+  const blockLocationName = cleanGuidedLocation(
+    String(locationName ?? "").trim() ||
+      settlement?.name ||
+      DOWNTIME_LOCATION_PRESETS.find((entry) => entry.id === presetId)?.label,
+  );
+  if (selectedIds.some((id) => !allowedIds.includes(id)))
+    throw new Error(
+      "An activity is unavailable at this location. Review the location and activity selection.",
+    );
   const templates = selectedIds
     .map((templateId) => guidedTemplateById(library, templateId))
     .filter(Boolean);
@@ -1072,10 +1109,15 @@ async function openGuidedDowntimeBlock({
   const block = await createDowntimeBlock({
     id: newId("downtime"),
     mode: GUIDED_DOWNTIME_MODE,
-    locationName: cleanGuidedLocation(locationName),
-    settlementName: cleanGuidedLocation(locationName),
-    settlementId: "guided-downtime",
-    hasSettlement: false,
+    locationName: blockLocationName,
+    settlementName: settlement?.name ?? blockLocationName,
+    settlementId: settlement?.id ?? "guided-downtime",
+    hasSettlement: Boolean(settlement),
+    settlementSnapshot: settlement ?? {
+      ...createNonSettlementDowntimeContext(blockLocationName),
+      locationPresetId: presetId,
+      guidedTemplateIds: allowedIds,
+    },
     budgetHours,
     hours: budgetHours,
     guidedTemplates: templates,
@@ -4166,6 +4208,8 @@ function projectSettlementForWorkspace(settlement) {
     linkedFactionId: settlement.linkedFactionId,
     merchantIds: [...settlement.linkedMerchantIds],
     linkedMerchantIds: [...settlement.linkedMerchantIds],
+    locationPresetId: settlement.locationPresetId,
+    guidedTemplateIds: settlement.guidedTemplateIds,
     enabledActivities: [...settlement.enabledActivityIds],
     enabledActivityIds: [...settlement.enabledActivityIds],
   };

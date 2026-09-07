@@ -264,6 +264,9 @@
         </aside>
         {{/if}}
         <form class="dt-form" data-form="new-block">
+          <label class="dt-field"><span>Settlement</span><select name="settlementId" aria-label="Downtime settlement" {{#if busy}}disabled{{/if}}><option value="">No saved settlement</option>{{#each blockSettlementOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>A saved settlement supplies its own allowed activities and linked shops.</small></label>
+          <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Unavailable activities cannot be selected. Use Custom to define a different situation, or edit the saved settlement.</small></label>
+          {{#if blockShopNames}}<p>Linked shops: {{blockShopNames}}</p>{{/if}}
           <label class="dt-field">
             <span>Location</span>
             <input type="text" name="locationName" value="{{newBlockLocation}}" maxlength="120" placeholder="Camp, forest, roadside, ship..." aria-label="Downtime location" {{#if busy}}disabled{{/if}} />
@@ -394,7 +397,7 @@
             {{#if hasGuidedTemplates}}
             <div class="dt-chip-grid">
               {{#each guidedTemplates}}
-              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}}</span></label>
+              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if unavailable}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}}{{#if unavailable}} — unavailable here{{/if}}</span></label>
               {{/each}}
             </div>
             {{else}}
@@ -611,7 +614,12 @@
           </div>
 
           <fieldset class="dt-fieldset">
-            <legend>Enabled activities</legend>
+            <legend>Downtime activities at this settlement</legend>
+            <label class="dt-field"><span>Start from a preset</span><select name="locationPresetId" aria-label="Location preset">{{#each selectedSettlement.locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <div class="dt-chip-grid">{{#each selectedSettlement.guidedActivityOptions}}<label class="dt-chip"><input type="checkbox" name="guidedTemplateIds" value="{{id}}" {{#if checked}}checked{{/if}} /><span>{{label}}</span></label>{{/each}}</div>
+          </fieldset>
+          <fieldset class="dt-fieldset">
+            <legend>Legacy city activities</legend>
             <div class="dt-chip-grid">
               {{#each selectedSettlement.activityOptions}}
               <label class="dt-chip"><input type="checkbox" name="enabledActivities" value="{{id}}" {{#if checked}}checked{{/if}} /><span>{{label}}</span></label>
@@ -621,7 +629,7 @@
 
           <fieldset class="dt-fieldset">
             <legend>Linked merchants</legend>
-            <p>Only finite, non-quest stock from these merchants can become a shoplifting target.</p>
+            <p>These shops belong to this downtime profile. Linking does not move shops in the Shops directory or change their opening status. Legacy shoplifting uses only finite, non-quest stock.</p>
             {{#if selectedSettlement.hasMerchants}}
             <div class="dt-chip-grid">
               {{#each selectedSettlement.merchantOptions}}

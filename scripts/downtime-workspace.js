@@ -1,3 +1,7 @@
+import {
+  DOWNTIME_LOCATION_PRESETS,
+  downtimeLocationActivityIds,
+} from "./downtime/location-presets.js";
 /**
  * Infinity D&D5e - Downtime Workspace (full-GM interface)
  *
@@ -420,6 +424,29 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     for (const event of ["input", "change"]) {
       setup?.addEventListener(event, () => this._captureNewBlockDraft(setup));
     }
+    setup?.addEventListener("change", (event) => {
+      if (!["settlementId", "locationPresetId"].includes(event.target?.name))
+        return;
+      this._captureNewBlockDraft(setup);
+      this._newBlockDraft.templateIds = null;
+      this.render();
+    });
+    const settlementForm = this.element?.querySelector?.(
+      '[data-form="settlement-edit"]',
+    );
+    settlementForm
+      ?.querySelector('[name="locationPresetId"]')
+      ?.addEventListener("change", (event) => {
+        const inputs = [
+          ...settlementForm.querySelectorAll('[name="guidedTemplateIds"]'),
+        ];
+        const allowed = downtimeLocationActivityIds(
+          inputs.map((input) => ({ id: input.value })),
+          event.target.value,
+        );
+        for (const input of inputs)
+          input.checked = allowed.includes(input.value);
+      });
     const templateForm = this.element?.querySelector?.(
       '[data-form="guided-template"]',
     );
@@ -483,6 +510,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
   _captureNewBlockDraft(form) {
     const data = new FormData(form);
     this._newBlockDraft = {
+      locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
+      settlementId: cleanId(data.get("settlementId")),
       locationName: String(data.get("locationName") ?? ""),
       hours: String(data.get("hours") ?? ""),
       templateIds: data.getAll("templateIds").map(cleanId).filter(Boolean),
@@ -836,6 +865,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const data = new FormData(form);
     const payload = {
       settlementId: cleanId(data.get("settlementId")),
+      locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
       locationName: String(data.get("locationName") ?? "").trim(),
       hours: positiveInteger(data.get("hours"), 0),
       actorIds: [
@@ -1123,6 +1153,11 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       marketDc: positiveInteger(data.get("marketDc"), 0),
       factionId: cleanId(data.get("factionId")),
       merchantIds: data.getAll("merchantIds").map(cleanId).filter(Boolean),
+      locationPresetId: cleanId(data.get("locationPresetId")),
+      guidedTemplateIds: data
+        .getAll("guidedTemplateIds")
+        .map(cleanId)
+        .filter(Boolean),
       enabledActivities: data
         .getAll("enabledActivities")
         .map(cleanId)
@@ -1358,15 +1393,29 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     workflow?.status ?? source.workflowStatus ?? "idle",
   );
   const settlements = array(source.settlements).map(normalizeSettlementListRow);
+  const blockSettlement = array(source.settlements).find(
+    (entry) => entry.id === uiState.newBlockDraft?.settlementId,
+  );
+  const locationPresetId = blockSettlement
+    ? (blockSettlement.locationPresetId ?? "town")
+    : (uiState.newBlockDraft?.locationPresetId ?? "wilderness");
+  const locationAllowed = downtimeLocationActivityIds(
+    array(source.guidedTemplates),
+    locationPresetId,
+    blockSettlement,
+  );
   const guidedTemplates = array(source.guidedTemplates)
     .map((template) => ({
       id: cleanId(template?.id),
       name: String(template?.name ?? "Activity"),
       description: String(template?.description ?? ""),
       image: String(template?.image ?? "icons/svg/d20.svg"),
-      checked: uiState.newBlockDraft
-        ? array(uiState.newBlockDraft.templateIds).includes(template?.id)
-        : true,
+      unavailable: !locationAllowed.includes(template?.id),
+      checked:
+        locationAllowed.includes(template?.id) &&
+        (Array.isArray(uiState.newBlockDraft?.templateIds)
+          ? uiState.newBlockDraft.templateIds.includes(template?.id)
+          : true),
     }))
     .filter((template) => template.id);
   const selectedTemplate = uiState.creatingTemplate
@@ -1635,6 +1684,23 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   return {
     dataAvailable: source.dataAvailable !== false,
     guided,
+    locationPresetOptions: DOWNTIME_LOCATION_PRESETS.map((entry) => ({
+      ...entry,
+      selected: entry.id === locationPresetId,
+    })),
+    blockSettlementOptions: settlements.map((entry) => ({
+      ...entry,
+      selected: entry.id === blockSettlement?.id,
+    })),
+    blockHasSettlement: Boolean(blockSettlement),
+    blockShopNames: blockSettlement
+      ? array(source.merchants)
+          .filter((entry) =>
+            array(blockSettlement.linkedMerchantIds).includes(entry.id),
+          )
+          .map((entry) => entry.name)
+          .join(", ")
+      : "",
     newBlockLocation: String(uiState.newBlockDraft?.locationName ?? ""),
     newBlockHours: String(uiState.newBlockDraft?.hours ?? "8"),
     lifecycleLabel: lifecycle.steps.map((step) => step.label).join(", "),
@@ -2312,6 +2378,19 @@ function normalizeSettlementEditor(source, root, { creating = false } = {}) {
     id: cleanId(settlement.id),
     creating,
     name: String(settlement.name ?? ""),
+    locationPresetOptions: DOWNTIME_LOCATION_PRESETS.map((entry) => ({
+      ...entry,
+      selected: entry.id === (settlement.locationPresetId ?? "town"),
+    })),
+    guidedActivityOptions: array(root.guidedTemplates).map((entry) => ({
+      id: entry.id,
+      label: entry.name,
+      checked: downtimeLocationActivityIds(
+        array(root.guidedTemplates),
+        settlement.locationPresetId ?? "town",
+        settlement,
+      ).includes(entry.id),
+    })),
     marketDc: positiveInteger(settlement.marketDc, 13),
     wealthOptions: optionRows(
       ["poor", "modest", "prosperous", "wealthy"],
