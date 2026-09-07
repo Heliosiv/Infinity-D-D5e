@@ -26,6 +26,10 @@ import {
 } from "./merchant/transaction-ledger.js";
 import { normalizeMerchant } from "./merchant/store.js";
 import { applyLocationOperation } from "./merchant/locations.js";
+import {
+  deleteDirectoryShops,
+  moveDirectoryShops,
+} from "./merchant/directory.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const saved = {
@@ -1098,6 +1102,20 @@ try {
     getPrivateState("merchants"),
     beforeProtectedEdit,
     "bulk and individual edits cannot erase recovery checkpoints",
+  );
+  const protectedShop = beforeProtectedEdit.find((row) => row.id === "shop-p3");
+  await assert.rejects(
+    deleteDirectoryShops([protectedShop]),
+    /unfinished trade/,
+  );
+  await assert.rejects(
+    moveDirectoryShops({ expectedShops: [protectedShop], destination: "" }),
+    /unfinished trade/,
+  );
+  assert.deepEqual(
+    getPrivateState("merchants"),
+    beforeProtectedEdit,
+    "directory deletion and moving preserve unfinished trade checkpoints",
   );
 
   const p3BlockedSession = openSession({

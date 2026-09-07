@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Shops organization (next release):** Delete shops directly from the directory,
+or select several to move or delete together. **Manage location** renames or
+removes a city/location; removal keeps its shops in **Unassigned shops**. Find
+locations by name, filter shops by Open/Closed/Empty inventory, and sort by name,
+opening status, or item types. See the [Shops guide](docs/MERCHANT_SESSIONS.md).
+
 **v0.3.27 — current-PC injuries and compendium cleanup:** The landing-page
 injury picker now follows each non-GM player's assigned character, including
 offline players, and excludes spare owned characters and copies. **New injury

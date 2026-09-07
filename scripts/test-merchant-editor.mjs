@@ -3,6 +3,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
 import { buildUiHarnessDocument } from "./ui-harness.mjs";
+import { filterDirectoryShops } from "./merchant/directory.js";
 import {
   MERCHANT_EDITOR_TABS,
   merchantTabContext,
@@ -139,7 +140,7 @@ try {
   await page.setContent(buildUiHarnessDocument());
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(readFileSync("scripts/merchant/editor-tabs.js", "utf8")).toString("base64")}`;
   await page.evaluate(
-    async ({ moduleUrl, searchMethod }) => {
+    async ({ moduleUrl, searchMethod, selectionMethod, filterFunction }) => {
       const { selectMerchantTab, bindMerchantTabKeys } = await import(
         moduleUrl
       );
@@ -155,14 +156,30 @@ try {
         '[data-harness-window="merchant-workspace"]',
       );
       const wireSearch = new Function(
+        "filterDirectoryShops",
         `return ({${searchMethod}})._wireMerchantSearch`,
-      )();
-      wireSearch.call({ element: root, _merchantSearch: "" });
+      )(new Function(`return (${filterFunction})`)());
+      const updateSelection = new Function(
+        "isAuthoritativeGM",
+        "hasMerchantTabLeadership",
+        `return ({${selectionMethod}})._updateShopSelection`,
+      )(
+        () => true,
+        () => true,
+      );
+      wireSearch.call({
+        element: root,
+        _merchantSearch: "",
+        _updateShopSelection: updateSelection,
+      });
     },
     {
       moduleUrl,
       searchMethod:
         MerchantWorkspaceApp.prototype._wireMerchantSearch.toString(),
+      selectionMethod:
+        MerchantWorkspaceApp.prototype._updateShopSelection.toString(),
+      filterFunction: filterDirectoryShops.toString(),
     },
   );
   const directoryRoot = page.locator(

@@ -158,7 +158,15 @@ export function templateMerchant(
   });
 }
 
-export async function createShopLocation({
+export function createShopLocation(options) {
+  return runMerchantAccessOperation(() => createShopLocationLocked(options));
+}
+
+export function addShopToLocation(options) {
+  return runMerchantAccessOperation(() => addShopToLocationLocked(options));
+}
+
+async function createShopLocationLocked({
   name,
   templateId = "town",
   items = [],
@@ -180,11 +188,7 @@ export async function createShopLocation({
   return { id, name: label, count: shops.length };
 }
 
-export async function addShopToLocation({
-  locationId,
-  templateId,
-  items = [],
-}) {
+async function addShopToLocationLocked({ locationId, templateId, items = [] }) {
   if (
     locationId &&
     !locationDirectory().some((location) => location.id === locationId)
