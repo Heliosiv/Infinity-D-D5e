@@ -1,3 +1,4 @@
+import { CRITICAL_INJURY_TABLE_VERSION } from "./table.js";
 /** GM-only Critical Injury review and party-status workspace. */
 
 import { isFullGM } from "../permissions.js";
@@ -269,6 +270,7 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
       showLog: this._view === "history",
       showTable: this._view === "table",
       tableRows: buildCriticalInjuryTableReference(),
+      tableVersion: CRITICAL_INJURY_TABLE_VERSION,
       midiActive: globalThis.game?.modules?.get?.("midi-qol")?.active === true,
       logRows,
       hasLogRows: logRows.length > 0,

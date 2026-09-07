@@ -1,253 +1,41 @@
-/**
- * Critical Injury Table, Version 2.
- *
- * This is the campaign table previously shipped by Party Operations, moved
- * into a pure data/domain module so the roll bands, recovery rules, and
- * mechanical changes can be tested without Foundry globals.
- */
-
-export const CRITICAL_INJURY_TABLE_VERSION = 2;
+/** Versioned campaign injury tables and pure effect rules. */
+import { LEGACY_CRITICAL_INJURY_TABLE } from "./table-v2.js";
+import { EXPANDED_CRITICAL_INJURIES } from "./table-v3.js";
+export const CRITICAL_INJURY_TABLE_VERSION = 3;
 export const CRITICAL_INJURY_ROLL_FORMULA = "1d100";
 
-export const CRITICAL_INJURY_TABLE = Object.freeze([
-  {
-    key: "lost-limb",
-    min: 1,
-    max: 5,
-    label: "Lost Limb",
-    effect:
-      "Lose an arm or leg (1d4). Limb is unusable. Movement is halved if it is a leg; weapons and shields cannot be used with a lost arm.",
-    recovery: "Permanent. Only Regenerate or divine magic can restore it.",
-    permanent: true,
-    kitCharges: 0,
-    detailRoll: { type: "body-part", formula: "1d4" },
-  },
-  {
-    key: "crippling-injury",
-    min: 6,
-    max: 10,
-    label: "Crippling Injury",
-    effect:
-      "Disadvantage on actions using the injured limb. Speed is halved for a leg; shield protection is impaired for an arm.",
-    recovery: "1d4 days or 2 Healer's Kit charges plus DC 12 Medicine.",
-    recoveryFormula: "1d4",
-    dayMin: 1,
-    dayMax: 4,
-    kitCharges: 2,
-    treatmentDc: 12,
-    treatmentSkill: "med",
-    detailRoll: { type: "body-part", formula: "1d4" },
-  },
-  {
-    key: "concussion",
-    min: 11,
-    max: 15,
-    label: "Concussion",
-    effect:
-      "Disadvantage on Intelligence and Wisdom checks and saves. Passive Perception is reduced by 5.",
-    recovery: "1d4 days or 1 Healer's Kit charge.",
-    recoveryFormula: "1d4",
-    dayMin: 1,
-    dayMax: 4,
-    kitCharges: 1,
-  },
-  {
-    key: "broken-arm",
-    min: 16,
-    max: 20,
-    label: "Broken Arm",
-    effect:
-      "The injured arm cannot be used for weapons, shields, or somatic spell components.",
-    recovery:
-      "2d4 days, or 2 Healer's Kit charges to downgrade it to a Crippling Injury with half the remaining recovery.",
-    recoveryFormula: "2d4",
-    dayMin: 2,
-    dayMax: 8,
-    kitCharges: 2,
-    downgradeTo: "crippling-injury",
-    downgradeHalfDays: true,
-  },
-  {
-    key: "fractured-ribs",
-    min: 21,
-    max: 25,
-    label: "Fractured Ribs",
-    effect:
-      "Disadvantage on Dexterity saves and Constitution checks. Dashing causes 1d4 damage.",
-    recovery: "1d4+1 days or 2 Healer's Kit charges.",
-    recoveryFormula: "1d4+1",
-    dayMin: 2,
-    dayMax: 5,
-    kitCharges: 2,
-  },
-  {
-    key: "internal-bleeding",
-    min: 26,
-    max: 30,
-    label: "Internal Bleeding",
-    effect: "At the start of combat, roll 1d6. On a 1, take 1d4 damage.",
-    recovery:
-      "3 Healer's Kit charges plus DC 15 Medicine, or suitable magical healing.",
-    recoveryFormula: "3",
-    dayMin: 3,
-    dayMax: 3,
-    kitCharges: 3,
-    treatmentDc: 15,
-    treatmentSkill: "med",
-  },
-  {
-    key: "deep-cut",
-    min: 31,
-    max: 35,
-    label: "Deep Cut",
-    effect: "Lose 1d6 maximum HP. It cannot be regained until treated.",
-    recovery: "1 Healer's Kit charge, or 1 hour of rest plus DC 13 Medicine.",
-    recoveryFormula: "1",
-    dayMin: 1,
-    dayMax: 1,
-    kitCharges: 1,
-    treatmentDc: 13,
-    treatmentSkill: "med",
-    detailRoll: { type: "max-hp-loss", formula: "1d6" },
-  },
-  {
-    key: "loss-of-eye",
-    min: 36,
-    max: 40,
-    label: "Loss of Eye",
-    effect: "Disadvantage on Perception checks and ranged attacks.",
-    recovery: "Permanent unless magically restored.",
-    permanent: true,
-    kitCharges: 0,
-  },
-  {
-    key: "loss-of-hearing",
-    min: 41,
-    max: 45,
-    label: "Loss of Hearing",
-    effect: "Disadvantage on sound-based Perception checks.",
-    recovery: "Permanent unless magically restored.",
-    permanent: true,
-    kitCharges: 0,
-  },
-  {
-    key: "shattered-knee",
-    min: 46,
-    max: 50,
-    label: "Shattered Knee",
-    effect: "Cannot Dash. Speed is halved and movement is painful.",
-    recovery:
-      "1 week or 3 Healer's Kit charges. It becomes permanent if untreated.",
-    recoveryFormula: "7",
-    dayMin: 7,
-    dayMax: 7,
-    kitCharges: 3,
-    canBecomePermanent: true,
-  },
-  {
-    key: "dislocated-shoulder",
-    min: 51,
-    max: 55,
-    label: "Dislocated Shoulder",
-    effect: "Disadvantage on Strength checks and melee attacks.",
-    recovery: "1d6 days of rest.",
-    recoveryFormula: "1d6",
-    dayMin: 1,
-    dayMax: 6,
-    kitCharges: 0,
-  },
-  {
-    key: "infection",
-    min: 56,
-    max: 60,
-    label: "Infection",
-    effect:
-      "After each long rest, make a DC 15 Constitution save. On a failure, lose 1 maximum HP until the infection heals.",
-    recovery: "2 Healer's Kit charges.",
-    recoveryFormula: "3",
-    dayMin: 3,
-    dayMax: 3,
-    kitCharges: 2,
-  },
-  {
-    key: "minor-injury",
-    min: 61,
-    max: 70,
-    label: "Minor Injury",
-    effect: "No combat effect. The character is bloodied, limping, or bruised.",
-    recovery: "1 Healer's Kit charge or 1d3 days of rest.",
-    recoveryFormula: "1d3",
-    dayMin: 1,
-    dayMax: 3,
-    kitCharges: 1,
-  },
-  {
-    key: "deep-scar",
-    min: 71,
-    max: 80,
-    label: "Deep Scar",
-    effect: "+1 Intimidation and -1 Persuasion while the scar is visible.",
-    recovery: "Permanent.",
-    permanent: true,
-    kitCharges: 0,
-  },
-  {
-    key: "psychic-trauma",
-    min: 81,
-    max: 90,
-    label: "Psychic Trauma",
-    effect: "Disadvantage on saves against fear and charm.",
-    recovery: "1 week, or 2 Healer's Kit charges plus one DC 13 Insight check.",
-    recoveryFormula: "7",
-    dayMin: 7,
-    dayMax: 7,
-    kitCharges: 2,
-    treatmentDc: 13,
-    treatmentSkill: "ins",
-  },
-  {
-    key: "nerve-damage",
-    min: 91,
-    max: 95,
-    label: "Nerve Damage",
-    effect: "One ability score (1d6) is reduced by 1 temporarily.",
-    recovery:
-      "1 week or 2 Healer's Kit charges. It becomes permanent on a failed DC 13 Constitution save.",
-    recoveryFormula: "7",
-    dayMin: 7,
-    dayMax: 7,
-    kitCharges: 2,
-    treatmentDc: 13,
-    treatmentSkill: "con",
-    canBecomePermanent: true,
-    detailRoll: { type: "ability", formula: "1d6" },
-  },
-  {
-    key: "nightmares",
-    min: 96,
-    max: 99,
-    label: "Nightmares",
-    effect:
-      "Disadvantage on the first initiative roll each day. Long rests do not remove exhaustion.",
-    recovery:
-      "Remove Curse, or 4 Healer's Kit charges to ease the mental symptoms.",
-    recoveryFormula: "7",
-    dayMin: 7,
-    dayMax: 7,
-    kitCharges: 4,
-  },
-  {
-    key: "soul-shaken",
-    min: 100,
-    max: 100,
-    label: "Soul-Shaken",
-    effect: "Permanent -1 to Wisdom saves. Shadows cling to the soul.",
-    recovery:
-      "Permanent unless resolved through divine magic or a narrative quest.",
-    permanent: true,
-    kitCharges: 0,
-  },
-]);
+const EXPANDED_BANDS = {
+  "crippling-injury": [6, 8],
+  concussion: [11, 13],
+  "broken-arm": [16, 18],
+  "fractured-ribs": [21, 23],
+  "internal-bleeding": [26, 28],
+  "deep-cut": [31, 33],
+  "dislocated-shoulder": [51, 53],
+  infection: [56, 58],
+  "minor-injury": [61, 63],
+  "psychic-trauma": [81, 85],
+};
+export const CRITICAL_INJURY_TABLE = Object.freeze(
+  [
+    ...LEGACY_CRITICAL_INJURY_TABLE.map((entry) => {
+      const band = EXPANDED_BANDS[entry.key];
+      return Object.freeze(
+        band ? { ...entry, min: band[0], max: band[1] } : { ...entry },
+      );
+    }),
+    ...EXPANDED_CRITICAL_INJURIES,
+  ].sort((a, b) => a.min - b.min),
+);
+
+export function getCriticalInjuryTable(
+  version = CRITICAL_INJURY_TABLE_VERSION,
+) {
+  if (Number(version) === 2) return LEGACY_CRITICAL_INJURY_TABLE;
+  if (Number(version) === CRITICAL_INJURY_TABLE_VERSION)
+    return CRITICAL_INJURY_TABLE;
+  return [];
+}
 
 const BODY_PARTS = Object.freeze({
   1: { key: "left-arm", label: "Left arm", kind: "arm" },
@@ -265,19 +53,27 @@ const ABILITIES = Object.freeze({
   6: { key: "cha", label: "Charisma" },
 });
 
-export function getCriticalInjuryDefinition(key) {
+export function getCriticalInjuryDefinition(
+  key,
+  version = CRITICAL_INJURY_TABLE_VERSION,
+) {
   const normalized = String(key ?? "").trim();
   return (
-    CRITICAL_INJURY_TABLE.find((entry) => entry.key === normalized) ?? null
+    getCriticalInjuryTable(version).find((entry) => entry.key === normalized) ??
+    null
   );
 }
 
-export function findCriticalInjuryByRoll(roll) {
+export function findCriticalInjuryByRoll(
+  roll,
+  version = CRITICAL_INJURY_TABLE_VERSION,
+) {
+  const table = getCriticalInjuryTable(version);
   const value = Math.max(1, Math.min(100, Math.floor(Number(roll) || 1)));
   return (
-    CRITICAL_INJURY_TABLE.find(
-      (entry) => value >= entry.min && value <= entry.max,
-    ) ?? CRITICAL_INJURY_TABLE[0]
+    table.find((entry) => value >= entry.min && value <= entry.max) ??
+    table[0] ??
+    null
   );
 }
 
@@ -344,6 +140,9 @@ export function buildCriticalInjuryChanges(
   const add = (key, value, mode = ADD) =>
     changes.push({ key, mode, value: String(value), priority });
   const disadvantage = (key) => add(`flags.midi-qol.${key}`, "1", OVERRIDE);
+
+  for (const change of definition?.mechanicalChanges ?? [])
+    add(change.key, change.value);
 
   switch (definition?.key) {
     case "lost-limb":

@@ -145,7 +145,7 @@ try {
   await board
     .getByRole("button", { name: "Injury table", exact: true })
     .click();
-  assert.equal(await board.locator(".ci-injury-table-row").count(), 18);
+  assert.equal(await board.locator(".ci-injury-table-row").count(), 30);
   await board.getByRole("searchbox").fill("nightmares");
   assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 1);
   await board.locator(".ci-injury-table-row:visible summary").click();
@@ -154,13 +154,23 @@ try {
     /not implemented/,
   );
   await page.screenshot({ path: path.join(out, "injury-table-search.png") });
+  await board.getByRole("searchbox").fill("winded");
+  assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 1);
+  assert.match(
+    await board.locator(".ci-injury-table-row:visible").innerText(),
+    /Effect supported/,
+  );
+  assert.match(
+    await board.locator(".ci-injury-table-row:visible").innerText(),
+    /Athletics/,
+  );
   await board.getByRole("searchbox").fill("no matching rule");
   assert.equal(
     await board.locator('[data-role="injury-no-matches"]').isVisible(),
     true,
   );
   await board.getByRole("searchbox").fill("");
-  assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 18);
+  assert.equal(await board.locator(".ci-injury-table-row:visible").count(), 30);
   await page.screenshot({ path: path.join(out, "injury-table.png") });
   await board.getByRole("button", { name: "Party & rolls" }).click();
   await board

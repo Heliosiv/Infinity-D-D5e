@@ -1,4 +1,4 @@
-# Critical Injury Table V2
+# Critical Injuries and Table V3
 
 ## View the complete table
 
@@ -10,8 +10,10 @@ another Workbench section preserves this view.
 
 The table is **not fully automatic**. See the
 [2026-09-07 automation audit and expansion proposal](INJURY_TABLE_AUDIT.md).
-The viewer does not change injury probabilities, rules, active effects, or
-existing campaign records.
+New rolls now use the [expanded V3 chart](INJURY_TABLE_EXPANSION.md): 30 outcomes,
+including 12 new temporary injuries with automatic numeric penalties. Permanent
+injury odds are unchanged. Existing V2 injuries and saved roll receipts keep
+their original rules. The viewer itself remains read-only.
 
 ## Injury board, canvas badges, and saved log
 
@@ -152,7 +154,10 @@ of trusting an owner-writable effect as proof of completion. If the recorded
 player no longer controls the Actor, the private approval and visible button
 are moved to the active GM.
 
-## Version 2 table
+## Version 2 table (historical)
+
+New rolls use the [complete V3 chart](INJURY_TABLE_EXPANSION.md#complete-d100-chart).
+This original table remains the reference for saved V2 injuries.
 
 | d100  | Injury              | Recovery or treatment                                                                    |
 | ----- | ------------------- | ---------------------------------------------------------------------------------------- |

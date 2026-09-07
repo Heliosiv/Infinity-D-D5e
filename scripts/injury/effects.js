@@ -1,7 +1,7 @@
-/** Active Effect persistence for Version 2 Critical Injuries. */
+/** Active Effect persistence for versioned Critical Injuries. */
 
 import {
-  CRITICAL_INJURY_TABLE_VERSION,
+  getCriticalInjuryTable,
   buildCriticalInjuryChanges,
   buildCriticalInjuryEffectText,
   getCriticalInjuryDefinition,
@@ -70,8 +70,11 @@ export function buildCriticalInjuryEffectData(
   injury,
   { startTime = 0, dueTimestamp = null, modes = {} } = {},
 ) {
+  const tableVersion = Number(injury?.tableVersion ?? 2);
+  if (!getCriticalInjuryTable(tableVersion).length)
+    throw new Error("CriticalInjuryEffectTableVersionUnsupported");
   const definition =
-    getCriticalInjuryDefinition(injury?.injuryKey) ??
+    getCriticalInjuryDefinition(injury?.injuryKey, tableVersion) ??
     injury?.definition ??
     null;
   const permanent = Boolean(injury?.permanent || definition?.permanent);
@@ -129,7 +132,7 @@ export function buildCriticalInjuryEffectData(
         [EFFECT_FLAG]: {
           ...injury,
           schema: 1,
-          tableVersion: CRITICAL_INJURY_TABLE_VERSION,
+          tableVersion,
           permanent,
           effect: effectText,
           recoveryRule,

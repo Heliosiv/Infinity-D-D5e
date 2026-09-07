@@ -1,4 +1,5 @@
-/** Pure presentation mapping from Critical Injury V2 data to body regions. */
+import { EXPANDED_CRITICAL_INJURIES } from "./table-v3.js";
+/** Pure presentation mapping from Critical Injury data to body regions. */
 
 const freezeRegion = (region) => Object.freeze(region);
 
@@ -59,6 +60,27 @@ const ALL_LIMBS = Object.freeze([
 ]);
 
 const INJURY_DEFAULTS = Object.freeze({
+  ...Object.fromEntries(
+    EXPANDED_CRITICAL_INJURIES.map((entry) => {
+      const limb =
+        entry.bodyRegion === "arms"
+          ? BOTH_ARMS
+          : entry.bodyRegion === "legs"
+            ? BOTH_LEGS
+            : null;
+      return [
+        entry.key,
+        Object.freeze({
+          regionKeys: limb ?? Object.freeze([entry.bodyRegion]),
+          locationLabel: limb
+            ? `${entry.bodyRegion === "arms" ? "Arm" : "Leg"} (side unspecified)`
+            : entry.bodyRegion.replace("-", " "),
+          specificity: limb ? "unspecified-side" : "general",
+        }),
+      ];
+    }),
+  ),
+
   concussion: Object.freeze({
     regionKeys: Object.freeze(["head"]),
     locationLabel: "Head",

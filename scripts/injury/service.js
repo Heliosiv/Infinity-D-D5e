@@ -22,6 +22,7 @@ import {
   CRITICAL_INJURY_TABLE_VERSION,
   buildCriticalInjuryEffectText,
   findCriticalInjuryByRoll,
+  getCriticalInjuryTable,
   getCriticalInjuryDefinition,
   getCriticalInjuryRecoveryFormula,
   resolveCriticalInjuryDetail,
@@ -914,12 +915,18 @@ async function rollAndPersistCriticalInjuryResolution({
   );
 }
 
-function buildInjuryFromResolution(pendingId, actor, resolution) {
-  if (Number(resolution.tableVersion) !== CRITICAL_INJURY_TABLE_VERSION) {
+export function buildInjuryFromResolution(pendingId, actor, resolution) {
+  if (getCriticalInjuryTable(Number(resolution.tableVersion)).length === 0) {
     throw new Error("CriticalInjuryResolutionTableVersionMismatch");
   }
-  const definition = getCriticalInjuryDefinition(resolution.injuryKey);
-  const rollDefinition = findCriticalInjuryByRoll(resolution.injuryRoll);
+  const definition = getCriticalInjuryDefinition(
+    resolution.injuryKey,
+    resolution.tableVersion,
+  );
+  const rollDefinition = findCriticalInjuryByRoll(
+    resolution.injuryRoll,
+    resolution.tableVersion,
+  );
   if (!definition || definition.key !== rollDefinition?.key) {
     throw new Error("CriticalInjuryResolutionDefinitionMismatch");
   }
@@ -934,6 +941,7 @@ function buildInjuryFromResolution(pendingId, actor, resolution) {
     injuryKey: definition.key,
     injuryName: definition.label,
     injuryRoll: resolution.injuryRoll,
+    tableVersion: Number(resolution.tableVersion),
     effect: buildCriticalInjuryEffectText(definition, detail),
     recoveryRule: definition.recovery,
     recoveryFormula: resolution.recoveryFormula,
@@ -1450,7 +1458,10 @@ async function prepareCriticalInjuryTreatmentResolution({
   parent,
   applicationLeaseId,
 }) {
-  const definition = getCriticalInjuryDefinition(initial.injuryKey);
+  const definition = getCriticalInjuryDefinition(
+    initial.injuryKey,
+    initial.tableVersion ?? 2,
+  );
   const requiredCharges = Math.max(0, Number(definition?.kitCharges ?? 0));
   if (!definition || requiredCharges <= 0) {
     return {
@@ -1631,7 +1642,10 @@ function buildCriticalInjuryTreatmentOutcome(
     );
   }
   if (injury.injuryKey === "broken-arm" && injury.downgradeTo) {
-    const next = getCriticalInjuryDefinition(injury.downgradeTo);
+    const next = getCriticalInjuryDefinition(
+      injury.downgradeTo,
+      injury.tableVersion ?? 2,
+    );
     if (next) {
       injury.injuryKey = next.key;
       injury.injuryName = next.label;
@@ -2533,7 +2547,7 @@ async function requestGmInjuryApproval(actor, recovery) {
   const content = `
     <div class="infinity-dnd5e">
       <p><strong>${escapeHtml(actor.name)}</strong> recovered from ${escapeHtml(stateLabel)} (${Number(recovery?.previousHp ?? 0)} → ${Number(recovery?.nextHp ?? 1)} HP).</p>
-      <p>Ask the owning player to roll on Critical Injury Table V2?</p>
+      <p>Ask the owning player to roll on Critical Injury Table V${CRITICAL_INJURY_TABLE_VERSION}?</p>
     </div>`;
   if (!isInfinityDialogAvailable("confirm")) {
     ui.notifications?.warn?.(

@@ -1,4 +1,4 @@
-/** Read-only audit notes for the canonical V2 table; no rule or Actor writes. */
+/** Read-only audit notes for the current table; no rule or Actor writes. */
 import {
   CRITICAL_INJURY_TABLE,
   CRITICAL_INJURY_TABLE_VERSION,
@@ -6,7 +6,20 @@ import {
   treatmentSkillLabel,
 } from "./table.js";
 
+import { EXPANDED_CRITICAL_INJURIES } from "./table-v3.js";
+
 export const INJURY_AUTOMATION_AUDIT = Object.freeze({
+  ...Object.fromEntries(
+    EXPANDED_CRITICAL_INJURIES.map((entry) => [
+      entry.key,
+      {
+        status: "automated",
+        automatic: `${entry.effect} The numeric penalty is applied automatically until recovery.`,
+        manual:
+          "No additional GM penalty is needed. Bonuses use the D&D5e roll system; third-party replacement rolls need installed-world verification.",
+      },
+    ]),
+  ),
   "lost-limb": {
     status: "partial",
     automatic: "A rolled leg halves walking speed.",
