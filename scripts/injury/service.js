@@ -50,7 +50,10 @@ import {
   getRemainingInjuryCalendarDays,
   removeCriticalInjuryNote,
   scheduleCriticalInjuryNote,
+  synchronizeCriticalInjuryNoteRange,
+  isSimpleCalendarAvailable,
 } from "./calendar.js";
+import { syncCriticalInjuryCalendar } from "./calendar-sync.js";
 import {
   authorizeCriticalInjuryWorkflowRequest,
   claimCriticalInjuryApplication,
@@ -341,15 +344,21 @@ function onUpdateActor(actor, _changes, options = {}) {
   if (recovery) void considerRecoveryForInjury(actor, recovery);
 }
 
-function onDeleteActiveEffect(effect) {
+function onDeleteActiveEffect(effect, options = {}) {
   if (!isAuthoritativeGM()) return;
   const actor = effect?.parent;
   const injury = getCriticalInjuryData(effect);
   if (injury?.calendarEntryId) {
-    void removeVerifiedCriticalInjuryNote(
-      actor,
-      injury,
-      injury.calendarEntryId,
+    void completeInjuryCalendarEvent(actor, injury, {
+      recovered:
+        options[`${MODULE_ID}.injuryRecovered`] === true ||
+        (injury.recoveryDueTs != null &&
+          Number(injury.recoveryDueTs) <= getCurrentInjuryTimestamp()),
+    }).catch((error) =>
+      console.warn(
+        `${MODULE_ID} | injury calendar completion needs retry`,
+        error,
+      ),
     );
   }
   if (
@@ -368,6 +377,11 @@ function onDeleteActiveEffect(effect) {
 
 function onUpdateActiveEffect(effect, changes) {
   if (!criticalInjuriesEnabled() || !isAuthoritativeGM()) return;
+  if (getCriticalInjuryData(effect) && isSimpleCalendarAvailable()) {
+    void syncCriticalInjuryCalendar().catch((error) =>
+      console.warn(`${MODULE_ID} | injury calendar sync needs retry`, error),
+    );
+  }
   if (
     changes?.disabled === true &&
     effect?.parent?.system?.attributes?.hp?.value > 0 &&
@@ -938,6 +952,7 @@ function buildInjuryFromResolution(pendingId, actor, resolution) {
     createdBy: resolution.resolvedBy,
     requestedBy: resolution.requestedBy,
     recoveryDueTs: resolution.recoveryDueTs,
+    recoveryStartTs: resolution.recoveryStartTs,
     calendarEntryId: "",
   };
 }
@@ -979,6 +994,25 @@ async function removeVerifiedCriticalInjuryNote(actor, injury, entryId) {
   const id = String(entryId ?? "").trim();
   if (!id || !criticalInjuryHasPrivateReceipt(actor, injury)) return false;
   return await removeCriticalInjuryNote(id, { actor, injury });
+}
+
+async function completeInjuryCalendarEvent(
+  actor,
+  injury,
+  { recovered = true } = {},
+) {
+  if (!injury.calendarEntryId || !isSimpleCalendarAvailable()) return true;
+  if (!criticalInjuryHasPrivateReceipt(actor, injury)) return false;
+  return synchronizeCriticalInjuryNoteRange({
+    actor,
+    injury,
+    completed: true,
+    recovered,
+    startTimestamp:
+      getCriticalInjuryWorkflowRecord(injury.pendingId)?.resolution
+        ?.recoveryStartTs ?? injury.recoveryStartTs,
+    authorizeWrite: isAuthoritativeGM,
+  });
 }
 
 function emitStoredCriticalInjuryResult(
@@ -1681,6 +1715,9 @@ async function applyPersistedCriticalInjuryTreatment({
     existingEntryId: resolution.previousCalendarEntryId,
     verifiedReplacement: criticalInjuryHasPrivateReceipt(actor, injury),
     operationId: treatmentId,
+    startTimestamp:
+      getCriticalInjuryWorkflowRecord(pendingId)?.resolution?.recoveryStartTs ??
+      injury.recoveryStartTs,
   });
   await renewCriticalInjuryTreatmentLease(
     pendingId,
@@ -2409,6 +2446,9 @@ export async function processExpiredCriticalInjuries() {
           injury,
           existingEntryId: injury.calendarEntryId,
           verifiedReplacement: criticalInjuryHasPrivateReceipt(actor, injury),
+          startTimestamp:
+            getCriticalInjuryWorkflowRecord(injury.pendingId)?.resolution
+              ?.recoveryStartTs ?? injury.recoveryStartTs,
         });
         if (calendar.entryId) {
           injury.calendarEntryId = calendar.entryId;
@@ -2431,11 +2471,7 @@ export async function processExpiredCriticalInjuries() {
         continue;
       }
       if (injury.calendarEntryId) {
-        await removeVerifiedCriticalInjuryNote(
-          actor,
-          injury,
-          injury.calendarEntryId,
-        );
+        if (!(await completeInjuryCalendarEvent(actor, injury))) continue;
       }
       await effect.delete();
       await postTreatmentChat(

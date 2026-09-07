@@ -24,17 +24,39 @@ Unlinked synthetic tokens are excluded because their effects may differ from
 the world character opened by the injury window. The body HUD and `Shift+J`
 remain alternative entry points.
 
-New injuries receive a Simple Calendar Reborn note through the existing roll
-workflow. The active GM can use **Sync injuries** to check and repair missing
-entries, including after a note was deleted or a calendar outage. Repair
-requires the saved GM receipt, reuses matching notes, and updates only the
-calendar link. It does not reroll injuries, spend kit charges, or reset recovery.
+Timed injuries receive a Simple Calendar Reborn event spanning the original
+in-game injury date through the current recovery date. Treatment and **Tend the
+Sick** downtime preserve that original start and move the end as recovery changes.
+Changes to the saved injury also synchronize linked event dates on the active GM.
+Permanent injuries remain a single-date entry without an invented recovery date.
+
+The active GM can use **Sync injuries** to repair missing entries and correct
+stale start/end dates on existing events, including after a calendar outage.
+Use this once to update older linked events. Repair requires the saved GM receipt
+and updates the calendar projection and link; it does not reroll injuries, spend
+kit charges, or reset recovery. Calendar ownership and visibility are preserved
+when an existing event's dates are corrected.
 Unconfirmed or changing injuries are skipped. Calendar outages show a retryable
 message. Repaired notes start at the original in-game injury date; recovery
 labels count down from the current campaign time. **View calendar** opens the
 recovery date without advancing time. The adapter supports the documented
 [Simple Calendar API](https://simplecalendar.info/docs/developing-with-sc/api/namespaces/SimpleCalendar.api/)
 and both Reborn and legacy module IDs.
+
+When timed recovery or downtime care finishes, the event stays in the calendar
+with **(Recovered)** in its title and an end date at recovery. Repeating a saved
+completion does not move that date forward. Manually removing an injury closes
+its event with **(Ended)** instead, because removal alone does not prove healing.
+The saved injury log remains separate. A calendar save failure during automatic
+recovery keeps the effect for retry; an interrupted downtime completion resumes
+from its saved operation without applying care twice.
+
+The adapter uses Reborn's documented `addNote(startDate, endDate, allDay)`
+contract and the calendar Journal's `noteData.startDate` / `noteData.endDate`
+fields for range corrections. `timestampToDate().second` is mapped to the
+`seconds` field expected by note dates. See the upstream
+[API implementation](https://github.com/Fireblight-Studios/foundryvtt-simple-calendar/blob/main/src/classes/api/index.ts)
+and [note storage](https://github.com/Fireblight-Studios/foundryvtt-simple-calendar/blob/main/src/classes/notes/note-manager.ts).
 
 Recovery rules and integration details in the player window are collapsible;
 effects, dates, calendar status, and treatment actions stay visible.

@@ -11,7 +11,9 @@ import {
   isSimpleCalendarAvailable,
   scheduleCriticalInjuryNote,
   removeCriticalInjuryNoteVerified,
+  synchronizeCriticalInjuryNoteRange,
 } from "./calendar.js";
+import { getCriticalInjuryWorkflowRecord } from "./workflow-store.js";
 import { persistedValuesEqual } from "../utils/persisted-data.js";
 import { isPlayerOwnedCriticalInjuryActor } from "./actors.js";
 
@@ -116,7 +118,9 @@ export async function applyDowntimeCare(plan, operationId, authorizeWrite) {
     if (!authorizeWrite()) throw new Error("Downtime authority changed.");
     try {
       if (plan.healed)
-        await actor.deleteEmbeddedDocuments("ActiveEffect", [plan.effectId]);
+        await actor.deleteEmbeddedDocuments("ActiveEffect", [plan.effectId], {
+          "infinity-dnd5e.injuryRecovered": true,
+        });
       else
         await updateCriticalInjuryEffect(effect, plan.after, {
           startTime: plan.startTime,
@@ -133,13 +137,21 @@ export async function applyDowntimeCare(plan, operationId, authorizeWrite) {
   if (!authorizeWrite()) throw new Error("Downtime authority changed.");
   if (plan.healed) {
     if (
-      !(await removeCriticalInjuryNoteVerified(plan.before.calendarEntryId, {
+      !(await synchronizeCriticalInjuryNoteRange({
         actor,
         injury: plan.before,
+        startTimestamp:
+          getCriticalInjuryWorkflowRecord(plan.before.pendingId)?.resolution
+            ?.recoveryStartTs ??
+          plan.before.recoveryStartTs ??
+          plan.startTime,
+        completed: true,
+        completionTimestamp: plan.after.recoveryDueTs,
+        authorizeWrite,
       }))
     )
       throw new Error(
-        "Recovery completed, but the old calendar note still needs cleanup.",
+        "Recovery completed, but the calendar event still needs its end date saved.",
       );
     return;
   }
@@ -149,6 +161,11 @@ export async function applyDowntimeCare(plan, operationId, authorizeWrite) {
     existingEntryId: plan.before.calendarEntryId,
     verifiedReplacement: true,
     operationId,
+    startTimestamp:
+      getCriticalInjuryWorkflowRecord(plan.before.pendingId)?.resolution
+        ?.recoveryStartTs ??
+      plan.before.recoveryStartTs ??
+      plan.startTime,
   });
   if (!calendar.scheduled || !calendar.entryId)
     throw new Error("Injury care saved, but its calendar note needs recovery.");

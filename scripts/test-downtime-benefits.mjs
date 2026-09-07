@@ -506,12 +506,27 @@ const calendarApi = {
     minute: 0,
     seconds: 0,
   }),
-  getNotes: () => clone(notes),
+  getNotes: () => notes,
   async addNote(...args) {
     if (failNote) throw new Error("calendar unavailable");
     const note = {
       id: `note-${++noteSerial}`,
       pages: { contents: [{ text: { content: args[1] } }] },
+      name: args[0],
+      flags: {
+        "foundryvtt-simple-calendar-reborn": {
+          noteData: { startDate: args[2], endDate: args[3], allDay: args[4] },
+        },
+      },
+      async update(patch) {
+        for (const [path, value] of Object.entries(patch)) {
+          const keys = path.split(".");
+          const key = keys.pop();
+          let target = this;
+          for (const part of keys) target = target[part] ??= {};
+          target[key] = clone(value);
+        }
+      },
     };
     notes.push(note);
     return note;
@@ -600,6 +615,11 @@ const nearWound = injury(nearRecovery, {
   recoveryDueTs: 1050,
   remainingDays: 1,
 });
+const nearNote = await scheduleCriticalInjuryNote({
+  actor: nearRecovery,
+  injury: getCriticalInjuryData(nearWound),
+});
+getCriticalInjuryData(nearWound).calendarEntryId = nearNote.entryId;
 const finish = operation(healer, "injury-care", {
   operationId: "finish-op",
   target: `${nearRecovery.id}|${getCriticalInjuryData(nearWound).id}`,
@@ -609,6 +629,13 @@ assert.equal(
   nearRecovery.effects.contents.length,
   0,
   "care can complete the last recovery day",
+);
+const completedNote = notes.find((note) => note.id === nearNote.entryId);
+assert.ok(completedNote, "completed care keeps the original calendar event");
+assert.match(completedNote.name, /\(Recovered\)$/);
+assert.equal(
+  completedNote.flags[moduleId].criticalInjuryCalendar.completedAtTs,
+  1000,
 );
 assert.equal(
   (await applyDowntimeBenefit(healer, finish, authorized)).alreadyApplied,
