@@ -1,6 +1,6 @@
 # Active hunting
 
-Implemented for local development, 2026-09-08. This replaces the hunting discussion
+Implemented in v0.3.36. This replaces the hunting discussion
 in the [non-ammunition design](DOWNTIME_NON_AMMUNITION_DESIGN.md). Fishing and
 trapping remain separate future activities; campcraft is withdrawn.
 
@@ -112,4 +112,5 @@ refreshing the player app before the shot, GM application and the report at
 `output/playwright/hunting/`. The general check suite discovers the hunting test.
 
 Browser fixtures do not substitute for an installed-world acceptance pass with
-real system documents. This development change has not been deployed to Forge.
+real system documents. Each deployment verifies its installed version, served
+source and campaign preservation separately.

@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**Local development — active hunting:** Open guided downtime in Forest, Swamp or
+**v0.3.36 — active hunting:** Open guided downtime in Forest, Swamp or
 another wilderness area. Under **Hunting rules and custom area**, edit the DC,
 animals, yields, risk and allowed activities, or save a custom area. Players choose
 four/eight hours, a ranged weapon and ammunition, roll Survival, then take one
