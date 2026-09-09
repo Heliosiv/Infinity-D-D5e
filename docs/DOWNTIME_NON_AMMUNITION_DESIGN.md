@@ -1,9 +1,17 @@
-# Drakmor downtime: camp, exploration, herbalism and personal goals
+# Drakmor downtime: hunting, exploration, herbalism and personal goals
 
 Design draft, 2026-09-08. Reviewed against source `a83482c` (v0.3.35).
 This document proposes house rules for discussion. It changes no gameplay and
 does not authorize implementation. Ammunition crafting belongs to the separate
 task and is outside this document's scope.
+
+## Current discussion scope
+
+The user rejected campcraft and selected active hunting for step-by-step design.
+See [the active hunting design](DOWNTIME_HUNTING_DESIGN.md) for the current rules
+discussion. Other families below are deferred candidates, not approved rules.
+Hunting uses its own outing cadence and supersedes the generic cadence examples
+below. Fishing and trapping are separate future activities.
 
 ## Decisions already confirmed
 
@@ -30,15 +38,15 @@ temporary bonuses, is a **candidate**, unless described as current source behavi
 The [earlier assessment](DOWNTIME_EXPANSION_ASSESSMENT.md) is historical. Several
 of its recommendations have since shipped in source:
 
-| Area             | Current source                                                                                                                            | Remaining design work                                                                                                                           |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Training         | Personal plans bind one character to one project ID; bounded language, tool, skill, feat and technique grants require GM approval.        | Agree pacing, methods and milestone cadence. Prerequisites are GM-confirmed text, not automatically inferred.                                   |
-| Recipes          | Eight Drakmor recipes, including healing potions, antitoxin and healer's kits; all currently use eight-hour batches with no recipe check. | Gathering credits, smaller work increments, checked progress and material retention are new behavior.                                           |
-| Camp/exploration | Scout & Map supplies GM-authored narrative results. Quartermaster already has food/water Forage Drive.                                    | Add precise camp benefits and discoveries; reuse supply delivery rather than creating a second consumption system.                              |
-| Projects         | Hours and costs accumulate; each allocation can add one success regardless of duration. Shared and personal plans exist.                  | Checks by fixed work unit, typed completion benefits, and explicit contributor/payment/delivery rules.                                          |
-| Reports          | Latest, ongoing work and searchable past reports exist; archive retains 200 reports per character.                                        | Add method, risk, supplies, reservations and benefit expiry to the existing receipt. Preserve retained entries; do not claim unlimited history. |
-| Locations        | Presets and settlement allowlists are checked in setup and service.                                                                       | Add opportunity conditions and family-specific access. Town/custom currently allow all library entries unless restricted.                       |
-| Hidden DCs       | Project projection and report formatting currently include exact DCs. The guide records a transport privacy limitation.                   | Remove DCs from player projections, reports and transport before claiming this requirement is met. Hiding a field is insufficient.              |
+| Area        | Current source                                                                                                                            | Remaining design work                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Training    | Personal plans bind one character to one project ID; bounded language, tool, skill, feat and technique grants require GM approval.        | Agree pacing, methods and milestone cadence. Prerequisites are GM-confirmed text, not automatically inferred.                                   |
+| Recipes     | Eight Drakmor recipes, including healing potions, antitoxin and healer's kits; all currently use eight-hour batches with no recipe check. | Gathering credits, smaller work increments, checked progress and material retention are new behavior.                                           |
+| Exploration | Scout & Map supplies GM-authored narrative results. Quartermaster already has food/water Forage Drive.                                    | Define hunting outcomes and scouting discoveries; reuse supply delivery rather than creating a second consumption system.                       |
+| Projects    | Hours and costs accumulate; each allocation can add one success regardless of duration. Shared and personal plans exist.                  | Checks by fixed work unit, typed completion benefits, and explicit contributor/payment/delivery rules.                                          |
+| Reports     | Latest, ongoing work and searchable past reports exist; archive retains 200 reports per character.                                        | Add method, risk, supplies, reservations and benefit expiry to the existing receipt. Preserve retained entries; do not claim unlimited history. |
+| Locations   | Presets and settlement allowlists are checked in setup and service.                                                                       | Add opportunity conditions and family-specific access. Town/custom currently allow all library entries unless restricted.                       |
+| Hidden DCs  | Project projection and report formatting currently include exact DCs. The guide records a transport privacy limitation.                   | Remove DCs from player projections, reports and transport before claiming this requirement is met. Hiding a field is insufficient.              |
 
 Evidence: [recipes](../scripts/downtime/recipes.js),
 [training rules](../scripts/downtime/training-rules.js),
@@ -80,29 +88,6 @@ the report records the result and the separate consequence. Injury, combat or
 extra spending requires GM adjudication through the appropriate existing system.
 
 ## First candidate rules
-
-### Campcraft: prepare shelter or secure the perimeter
-
-- **Time/check:** two-hour increments; one check per two hours. No GP fee for
-  ordinary site preparation. Carry shelter/bedroll supplies and suitable tools;
-  found branches do not conjure a tent or permanent structure.
-- **Methods:** Survival arranges weather protection; Perception chooses watch
-  positions and warning lines. The player selects one purpose before work.
-- **Benefit:** success creates one preparation for this named camp: either +2
-  to one check against environmental exposure while resting there, or +2 to one
-  watch Perception check there. Exceptional success gives two uses; near miss
-  gives one +1 use; failure gives no preparation. The acting character declares
-  a use before rolling. GM records manual use until a supported effect exists.
-- **Limit:** preparations are shared among the named camp occupants, expire on
-  departure or after 24 campaign hours, and do not stack with another preparation
-  on the same roll. Repeated work replaces a weaker preparation; it cannot add
-  unlimited charges or restart expiry for an unchanged preparation.
-- **Risk:** 5% base. Example complication: runoff threatens the sleeping area,
-  creating a new relocation decision while the earned preparation remains usable
-  at the current camp until departure. Preparation does not grant a rest,
-  remove exhaustion, or consume food/water automatically.
-- **Report:** purpose, camp, roll band, eligible occupants, remaining uses,
-  expiry and any separate unresolved consequence.
 
 ### Scouting: survey a route or observe a feature
 
@@ -173,31 +158,15 @@ earned, GP paid, materials reserved/lost, required special components, output an
 next step. A contamination complication can require GM follow-up without secretly
 turning a successfully delivered potion into an unusable item.
 
-### Hunting: obtain food
+### Hunting: active pursuit of game
 
-- **Time/check:** four-hour increments; one Survival check per outing. No GP fee.
-  Require an offered hunting ground, suitable weapon or reusable trapping gear,
-  and equipment to dress the catch. Weapon ammunition accounting remains outside
-  this design and must be resolved by the owning ammunition workflow if needed.
-- **Methods:** stalk game for a fresh catch, or set and check traps for small game.
-  Both return within the paid interval; traps do not create free later harvests.
-  The GM offers only methods supported by the location's available game.
-- **Benefit:** success yields four food units; exceptional six; near miss one;
-  failure zero. One unit means enough edible food for one standard configured
-  daily food portion, mapped to a verified existing supply item before offering.
-  A rich ground adds two units on success/exceptional; a sparse ground halves
-  positive yields, rounding up. Show the resulting yield table before commitment.
-- **Limit:** default one outing per hunting opportunity, shared across participants;
-  the GM offers further grounds when justified. Fresh yield expires after the next
-  daily upkeep opportunity or 24 campaign hours, whichever comes first. A first
-  implementation must support that expiry or obtain approval for shelf-stable
-  output instead; ordinary permanent ration stacks cannot silently represent it.
-- **Risk:** 10% base. Example: predator signs near the return route create a GM
-  encounter decision. No automatic combat or injury is resolved by the check.
-- **Report:** ground, method, yield, destination, expiry and complication. Deliver
-  to one nominated supply inventory, count it once in Quartermaster, and leave
-  actual daily consumption to the existing supplies workflow. Do not also award
-  Forage Drive output for the same four hours or automatically create saleable hides.
+See [the active hunting design](DOWNTIME_HUNTING_DESIGN.md). The earlier
+combined hunting/trapping method, flat food yields, shared outing limit and
+automatic expiry proposal are withdrawn. Hunting requires a ranged weapon and
+compatible ammunition, uses a four-hour minimum and a proposed eight-hour DC
+reduction, and weights animal size by success margin. Survival finds game; a
+separate ranged attack secures it. The GM selects a preset or custom region
+and controls hunting difficulty.
 
 ### Personal training: learn a defined reward
 
@@ -264,13 +233,13 @@ Presets supply defaults; actual access and opportunities must also pass the
 selected settlement/location rules. A town preset cannot manufacture a forest,
 instructor or workbench. Show why a choice is unavailable.
 
-| Preset             | Candidate offering and opportunity conditions                                                                                                                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Adventuring / road | Scouting during a halt; campcraft at a named temporary camp. Hunting/herb gathering only if the GM offers a reachable ground/patch and enough stationary hours. No brewing or site construction while travelling. |
-| Wilderness camp    | Campcraft, scouting, offered hunting/herb gathering; brewing with workspace; source-backed study; fixed-site projects. Adverse/known hazardous conditions modify disclosed risk.                                  |
-| Village            | Local scouting, edge-of-village grounds/patches when offered, permitted campsite work, available instructors and borrowed/rented workspaces with quoted access costs.                                             |
-| Town / city        | Urban observations, available instructors and workshops. Gathering/hunting requires a specific garden or reachable outlying opportunity; ordinary market access only allows buying materials.                     |
-| Custom             | Explicit GM selections plus the same prerequisites, opportunity limits and disclosed modifiers.                                                                                                                   |
+| Preset             | Candidate offering and opportunity conditions                                                                                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adventuring / road | Scouting during a halt. Hunting/herb gathering only if the GM offers a reachable ground/patch and enough stationary hours. No brewing or site construction while travelling.                  |
+| Wilderness camp    | Scouting, offered hunting/herb gathering; brewing with workspace; source-backed study; fixed-site projects. Adverse/known hazardous conditions modify disclosed risk.                         |
+| Village            | Local scouting, edge-of-village grounds/patches when offered, available instructors and borrowed/rented workspaces with quoted access costs.                                                  |
+| Town / city        | Urban observations, available instructors and workshops. Gathering/hunting requires a specific garden or reachable outlying opportunity; ordinary market access only allows buying materials. |
+| Custom             | Explicit GM selections plus the same prerequisites, opportunity limits and disclosed modifiers.                                                                                               |
 
 Snapshot offered methods, opportunity identity/capacity, conditions, check
 cadence, prices, yields and benefit terms when the block opens. Shared patches,
@@ -280,35 +249,12 @@ conditions require a visible revised plan before new commitment, not altered
 terms after a saved roll. Respect existing per-character hour budgets and prevent
 assigning those same hours to overlapping productive work.
 
-## First implementation boundary, after a family is chosen
+## Current design boundary
 
-Recommend **campcraft and scouting** first: they make short wilderness downtime
-useful and let players choose between a camp benefit and information. The slice
-would include two-hour scheduling, fixed check cadence, disclosed risk, safe
-player projections, GM-authored findings, camp benefit uses/expiry and complete
-reports. It must not claim hidden DC confidentiality until the current projection
-and transport issues are resolved; an interim GM-only external DC workflow would
-need an explicit design decision before implementation.
-
-Acceptance examples for whichever family is chosen:
-
-1. Two selected characters each get six hours; one spends two on camp and four
-   scouting, the other submits their own allocation. Unselected characters gain
-   no budget. Six hours never becomes a shared party pool.
-2. Four two-hour submissions and one eight-hour allocation generate identical
-   check counts, charge bases and risk trials for the same offered work.
-3. Success plus a complication preserves the successful benefit and separately
-   reports the consequence. Reloading rerolls neither result.
-4. Player UI, report history, socket replies and readable persisted state contain
-   no exact DC or unrevealed GM finding. Final percentages and timing are visible.
-5. Location restrictions and shared opportunity reservations are rechecked by the
-   GM service; unavailable methods cannot be submitted through a stale window.
-6. Brewing verifies 50/75/25/0 discounts, non-discountable components, near-miss
-   reservations, severe failure loss, copper rounding and duplicate-safe output.
-7. Hunting verifies one inventory delivery, expiry and later normal supply
-   consumption; training verifies isolated plans and one approved grant.
-8. Existing active-block snapshots, customized library entries, historical reports,
-   personal grants and shared progress survive upgrade and interrupted application.
+Active hunting is the selected family for discussion. Its confirmed direction,
+proposed numbers, pending choices and later acceptance examples live in
+[the hunting design](DOWNTIME_HUNTING_DESIGN.md). Selection does not authorize
+implementation while the rules are still being discussed.
 
 Adopt new defaults only for explicitly selected new activities/plans. Do not
 rewrite customized entries or unfinished recipes to match these proposals.
@@ -319,7 +265,8 @@ without inventing values they never recorded.
 
 ## Next discussion
 
-Choose the first family: **campcraft and scouting**, **herbalism and hunting**, or
-**personal training and projects**. Then tune the candidate benefits and pacing
-for that family before implementation. No source changes, ammunition edits,
-push, deployment or live-world mutation are included in this design task.
+Continue active hunting one decision at a time. The two-check structure is
+confirmed: Survival finds game and a ranged attack secures it. Next define attack
+resolution and ammunition, then animal yields. Other families remain deferred.
+No gameplay changes, ammunition-crafting edits, push, deployment or live-world
+mutation are included in this design task.

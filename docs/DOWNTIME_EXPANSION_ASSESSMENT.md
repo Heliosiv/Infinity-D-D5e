@@ -4,8 +4,9 @@ Assessed 2026-09-06 (America/Vancouver) against Infinity D&D5e v0.3.27, source c
 
 Later source includes personal training, recipes and report history. See the
 [non-ammunition Drakmor design](DOWNTIME_NON_AMMUNITION_DESIGN.md) for the
-2026-09-08 source review and candidate campcraft, scouting, herbalism, hunting,
-training and project rules. That draft is for discussion, not implemented behavior.
+2026-09-08 source review and deferred activity candidates. The user has since
+rejected campcraft and selected [active hunting](DOWNTIME_HUNTING_DESIGN.md) for
+step-by-step rules discussion. These drafts describe no implemented changes.
 
 The user wants more activities, crafting, and training while preserving the completed activity reports they already enjoy.
 
