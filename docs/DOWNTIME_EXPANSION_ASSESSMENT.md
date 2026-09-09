@@ -2,6 +2,11 @@
 
 Assessed 2026-09-06 (America/Vancouver) against Infinity D&D5e v0.3.27, source commit 83cf956. This is an assessment and proposed plan, not an implemented expansion.
 
+Later source includes personal training, recipes and report history. See the
+[non-ammunition Drakmor design](DOWNTIME_NON_AMMUNITION_DESIGN.md) for the
+2026-09-08 source review and candidate campcraft, scouting, herbalism, hunting,
+training and project rules. That draft is for discussion, not implemented behavior.
+
 The user wants more activities, crafting, and training while preserving the completed activity reports they already enjoy.
 
 ## Overall judgment
