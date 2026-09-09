@@ -2404,7 +2404,7 @@ function applyCompletedPlanProgress(store, block) {
     }
 
     const work = operation.work;
-    if (!work || state !== "applied") continue;
+    if (!work || operation.hunting || state !== "applied") continue;
     if (
       !/^[A-Za-z0-9]{16}$/.test(work.key) ||
       !Number.isInteger(work.contributedHours) ||

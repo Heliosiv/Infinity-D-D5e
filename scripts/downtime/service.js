@@ -1,3 +1,20 @@
+import {
+  HUNTING_ID,
+  publicHuntingRegion,
+  normalizeHuntingRegion,
+  huntingSummary,
+} from "./hunting.js";
+import {
+  loadHuntingRegions,
+  saveHuntingRegion,
+  saveHuntingBlock,
+} from "./hunting-store.js";
+import { huntingEquipmentOptions } from "./hunting-equipment.js";
+import {
+  prepareHuntingAttempt,
+  buildHuntingOperation,
+  huntingQueueKey,
+} from "./hunting-workflow.js";
 import { guidedRewardCp } from "./recipes.js";
 import { collectDowntimeJournal } from "./journal.js";
 import {
@@ -1003,6 +1020,7 @@ export async function openDowntimeBlock({
   actorIds,
   mode = "",
   locationPresetId = "custom",
+  huntingRules = null,
   templateIds = [],
   projectIds = [],
 } = {}) {
@@ -1015,6 +1033,7 @@ export async function openDowntimeBlock({
         config,
         settlementId,
         locationPresetId,
+        huntingRules,
         locationName,
         hours,
         actorIds,
@@ -1081,6 +1100,7 @@ async function openGuidedDowntimeBlock({
   config,
   settlementId,
   locationPresetId,
+  huntingRules,
   locationName,
   hours,
   actorIds,
@@ -1109,10 +1129,26 @@ async function openGuidedDowntimeBlock({
   const presetId = settlement
     ? (settlement.locationPresetId ?? "town")
     : locationPresetId;
-  const allowedIds = downtimeLocationActivityIds(library, presetId, settlement);
+  const regions = loadHuntingRegions();
+  const selectedRegion = regions.find((r) => r.id === presetId);
+  const region =
+    selectedRegion &&
+    normalizeHuntingRegion({
+      ...selectedRegion,
+      ...(huntingRules ?? {}),
+      id: selectedRegion.id,
+      activityIds: selectedRegion.activityIds,
+    });
+  const allowedIds = downtimeLocationActivityIds(
+    library,
+    presetId,
+    settlement,
+    regions,
+  );
   const blockLocationName = cleanGuidedLocation(
     String(locationName ?? "").trim() ||
       settlement?.name ||
+      selectedRegion?.name ||
       DOWNTIME_LOCATION_PRESETS.find((entry) => entry.id === presetId)?.label,
   );
   if (selectedIds.some((id) => !allowedIds.includes(id)))
@@ -1146,8 +1182,19 @@ async function openGuidedDowntimeBlock({
     .filter((actor) => actor?.type === "character");
   if (eligible.length === 0) throw new Error("Choose at least one character.");
   const createdAt = now();
+  const blockId = newId("downtime");
+  if (selectedIds.includes(HUNTING_ID)) {
+    if (!region)
+      throw new Error(
+        "Choose a wilderness hunting area before offering Hunting.",
+      );
+    saveHuntingBlock(blockId, region);
+  }
   const block = await createDowntimeBlock({
-    id: newId("downtime"),
+    id: blockId,
+    ...(selectedIds.includes(HUNTING_ID)
+      ? { huntingProfile: publicHuntingRegion(region) }
+      : {}),
     mode: GUIDED_DOWNTIME_MODE,
     locationName: blockLocationName,
     settlementName: settlement?.name ?? blockLocationName,
@@ -2181,6 +2228,19 @@ async function buildGuidedDowntimeOperation({
   benefitTarget = "",
   walletBeforeOverride = null,
 }) {
+  if (activity.id === HUNTING_ID) {
+    const wallet =
+      walletBeforeOverride ?? readWalletStrict(actor.system?.currency).wallet;
+    return buildHuntingOperation({
+      block,
+      actor,
+      operationId,
+      createdAt,
+      wallet,
+      report: reportOverride,
+      existingWork,
+    });
+  }
   const outcome = activity.outcomes[selectedOutcomeIndex];
   const report = cleanGuidedReport(reportOverride) || outcome.report;
   const total = Number(roll?.total) || 0;
@@ -2401,6 +2461,10 @@ function normalizeGuidedSubmittedQueue(block, rawQueue) {
       : null;
     const hours = Number(entry?.hours);
     const blockHours = guidedActivityBlockHours(activity);
+    if (activity?.id === HUNTING_ID && ![4, 8].includes(hours))
+      throw new Error("Choose four or eight hours for Hunting.");
+    if (activity?.id === HUNTING_ID && selection.skill !== "sur")
+      throw new Error("Hunting requires Survival to find game.");
     if (
       !selection ||
       !activity ||
@@ -2436,8 +2500,10 @@ function normalizeGuidedSubmittedQueue(block, rawQueue) {
   }
   const resourceWork = normalized.filter(
     ({ activity }) =>
-      activity.work &&
-      (activity.work.output !== "none" || activity.work.materials?.length > 0),
+      activity.id === HUNTING_ID ||
+      (activity.work &&
+        (activity.work.output !== "none" ||
+          activity.work.materials?.length > 0)),
   );
   if (resourceWork.length > 1) {
     throw new Error(
@@ -4170,6 +4236,7 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
   const projectProgress = guidedProjectProgressFromStore(store);
   const projectSuccesses = guidedProjectSuccessesFromStore(store);
   return {
+    huntingRegions: loadHuntingRegions(),
     workflowStatus: visibleBlock?.state ?? "idle",
     workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
@@ -4363,28 +4430,34 @@ function projectWorkspaceBlock(block) {
                         block.guidedProjects,
                         operation.activityId,
                       )?.outcomes ?? []
-                    ).map((outcome, index) => ({
-                      index,
-                      label: outcome.label,
-                      report: outcome.report,
-                      rewardLabel: operation.project
-                        ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
-                        : outcome.benefit
-                          ? [
-                              downtimeBenefitLabel(outcome.benefit),
-                              outcome.rewardGp > 0
+                    )
+                      .map((outcome, index) => ({
+                        index,
+                        label: outcome.label,
+                        report: outcome.report,
+                        rewardLabel: operation.hunting
+                          ? operation.work.delivery
+                            ? `${operation.work.delivery.quantity} food portions`
+                            : "No food"
+                          : operation.project
+                            ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
+                            : outcome.benefit
+                              ? [
+                                  downtimeBenefitLabel(outcome.benefit),
+                                  outcome.rewardGp > 0
+                                    ? `${outcome.rewardGp} gp`
+                                    : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")
+                              : outcome.rewardGp > 0
                                 ? `${outcome.rewardGp} gp`
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : outcome.rewardGp > 0
-                            ? `${outcome.rewardGp} gp`
-                            : operation.work
-                              ? "No reward"
-                              : "No currency",
-                      selected: index === operation.selectedOutcomeIndex,
-                    }))
+                                : operation.work
+                                  ? "No reward"
+                                  : "No currency",
+                        selected: index === operation.selectedOutcomeIndex,
+                      }))
+                      .filter((option) => !operation.hunting || option.selected)
                   : [],
             })),
           })),
@@ -4489,6 +4562,60 @@ export async function getPlayerProjectionForUser({
       remainingHours: Math.max(0, active.budgetHours - sumHours(queue)),
       activities: [
         ...active.guidedTemplates.map((template) => {
+          if (template.id === HUNTING_ID) {
+            const profile = active.huntingProfile;
+            const targets = huntingEquipmentOptions(actor).map(
+              ({ id, label }) => ({ id, label }),
+            );
+            return {
+              id: HUNTING_ID,
+              label: template.name,
+              description: template.description,
+              category: "activities",
+              icon: "fa-solid fa-bullseye",
+              available: Boolean(
+                profile && targets.length && active.budgetHours >= 4,
+              ),
+              unavailableReason: !profile
+                ? "The GM must open this activity in a hunting area."
+                : !targets.length
+                  ? "Carry a ranged weapon with compatible ammunition."
+                  : active.budgetHours < 4
+                    ? "Hunting needs at least four hours."
+                    : "",
+              hourOptions: [4, 8]
+                .filter((h) => h <= active.budgetHours)
+                .map((h) => ({
+                  value: h,
+                  label:
+                    h === 8 ? "8 hours — improved hunting odds" : "4 hours",
+                })),
+              skills: [{ id: "sur", label: "Survival" }],
+              targets,
+              targetLabel: "Ranged weapon and ammunition",
+              costLabel:
+                "One ammunition per shot, hit or miss. Failed tracking spends none.",
+              limitLabel: profile
+                ? profile.difficulty +
+                  ". Complication: " +
+                  profile.risk +
+                  "% per outing. " +
+                  profile.game
+                    .map(
+                      (g) =>
+                        g.name +
+                        ": " +
+                        g.food +
+                        " food (" +
+                        g.ordinary +
+                        "% / " +
+                        g.exceptional +
+                        "% exceptional)",
+                    )
+                    .join("; ")
+                : "",
+            };
+          }
           const allocation = projectGuidedActivity(
             template,
             active.budgetHours,
@@ -4533,12 +4660,20 @@ export async function getPlayerProjectionForUser({
       ),
       ...playerJournalProjection(store, config, actor.id),
       rawQueue: queue,
+      ...(selected.hunt
+        ? {
+            huntingLocked: true,
+            huntingPending: selected.hunt.stage === "attack",
+            huntingMessage: huntingSummary(selected.hunt),
+          }
+        : {}),
       submitted: selected.submitted === true,
       canSubmit:
         !individuallyResolved &&
         active.state === "collecting" &&
         selected.submitted !== true,
       canRecall:
+        !selected.hunt &&
         !individuallyResolved &&
         active.state === "collecting" &&
         selected.submitted === true,
@@ -4836,7 +4971,15 @@ async function submitGuidedDowntimeChoice({
     guidedRoll: entry.selection.skill
       ? { total: entry.roll.total, formula: entry.roll.formula }
       : undefined,
+    ...(entry.activity.id === HUNTING_ID && source[index].guidedAttack
+      ? { guidedAttack: source[index].guidedAttack }
+      : {}),
   }));
+  const existingHunt = block.participants.find(
+    (p) => p.actorId === actor.id,
+  )?.hunt;
+  if (existingHunt && existingHunt.queueKey !== huntingQueueKey(canonicalQueue))
+    throw new Error("A started hunt cannot be edited or rerolled.");
   const digest = queueDigest(canonicalQueue);
   const prior = block.requests?.[requestId];
   if (prior) {
@@ -4906,11 +5049,27 @@ async function submitGuidedDowntimeChoice({
       `${actor.name} needs ${formatCp(totalCostCp)} available for the full downtime allocation.`,
     );
   }
+  const hunt = prepareHuntingAttempt(block, actor, canonicalQueue);
+  if (hunt?.stage === "attack") {
+    const updated = await updateCollectingDowntimeBlock(
+      block.id,
+      {
+        participants: block.participants.map((p) =>
+          p.actorId === actor.id ? { ...p, queue: canonicalQueue, hunt } : p,
+        ),
+      },
+      { expectedRevision: revision },
+    );
+    notifyServiceChanged("hunting-game-found");
+    await broadcastPlayerState(updated);
+    return updated;
+  }
   const first = allocation[0];
   const participants = block.participants.map((entry) =>
     entry.actorId === actor.id
       ? {
           ...entry,
+          ...(hunt ? { hunt } : {}),
           guidedSelection: first.selection,
           guidedRoll: first.selection.skill
             ? { total: first.roll.total, formula: first.roll.formula }
@@ -4964,6 +5123,8 @@ export async function recallSubmissionAuthoritatively({
     if (!actor || !participant || !userOwnsDowntimeActor(user, actor)) {
       throw new Error("You do not own that eligible character.");
     }
+    if (participant.hunt)
+      throw new Error("A started hunt cannot be recalled or rerolled.");
     if (participant.resolved === true) {
       throw new Error("This character's downtime has already been resolved.");
     }
@@ -5633,6 +5794,13 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   subscribe: subscribeDowntimeService,
   getWorkspaceProjection,
   createBlock: openDowntimeBlock,
+  saveHuntingRegion: (payload) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = saveHuntingRegion(payload);
+      notifyServiceChanged("hunting-area-saved");
+      return result;
+    }),
   openForPlayers: ({ blockId }) => openBlockForPlayers(blockId),
   prepareParticipant: (payload) => prepareGuidedDowntimeParticipant(payload),
   lockBlock: ({ blockId }) => lockActiveDowntimeBlock(blockId),

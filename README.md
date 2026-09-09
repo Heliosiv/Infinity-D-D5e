@@ -3,6 +3,15 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Local development — active hunting:** Open guided downtime in Forest, Swamp or
+another wilderness area. Under **Hunting rules and custom area**, edit the DC,
+animals, yields, risk and allowed activities, or save a custom area. Players choose
+four/eight hours, a ranged weapon and ammunition, roll Survival, then take one
+shot. Eight hours lowers the Survival DC by four; a miss ends the hunt. GM review
+delivers food and spends one ammunition per shot. Hidden hunting rules and saved
+areas currently belong to the GM browser that opened them; finish there.
+See [hunting rules and setup](docs/DOWNTIME_HUNTING_DESIGN.md).
+
 **v0.3.35 - Expanded GM injury table:** Open **Injuries → Injury table** to browse
 all **30 d100 outcomes**, recovery rules, and automation/GM follow-up notes.
 The [V3 expansion](docs/INJURY_TABLE_EXPANSION.md) adds 12 temporary injuries

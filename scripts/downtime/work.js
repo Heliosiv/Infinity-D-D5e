@@ -982,3 +982,5 @@ export async function applyGuidedWork(
     ? { ok: true }
     : failed("crafting-write-unconfirmed");
 }
+
+export { identity as guidedWorkItemIdentity };

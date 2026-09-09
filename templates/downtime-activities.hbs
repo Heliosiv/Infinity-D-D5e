@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Split the assigned hours among any available activities. Each choice uses whole time blocks; unallocated hours are forfeited when you submit. You will roll once for each activity that uses a skill.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
+      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Split the assigned hours among any available activities. Each choice uses whole time blocks; unallocated hours are forfeited when you submit. You will roll for each activity that uses a skill. Successful hunting also requires one ranged shot.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -26,11 +26,14 @@
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
       {{else if completed}}read your completed report below. Your GM will open another block when it is time for more downtime.
+      {{else if huntingPending}}take your hunting shot below. Your animal, time and allocation are saved.
       {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if retrySubmission}}retry your submission. Completed checks are saved in this window and will not be rolled again.{{else if guided}}{{#if hasQueue}}review the allocation, add more activities if wanted, then submit.{{else}}allocate at least one activity for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
       {{else}}wait for the GM to open a downtime block; no activity was submitted.
       {{/if}}
     </span>
   </p>
+
+  {{#if huntingMessage}}<div class="dt-notice" role="status">{{huntingMessage}}{{#if huntingPending}} Use Take hunting shot below to finish.{{/if}}</div>{{/if}}
 
   {{#if hasError}}
   <div class="dt-notice dt-notice--danger" role="alert">
@@ -198,7 +201,7 @@
           {{else}}
           <div class="dt-state-inline">
             <i class="fa-solid fa-lock" aria-hidden="true"></i>
-            <p>{{#if canRecall}}Your queue is submitted. Recall it if you need to edit.{{else if submitted}}Your queue is submitted and locked. It will resolve exactly as shown.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
+            <p>{{#if huntingPending}}Game found. Your allocation is locked; take your hunting shot below to finish.{{else if canRecall}}Your queue is submitted. Recall it if you need to edit.{{else if submitted}}Your queue is submitted and locked. It will resolve exactly as shown.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
           </div>
           {{/if}}
         </section>
@@ -243,7 +246,7 @@
               {{/if}}
             {{else}}
             <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit allocation{{else}}Submit queue{{/if}}
+              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if huntingPending}}Take hunting shot{{else if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit allocation{{else}}Submit queue{{/if}}
             </button>
             {{/if}}
           </footer>

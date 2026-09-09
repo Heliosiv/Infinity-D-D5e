@@ -1,5 +1,11 @@
 # Drakmor downtime: hunting, exploration, herbalism and personal goals
 
+**Hunting implementation update, 2026-09-08:** The user subsequently authorized
+building active hunting. Its implemented rules, editable defaults, setup and
+limits are in [the hunting guide](DOWNTIME_HUNTING_DESIGN.md). The remaining
+families and the discussion-stage approval statements below remain historical
+design context; they do not describe the current hunting implementation.
+
 Design draft, 2026-09-08. Reviewed against source `a83482c` (v0.3.35).
 This document proposes house rules for discussion. It changes no gameplay and
 does not authorize implementation. Ammunition crafting belongs to the separate

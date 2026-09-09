@@ -265,7 +265,36 @@
         {{/if}}
         <form class="dt-form" data-form="new-block">
           <label class="dt-field"><span>Settlement</span><select name="settlementId" aria-label="Downtime settlement" {{#if busy}}disabled{{/if}}><option value="">No saved settlement</option>{{#each blockSettlementOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>A saved settlement supplies its own allowed activities and linked shops.</small></label>
-          <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Unavailable activities cannot be selected. Use Custom to define a different situation, or edit the saved settlement.</small></label>
+          <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Choose a wilderness area for hunting. Saved areas control which activities are available.</small></label>
+          {{#if huntingEditor}}
+          <details class="dt-field dt-field--wide">
+            <summary>Hunting rules and custom area</summary>
+            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in this GM browser. Finish open hunts here. Each shot spends one ammunition, and a miss ends the hunt.</p>
+            <div class="dt-form-grid">
+              <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingEditor.name}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
+              <label class="dt-field"><span>Base Survival DC (GM only)</span><input name="huntingDc" aria-label="Base hunting Survival DC" type="number" min="4" max="40" step="1" value="{{huntingEditor.dc}}" required /></label>
+              <label class="dt-field"><span>Player difficulty label</span><input name="huntingDifficulty" aria-label="Hunting difficulty label" value="{{huntingEditor.difficulty}}" maxlength="60" required /></label>
+              <label class="dt-field"><span>Complication chance per outing (%)</span><input name="huntingRisk" aria-label="Hunting complication percentage" type="number" min="0" max="100" step="1" value="{{huntingEditor.risk}}" required /></label>
+            </div>
+            <p>Each probability column must total 100%. Food is delivered to the hunter as portions using Quartermaster's configured food item. Preservation and spoilage are GM-managed.</p>
+            {{#each huntingEditor.game}}
+            <fieldset class="dt-form-grid" data-hunting-game>
+              <legend>{{size}} game</legend>
+              <label class="dt-field"><span>Animal</span><input data-hunting-field="name" aria-label="Animal for game entry {{@index}}" value="{{name}}" maxlength="100" required /></label>
+              <label class="dt-field"><span>Size label</span><input data-hunting-field="size" aria-label="Size for game entry {{@index}}" value="{{size}}" maxlength="30" required /></label>
+              <label class="dt-field"><span>Hunting AC (GM only)</span><input data-hunting-field="ac" aria-label="Hunting AC for {{name}}" type="number" min="1" max="40" step="1" value="{{ac}}" required /></label>
+              <label class="dt-field"><span>Food portions</span><input data-hunting-field="food" aria-label="Food portions from {{name}}" type="number" min="1" max="1000" step="1" value="{{food}}" required /></label>
+              <label class="dt-field"><span>Ordinary success chance (%)</span><input data-hunting-field="ordinary" aria-label="Ordinary chance for {{name}}" type="number" min="0" max="100" step="1" value="{{ordinary}}" required /></label>
+              <label class="dt-field"><span>Beat DC by 5+ chance (%)</span><input data-hunting-field="exceptional" aria-label="Exceptional chance for {{name}}" type="number" min="0" max="100" step="1" value="{{exceptional}}" required /></label>
+            </fieldset>
+            {{/each}}
+            <fieldset><legend>Activities available in this saved area</legend>
+              {{#each huntingActivityOptions}}<label class="dt-check"><input type="checkbox" name="huntingActivityIds" value="{{id}}" {{#if checked}}checked{{/if}} /> {{name}}</label>{{/each}}
+            </fieldset>
+            <button type="button" class="dt-button" data-action="saveHuntingRegion" {{#if busy}}disabled{{/if}}>Save area and activities</button>
+            <small>Open downtime uses the current hunting numbers. Save area also keeps these defaults for future blocks on this GM browser.</small>
+          </details>
+          {{/if}}
           {{#if blockShopNames}}<p>Linked shops: {{blockShopNames}}</p>{{/if}}
           <label class="dt-field">
             <span>Location</span>

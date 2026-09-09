@@ -396,7 +396,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
             ? "Rolling and submitting your downtime activities..."
             : "Submitting your queue...",
         success: this._guided
-          ? "Your allocation is submitted. The GM can now review the results."
+          ? "Downtime saved. Check your current status below."
           : "Your queue is submitted for GM review.",
         focus: '[data-action="recallSubmission"]',
       },
@@ -486,11 +486,17 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status === "collecting" &&
     actor &&
     !submitted &&
+    !source.huntingLocked &&
     !needsRecovery;
   const withinBudget = usedHours <= budgetHours;
   const guided = cleanId(source.mode) === "guided";
   const canSubmit =
-    editable &&
+    (editable ||
+      (source.huntingPending &&
+        !noGm &&
+        !needsRecovery &&
+        status === "collecting" &&
+        !submitted)) &&
     withinBudget &&
     (!guided || queue.length >= 1) &&
     Boolean(source.canSubmit ?? true);
@@ -505,6 +511,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status,
     completed: status === "completed",
     guided,
+    huntingPending: source.huntingPending === true,
+    huntingMessage: String(source.huntingMessage ?? ""),
     requiresRoll: guided && queue.some((entry) => Boolean(entry.skill)),
     retrySubmission: source.retrySubmission === true,
     statusLabel: playerStatusLabel(status, submitted),
@@ -566,15 +574,17 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     canSubmit: Boolean(canSubmit),
     submitReason:
       String(source.submitReason ?? "").trim() ||
-      (!editable
-        ? submitted
-          ? "Your queue is already submitted."
-          : "Submissions are not open."
-        : guided && queue.length < 1
-          ? "Allocate at least one activity, then submit. Unallocated hours will be forfeited."
-          : usedHours > budgetHours
-            ? "Your queue exceeds the time budget."
-            : ""),
+      (canSubmit
+        ? ""
+        : !editable
+          ? submitted
+            ? "Your queue is already submitted."
+            : "Submissions are not open."
+          : guided && queue.length < 1
+            ? "Allocate at least one activity, then submit. Unallocated hours will be forfeited."
+            : usedHours > budgetHours
+              ? "Your queue exceeds the time budget."
+              : ""),
     canRecall:
       hasActiveBlock &&
       status === "collecting" &&

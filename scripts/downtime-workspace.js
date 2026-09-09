@@ -172,6 +172,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       restoreActorDefaults: DowntimeWorkspaceApp._onRestoreActorDefaults,
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
+      saveHuntingRegion: DowntimeWorkspaceApp._onSaveHuntingRegion,
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
       prepareParticipant: DowntimeWorkspaceApp._onPrepareParticipant,
       lockBlock: DowntimeWorkspaceApp._onLockBlock,
@@ -431,6 +432,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         return;
       this._captureNewBlockDraft(setup);
       this._newBlockDraft.templateIds = null;
+      delete this._newBlockDraft.huntingRules;
       this.render();
     });
     const settlementForm = this.element?.querySelector?.(
@@ -532,6 +534,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
       settlementId: cleanId(data.get("settlementId")),
       locationName: String(data.get("locationName") ?? ""),
+      huntingRules: readHuntingRules(form),
       hours: String(data.get("hours") ?? ""),
       templateIds: data.getAll("templateIds").map(cleanId).filter(Boolean),
       projectIds: data.getAll("projectIds").map(cleanId).filter(Boolean),
@@ -875,6 +878,28 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._applyActorSelector();
   }
 
+  static async _onSaveHuntingRegion() {
+    const form = this.element?.querySelector('[data-form="new-block"]');
+    if (!form) return;
+    const rules = readHuntingRules(form);
+    if (!rules) return;
+    const currentName = form.querySelector('[name="huntingName"]')?.dataset
+      .originalName;
+    if (rules.name !== currentName)
+      rules.id = "custom-hunt-" + globalThis.crypto.randomUUID().slice(0, 8);
+    const result = await this._runCommand("saveHuntingRegion", rules, {
+      pending: "Saving area…",
+      success: "Area and its activities saved.",
+    });
+    if (result) {
+      this._captureNewBlockDraft(form);
+      this._newBlockDraft.locationPresetId = result.id;
+      this._newBlockDraft.templateIds = null;
+      delete this._newBlockDraft.huntingRules;
+      this.render();
+    }
+  }
+
   static async _onCreateBlock() {
     if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="new-block"]');
@@ -882,10 +907,12 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     if (form.reportValidity?.() === false) return;
     this._captureNewBlockDraft?.(form);
     const data = new FormData(form);
+    const huntingRules = readHuntingRules(form);
     const payload = {
       settlementId: cleanId(data.get("settlementId")),
       locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
       locationName: String(data.get("locationName") ?? "").trim(),
+      ...(huntingRules ? { huntingRules } : {}),
       hours: positiveInteger(data.get("hours"), 0),
       actorIds: [
         ...(form.querySelectorAll?.('input[name="actorIds"]:checked') ?? []),
@@ -1450,6 +1477,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     array(source.guidedTemplates),
     locationPresetId,
     blockSettlement,
+    array(source.huntingRegions),
   );
   const guidedTemplates = array(source.guidedTemplates)
     .map((template) => ({
@@ -1773,7 +1801,21 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   return {
     dataAvailable: source.dataAvailable !== false,
     guided,
-    locationPresetOptions: DOWNTIME_LOCATION_PRESETS.map((entry) => ({
+    huntingEditor:
+      uiState.newBlockDraft?.huntingRules ??
+      array(source.huntingRegions).find((r) => r.id === locationPresetId),
+    huntingActivityOptions: array(source.guidedTemplates).map((t) => ({
+      id: t.id,
+      name: t.name,
+      checked: (
+        uiState.newBlockDraft?.huntingRules ??
+        array(source.huntingRegions).find((r) => r.id === locationPresetId)
+      )?.activityIds?.includes(t.id),
+    })),
+    locationPresetOptions: [
+      ...DOWNTIME_LOCATION_PRESETS,
+      ...array(source.huntingRegions).map((r) => ({ id: r.id, label: r.name })),
+    ].map((entry) => ({
       ...entry,
       selected: entry.id === locationPresetId,
     })),
@@ -2693,4 +2735,25 @@ function cssEscape(value) {
     globalThis.CSS?.escape?.(String(value)) ??
     String(value).replace(/["\\]/g, "\\$&")
   );
+}
+
+function readHuntingRules(form) {
+  if (!form?.querySelector?.('[name="huntingDc"]')) return null;
+  const data = new FormData(form);
+  return {
+    id: String(data.get("locationPresetId")),
+    name: String(data.get("huntingName")),
+    dc: data.get("huntingDc"),
+    difficulty: data.get("huntingDifficulty"),
+    risk: data.get("huntingRisk"),
+    activityIds: data.getAll("huntingActivityIds").map(String),
+    game: [...form.querySelectorAll("[data-hunting-game]")].map((row) =>
+      Object.fromEntries(
+        ["name", "size", "ac", "food", "ordinary", "exceptional"].map((k) => [
+          k,
+          row.querySelector('[data-hunting-field="' + k + '"]')?.value,
+        ]),
+      ),
+    ),
+  };
 }

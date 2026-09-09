@@ -58,7 +58,7 @@ import {
    configured template and skill. */
 {
   const templates = defaultGuidedDowntimeTemplates();
-  assert.equal(templates.length, 26);
+  assert.equal(templates.length, 27);
   assert.deepEqual(
     Object.fromEntries(
       templates.map((template) => [
@@ -75,6 +75,7 @@ import {
       "guided-training": [0, 0, 0],
       "guided-contacts": [0, 0, 0],
       "guided-scouting": [0, 0, 0],
+      "guided-hunting": [0, 0, 0],
       "guided-care": [0, 0, 0],
       "guided-service": [0, 0, 0],
       "guided-animal-care": [0, 0, 0],
@@ -111,7 +112,7 @@ import {
     normalizeGuidedDowntimeTemplates([
       { id: "invalid", name: "Invalid", outcomes: [] },
     ]).length,
-    26,
+    27,
   );
   for (const template of templates.slice(3)) {
     const choice = normalizeGuidedDowntimeSelection(
@@ -131,7 +132,7 @@ import {
   const expanded = normalizeGuidedDowntimeLibrary(original);
   assert.deepEqual(expanded.slice(0, 3), before);
   assert.deepEqual(original, before, "expansion never mutates saved records");
-  assert.equal(expanded.length, 26);
+  assert.equal(expanded.length, 27);
   assert.deepEqual(normalizeGuidedDowntimeLibrary(expanded), expanded);
   assert.deepEqual(
     normalizeGuidedDowntimeTemplates(original),

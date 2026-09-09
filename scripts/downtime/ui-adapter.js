@@ -1,3 +1,4 @@
+import { rollHuntingAttack } from "./hunting-equipment.js";
 /**
  * Player-side downtime adapter.
  *
@@ -259,6 +260,17 @@ function sanitizeCanonicalEntry(raw, index = 0) {
   if (targetIds.length > 0) entry.targetIds = targetIds;
   if (stakeCp > 0) entry.stakeCp = stakeCp;
   if (guidedRoll) entry.guidedRoll = guidedRoll;
+  if (
+    raw.guidedAttack &&
+    Number.isInteger(raw.guidedAttack.natural) &&
+    raw.guidedAttack.natural >= 1 &&
+    raw.guidedAttack.natural <= 20 &&
+    sanitizeGuidedRoll(raw.guidedAttack)
+  )
+    entry.guidedAttack = {
+      ...sanitizeGuidedRoll(raw.guidedAttack),
+      natural: raw.guidedAttack.natural,
+    };
   return entry;
 }
 
@@ -381,6 +393,9 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     rawQueue,
     submitted:
       source.submitted === true || source.submission?.submitted === true,
+    huntingLocked: source.huntingLocked === true,
+    huntingPending: source.huntingPending === true,
+    huntingMessage: cleanText(source.huntingMessage, 1000),
     canSubmit: source.canSubmit === true,
     canRecall: source.canRecall === true,
     needsRecovery: source.needsRecovery === true,
@@ -447,6 +462,7 @@ export class DowntimePlayerAdapter {
       options.getActor ??
       ((actorId) => globalThis.game?.actors?.get?.(actorId));
     this._rollSkill = options.rollSkill ?? rollSkillTotal;
+    this._rollHuntingAttack = options.rollHuntingAttack ?? rollHuntingAttack;
     const setTimer = options.setTimeout ?? globalThis.setTimeout;
     const clearTimer = options.clearTimeout ?? globalThis.clearTimeout;
     this._setTimeout =
@@ -756,12 +772,22 @@ export class DowntimePlayerAdapter {
 
   async _submitQueueForActor(actor) {
     const projection = await this.getPlayerProjection({ actorId: actor });
-    this._assertEditable(projection, actor);
+    this._assertEditable(projection, actor, true);
     const draft = this._ensureDraft(
       this._draftKey(projection.blockId, actor),
       projection.rawQueue,
     );
-    const queue = sanitizeDowntimeSubmissionQueue(draft.queue);
+    const queue = sanitizeDowntimeSubmissionQueue(
+      projection.huntingLocked ? projection.rawQueue : draft.queue,
+    );
+    if (projection.huntingPending) {
+      const hunt = queue.find((e) => e.activityId === "guided-hunting");
+      hunt.guidedAttack = await this._rollHuntingAttack(
+        this._getActor(actor),
+        hunt.targetId,
+        projection.blockId,
+      );
+    }
     let attempt = draft.submissionAttempt;
     const queueKey = JSON.stringify(queue);
     if (projection.mode !== "guided" || attempt?.queueKey !== queueKey) {
@@ -916,8 +942,9 @@ export class DowntimePlayerAdapter {
     return this._projectDraft(actor, result.projection);
   }
 
-  _assertEditable(projection, actorId) {
+  _assertEditable(projection, actorId, allowHunt = false) {
     if (
+      (projection?.huntingLocked && !allowHunt) ||
       !projection?.blockId ||
       projection.noGm ||
       projection.status !== "collecting" ||
@@ -1103,6 +1130,7 @@ export class DowntimePlayerAdapter {
         replaceDraft ||
         submissionsClosed ||
         projection.submitted ||
+        projection.huntingLocked ||
         !draft.dirty
       ) {
         this._drafts.set(key, {

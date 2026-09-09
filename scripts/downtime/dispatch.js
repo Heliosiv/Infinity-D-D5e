@@ -1,3 +1,4 @@
+import { HUNTING_TEMPLATE, HUNTING_ID } from "./hunting.js";
 import { DOWNTIME_RECIPES } from "./recipes.js";
 /**
  * The intentionally small, GM-guided downtime model.
@@ -151,6 +152,7 @@ export function normalizeGuidedDowntimeLibrary(raw) {
 export function campaignDowntimeTemplates() {
   return [
     ...DOWNTIME_RECIPES,
+    HUNTING_TEMPLATE,
     {
       id: "guided-train-spar",
       name: "Train & Spar",
@@ -464,7 +466,8 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   return {
     templateId,
     skill: template.skills.length > 0 ? skill : "",
-    ...(["scroll", "learn-spell"].includes(template.work?.output)
+    ...(template.id === HUNTING_ID ||
+    ["scroll", "learn-spell"].includes(template.work?.output)
       ? { targetId: idValue(raw.targetId) }
       : {}),
   };
