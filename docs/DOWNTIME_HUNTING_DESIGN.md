@@ -12,12 +12,14 @@ Campcraft is withdrawn. Other activities are deferred while hunting is discussed
   activities. The GM controls hunting difficulty within that area.
 - Active hunting spends dedicated downtime. Ordinary gathering remains available
   during walking/travel under its own rules; hunting supplements that activity.
-- Four hours is the proposed minimum. Four hours uses the base DC; eight hours
-  reduces the DC by two. These are the user's proposed starting values.
+- Four hours is the minimum and uses the base Survival DC. The user confirmed
+  that eight hours reduces that DC by four.
 - Beating the adjusted DC by five or more increases the chance of larger game.
   It does not guarantee a large animal.
 - The user chose two checks: Survival finds game; a separate ranged attack
   secures it.
+- The user confirmed that a missed shot ends the hunt. There is no second shot
+  or resumed search within that outing, and its committed time remains spent.
 - Hunting requires a ranged weapon and compatible ammunition. The weapon remains
   in inventory; ammunition may be expended. Fishing and trapping are separate
   activities with their own checks, not hunting methods.
@@ -68,11 +70,11 @@ or more hours yet.
 | Chosen duration | Survival DC       | Survival checks for that outing |
 | --------------- | ----------------- | ------------------------------- |
 | 4 hours         | Area's base DC    | 1                               |
-| 8 hours         | Area's base DC −2 | 1                               |
+| 8 hours         | Area's base DC −4 | 1                               |
 
 Use Wisdom (Survival) to track and approach game. A successful check selects an
 animal from the appropriate probability table, followed by an attack using the
-chosen ranged weapon. The two-point DC reduction for an eight-hour outing applies
+chosen ranged weapon. The four-point DC reduction for an eight-hour outing applies
 only to Survival; it neither lowers the animal's defence nor grants an attack
 bonus. Exact attack targets and the treatment of dangerous game remain proposed
 below, not confirmed combat rules.
@@ -114,9 +116,9 @@ animals within the rolled category. Never invent an animal for an empty category
 the GM must correct that profile before offering it. Species weights can be
 added later if the GM needs them.
 
-Example: the GM sets Forest to DC 10. A total of 13 on a four-hour hunt is an
+Example: the GM sets Forest to DC 10. A total of 11 on a four-hour hunt is an
 ordinary success, giving a 10% chance of large game. The same total on an
-eight-hour hunt beats adjusted DC 8 by five, giving a 35% chance of large game.
+eight-hour hunt beats adjusted DC 6 by five, giving a 35% chance of large game.
 This makes extra time improve both success and the chance of a larger result.
 
 Bear is an example the user raised, not an automatic hostile encounter. Whether
@@ -127,16 +129,18 @@ is unresolved; do not offer it for automatic delivery until that policy is set.
 
 After game selection, make one normal attack with the chosen ranged weapon
 against that animal entry's GM-defined hunting AC. Use the character's actual
-weapon attack modifiers. Proposed result: a hit secures that animal; a miss lets
-it escape. Either shot spends the weapon's configured ammunition cost once.
+weapon attack modifiers. A hit secures that animal; a miss lets it escape and
+ends the hunt, with no food awarded and no retry within the outing. The proposed
+ammunition rule spends the weapon's configured ammunition cost once per shot.
 This is an abstract hunting outcome, not a claim that one hit would remove a
 creature's combat hit points. Critical hits do not create extra animals.
 
 An ordinary bow/crossbow would therefore require one compatible arrow/bolt:
 failed Survival spends zero; a hit or miss spends one. No extra attack from Extra
 Attack, multiattack or eight-hour duration is assumed. No automatic ammunition
-recovery is included in this candidate. These cost and shot-count choices still
-need user review. Game hunting ACs must be defined before the table is usable;
+recovery is included in this candidate. Ammunition cost and recovery still need
+user review; ending the hunt after a miss is confirmed. Game hunting ACs must be
+defined before the table is usable;
 do not invent published creature statistics or resolve a bear as an ordinary
 one-hit catch without settling dangerous game first.
 
@@ -187,17 +191,19 @@ and documented transport privacy limits. Hidden hunting DCs need verified player
 projections and storage, not merely a hidden control. Existing custom libraries,
 open blocks and completed reports must remain intact; this draft changes none.
 
-The hunt/attack structure is confirmed. Before implementation, review the proposed
-attack and ammunition rule, then define species outputs. A later acceptance pass
-should cover:
+The hunt/attack structure, four-point DC reduction at eight hours, and hunt ending
+after a missed shot are confirmed. Before implementation, define hunting ACs,
+review ammunition cost/recovery, then define species outputs. A later acceptance
+pass should cover:
 
 1. Forest and custom-area activity selection, GM overrides and unchanged
    travel-gathering rules.
-2. Four/eight-hour time charges, DC reduction and the exceptional boundary in
-   the DC 10 / total 13 example.
+2. Four/eight-hour time charges, the four-point DC reduction and the exceptional
+   boundary in the base DC 10 / total 11 example (adjusted DC 6 at eight hours).
 3. Valid habitat tables, recorded weighted game selection and independent risk.
 4. Wrong weapon/ammunition rejection, no shot after failed Survival, a hit versus
-   a miss after successful Survival, and duplicate-safe inventory spending.
+   a miss after successful Survival, no second shot/search or refunded time after
+   a miss, and duplicate-safe inventory spending.
 5. Concrete food delivery and reports, saved rolls across retries, and no exact
    DC in player-readable state or receipts.
 

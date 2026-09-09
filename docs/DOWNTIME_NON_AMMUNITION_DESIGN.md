@@ -163,10 +163,10 @@ turning a successfully delivered potion into an unusable item.
 See [the active hunting design](DOWNTIME_HUNTING_DESIGN.md). The earlier
 combined hunting/trapping method, flat food yields, shared outing limit and
 automatic expiry proposal are withdrawn. Hunting requires a ranged weapon and
-compatible ammunition, uses a four-hour minimum and a proposed eight-hour DC
-reduction, and weights animal size by success margin. Survival finds game; a
-separate ranged attack secures it. The GM selects a preset or custom region
-and controls hunting difficulty.
+compatible ammunition, uses a four-hour minimum and a confirmed four-point
+Survival DC reduction at eight hours, and weights animal size by success margin.
+Survival finds game; a separate ranged attack secures it. A missed shot ends the
+hunt. The GM selects a preset or custom region and controls hunting difficulty.
 
 ### Personal training: learn a defined reward
 
@@ -266,7 +266,8 @@ without inventing values they never recorded.
 ## Next discussion
 
 Continue active hunting one decision at a time. The two-check structure is
-confirmed: Survival finds game and a ranged attack secures it. Next define attack
-resolution and ammunition, then animal yields. Other families remain deferred.
+confirmed: Survival finds game and a ranged attack secures it; a miss ends the
+hunt. Eight hours reduces the Survival DC by four. Next define hunting ACs and
+ammunition, then animal yields. Other families remain deferred.
 No gameplay changes, ammunition-crafting edits, push, deployment or live-world
 mutation are included in this design task.
