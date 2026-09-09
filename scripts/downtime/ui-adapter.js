@@ -23,6 +23,7 @@ import {
 } from "./socket.js";
 import { rollSkillTotal } from "../dnd5e-roll.js";
 import { DOWNTIME_MAX_BLOCK_HOURS } from "./limits.js";
+import { fieldChoice } from "./field-ammunition.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const MAX_ID_LENGTH = 160;
@@ -164,6 +165,15 @@ function sanitizeOption(raw) {
     selected: raw.selected === true,
     disabled: raw.disabled === true,
     reason: cleanText(raw.reason, 300),
+    ...(Array.isArray(raw.quotes)
+      ? {
+          quotes: raw.quotes.slice(0, 240).map((quote) => ({
+            hours: safeInteger(quote.hours, 1, 240),
+            detail: cleanText(quote.detail, 1600),
+            available: quote.available === true,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -236,6 +246,7 @@ function sanitizeActivity(raw) {
     stakeValueGp,
     costLabel: cleanText(raw.costLabel, 1600),
     limitLabel: cleanText(raw.limitLabel, 300),
+    ...(raw.fieldAmmunition === true ? { fieldAmmunition: true } : {}),
   };
 }
 
@@ -259,6 +270,8 @@ function sanitizeCanonicalEntry(raw, index = 0) {
   if (targetIds.length > 0) entry.targetIds = targetIds;
   if (stakeCp > 0) entry.stakeCp = stakeCp;
   if (guidedRoll) entry.guidedRoll = guidedRoll;
+  const gatheringRoll = sanitizeGuidedRoll(raw.gatheringRoll);
+  if (gatheringRoll) entry.gatheringRoll = gatheringRoll;
   return entry;
 }
 
@@ -614,6 +627,16 @@ export class DowntimePlayerAdapter {
       activityId,
       hours,
     };
+    if (activity?.fieldAmmunition) {
+      const quote = activity.targets
+        .find((option) => option.id === targetId)
+        ?.quotes?.find((row) => row.hours === hours);
+      if (!quote?.available)
+        throw new Error(
+          quote?.detail ||
+            "Choose a recipe with enough crafting time and supplies.",
+        );
+    }
     if (
       guided &&
       activity.targets.length &&
@@ -801,7 +824,7 @@ export class DowntimePlayerAdapter {
       throw new Error("Your assigned character is no longer available.");
     const prepared = [];
     for (let index = 0; index < queue.length; index += 1) {
-      const entry = queue[index];
+      let entry = queue[index];
       const activity = projection.activities.find(
         (option) => option.id === entry.activityId,
       );
@@ -820,6 +843,44 @@ export class DowntimePlayerAdapter {
           "An activity's time block, costs, or supplies are no longer available. Refresh and review the allocation before submitting.",
         );
       }
+      if (activity.fieldAmmunition) {
+        const quote = activity.targets
+          .find((option) => option.id === entry.targetId)
+          ?.quotes?.find((row) => row.hours === entry.hours);
+        if (!quote?.available)
+          throw new Error(
+            quote?.detail ||
+              "Refresh and review field ammunition costs before rolling.",
+          );
+        if (
+          fieldChoice(entry.targetId).gatheringHours &&
+          !entry.gatheringRoll
+        ) {
+          const gathered = await this._rollSkill(actor, "sur", {
+            chatMessage: true,
+            fastForward: false,
+          });
+          if (!gathered?.ok) {
+            const error = new Error(
+              "Gathering check cancelled. Submit when ready.",
+            );
+            error.code = "DOWNTIME_ROLL_CANCELLED";
+            error.partialQueue = [
+              ...prepared,
+              entry,
+              ...queue.slice(index + 1),
+            ];
+            throw error;
+          }
+          entry = {
+            ...entry,
+            gatheringRoll: {
+              total: Number(gathered.total),
+              formula: cleanText(gathered.roll?.formula, 160),
+            },
+          };
+        }
+      }
       if (!entry.skill || entry.guidedRoll) {
         prepared.push(entry);
         continue;
@@ -833,7 +894,7 @@ export class DowntimePlayerAdapter {
           "A downtime check was cancelled. Completed checks are kept; submit again when ready.",
         );
         error.code = "DOWNTIME_ROLL_CANCELLED";
-        error.partialQueue = [...prepared, ...queue.slice(index)];
+        error.partialQueue = [...prepared, entry, ...queue.slice(index + 1)];
         throw error;
       }
       prepared.push({
@@ -1130,7 +1191,12 @@ export class DowntimePlayerAdapter {
         const target = activity.targets.find(
           (option) => option.id === entry.targetId,
         );
-        detail.push(target?.detail || activity.costLabel);
+        detail.push(
+          target?.quotes?.find((quote) => quote.hours === entry.hours)
+            ?.detail ||
+            target?.detail ||
+            activity.costLabel,
+        );
       }
       return {
         ...entry,

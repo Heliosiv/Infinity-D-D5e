@@ -149,7 +149,7 @@ function injury(a, extra = {}) {
 
 // Existing libraries gain the campaign activities without replacing saved prose or recipes.
 const defaults = defaultGuidedDowntimeTemplates();
-assert.equal(defaults.length, 18);
+assert.equal(defaults.length, 19);
 assert.equal(
   defaults.find((row) => row.work?.output === "arrows").work.batchHours,
   8,
@@ -219,7 +219,7 @@ custom.name = "Train and Spar";
 delete custom.outcomes[2].benefit;
 custom.outcomes[2].report = "Keep my campaign report";
 const upgraded = includeCampaignDowntimeTemplates([custom]);
-assert.equal(upgraded.length, 9);
+assert.equal(upgraded.length, 10);
 assert.equal(upgraded[0].outcomes[2].report, "Keep my campaign report");
 assert.equal(upgraded[0].outcomes[2].benefit, "sparring");
 custom.outcomes[2].benefit = "";

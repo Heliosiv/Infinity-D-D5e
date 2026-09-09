@@ -156,6 +156,11 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     this._guided = context.guided;
     this._retrySubmission = context.retrySubmission;
     this._requiresRoll = context.requiresRoll;
+    this._fieldQuotes = new Map(
+      context.activities
+        .filter((activity) => activity.fieldAmmunition)
+        .map((activity) => [activity.id, activity.targets]),
+    );
     for (const activity of context.activities) {
       const targetId = this._activityTargets.get(
         `${this._actorId}:${activity.id}`,
@@ -193,7 +198,10 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     const root = this.element?.querySelector?.("[data-activity-list]");
     if (!root) return;
     for (const card of root.querySelectorAll("[data-activity-id]"))
-      updateActivityCardSummary(card);
+      updateActivityCardSummary(
+        card,
+        this._fieldQuotes?.get(card.dataset.activityId),
+      );
     root.addEventListener("change", (event) => {
       const input = event.target;
       if (!(input instanceof HTMLElement)) return;
@@ -204,7 +212,10 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
           `${this._actorId}:${card.dataset.activityId}`,
           input.value,
         );
-      updateActivityCardSummary(card);
+      updateActivityCardSummary(
+        card,
+        this._fieldQuotes?.get(card.dataset.activityId),
+      );
     });
   }
 
@@ -607,6 +618,15 @@ function normalizeActivity(activity) {
       detail: String(entry?.detail ?? entry?.description ?? ""),
       selected: entry?.selected === true,
       disabled: entry?.disabled === true,
+      ...(Array.isArray(entry?.quotes)
+        ? {
+            quotes: entry.quotes.map((quote) => ({
+              hours: Number(quote.hours),
+              detail: String(quote.detail ?? ""),
+              available: quote.available === true,
+            })),
+          }
+        : {}),
     }),
   );
   const items = array(source.itemOptions ?? source.items).map((entry) => ({
@@ -666,6 +686,7 @@ function normalizeActivity(activity) {
     stakeValueGp,
     costLabel: String(source.costLabel ?? ""),
     limitLabel: String(source.limitLabel ?? ""),
+    fieldAmmunition: source.fieldAmmunition === true,
   };
 }
 
@@ -733,7 +754,7 @@ export function readAllowedActivityInputs(card) {
   return result;
 }
 
-function updateActivityCardSummary(card) {
+export function updateActivityCardSummary(card, fieldTargets) {
   const detail = card.querySelector?.("[data-target-detail]");
   if (detail)
     detail.textContent =
@@ -746,6 +767,21 @@ function updateActivityCardSummary(card) {
   const summary = card.querySelector?.("[data-selected-hours]");
   if (summary)
     summary.textContent = `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  if (fieldTargets) {
+    const targetId = card.querySelector('[name="targetId"]')?.value;
+    const target = fieldTargets.find((option) => option.id === targetId);
+    const quote = target?.quotes?.find((row) => row.hours === hours);
+    if (detail)
+      detail.textContent = [
+        target?.detail,
+        quote?.detail ||
+          "Gathering needs one hour plus at least one crafting hour.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    const button = card.querySelector('[data-action="addActivity"]');
+    if (button) button.disabled = !quote?.available;
+  }
 }
 
 function playerStatusLabel(status, submitted) {

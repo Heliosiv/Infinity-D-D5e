@@ -23,6 +23,7 @@ const QUEUE_ENTRY_KEYS = new Set([
   "hours",
   "skill",
   "guidedRoll",
+  "gatheringRoll",
   "stakeCp",
   "targetId",
   "targetIds",
@@ -34,6 +35,7 @@ const RESTRICTED_PLAYER_PROJECTION_KEYS = new Set([
   "planningDraft",
   "rewardSeed",
   "targetFacts",
+  "fieldSeed",
 ]);
 
 export const DOWNTIME_EVENTS = Object.freeze({
@@ -418,6 +420,8 @@ function validateQueueEntry(entry) {
   if (entry.guidedRoll != null && !validateGuidedRoll(entry.guidedRoll)) {
     return false;
   }
+  if (entry.gatheringRoll != null && !validateGuidedRoll(entry.gatheringRoll))
+    return false;
   return true;
 }
 

@@ -1,4 +1,9 @@
 import {
+  FIELD_OUTPUT,
+  fieldChoice,
+  fieldResolution,
+} from "./field-ammunition.js";
+import {
   DOWNTIME_LOCATION_PRESETS,
   downtimeLocationActivityIds,
 } from "./location-presets.js";
@@ -1122,6 +1127,9 @@ async function openGuidedDowntimeBlock({
     hours: budgetHours,
     guidedTemplates: templates,
     guidedProjects: projects,
+    ...(templates.some((template) => template.work?.output === FIELD_OUTPUT)
+      ? { fieldSeed: newId("field-risk") }
+      : {}),
     participants: eligible.map((actor) => ({
       actorId: String(actor.id),
       actorName: String(actor.name ?? "Character"),
@@ -1598,10 +1606,18 @@ async function buildGuidedDowntimePlan(block, { actorIds = [] } = {}) {
     const characterOperations = [];
     for (let index = 0; index < submitted.length; index += 1) {
       const entry = submitted[index];
-      const selectedOutcomeIndex = guidedOutcomeIndex(
-        entry.roll.total,
-        entry.activity.outcomes.length,
-      );
+      const selectedOutcomeIndex =
+        entry.activity.work?.output === FIELD_OUTPUT
+          ? Math.round(
+              fieldResolution(
+                entry.roll.total,
+                fieldChoice(entry.selection.targetId).recipe.difficulty,
+              ).factor * 2,
+            )
+          : guidedOutcomeIndex(
+              entry.roll.total,
+              entry.activity.outcomes.length,
+            );
       const operation = await buildGuidedDowntimeOperation({
         block,
         actor,
@@ -1610,6 +1626,7 @@ async function buildGuidedDowntimePlan(block, { actorIds = [] } = {}) {
         skill: entry.selection.skill,
         targetId: entry.selection.targetId,
         roll: entry.roll,
+        gatheringTotal: entry.gatheringRoll?.total,
         selectedOutcomeIndex,
         createdAt,
         operationId: `guided-${block.id}-${actor.id}-${index + 1}`,
@@ -1698,6 +1715,10 @@ export async function chooseGuidedDowntimeOutcome({
         if (!activity || index < 0 || index >= activity.outcomes.length) {
           throw new Error("Choose one of this activity's available results.");
         }
+        if (operation.work?.field && index !== operation.selectedOutcomeIndex)
+          throw new Error(
+            "Field ammunition results follow the saved check. Edit the narrative report instead.",
+          );
         const actor = actorById(operation.actorId);
         if (!actor) throw new Error("That character is no longer available.");
         return buildGuidedDowntimeOperation({
@@ -2140,6 +2161,7 @@ async function buildGuidedDowntimeOperation({
   existingWork = null,
   benefitTarget = "",
   walletBeforeOverride = null,
+  gatheringTotal,
 }) {
   const outcome = activity.outcomes[selectedOutcomeIndex];
   const report = cleanGuidedReport(reportOverride) || outcome.report;
@@ -2251,6 +2273,18 @@ async function buildGuidedDowntimeOperation({
       progress: loadDowntimeWorkflowStore().workProgress ?? {},
       operationId: operationId || `guided-${block.id}-${actor.id}`,
       checkTotal: total,
+      gatheringTotal,
+      locationPresetId: block.settlementSnapshot?.locationPresetId ?? "custom",
+      complicationRoll:
+        activity.work?.output === FIELD_OUTPUT
+          ? 1 +
+            Math.floor(
+              deterministicDowntimeRoll(
+                String(block.fieldSeed || block.id),
+                `${actor.id}:${activity.id}:complication`,
+              ) * 10000,
+            )
+          : undefined,
       dateLabel: formatInjuryTimestamp(getCurrentInjuryTimestamp()),
     }));
   if (work && !planWalletDeltaCp(walletRead.wallet, -work.costCp))
@@ -2295,6 +2329,12 @@ async function buildGuidedDowntimeOperation({
       total,
       formula: String(roll?.formula ?? roll?.roll?.formula ?? ""),
       outcomeTier: "neutral",
+      ...(work?.field
+        ? {
+            dc: work.field.result.dc,
+            outcomeTier: work.field.result.factor === 1 ? "success" : "failure",
+          }
+        : {}),
     },
   };
 }
@@ -2384,7 +2424,14 @@ function normalizeGuidedSubmittedQueue(block, rawQueue) {
         `Roll the selected downtime check for ${activity.name} before submitting.`,
       );
     }
-    return { activity, selection, hours, roll };
+    const gatheringRoll =
+      activity.work?.output === FIELD_OUTPUT &&
+      fieldChoice(selection.targetId).gatheringHours
+        ? normalizeGuidedPlayerRoll(entry?.gatheringRoll)
+        : null;
+    if (gatheringRoll && !gatheringRoll.ok)
+      throw new Error("Roll Survival for gathering before submitting.");
+    return { activity, selection, hours, roll, gatheringRoll };
   });
   const usedHours = normalized.reduce((sum, entry) => sum + entry.hours, 0);
   if (usedHours > block.budgetHours) {
@@ -4286,7 +4333,7 @@ function projectWorkspaceBlock(block) {
               rollLabel: operation.check
                 ? operation.mode === GUIDED_DOWNTIME_MODE
                   ? operation.check.skill
-                    ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}${operation.project ? ` vs DC ${operation.project.checkDc}` : ""}`
+                    ? `${guidedDowntimeSkillLabel(operation.check.skill)} roll: ${operation.check.total}${operation.project ? ` vs DC ${operation.project.checkDc}` : operation.work?.field ? ` vs DC ${operation.work.field.result.dc}${operation.work.field.gathering ? `; Gathering ${operation.work.field.gathering.total} vs DC ${operation.work.field.gathering.dc}` : ""}${operation.work.field.complication ? `; complication ${operation.work.field.complication.roll}/10000` : ""}` : ""}`
                     : "No skill check"
                   : `${operation.check.total} vs DC ${operation.check.dc}`
                 : "",
@@ -4318,28 +4365,34 @@ function projectWorkspaceBlock(block) {
                         block.guidedProjects,
                         operation.activityId,
                       )?.outcomes ?? []
-                    ).map((outcome, index) => ({
-                      index,
-                      label: outcome.label,
-                      report: outcome.report,
-                      rewardLabel: operation.project
-                        ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
-                        : outcome.benefit
-                          ? [
-                              downtimeBenefitLabel(outcome.benefit),
-                              outcome.rewardGp > 0
-                                ? `${outcome.rewardGp} gp`
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : outcome.rewardGp > 0
-                            ? `${outcome.rewardGp} gp`
-                            : operation.work
-                              ? "No reward"
-                              : "No currency",
-                      selected: index === operation.selectedOutcomeIndex,
-                    }))
+                    )
+                      .map((outcome, index) => ({
+                        index,
+                        label: outcome.label,
+                        report: outcome.report,
+                        rewardLabel: operation.project
+                          ? `${operation.project.contributedHours}h · ${formatCp(operation.project.costCp)} · ${operation.project.successesAdded ? "+1 success" : "no success"}`
+                          : outcome.benefit
+                            ? [
+                                downtimeBenefitLabel(outcome.benefit),
+                                outcome.rewardGp > 0
+                                  ? `${outcome.rewardGp} gp`
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : outcome.rewardGp > 0
+                              ? `${outcome.rewardGp} gp`
+                              : operation.work
+                                ? "No reward"
+                                : "No currency",
+                        selected: index === operation.selectedOutcomeIndex,
+                      }))
+                      .filter(
+                        (option) =>
+                          !operation.work?.field ||
+                          option.index === operation.selectedOutcomeIndex,
+                      )
                   : [],
             })),
           })),
@@ -4454,6 +4507,8 @@ export async function getPlayerProjectionForUser({
             template,
             Math.min(template.blockHours, active.budgetHours),
             store.workProgress ?? {},
+            active.settlementSnapshot?.locationPresetId ?? "custom",
+            active.budgetHours,
           );
           return {
             ...allocation,
@@ -4786,6 +4841,14 @@ async function submitGuidedDowntimeChoice({
     guidedRoll: entry.selection.skill
       ? { total: entry.roll.total, formula: entry.roll.formula }
       : undefined,
+    ...(entry.gatheringRoll
+      ? {
+          gatheringRoll: {
+            total: entry.gatheringRoll.total,
+            formula: entry.gatheringRoll.formula,
+          },
+        }
+      : {}),
   }));
   const digest = queueDigest(canonicalQueue);
   const prior = block.requests?.[requestId];
@@ -4839,6 +4902,7 @@ async function submitGuidedDowntimeChoice({
       hours: entry.hours,
       targetId: entry.selection.targetId,
       progress: store.workProgress ?? {},
+      locationPresetId: block.settlementSnapshot?.locationPresetId ?? "custom",
     });
     if (workQuote && !workQuote.ok) {
       throw new Error(workQuote.problems.join(" "));

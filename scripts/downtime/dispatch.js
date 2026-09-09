@@ -10,6 +10,11 @@
 import { normalizeGuidedWork, guidedWorkPreset } from "./work.js";
 import { normalizeDowntimeBenefit } from "./benefit-rules.js";
 import { ADDITIONAL_GUIDED_ACTIVITIES } from "./activity-library.js";
+import {
+  FIELD_OUTPUT,
+  fieldTemplate,
+  fieldChoice,
+} from "./field-ammunition.js";
 
 export const GUIDED_DOWNTIME_MODE = "guided";
 export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 28;
@@ -148,6 +153,7 @@ export function normalizeGuidedDowntimeLibrary(raw) {
 
 export function campaignDowntimeTemplates() {
   return [
+    fieldTemplate(),
     {
       id: "guided-train-spar",
       name: "Train & Spar",
@@ -403,12 +409,26 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
     name,
     description: text(raw.description, 400),
     image: imagePath(raw.image),
-    blockHours: guidedBlockHours(
-      raw.blockHours,
-      id === "guided-reflection" ? 1 : GUIDED_DOWNTIME_DEFAULT_BLOCK_HOURS,
-    ),
-    skills: normalizeSkills(raw.skills),
-    outcomes,
+    blockHours:
+      work?.output === FIELD_OUTPUT
+        ? 1
+        : guidedBlockHours(
+            raw.blockHours,
+            id === "guided-reflection"
+              ? 1
+              : GUIDED_DOWNTIME_DEFAULT_BLOCK_HOURS,
+          ),
+    skills:
+      work?.output === FIELD_OUTPUT
+        ? ["slt", "sur"]
+        : normalizeSkills(raw.skills),
+    outcomes:
+      work?.output === FIELD_OUTPUT
+        ? fieldTemplate().outcomes.map((outcome, index) => ({
+            ...outcome,
+            report: outcomes[index]?.report || outcome.report,
+          }))
+        : outcomes,
     ...(work ? { work } : {}),
   };
 }
@@ -436,10 +456,11 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   const skill = idValue(raw.skill);
   if (template.skills.length > 0 && !template.skills.includes(skill))
     return null;
+  if (template.work?.output === FIELD_OUTPUT) fieldChoice(raw.targetId);
   return {
     templateId,
     skill: template.skills.length > 0 ? skill : "",
-    ...(["scroll", "learn-spell"].includes(template.work?.output)
+    ...(["scroll", "learn-spell", FIELD_OUTPUT].includes(template.work?.output)
       ? { targetId: idValue(raw.targetId) }
       : {}),
   };

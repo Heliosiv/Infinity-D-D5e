@@ -144,6 +144,7 @@ try {
         skills: template.skills.map((id) => ({ id, label: id })),
         category: "guided",
         ...(template.id === "guided-craft-arrows" ? state.toolQuote : {}),
+        ...(template.id === "guided-field-ammunition" ? state.fieldQuote : {}),
       })),
       receipt: state.receipt,
     });
@@ -998,6 +999,128 @@ try {
     await page.evaluate(() => journey.state.saved.at(-1).benefitTarget),
     "mira|ankle",
   );
+  await page.locator('[data-action="setView"][data-view="activities"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  await page
+    .locator(
+      '[data-action="selectGuidedTemplate"][data-template-id="guided-field-ammunition"]',
+    )
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  const fieldRisk = page.getByLabel(
+    "Gathering complication chance per hour (%)",
+    { exact: true },
+  );
+  assert.equal(await fieldRisk.inputValue(), "5");
+  assert.equal(
+    await page.locator('[name="workGpPerBlock"]').isVisible(),
+    false,
+  );
+  assert.equal(
+    await page.locator('[name="outcomeReward"]').first().isVisible(),
+    false,
+  );
+  assert.equal(
+    await page
+      .locator('[name="outcomeLabel"]')
+      .first()
+      .getAttribute("readonly"),
+    "",
+  );
+  await fieldRisk.fill("0");
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(await fieldRisk.inputValue(), "0", "zero risk survives saving");
+  await fieldRisk.fill("5");
+  await page.locator('[data-action="saveGuidedTemplate"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  const fieldEditorA11y = await new AxeBuilder({ page })
+    .include("#app")
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  assert.deepEqual(
+    fieldEditorA11y.violations.map(({ id }) => id),
+    [],
+  );
+  await page.evaluate(async () => {
+    const { projectGuidedWork } = await import("/scripts/downtime/work.js");
+    journey.state.block.hours = 4;
+    journey.state.queue = null;
+    journey.state.block.status = "collecting";
+    journey.state.fieldQuote = projectGuidedWork(
+      {
+        id: "mira",
+        system: { currency: { gp: 10, sp: 0, cp: 0, pp: 0, ep: 0 } },
+        items: [
+          {
+            id: "fletcher",
+            name: "Fletcher's Tools",
+            type: "tool",
+            system: { quantity: 1 },
+          },
+        ],
+      },
+      journey.templates.find((entry) => entry.id === "guided-field-ammunition"),
+      1,
+      {},
+      "wilderness",
+      4,
+    );
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  const fieldCard = page.locator(
+    '[data-activity-id="guided-field-ammunition"]',
+  );
+  await fieldCard.locator('[name="targetId"]').selectOption("arrows:gather");
+  assert.equal(
+    await fieldCard.locator('[data-action="addActivity"]').isDisabled(),
+    true,
+    "one hour cannot contain both gathering and crafting",
+  );
+  await fieldCard.locator('[name="hours"]').selectOption("4");
+  assert.equal(
+    await fieldCard.locator('[data-action="addActivity"]').isEnabled(),
+    true,
+  );
+  assert.match(
+    await fieldCard.locator("[data-target-detail]").innerText(),
+    /3h crafting/,
+  );
+  assert.match(
+    await fieldCard.locator("[data-target-detail]").innerText(),
+    /Complication chance: 5%/,
+  );
+  assert.doesNotMatch(await fieldCard.innerText(), /DC\s+\d+/);
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await fieldCard.scrollIntoViewIfNeeded();
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    );
+    await fieldCard.screenshot({
+      path: path.join(out, `field-ammunition-${width}.png`),
+    });
+  }
+  const rollsBeforeField = await page.evaluate(() => journey.state.rolls);
+  await fieldCard.locator('[data-action="addActivity"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.match(
+    await page.locator(".dt-queue__list").innerText(),
+    /Complication chance: 5%/,
+  );
+  await page.locator('[data-action="submitQueue"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.evaluate(() => journey.state.rolls),
+    rollsBeforeField + 2,
+  );
+  assert.equal(
+    await page.evaluate(() => journey.state.queue[0].gatheringRoll.total),
+    17,
+  );
   assert.equal(errors.length, 0, errors.join("\n"));
   await page.evaluate(async () => {
     const { projectGuidedWork } = await import("/scripts/downtime/work.js");
@@ -1020,6 +1143,7 @@ try {
         },
       ],
     };
+    journey.state.block.hours = 24;
     journey.state.block.status = "collecting";
     journey.state.queue = null;
     journey.state.receipt = null;

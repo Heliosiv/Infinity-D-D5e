@@ -1,5 +1,10 @@
 # Downtime
 
+**New field ammunition:** [Drakmor field ammunition v1](FIELD_AMMUNITION.md)
+adds a separate recipe picker, gathering credits, visible complication chances,
+and check-based crafting progress. Its house rules supersede the ordinary
+crafting descriptions below only for **Craft Field Ammunition**.
+
 ## Guided downtime (default)
 
 Open **Workbench > Downtime** and choose a **Location preset**: Adventuring,

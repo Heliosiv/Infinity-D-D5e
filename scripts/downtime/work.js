@@ -1,4 +1,9 @@
 /** Guided crafting quotes and verified, recoverable inventory transactions. */
+import { FIELD_OUTPUT } from "./field-ammunition.js";
+import {
+  quoteFieldAmmunition,
+  projectFieldAmmunition,
+} from "./field-ammunition-work.js";
 import {
   readWalletStrict,
   updateCurrencyVerified,
@@ -50,6 +55,7 @@ export const SCROLL_WORK = Object.freeze([
 export const WORK_OUTPUT_OPTIONS = Object.freeze(
   [
     ["none", "Costs / resources only"],
+    [FIELD_OUTPUT, "Field ammunition (Drakmor house rules)"],
     ["arrows", "Arrows (20 per batch)"],
     ["bolts", "Crossbow bolts (20 per batch)"],
     ["needles", "Blowgun needles (20 per batch)"],
@@ -99,6 +105,15 @@ export function normalizeGuidedWork(raw) {
   const output = String(raw.output ?? "none");
   if (!OUTPUT_IDS.has(output))
     throw new Error("Choose a supported crafting result.");
+  if (output === FIELD_OUTPUT)
+    return {
+      output,
+      fieldRiskPercent: number(
+        raw.fieldRiskPercent,
+        "Gathering complication percent per hour",
+        { min: 0, max: 100, fallback: 5 },
+      ),
+    };
   const materials = (Array.isArray(raw.materials) ? raw.materials : []).filter(
     (entry) => cleanName(entry?.name),
   );
@@ -268,7 +283,7 @@ export function scrollSourceLevel(item) {
 }
 
 // Quantities and Foundry housekeeping do not change the identity of supplies.
-function identity(item) {
+export function identity(item) {
   const source = clone(sourceOf(item) ?? {});
   for (const key of ["_id", "id", "_stats", "sort", "folder", "ownership"])
     delete source[key];
@@ -294,7 +309,7 @@ function identity(item) {
   return JSON.stringify(stable(source));
 }
 
-function matchMaterial(actor, name, excluded = new Set()) {
+export function matchMaterial(actor, name, excluded = new Set()) {
   return collectionValues(actor?.items)
     .filter(
       (item) =>
@@ -313,9 +328,25 @@ export function quoteGuidedWork({
   hours,
   targetId = "",
   progress = {},
+  locationPresetId = "custom",
+  checkTotal,
+  gatheringTotal,
+  complicationRoll,
 }) {
   const config = normalizeGuidedWork(activity.work);
   if (!config) return null;
+  if (config.output === FIELD_OUTPUT)
+    return quoteFieldAmmunition({
+      actor,
+      activity: { ...activity, work: config },
+      hours,
+      targetId,
+      progress,
+      locationPresetId,
+      checkTotal,
+      gatheringTotal,
+      complicationRoll,
+    });
   const problems = [];
   const learning = config.output === "learn-spell";
   if (learning) problems.push(...learningProblems(actor, config.learning));
@@ -549,8 +580,23 @@ export function quoteGuidedWork({
   };
 }
 
-export function projectGuidedWork(actor, activity, hours, progress = {}) {
+export function projectGuidedWork(
+  actor,
+  activity,
+  hours,
+  progress = {},
+  locationPresetId = "custom",
+  budgetHours = hours,
+) {
   if (!activity.work) return {};
+  if (activity.work.output === FIELD_OUTPUT)
+    return projectFieldAmmunition(
+      actor,
+      activity,
+      budgetHours,
+      progress,
+      locationPresetId,
+    );
   const learning = activity.work.output === "learn-spell";
   const scroll =
     activity.work.output === "scroll" ||
@@ -627,7 +673,7 @@ export function projectGuidedWork(actor, activity, hours, progress = {}) {
 
 export function guidedWorkReceipt(work) {
   return work.detail
-    .replace(/^Spend /, "Spent ")
+    .replace(/\bSpend /, "Spent ")
     .replace("Consume:", "Consumed:")
     .replace("Receive ", "Received ")
     .replace("Keep:", "Kept:");

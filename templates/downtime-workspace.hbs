@@ -456,11 +456,19 @@
         <label class="dt-field dt-field--wide"><span>Activity name</span><input name="name" value="{{templateEditor.name}}" maxlength="80" required {{#if busy}}disabled{{/if}} /></label>
         <label class="dt-field dt-field--wide"><span>Player description</span><textarea name="description" aria-label="Player description" rows="3" maxlength="400" {{#if busy}}disabled{{/if}}>{{templateEditor.description}}</textarea></label>
         <label class="dt-field dt-field--wide"><span>Activity image (optional)</span><input name="image" value="{{templateEditor.image}}" maxlength="500" placeholder="Image path or URL" {{#if busy}}disabled{{/if}} /><small>Leave blank to use the default activity icon.</small></label>
-        <label class="dt-field"><span>Hours per allocation block</span><input type="number" name="blockHours" min="1" max="240" step="1" value="{{#if (lookup templateEditor "blockHours")}}{{lookup templateEditor "blockHours"}}{{else}}8{{/if}}" required {{#if busy}}disabled{{/if}} /><small>Players may allocate one or more whole blocks. Official downtime and crafting workdays are 8 hours.</small></label>
+        <div data-work-output="none arrows bolts needles sling-bullets item scroll learn-spell" {{#if templateEditor.work.isField}}hidden{{/if}}>
+        <label class="dt-field"><span>Hours per allocation block</span><input type="number" name="blockHours" min="1" max="240" step="1" value="{{#if (lookup templateEditor "blockHours")}}{{lookup templateEditor "blockHours"}}{{else}}8{{/if}}" required {{#if busy}}disabled{{/if}} /><small>Players may allocate one or more whole blocks. Other crafting recipes use 8-hour workdays.</small></label>
         <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one of these skills. Leave all unchecked for an activity without a roll.</p><div class="dt-chip-grid">{{#each templateEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+        </div>
         <fieldset class="dt-fieldset"><legend>Costs, supplies &amp; crafting</legend>
-          <p>Costs apply to every result, after your review. One workday is 8 productive hours. GP/day is prorated and rounded up to copper; whole materials per day round up. Earlier rounded charges count toward later blocks, so splitting a day adds no extra cost. No costs are taken on submission.</p>
+          <p>Review costs, progress and the player's report before applying. Field ammunition uses the Drakmor recipe catalogue below; other outputs use their saved costs and materials.</p>
           <label class="dt-field dt-field--wide"><span>Crafting result</span><select name="workOutput" {{#if busy}}disabled{{/if}}>{{#each templateEditor.work.outputOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <div data-work-output="field-ammunition" {{#unless templateEditor.work.isField}}hidden{{/unless}}>
+            <p>Drakmor v1: arrows and bolts produce 5 per 2h; needles and sling bullets produce 5 per 1h. Players use one-hour allocations and choose abstract GP, carried bundles, a mixture, or one hour of wilderness gathering. Each recipe requires a carried tool; confirm proficiency and a working area. Sleight of Hand or Survival resolves crafting; gathering uses Survival.</p>
+            <label class="dt-field"><span>Gathering complication chance per hour (%)</span><input type="number" name="fieldRiskPercent" aria-label="Gathering complication chance per hour (%)" min="0" max="100" step="0.01" value="{{#if (lookup templateEditor.work "isField")}}{{lookup templateEditor.work "fieldRiskPercent"}}{{else}}5{{/if}}" {{#if busy}}disabled{{/if}} /></label>
+            <p>Players see the final percentage. Gathering is available in Wilderness or Adventuring presets. Camp crafting has 0% exposure. A failure by 1–4 grants half progress and keeps unused funded materials; failure by 5+ consumes only that attempt's time and materials. Gathering discounts: 0 / 25 / 50 / 75%; exceptional means beating the gathering DC by at least 5. Crafting difficulty: arrows/bolts Moderate (13), needles Hard (16), sling bullets Easy (10); gathering Easy (10). Players see difficulty labels only. Complications generate a report prompt for the GM.</p>
+          </div>
+          <div data-work-output="none arrows bolts needles sling-bullets item scroll learn-spell" {{#if templateEditor.work.isField}}hidden{{/if}}>
           <label class="dt-field"><span>Fee per block (gp)</span><input type="number" name="workGpPerBlock" min="0" max="100000" step="0.01" value="{{templateEditor.work.gpPerBlock}}" required {{#if busy}}disabled{{/if}} /></label>
           <label class="dt-field"><span>Additional cost per workday (gp)</span><input type="number" name="workGpPerDay" min="0" max="100000" step="0.01" value="{{templateEditor.work.gpPerDay}}" required {{#if busy}}disabled{{/if}} /></label>
           <div data-work-output="arrows bolts needles sling-bullets item" {{#unless templateEditor.work.isBatch}}hidden{{/unless}}>
@@ -493,16 +501,19 @@
             </fieldset>
             {{/each}}
           </details>
+          </div>
         </fieldset>
-        <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per submitted allocation.</p></div>
+        <div class="dt-form__head"><h4>Possible results</h4><p>Field ammunition fixes three result tiers from the saved check, without extra rewards or benefits; its narrative reports remain editable. Other activities use the configured results and rewards per submitted allocation.</p></div>
         {{#each templateEditor.outcomes}}
         <fieldset class="dt-fieldset" data-template-outcome><legend>Result {{number}}</legend>
-          <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../busy}}disabled{{/if}} /></label>
+          <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../templateEditor.work.isField}}readonly{{/if}} {{#if ../busy}}disabled{{/if}} /></label>
           <label class="dt-field dt-field--wide"><span>Player report</span><textarea name="outcomeReport" aria-label="Player report for result {{number}}" rows="3" maxlength="800" required {{#if ../busy}}disabled{{/if}}>{{report}}</textarea></label>
+          <div data-work-output="none arrows bolts needles sling-bullets item scroll learn-spell" {{#if ../templateEditor.work.isField}}hidden{{/if}}>
           <label class="dt-field"><span>Reward (gp)</span><input type="number" name="outcomeReward" min="0" max="100000" step="0.01" value="{{rewardGp}}" required {{#if ../busy}}disabled{{/if}} /></label>
           <label class="dt-field dt-field--wide"><span>Extra benefit</span><select name="outcomeBenefit" aria-label="Extra benefit for result {{number}}" {{#if ../busy}}disabled{{/if}}>
             {{#each benefitOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
           </select></label>
+          </div>
         </fieldset>
         {{/each}}
         <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedTemplate" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save activity</button></footer>

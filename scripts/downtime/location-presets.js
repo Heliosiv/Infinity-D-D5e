@@ -4,6 +4,7 @@ export const DOWNTIME_LOCATION_PRESETS = Object.freeze([
     id: "adventuring",
     label: "Adventuring / on the road",
     activityIds: [
+      "guided-field-ammunition",
       "guided-reflection",
       "guided-scouting",
       "guided-animal-care",
@@ -14,6 +15,7 @@ export const DOWNTIME_LOCATION_PRESETS = Object.freeze([
     id: "wilderness",
     label: "Wilderness camp / forest",
     activityIds: [
+      "guided-field-ammunition",
       "guided-reflection",
       "guided-scouting",
       "guided-animal-care",
@@ -32,6 +34,7 @@ export const DOWNTIME_LOCATION_PRESETS = Object.freeze([
     id: "village",
     label: "Village / small settlement",
     activityIds: [
+      "guided-field-ammunition",
       "guided-labor",
       "guided-performance",
       "guided-training",

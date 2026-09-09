@@ -855,7 +855,8 @@ function normalizeWorkProgress(raw) {
     Object.entries(isPlainObject(raw) ? raw : {}).filter(
       ([key, hours]) =>
         /^[A-Za-z0-9]{16}$/.test(key) &&
-        Number.isSafeInteger(hours) &&
+        typeof hours === "number" &&
+        Number.isSafeInteger(hours * 2) &&
         hours >= 0,
     ),
   );
@@ -2393,8 +2394,9 @@ function applyCompletedPlanProgress(store, block) {
     if (!work || state !== "applied") continue;
     if (
       !/^[A-Za-z0-9]{16}$/.test(work.key) ||
-      !Number.isInteger(work.contributedHours) ||
-      work.contributedHours < 1
+      typeof work.contributedHours !== "number" ||
+      !Number.isSafeInteger(work.contributedHours * (work.field ? 2 : 1)) ||
+      work.contributedHours < (work.field ? 0 : 1)
     )
       throw new Error("DowntimeCraftingProgressInvalid");
     store.workProgress ??= {};
@@ -2402,6 +2404,30 @@ function applyCompletedPlanProgress(store, block) {
       throw new Error("DowntimeCraftingProgressDrift");
     store.workProgress[work.key] =
       work.progressBeforeHours + work.contributedHours;
+    if (work.field) {
+      for (const [key, before, after] of [
+        [
+          work.field.materialKey,
+          work.field.fundedBefore,
+          work.field.fundedAfter,
+        ],
+        [
+          work.field.roundingKey,
+          work.field.roundingBefore,
+          work.field.roundingAfter,
+        ],
+      ]) {
+        if (
+          !/^[A-Za-z0-9]{16}$/.test(key) ||
+          (store.workProgress[key] ?? 0) !== before ||
+          typeof after !== "number" ||
+          !Number.isSafeInteger(after * 2) ||
+          after < 0
+        )
+          throw new Error("DowntimeFieldMaterialsProgressDrift");
+        store.workProgress[key] = after;
+      }
+    }
     if (work.config?.output === "learn-spell" && work.delivery) {
       store.spellbooks ??= {};
       // Independent of capped history and of the Actor's importer-managed Items.

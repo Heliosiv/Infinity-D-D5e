@@ -1334,6 +1334,7 @@ function readGuidedTemplateForm(form) {
     skills: data.getAll("skills").map(String),
     work: {
       output: String(data.get("workOutput") ?? "none"),
+      fieldRiskPercent: String(data.get("fieldRiskPercent") ?? "5"),
       gpPerBlock: String(data.get("workGpPerBlock") ?? "0"),
       gpPerDay: String(data.get("workGpPerDay") ?? "0"),
       batchGp: String(data.get("workBatchGp") ?? "0"),
@@ -1448,6 +1449,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       batchGp: 0,
       batchHours: 8,
       quantity: 1,
+      fieldRiskPercent: 5,
       ...templateSource.work,
       toolOptions: CRAFTING_TOOL_OPTIONS.map((name) => ({
         name,
@@ -1457,6 +1459,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
         templateSource.work?.output,
       ),
       isItem: templateSource.work?.output === "item",
+      isField: templateSource.work?.output === "field-ammunition",
       isScroll: templateSource.work?.output === "scroll",
       isLearning: templateSource.work?.output === "learn-spell",
       learning: {

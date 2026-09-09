@@ -1826,6 +1826,120 @@ try {
   // Guided resource work uses the same player/GM flow, with paid progress
   // retained across blocks and reloads, and exact inventory writes on finish.
   {
+    const { fieldTemplate } = await import("./downtime/field-ammunition.js");
+    const crafter = makeActor({
+      id: "field-crafter",
+      currency: { gp: 10, pp: 0, ep: 0, sp: 0, cp: 0 },
+    });
+    actors.set(crafter.id, crafter);
+    crafter.addItem({
+      _id: "field-tools",
+      name: "Fletcher's Tools",
+      type: "tool",
+      system: { quantity: 1 },
+    });
+    const template = await service.saveGuidedDowntimeTemplate(fieldTemplate());
+    const originalResolver = globalThis.fromUuid;
+    globalThis.fromUuid = async () => ({
+      _id: "field-source",
+      name: "Arrow",
+      type: "consumable",
+      system: { quantity: 1, type: { value: "ammo" } },
+    });
+    let retained;
+    for (const [pass, total] of [9, 8, 13].entries()) {
+      const opened = await service.openDowntimeBlock({
+        mode: "guided",
+        locationPresetId: "wilderness",
+        hours: 4,
+        actorIds: [crafter.id],
+        templateIds: [template.id],
+      });
+      const projection = await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: crafter.id,
+      });
+      assert.equal(projection.activities[0].fieldAmmunition, true);
+      assert.doesNotMatch(
+        JSON.stringify(projection),
+        /fieldSeed|"dc"|"walletBefore"/,
+      );
+      const payload = {
+        userId: player.id,
+        requestId: `field-${pass}`,
+        blockId: opened.id,
+        actorId: crafter.id,
+        queue: [
+          {
+            activityId: template.id,
+            hours: 4,
+            skill: "slt",
+            targetId: "arrows:gather",
+            guidedRoll: { total, formula: "1d20 + 3" },
+            gatheringRoll: { total: 15, formula: "1d20 + 2" },
+          },
+        ],
+      };
+      await service.submitQueueAuthoritatively(payload);
+      await service.submitQueueAuthoritatively(payload);
+      const reviewed = await service.prepareGuidedDowntimeParticipant({
+        blockId: opened.id,
+        actorId: crafter.id,
+      });
+      const op = reviewed.plan.operations[0];
+      assert.equal(op.work.contributedHours, [1.5, 0, 3][pass]);
+      assert.equal(op.selectedOutcomeIndex, [1, 0, 2][pass]);
+      const edited = await service.chooseGuidedDowntimeOutcome({
+        blockId: opened.id,
+        operationId: op.operationId,
+        outcomeIndex: op.selectedOutcomeIndex,
+        report: "Camp crafting report.",
+      });
+      assert.deepEqual(
+        edited.plan.operations[0].work,
+        op.work,
+        "editing the report cannot reroll or change costs",
+      );
+      await assert.rejects(
+        service.chooseGuidedDowntimeOutcome({
+          blockId: opened.id,
+          operationId: op.operationId,
+          outcomeIndex: (op.selectedOutcomeIndex + 1) % 3,
+        }),
+        /saved check/,
+      );
+      await service.applyActiveDowntimeBlock(opened.id);
+      const completedProgress = clone(
+        workflow.loadDowntimeWorkflowStore().workProgress,
+      );
+      await service.applyActiveDowntimeBlock(opened.id);
+      assert.deepEqual(
+        workflow.loadDowntimeWorkflowStore().workProgress,
+        completedProgress,
+      );
+      workflow.resetDowntimeWorkflowStoreForTests();
+      assert.deepEqual(
+        workflow.loadDowntimeWorkflowStore().workProgress,
+        completedProgress,
+      );
+      if (pass === 0) retained = completedProgress[op.work.key];
+      if (pass === 1)
+        assert.equal(
+          completedProgress[op.work.key],
+          retained,
+          "severe failure preserves previous progress",
+        );
+    }
+    assert.equal(
+      [...crafter.items.values()]
+        .filter((item) => item.name === "Arrow")
+        .reduce((sum, item) => sum + item.system.quantity, 0),
+      10,
+    );
+    actors.delete(crafter.id);
+    globalThis.fromUuid = originalResolver;
+  }
+  {
     const workModule = await import("./downtime/work.js");
     const crafter = makeActor({
       id: "guided-crafter",

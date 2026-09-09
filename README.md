@@ -3,6 +3,13 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Field ammunition (next release):** Include **Craft Field Ammunition** in a
+downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
+Players choose hours and materials, see difficulty labels and complication
+percentages, and roll gathering before crafting. Drakmor house rules preserve
+half progress on near misses and lose the attempt's materials on failure by 5+.
+See [field ammunition rules and setup](docs/FIELD_AMMUNITION.md).
+
 **GM injury table (next release):** Open **Injuries → Injury table** to browse
 all **30 d100 outcomes**, recovery rules, and automation/GM follow-up notes.
 The [V3 expansion](docs/INJURY_TABLE_EXPANSION.md) adds 12 temporary injuries
