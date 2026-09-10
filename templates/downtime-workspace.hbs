@@ -220,6 +220,7 @@
                     {{#each outcomeOptions}}
                     <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
                     {{/each}}
+                    {{#if canEditHuntingFood}}<p>Suggested yield: {{huntingSuggestedFood}} portions of {{huntingAnimal}} meat. The quantity below goes to the hunter's inventory when applied.</p><label class="dt-field"><span>Meat portions to deliver</span><input type="number" data-hunting-food data-saved-food="{{savedHuntingFood}}" value="{{huntingFood}}" min="0" max="1000" step="1" aria-label="Meat portions to deliver for {{label}}" {{#unless ../../currentBlock.canApply}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}} /></label>{{/if}}
                     <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report data-saved-report="{{savedReport}}" rows="3" maxlength="800" aria-label="Player report for {{label}}" {{#unless ../../currentBlock.canApply}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{report}}</textarea><small>Choosing another result loads its report. Edits are saved when you apply, or with Save report.</small></label>
                     <button type="button" class="dt-button" data-action="saveGuidedReport" {{#unless ../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../busy}}disabled{{/if}}>Save report</button>
                   </div>
@@ -267,11 +268,11 @@
           <label class="dt-field"><span>Settlement</span><select name="settlementId" aria-label="Downtime settlement" {{#if busy}}disabled{{/if}}><option value="">No saved settlement</option>{{#each blockSettlementOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>A saved settlement supplies its own allowed activities and linked shops.</small></label>
           <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Choose a wilderness area for hunting. Saved areas control which activities are available.</small></label>
           {{#if huntingEditor}}
-          <details class="dt-field dt-field--wide">
+          <details class="dt-field dt-field--wide" data-hunting-editor>
             <summary>Hunting rules and custom area</summary>
             <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in this GM browser. Finish open hunts here. Each shot spends one ammunition, and a miss ends the hunt.</p>
             <div class="dt-form-grid">
-              <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingEditor.name}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
+              <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingOriginalName}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
               <label class="dt-field"><span>Base Survival DC (GM only)</span><input name="huntingDc" aria-label="Base hunting Survival DC" type="number" min="4" max="40" step="1" value="{{huntingEditor.dc}}" required /></label>
               <label class="dt-field"><span>Player difficulty label</span><input name="huntingDifficulty" aria-label="Hunting difficulty label" value="{{huntingEditor.difficulty}}" maxlength="60" required /></label>
               <label class="dt-field"><span>Complication chance per outing (%)</span><input name="huntingRisk" aria-label="Hunting complication percentage" type="number" min="0" max="100" step="1" value="{{huntingEditor.risk}}" required /></label>
@@ -283,11 +284,15 @@
               <label class="dt-field"><span>Animal</span><input data-hunting-field="name" aria-label="Animal for game entry {{@index}}" value="{{name}}" maxlength="100" required /></label>
               <label class="dt-field"><span>Size label</span><input data-hunting-field="size" aria-label="Size for game entry {{@index}}" value="{{size}}" maxlength="30" required /></label>
               <label class="dt-field"><span>Hunting AC (GM only)</span><input data-hunting-field="ac" aria-label="Hunting AC for {{name}}" type="number" min="1" max="40" step="1" value="{{ac}}" required /></label>
-              <label class="dt-field"><span>Food portions</span><input data-hunting-field="food" aria-label="Food portions from {{name}}" type="number" min="1" max="1000" step="1" value="{{food}}" required /></label>
+              <label class="dt-field"><span>Minimum meat portions</span><input data-hunting-field="foodMin" aria-label="Minimum meat portions from {{name}}" type="number" min="1" max="1000" step="1" value="{{foodMin}}" required /></label>
+              <label class="dt-field"><span>Maximum meat portions</span><input data-hunting-field="foodMax" aria-label="Maximum meat portions from {{name}}" type="number" min="1" max="1000" step="1" value="{{foodMax}}" required /></label>
               <label class="dt-field"><span>Ordinary success chance (%)</span><input data-hunting-field="ordinary" aria-label="Ordinary chance for {{name}}" type="number" min="0" max="100" step="1" value="{{ordinary}}" required /></label>
               <label class="dt-field"><span>Beat DC by 5+ chance (%)</span><input data-hunting-field="exceptional" aria-label="Exceptional chance for {{name}}" type="number" min="0" max="100" step="1" value="{{exceptional}}" required /></label>
+              <button type="button" class="dt-button" data-action="removeHuntingAnimal" data-game-index="{{@index}}" aria-label="Remove animal {{name}}" {{#if ../busy}}disabled{{/if}}>Remove animal</button>
             </fieldset>
             {{/each}}
+            <button type="button" class="dt-button" data-action="addHuntingAnimal" {{#if busy}}disabled{{/if}}>Add animal</button>
+            <p>Each chance column must total 100%. Meat is generated once within the animal's range. You can adjust the final quantity and report before delivery.</p>
             <fieldset><legend>Activities available in this saved area</legend>
               {{#each huntingActivityOptions}}<label class="dt-check"><input type="checkbox" name="huntingActivityIds" value="{{id}}" {{#if checked}}checked{{/if}} /> {{name}}</label>{{/each}}
             </fieldset>
@@ -523,6 +528,7 @@
             {{/each}}
           </details>
         </fieldset>
+        {{#if templateEditor.isHunting}}<p>Hunting results follow Survival and the one ranged shot. Edit animals, meat ranges and chances under New block: Hunting rules and custom area. Review each hunt to adjust its meat quantity and player report before delivery.</p>{{/if}}
         <div class="dt-form__head"><h4>Possible results</h4><p>Put results in order from least to most successful. The GM makes the final choice after reviewing the player's check. Rewards are per submitted allocation.</p></div>
         <label class="dt-field"><span>Currency reward basis</span><select name="rewardBasis" aria-label="Currency reward basis">{{#each rewardBasisOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Existing activities keep their saved policy. Workday rewards scale with allocated hours.</small></label>
         {{#each templateEditor.outcomes}}

@@ -1756,6 +1756,7 @@ export async function chooseGuidedDowntimeOutcome({
   operationId,
   outcomeIndex,
   report,
+  foodQuantity,
   benefitTarget,
 } = {}) {
   return runServiceMutation(async () => {
@@ -1795,6 +1796,9 @@ export async function chooseGuidedDowntimeOutcome({
           skill: operation.check?.skill ?? "",
           targetId: operation.targetId,
           existingWork: operation.work,
+          foodQuantity,
+          existingHuntingDelivery:
+            operation.huntingDelivery ?? operation.work?.delivery,
           benefitTarget:
             benefitTarget === undefined
               ? operation.benefitTarget
@@ -1809,11 +1813,20 @@ export async function chooseGuidedDowntimeOutcome({
           operationId: operation.operationId,
           walletBeforeOverride: operation.walletBefore,
           reportOverride:
-            report === undefined
-              ? index === operation.selectedOutcomeIndex
-                ? operation.report
-                : ""
-              : cleanGuidedReport(report),
+            operation.hunting &&
+            (report ?? operation.report) ===
+              (operation.huntingGeneratedReport ??
+                huntingSummary(
+                  block.participants.find(
+                    (p) => p.actorId === operation.actorId,
+                  ).hunt,
+                ))
+              ? ""
+              : report === undefined
+                ? index === operation.selectedOutcomeIndex
+                  ? operation.report
+                  : ""
+                : cleanGuidedReport(report),
           projectProgress: operation.project
             ? new Map([
                 [operation.project.id, operation.project.progressBeforeHours],
@@ -2225,6 +2238,8 @@ async function buildGuidedDowntimeOperation({
   projectSuccesses = null,
   targetId = "",
   existingWork = null,
+  foodQuantity,
+  existingHuntingDelivery,
   benefitTarget = "",
   walletBeforeOverride = null,
 }) {
@@ -2239,6 +2254,8 @@ async function buildGuidedDowntimeOperation({
       wallet,
       report: reportOverride,
       existingWork,
+      foodQuantity,
+      existingHuntingDelivery,
     });
   }
   const outcome = activity.outcomes[selectedOutcomeIndex];
@@ -4409,6 +4426,20 @@ function projectWorkspaceBlock(block) {
                   ? operation.work.detail
                   : `${operation.report} ${block.state === "completed" ? guidedWorkReceipt(operation.work) : operation.work.detail}`
                 : "",
+              hunting: operation.hunting === true,
+              canEditHuntingFood:
+                operation.hunting && operation.selectedOutcomeIndex === 2,
+              huntingFood: operation.work?.outputQuantity ?? 0,
+              huntingAnimal:
+                operation.huntingAnimal ??
+                block.participants.find((p) => p.actorId === operation.actorId)
+                  ?.hunt?.game?.name ??
+                "",
+              huntingSuggestedFood:
+                operation.huntingSuggestedFood ??
+                block.participants.find((p) => p.actorId === operation.actorId)
+                  ?.hunt?.game?.food ??
+                0,
               report: operation.report ?? "",
               hours: operation.hours,
               benefitSummary: operation.benefit?.detail ?? "",
@@ -4605,7 +4636,9 @@ export async function getPlayerProjectionForUser({
                       (g) =>
                         g.name +
                         ": " +
-                        g.food +
+                        (g.foodMin ?? g.food) +
+                        "–" +
+                        (g.foodMax ?? g.food) +
                         " food (" +
                         g.ordinary +
                         "% / " +

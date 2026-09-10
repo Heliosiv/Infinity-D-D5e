@@ -3,6 +3,11 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Next update — varied hunting:** Ten terrain tables with eight animals each,
+editable animal rows and meat-yield ranges. The GM can adjust a successful hunt's
+meat quantity and player report before delivery. Existing saved areas and open
+hunts retain their settings. See the [hunting guide](docs/DOWNTIME_HUNTING_DESIGN.md).
+
 **v0.3.36 — active hunting:** Open guided downtime in Forest, Swamp or
 another wilderness area. Under **Hunting rules and custom area**, edit the DC,
 animals, yields, risk and allowed activities, or save a custom area. Players choose

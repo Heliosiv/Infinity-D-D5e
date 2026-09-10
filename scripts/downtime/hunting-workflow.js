@@ -4,6 +4,7 @@ import {
   findHuntingGame,
   huntingHit,
   huntingSummary,
+  huntingYield,
 } from "./hunting.js";
 import { loadHuntingBlock } from "./hunting-store.js";
 import { requireHuntingEquipment } from "./hunting-equipment.js";
@@ -50,7 +51,13 @@ export function prepareHuntingAttempt(block, actor, queue) {
       game:
         result.gameIndex < 0
           ? null
-          : block.huntingProfile.game[result.gameIndex],
+          : {
+              ...block.huntingProfile.game[result.gameIndex],
+              food: huntingYield(
+                region.game[result.gameIndex],
+                deterministicDowntimeRoll(seed, `${actor.id}:meat`),
+              ),
+            },
       stage: result.gameIndex < 0 ? "done" : "attack",
       hit: false,
       survival: entry.guidedRoll,
@@ -107,14 +114,47 @@ export async function buildHuntingOperation({
   wallet,
   report,
   existingWork,
+  foodQuantity,
+  existingHuntingDelivery,
 }) {
   const hunt = block.participants.find((p) => p.actorId === actor.id)?.hunt;
   if (!hunt || hunt.stage !== "done")
     throw new Error(
       "Finish the hunting check and ranged shot before GM review.",
     );
-  const work = existingWork ?? (await huntingWork(actor, hunt, operationId));
-  const summary = huntingSummary(hunt);
+  const quantity =
+    foodQuantity === undefined
+      ? (existingWork?.outputQuantity ?? (hunt.hit ? hunt.game.food : 0))
+      : Number(foodQuantity);
+  if (
+    foodQuantity === "" ||
+    !Number.isSafeInteger(quantity) ||
+    quantity < 0 ||
+    quantity > 1000 ||
+    (!hunt.hit && quantity !== 0)
+  )
+    throw new Error(
+      "Enter 0–1000 meat portions for a successful hunt; failed hunts yield no meat.",
+    );
+  const reviewedHunt = hunt.hit
+    ? { ...hunt, game: { ...hunt.game, food: quantity } }
+    : hunt;
+  const work = structuredClone(
+    existingWork ?? (await huntingWork(actor, hunt, operationId)),
+  );
+  const huntingDelivery = existingHuntingDelivery ?? work.delivery;
+  const summary = huntingSummary(reviewedHunt);
+  work.outputQuantity = quantity;
+  work.detail = summary;
+  if (quantity > 0) {
+    if (!huntingDelivery)
+      throw new Error(
+        "The saved meat delivery is missing. Reprepare this hunt before applying.",
+      );
+    work.delivery = structuredClone(huntingDelivery);
+    work.delivery.quantity = quantity;
+    work.delivery.snapshot.system.quantity = quantity;
+  } else delete work.delivery;
   return {
     operationId,
     kind: "guided-work",
@@ -128,6 +168,10 @@ export async function buildHuntingOperation({
     createdAt,
     targetId: hunt.targetId,
     hunting: true,
+    ...(huntingDelivery ? { huntingDelivery } : {}),
+    huntingGeneratedReport: summary,
+    huntingAnimal: hunt.game?.name ?? "",
+    huntingSuggestedFood: hunt.hit ? hunt.game.food : 0,
     work,
     walletBefore: wallet,
     walletAfter: wallet,
@@ -156,7 +200,7 @@ async function huntingWork(actor, hunt, operationId) {
     materials: [],
     outputQuantity: 0,
   };
-  if (hunt.hit) {
+  if (hunt.hit && hunt.game.food > 0) {
     const food = loadResourceConfig().resources.find(
       (r) => r.forageYields === "food" && r.scope === "per-character",
     );

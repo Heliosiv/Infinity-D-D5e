@@ -190,12 +190,54 @@ try {
     "exceptional",
   );
   assert.equal(rules.findHuntingGame(forest, 8, 11, 100, 1).complication, true);
-  assert.equal(rules.findHuntingGame(forest, 8, 11, 100, 100).gameIndex, 2);
+  assert.equal(rules.findHuntingGame(forest, 8, 11, 100, 100).gameIndex, 7);
   assert.equal(rules.findHuntingGame(forest, 4, 9, 100, 100).gameIndex, -1);
   assert.throws(
     () => rules.normalizeHuntingRegion({ ...forest, game: [forest.game[0]] }),
     /100%/,
   );
+  for (const region of regions) {
+    assert.equal(region.game.length, 8);
+    assert.deepEqual(rules.normalizeHuntingRegion(region), region);
+    for (const game of region.game) {
+      assert.equal(rules.huntingYield(game, 0), game.foodMin);
+      assert.equal(rules.huntingYield(game, 0.999999), game.foodMax);
+    }
+    const ordinaryLarge = region.game
+      .filter((g) => g.size === "Large")
+      .reduce((n, g) => n + g.ordinary, 0);
+    const exceptionalLarge = region.game
+      .filter((g) => g.size === "Large")
+      .reduce((n, g) => n + g.exceptional, 0);
+    assert.ok(exceptionalLarge > ordinaryLarge);
+  }
+  assert.equal(new Set(regions.map((r) => JSON.stringify(r.game))).size, 10);
+  assert.throws(
+    () =>
+      rules.normalizeHuntingRegion({
+        ...forest,
+        game: forest.game.map((g, i) =>
+          i ? g : { ...g, foodMin: 20, foodMax: 1 },
+        ),
+      }),
+    /minimum/,
+  );
+  const legacy = {
+    ...forest,
+    game: [
+      {
+        name: "Deer",
+        size: "Large",
+        ac: 12,
+        food: 20,
+        ordinary: 100,
+        exceptional: 100,
+      },
+    ],
+  };
+  assert.equal(rules.normalizeHuntingRegion(legacy).game[0].foodMin, 20);
+  assert.equal(rules.huntingYield(legacy.game[0], 0.2), 20);
+  assert.throws(() => rules.huntingYield(forest.game[0], 1), /Invalid/);
   const publicRegion = rules.publicHuntingRegion(forest);
   assert.ok(!JSON.stringify(publicRegion).includes('"dc"'));
   assert.ok(!JSON.stringify(publicRegion).includes('"ac"'));
@@ -353,7 +395,82 @@ try {
   });
   const planned = workflow.getActiveDowntimeBlock();
   assert.equal(planned.plan.operations[0].hunting, true);
-  const operation = planned.plan.operations[0];
+  let operation = planned.plan.operations[0];
+  // Old prepared hunts lack the new review metadata; they remain editable.
+  const legacyPlan = clone(planned.plan);
+  for (const op of [
+    ...legacyPlan.operations,
+    ...legacyPlan.characters.flatMap((c) => c.operations),
+  ]) {
+    delete op.huntingDelivery;
+    delete op.huntingGeneratedReport;
+    delete op.huntingAnimal;
+    delete op.huntingSuggestedFood;
+  }
+  await workflow.updateGuidedDowntimePlan(block.id, legacyPlan);
+  const review = (foodQuantity, report) =>
+    service.chooseGuidedDowntimeOutcome({
+      blockId: block.id,
+      operationId: operation.operationId,
+      outcomeIndex: 2,
+      foodQuantity,
+      ...(report === undefined ? {} : { report }),
+    });
+  for (const invalid of [-1, 1001, 1.5, "", "not a number"])
+    await assert.rejects(review(invalid), /meat portions/);
+  game.user = player;
+  await assert.rejects(review(30), /Gamemaster|GM|authority/i);
+  game.user = gm;
+  await review(0);
+  operation = workflow.getActiveDowntimeBlock().plan.operations[0];
+  assert.equal(operation.work.outputQuantity, 0);
+  assert.equal(operation.work.delivery, undefined);
+  assert.match(operation.report, /0 food portions/);
+  await review(30);
+  operation = workflow.getActiveDowntimeBlock().plan.operations[0];
+  assert.equal(operation.work.delivery.quantity, 30);
+  assert.equal(operation.work.delivery.snapshot.system.quantity, 30);
+  assert.match(operation.report, /30 food portions/);
+  await review(7, "A careful shot brings back meat for the camp.");
+  operation = workflow.getActiveDowntimeBlock().plan.operations[0];
+  assert.equal(operation.work.delivery.quantity, 7);
+  assert.equal(
+    operation.report,
+    "A careful shot brings back meat for the camp.",
+  );
+  assert.match(operation.summary, /7 food portions/);
+  assert.equal(
+    workflow.getActiveDowntimeBlock().participants[0].hunt.game.food,
+    food,
+  );
+  assert.equal(ammo.system.quantity, 10);
+  // Changing meat must not weaken the saved equipment or delivery identities.
+  for (const tamper of [
+    (op) => {
+      op.work.materials[0].after += 1;
+    },
+    (op) => {
+      op.work.delivery.snapshot.name = "Different item";
+    },
+    (op) => {
+      op.work.delivery.quantity = 99;
+    },
+    (op) => {
+      op.huntingDelivery.snapshot.name = "Different base item";
+      op.work.delivery.snapshot.name = "Different base item";
+    },
+  ]) {
+    const invalidPlan = clone(workflow.getActiveDowntimeBlock().plan);
+    for (const op of [
+      ...invalidPlan.operations,
+      ...invalidPlan.characters.flatMap((c) => c.operations),
+    ])
+      tamper(op);
+    await assert.rejects(
+      workflow.updateGuidedDowntimePlan(block.id, invalidPlan),
+      /Immutable|HuntingReviewInvalid/,
+    );
+  }
   assert.equal(inventory.verifyGuidedWorkBefore(actor, operation), true);
   ammo.system.quantity = 12;
   assert.equal(inventory.verifyGuidedWorkBefore(actor, operation), false);
@@ -369,7 +486,7 @@ try {
     (i) => i.flags?.[MODULE_ID]?.downtimeCraft,
   );
   assert.ok(delivery);
-  assert.equal(delivery.system.quantity, food);
+  assert.equal(delivery.system.quantity, 7);
   assert.equal(delivery.flags[MODULE_ID].resourceTag, "food");
   assert.equal(
     delivery.flags.core.sourceId,
@@ -386,7 +503,8 @@ try {
     userId: player.id,
     actorId: actor.id,
   });
-  assert.match(JSON.stringify(journal), /secured/);
+  assert.match(JSON.stringify(journal), /A careful shot brings back meat/);
+  assert.match(JSON.stringify(journal), /7/);
   block = await open();
   block = await service.submitQueueAuthoritatively({
     userId: player.id,
@@ -420,6 +538,16 @@ try {
     blockId: block.id,
     actorId: actor.id,
   });
+  const missedOperation = workflow.getActiveDowntimeBlock().plan.operations[0];
+  await assert.rejects(
+    service.chooseGuidedDowntimeOutcome({
+      blockId: block.id,
+      operationId: missedOperation.operationId,
+      outcomeIndex: 2,
+      foodQuantity: 10,
+    }),
+    /failed hunts yield no meat/,
+  );
   await service.applyActiveDowntimeBlock(block.id);
   assert.equal(ammo.system.quantity, 8);
   assert.equal(
@@ -447,6 +575,39 @@ try {
   assert.equal(ammo.system.quantity, 8);
   if (workflow.getActiveDowntimeBlock()?.state === "collecting")
     await service.finishGuidedDowntimeBlock(block.id);
+  // A zero-meat review still spends exactly one shot and creates no empty item.
+  block = await open();
+  block = await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "zero-track",
+    blockId: block.id,
+    actorId: actor.id,
+    queue: queue(11),
+  });
+  block = await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "zero-shot",
+    blockId: block.id,
+    actorId: actor.id,
+    queue: queue(11).map((e) => ({ ...e, guidedAttack: shot })),
+  });
+  await service.prepareGuidedDowntimeParticipant({
+    blockId: block.id,
+    actorId: actor.id,
+  });
+  const zeroOperation = workflow.getActiveDowntimeBlock().plan.operations[0];
+  await service.chooseGuidedDowntimeOutcome({
+    blockId: block.id,
+    operationId: zeroOperation.operationId,
+    outcomeIndex: 2,
+    foodQuantity: 0,
+  });
+  const itemCount = actor.items.size;
+  await service.applyActiveDowntimeBlock(block.id);
+  assert.equal(actor.items.size, itemCount);
+  assert.equal(ammo.system.quantity, 7);
+  if (workflow.getActiveDowntimeBlock()?.state === "collecting")
+    await service.finishGuidedDowntimeBlock(block.id);
   // The one shot survives player reloads and lost submission replies.
   let dice = 0;
   globalThis.Roll = class {
@@ -471,7 +632,7 @@ try {
     firstShot,
   );
   assert.equal(dice, 1);
-  assert.equal(ammo.system.quantity, 8);
+  assert.equal(ammo.system.quantity, 7);
   const beforeStore = local;
   globalThis.localStorage = { getItem: () => null, setItem: () => {} };
   await assert.rejects(

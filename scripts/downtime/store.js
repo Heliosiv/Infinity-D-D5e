@@ -1618,6 +1618,35 @@ function guidedPlanIdentity(plan) {
       "benefitTarget",
     ])
       delete result[field];
+    if (operation.hunting) {
+      // Review may change only the delivered quantity and prose. Keep the
+      // original item snapshot, equipment, ammunition and all roll inputs fixed.
+      const work = clone(operation.work);
+      const quantity = work?.outputQuantity;
+      const delivery = operation.huntingDelivery ?? work?.delivery;
+      if (
+        !Number.isSafeInteger(quantity) ||
+        quantity < 0 ||
+        quantity > 1000 ||
+        (quantity > 0 && !delivery)
+      )
+        throw new Error("DowntimeHuntingReviewInvalid");
+      if (quantity > 0) {
+        const expected = clone(delivery);
+        expected.quantity = quantity;
+        expected.snapshot.system.quantity = quantity;
+        if (!persistedValuesEqual(expected, work.delivery))
+          throw new Error("DowntimeHuntingReviewInvalid");
+      } else if (work.delivery) throw new Error("DowntimeHuntingReviewInvalid");
+      if (delivery) result.huntingDelivery = clone(delivery);
+      delete work.delivery;
+      delete work.outputQuantity;
+      delete work.detail;
+      result.work = work;
+      delete result.huntingGeneratedReport;
+      delete result.huntingAnimal;
+      delete result.huntingSuggestedFood;
+    }
     return result;
   };
   identity.operations = (identity.operations ?? []).map(retainIdentity);
