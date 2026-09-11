@@ -133,19 +133,28 @@ let uiFoundationRegistered = false;
 /**
  * Apply density/container behavior to every Infinity ApplicationV2 root and
  * restore the last meaningful control after a rerender. The focus record is a
- * selector only; no document or campaign data is retained.
+ * selector and cursor offsets only; no document or campaign data is retained.
  */
 export function registerUiFoundationHooks() {
   if (uiFoundationRegistered) return;
   uiFoundationRegistered = true;
 
-  globalThis.document?.addEventListener?.("focusin", (event) => {
+  const remember = (event) => {
     const root = event.target?.closest?.(".application.infinity-dnd5e");
     if (!root) return;
     const key = applicationFocusKey(root);
     const descriptor = describeFocusTarget(root, event.target);
     if (key && descriptor) lastFocusByApplication.set(key, descriptor);
-  });
+  };
+  for (const eventName of [
+    "focusin",
+    "input",
+    "select",
+    "keyup",
+    "pointerup",
+  ]) {
+    globalThis.document?.addEventListener?.(eventName, remember);
+  }
 
   const enhance = (application) => {
     const root = application?.element;
@@ -156,6 +165,9 @@ export function registerUiFoundationHooks() {
   };
   globalThis.Hooks?.on?.("renderApplicationV2", enhance);
   globalThis.Hooks?.on?.("renderDialogV2", enhance);
+  globalThis.Hooks?.on?.("closeApplicationV2", (application) => {
+    lastFocusByApplication.delete(applicationFocusKey(application?.element));
+  });
 }
 
 /** Capture a safe focus origin and restore it once a window has closed. */
@@ -229,11 +241,19 @@ function restoreRememberedFocus(root) {
   const descriptor = lastFocusByApplication.get(applicationFocusKey(root));
   if (!descriptor) return;
   const active = globalThis.document?.activeElement;
-  if (active && active !== globalThis.document?.body && root.contains(active)) {
+  if (active && active !== globalThis.document?.body) {
     return;
   }
   const candidates = root.querySelectorAll?.(descriptor.selector) ?? [];
-  scheduleFocus(candidates[descriptor.index] ?? candidates[0]);
+  const target = candidates[descriptor.index];
+  scheduleFocus(
+    target,
+    () => {
+      const current = globalThis.document?.activeElement;
+      return !current || current === globalThis.document?.body;
+    },
+    descriptor.selection,
+  );
 }
 
 function describeFocusTarget(root, target) {
@@ -251,7 +271,10 @@ function describeFocusTarget(root, target) {
     return null;
   }
   const matches = [...(root.querySelectorAll?.(selector) ?? [])];
-  return { selector, index: Math.max(0, matches.indexOf(target)) };
+  const selection = Number.isInteger(target.selectionStart)
+    ? [target.selectionStart, target.selectionEnd, target.selectionDirection]
+    : null;
+  return { selector, index: Math.max(0, matches.indexOf(target)), selection };
 }
 
 function applicationFocusKey(root) {
@@ -260,12 +283,18 @@ function applicationFocusKey(root) {
   ).trim();
 }
 
-function scheduleFocus(target) {
+function scheduleFocus(target, shouldFocus = () => true, selection = null) {
   if (!isFocusable(target) || target?.isConnected === false) return;
   const run = () => {
-    if (target?.isConnected === false || target?.disabled === true) return;
+    if (
+      target?.isConnected === false ||
+      target?.disabled === true ||
+      !shouldFocus()
+    )
+      return;
     try {
       target.focus({ preventScroll: true });
+      if (selection) target.setSelectionRange?.(...selection);
     } catch {
       target.focus?.();
     }

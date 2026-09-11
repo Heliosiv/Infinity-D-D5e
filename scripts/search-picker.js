@@ -149,10 +149,28 @@ export class SearchPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._selectedIds.clear();
       this._selectedIds.add(id);
     }
-    await this.render(false);
-    this.element
-      ?.querySelector?.(`[data-option-id="${cssEscape(id)}"]`)
-      ?.focus?.();
+    // Selection changes no layout or source data. Keep the list DOM intact so
+    // choosing several options cannot reset its scroll position or focus.
+    const labels = new Map(
+      this._options.map((entry) => [entry.id, entry.label]),
+    );
+    for (const row of this.element?.querySelectorAll?.(
+      "[data-search-option]",
+    ) ?? []) {
+      const selected = this._selectedIds.has(row.dataset.optionId);
+      const label = labels.get(row.dataset.optionId) ?? "";
+      row.classList?.toggle("is-selected", selected);
+      row.setAttribute?.("aria-selected", String(selected));
+      row.setAttribute?.(
+        "aria-label",
+        `${selected ? "Deselect" : "Select"} ${label}`,
+      );
+      const icon = row.querySelector?.(".fa-circle, .fa-circle-check");
+      icon?.classList.toggle("fa-circle-check", selected);
+      icon?.classList.toggle("fa-circle", !selected);
+    }
+    const confirm = this.element?.querySelector?.('[data-action="confirm"]');
+    if (confirm) confirm.disabled = this._selectedIds.size === 0;
   }
 
   /** @this {SearchPickerApp} */
@@ -252,11 +270,4 @@ function cleanText(value, max) {
 
 function cleanId(value) {
   return cleanText(value, 240);
-}
-
-function cssEscape(value) {
-  return (
-    globalThis.CSS?.escape?.(String(value)) ??
-    String(value).replace(/["\\]/g, "\\$&")
-  );
 }

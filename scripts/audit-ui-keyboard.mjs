@@ -6,6 +6,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 import { buildUiHarnessDocument } from "./ui-harness.mjs";
+import { auditRefreshFocus } from "./ui-focus-journey.mjs";
 
 async function main() {
   const outDir = path.resolve("tmp", "playwright");
@@ -37,6 +38,11 @@ async function main() {
     if (url.pathname === "/ui-harness-keyboard.html") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(harnessDocument);
+      return;
+    }
+    if (/^\/scripts\/[\w/-]+\.js$/.test(url.pathname)) {
+      response.writeHead(200, { "content-type": "text/javascript" });
+      response.end(readFileSync(path.resolve(`.${url.pathname}`), "utf8"));
       return;
     }
     response.writeHead(404);
@@ -81,6 +87,20 @@ async function main() {
 
     await openFixture(page, harnessUrl, "search-picker");
     await auditSearchPickerJourney(page);
+    await auditRefreshFocus(page);
+    await page.setViewportSize({ width: 412, height: 740 });
+    await openFixture(page, harnessUrl, "merchant-editor-stock");
+    await page
+      .locator("[data-harness-window]")
+      .evaluate((root) => root.style.setProperty("--harness-width", "380px"));
+    const inventory = page.locator(".mw-inv__row").first();
+    for (const label of ["Qty", "Restock to", "Custom gp", "Unlimited"]) {
+      assert.equal(
+        await inventory.getByText(label, { exact: true }).isVisible(),
+        true,
+        `${label} remains visible on narrow inventory cards`,
+      );
+    }
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
@@ -102,8 +122,17 @@ async function auditSearchPickerJourney(page) {
     const { SearchPickerApp } = await import("/scripts/search-picker.js");
     const picker = new SearchPickerApp();
     picker.element = document.querySelector(".ix-search-picker");
-    picker._options = [{ id: "item-1" }, { id: "item-2" }, { id: "item-3" }];
+    picker._options = [
+      ...picker.element.querySelectorAll("[data-search-option]"),
+    ].map((row) => ({
+      id: row.dataset.optionId,
+      label: row.querySelector("strong").textContent,
+      disabled: row.disabled,
+    }));
     picker._onRender({}, {});
+    globalThis.keyboardPicker = picker;
+    globalThis.toggleKeyboardPicker = (target) =>
+      SearchPickerApp._onToggleOption.call(picker, null, target);
   });
   const search = page.locator("[data-search-picker-query]");
   const empty = page.locator("[data-search-picker-empty]");
@@ -134,6 +163,68 @@ async function auditSearchPickerJourney(page) {
       .evaluate((el) => el === document.activeElement),
     true,
     "disabled results are skipped",
+  );
+  await page.evaluate(() => {
+    keyboardPicker._multiple = true;
+    const list = document.querySelector("[data-search-picker-list]");
+    list.style.height = "60px";
+    list.style.overflow = "auto";
+    keyboardPicker.render = () => {
+      throw new Error("Selection rebuilt the picker");
+    };
+    list.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-search-option]");
+      if (target) void toggleKeyboardPicker(target);
+    });
+  });
+  const option = page.locator('[data-option-id="item-2"]');
+  await option.focus();
+  const before = await page
+    .locator("[data-search-picker-list]")
+    .evaluate((el) => el.scrollTop);
+  await option.press("Enter");
+  assert.equal(await option.getAttribute("aria-selected"), "true");
+  assert.equal(
+    await option.evaluate((el) => el === document.activeElement),
+    true,
+  );
+  assert.equal(
+    await page
+      .locator("[data-search-picker-list]")
+      .evaluate((el) => el.scrollTop),
+    before,
+  );
+  await option.press("Enter");
+  assert.equal(await option.getAttribute("aria-selected"), "false");
+  assert.equal(
+    await page.locator('[data-action="confirm"]').isDisabled(),
+    true,
+  );
+  const firstOption = page.locator('[data-option-id="item-1"]');
+  await firstOption.press("Enter");
+  await option.press("Enter");
+  assert.equal(
+    await page.locator('[data-search-option][aria-selected="true"]').count(),
+    2,
+  );
+  await page.evaluate(() => {
+    keyboardPicker._multiple = false;
+  });
+  await firstOption.press("Enter");
+  assert.equal(
+    await page.locator('[data-search-option][aria-selected="true"]').count(),
+    1,
+  );
+  assert.equal(await firstOption.getAttribute("aria-selected"), "true");
+  await page.evaluate(() =>
+    toggleKeyboardPicker(
+      document.querySelector("[data-search-option][disabled]"),
+    ),
+  );
+  assert.equal(
+    await page.locator('[data-search-option][aria-selected="true"]').count(),
+    1,
+    "disabled options cannot change the selection",
   );
 }
 

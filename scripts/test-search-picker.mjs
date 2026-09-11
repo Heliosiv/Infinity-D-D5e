@@ -149,27 +149,21 @@ assert.equal(filterSearchOptions(raw, "   ").length, 2);
   assert.equal(rendered.rows[1].hidden, true);
 
   picker.render = async () => {
-    rendered = createPickerRoot();
-    picker.element = rendered.root;
-    picker._onRender({}, {});
-    return picker;
+    assert.fail("toggling a choice must not rebuild the list");
   };
+  picker._onRender({}, {});
   await SearchPickerApp.DEFAULT_OPTIONS.actions.toggleOption.call(
     picker,
     null,
     { dataset: { optionId: "a" } },
   );
 
-  assert.equal(
-    picker._query,
-    "arcane",
-    "selection rerenders preserve the active query",
-  );
+  assert.equal(picker._query, "arcane", "selection preserves the active query");
   assert.equal(rendered.input.value, "arcane");
   assert.equal(
     rendered.rows[1].hidden,
     true,
-    "the preserved query is reapplied to the freshly rendered options",
+    "selection keeps the existing filter",
   );
   assert.match(rendered.status.textContent, /^1 of 2 options shown$/);
 }

@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**UI stability (next release):** Background window refreshes respect the control
+you are using, and text-field refreshes retain the cursor selection. Searchable
+pickers keep their list and scroll position while selecting choices. Narrow shop
+inventory cards show quantity, restock, custom-price, and unlimited-stock labels.
+See the [UI gauntlet report](docs/UI_GAUNTLET_2026-09-11.md) for coverage and limits.
+
 **Field ammunition (next release):** Include **Craft Field Ammunition** in a
 downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
 Players choose hours and materials, see difficulty labels and complication

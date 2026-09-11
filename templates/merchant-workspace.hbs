@@ -238,10 +238,17 @@
                     <span class="mw-inv__meta">{{#unless missing}}<i class="fa-solid fa-coins mw-coin" aria-hidden="true"></i> {{/unless}}{{basePriceLabel}}{{#if rarityLabel}} · <span class="mw-rarity mw-rarity--{{rarity}}">{{rarityLabel}}</span>{{/if}}{{#if missing}} · <em>missing</em>{{/if}}</span>
                   </div>
                 </div>
+                <label class="mw-inv__field"><span>Qty</span>
                 <input class="mw-input mw-input--num" type="number" data-role="invQty" data-uuid="{{uuid}}" value="{{qtyDisplay}}" min="0" step="1" {{#if unlimited}}disabled{{/if}} aria-label="Quantity for {{name}}" />
+                </label>
+                <label class="mw-inv__field"><span>Restock to</span>
                 <input class="mw-input mw-input--num" type="number" data-role="invStartQty" data-uuid="{{uuid}}" value="{{startingQty}}" min="0" step="1" aria-label="Restock quantity for {{name}}" />
+                </label>
+                <label class="mw-inv__field"><span>Custom gp</span>
                 <input class="mw-input mw-input--num" type="number" data-role="invPriceOverride" data-uuid="{{uuid}}" value="{{priceOverrideDisplay}}" min="0" step="0.05" placeholder="—" aria-label="Custom price (gp) for {{name}}" />
-                <label class="mw-toggle" aria-label="Unlimited stock for {{name}}">
+                </label>
+                <label class="mw-toggle mw-inv__unlimited" aria-label="Unlimited stock for {{name}}">
+                  <span class="mw-inv__compact-label">Unlimited</span>
                   <input type="checkbox" data-role="invUnlimited" data-uuid="{{uuid}}" {{#if unlimited}}checked{{/if}} />
                 </label>
                 <button type="button" class="mw-btn mw-btn--ghost mw-btn--icon" data-action="openInventoryItem" data-uuid="{{uuid}}" title="Open {{name}}" aria-label="Open {{name}} item sheet">

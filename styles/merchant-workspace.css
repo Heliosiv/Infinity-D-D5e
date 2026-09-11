@@ -774,6 +774,16 @@
   background: var(--lf-bg);
   border: 1px solid var(--lf-border);
 }
+.mw-inv__field {
+  min-width: 0;
+}
+.mw-inv__field > span,
+.mw-inv__compact-label {
+  display: none;
+}
+.mw-inv__field > input {
+  width: 100%;
+}
 .mw-inv__row.is-missing {
   opacity: 0.55;
   border-style: dashed;
@@ -1159,6 +1169,15 @@
   .mw-inv__name {
     grid-column: 1 / -1;
     min-width: 0;
+  }
+  .mw-inv__field > span,
+  .mw-inv__compact-label {
+    display: block;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .mw-inv__unlimited {
+    flex-direction: column;
   }
   .mw-inv__row > .mw-input,
   .mw-inv__row > .mw-toggle,

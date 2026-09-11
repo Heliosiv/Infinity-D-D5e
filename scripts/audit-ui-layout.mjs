@@ -11,6 +11,30 @@ import {
 
 const SCENARIOS = [
   {
+    name: "desktop-1920",
+    viewportWidth: 1920,
+    appWidth: 1040,
+    height: 1080,
+    density: "comfortable",
+    targetSize: 44,
+  },
+  {
+    name: "laptop-1366",
+    viewportWidth: 1366,
+    appWidth: 1040,
+    height: 768,
+    density: "comfortable",
+    targetSize: 44,
+  },
+  {
+    name: "mobile-412",
+    viewportWidth: 412,
+    appWidth: 380,
+    height: 740,
+    density: "comfortable",
+    targetSize: 44,
+  },
+  {
     name: "comfortable-1040",
     appWidth: 1040,
     height: 920,
@@ -137,8 +161,14 @@ async function main() {
     }
     for (const scenario of scenarios) {
       const context = await browser.newContext({
-        viewport: { width: 1440, height: scenario.height },
-        screen: { width: 1440, height: scenario.height },
+        viewport: {
+          width: scenario.viewportWidth ?? 1440,
+          height: scenario.height,
+        },
+        screen: {
+          width: scenario.viewportWidth ?? 1440,
+          height: scenario.height,
+        },
         hasTouch: scenario.coarse === true,
         isMobile: scenario.coarse === true,
       });
