@@ -3,6 +3,7 @@ import {
   deleteDirectoryShops,
   filterDirectoryShops,
   moveDirectoryShops,
+  nameUnassignedShopLocation,
   removeShopLocation,
   renameShopLocation,
 } from "./merchant/directory.js";
@@ -11,7 +12,11 @@ import {
   addShopToLocation,
   locationDirectory,
 } from "./merchant/locations.js";
-import { loadMerchants, normalizeMerchant } from "./merchant/store.js";
+import {
+  loadMerchants,
+  normalizeMerchant,
+  shopSetup,
+} from "./merchant/store.js";
 import { loadMerchantAccessState } from "./merchant/global-access.js";
 import { commitMerchantWrite, pushOpenSession } from "./merchant/socket.js";
 import {
@@ -26,6 +31,7 @@ users.activeGM = gm;
 users.get = (id) => users.find((row) => row.id === id);
 const settings = new Map([["soundsEnabled", false]]);
 let failCatalogue = false;
+let failMerchants = false;
 globalThis.CONST = { USER_ROLES: { GAMEMASTER: 4 } };
 globalThis.game = {
   ready: false,
@@ -36,6 +42,8 @@ globalThis.game = {
     set: async (_scope, key, value) => {
       if (key === "merchantAccess" && failCatalogue)
         throw new Error("Catalogue save failed");
+      if (key === "merchants" && failMerchants)
+        throw new Error("Shop save failed");
       settings.set(key, structuredClone(value));
       return value;
     },
@@ -270,6 +278,97 @@ await removeShopLocation({
 });
 assert.equal(find("imported-shop").shop.locationId, "");
 assert.ok(!locationDirectory().some((row) => row.id === "imported"));
+
+const unassigned = [find("imported-shop")];
+const beforeNaming = loadMerchants();
+const catalogueBeforeNaming = loadMerchantAccessState();
+await assert.rejects(
+  nameUnassignedShopLocation({ name: "  ", expectedShops: unassigned }),
+  /Enter/,
+);
+await assert.rejects(
+  nameUnassignedShopLocation({ name: "harbor", expectedShops: unassigned }),
+  /already exists/,
+);
+await assert.rejects(
+  nameUnassignedShopLocation({ name: "Market", expectedShops: [find("b")] }),
+  /unassigned shops changed/,
+);
+failCatalogue = true;
+await assert.rejects(
+  nameUnassignedShopLocation({ name: "Market", expectedShops: unassigned }),
+  /Catalogue save failed/,
+);
+failCatalogue = false;
+assert.deepEqual(loadMerchants(), beforeNaming);
+failMerchants = true;
+await assert.rejects(
+  nameUnassignedShopLocation({ name: "Market", expectedShops: unassigned }),
+  /Shop save failed/,
+);
+failMerchants = false;
+assert.deepEqual(
+  loadMerchantAccessState(),
+  catalogueBeforeNaming,
+  "failed moves remove the empty location",
+);
+assert.deepEqual(loadMerchants(), beforeNaming);
+
+// Membership may change while waiting for a trade; no shops may be silently omitted.
+let unlockNaming, signalNaming;
+const namingGate = new Promise((resolve) => {
+  unlockNaming = resolve;
+});
+const namingStarted = new Promise((resolve) => {
+  signalNaming = resolve;
+});
+const namingTrade = runWithMerchantMutex("imported-shop", async () => {
+  signalNaming();
+  await namingGate;
+});
+await namingStarted;
+const pendingName = nameUnassignedShopLocation({
+  name: "Market",
+  expectedShops: unassigned,
+});
+await new Promise((resolve) => setImmediate(resolve));
+settings.set("merchants", [
+  ...loadMerchants(),
+  normalizeMerchant({ id: "late", name: "Late shop" }),
+]);
+unlockNaming();
+await namingTrade;
+await assert.rejects(pendingName, /shops in this location changed/);
+assert.deepEqual(loadMerchantAccessState(), catalogueBeforeNaming);
+const allBeforeNaming = loadMerchants();
+const named = await nameUnassignedShopLocation({
+  name: "  Xelethar's Market  ",
+  expectedShops: allBeforeNaming.filter((row) => !row.shop?.locationId),
+});
+assert.equal(named.name, "Xelethar's Market");
+assert.ok(named.id);
+assert.ok(
+  locationDirectory().some(
+    (row) => row.id === named.id && row.name === named.name,
+  ),
+);
+for (const before of allBeforeNaming)
+  assert.deepEqual(
+    find(before.id),
+    before.shop?.locationId
+      ? before
+      : { ...before, shop: { ...shopSetup(before), locationId: named.id } },
+  );
+assert.ok(!locationDirectory().some((row) => row.id === ""));
+await renameShopLocation({
+  locationId: named.id,
+  expectedName: named.name,
+  name: "Market Square",
+});
+assert.equal(
+  locationDirectory().find((row) => row.id === named.id).name,
+  "Market Square",
+);
 console.log(
   "Shop organization: preserved data, exact selections, stale edits, safe removal retry, session cleanup, queued membership and filters passed.",
 );

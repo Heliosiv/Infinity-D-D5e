@@ -135,7 +135,7 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
   };
 
   static PARTS = {
-    body: { template: TEMPLATE_PATH },
+    body: { template: TEMPLATE_PATH, scrollable: [""] },
   };
 
   static open() {
@@ -146,6 +146,7 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
   constructor(options = {}) {
     super(options);
     this._dirty = false;
+    this._draft = new Map();
     this._status = "No unsaved changes.";
     this._statusTone = "neutral";
   }
@@ -154,22 +155,30 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
     const fullGm = isFullGM();
     const preferences = getUiPreferences();
     const groups = buildSettingsGroups({ fullGm });
+    for (const field of groups.flatMap((group) => group.fields)) {
+      if (!this._draft.has(field.key)) continue;
+      field.value = this._draft.get(field.key);
+      field.checked = field.value === true;
+      for (const choice of field.choices)
+        choice.selected = String(choice.value) === String(field.value);
+    }
+    const density = this._draft.get("uiDensity") ?? preferences.density;
     return {
       moduleId: MODULE_ID,
       fullGm,
       groups,
       hasGroups: groups.length > 0,
-      density: preferences.density,
+      density,
       densityOptions: [
         {
           value: "comfortable",
           label: "Comfortable — larger controls and spacing",
-          selected: preferences.density === "comfortable",
+          selected: density === "comfortable",
         },
         {
           value: "compact",
           label: "Compact — more information on fine-pointer screens",
-          selected: preferences.density === "compact",
+          selected: density === "compact",
         },
       ],
       status: this._status,
@@ -183,8 +192,8 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
     super._onRender?.(context, options);
     const form = this.element?.querySelector?.("[data-infinity-settings-form]");
     if (!form) return;
-    form.addEventListener("input", () => this._markDirty());
-    form.addEventListener("change", () => this._markDirty());
+    form.addEventListener("input", (event) => this._markDirty(event.target));
+    form.addEventListener("change", (event) => this._markDirty(event.target));
   }
 
   _onClose(options) {
@@ -192,7 +201,15 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
     InfinitySettingsApp._instance = null;
   }
 
-  _markDirty() {
+  _markDirty(control) {
+    const key =
+      control?.dataset?.settingKey ??
+      (control?.name === "uiDensity" ? "uiDensity" : "");
+    if (key)
+      this._draft.set(
+        key,
+        control.type === "checkbox" ? control.checked : control.value,
+      );
     this._dirty = true;
     this._status = "Changes are ready to save.";
     this._statusTone = "attention";
@@ -210,14 +227,25 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
     const form = this.element?.querySelector?.("[data-infinity-settings-form]");
     if (!form) return;
     const values = collectSettingsForm(form, { fullGm: isFullGM() });
+    this._draft ??= new Map();
+    const draftAtSave = new Map(this._draft);
+    const clearSaved = (key) => {
+      if (this._draft.get(key) === draftAtSave.get(key))
+        this._draft.delete(key);
+    };
     let saved = 0;
     const failed = [];
 
     for (const { entry, value } of values.settings) {
-      if (Object.is(getSetting(entry.key), value)) continue;
+      if (Object.is(getSetting(entry.key), value)) {
+        clearSaved(entry.key);
+        continue;
+      }
       const ok = await setSetting(entry.key, value);
-      if (ok) saved += 1;
-      else failed.push(entry.name);
+      if (ok) {
+        saved += 1;
+        clearSaved(entry.key);
+      } else failed.push(entry.name);
     }
 
     try {
@@ -226,18 +254,21 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
         await updateUiPreferences({ density: values.density });
         saved += 1;
       }
+      clearSaved("uiDensity");
     } catch (error) {
       console.warn(`${MODULE_ID} | could not save UI preferences`, error);
       failed.push("Interface density");
     }
 
-    this._dirty = failed.length > 0;
+    this._dirty = failed.length > 0 || this._draft.size > 0;
     this._statusTone = failed.length > 0 ? "danger" : "success";
     this._status = failed.length
       ? `Some changes were not saved: ${failed.join(", ")}. Review them and try again.`
-      : saved > 0
-        ? `${saved} change${saved === 1 ? "" : "s"} saved. Open windows now use the updated preferences.`
-        : "Everything is already up to date.";
+      : this._dirty
+        ? "Saved. Newer edits are still waiting; use Save changes again."
+        : saved > 0
+          ? `${saved} change${saved === 1 ? "" : "s"} saved. Open windows now use the updated preferences.`
+          : "Everything is already up to date.";
     playModuleSound(
       failed.length > 0 ? SOUND_EVENTS.WARNING_MUTED : SOUND_EVENTS.DEPOSIT,
     );
@@ -251,7 +282,6 @@ export class InfinitySettingsApp extends HandlebarsApplicationMixin(
       this._status =
         "Quick-start cards will appear again the next time each workspace opens.";
       this._statusTone = "success";
-      this._dirty = false;
       await this.render(false);
     } catch (error) {
       console.warn(`${MODULE_ID} | could not restore quick starts`, error);

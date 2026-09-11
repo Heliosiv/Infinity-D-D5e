@@ -17,6 +17,91 @@ try {
   const workspaceModule = await import("./downtime-workspace.js");
   const activitiesModule = await import("./downtime-activities.js");
 
+  {
+    const hours = {
+      name: "hours",
+      value: "16",
+      options: [{ value: "8" }, { value: "16" }],
+    };
+    const skill = {
+      name: "skill",
+      value: "arc",
+      options: [{ value: "arc" }, { value: "ins" }],
+    };
+    const card = { querySelectorAll: () => [hours, skill] };
+    const draft = activitiesModule.readAllowedActivityInputs(card);
+    hours.value = "8";
+    skill.value = "ins";
+    activitiesModule.restoreActivityInputDraft(card, draft);
+    assert.equal(
+      hours.value,
+      "16",
+      "refresh preserves unsubmitted allocation hours",
+    );
+    assert.equal(skill.value, "arc", "refresh preserves unsubmitted skill");
+    hours.options = [{ value: "8" }];
+    hours.value = "8";
+    activitiesModule.restoreActivityInputDraft(card, draft);
+    assert.equal(hours.value, "8", "a removed choice is not restored");
+  }
+
+  {
+    const option = { value: "spell", dataset: {}, disabled: false };
+    const select = {
+      value: "spell",
+      options: [option],
+      selectedOptions: [option],
+    };
+    const detail = { textContent: "old quote" };
+    const cost = { textContent: "old cost" };
+    const button = { disabled: false };
+    const nodes = {
+      '[name="targetId"]': select,
+      '[name="hours"]': { value: "16" },
+      "[data-target-detail]": detail,
+      ".dt-activity-card__cost": cost,
+      '[data-action="addActivity"]': button,
+    };
+    activitiesModule.updateActivityCardSummary(
+      { querySelector: (key) => nodes[key] },
+      null,
+      [
+        {
+          hours: 16,
+          available: false,
+          costLabel: "16-hour cost",
+          targets: [
+            {
+              id: "spell",
+              label: "Spell: 16-hour cost",
+              detail: "16-hour materials",
+              disabled: true,
+            },
+          ],
+        },
+      ],
+    );
+    assert.equal(cost.textContent, "16-hour cost");
+    assert.equal(detail.textContent, "16-hour materials");
+    assert.equal(option.textContent, "Spell: 16-hour cost");
+    assert.equal(
+      button.disabled,
+      true,
+      "selected allocation affordability controls submission",
+    );
+    activitiesModule.updateActivityCardSummary(
+      { querySelector: (key) => nodes[key] },
+      null,
+      [{ hours: 16, available: true, costLabel: "ready", targets: [] }],
+      true,
+    );
+    assert.equal(
+      button.disabled,
+      true,
+      "quote refresh cannot re-enable an allocation while a command is busy",
+    );
+  }
+
   const cancelledCommand = {
     _busy: false,
     rendered: false,

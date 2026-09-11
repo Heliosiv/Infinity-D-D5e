@@ -49,15 +49,13 @@ export async function runActivityLibraryFoundryJourney({
   for (const [index, activity] of ADDITIONAL_GUIDED_ACTIVITIES.entries()) {
     console.log(`Testing installed activity: ${activity.name}`);
     const before = await state();
-    // Cover fractional-day costs and the maximum block alongside normal days.
+    // Respect released whole-block activity rules; cover one-hour reflection and the maximum allocation.
     const hours =
-      activity.id === "guided-care"
+      activity.id === "guided-reflection"
         ? 1
-        : activity.id === "guided-training"
-          ? 4
-          : activity.id === "guided-contacts"
-            ? 240
-            : 8;
+        : activity.id === "guided-contacts"
+          ? 240
+          : 8;
     const outcomeIndex = index % 3;
     await openUiBlock(activity.id, `Gauntlet: ${activity.name}`, hours);
     await submitUiChoices(activity.id, activity.skills.length > 0);

@@ -3,11 +3,14 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**UI stability (next release):** Background window refreshes respect the control
+**v0.3.37 local release candidate — UI stability:** Background window refreshes respect the control
 you are using, and text-field refreshes retain the cursor selection. Searchable
 pickers keep their list and scroll position while selecting choices. Narrow shop
 inventory cards show quantity, restock, custom-price, and unlimited-stock labels.
-See the [UI gauntlet report](docs/UI_GAUNTLET_2026-09-11.md) for coverage and limits.
+Settings keep unsaved edits, focus and scroll through refreshes and Restore guides;
+failed saves and edits made during a save remain available. Player activity cards
+also retain allocation hours, skill and source selections through refreshes.
+See the [reconciled candidate report](docs/UI_CANDIDATE_0.3.37.md) for coverage and limits.
 
 **Field ammunition (next release):** Include **Craft Field Ammunition** in a
 downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
@@ -16,24 +19,53 @@ percentages, and roll gathering before crafting. Drakmor house rules preserve
 half progress on near misses and lose the attempt's materials on failure by 5+.
 See [field ammunition rules and setup](docs/FIELD_AMMUNITION.md).
 
-**GM injury table (next release):** Open **Injuries → Injury table** to browse
+**v0.3.36 — active hunting:** Open guided downtime in Forest, Swamp or
+another wilderness area. Under **Hunting rules and custom area**, edit the DC,
+animals, yields, risk and allowed activities, or save a custom area. Players choose
+four/eight hours, a ranged weapon and ammunition, roll Survival, then take one
+shot. Eight hours lowers the Survival DC by four; a miss ends the hunt. GM review
+delivers food and spends one ammunition per shot. Hidden hunting rules and saved
+areas currently belong to the GM browser that opened them; finish there.
+See [hunting rules and setup](docs/DOWNTIME_HUNTING_DESIGN.md).
+
+**v0.3.35 - Expanded GM injury table:** Open **Injuries → Injury table** to browse
 all **30 d100 outcomes**, recovery rules, and automation/GM follow-up notes.
 The [V3 expansion](docs/INJURY_TABLE_EXPANSION.md) adds 12 temporary injuries
 with automatic penalties while preserving permanent-injury odds and saved V2
 injuries. The [original audit](docs/INJURY_TABLE_AUDIT.md) still identifies
 manual effects and recovery mismatches in the older outcomes.
 
-**Daily supplies (next release):** With Auto-run off, day changes ask the GM
+**v0.3.35 - Daily supplies:** With Auto-run off, day changes ask the GM
 which supplies to use or skip. **Use Daily Supplies** also offers independent
 food, water, and light/torch choices. Only checked supplies are consumed and
 assessed for shortages. See the [resource guide](docs/RESOURCE_SYSTEM.md).
 
-**Downtime locations (next release):** New blocks offer Adventuring, Wilderness
+**v0.3.34 - Downtime locations, recovery and pickers:** New blocks offer Adventuring, Wilderness
 camp, Village, Town/city, and Custom presets. Select a saved settlement to use
 its own editable activity list and linked shops. Activities unavailable at the
-location cannot be included. See the [Downtime guide](docs/DOWNTIME_SYSTEM.md).
+location cannot be included. Injury recovery now follows calendar ranges, and
+shared pickers support clearer searches and keyboard navigation. See the
+[Downtime guide](docs/DOWNTIME_SYSTEM.md).
 
-**Shops organization (next release):** Delete shops directly from the directory,
+**v0.3.33 - Downtime panels:** Activities, Projects, and Settlements keep their
+lists and preset controls visible when the window is resized. On narrow windows,
+the panel sits above the editor; long saved lists scroll within the panel, and
+the workspace scrolls through the full editor without collapsing the panel.
+
+**v0.3.32 - Visible location naming:** Edit **Location name** directly beneath
+the selected Shops heading and click **Rename**. For **Unassigned shops**, enter
+a name and click **Name location** to move those shops into a real named location,
+preserving stock, gold, and access settings. The naming control is always visible.
+
+**v0.3.31 — crafting, personal training and downtime journals:** Browse activities
+and recipes by category or search. Eight Drakmor house recipes produce usable
+items with explicit tools, costs and saved progress. Personal training supports
+languages, tools, skills, feats and special techniques with final GM approval.
+Players can search past results and see ongoing plans. Stock Paid Work rewards
+scale per eight productive hours; custom policies and open blocks are preserved.
+See the [downtime guide](docs/DOWNTIME_SYSTEM.md).
+
+**v0.3.29 - Shops organization:** Delete shops directly from the directory,
 or select several to move or delete together. **Manage location** renames or
 removes a city/location; removal keeps its shops in **Unassigned shops**. Find
 locations by name, filter shops by Open/Closed/Empty inventory, and sort by name,

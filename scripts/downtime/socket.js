@@ -24,6 +24,7 @@ const QUEUE_ENTRY_KEYS = new Set([
   "skill",
   "guidedRoll",
   "gatheringRoll",
+  "guidedAttack",
   "stakeCp",
   "targetId",
   "targetIds",
@@ -422,6 +423,17 @@ function validateQueueEntry(entry) {
   }
   if (entry.gatheringRoll != null && !validateGuidedRoll(entry.gatheringRoll))
     return false;
+  if (entry.guidedAttack != null) {
+    const { natural, ...roll } = entry.guidedAttack;
+    if (
+      entry.activityId !== "guided-hunting" ||
+      !Number.isInteger(natural) ||
+      natural < 1 ||
+      natural > 20 ||
+      !validateGuidedRoll(roll)
+    )
+      return false;
+  }
   return true;
 }
 

@@ -100,6 +100,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     this._errorMessage = "";
     this._pendingFocus = null;
     this._activityTargets = new Map();
+    this._activityDrafts = new Map();
     this._unsubscribe = null;
     this._bindAdapter();
   }
@@ -131,6 +132,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
 
   async _prepareContext() {
     this._activityTargets ??= new Map();
+    this._activityDrafts ??= new Map();
     let projection = null;
     try {
       projection = await this._adapter?.getPlayerProjection?.({
@@ -150,6 +152,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       this._statusMessage = "";
       this._errorMessage = "";
       this._activityTargets.clear();
+      this._activityDrafts.clear();
     }
     this._blockId = context.blockId;
     this._actorId = context.actor?.id ?? this._actorId;
@@ -160,6 +163,12 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       context.activities
         .filter((activity) => activity.fieldAmmunition)
         .map((activity) => [activity.id, activity.targets]),
+    );
+    this._workQuotes = new Map(
+      context.activities.map((activity) => [
+        activity.id,
+        activity.allocationQuotes,
+      ]),
     );
     for (const activity of context.activities) {
       const targetId = this._activityTargets.get(
@@ -191,22 +200,52 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
     super._onRender?.(context, options);
     applyVisualPrefs(this.element, "dt-");
     this._wireActivityInputs();
+    this._wireJournalSearch();
     this._restoreFocus();
+  }
+
+  _wireJournalSearch() {
+    for (const input of this.element?.querySelectorAll?.(
+      "[data-downtime-search]",
+    ) ?? []) {
+      input.addEventListener("input", () => {
+        const query = input.value.toLocaleLowerCase().trim();
+        for (const row of this.element.querySelectorAll(
+          input.dataset.downtimeSearch,
+        ))
+          row.hidden =
+            query && !row.textContent.toLocaleLowerCase().includes(query);
+      });
+    }
   }
 
   _wireActivityInputs() {
     const root = this.element?.querySelector?.("[data-activity-list]");
     if (!root) return;
-    for (const card of root.querySelectorAll("[data-activity-id]"))
+    for (const card of root.querySelectorAll("[data-activity-id]")) {
+      restoreActivityInputDraft(
+        card,
+        this._activityDrafts?.get(
+          `${this._actorId}:${card.dataset.activityId}`,
+        ),
+      );
       updateActivityCardSummary(
         card,
         this._fieldQuotes?.get(card.dataset.activityId),
+        this._workQuotes?.get(card.dataset.activityId),
+        this._busy,
       );
+    }
     root.addEventListener("change", (event) => {
       const input = event.target;
       if (!(input instanceof HTMLElement)) return;
       const card = input.closest?.("[data-activity-id]");
       if (!card) return;
+      this._activityDrafts ??= new Map();
+      this._activityDrafts.set(
+        `${this._actorId}:${card.dataset.activityId}`,
+        readAllowedActivityInputs(card),
+      );
       if (input.name === "targetId")
         this._activityTargets.set(
           `${this._actorId}:${card.dataset.activityId}`,
@@ -215,6 +254,8 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
       updateActivityCardSummary(
         card,
         this._fieldQuotes?.get(card.dataset.activityId),
+        this._workQuotes?.get(card.dataset.activityId),
+        this._busy,
       );
     });
   }
@@ -391,7 +432,7 @@ export class DowntimeActivitiesApp extends HandlebarsApplicationMixin(
             ? "Rolling and submitting your downtime activities..."
             : "Submitting your queue...",
         success: this._guided
-          ? "Your allocation is submitted. The GM can now review the results."
+          ? "Downtime saved. Check your current status below."
           : "Your queue is submitted for GM review.",
         focus: '[data-action="recallSubmission"]',
       },
@@ -481,11 +522,17 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status === "collecting" &&
     actor &&
     !submitted &&
+    !source.huntingLocked &&
     !needsRecovery;
   const withinBudget = usedHours <= budgetHours;
   const guided = cleanId(source.mode) === "guided";
   const canSubmit =
-    editable &&
+    (editable ||
+      (source.huntingPending &&
+        !noGm &&
+        !needsRecovery &&
+        status === "collecting" &&
+        !submitted)) &&
     withinBudget &&
     (!guided || queue.length >= 1) &&
     Boolean(source.canSubmit ?? true);
@@ -500,6 +547,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     status,
     completed: status === "completed",
     guided,
+    huntingPending: source.huntingPending === true,
+    huntingMessage: String(source.huntingMessage ?? ""),
     requiresRoll: guided && queue.some((entry) => Boolean(entry.skill)),
     retrySubmission: source.retrySubmission === true,
     statusLabel: playerStatusLabel(status, submitted),
@@ -561,21 +610,37 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     canSubmit: Boolean(canSubmit),
     submitReason:
       String(source.submitReason ?? "").trim() ||
-      (!editable
-        ? submitted
-          ? "Your queue is already submitted."
-          : "Submissions are not open."
-        : guided && queue.length < 1
-          ? "Allocate at least one activity, then submit. Unallocated hours will be forfeited."
-          : usedHours > budgetHours
-            ? "Your queue exceeds the time budget."
-            : ""),
+      (canSubmit
+        ? ""
+        : !editable
+          ? submitted
+            ? "Your queue is already submitted."
+            : "Submissions are not open."
+          : guided && queue.length < 1
+            ? "Allocate at least one activity, then submit. Unallocated hours will be forfeited."
+            : usedHours > budgetHours
+              ? "Your queue exceeds the time budget."
+              : ""),
     canRecall:
       hasActiveBlock &&
       status === "collecting" &&
       submitted &&
       !noGm &&
       Boolean(source.canRecall ?? true),
+    pastReports: array(source.pastReports)
+      .filter((row) => row.blockId !== source.blockId)
+      .map((row) => ({
+        blockId: cleanId(row.blockId),
+        locationName: String(row.locationName ?? ""),
+        receipt: normalizeReceipt(row.receipt),
+      }))
+      .filter((row) => row.receipt),
+    ongoingProjects: array(source.ongoingProjects).map((row) => ({
+      name: String(row.name ?? ""),
+      progressLabel: String(row.progressLabel ?? ""),
+      awardStatus: String(row.awardStatus ?? ""),
+      prerequisites: String(row.prerequisites ?? ""),
+    })),
     receipt,
     hasReceipt: Boolean(receipt),
     completionMessage: String(source.completionMessage ?? ""),
@@ -665,6 +730,17 @@ function normalizeActivity(activity) {
     ),
     hourOptions,
     hasHourOptions: hourOptions.length > 0,
+    allocationQuotes: array(source.allocationQuotes).map((quote) => ({
+      hours: Number(quote.hours),
+      available: quote.available === true,
+      costLabel: String(quote.costLabel ?? ""),
+      targets: array(quote.targets).map((target) => ({
+        id: cleanId(target.id),
+        label: String(target.label ?? ""),
+        detail: String(target.detail ?? ""),
+        disabled: target.disabled === true,
+      })),
+    })),
     fixedHours,
     selectedHoursLabel:
       fixedHours > 0
@@ -717,11 +793,13 @@ function normalizeReceipt(receipt) {
       image: String(entry?.image ?? ""),
       hasImage: Boolean(entry?.image),
       report: String(entry?.report ?? ""),
+      hours: positiveInteger(entry?.hours, 0),
       rewardLabel: String(entry?.rewardLabel ?? ""),
     }),
   );
   return {
     settlementName: String(receipt.settlementName ?? "Settlement"),
+    campaignDate: String(receipt.campaignDate ?? ""),
     completedAt: formatDate(receipt.completedAt ?? receipt.createdAt),
     activities,
     hasActivities: activities.length > 0,
@@ -754,7 +832,33 @@ export function readAllowedActivityInputs(card) {
   return result;
 }
 
-export function updateActivityCardSummary(card, fieldTargets) {
+/** Restore valid draft choices; removed options retain their new defaults. */
+export function restoreActivityInputDraft(card, draft) {
+  if (!draft) return;
+  for (const input of card?.querySelectorAll?.("[data-activity-input]") ?? []) {
+    const field = cleanId(input.name ?? input.dataset?.field);
+    if (!REQUEST_FIELDS.has(field) || !Object.hasOwn(draft, field)) continue;
+    if (field === "targetIds") {
+      for (const option of input.options ?? [])
+        option.selected = draft[field].includes(option.value);
+    } else {
+      const value = String(draft[field]);
+      if (
+        input.options &&
+        !Array.from(input.options).some((option) => option.value === value)
+      )
+        continue;
+      input.value = value;
+    }
+  }
+}
+
+export function updateActivityCardSummary(
+  card,
+  fieldTargets,
+  allocationQuotes,
+  busy = false,
+) {
   const detail = card.querySelector?.("[data-target-detail]");
   if (detail)
     detail.textContent =
@@ -767,6 +871,29 @@ export function updateActivityCardSummary(card, fieldTargets) {
   const summary = card.querySelector?.("[data-selected-hours]");
   if (summary)
     summary.textContent = `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const allocation = allocationQuotes?.find((quote) => quote.hours === hours);
+  if (allocation) {
+    const cost = card.querySelector(".dt-activity-card__cost");
+    if (cost) cost.textContent = allocation.costLabel;
+    const select = card.querySelector('[name="targetId"]');
+    for (const option of select?.options ?? []) {
+      const target = allocation.targets.find(
+        (target) => target.id === option.value,
+      );
+      if (!target) continue;
+      option.textContent = target.label;
+      option.dataset.detail = target.detail;
+      option.disabled = target.disabled;
+    }
+    const selected = allocation.targets.find(
+      (target) => target.id === select?.value,
+    );
+    if (detail && selected) detail.textContent = selected.detail;
+    const button = card.querySelector('[data-action="addActivity"]');
+    if (button)
+      button.disabled =
+        busy || !allocation.available || selected?.disabled === true;
+  }
   if (fieldTargets) {
     const targetId = card.querySelector('[name="targetId"]')?.value;
     const target = fieldTargets.find((option) => option.id === targetId);
@@ -780,7 +907,7 @@ export function updateActivityCardSummary(card, fieldTargets) {
         .filter(Boolean)
         .join(" ");
     const button = card.querySelector('[data-action="addActivity"]');
-    if (button) button.disabled = !quote?.available;
+    if (button) button.disabled = busy || !quote?.available;
   }
 }
 

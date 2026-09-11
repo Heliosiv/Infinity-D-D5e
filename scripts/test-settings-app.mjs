@@ -38,6 +38,29 @@ for (const entry of SETTINGS.filter((candidate) => candidate.config === true)) {
 const partyEntry = SETTINGS.find(
   (entry) => entry.key === SETTING_KEYS.DEFAULT_PARTY_SIZE,
 );
+{
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { role: 4, isGM: true },
+    settings: { get: () => undefined },
+  };
+  const app = new InfinitySettingsApp();
+  app.element = { querySelector: () => null };
+  app._markDirty({
+    dataset: { settingKey: SETTING_KEYS.DEFAULT_PARTY_SIZE },
+    type: "number",
+    value: "7",
+  });
+  const context = await app._prepareContext();
+  assert.equal(
+    context.groups
+      .flatMap((group) => group.fields)
+      .find((field) => field.key === SETTING_KEYS.DEFAULT_PARTY_SIZE).value,
+    "7",
+    "refresh retains unsaved settings",
+  );
+  globalThis.game = previousGame;
+}
 assert.equal(
   coerceSettingValue(partyEntry, { value: "999" }),
   10,
@@ -147,6 +170,69 @@ assert.equal(
     console.warn = previousWarn;
     if (previousGame === undefined) delete globalThis.game;
     else globalThis.game = previousGame;
+  }
+}
+
+{
+  const previousGame = globalThis.game;
+  const previousWarn = console.warn;
+  const control = {
+    dataset: { settingKey: SETTING_KEYS.DEFAULT_PARTY_SIZE },
+    type: "number",
+    value: "7",
+  };
+  const form = {
+    querySelectorAll: () => [control],
+    querySelector: () => ({ value: "comfortable" }),
+  };
+  const app = new InfinitySettingsApp();
+  app.element = {
+    querySelector: (selector) =>
+      selector === "[data-infinity-settings-form]" ? form : null,
+  };
+  app.render = async () => {};
+  let fail = true;
+  globalThis.game = {
+    user: { role: 4, isGM: true },
+    settings: {
+      get: () => undefined,
+      set: async (_module, key) => {
+        if (key === SETTING_KEYS.DEFAULT_PARTY_SIZE) {
+          if (fail) throw Error("test save failure");
+          control.value = "8";
+          app._markDirty(control);
+        }
+      },
+    },
+  };
+  console.warn = () => {};
+  try {
+    app._markDirty(control);
+    await InfinitySettingsApp._onSave.call(app);
+    assert.equal(
+      app._draft.get(control.dataset.settingKey),
+      "7",
+      "failed save retains the attempted value",
+    );
+    assert.equal(app._dirty, true);
+    await InfinitySettingsApp._onResetQuickStarts.call(app);
+    assert.equal(
+      app._draft.get(control.dataset.settingKey),
+      "7",
+      "Restore guides retains the draft",
+    );
+    assert.equal(app._dirty, true);
+    fail = false;
+    await InfinitySettingsApp._onSave.call(app);
+    assert.equal(
+      app._draft.get(control.dataset.settingKey),
+      "8",
+      "edits during an in-flight save are retained",
+    );
+    assert.equal(app._dirty, true);
+  } finally {
+    globalThis.game = previousGame;
+    console.warn = previousWarn;
   }
 }
 

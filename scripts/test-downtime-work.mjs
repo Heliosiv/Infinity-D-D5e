@@ -532,6 +532,34 @@ try {
     0,
   );
   const poor = actor(0);
+  const previewActor = actor(1000);
+  const previewSpell = spell(previewActor, 2);
+  const previews = projectGuidedWork(
+    previewActor,
+    { ...scroll, blockHours: 8 },
+    8,
+    {},
+    "custom",
+    24,
+  ).allocationQuotes;
+  assert.deepEqual(
+    previews.map((row) => row.hours),
+    [8, 16, 24],
+  );
+  const sixteen = previews
+    .find((row) => row.hours === 16)
+    .targets.find((row) => row.id === previewSpell.id);
+  assert.equal(
+    sixteen.detail.trim(),
+    quoteGuidedWork(
+      args(previewActor, scroll, { hours: 16, targetId: previewSpell.id }),
+    ).detail,
+  );
+  assert.notEqual(
+    sixteen.detail,
+    previews[0].targets.find((row) => row.id === previewSpell.id).detail,
+    "different allocations receive different authoritative quotes",
+  );
   spell(poor);
   assert.equal(projectGuidedWork(poor, scroll, 8).available, false);
   assert.equal(projectGuidedWork(poor, scroll, 8).targets[0].disabled, true);

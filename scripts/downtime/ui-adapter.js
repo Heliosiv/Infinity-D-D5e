@@ -1,3 +1,4 @@
+import { rollHuntingAttack } from "./hunting-equipment.js";
 /**
  * Player-side downtime adapter.
  *
@@ -228,6 +229,15 @@ function sanitizeActivity(raw) {
     available: raw.available !== false,
     unavailableReason: cleanText(raw.unavailableReason ?? raw.reason, 500),
     hourOptions,
+    allocationQuotes: array(raw.allocationQuotes)
+      .slice(0, 240)
+      .filter(plainObject)
+      .map((quote) => ({
+        hours: safeInteger(quote.hours, 0, DOWNTIME_MAX_BLOCK_HOURS),
+        available: quote.available === true,
+        costLabel: cleanText(quote.costLabel, 1600),
+        targets: array(quote.targets).map(sanitizeOption).filter(Boolean),
+      })),
     fixedHours: safeInteger(raw.fixedHours, 0, DOWNTIME_MAX_BLOCK_HOURS),
     skills,
     forcedSkill: cleanId(raw.forcedSkill),
@@ -272,6 +282,17 @@ function sanitizeCanonicalEntry(raw, index = 0) {
   if (guidedRoll) entry.guidedRoll = guidedRoll;
   const gatheringRoll = sanitizeGuidedRoll(raw.gatheringRoll);
   if (gatheringRoll) entry.gatheringRoll = gatheringRoll;
+  if (
+    raw.guidedAttack &&
+    Number.isInteger(raw.guidedAttack.natural) &&
+    raw.guidedAttack.natural >= 1 &&
+    raw.guidedAttack.natural <= 20 &&
+    sanitizeGuidedRoll(raw.guidedAttack)
+  )
+    entry.guidedAttack = {
+      ...sanitizeGuidedRoll(raw.guidedAttack),
+      natural: raw.guidedAttack.natural,
+    };
   return entry;
 }
 
@@ -315,6 +336,9 @@ function sanitizeReceipt(raw) {
   if (!plainObject(raw)) return null;
   return {
     settlementName: cleanText(raw.settlementName, 200),
+    ...(raw.campaignDate
+      ? { campaignDate: cleanText(raw.campaignDate, 200) }
+      : {}),
     completedAt:
       Number.isSafeInteger(Number(raw.completedAt)) &&
       Number(raw.completedAt) >= 0
@@ -333,6 +357,9 @@ function sanitizeReceipt(raw) {
         tone: cleanId(entry?.tone ?? entry?.outcomeTier) || "neutral",
         image: cleanText(entry?.image, 500),
         report: cleanText(entry?.report, 1_000),
+        ...(entry?.hours
+          ? { hours: safeInteger(entry.hours, 0, DOWNTIME_MAX_BLOCK_HOURS) }
+          : {}),
         rewardLabel: cleanText(entry?.rewardLabel, 300),
       })),
   };
@@ -388,12 +415,40 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     rawQueue,
     submitted:
       source.submitted === true || source.submission?.submitted === true,
+    huntingLocked: source.huntingLocked === true,
+    huntingPending: source.huntingPending === true,
+    huntingMessage: cleanText(source.huntingMessage, 1000),
     canSubmit: source.canSubmit === true,
     canRecall: source.canRecall === true,
     needsRecovery: source.needsRecovery === true,
     recoveryMessage: cleanText(source.recoveryMessage, 1_000),
     submitReason: cleanText(source.submitReason, 500),
     receipt: sanitizeReceipt(source.receipt ?? source.latestReceipt),
+    ...(source.pastReports
+      ? {
+          pastReports: array(source.pastReports)
+            .slice(0, 200)
+            .map((row) => ({
+              blockId: cleanId(row?.blockId),
+              locationName: cleanText(row?.locationName, 200),
+              receipt: sanitizeReceipt(row?.receipt),
+            }))
+            .filter((row) => row.receipt),
+        }
+      : {}),
+    ...(source.ongoingProjects
+      ? {
+          ongoingProjects: array(source.ongoingProjects)
+            .slice(0, 104)
+            .map((row) => ({
+              id: cleanId(row?.id),
+              name: cleanText(row?.name, 200),
+              progressLabel: cleanText(row?.progressLabel, 500),
+              prerequisites: cleanText(row?.prerequisites, 400),
+              awardStatus: cleanText(row?.awardStatus, 200),
+            })),
+        }
+      : {}),
     completionMessage: cleanText(source.completionMessage, 1_000),
   };
 }
@@ -429,6 +484,7 @@ export class DowntimePlayerAdapter {
       options.getActor ??
       ((actorId) => globalThis.game?.actors?.get?.(actorId));
     this._rollSkill = options.rollSkill ?? rollSkillTotal;
+    this._rollHuntingAttack = options.rollHuntingAttack ?? rollHuntingAttack;
     const setTimer = options.setTimeout ?? globalThis.setTimeout;
     const clearTimer = options.clearTimeout ?? globalThis.clearTimeout;
     this._setTimeout =
@@ -748,12 +804,22 @@ export class DowntimePlayerAdapter {
 
   async _submitQueueForActor(actor) {
     const projection = await this.getPlayerProjection({ actorId: actor });
-    this._assertEditable(projection, actor);
+    this._assertEditable(projection, actor, true);
     const draft = this._ensureDraft(
       this._draftKey(projection.blockId, actor),
       projection.rawQueue,
     );
-    const queue = sanitizeDowntimeSubmissionQueue(draft.queue);
+    const queue = sanitizeDowntimeSubmissionQueue(
+      projection.huntingLocked ? projection.rawQueue : draft.queue,
+    );
+    if (projection.huntingPending) {
+      const hunt = queue.find((e) => e.activityId === "guided-hunting");
+      hunt.guidedAttack = await this._rollHuntingAttack(
+        this._getActor(actor),
+        hunt.targetId,
+        projection.blockId,
+      );
+    }
     let attempt = draft.submissionAttempt;
     const queueKey = JSON.stringify(queue);
     if (projection.mode !== "guided" || attempt?.queueKey !== queueKey) {
@@ -946,8 +1012,9 @@ export class DowntimePlayerAdapter {
     return this._projectDraft(actor, result.projection);
   }
 
-  _assertEditable(projection, actorId) {
+  _assertEditable(projection, actorId, allowHunt = false) {
     if (
+      (projection?.huntingLocked && !allowHunt) ||
       !projection?.blockId ||
       projection.noGm ||
       projection.status !== "collecting" ||
@@ -1133,6 +1200,7 @@ export class DowntimePlayerAdapter {
         replaceDraft ||
         submissionsClosed ||
         projection.submitted ||
+        projection.huntingLocked ||
         !draft.dirty
       ) {
         this._drafts.set(key, {
@@ -1174,6 +1242,12 @@ export class DowntimePlayerAdapter {
     projection.rawQueue = clone(queue);
     projection.queue = queue.map((entry) => {
       const activity = activities.get(entry.activityId);
+      const allocation = activity?.allocationQuotes?.find(
+        (quote) => quote.hours === entry.hours,
+      );
+      const allocatedTarget = allocation?.targets.find(
+        (target) => target.id === entry.targetId,
+      );
       const detail = [];
       if (entry.skill) {
         const skill = array(activity?.skills).find(
@@ -1185,15 +1259,20 @@ export class DowntimePlayerAdapter {
       if (entry.targetIds?.length > 0) {
         detail.push(selectedBundleLabel(activity, entry.targetIds));
       } else if (entry.targetId) {
-        detail.push(selectedOptionLabel(activity, entry.targetId));
+        detail.push(
+          allocatedTarget?.label ||
+            selectedOptionLabel(activity, entry.targetId),
+        );
       }
       if (projection.mode === "guided" && activity?.costLabel) {
         const target = activity.targets.find(
           (option) => option.id === entry.targetId,
         );
         detail.push(
-          target?.quotes?.find((quote) => quote.hours === entry.hours)
-            ?.detail ||
+          allocatedTarget?.detail ||
+            allocation?.costLabel ||
+            target?.quotes?.find((quote) => quote.hours === entry.hours)
+              ?.detail ||
             target?.detail ||
             activity.costLabel,
         );
