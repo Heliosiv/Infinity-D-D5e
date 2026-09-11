@@ -261,6 +261,8 @@ function describeFocusTarget(root, target) {
   let selector = "";
   if (target.dataset?.focusKey) {
     selector = `[data-focus-key="${escapeCssAttribute(target.dataset.focusKey)}"]`;
+  } else if (target.dataset?.settingKey) {
+    selector = `[data-setting-key="${escapeCssAttribute(target.dataset.settingKey)}"]`;
   } else if (target.id) {
     selector = `#${cssEscape(target.id)}`;
   } else if (target.getAttribute?.("name")) {

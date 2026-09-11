@@ -7,6 +7,11 @@ crafting descriptions below only for **Craft Field Ammunition**.
 
 ## Guided downtime (default)
 
+The Activities, Projects, and Settlements panels sit beside their editors in a
+wide window. In a narrow window they move above the editor, with the heading and
+presets kept visible. Long saved lists scroll inside the panel; scroll the main
+workspace to reach the rest of an editor and its save button.
+
 Open **Workbench > Downtime** and choose a **Location preset**: Adventuring,
 Wilderness camp, Village, Town/city, or Custom. Presets select applicable activities
 and disable unavailable ones; wilderness and adventuring exclude crowd performance
@@ -67,7 +72,7 @@ Players who own multiple participating characters can use the character tabs
 to switch between their latest completed reports. Each character receives its
 own state update, and report access follows current Actor ownership.
 
-The library ships with seventeen editable activities: **Paid Work**,
+The library ships with twenty-six editable activities: **Paid Work**,
 **Research & Rumors**, **Thievery**, the eight choices below, **Craft Arrows**,
 **Scribe a Spell Scroll**, **Focused Study**, **Seek a Blessing**, **Trail
 Conditioning**, and **Defensive Drills**. No campaign time is advanced by this
@@ -635,3 +640,95 @@ to D&D5e's `preRollDamageV2`, `rollDamageV2`, and `restCompleted` hooks for
 charge consumption and long-rest removal. The compatibility damage hook remains
 available for supported D&D5e versions before 4.4.3; 4.4.3 and newer use the
 native locked damage part.
+
+## Crafting, training and journal expansion (v0.3.31)
+
+In **Downtime Activities**, use the category buttons and **Find an activity or
+recipe** to browse the choices offered by the GM. The GM still chooses what is
+available in each block. New recipes appear in the library after migration; they
+are not inserted into a block that is already open. There are 26 shipped choices,
+with room for 64 saved activities. Existing customized recipes take precedence.
+
+Eight clearly labelled **Drakmor house recipes** supplement ammunition and scroll
+crafting. Each takes eight productive hours per batch. Ordinary materials are
+covered by GP, and tools are kept. The GM confirms proficiency and workspace when
+offering the recipe. Costs, tools, physical supplies, and delivered items remain
+part of the existing verified/recoverable transaction.
+
+| Recipe            | GP per batch | Required tool         | Output       |
+| ----------------- | -----------: | --------------------- | ------------ |
+| Potion of Healing |           25 | Herbalism Kit         | 1 potion     |
+| Antitoxin         |           25 | Herbalism Kit         | 1 vial       |
+| Alchemist's Fire  |           25 | Alchemist's Supplies  | 1 flask      |
+| Acid              |         12.5 | Alchemist's Supplies  | 1 vial       |
+| Healer's Kit      |          2.5 | Herbalism Kit         | 1 usable kit |
+| Backpack          |            1 | Leatherworker's Tools | 1 backpack   |
+| Leather Armor     |            5 | Leatherworker's Tools | 1 armor      |
+| Torches           |         0.05 | Woodcarver's Tools    | 10 torches   |
+
+These are editable campaign recipes, not a claim of universal rules-edition
+compliance. The item outputs come from this module's existing compendium.
+
+### Personal training
+
+In **DM screen → Downtime → Projects**, choose **Use Train or learn**. Select the
+character, record the goal and prerequisites/instructor, set productive hours,
+costs and successful checks, and choose the reward. Use zero required successes
+for steady time-based training. The preset's 80 hours/50 GP/five checks are
+editable campaign starting values; each check adds at most one success per
+allocation, regardless of its duration. Hours and GP progress accrue even after
+a failed check. Completing funded hours does not charge the same tuition again.
+
+Each personal plan has one character and its own project ID. Create a separate
+plan for another character learning the same thing. Shared projects retain their
+pooled progress and narrative completion. Permanent rewards require personal
+plans. A saved plan locks once assigned or started; create a new plan to change
+its ownership, requirements or reward.
+
+Language/tool/skill targets use the system's supported options. Proficiencies are
+raised to one; existing expertise is retained. For a feat or technique, drag a
+usable feat Item into the reward field. The exact source is saved with the plan.
+Prerequisites and the instructor are GM-confirmed rather than automatically
+inferred. When progress is complete, open that project and choose **Approve /
+restore training reward**. Confirm that the prerequisites are satisfied. The
+approved reward plan is saved before the character sheet changes, and retries
+do not grant it twice. No ability-score increase or expertise is inferred.
+
+Earned rewards are stored separately from rotating workflow history. The DDB
+character-import completion hook restores missing approved rewards for the same
+linked character; it preserves later expertise. The GM can also use **Approve /
+restore** after an interrupted write or import. This does not update D&D Beyond.
+A changed character link or conflicting Item identity requires GM review.
+
+### Reward policies and personal journal
+
+The activity editor's **Currency reward basis** supports once per allocation or
+per eight productive hours. Unmodified stock Paid Work migrates to workday-based
+pay: a 2 GP result for 24 hours pays 6 GP. Customized activities retain their
+saved policy. Existing open blocks preserve their original rewards and recipes.
+Crafted output scales by completed batches. Calendar passage and party upkeep
+remain separate GM actions.
+
+Players retain **Latest Results**, gain **Ongoing work & training**, and can
+search **Past downtime** by activity, location or result. The archive retains
+the latest 200 reports per character separately from the 100 recovery blocks;
+available old reports are backfilled when the next result is committed. It
+cannot recover reports that had already rotated out. New receipts include the
+campaign date at application; older undated receipts show their recorded real
+date instead. Current ownership is rechecked before projecting any journal.
+
+### Upgrade and verification
+
+The existing authority-fenced migration upgrades downtime configuration v10 to
+v11. It preserves active blocks, custom activities, shared progress and costs.
+No training plan, grant, resource spending or campaign-time advance is created
+merely by installing the release. Existing secret-state storage limitations
+described above remain; this release does not add concealed campaign outcomes.
+
+Tests cover recipe source identity, old-save migration, time scaling, archive
+retention, personal assignment enforcement, frozen plans, GM-only grants,
+interrupted delivery, duplicate prevention and import reconciliation. The browser
+journey also exercises recipe/journal searches and the personal-training form at
+1040, 720 and 380 pixels. Use the saved pre-upgrade downtime backup if rolling
+back both the module and schema; installing an older module alone cannot read
+newer configuration safely. Preserve any results earned after the upgrade.

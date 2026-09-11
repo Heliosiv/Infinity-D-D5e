@@ -646,7 +646,7 @@ export function projectGuidedWork(
   const quote = scroll
     ? null
     : quoteGuidedWork({ actor, activity, hours, progress });
-  return {
+  const projection = {
     available: scroll ? targets.some((target) => !target.disabled) : quote.ok,
     unavailableReason: scroll
       ? targets.length
@@ -669,6 +669,31 @@ export function projectGuidedWork(
       : "Spell or scroll to scribe",
     targetField: "targetId",
   };
+  if (budgetHours > hours) {
+    const step = Math.max(1, Math.floor(Number(activity.blockHours) || hours));
+    projection.allocationQuotes = [];
+    for (
+      let allocated = step;
+      allocated <= Math.min(240, budgetHours);
+      allocated += step
+    ) {
+      const option = projectGuidedWork(
+        actor,
+        activity,
+        allocated,
+        progress,
+        locationPresetId,
+        allocated,
+      );
+      projection.allocationQuotes.push({
+        hours: allocated,
+        available: option.available,
+        costLabel: option.costLabel,
+        targets: option.targets,
+      });
+    }
+  }
+  return projection;
 }
 
 export function guidedWorkReceipt(work) {
@@ -1028,3 +1053,5 @@ export async function applyGuidedWork(
     ? { ok: true }
     : failed("crafting-write-unconfirmed");
 }
+
+export { identity as guidedWorkItemIdentity };

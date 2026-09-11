@@ -1,3 +1,4 @@
+import { defaultHuntingRegions } from "./hunting.js";
 /** Shared location rules for setup and authoritative block creation. */
 export const DOWNTIME_LOCATION_PRESETS = Object.freeze([
   {
@@ -59,10 +60,12 @@ export function downtimeLocationActivityIds(
   library,
   presetId = "custom",
   settlement = null,
+  regions = defaultHuntingRegions(),
 ) {
-  const preset = DOWNTIME_LOCATION_PRESETS.find(
-    (entry) => entry.id === presetId,
-  );
+  const region = regions.find((entry) => entry.id === presetId);
+  const preset = region
+    ? { activityIds: region.activityIds }
+    : DOWNTIME_LOCATION_PRESETS.find((entry) => entry.id === presetId);
   if (!preset) throw new Error("Choose a valid location preset.");
   const allowed = settlement?.guidedTemplateIds ?? preset.activityIds;
   return library

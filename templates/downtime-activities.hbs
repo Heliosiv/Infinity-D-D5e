@@ -4,7 +4,7 @@
     <div class="dt-head__copy">
       <p class="dt-eyebrow">{{#if hasActiveBlock}}{{locationName}}{{else}}Downtime and personal projects{{/if}}</p>
       <h2><i class="fa-solid fa-moon" aria-hidden="true"></i> Downtime Activities</h2>
-      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Split the assigned hours among available activities. Unallocated hours are forfeited when you submit. Skill activities require one check; gathering field materials adds a Survival check before crafting. Review costs and risk before Roll &amp; submit.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
+      <p>{{#if completed}}Your downtime is complete. Your report and rewards are below.{{else if guided}}Split the assigned hours among any available activities. Each choice uses whole time blocks; unallocated hours are forfeited when you submit. You will roll for each activity that uses a skill. Successful hunting also requires one ranged shot; gathering field materials adds a Survival check before crafting. Review costs and risk before Roll &amp; submit.{{else}}Build your activity queue within the assigned hours, then submit it for GM review.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <span class="dt-phase dt-phase--{{statusTone}}">{{statusLabel}}</span>
@@ -26,11 +26,14 @@
       {{else if needsRecovery}}wait for the GM's review; do not resubmit this block.
       {{else if noGm}}reconnect, then refresh and verify the saved queue or receipt before repeating anything.
       {{else if completed}}read your completed report below. Your GM will open another block when it is time for more downtime.
+      {{else if huntingPending}}take your hunting shot below. Your animal, time and allocation are saved.
       {{else if hasActiveBlock}}{{#if actor}}{{#if submitted}}wait for your GM to review your submission.{{else if retrySubmission}}retry your submission. Completed checks are saved in this window and will not be rolled again.{{else if guided}}{{#if hasQueue}}review the allocation, add more activities if wanted, then submit.{{else}}allocate at least one activity for {{actor.name}}.{{/if}}{{else}}review {{actor.name}}'s remaining hours, then add or reorder activities if the block is still open.{{/if}}{{else}}choose an eligible character when the GM has assigned one.{{/if}}
       {{else}}wait for the GM to open a downtime block; no activity was submitted.
       {{/if}}
     </span>
   </p>
+
+  {{#if huntingMessage}}<div class="dt-notice" role="status">{{huntingMessage}}{{#if huntingPending}} Use Take hunting shot below to finish.{{/if}}</div>{{/if}}
 
   {{#if hasError}}
   <div class="dt-notice dt-notice--danger" role="alert">
@@ -68,7 +71,7 @@
     <button type="button" class="dt-button" data-action="refresh" {{#if busy}}disabled{{/if}}>Try again</button>
   </div>
   {{else if completed}}
-  <p class="dt-notice dt-notice--success" role="status">Downtime complete. Your saved results are ready.</p>
+  {{!-- Completion is already shown in the header and report. --}}
   {{else if hasActiveBlock}}
     {{#if actor}}
       <section class="dt-player-summary" aria-label="Character downtime summary">
@@ -98,13 +101,13 @@
         {{/if}}{{/unless}}
       </section>
 
-      {{#if editable}}{{#unless guided}}
+      {{#if editable}}
       <nav class="dt-categories" aria-label="Activity categories">
         {{#each categories}}
         <button type="button" data-action="selectCategory" data-category="{{id}}" {{#if selected}}class="is-active" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}>{{label}}</button>
         {{/each}}
       </nav>
-      {{/unless}}{{/if}}
+      {{/if}}
 
       <div class="dt-player-layout">
         <section class="dt-activity-pane" aria-labelledby="dt-activity-heading">
@@ -112,6 +115,7 @@
             <div><p class="dt-eyebrow">Choose work</p><h3 id="dt-activity-heading">Activities</h3></div>
           </div>
           {{#if editable}}
+            <label class="dt-field"><span>Find an activity or recipe</span><input type="search" data-downtime-search="[data-activity-id]" aria-label="Find an activity or recipe" placeholder="Potion, training, leatherwork…" /></label>
             {{#if hasActivities}}
             <div class="dt-activity-list" data-activity-list tabindex="-1">
               {{#each activities}}
@@ -197,7 +201,7 @@
           {{else}}
           <div class="dt-state-inline">
             <i class="fa-solid fa-lock" aria-hidden="true"></i>
-            <p>{{#if canRecall}}Your queue is submitted. Recall it if you need to edit.{{else if submitted}}Your queue is submitted and locked. It will resolve exactly as shown.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
+            <p>{{#if huntingPending}}Game found. Your allocation is locked; take your hunting shot below to finish.{{else if canRecall}}Your queue is submitted. Recall it if you need to edit.{{else if submitted}}Your queue is submitted and locked. It will resolve exactly as shown.{{else}}Activity editing is closed while the GM resolves this block.{{/if}}</p>
           </div>
           {{/if}}
         </section>
@@ -242,7 +246,7 @@
               {{/if}}
             {{else}}
             <button type="button" class="dt-button dt-button--success" data-action="submitQueue" title="{{submitReason}}" {{#unless canSubmit}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
-              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit allocation{{else}}Submit queue{{/if}}
+              <i class="fa-solid {{#if requiresRoll}}fa-dice-d20{{else}}fa-paper-plane{{/if}}" aria-hidden="true"></i> {{#if huntingPending}}Take hunting shot{{else if retrySubmission}}Retry submission{{else if requiresRoll}}Roll &amp; submit{{else if guided}}Submit allocation{{else}}Submit queue{{/if}}
             </button>
             {{/if}}
           </footer>
@@ -268,16 +272,25 @@
   <section class="dt-receipt" aria-labelledby="dt-receipt-heading">
     <div class="dt-section__head">
       <div><p class="dt-eyebrow">GM-and-owner receipt{{#if actor}} · {{actor.name}}{{/if}}</p><h3 id="dt-receipt-heading">Latest Results</h3></div>
+      {{#if receipt.campaignDate}}<span>{{receipt.campaignDate}}</span>{{/if}}
       {{#if receipt.completedAt}}<span>{{receipt.completedAt}}</span>{{/if}}
     </div>
     {{#if receipt.summary}}<p>{{receipt.summary}}</p>{{/if}}
     {{#if receipt.hasActivities}}
     <ul>
       {{#each receipt.activities}}
-      <li class="dt-result-row dt-result-row--{{tone}}">{{#if hasImage}}<img src="{{image}}" alt="" />{{/if}}<strong>{{label}}</strong><span>{{#if report}}{{report}}{{else}}{{summary}}{{/if}}{{#if rewardLabel}} {{rewardLabel}}{{/if}}</span></li>
+      <li class="dt-result-row dt-result-row--{{tone}}">{{#if hasImage}}<img src="{{image}}" alt="" />{{/if}}<strong>{{label}}{{#if hours}} · {{hours}}h{{/if}}</strong><span>{{#if report}}{{report}}{{else}}{{summary}}{{/if}}{{#if rewardLabel}} {{rewardLabel}}{{/if}}</span></li>
       {{/each}}
     </ul>
     {{/if}}
   </section>
+  {{/if}}
+
+  {{#if ongoingProjects}}
+  <section class="dt-receipt" aria-label="Ongoing work"><h3>Ongoing work &amp; training</h3><p>Continue these goals when the GM includes them in your next downtime block.</p><ul>{{#each ongoingProjects}}<li><strong>{{name}}</strong><span>{{progressLabel}} · {{awardStatus}}</span>{{#if prerequisites}}<p>{{prerequisites}}</p>{{/if}}</li>{{/each}}</ul></section>
+  {{/if}}
+  {{#if pastReports}}
+  <section class="dt-receipt" aria-label="Past downtime"><h3>Past downtime</h3><label class="dt-field"><span>Search your journal</span><input type="search" data-downtime-search="[data-journal-report]" aria-label="Search your journal" placeholder="Activity, reward or location…" /></label><p>Your latest 200 reports are retained separately from the recovery history.</p>
+  {{#each pastReports}}<details data-journal-report><summary>{{locationName}} · {{#if receipt.campaignDate}}{{receipt.campaignDate}}{{else}}{{receipt.completedAt}}{{/if}}</summary><p>{{receipt.summary}}</p><ul>{{#each receipt.activities}}<li class="dt-result-row"><strong>{{label}}{{#if hours}} · {{hours}}h{{/if}}</strong><span>{{#if report}}{{report}}{{else}}{{summary}}{{/if}} {{rewardLabel}}</span></li>{{/each}}</ul></details>{{/each}}</section>
   {{/if}}
 </div>

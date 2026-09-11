@@ -142,11 +142,13 @@ try {
           (_, index) => (index + 1) * Math.max(1, template.blockHours ?? 8),
         ),
         skills: template.skills.map((id) => ({ id, label: id })),
-        category: "guided",
+        category: template.category ?? "activities",
         ...(template.id === "guided-craft-arrows" ? state.toolQuote : {}),
         ...(template.id === "guided-field-ammunition" ? state.fieldQuote : {}),
       })),
       receipt: state.receipt,
+      pastReports: state.pastReports ?? [],
+      ongoingProjects: state.ongoingProjects ?? [],
     });
     const gmAdapter = {
       saveSettlement: async (payload) => {
@@ -420,6 +422,10 @@ try {
   assert.deepEqual(await page.evaluate(() => journey.state.lastProjectSave), {
     id: "",
     name: "Restore the observatory",
+    scope: "shared",
+    actorId: "",
+    prerequisites: "",
+    reward: { kind: "none", key: "", itemUuid: "" },
     description:
       "Make, repair, or commission a substantial item over several downtime blocks.",
     blockHours: "8",
@@ -1121,6 +1127,114 @@ try {
     await page.evaluate(() => journey.state.queue[0].gatheringRoll.total),
     17,
   );
+  await page.evaluate(async () => {
+    journey.state.block.status = "collecting";
+    journey.state.queue = null;
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  await page.getByLabel("Find an activity or recipe").fill("antitoxin");
+  assert.equal(await page.locator("[data-activity-id]:visible").count(), 1);
+  assert.match(
+    await page.locator("[data-activity-id]:visible").innerText(),
+    /Craft Antitoxin/,
+  );
+  await page.evaluate(async () => {
+    journey.state.pastReports = [
+      {
+        blockId: "older",
+        locationName: "Pilgrim's Rest",
+        receipt: {
+          completedAt: 1000,
+          campaignDate: "Shadowfall 22",
+          activities: [
+            {
+              label: "Craft Antitoxin",
+              report: "Prepared a vial",
+              rewardLabel: "One vial delivered",
+            },
+          ],
+        },
+      },
+    ];
+    journey.state.ongoingProjects = [
+      {
+        name: "Learn Draconic",
+        progressLabel: "8 / 80 hours",
+        awardStatus: "In progress",
+        prerequisites: "Study with a tutor",
+      },
+    ];
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  assert.match(
+    await page.getByRole("region", { name: "Ongoing work" }).innerText(),
+    /Learn Draconic/,
+  );
+  await page.getByLabel("Search your journal").fill("Antitoxin");
+  assert.equal(await page.locator("[data-journal-report]:visible").count(), 1);
+  await page.locator("[data-journal-report] summary").click();
+  assert.match(
+    await page.locator("[data-journal-report]").innerText(),
+    /One vial delivered/,
+  );
+  await page.getByLabel("Search your journal").fill("unmatched search");
+  assert.equal(await page.locator("[data-journal-report]:visible").count(), 0);
+  await page.getByLabel("Search your journal").fill("");
+  await page.screenshot({
+    path: path.join(out, "expanded-player-journal.png"),
+    fullPage: true,
+  });
+  await page.evaluate(async () => {
+    game.user = { id: "gm", isGM: true, role: 4 };
+    await journey.mount("workspace");
+  });
+  await page.locator('[data-action="setView"][data-view="projects"]').click();
+  await page
+    .locator('[data-action="projectPreset"][data-preset="training"]')
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Progress belongs to").inputValue(),
+    "personal",
+  );
+  await page.getByLabel("Character for a personal plan").selectOption("mira");
+  await page
+    .getByLabel("Permanent completion reward")
+    .selectOption("technique");
+  await page
+    .getByLabel("Prerequisites and instructor or study source")
+    .fill("Train with the wardens");
+  await page.locator('[name="rewardItemUuid"]').fill("Item.ApprovedFeat0001");
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 900 });
+    const audit = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .include("#app")
+      .analyze();
+    assert.deepEqual(audit.violations, [], "training accessibility");
+    assert.ok(
+      await page
+        .locator("#app")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      "training horizontal overflow",
+    );
+    await page.screenshot({
+      path: path.join(out, `training-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.locator('[data-action="saveGuidedProject"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  const trainingSave = await page.evaluate(() => journey.state.lastProjectSave);
+  assert.equal(trainingSave.actorId, "mira");
+  assert.equal(trainingSave.scope, "personal");
+  assert.equal(trainingSave.reward.kind, "technique");
+  await page.screenshot({
+    path: path.join(out, "expanded-training-plan.png"),
+    fullPage: true,
+  });
   assert.equal(errors.length, 0, errors.join("\n"));
   await page.evaluate(async () => {
     const { projectGuidedWork } = await import("/scripts/downtime/work.js");

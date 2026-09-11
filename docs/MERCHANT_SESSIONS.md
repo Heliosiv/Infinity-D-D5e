@@ -52,8 +52,13 @@ Home/End move between tabs; multiple merchant windows can remain open.
 ## Organize and clean up shops
 
 - **Find a location** searches the location list, which is alphabetized with
-  **Unassigned shops** first. **Manage location → Rename** changes a location's
+  **Unassigned shops** first. The **Location name** field directly below the heading
+  and **Rename** button change a location's
   name without touching its shops or prices, including recovered imported locations.
+- For **Unassigned shops**, enter a name in that same visible field and click
+  **Name location**. This creates a real named location and moves all currently
+  unassigned shops into it, preserving their stock, gold, and access settings.
+  New unassigned shops can still appear separately in the future.
 - **Find a merchant** searches the selected location. **Show** filters All, Open,
   Closed, or Empty inventory (no stock rows). **Sort** offers Name A–Z, Name Z–A,
   Open first, and Most item types. Filters and sorting survive shop refreshes while

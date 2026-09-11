@@ -139,6 +139,9 @@ export async function runCraftingFoundryJourney({
       )
       .click();
     await gm.getByLabel("Activity name", { exact: true }).fill(name);
+    await gm
+      .locator('[data-form="guided-template"] [name="blockHours"]')
+      .fill(kind === "arrows" ? "4" : "8");
     if (kind === "arrows")
       await gm
         .getByLabel("Additional cost per workday (gp)", { exact: true })
@@ -178,6 +181,9 @@ export async function runCraftingFoundryJourney({
     if (await gm.locator('[data-action="beginNextBlock"]').count())
       await gm.locator('[data-action="beginNextBlock"]').click();
     await gm
+      .getByLabel("Location preset", { exact: true })
+      .selectOption("custom");
+    await gm
       .getByLabel("Downtime location", { exact: true })
       .fill("Gauntlet crafting workshop");
     await gm
@@ -194,10 +200,19 @@ export async function runCraftingFoundryJourney({
     await player.locator('[data-action="refresh"]').click();
     const card = player.locator(`[data-activity-id="${templateId}"]`);
     await card.waitFor();
+    const hoursSelect = card.locator('select[name="hours"]');
+    if (await hoursSelect.count())
+      await hoursSelect.selectOption(String(hours));
     if (targetId)
       await card.locator('[name="targetId"]').selectOption(targetId);
     if (targetId) {
       await player.locator('[data-action="refresh"]').click();
+      if (await hoursSelect.count())
+        assert.equal(
+          await hoursSelect.inputValue(),
+          String(hours),
+          "refresh keeps allocation hours alongside the chosen source",
+        );
       assert.equal(
         await card.locator('[name="targetId"]').inputValue(),
         targetId,
@@ -208,6 +223,17 @@ export async function runCraftingFoundryJourney({
       ? await card.locator("[data-target-detail]").innerText()
       : await card.locator(".dt-activity-card__cost").innerText();
     await card.locator('[data-action="addActivity"]').click();
+    await player.waitForFunction(
+      () =>
+        document.querySelector('[data-action="submitQueue"]')?.disabled ===
+        false,
+    );
+    assert.ok(
+      (await player.locator("[data-queue-list]").innerText()).includes(
+        shownCost.trim(),
+      ),
+      "queued allocation keeps the displayed cost and result",
+    );
     await player.locator('[data-action="submitQueue"]').click();
     await gm
       .locator(
@@ -325,8 +351,15 @@ export async function runCraftingFoundryJourney({
   await player.evaluate(() =>
     game.modules.get("infinity-dnd5e").api.openDowntimeActivities(),
   );
-  await player.locator(".dt-receipt").waitFor();
-  assert.match(await player.locator(".dt-receipt").innerText(), /Spent 100 gp/);
+  await player
+    .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+    .waitFor();
+  assert.match(
+    await player
+      .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+      .innerText(),
+    /Spent 100 gp/,
+  );
   await player
     .locator(".infinity-downtime-activities")
     .screenshot({ path: path.join(output, "crafting-player-receipt.png") });

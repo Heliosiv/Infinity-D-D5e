@@ -166,8 +166,15 @@ async function waitForParticipantReceipt(actorId, expected) {
   await player
     .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
     .click();
-  await player.locator(".dt-receipt").waitFor();
-  assert.match(await player.locator(".dt-receipt").innerText(), expected);
+  await player
+    .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+    .waitFor();
+  assert.match(
+    await player
+      .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+      .innerText(),
+    expected,
+  );
 }
 
 async function openUiBlock(templateId, location, hours = 8) {
@@ -184,6 +191,10 @@ async function openUiBlock(templateId, location, hours = 8) {
   );
   if (await gm.locator('[data-action="beginNextBlock"]').count())
     await gm.locator('[data-action="beginNextBlock"]').click();
+  await gm
+    .getByLabel("Location preset", { exact: true })
+    .selectOption("custom");
+  await gm.locator('[name="templateIds"]:not([disabled])').first().waitFor();
   await gm.getByLabel("Downtime location", { exact: true }).fill(location);
   await gm
     .locator('[data-form="new-block"] [name="hours"]')
@@ -221,6 +232,15 @@ async function submitUiChoices(
           ?.getAttribute("aria-current") === "true",
       actorId,
     );
+    const hoursControl = player.locator(
+      `[data-activity-id="${templateId}"] select[name="hours"]`,
+    );
+    if (await hoursControl.count()) {
+      const options = await hoursControl
+        .locator("option")
+        .evaluateAll((rows) => rows.map((row) => row.value));
+      await hoursControl.selectOption(options.at(-1));
+    }
     await player
       .locator(`[data-activity-id="${templateId}"] [data-action="addActivity"]`)
       .click();
@@ -232,7 +252,7 @@ async function submitUiChoices(
     );
     assert.equal(
       (await submit.innerText()).trim(),
-      needsRoll ? "Roll & submit" : "Submit activity",
+      needsRoll ? "Roll & submit" : "Submit allocation",
     );
     if (probeRetry && actorId === evidence.actorIds[0]) {
       await submit.click();
@@ -404,6 +424,22 @@ try {
         game.actors
           .get(row.actorId)
           ?.getFlag("infinity-dnd5e", "downtimeGauntletActor"),
+      )
+    ) {
+      const service =
+        await import("/modules/infinity-dnd5e/scripts/downtime/service.js");
+      await service.cancelActiveDowntimeBlock(previous.id);
+    }
+    if (
+      previous?.state === "collecting" &&
+      previous.locationName?.startsWith("Gauntlet:") &&
+      previous.participants.length > 0 &&
+      previous.participants.every(
+        (row) =>
+          !row.resolved &&
+          game.actors
+            .get(row.actorId)
+            ?.getFlag("infinity-dnd5e", "downtimeGauntletActor"),
       )
     ) {
       const service =
@@ -733,9 +769,13 @@ try {
       await player
         .locator(`[data-action="selectActor"][data-actor-id="${actorId}"]`)
         .click();
-      await player.locator(".dt-receipt").waitFor();
+      await player
+        .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+        .waitFor();
       assert.match(
-        await player.locator(".dt-receipt").innerText(),
+        await player
+          .locator('.dt-receipt[aria-labelledby="dt-receipt-heading"]')
+          .innerText(),
         /4 gp added/,
       );
     }

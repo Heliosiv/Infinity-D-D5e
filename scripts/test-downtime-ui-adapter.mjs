@@ -106,6 +106,79 @@ try {
   } = await import("./downtime/ui-adapter.js");
 
   const sanitized = sanitizePlayerDowntimeSnapshot(projection());
+  const quoteAdapter = createDowntimePlayerAdapter({
+    subscribeSocket: makeBus().subscribe,
+    registerSocket: () => true,
+    isAuthority: () => true,
+    getCurrentUserId: () => "gm-1",
+    getDirectProjection: async () =>
+      projection({
+        mode: "guided",
+        budgetHours: 16,
+        rawQueue: [
+          { id: "q", activityId: "scribe", hours: 16, targetId: "spell" },
+        ],
+        activities: [
+          {
+            id: "scribe",
+            available: true,
+            costLabel: "8-hour cost",
+            targets: [
+              {
+                id: "spell",
+                label: "8-hour source",
+                detail: "8-hour materials",
+              },
+            ],
+            allocationQuotes: [
+              {
+                hours: 16,
+                available: true,
+                costLabel: "16-hour cost",
+                targets: [
+                  {
+                    id: "spell",
+                    label: "16-hour source",
+                    detail: "16-hour materials",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+  });
+  const quoteView = await quoteAdapter.getPlayerProjection({
+    actorId: "actor-1",
+  });
+  assert.match(quoteView.queue[0].detail, /16-hour source.*16-hour materials/);
+  assert.doesNotMatch(quoteView.queue[0].detail, /8-hour/);
+  quoteAdapter.destroy();
+  const quoted = projection();
+  quoted.activities[0].allocationQuotes = [
+    {
+      hours: 16,
+      available: true,
+      costLabel: "16-hour cost",
+      hiddenDc: 99,
+      targets: [
+        {
+          id: "spell",
+          label: "Spell",
+          detail: "16-hour materials",
+          hiddenRoll: 99,
+        },
+      ],
+    },
+  ];
+  const quotedActivity = sanitizePlayerDowntimeSnapshot(quoted).activities[0];
+  assert.equal(quotedActivity.allocationQuotes[0].hours, 16);
+  assert.equal(
+    quotedActivity.allocationQuotes[0].targets[0].detail,
+    "16-hour materials",
+  );
+  assert.equal(JSON.stringify(quotedActivity).includes("hiddenDc"), false);
+  assert.equal(JSON.stringify(quotedActivity).includes("hiddenRoll"), false);
   assert.equal(JSON.stringify(sanitized).includes("hiddenDc"), false);
   assert.equal(JSON.stringify(sanitized).includes("hiddenRoll"), false);
   assert.equal(JSON.stringify(sanitized).includes("secret purse"), false);

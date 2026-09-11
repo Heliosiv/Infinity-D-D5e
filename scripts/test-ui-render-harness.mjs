@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  104,
+  106,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 

@@ -1399,11 +1399,18 @@
 }
 
 /* Settlement editor and history. */
+.infinity-downtime-workspace .dt-main:has(> .dt-settlement-layout) {
+  /* Let the workspace scroll long editors instead of shrinking a stacked rail. */
+  flex: 0 0 auto;
+}
+
 .infinity-downtime-workspace .dt-settlement-layout {
   display: grid;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   grid-template-columns: minmax(210px, 270px) minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -1653,10 +1660,11 @@
 
 .infinity-downtime-activities .dt-player-layout {
   display: grid;
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.8fr);
   gap: 10px;
-  min-height: 0;
+  min-height: 360px;
+  max-height: 70vh;
 }
 
 .infinity-downtime-activities .dt-activity-pane,
@@ -1955,6 +1963,24 @@
   list-style: none;
 }
 
+.infinity-downtime-activities [data-journal-report] {
+  padding: 10px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  overflow-wrap: anywhere;
+}
+.infinity-downtime-activities [data-journal-report] summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+.infinity-downtime-activities [aria-label="Ongoing work"] li {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--dt-surface);
+}
+
 .infinity-downtime-activities .dt-result-row {
   display: grid;
   grid-template-columns: minmax(130px, 0.5fr) minmax(0, 1fr);
@@ -2017,8 +2043,9 @@
     grid-template-columns: 1fr;
   }
 
-  .infinity-downtime-workspace .dt-rail {
+  .infinity-downtime-workspace .dt-rail__list {
     max-height: 210px;
+    overflow: auto;
   }
 }
 
@@ -2197,6 +2224,7 @@
     grid-template-columns: 1fr;
     grid-auto-rows: max-content;
     min-height: auto;
+    max-height: none;
   }
 
   .infinity-downtime-activities .dt-activity-pane {

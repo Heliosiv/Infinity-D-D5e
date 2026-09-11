@@ -9,7 +9,12 @@ export async function auditShopOrganization({
   river,
 }) {
   const shops = () => page.evaluate(() => journey.settings.get("merchants"));
-  await directory.getByText("Manage location", { exact: true }).click();
+  assert.equal(
+    await directory
+      .getByRole("textbox", { name: "Selected location name", exact: true })
+      .isVisible(),
+    true,
+  );
   await directory.locator('[name="renameLocation"]').fill("Harbor Market");
   await directoryAction('[data-action="renameLocation"]');
   assert.equal(
@@ -90,6 +95,54 @@ export async function auditShopOrganization({
     (await shops()).find((row) => row.id === remaining.id),
     { ...remaining, shop: { ...remaining.shop, locationId: "" } },
   );
+
+  // The screenshot's Unassigned heading must have a visible naming control too.
+  const beforeName = await page.evaluate(async () => {
+    const { shopSetup } = await import("/scripts/merchant/store.js");
+    return journey.settings
+      .get("merchants")
+      .map((row) =>
+        row.shop?.locationId ? row : { ...row, shop: shopSetup(row) },
+      );
+  });
+  await directory
+    .getByRole("textbox", { name: "Selected location name", exact: true })
+    .fill("Xelethar's Market");
+  assert.equal(
+    await directory
+      .getByRole("button", { name: "Name location", exact: true })
+      .isVisible(),
+    true,
+  );
+  await directoryAction('[data-action="renameLocation"]');
+  const namedId = await page.evaluate(() => journey.app._selectedLocationId);
+  assert.ok(namedId);
+  assert.equal(
+    await directory.locator(".mw-location-heading h3").textContent(),
+    "Xelethar's Market",
+  );
+  assert.equal(
+    await directory.locator(`[data-location-id="${namedId}"]`).count(),
+    1,
+  );
+  for (const before of beforeName) {
+    assert.deepEqual(
+      (await shops()).find((row) => row.id === before.id),
+      before.shop?.locationId
+        ? before
+        : { ...before, shop: { ...before.shop, locationId: namedId } },
+    );
+  }
+  await page.evaluate(() => journey.app.render(false));
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await directory
+      .getByRole("textbox", { name: "Selected location name", exact: true })
+      .inputValue(),
+    "Xelethar's Market",
+  );
+  await directory.getByText("Manage location", { exact: true }).click();
+  await directoryAction('[data-action="removeLocation"]');
 
   // Direct deletion works for unassigned shops and closes that shop's editor.
   await directoryAction(

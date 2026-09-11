@@ -1,3 +1,4 @@
+import { normalizeTrainingReward } from "./training-rules.js";
 /**
  * Durable, GM-defined guided-downtime projects.
  *
@@ -49,6 +50,7 @@ export const GUIDED_PROJECT_PRESETS = Object.freeze([
     label: "Train or learn",
     project: Object.freeze({
       name: "Train or Learn",
+      scope: "personal",
       description:
         "Work toward a language, tool, contact, or other GM-approved training goal.",
       blockHours: 8,
@@ -96,6 +98,14 @@ export function normalizeGuidedDowntimeProject(
     id,
     name,
     description: text(raw.description, 400),
+    ...(raw.scope
+      ? {
+          scope: raw.scope === "personal" ? "personal" : "shared",
+          actorId: text(raw.actorId, 80),
+          prerequisites: text(raw.prerequisites, 400),
+          reward: normalizeTrainingReward(raw.reward),
+        }
+      : {}),
     image: imagePath(raw.image),
     skills: normalizeGuidedDowntimeSkills(raw.skills),
     blockHours: wholeNumber(raw.blockHours, 1, 240, legacyBlockHours),
@@ -118,6 +128,14 @@ export function projectGuidedDowntimeProject(project) {
     id: project.id,
     name: project.name,
     description: project.description,
+    ...(project.scope
+      ? {
+          scope: project.scope,
+          actorId: project.actorId,
+          prerequisites: project.prerequisites,
+          reward: project.reward,
+        }
+      : {}),
     image: project.image,
     skills: [...project.skills],
     blockHours: project.blockHours,

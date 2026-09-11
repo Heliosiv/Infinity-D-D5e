@@ -662,6 +662,57 @@ export function buildHarnessViews() {
       { width: 1040, height: 760 },
     ),
     view(
+      "downtime-workspace-project-empty",
+      "Downtime Workspace (new project)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      {
+        ...downtimeWorkspaceProjectEditorContext(),
+        guided: true,
+        guidedProjects: [],
+        hasGuidedProjects: false,
+      },
+      { width: 720, height: 620 },
+    ),
+    view(
+      "downtime-workspace-settlement-editor",
+      "Downtime Workspace (settlement editor)",
+      "infinity-downtime-workspace",
+      "templates/downtime-workspace.hbs",
+      downtimeWorkspaceBaseContext({
+        guided: true,
+        view: "settlements",
+        viewCurrent: false,
+        viewSettlements: true,
+        hasSelectedSettlement: true,
+        selectedSettlement: {
+          id: "settlement-haven",
+          name: "Haven",
+          creating: false,
+          marketDc: 13,
+          wealthOptions: [
+            { value: "prosperous", label: "Prosperous", selected: true },
+          ],
+          securityOptions: [
+            { value: "guarded", label: "Guarded", selected: true },
+          ],
+          factionOptions: [{ id: "", label: "None", selected: true }],
+          activityOptions: [
+            { id: "guided-paid-work", label: "Paid work", checked: true },
+          ],
+          hasMerchants: true,
+          merchantOptions: [
+            {
+              id: "merchant-tools",
+              label: "Tools and Outfitters",
+              checked: true,
+            },
+          ],
+        },
+      }),
+      { width: 720, height: 620 },
+    ),
+    view(
       "downtime-workspace-character-picker",
       "Downtime Workspace (character picker)",
       "infinity-downtime-workspace",
@@ -3808,7 +3859,20 @@ function downtimeWorkspaceProjectEditorContext() {
       { id: "research", label: "Research a lead" },
       { id: "training", label: "Train or learn" },
     ],
+    rewardBasisOptions: [
+      { id: "allocation", label: "Once per allocation", selected: true },
+      { id: "workday", label: "Per 8 productive hours", selected: false },
+    ],
     projectEditor: {
+      prerequisites: "",
+      scopeOptions: [],
+      actorOptions: [],
+      rewardOptions: [],
+      rewardKey: "",
+      rewardItemUuid: "",
+      targetOptions: [],
+      awardStatus: "",
+      canApprove: false,
       id: "",
       name: "Restore the observatory",
       description: "Rebuild the telescope and chart the northern sky.",

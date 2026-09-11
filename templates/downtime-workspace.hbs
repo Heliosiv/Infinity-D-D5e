@@ -265,7 +265,36 @@
         {{/if}}
         <form class="dt-form" data-form="new-block">
           <label class="dt-field"><span>Settlement</span><select name="settlementId" aria-label="Downtime settlement" {{#if busy}}disabled{{/if}}><option value="">No saved settlement</option>{{#each blockSettlementOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>A saved settlement supplies its own allowed activities and linked shops.</small></label>
-          <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Unavailable activities cannot be selected. Use Custom to define a different situation, or edit the saved settlement.</small></label>
+          <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Choose a wilderness area for hunting. Saved areas control which activities are available.</small></label>
+          {{#if huntingEditor}}
+          <details class="dt-field dt-field--wide">
+            <summary>Hunting rules and custom area</summary>
+            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in this GM browser. Finish open hunts here. Each shot spends one ammunition, and a miss ends the hunt.</p>
+            <div class="dt-form-grid">
+              <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingEditor.name}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
+              <label class="dt-field"><span>Base Survival DC (GM only)</span><input name="huntingDc" aria-label="Base hunting Survival DC" type="number" min="4" max="40" step="1" value="{{huntingEditor.dc}}" required /></label>
+              <label class="dt-field"><span>Player difficulty label</span><input name="huntingDifficulty" aria-label="Hunting difficulty label" value="{{huntingEditor.difficulty}}" maxlength="60" required /></label>
+              <label class="dt-field"><span>Complication chance per outing (%)</span><input name="huntingRisk" aria-label="Hunting complication percentage" type="number" min="0" max="100" step="1" value="{{huntingEditor.risk}}" required /></label>
+            </div>
+            <p>Each probability column must total 100%. Food is delivered to the hunter as portions using Quartermaster's configured food item. Preservation and spoilage are GM-managed.</p>
+            {{#each huntingEditor.game}}
+            <fieldset class="dt-form-grid" data-hunting-game>
+              <legend>{{size}} game</legend>
+              <label class="dt-field"><span>Animal</span><input data-hunting-field="name" aria-label="Animal for game entry {{@index}}" value="{{name}}" maxlength="100" required /></label>
+              <label class="dt-field"><span>Size label</span><input data-hunting-field="size" aria-label="Size for game entry {{@index}}" value="{{size}}" maxlength="30" required /></label>
+              <label class="dt-field"><span>Hunting AC (GM only)</span><input data-hunting-field="ac" aria-label="Hunting AC for {{name}}" type="number" min="1" max="40" step="1" value="{{ac}}" required /></label>
+              <label class="dt-field"><span>Food portions</span><input data-hunting-field="food" aria-label="Food portions from {{name}}" type="number" min="1" max="1000" step="1" value="{{food}}" required /></label>
+              <label class="dt-field"><span>Ordinary success chance (%)</span><input data-hunting-field="ordinary" aria-label="Ordinary chance for {{name}}" type="number" min="0" max="100" step="1" value="{{ordinary}}" required /></label>
+              <label class="dt-field"><span>Beat DC by 5+ chance (%)</span><input data-hunting-field="exceptional" aria-label="Exceptional chance for {{name}}" type="number" min="0" max="100" step="1" value="{{exceptional}}" required /></label>
+            </fieldset>
+            {{/each}}
+            <fieldset><legend>Activities available in this saved area</legend>
+              {{#each huntingActivityOptions}}<label class="dt-check"><input type="checkbox" name="huntingActivityIds" value="{{id}}" {{#if checked}}checked{{/if}} /> {{name}}</label>{{/each}}
+            </fieldset>
+            <button type="button" class="dt-button" data-action="saveHuntingRegion" {{#if busy}}disabled{{/if}}>Save area and activities</button>
+            <small>Open downtime uses the current hunting numbers. Save area also keeps these defaults for future blocks on this GM browser.</small>
+          </details>
+          {{/if}}
           {{#if blockShopNames}}<p>Linked shops: {{blockShopNames}}</p>{{/if}}
           <label class="dt-field">
             <span>Location</span>
@@ -504,6 +533,7 @@
           </div>
         </fieldset>
         <div class="dt-form__head"><h4>Possible results</h4><p>Field ammunition fixes three result tiers from the saved check, without extra rewards or benefits; its narrative reports remain editable. Other activities use the configured results and rewards per submitted allocation.</p></div>
+        <label class="dt-field"><span>Currency reward basis</span><select name="rewardBasis" aria-label="Currency reward basis">{{#each rewardBasisOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Existing activities keep their saved policy. Workday rewards scale with allocated hours.</small></label>
         {{#each templateEditor.outcomes}}
         <fieldset class="dt-fieldset" data-template-outcome><legend>Result {{number}}</legend>
           <label class="dt-field dt-field--wide"><span>Result label</span><input name="outcomeLabel" value="{{label}}" maxlength="80" required {{#if ../templateEditor.work.isField}}readonly{{/if}} {{#if ../busy}}disabled{{/if}} /></label>
@@ -554,6 +584,14 @@
         <label class="dt-field"><span>Total project cost (gp)</span><input type="number" name="requiredGp" aria-label="Total project cost (gp)" min="0" max="100000" step="0.01" value="{{projectEditor.requiredGp}}" required {{#if busy}}disabled{{/if}} /><small>This total is divided across the required hours.</small></label>
         <label class="dt-field"><span>Successful checks required</span><input type="number" name="requiredSuccesses" aria-label="Successful checks required" min="0" max="1000" step="1" value="{{projectEditor.requiredSuccesses}}" required {{#if busy}}disabled{{/if}} /><small>Use 0 for a project that only needs time and GP.</small></label>
         <label class="dt-field"><span>Check DC</span><input type="number" name="checkDc" aria-label="Check DC" min="5" max="40" step="1" value="{{projectEditor.checkDc}}" required {{#if busy}}disabled{{/if}} /></label>
+        <label class="dt-field"><span>Progress belongs to</span><select name="scope" aria-label="Progress belongs to">{{#each projectEditor.scopeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        <label class="dt-field"><span>Character for a personal plan</span><select name="actorId" aria-label="Character for a personal plan">{{#each projectEditor.actorOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        <label class="dt-field dt-field--wide"><span>Prerequisites and instructor or study source</span><textarea name="prerequisites" aria-label="Prerequisites and instructor or study source" rows="2" maxlength="400">{{projectEditor.prerequisites}}</textarea><small>Visible to the player. Confirm these requirements before final approval.</small></label>
+        <label class="dt-field"><span>Permanent completion reward</span><select name="rewardKind" aria-label="Permanent completion reward">{{#each projectEditor.rewardOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        <label class="dt-field"><span>Language, tool or skill target</span><input name="rewardKey" aria-label="Language, tool or skill target" list="dt-training-targets" value="{{projectEditor.rewardKey}}" /><datalist id="dt-training-targets">{{#each projectEditor.targetOptions}}<option value="{{id}}">{{label}}</option>{{/each}}</datalist><small>Choose a suggestion matching the reward type. Grants proficiency, never expertise.</small></label>
+        <label class="dt-field dt-field--wide"><span>Feat or technique Item</span><input name="rewardItemUuid" aria-label="Feat or technique Item" data-training-item value="{{projectEditor.rewardItemUuid}}" placeholder="Drag a feat Item from a compendium or the Items directory" /><small>The GM approves the exact usable feat or technique. Personal plans are locked once assigned or started.</small></label>
+        {{#if projectEditor.awardStatus}}<p class="dt-notice">{{projectEditor.awardStatus}}</p>{{/if}}
+        {{#if projectEditor.canApprove}}<button type="button" class="dt-button dt-button--success" data-action="approveTraining" data-project-id="{{projectEditor.id}}" {{#if busy}}disabled{{/if}}>Approve / restore training reward</button>{{/if}}
         <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one for each contribution. Choose at least one if successes are required.</p><div class="dt-chip-grid">{{#each projectEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
         <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{#if projectEditor.id}}Save changes{{else}}Add project{{/if}}</button></footer>
       </form>

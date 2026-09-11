@@ -103,6 +103,11 @@
       <section class="mw-location-content" aria-label="Selected location shops">
         {{#if selectedLocation}}
         <div class="mw-location-heading"><h3>{{selectedLocation.name}}</h3><span class="mw-save-status" role="status" aria-live="polite" data-location-status>{{#if locationBusy}}Updating shops…{{else}}{{selectedLocation.openCount}} of {{selectedLocation.count}} shops open{{/if}}</span></div>
+        <div class="mw-location-add mw-location-name">
+          <label class="mw-field"><span class="mw-field__label">Location name</span><input class="mw-input" name="renameLocation" aria-label="Selected location name" value="{{#if canEditLocation}}{{selectedLocation.name}}{{/if}}" placeholder="Enter a city or location name…" maxlength="100" data-location-control /></label>
+          <button type="button" class="mw-btn" data-action="renameLocation" data-location-control>{{#if canEditLocation}}Rename{{else}}Name location{{/if}}</button>
+        </div>
+        {{#unless canEditLocation}}<p class="mw-hint">Naming this location moves all {{selectedLocation.count}} unassigned shops into it, keeping their stock, gold, and access settings.</p>{{/unless}}
         <div class="mw-location-actions" role="group" aria-label="Actions for {{selectedLocation.name}}">
           <button type="button" class="mw-btn mw-btn--primary" data-action="locationOperation" data-operation="open" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Open All</button>
           <button type="button" class="mw-btn" data-action="locationOperation" data-operation="close" data-location-control {{#unless locationHasShops}}disabled{{/unless}}>Close All</button>
@@ -149,8 +154,6 @@
         {{#if canEditLocation}}
         <details class="mw-advanced"><summary>Manage location</summary>
           <div class="mw-location-add">
-            <label class="mw-field"><span class="mw-field__label">Location name</span><input class="mw-input" name="renameLocation" value="{{selectedLocation.name}}" maxlength="100" data-location-control /></label>
-            <button type="button" class="mw-btn" data-action="renameLocation" data-location-control>Rename</button>
             <button type="button" class="mw-btn mw-btn--danger" data-action="removeLocation" data-location-control>Remove location</button>
           </div><p class="mw-hint">Removing a location keeps its shops in Unassigned shops. Use Delete on a shop to remove the shop itself.</p>
         </details>

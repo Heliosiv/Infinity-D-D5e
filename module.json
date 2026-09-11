@@ -1,9 +1,13 @@
 {
   "id": "infinity-dnd5e",
   "title": "Infinity D&D5e",
-  "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, schedule downtime and city actions, track party resources and reputation, consume spell components, and automate Critical Injury Table V2 recovery workflows.",
-  "version": "0.3.27",
-  "authors": [{ "name": "Heliosiv" }],
+  "description": "GM and player toolkit for D&D 5e on Foundry VTT. Generate loot, run merchants, schedule downtime and city actions, track party resources and reputation, consume spell components, and automate Critical Injury Table V3 recovery workflows.",
+  "version": "0.3.37",
+  "authors": [
+    {
+      "name": "Heliosiv"
+    }
+  ],
   "compatibility": {
     "minimum": "13",
     "verified": "13.351"
@@ -80,7 +84,10 @@
       {
         "id": "dnd5e",
         "type": "system",
-        "compatibility": { "minimum": "4.0.0", "verified": "4.4.4" }
+        "compatibility": {
+          "minimum": "4.0.0",
+          "verified": "4.4.4"
+        }
       }
     ],
     "requires": [
@@ -88,19 +95,35 @@
         "id": "socketlib",
         "type": "module",
         "manifest": "https://github.com/farling42/foundryvtt-socketlib/releases/latest/download/module.json",
-        "compatibility": { "minimum": "1.1.4" }
+        "compatibility": {
+          "minimum": "1.1.4"
+        }
       }
     ],
     "recommends": [
-      { "id": "midi-qol", "type": "module" },
-      { "id": "dae", "type": "module" },
+      {
+        "id": "midi-qol",
+        "type": "module"
+      },
+      {
+        "id": "dae",
+        "type": "module"
+      },
       {
         "id": "monks-active-tiles",
         "type": "module",
-        "compatibility": { "minimum": "13.06" }
+        "compatibility": {
+          "minimum": "13.06"
+        }
       },
-      { "id": "foundryvtt-simple-calendar-reborn", "type": "module" },
-      { "id": "times-up", "type": "module" }
+      {
+        "id": "foundryvtt-simple-calendar-reborn",
+        "type": "module"
+      },
+      {
+        "id": "times-up",
+        "type": "module"
+      }
     ]
   },
   "url": "",

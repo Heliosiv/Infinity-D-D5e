@@ -1,3 +1,5 @@
+import { HUNTING_TEMPLATE, HUNTING_ID } from "./hunting.js";
+import { DOWNTIME_RECIPES } from "./recipes.js";
 /**
  * The intentionally small, GM-guided downtime model.
  *
@@ -17,7 +19,7 @@ import {
 } from "./field-ammunition.js";
 
 export const GUIDED_DOWNTIME_MODE = "guided";
-export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 28;
+export const GUIDED_DOWNTIME_TEMPLATE_LIMIT = 64;
 export const GUIDED_DOWNTIME_OUTCOME_MINIMUM = 3;
 export const GUIDED_DOWNTIME_OUTCOME_MAXIMUM = 6;
 export const GUIDED_DOWNTIME_DEFAULT_BLOCK_HOURS = 8;
@@ -57,6 +59,7 @@ const DEFAULT_TEMPLATES = Object.freeze([
   {
     id: "guided-labor",
     name: "Paid Work",
+    rewardBasis: "workday",
     description: "Find honest work and turn the available time into wages.",
     image: "icons/skills/social/diplomacy-handshake.webp",
     skills: ["ath", "per", "sur"],
@@ -154,6 +157,8 @@ export function normalizeGuidedDowntimeLibrary(raw) {
 export function campaignDowntimeTemplates() {
   return [
     fieldTemplate(),
+    ...DOWNTIME_RECIPES,
+    HUNTING_TEMPLATE,
     {
       id: "guided-train-spar",
       name: "Train & Spar",
@@ -332,6 +337,17 @@ export function campaignDowntimeTemplates() {
 /** Add missing campaign entries while retaining saved names, prose and recipes. */
 export function includeCampaignDowntimeTemplates(templates) {
   const result = structuredClone(templates);
+  const labor = result.find((t) => t.id === "guided-labor");
+  const builtinLabor = normalizeGuidedDowntimeTemplate(DEFAULT_TEMPLATES[0]);
+  if (
+    labor &&
+    !labor.rewardBasis &&
+    labor.name === builtinLabor.name &&
+    labor.description === builtinLabor.description &&
+    JSON.stringify(labor.outcomes) === JSON.stringify(builtinLabor.outcomes)
+  )
+    labor.rewardBasis = "workday";
+
   const nameKey = (name) =>
     name
       .toLowerCase()
@@ -342,7 +358,10 @@ export function includeCampaignDowntimeTemplates(templates) {
       (entry) =>
         entry.id === builtin.id ||
         nameKey(entry.name) === nameKey(builtin.name) ||
-        (builtin.work && entry.work?.output === builtin.work.output),
+        (builtin.work &&
+          entry.work?.output === builtin.work.output &&
+          (builtin.work.output !== "item" ||
+            entry.work.itemUuid === builtin.work.itemUuid)),
     );
     if (existing) {
       // Upgrade the stock arrow recipe only. Saved custom tools and open-block
@@ -409,6 +428,14 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
     name,
     description: text(raw.description, 400),
     image: imagePath(raw.image),
+    ...(raw.category
+      ? { category: raw.category === "crafting" ? "crafting" : "activities" }
+      : {}),
+    ...(raw.rewardBasis
+      ? {
+          rewardBasis: raw.rewardBasis === "workday" ? "workday" : "allocation",
+        }
+      : {}),
     blockHours:
       work?.output === FIELD_OUTPUT
         ? 1
@@ -460,7 +487,8 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   return {
     templateId,
     skill: template.skills.length > 0 ? skill : "",
-    ...(["scroll", "learn-spell", FIELD_OUTPUT].includes(template.work?.output)
+    ...(template.id === HUNTING_ID ||
+    ["scroll", "learn-spell", FIELD_OUTPUT].includes(template.work?.output)
       ? { targetId: idValue(raw.targetId) }
       : {}),
   };
@@ -480,6 +508,8 @@ export function projectGuidedDowntimeTemplate(template) {
     name: template.name,
     description: template.description,
     image: template.image,
+    category: template.category,
+    rewardBasis: template.rewardBasis,
     blockHours: template.blockHours,
     skills: [...template.skills],
     ...(template.work ? { work: structuredClone(template.work) } : {}),

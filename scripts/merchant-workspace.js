@@ -85,6 +85,7 @@ import {
   deleteDirectoryShops,
   filterDirectoryShops,
   moveDirectoryShops,
+  nameUnassignedShopLocation,
   removeShopLocation,
   renameShopLocation,
 } from "./merchant/directory.js";
@@ -1548,13 +1549,25 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     const name = this.element?.querySelector?.(
       '[name="renameLocation"]',
     )?.value;
-    if (!location?.id) return;
+    if (!location) return;
+    const expectedShops = loadMerchants().filter(
+      (row) => !row.shop?.locationId,
+    );
     await this._runLocationAction(async () => {
-      await renameShopLocation({
-        locationId: location.id,
-        expectedName: location.name,
-        name,
-      });
+      if (location.id) {
+        await renameShopLocation({
+          locationId: location.id,
+          expectedName: location.name,
+          name,
+        });
+      } else {
+        const created = await nameUnassignedShopLocation({
+          name,
+          expectedShops,
+        });
+        this._selectedLocationId = created.id;
+        this._selectedShopIds?.clear();
+      }
       this._locationSearch = "";
       notify("info", "Location renamed.");
     });
