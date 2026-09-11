@@ -1,3 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="32" cy="32" r="23"/><circle cx="32" cy="32" r="12"/><circle cx="32" cy="32" r="4"/><path d="M32 4v12m0 32v12M4 32h12m32 0h12M12 12l9 9m22 22 9 9M12 52l9-9m22-22 9-9"/><path d="m39 13 10 5 3 9M12 37l3 9 10 5"/>
+  <path stroke-width="1.2" d="M4 18 6 5l12-1M46 4l12 2 2 12M60 46l-2 12-12 2M18 60 5 58 4 46M7 9l5-2m-4 6 7-5M49 57l7-5m-4 7 5-4"/>
 </svg>

@@ -8,7 +8,11 @@ const manifest = JSON.parse(readFileSync("module.json", "utf8"));
 assert.equal(manifest.styles.at(-1), "styles/atlas.css");
 const css = readFileSync("styles/atlas.css", "utf8");
 const assets = [...css.matchAll(/url\("(\.\.\/assets\/ui\/[^"]+)"\)/g)];
-assert.equal(assets.length, 10, "Atlas artwork and nine emblems must ship");
+assert.equal(
+  assets.length,
+  11,
+  "Manuscript, bookbinding and nine emblems must ship",
+);
 const harness = buildUiHarnessDocument();
 let totalBytes = 0;
 for (const [, relativePath] of assets) {

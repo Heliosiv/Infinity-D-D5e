@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Plague Scholar UI (next release):** All module windows share warm manuscript
+surfaces, anatomical undead marginalia, worn bookbinding, brass emblems, and
+scholarly headings. Buttons, tabs, panels, dialogs, and the injury HUD inherit
+the shared theme. Artwork is bundled locally; labels, focus indicators, and
+semantic status colors remain readable. See [asset provenance](assets/ui/PROVENANCE.md).
+
 **UI stability (next release):** Background window refreshes respect the control
 you are using, and text-field refreshes retain the cursor selection. Searchable
 pickers keep their list and scroll position while selecting choices. Narrow shop

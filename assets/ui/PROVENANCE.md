@@ -1,5 +1,30 @@
 # Campaign Atlas UI assets
 
+## Plague Scholar revision — 2026-09-11
+
+The active theme uses two original images generated with the built-in OpenAI
+image-generation tool, encoded as WebP at quality 78 without resizing:
+
+- `plague-manuscript-v1.webp`: 1536 × 1024, dark archival paper, anatomical
+  undead hands and skull marginalia, faded scholarly markings and ink scratches.
+- `plague-binding-v1.webp`: 1254 × 1254, worn leather with brass engraving,
+  occult diagrams and claw scrawls at the corners.
+- All nine editable SVG emblems now have fine scratched manuscript corner rules.
+  Their recognizable functional silhouettes remain intact at small sizes.
+
+Generation direction: flat full-bleed production textures, scholarly zombie
+fantasy, dark warm umber, archival brass, muted oxblood, low-contrast empty
+centers for labels, decoration concentrated in margins; no readable text,
+logos, UI mockups or perspective. Manuscript details decorate headers and window
+surfaces; binding decorates window chrome and launcher cards. Button and tab
+finishes use CSS so their semantic colors and states remain available.
+
+The two active rasters and nine emblems together remain below 500 KB. Assets
+are local, decorative and embedded by the existing browser harness. Forced-color
+mode suppresses textures. The original atlas image is retained as source history
+but is no longer referenced by the active theme. This is a local source change;
+deployment and live Foundry visual acceptance are separate steps.
+
 Created for Infinity D&D5e on 2026-09-04.
 
 - `campaign-atlas-v1.webp`: original artwork generated with the built-in OpenAI

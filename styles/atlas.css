@@ -2,7 +2,8 @@
    Loaded after feature styles; gameplay and window controllers are unchanged. */
 
 .infinity-dnd5e {
-  --atlas-art: url("../assets/ui/campaign-atlas-v1.webp");
+  --atlas-art: url("../assets/ui/plague-manuscript-v1.webp");
+  --atlas-binding: url("../assets/ui/plague-binding-v1.webp");
   --atlas-crest: url("../assets/ui/icons/infinity-crest.svg");
   --atlas-merchants: url("../assets/ui/icons/merchants.svg");
   --atlas-supplies: url("../assets/ui/icons/supplies.svg");
@@ -15,6 +16,23 @@
   --atlas-emblem: var(--atlas-crest);
   --atlas-heading: "Palatino Linotype", "Book Antiqua", Palatino, serif;
   --atlas-rule: color-mix(in srgb, var(--lf-gold-soft) 35%, var(--lf-bg));
+  /* Plague scholar: parchment ink, worn leather, and archival brass. */
+  --lf-bg: #1c1915;
+  --lf-bg-alt: #25211c;
+  --lf-surface: #302a23;
+  --lf-surface-elev: #3b3329;
+  --lf-surface-sunken: #15120f;
+  --lf-border: #786a55;
+  --lf-border-strong: #a79476;
+  --lf-text: #f2e9d9;
+  --lf-text-strong: #fff6e5;
+  --lf-muted: #c7baa6;
+  --lf-disabled: #a29683;
+  --lf-accent: #eac082;
+  --lf-accent-hover: #ffdaa0;
+  --lf-gold-soft: #dfbf87;
+  --lf-ink-blue: #17130f;
+  --lf-font-heading: var(--atlas-heading);
 }
 
 /* A common silhouette language, independent of Foundry's icon font. */
@@ -200,14 +218,14 @@
   background-image:
     linear-gradient(
       90deg,
-      rgb(13 20 28 / 96%),
-      rgb(13 20 28 / 80%) 45%,
-      rgb(13 20 28 / 48%)
+      rgb(21 18 15 / 94%),
+      rgb(21 18 15 / 78%) 45%,
+      rgb(21 18 15 / 20%)
     ),
     var(--atlas-art);
   background-position:
     center,
-    right center;
+    right top;
   background-size: cover;
   border: 1px solid var(--atlas-rule);
   border-radius: var(--lf-radius-sm);
@@ -300,9 +318,9 @@
   background-image:
     linear-gradient(
       90deg,
-      rgb(13 20 28 / 95%),
-      rgb(13 20 28 / 78%) 45%,
-      rgb(13 20 28 / 22%)
+      rgb(21 18 15 / 94%),
+      rgb(21 18 15 / 72%) 45%,
+      rgb(21 18 15 / 12%)
     ),
     var(--atlas-art);
 }
@@ -474,10 +492,84 @@
   }
 }
 
+/* Shared bookbinding reaches dialogs, HUDs, chat, and secondary tools too.
+   Paint only: decoration never adds hit targets or consumes layout space. */
+.infinity-dnd5e {
+  background-color: var(--lf-bg);
+  background-image:
+    linear-gradient(rgb(21 18 15 / 78%), rgb(21 18 15 / 78%)), var(--atlas-art);
+  background-size: cover;
+}
+
+.application.infinity-dnd5e .window-content,
+.infinity-dnd5e :is(.infinity-app-shell, .infinity-ui) {
+  background-color: var(--lf-bg);
+  background-image:
+    linear-gradient(rgb(21 18 15 / 84%), rgb(21 18 15 / 84%)), var(--atlas-art);
+  background-size: cover;
+}
+
+.infinity-dnd5e :is(.window-header, .gmw-chrome) {
+  background-color: var(--lf-surface-sunken);
+  background-image:
+    linear-gradient(rgb(21 18 15 / 35%), rgb(21 18 15 / 35%)),
+    var(--atlas-binding);
+  background-size: cover;
+  border-block-end-color: var(--atlas-rule);
+}
+
+.infinity-dnd5e :is(h1, h2, h3, .window-title) {
+  font-family: var(--atlas-heading);
+}
+
+.infinity-dnd5e
+  :is(button, .tabs > :where([data-tab]), .gmw-route, .gmw-utility) {
+  /* Preserve existing semantic button colors, focus, disabled and active states. */
+  background-image: linear-gradient(
+    110deg,
+    rgb(255 231 185 / 7%),
+    transparent 55%,
+    rgb(20 10 4 / 12%)
+  );
+  border-radius: var(--lf-radius-xs);
+}
+
+.infinity-dnd5e .id-tile__button {
+  background-image:
+    linear-gradient(rgb(21 18 15 / 30%), rgb(21 18 15 / 50%)),
+    var(--atlas-binding);
+  background-size: 100% 100%;
+}
+
+.infinity-dnd5e
+  :is(
+    .id-section__head,
+    .mw-workspace-section__head,
+    .rm-section__head,
+    .rw-section__head
+  ) {
+  border-block-end-style: double;
+  border-block-end-width: 3px;
+}
+
 @media (forced-colors: active) {
   .infinity-dnd5e {
     --atlas-art: none;
+    --atlas-binding: none;
     --atlas-rule: CanvasText;
+  }
+
+  .infinity-dnd5e,
+  .application.infinity-dnd5e .window-content,
+  .infinity-dnd5e
+    :is(
+      .infinity-app-shell,
+      .infinity-ui,
+      .window-header,
+      button,
+      .tabs > [data-tab]
+    ) {
+    background-image: none;
   }
 
   .infinity-dnd5e
