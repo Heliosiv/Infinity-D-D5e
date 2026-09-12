@@ -384,8 +384,8 @@ export const SETTINGS = Object.freeze([
     name: "Auto-Run Daily Upkeep",
     hint:
       "When a new in-game day begins (via Simple Calendar or the world clock), " +
-      "automatically prompt foraging and consume the party's food, water, and " +
-      "light. Turn off to ask the GM which supplies to use or skip at each day change.",
+      "automatically settle configured supplies or living costs. Turn off to ask " +
+      "the GM to settle or skip. Large jumps always ask; Pause calendar upkeep in Quartermaster ignores elapsed time.",
     scope: "world",
     config: true,
     type: Boolean,

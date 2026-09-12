@@ -24,6 +24,7 @@ export async function promptDailySupplies({
   config,
   days = 1,
   rollover = false,
+  elapsedDays = days,
   readContext = null,
 }) {
   const renderer = globalThis.foundry?.applications?.handlebars?.renderTemplate;
@@ -65,6 +66,8 @@ export async function promptDailySupplies({
           : [],
         consumerCount: preview.consumerCount,
         days,
+        elapsedDays,
+        hasRemainingDays: elapsedDays > days,
         rollover,
         hasResources: resources.length > 0,
       },
@@ -118,9 +121,9 @@ export async function promptDailySupplies({
           },
         },
         no: {
-          label: config.dailyLiving ? "Cancel" : "Skip supplies",
+          label: config.dailyLiving ? "Skip upkeep" : "Skip supplies",
           default: true,
-          callback: () => (config.dailyLiving ? null : false),
+          callback: () => false,
         },
         rejectClose: false,
       },

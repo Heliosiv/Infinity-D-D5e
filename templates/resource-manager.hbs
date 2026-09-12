@@ -31,6 +31,8 @@
     <button type="button" data-action="selectSection" data-section-target="rm-setup" aria-controls="rm-setup"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Setup &amp; Rules</button>
   </nav>
 
+  {{#if upkeepPaused}}<p class="rm-note" role="status">Calendar upkeep is paused. Passing time will not spend supplies or coins. Manual settlement is still available.</p>{{/if}}
+
   <section id="rm-today" class="rm-workspace-section rm-today" aria-labelledby="rm-today-heading" tabindex="-1">
     <div class="rm-workspace-section__head">
       <div>
@@ -38,9 +40,10 @@
         <h3 id="rm-today-heading">Today</h3>
       </div>
       <div class="rm-today__actions">
-        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Settle one day using saved living choices and selected supplies, without moving the world clock{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Preview upkeep using saved living choices and selected supplies, without moving the world clock{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
           <i class="fa-solid fa-utensils" aria-hidden="true"></i> {{#if dailyLiving}}Settle Daily Upkeep{{else}}Use Daily Supplies{{/if}}
         </button>
+        <button type="button" class="mw-btn mw-btn--ghost" data-action="skipUpkeep" {{#unless canSkipUpkeep}}disabled{{/unless}}>Skip elapsed upkeep</button>
         <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunForageDrive}}Choose what each character gathers and run their Survival checks (no day passes){{else}}{{#if canRunResourceWrites}}Foraging is closed in the current environment.{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}{{/if}}" {{#unless canRunForageDrive}}disabled aria-disabled="true" aria-describedby="{{#if canRunResourceWrites}}rm-forage-drive-reason{{else}}rm-resource-write-reason{{/if}}"{{/unless}}>
           <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
         </button>
@@ -411,6 +414,8 @@
     <h3>Rules</h3>
     <div class="rm-options__grid">
       <label class="rm-toggle"><input type="checkbox" data-config-path="autoTrigger" {{#if autoTrigger}}checked{{/if}} /> Auto-run on day change</label>
+      <label class="rm-toggle"><input type="checkbox" data-config-path="upkeepPaused" {{#if upkeepPaused}}checked{{/if}} /> Pause calendar upkeep</label>
+      <p class="rm-note">Auto-run off: the GM chooses to settle or skip each pending interval. Pause ignores calendar time without charging or prompting; manual settlement still works. Turning Pause on or off skips pending calendar time. Use it for frozen characters or narrated time jumps. Large jumps beyond the catch-up limit always ask before charging.</p>
       <label class="rm-toggle"><input type="checkbox" data-config-path="waterEnabled" {{#if waterEnabled}}checked{{/if}} /> Track water</label>
       <label class="rm-toggle"><input type="checkbox" data-config-path="halfRations" {{#if halfRations}}checked{{/if}} /> Half rations</label>
       <label class="rm-field">
@@ -475,8 +480,8 @@
 
   <section class="rm-section rm-party">
     <h3>Party supplies</h3>
-    <label><input type="checkbox" data-config-path="dailyLiving" {{#if dailyLiving}}checked{{/if}} /> Automatically settle daily supplies or living costs</label>
-    <p class="rm-note">When enabled, each calendar day uses the saved choices below, even with Auto-run off. Food and water cannot be skipped. Set city residents to a paid lifestyle; switch back to supplies when they leave. Payment uses each character's own coins. GM-covered requires a reason. Other supplies keep their configured daily rates.</p>
+    <label><input type="checkbox" data-config-path="dailyLiving" {{#if dailyLiving}}checked{{/if}} /> Use supplies or lifestyle choices for daily upkeep</label>
+    <p class="rm-note">When enabled, settlement uses the saved choices below. Auto-run, Pause, and Skip elapsed upkeep control whether calendar time is charged. Set city residents to a paid lifestyle; switch back to supplies when they leave. Payment uses each character's own coins. GM-covered requires a reason. Other supplies keep their configured daily rates.</p>
     {{#if rosterIsImplicit}}
     <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong>, change <strong>Draws from</strong>, or add an inventory-only actor to start curating the roster.</p>
     {{/if}}

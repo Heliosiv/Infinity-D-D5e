@@ -367,6 +367,7 @@ export function normalizeResourceConfig(input) {
     resources: resources.length > 0 ? resources : defaultResources(),
     roster: normalizeRoster(raw.roster),
     ...(raw.dailyLiving === true ? { dailyLiving: true } : {}),
+    ...(raw.upkeepPaused === true ? { upkeepPaused: true } : {}),
     // A single shared stash the WHOLE party draws every per-character supply
     // from — the quartermaster's pack. "" = each member draws from their own
     // sheet (or their per-row nomination). When set, it overrides per-member
@@ -466,6 +467,7 @@ export function serializeResourceConfig(input) {
     resources: config.resources,
     roster: config.roster,
     ...(config.dailyLiving === true ? { dailyLiving: true } : {}),
+    ...(config.upkeepPaused === true ? { upkeepPaused: true } : {}),
     partyStashId: config.partyStashId,
     environments: config.environments,
   };
@@ -2000,6 +2002,16 @@ export async function setLastSeenDay(day) {
       : Math.floor(Number(day));
   return updateRunState((state) => {
     state.lastSeenDay = value;
+  });
+}
+
+/** A skip cannot bypass an in-progress run or acknowledge a stale interval. */
+export async function skipResourceDaysThrough(day, expectedLastSeenDay) {
+  if (!Number.isSafeInteger(day)) throw new Error("Invalid upkeep skip date");
+  return updateRunState((state) => {
+    if (state.activeUpkeep || state.lastSeenDay !== expectedLastSeenDay)
+      throw new Error("Upkeep changed before the skip was saved");
+    state.lastSeenDay = Math.max(day, state.lastSeenDay ?? day);
   });
 }
 

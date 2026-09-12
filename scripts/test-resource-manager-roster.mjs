@@ -383,7 +383,31 @@ try {
     );
     assert.match(
       template(refreshed),
-      /Automatically settle daily supplies or living costs/,
+      /Use supplies or lifestyle choices for daily upkeep/,
+    );
+  }
+
+  {
+    globalThis.game.time = { worldTime: 100 * 86400, secondsPerDay: 86400 };
+    await ResourceManagerApp.prototype._onConfigInput.call(fakeApp, {
+      type: "checkbox",
+      checked: true,
+      dataset: { configPath: "upkeepPaused" },
+    });
+    assert.equal(settingValues.get("resourceConfig").upkeepPaused, true);
+    const { loadRunState } = await import("./resource/store.js");
+    assert.equal(loadRunState().lastSeenDay, 100);
+    globalThis.game.time.worldTime += 90 * 86400;
+    await ResourceManagerApp.prototype._onConfigInput.call(fakeApp, {
+      type: "checkbox",
+      checked: false,
+      dataset: { configPath: "upkeepPaused" },
+    });
+    assert.equal(settingValues.get("resourceConfig").upkeepPaused, undefined);
+    assert.equal(
+      loadRunState().lastSeenDay,
+      190,
+      "resuming acknowledges paused months even without time hooks",
     );
   }
 } finally {

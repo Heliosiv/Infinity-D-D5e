@@ -220,12 +220,29 @@ status remains bounded by the release gates below.
 
 ### 3. Day change
 
-#### Automatic supplies or living costs
+#### Supplies or living costs: automatic, manual, or skipped
 
-In **Quartermaster → Setup & Rules → Party supplies**, enable **Automatically
-settle daily supplies or living costs**. This is off by default for existing
-worlds. Once enabled, calendar days settle automatically even when the older
-Auto-run setting is off. An authoritative full GM must be connected.
+In **Quartermaster → Setup & Rules → Party supplies**, enable **Use supplies
+or lifestyle choices for daily upkeep**. This is off by default for existing
+worlds. It selects how characters are supported; it does not force automation.
+An authoritative full GM must be connected for settlement or skipping.
+
+- **Auto-run on day change** settles ordinary day changes automatically.
+- With **Auto-run off**, the GM previews and chooses **Settle** or **Skip upkeep**.
+  Closing the prompt leaves the interval pending. Manual settlement on Today
+  remains available with either Auto-run setting.
+- **Skip elapsed upkeep** on Today acknowledges the entire pending interval
+  without consuming supplies, paying lifestyles, foraging, or suggesting exhaustion.
+  It does not refund previously settled days. A skipped interval is not a paid receipt.
+- **Pause calendar upkeep** ignores time changes without charging or prompting.
+  Use this for frozen characters, special realms, or narrated downtime. Both
+  enabling and disabling Pause acknowledge pending calendar time, so resuming
+  does not back-charge the paused months. Manual settlement still works while paused.
+
+A calendar jump larger than the catch-up limit always prompts, including when
+Auto-run is on. Settle charges only the displayed batch; later days stay pending.
+Skip acknowledges the whole jump. Manual settlement uses the same bounded preview
+and date check, so a changed calendar cannot silently enlarge the charge.
 
 For each consuming character, choose **Daily living**:
 
@@ -248,8 +265,9 @@ catch-up days use the currently saved choices, not historical location tracking.
 
 Food and water must use **per-character** scope for this feature. A shared
 inventory is supported through the normal stash routing. Manual upkeep previews
-living costs and cannot uncheck required food or water. Cancel leaves the day
-unsettled. Other supply selections remain independent.
+living costs and cannot uncheck required food or water when settling. The whole
+interval can still be skipped. Closing leaves it pending; other supply selections
+remain independent.
 
 Insufficient or invalid currency leaves living **unresolved**, without silently
 switching to supplies or creating debt. Review the report and recorded history
@@ -260,8 +278,8 @@ Uncertain writes retain the run for review rather than claiming success.
 
 Duplicate calendar events and a second manual settlement cannot charge the
 same recorded date. Backward time preserves the settled baseline. Large calendar
-jumps retain days beyond the catch-up cap as pending; subsequent time events or
-reloads reconcile the next batch. The first clock sync seeds the baseline without
+jumps retain days beyond the catch-up cap as pending when a batch is settled;
+subsequent time events, reloads, or manual settlement can handle the next batch. The first clock sync seeds the baseline without
 retroactive charges. Inventory-only roster members are not charged.
 
 Turn the checkbox off to return to the existing selectable-supplies workflow.
@@ -303,15 +321,17 @@ automation and deterministic test worlds.
 
 ### 4. Manual upkeep
 
-1. The GM chooses **Use Daily Supplies**.
+1. The GM chooses **Use Daily Supplies**, or **Settle Daily Upkeep** when lifestyle choices are enabled.
 2. The same supply checklist lets the GM choose any combination of enabled
-   supplies. The world clock does not change.
+   supplies and preview the pending day count. The world clock does not change.
 3. The same durable consumption pipeline used by automatic upkeep runs for one
-   day, but the manual action skips forage prompts and gathered deposits.
+   previewed batch, but the manual action skips forage prompts and gathered deposits.
 4. The result appears in Quartermaster, the configured chat audience, history,
    and the player Supplies overview.
 
-Manual upkeep must not be a separate calculation or write path.
+Manual upkeep must not be a separate calculation or write path. It previews a
+bounded batch when calendar days are pending, or one day otherwise. A completed
+manual batch advances the upkeep baseline without moving the world clock.
 
 ### 5. Forage-only drive
 

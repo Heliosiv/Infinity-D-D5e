@@ -224,7 +224,7 @@ try {
     1,
     "only one Use Daily Supplies request may await confirmation at a time",
   );
-  assert.match(confirmationOptions.content, /Consume one day of supplies/);
+  assert.match(confirmationOptions.content, /Settle 1 day\(s\) of upkeep/);
   assert.match(confirmationOptions.content, /without foraging/);
   assert.doesNotMatch(confirmationOptions.content, /prompt online players/);
   assert.equal(button.disabled, true, "the action is disabled while pending");

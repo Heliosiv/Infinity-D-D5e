@@ -40,6 +40,7 @@ import {
   claimUpkeepRun,
   completeUpkeepRun,
   setLastSeenDay,
+  skipResourceDaysThrough,
   resourceOperationMode,
 } from "./store.js";
 import {
@@ -241,21 +242,24 @@ async function onTimeMaybeChanged(reason) {
     if (elapsed <= 0) return;
 
     const config = loadResourceConfig();
+    if (config.upkeepPaused) {
+      await skipUpkeepNow();
+      return;
+    }
     const days = clampElapsedForUpkeep(elapsed, config.maxCatchUpDays);
-    const settlementDay = config.dailyLiving
-      ? state.lastSeenDay + days
-      : current;
+    const settlementDay = state.lastSeenDay + days;
     upkeepInFlight = true;
     try {
       const prompted =
-        !config.dailyLiving &&
-        getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false;
+        getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false ||
+        elapsed > days;
       let selection = null;
       if (prompted) {
         selection = await promptDailySupplies({
           config,
           days,
           rollover: true,
+          elapsedDays: elapsed,
           readContext: dailySupplyPreviewContext,
         });
         // The clock, authority, or another GM client's baseline may have changed
@@ -268,7 +272,8 @@ async function onTimeMaybeChanged(reason) {
         )
           return;
         if (selection === false) {
-          await setLastSeenDay(current);
+          await skipResourceDaysThrough(current, state.lastSeenDay);
+          emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
           return;
         }
         if (!selection?.resourceIds?.length) return;
@@ -310,6 +315,8 @@ export function dailySupplyPreviewContext() {
   };
   return {
     config,
+    calendarDay: currentAbsoluteDay(),
+    lastSeenDay: loadRunState().lastSeenDay,
     roster: getPartyRoster(config).map(
       ({ actor, isStash, consumes, drawFromId }) => ({
         actorId: actor.id,
@@ -325,7 +332,52 @@ export function dailySupplyPreviewContext() {
   };
 }
 
-export async function advanceDayNow({ resourceIds = null } = {}) {
+/** The same bounded period powers the manual preview and the subsequent write. */
+export function manualUpkeepPeriod() {
+  const config = loadResourceConfig();
+  const calendarDay = currentAbsoluteDay();
+  const lastSeenDay = loadRunState().lastSeenDay;
+  const elapsedDays =
+    calendarDay == null ? 0 : diffDays(lastSeenDay, calendarDay).elapsed;
+  const days =
+    elapsedDays > 0
+      ? clampElapsedForUpkeep(elapsedDays, config.maxCatchUpDays)
+      : 1;
+  return {
+    calendarDay,
+    lastSeenDay,
+    elapsedDays,
+    days,
+    day: elapsedDays > 0 ? lastSeenDay + days : calendarDay,
+  };
+}
+
+/** A GM skip acknowledges elapsed calendar time without any Actor writes. */
+export async function skipUpkeepNow({ expectedPeriod = null } = {}) {
+  if (!isAuthoritativeGM() || upkeepInFlight || loadRunState().activeUpkeep)
+    return { blocked: true, reason: "upkeep-busy-or-not-authoritative" };
+  const period = manualUpkeepPeriod();
+  if (
+    period.calendarDay == null ||
+    (expectedPeriod &&
+      JSON.stringify(period) !== JSON.stringify(expectedPeriod))
+  )
+    return { blocked: true, reason: "calendar-changed" };
+  upkeepInFlight = true;
+  try {
+    // Skipping backward time must not reopen days already settled or skipped.
+    await skipResourceDaysThrough(period.calendarDay, period.lastSeenDay);
+    emitResourceEvent(RESOURCE_EVENTS.STATE_UPDATE, {});
+    return { skipped: true, days: period.elapsedDays, day: period.calendarDay };
+  } finally {
+    upkeepInFlight = false;
+  }
+}
+
+export async function advanceDayNow({
+  resourceIds = null,
+  expectedPeriod = null,
+} = {}) {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
       "Only the active full GM can run daily upkeep. No supplies were changed.",
@@ -339,24 +391,24 @@ export async function advanceDayNow({ resourceIds = null } = {}) {
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
-    const config = loadResourceConfig();
-    const day = currentAbsoluteDay();
+    const period = manualUpkeepPeriod();
     if (
-      config.dailyLiving &&
-      diffDays(loadRunState().lastSeenDay, day).elapsed > 1
+      expectedPeriod &&
+      JSON.stringify(period) !== JSON.stringify(expectedPeriod)
     ) {
       globalThis.ui?.notifications?.warn?.(
-        "Multiple calendar days are pending. Allow automatic calendar upkeep to reconcile them before settling a manual day.",
+        "The calendar changed. Review the daily upkeep preview again.",
       );
-      return { blocked: true, reason: "pending-calendar-days" };
+      return { blocked: true, reason: "calendar-changed" };
     }
+    const { day, days } = period;
     const result = await runDailyUpkeep({
-      elapsedDays: 1,
+      elapsedDays: days,
       manual: true,
       resourceIds,
       day,
     });
-    if (config.dailyLiving && result && !result.blocked && result.day != null)
+    if (result && !result.blocked && result.day != null)
       await setLastSeenDay(result.day);
     return result;
   } finally {

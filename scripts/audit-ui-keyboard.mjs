@@ -73,6 +73,20 @@ async function main() {
       .evaluate((node) => {
         node.open = true;
       });
+    const pause = page.locator(
+      '[data-harness-window="resource-manager"] [data-config-path="upkeepPaused"]',
+    );
+    await pause.focus();
+    await pause.press("Space");
+    assert.equal(await pause.isChecked(), true);
+    await pause.press("Space");
+    assert.equal(await pause.isChecked(), false);
+    const skip = page.locator(
+      '[data-harness-window="resource-manager"] [data-action="skipUpkeep"]',
+    );
+    assert.equal(await skip.isEnabled(), true);
+    await skip.focus();
+    await skip.press("Enter");
     const livingChoice = page
       .locator('[data-config-path="roster:a1:living"]')
       .first();

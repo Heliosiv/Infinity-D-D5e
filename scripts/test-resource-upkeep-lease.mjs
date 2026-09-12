@@ -656,12 +656,12 @@ try {
     true,
   );
 
-  // Enforced living settles on calendar changes even when legacy Auto-run is off.
+  // Living settles automatically only when Auto-run is enabled.
   const livingConfig = structuredClone(settings.get("resourceConfig"));
   livingConfig.dailyLiving = true;
   livingConfig.roster.find((r) => r.actorId === "hero").living = "modest";
   settings.set("resourceConfig", livingConfig);
-  settings.set("resourceAutoTrigger", false);
+  settings.set("resourceAutoTrigger", true);
   hero.flags = {};
   hero.system.currency = { gp: 10 };
   let payments = 0;
@@ -704,6 +704,101 @@ try {
     settledDay,
     "backward time preserves the settlement baseline",
   );
+
+  const { manualUpkeepPeriod, skipUpkeepNow } =
+    await import("./resource/calendar-watcher.js");
+  settings.set("resourceAutoTrigger", false);
+  let livingPrompt;
+  let resolveLivingPrompt;
+  let livingPrompts = 0;
+  globalThis.foundry.applications.api.DialogV2.confirm = (options) => {
+    livingPrompts++;
+    livingPrompt = options;
+    return new Promise((resolve) => {
+      resolveLivingPrompt = resolve;
+    });
+  };
+  // Even with Auto-run on, a month-sized jump asks before charging.
+  settings.set("resourceAutoTrigger", true);
+  globalThis.game.time.worldTime = (settledDay + 30) * 86400;
+  onWorldTime();
+  await waitFor(
+    () => livingPrompt,
+    "large jump must prompt even with Auto-run on",
+  );
+  assert.equal(payments, 1);
+  assert.match(livingPrompt.content, /30 calendar days are pending/);
+  assert.equal(livingPrompt.no.callback(), false);
+  resolveLivingPrompt(false);
+  await waitFor(
+    () => settings.get("resourceRunState").lastSeenDay === settledDay + 30,
+    "skip acknowledges the entire jump",
+  );
+  assert.equal(payments, 1);
+  onWorldTime();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(livingPrompts, 1);
+
+  settings.set("resourceAutoTrigger", false);
+  livingPrompt = null;
+  globalThis.game.time.worldTime += 86400;
+  onWorldTime();
+  await waitFor(() => livingPrompt, "Auto-run off asks for living too");
+  assert.equal(payments, 1);
+  resolveLivingPrompt(null);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    settings.get("resourceRunState").lastSeenDay,
+    settledDay + 30,
+    "close leaves interval pending",
+  );
+  globalThis.foundry.applications.api.DialogV2.confirm = originalConfirm;
+  let period = manualUpkeepPeriod();
+  assert.equal(period.days, 1);
+  await advanceDayNow({ expectedPeriod: period });
+  assert.equal(hero.system.currency.gp, 8);
+  globalThis.game.time.worldTime += 3 * 86400;
+  period = manualUpkeepPeriod();
+  assert.equal(period.days, 3);
+  const manual = await advanceDayNow({ expectedPeriod: period });
+  assert.equal(manual.days, 3);
+  assert.equal(
+    hero.system.currency.gp,
+    5,
+    "manual catch-up charges exactly the previewed days",
+  );
+
+  const pausedConfig = structuredClone(settings.get("resourceConfig"));
+  pausedConfig.upkeepPaused = true;
+  settings.set("resourceConfig", pausedConfig);
+  const paidCount = payments;
+  const pauseStart = settings.get("resourceRunState").lastSeenDay;
+  globalThis.game.time.worldTime += 90 * 86400;
+  onWorldTime();
+  await waitFor(
+    () => settings.get("resourceRunState").lastSeenDay === pauseStart + 90,
+    "paused months do not become debt",
+  );
+  assert.equal(payments, paidCount);
+  assert.equal(livingPrompts, 2, "pause opens no prompt");
+  await advanceDayNow({ expectedPeriod: manualUpkeepPeriod() });
+  assert.equal(
+    hero.system.currency.gp,
+    4,
+    "manual settlement remains usable during pause",
+  );
+
+  const stale = manualUpkeepPeriod();
+  globalThis.game.time.worldTime += 60 * 86400;
+  assert.equal((await skipUpkeepNow({ expectedPeriod: stale })).blocked, true);
+  assert.equal((await advanceDayNow({ expectedPeriod: stale })).blocked, true);
+  period = manualUpkeepPeriod();
+  const skipped = await skipUpkeepNow({ expectedPeriod: period });
+  assert.equal(skipped.days, 60);
+  assert.equal(hero.system.currency.gp, 4);
+  users.activeGM = otherGm;
+  assert.equal((await skipUpkeepNow()).blocked, true);
+  users.activeGM = gm;
 } finally {
   console.error = originalConsoleError;
   for (const [key, value] of Object.entries(saved)) {

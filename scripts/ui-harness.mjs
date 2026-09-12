@@ -2846,6 +2846,7 @@ function resourceManagerLivingContext() {
   return {
     ...context,
     dailyLiving: true,
+    canSkipUpkeep: true,
     partyRows: context.partyRows.map((row, index) => ({
       ...row,
       livingOptions: LIVING_CHOICES.map((choice) => ({

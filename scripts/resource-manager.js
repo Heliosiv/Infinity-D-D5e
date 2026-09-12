@@ -30,6 +30,8 @@ import { recoverDurableResources } from "./resource/operation-runtime.js";
 import {
   actorItemSnapshots,
   advanceDayNow,
+  manualUpkeepPeriod,
+  skipUpkeepNow,
   dailySupplyPreviewContext,
   describeForageDrive,
   discoverAllActors,
@@ -115,6 +117,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
     position: { width: 880, height: 700 },
     actions: {
       advanceDay: ResourceManagerApp._onAdvanceDay,
+      skipUpkeep: ResourceManagerApp._onSkipUpkeep,
       forageDrive: ResourceManagerApp._onForageDrive,
       clearInterruptedRun: ResourceManagerApp._onClearInterruptedRun,
       enableRecovery: ResourceManagerApp._onEnableRecovery,
@@ -505,12 +508,14 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       forageMode: config.forageMode,
       forageModeEach: config.forageMode === "each",
       dailyLiving: config.dailyLiving === true,
+      upkeepPaused: config.upkeepPaused === true,
       halfRations: config.halfRations,
       waterEnabled: config.waterEnabled,
       maxCatchUpDays: config.maxCatchUpDays,
       autoTrigger,
       isAuthoritative,
       canRunResourceWrites,
+      canSkipUpkeep: isAuthoritative && !activeUpkeep,
       canRunForageDrive: canRunResourceWrites && currentEnvForageable,
       hasActiveUpkeep: Boolean(activeUpkeep),
       activeUpkeep: activeUpkeep
@@ -646,6 +651,19 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       const [, id, field] = path.split(":");
       const res = config.resources.find((r) => r.id === id);
       if (res) applyResourceField(res, field, value);
+    } else if (path === "upkeepPaused") {
+      // Both edges synchronize the baseline, including time changed while no
+      // hook/GM was available. Resuming never bills the suspended interval.
+      const skipped = await skipUpkeepNow();
+      if (skipped.blocked) {
+        input.checked = config.upkeepPaused === true;
+        notify(
+          "warn",
+          "Finish or review the active upkeep run before pausing or resuming.",
+        );
+        return;
+      }
+      config.upkeepPaused = Boolean(value);
     } else if (path === "dailyLiving") {
       config.dailyLiving = Boolean(value);
     } else if (path === "partyStashId") {
@@ -917,14 +935,30 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       // Acquire the request guard before opening the dialog. Otherwise repeated
       // clicks can queue multiple confirmations that resume one at a time after
       // the service-level upkeep guard has already been released.
+      const period = manualUpkeepPeriod();
       const selection = await promptDailySupplies({
         config: loadResourceConfig(),
+        days: period.days,
+        elapsedDays: period.elapsedDays,
         readContext: dailySupplyPreviewContext,
       });
+      if (selection === false) {
+        const skipped = await skipUpkeepNow({ expectedPeriod: period });
+        if (skipped.blocked)
+          notify(
+            "warn",
+            "Upkeep or the calendar changed. Review the pending interval again.",
+          );
+        this.render(false);
+        return;
+      }
       if (!selection?.resourceIds?.length) return;
       if (!requireResourceWriteAuthority("run daily upkeep")) return;
       playModuleSound(SOUND_EVENTS.ROLL_START);
-      await advanceDayNow({ resourceIds: selection.resourceIds });
+      await advanceDayNow({
+        resourceIds: selection.resourceIds,
+        expectedPeriod: period,
+      });
       this.render(false);
     } finally {
       manualAdvanceRequestInFlight = false;
@@ -933,6 +967,39 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       } catch {
         // The request lock must still reset if a malformed action target throws.
       }
+    }
+  }
+
+  /** @this {ResourceManagerApp} */
+  static async _onSkipUpkeep(_event, target) {
+    if (
+      !requireResourceWriteAuthority("skip upkeep") ||
+      manualAdvanceRequestInFlight
+    )
+      return;
+    manualAdvanceRequestInFlight = true;
+    try {
+      setActionBusy(target, true);
+      const period = manualUpkeepPeriod();
+      const confirmed = await confirmInfinityDialog({
+        window: { title: "Skip elapsed upkeep?" },
+        content: `<p>Skip all ${period.elapsedDays} pending calendar day(s) through the current date? No supplies, coins, foraging or exhaustion will be changed. Previously paid costs are not refunded.</p>`,
+        yes: { label: "Skip elapsed upkeep", default: false },
+        no: { label: "Cancel", default: true },
+      });
+      if (!confirmed) return;
+      const result = await skipUpkeepNow({ expectedPeriod: period });
+      if (result.blocked)
+        notify(
+          "warn",
+          "Upkeep or the calendar changed. Review the pending interval again.",
+        );
+      else
+        notify("info", "Elapsed upkeep skipped. No supplies or coins changed.");
+      this.render(false);
+    } finally {
+      manualAdvanceRequestInFlight = false;
+      setActionBusy(target, false);
     }
   }
 

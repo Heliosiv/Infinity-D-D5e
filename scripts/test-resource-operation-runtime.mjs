@@ -5,6 +5,7 @@ import {
   enableResourceOperationRecovery,
   resourceRecoveryUpgradePreview,
   loadRunState,
+  skipResourceDaysThrough,
   resetResourceStoreForTests,
 } from "./resource/store.js";
 import { resetPrivateStateForTests } from "./private-state.js";
@@ -290,6 +291,15 @@ try {
     JSON.stringify(state.operationOutbox.at(-1)),
     /Living costs unresolved/,
   );
+  const beforeSkip = state.lastSeenDay;
+  const writesBeforeSkip = livingWrites;
+  await skipResourceDaysThrough(beforeSkip + 90, beforeSkip);
+  assert.equal(state.lastSeenDay, beforeSkip + 90);
+  assert.equal(livingWrites, writesBeforeSkip);
+  await assert.rejects(
+    skipResourceDaysThrough(beforeSkip + 91, beforeSkip),
+    /changed/,
+  );
   delete config.dailyLiving;
   delete config.roster;
 
@@ -314,6 +324,10 @@ try {
   const stopped = await createRuntime().coordinator.recover();
   assert.equal(stopped.action, "needs-review");
   assert.equal(state.activeOperation.phase, "needs-review");
+  await assert.rejects(
+    skipResourceDaysThrough(state.lastSeenDay + 1, state.lastSeenDay),
+    /changed/,
+  );
   assert.equal(item.system.quantity, 12, "changed rules stop before any write");
   console.log(
     "Production resource runtime: guarded upgrade, crash recovery, exact-once charge/report, prepaid fractions and replayed forage prompt passed",
