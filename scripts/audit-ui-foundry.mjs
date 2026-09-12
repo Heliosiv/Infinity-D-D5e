@@ -1,3 +1,4 @@
+import { unlockTestVault } from "./test-utils/foundry-vault.mjs";
 /** Native ApplicationV2 gauntlet restricted to the disposable localhost world. */
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -36,6 +37,7 @@ async function join(name) {
     await tab.reload();
     await tab.waitForFunction(() => globalThis.game?.ready);
   }
+  await unlockTestVault(tab);
   return tab;
 }
 async function closeWindows(tab) {

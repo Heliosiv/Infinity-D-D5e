@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 import { applyFlagMerge } from "./test-utils/foundry-flags.mjs";
 
@@ -325,7 +326,7 @@ try {
   };
   const flags = {
     privateStateStore: true,
-    schemaVersion: 7,
+    schemaVersion: 8,
     merchants: [],
     merchantTransactions: {
       version: 1,

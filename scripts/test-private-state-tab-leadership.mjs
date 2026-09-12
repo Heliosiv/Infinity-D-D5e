@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 
 const MODULE_ID = "infinity-dnd5e";
@@ -393,9 +394,10 @@ try {
     assert.equal(createCalls, 0);
     assert.equal(store.updateCalls.length, 1);
     assert.deepEqual(Object.keys(store.updateCalls[0]), [
+      `flags.${MODULE_ID}.schemaVersion`,
       `flags.${MODULE_ID}.merchantTransactions`,
     ]);
-    assert.equal(store.getFlag(MODULE_ID, "schemaVersion"), CURRENT_SCHEMA - 1);
+    assert.equal(store.getFlag(MODULE_ID, "schemaVersion"), CURRENT_SCHEMA);
     assert.deepEqual(state.settingWrites, []);
     assert.equal(state.values.merchants[0].id, "migration-source");
     assert.equal(privateState.getPrivateState("merchants"), undefined);

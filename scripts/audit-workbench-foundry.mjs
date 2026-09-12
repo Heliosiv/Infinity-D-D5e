@@ -1,3 +1,4 @@
+import { unlockTestVault } from "./test-utils/foundry-vault.mjs";
 /** Exercise real ApplicationV2 routing and same-GM tab handoff in the test world. */
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -48,6 +49,7 @@ export async function runWorkbenchFoundryJourney({ gm, output, record }) {
     await follower.waitForFunction(() => game?.ready, null, {
       timeout: 30_000,
     });
+    await unlockTestVault(follower);
     await follower.waitForFunction(
       () =>
         game.modules.get("infinity-dnd5e")?.api?.getPrivateStateStatus()

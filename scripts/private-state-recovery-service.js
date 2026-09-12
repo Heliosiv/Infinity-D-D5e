@@ -209,6 +209,7 @@ function recoveryOverview(state) {
   const canMutate =
     authority.fullGm === true &&
     authority.authoritative === true &&
+    !String(state.status?.code ?? "").startsWith("vault-") &&
     recoveryNeeded;
   return Object.freeze({
     status: safeStatus(state.status),

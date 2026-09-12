@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 
 const gm = { id: "gm", role: 4, isGM: true, active: true };

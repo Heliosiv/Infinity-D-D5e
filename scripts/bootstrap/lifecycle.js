@@ -125,6 +125,14 @@ export function createModuleBootstrap(bindings) {
           error,
         );
       }
+      if (
+        bindings.isFullGM() &&
+        String(bindings.getPrivateStateStatus?.()?.code ?? "").startsWith(
+          "vault-",
+        )
+      ) {
+        void bindings.openPrivateVault?.();
+      }
       const privateStateStatus = bindings.getPrivateStateStatus?.() ?? {
         state: privateStateAvailable ? "ready" : "pending",
         code: privateStateAvailable ? "ready" : "store-unavailable",
@@ -254,7 +262,9 @@ export function createModuleBootstrap(bindings) {
         bindings.isFullGM() &&
         hasCurrentCampaignLeadership()
       ) {
-        if (privateStateStatus.state === "blocked") {
+        if (String(privateStateStatus.code ?? "").startsWith("vault-")) {
+          void bindings.openPrivateVault?.();
+        } else if (privateStateStatus.state === "blocked") {
           const corrupt = privateStateStatus.code === "corrupt";
           const missing = [
             "candidate-review-required",

@@ -1,3 +1,4 @@
+import { openPrivateVault } from "../private-vault-ui.js";
 import {
   InfinityCampaignRecoveryApp,
   openPlayerLauncher,
@@ -161,6 +162,7 @@ function openHub() {
     isFullGM,
     getPrivateStateStatus,
     openPlayerLauncher,
+    openPrivateVault,
     openCampaignRecovery: () => InfinityCampaignRecoveryApp.open(),
     openGmWorkbench: () => GmWorkbenchApp.open(),
   });
@@ -186,6 +188,7 @@ export const runtimeBindings = Object.freeze({
   clearTimeout: (timer) => globalThis.clearTimeout?.(timer),
 
   openHub,
+  openPrivateVault,
   InfinityCampaignRecoveryApp,
   GmWorkbenchApp,
   LootStudioApp,

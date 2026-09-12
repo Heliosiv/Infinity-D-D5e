@@ -600,8 +600,15 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-**Known transport privacy limitation, observed 2026-09-03 and reconfirmed
-2026-09-05:** Foundry 13.351
+**v0.3.37 adds encrypted storage:** Complete private-state payloads are sealed
+before any Journal create/update request. Full GMs unlock locally; players receive
+ciphertext. First-run migration, passphrase recovery requirements, and remaining
+trust boundaries are in [Private Vault](PRIVATE_VAULT.md). A world is protected
+only after its GM completes setup and migration. Existing plaintext downloads
+and pre-migration backups are not revoked.
+
+**Historical transport finding (before vault migration), observed 2026-09-03
+and reconfirmed 2026-09-05:** Foundry 13.351
 sends the restricted Journal's raw flags to authenticated player clients,
 even with `ownership.default = NONE` and `journal.visible = false`. The
 disposable-world player could read the downtime configuration and workflow
@@ -612,10 +619,11 @@ also returned their data to that player, so moving the same flags into either
 container is not an established fix.
 
 This predates the downtime UI changes and affects the shared private-state
-storage design. The write guards and GM approval flow remain enforced by the
-module, but campaign secrets must not rely on this storage for confidentiality.
-Resolving it needs a separately validated storage/encryption design and a
-reviewable migration; it is not fixed by this downtime pass.
+storage design. The write guards and GM approval flow were enforced by the module, but before
+vault migration campaign secrets must not rely on Journal ownership for
+confidentiality.
+The v0.3.37 vault addresses this storage design for migrated records. Journal
+ownership alone remains insufficient.
 
 Only the active full GM can optionally configure settlements, create projects,
 create or transition a block, roll hidden checks, or apply results. A player can

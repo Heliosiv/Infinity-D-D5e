@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 
 import {
@@ -1021,7 +1022,7 @@ import {
     };
     const flags = {
       privateStateStore: true,
-      schemaVersion: 7,
+      schemaVersion: 8,
       merchants: [],
       merchantTransactions: {
         version: 1,

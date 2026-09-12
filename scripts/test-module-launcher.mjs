@@ -98,6 +98,7 @@ function apiFixture() {
   const api = createModuleApi(fixture.bindings);
   assert.deepEqual(Object.keys(api), [
     "openHub",
+    "openPrivateVault",
     "openDashboard",
     "openGmWorkbench",
     "openLootStudio",

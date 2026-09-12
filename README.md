@@ -3,15 +3,24 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**v0.3.37 local candidate — Plague Scholar UI:** All module windows share warm manuscript
+**v0.3.37 — Encrypted GM vault:** Hidden campaign records now use authenticated
+encryption instead of readable Journal flags. Each full GM enters the shared
+vault passphrase locally when opening or refreshing a tab. Before the first
+migration, back up the world, disconnect players, and save the new passphrase in
+a password manager. Press **Shift+I** to set up or unlock. Forgotten passphrases
+cannot be recovered. Old backups and previously received plaintext remain
+outside this protection. See the [vault setup and recovery guide](docs/PRIVATE_VAULT.md).
+
+**v0.3.37 — Plague Scholar UI:** All module windows share warm manuscript
 surfaces, anatomical undead marginalia, worn bookbinding, brass emblems, and
 scholarly headings. Buttons, tabs, panels, dialogs, and the injury HUD inherit
 the shared theme. Artwork is bundled locally; labels, focus indicators, and
 semantic status colors remain readable. See [asset provenance](assets/ui/PROVENANCE.md).
-The combined package and installed UI evidence are described in the
-[Plague Scholar candidate report](docs/PLAGUE_SCHOLAR_CANDIDATE.md).
+The earlier artwork package and UI evidence are retained in the
+[Plague Scholar candidate report](docs/PLAGUE_SCHOLAR_CANDIDATE.md); that report
+predates the vault migration.
 
-**v0.3.37 local release candidate — UI stability:** Background window refreshes respect the control
+**v0.3.37 — UI stability:** Background window refreshes respect the control
 you are using, and text-field refreshes retain the cursor selection. Searchable
 pickers keep their list and scroll position while selecting choices. Narrow shop
 inventory cards show quantity, restock, custom-price, and unlimited-stock labels.
@@ -20,7 +29,7 @@ failed saves and edits made during a save remain available. Player activity card
 also retain allocation hours, skill and source selections through refreshes.
 See the [reconciled candidate report](docs/UI_CANDIDATE_0.3.37.md) for coverage and limits.
 
-**Field ammunition (next release):** Include **Craft Field Ammunition** in a
+**v0.3.37 — Field ammunition:** Include **Craft Field Ammunition** in a
 downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
 Players choose hours and materials, see difficulty labels and complication
 percentages, and roll gathering before crafting. Drakmor house rules preserve
@@ -240,7 +249,7 @@ allows the next tool switch. Downtime setup rejects fractional or out-of-range
 hour budgets rather than rounding them. The installed-world gauntlet covers
 repeated leader/read-only navigation, editing handoff, and all eight new
 activities; its temporary activity fixtures are restored after the run.
-The documented Foundry transport privacy limitation remains unresolved.
+This historical release retained the Foundry transport privacy limitation; v0.3.37 adds the encrypted vault and requires first-run migration.
 
 **v0.3.14-preview.5 — More player downtime activities** - Adds performing,
 training, local contacts, scouting and mapping, medical care, religious service,

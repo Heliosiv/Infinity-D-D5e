@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 import { applyFlagMerge } from "./test-utils/foundry-flags.mjs";
 
@@ -402,8 +403,8 @@ try {
       {
         [`flags.${MODULE_ID}.merchantTransactions`]:
           emptyMerchantTransactions(),
+        [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA,
       },
-      { [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA },
     ]);
   }
 
@@ -1563,16 +1564,8 @@ try {
       legacy,
     });
 
-    const failedMigration = await captureConsole("error", () =>
-      assert.rejects(
-        initializePrivateState(),
-        /PrivateStateMigrationVerificationFailed:resourceConfig/,
-      ),
-    );
-    assert.match(
-      String(failedMigration.messages[0]?.[0] ?? ""),
-      /private state initialization failed/,
-    );
+    assert.equal(await initializePrivateState(), false);
+    assert.equal(getPrivateStateStatus().code, "corrupt");
     assert.equal(isPrivateStateReady(), false);
     assert.deepEqual(state.cleared, []);
     assert.equal(
@@ -1581,6 +1574,9 @@ try {
       "a failed journal copy never clears the legacy object",
     );
 
+    // The atomic schema upgrade now fails closed on a partial store response.
+    // Repair the deliberately dropped field before explicitly retrying.
+    store.setFlagDirect("resourceConfig", legacy.resourceConfig);
     assert.equal(await initializePrivateState(), true);
     assert.equal(
       getPrivateState("resourceConfig").roster[0].actorId,

@@ -73,4 +73,19 @@ for (const fullGm of [false, undefined]) {
   }
 }
 
+{
+  const current = fixture({ fullGm: true, state: "blocked" });
+  current.bindings.getPrivateStateStatus = () => ({
+    state: "blocked",
+    code: "vault-locked",
+  });
+  current.bindings.openPrivateVault = () => current.calls.push("vault");
+  openInfinityPrimaryLauncher(current.bindings);
+  assert.deepEqual(
+    current.calls,
+    ["vault"],
+    "a locked vault must never offer an empty campaign replacement",
+  );
+}
+
 process.stdout.write("primary launcher routing validation passed\n");

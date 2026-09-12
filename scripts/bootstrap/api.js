@@ -54,6 +54,7 @@ export function createModuleApi(bindings) {
 
   return {
     openHub: () => openHub(),
+    openPrivateVault: () => runAsFullGM(() => bindings.openPrivateVault?.()),
     openDashboard: () => runAsFullGM(() => openHub()),
     openGmWorkbench: (options = {}) =>
       runAsFullGM(() => GmWorkbenchApp.open(options)),

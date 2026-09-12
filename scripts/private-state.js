@@ -5,14 +5,23 @@
  * `config:false`. Merchant economy and unrevealed faction records therefore
  * live on a JournalEntry with default NONE ownership. This module hydrates its
  * cache only for full GMs and returns typed empty defaults to other roles.
- * Ownership is an application/write boundary, not transport confidentiality:
- * the installed Foundry 13.351 gauntlet demonstrated that player clients still
- * receive the underlying Journal flags. See docs/DOWNTIME_SYSTEM.md before
- * relying on these records to conceal information from a connected client.
+ * Ownership controls writes. An authenticated encrypted vault protects the
+ * payload on transport; its key is entered locally by each full GM.
  * Legacy settings are migrated once and then cleared.
  */
 
 import { isFullGM } from "./permissions.js";
+import {
+  createPrivateVaultDocument,
+  hasEncryptedPrivateVault,
+  hasUnencryptedPrivateFlags,
+  isPrivateVaultUnlocked,
+  lockPrivateVault,
+  preparePrivateVaultDocument,
+  privateVaultDocumentReady,
+  readPrivateFlag,
+  writePrivateVaultDocument,
+} from "./private-vault.js";
 import {
   configurePrivateStateRecoveryService,
   resetPrivateStateRecoveryServiceForTests,
@@ -30,7 +39,7 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
 const RECOVERY_SOURCE_FLAG = "privateStateRecoverySource";
-export const PRIVATE_STATE_SCHEMA_VERSION = 7;
+export const PRIVATE_STATE_SCHEMA_VERSION = 8;
 const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
@@ -82,6 +91,9 @@ const PRIVATE_STATE_FIELDS = Object.freeze({
   }),
 });
 const PRIVATE_STATE_KEYS = Object.freeze(Object.keys(PRIVATE_STATE_FIELDS));
+const PRIVATE_STORAGE_KEYS = [...PRIVATE_STATE_KEYS, RECOVERY_SOURCE_FLAG];
+const hasPlaintextPrivateFlags = (document) =>
+  hasUnencryptedPrivateFlags(document, PRIVATE_STORAGE_KEYS);
 
 /** Hook emitted after one or more cached private-state fields change. */
 export const PRIVATE_STATE_CHANGED_HOOK = "infinity-dnd5e.privateStateChanged";
@@ -107,6 +119,7 @@ let blockedStoreId = null;
 let storeQuarantineStatus = null;
 let manualRecoveryTargetId = null;
 let privateStateStatus = createPrivateStateStatus();
+let privateWriteQueue = Promise.resolve();
 
 export {
   applyEmptyPrivateStateReplacement,
@@ -255,7 +268,7 @@ function readLegacyValue(key) {
 }
 
 function readDocumentValue(document, key) {
-  const raw = document?.getFlag?.(MODULE_ID, key);
+  const raw = readPrivateFlag(document, key);
   return {
     present: isValidValue(key, raw),
     value: cleanValue(key, raw),
@@ -494,6 +507,7 @@ function hasCompleteStorePayload(document) {
   return Boolean(
     isStoreDocument(document) &&
     classifyStoreSchema(document).state === "current" &&
+    hasEncryptedPrivateVault(document) &&
     PRIVATE_STATE_KEYS.every((key) => readDocumentValue(document, key).present),
   );
 }
@@ -673,6 +687,62 @@ function unregisterSyncHooks() {
   syncHooksRegistered = false;
 }
 
+function blockPrivateVault(code) {
+  initialized = false;
+  if (!initializing) initialization = null;
+  cache.clear();
+  lastVerifiedStoreSnapshot = null;
+  lastVerifiedStoreId = null;
+  setPrivateStateStatus({
+    state: "blocked",
+    code: `vault-${code}`,
+    retryable: false,
+  });
+  callPrivateStateChanged(PRIVATE_STATE_KEYS, "vault-locked");
+}
+
+// Foundry hooks are synchronous. Authenticate remote ciphertext before handing
+// it to the existing synchronous lifecycle; never hydrate unauthenticated data.
+function onVaultHook(event, callback) {
+  return globalThis.Hooks.on(event, (subject) => {
+    if (!isFullGM()) return;
+    const document = event === "updateSetting" ? findStoreDocument() : subject;
+    if (
+      !document ||
+      !isStoreDocument(document) ||
+      privateVaultDocumentReady(document)
+    ) {
+      return callback(subject);
+    }
+    if (!isPrivateVaultUnlocked()) return blockPrivateVault("locked");
+    const epoch = lifecycleGeneration;
+    initialized = false;
+    cache.clear();
+    setPrivateStateStatus({
+      state: "pending",
+      code: "vault-sync",
+      retryable: false,
+    });
+    void preparePrivateVaultDocument(document)
+      .then((result) => {
+        if (result === false) return;
+        if (epoch === lifecycleGeneration && isFullGM()) callback(subject);
+      })
+      .catch((error) => {
+        if (epoch === lifecycleGeneration)
+          blockPrivateVault(error.code ?? "authentication-failed");
+      });
+  });
+}
+
+/** Resume through the normal authority, schema, and preservation checks. */
+export async function resumePrivateStateAfterVaultUnlock() {
+  if (!isFullGM() || !isPrivateVaultUnlocked()) return false;
+  initialized = false;
+  initialization = null;
+  return initializePrivateState();
+}
+
 function registerSyncHooks() {
   if (
     syncHooksRegistered ||
@@ -685,7 +755,7 @@ function registerSyncHooks() {
 
   syncHookIds.push([
     "createJournalEntry",
-    globalThis.Hooks.on("createJournalEntry", (document) => {
+    onVaultHook("createJournalEntry", (document) => {
       if (!isFullGM()) return;
       if (!isStoreDocument(document)) return;
       const canonical = findStoreDocument();
@@ -744,7 +814,7 @@ function registerSyncHooks() {
   ]);
   syncHookIds.push([
     "updateJournalEntry",
-    globalThis.Hooks.on("updateJournalEntry", (document) => {
+    onVaultHook("updateJournalEntry", (document) => {
       if (!isFullGM()) return;
       const tracksCurrentStore =
         document?.id &&
@@ -789,6 +859,7 @@ function registerSyncHooks() {
       const changedKeys = hydrateCache(document);
       if (changedKeys) {
         if (!initializing) {
+          initialized = true;
           setPrivateStateStatus({
             state: "ready",
             code: "ready",
@@ -816,7 +887,7 @@ function registerSyncHooks() {
   ]);
   syncHookIds.push([
     "updateSetting",
-    globalThis.Hooks.on("updateSetting", (setting) => {
+    onVaultHook("updateSetting", (setting) => {
       if (!isFullGM() || !isCanonicalSettingUpdate(setting)) return;
       const canonical = findStoreDocument();
       const classification = canonical ? classifyStoreSchema(canonical) : null;
@@ -903,6 +974,7 @@ function resetForRoleTransition({ safeDefaults }) {
   initializing = false;
   lastWriterLeadershipGeneration = null;
   if (safeDefaults) {
+    lockPrivateVault();
     lastVerifiedStoreSnapshot = null;
     lastVerifiedStoreId = null;
     recoveryEvidenceObserved = false;
@@ -1030,11 +1102,24 @@ function waitForStoreDocument() {
 }
 
 async function createStoreDocument(initial, { recoverySource = null } = {}) {
+  const generation = lifecycleGeneration;
+  const leadershipGeneration = getCampaignTabLeadershipStatus().generation;
+  const isCurrent = () =>
+    generation === lifecycleGeneration &&
+    isFullGM() &&
+    isAuthoritativeGM() &&
+    hasCampaignTabLeadership() &&
+    leadershipGeneration === getCampaignTabLeadershipStatus().generation;
   const none = noneOwnershipLevel();
-  const values = Object.fromEntries(
-    PRIVATE_STATE_KEYS.map((key) => [key, cleanValue(key, initial[key])]),
-  );
-  return globalThis.JournalEntry.create(
+  const values = {
+    ...Object.fromEntries(
+      PRIVATE_STATE_KEYS.map((key) => [key, cleanValue(key, initial[key])]),
+    ),
+    ...(recoverySource
+      ? { [RECOVERY_SOURCE_FLAG]: clone(recoverySource) }
+      : {}),
+  };
+  return createPrivateVaultDocument(
     {
       name: STORE_NAME,
       ownership: { default: none },
@@ -1042,14 +1127,12 @@ async function createStoreDocument(initial, { recoverySource = null } = {}) {
         [MODULE_ID]: {
           [STORE_MARKER]: true,
           schemaVersion: STORE_SCHEMA,
-          ...values,
-          ...(recoverySource
-            ? { [RECOVERY_SOURCE_FLAG]: clone(recoverySource) }
-            : {}),
         },
       },
     },
-    { renderSheet: false },
+    values,
+    PRIVATE_STORAGE_KEYS,
+    isCurrent,
   );
 }
 
@@ -1145,32 +1228,29 @@ async function migrateStoreDocument(document, legacyState, isCurrent) {
       updates[`flags.${MODULE_ID}.${key}`] = expected[key];
     }
   }
+  const recoverySource =
+    readPrivateFlag(document, RECOVERY_SOURCE_FLAG) ??
+    document.getFlag(MODULE_ID, RECOVERY_SOURCE_FLAG);
+  if (recoverySource !== undefined)
+    expected[RECOVERY_SOURCE_FLAG] = clone(recoverySource);
   const schemaVersion = classifyStoreSchema(document).observedSchema ?? 0;
-  if (Object.keys(updates).length > 0) {
-    if (
-      !ensureStoreCanBeWritten(document, {
-        allowSnapshotRepair: true,
-      })
-    )
-      return false;
-    if (!isCurrent()) return false;
-    await document.update(updates);
+  if (
+    Object.keys(updates).length ||
+    schemaVersion < STORE_SCHEMA ||
+    !hasEncryptedPrivateVault(document) ||
+    hasPlaintextPrivateFlags(document)
+  ) {
+    await writePrivateVaultDocument(document, expected, PRIVATE_STORAGE_KEYS, {
+      metadata: { [`flags.${MODULE_ID}.schemaVersion`]: STORE_SCHEMA },
+      isCurrent,
+    });
   }
   if (!isCurrent()) return false;
-
   for (const key of PRIVATE_STATE_KEYS) {
     const stored = readDocumentValue(document, key);
     if (!stored.present || !valuesEqual(stored.value, expected[key])) {
       throw new Error(`PrivateStateMigrationVerificationFailed:${key}`);
     }
-  }
-  if (schemaVersion < STORE_SCHEMA) {
-    if (!ensureStoreCanBeWritten(document)) return false;
-    if (!isCurrent()) return false;
-    await document.update({
-      [`flags.${MODULE_ID}.schemaVersion`]: STORE_SCHEMA,
-    });
-    if (!isCurrent()) return false;
   }
   if (classifyStoreSchema(document).state !== "current") {
     throw new Error("PrivateStateMigrationVerificationFailed:schemaVersion");
@@ -1214,6 +1294,10 @@ export function initializePrivateState() {
     return Promise.resolve(false);
   }
   if (isLiveFoundry()) registerRoleHook();
+  if (isFullGM() && !isPrivateVaultUnlocked()) {
+    blockPrivateVault("locked");
+    return Promise.resolve(false);
+  }
   if (initialization) {
     const leadership = getCampaignTabLeadershipStatus();
     const needsWriterFinalization = Boolean(
@@ -1273,7 +1357,43 @@ export function initializePrivateState() {
       currentUserId !== null &&
       startingAuthorityId === currentUserId &&
       isCurrentWriter();
+    if (!isPrivateVaultUnlocked()) {
+      blockPrivateVault("locked");
+      return false;
+    }
+    try {
+      for (const candidate of findStoreDocuments())
+        await preparePrivateVaultDocument(candidate);
+    } catch (error) {
+      blockPrivateVault(error.code ?? "authentication-failed");
+      return false;
+    }
     const legacyState = authoritative ? readLegacyState() : null;
+    const unsealed = findStoreDocuments().filter(
+      (candidate) =>
+        !hasEncryptedPrivateVault(candidate) ||
+        hasPlaintextPrivateFlags(candidate),
+    );
+    const unsupported = unsealed.find((candidate) =>
+      isSchemaBlocked(classifyStoreSchema(candidate)),
+    );
+    if (authoritative && unsupported) {
+      return blockUnsupportedStoreSchema(
+        unsupported,
+        classifyStoreSchema(unsupported),
+      );
+    }
+    if (
+      authoritative &&
+      (unsealed.length ||
+        PRIVATE_STATE_KEYS.some((key) =>
+          legacyNeedsClearing(key, legacyState[key]),
+        )) &&
+      globalThis.game?.users?.some?.((user) => user.active && !isFullGM(user))
+    ) {
+      blockPrivateVault("migration-players-connected");
+      return false;
+    }
     let document = findStoreDocument();
     if (storeQuarantineStatus) {
       if (!document) {
@@ -1378,6 +1498,33 @@ export function initializePrivateState() {
         isCurrentWritableStore,
       );
       if (!migration) return false;
+      // Recovery copies also replicate to players. Preserve their exact present
+      // fields, including incomplete evidence, without leaving plaintext flags.
+      for (const candidate of findStoreDocuments()) {
+        if (
+          candidate.id === document.id ||
+          (hasEncryptedPrivateVault(candidate) &&
+            !hasPlaintextPrivateFlags(candidate))
+        )
+          continue;
+        const payload = Object.fromEntries(
+          PRIVATE_STORAGE_KEYS.filter(
+            (key) =>
+              (readPrivateFlag(candidate, key) ??
+                candidate.getFlag(MODULE_ID, key)) !== undefined,
+          ).map((key) => [
+            key,
+            readPrivateFlag(candidate, key) ??
+              candidate.getFlag(MODULE_ID, key),
+          ]),
+        );
+        await writePrivateVaultDocument(
+          candidate,
+          payload,
+          PRIVATE_STORAGE_KEYS,
+          { isCurrent: isCurrentWritableStore },
+        );
+      }
       changedKeys = migration.changedKeys;
     } else {
       if (!isCurrentStore() || !isVerifiedCanonicalStore(document)) {
@@ -1430,7 +1577,9 @@ export function initializePrivateState() {
       if (initialization === trackedInitialization) {
         initializing = false;
         initialization = null;
-        if (storeQuarantineStatus) {
+        if (String(error?.message ?? "").startsWith("PrivateVault:")) {
+          blockPrivateVault(error.code);
+        } else if (storeQuarantineStatus) {
           setPrivateStateStatus(storeQuarantineStatus);
         } else {
           setPrivateStateStatus({
@@ -1455,6 +1604,11 @@ export function initializePrivateState() {
 /** Read cached private state. `undefined` means the live store is not ready. */
 export function getPrivateState(key) {
   fieldDefinition(key);
+  if (isFoundryEnvironment() && !isFullGM()) {
+    return initialized ? defaultValue(key) : undefined;
+  }
+  if (isFoundryEnvironment() && isFullGM() && !isPrivateVaultUnlocked())
+    return undefined;
   if (!initialized) return undefined;
   return cache.has(key) ? clone(cache.get(key)) : undefined;
 }
@@ -1528,37 +1682,26 @@ function verifyPrivateStateWrite(document, cleaned) {
   }
 }
 
-// Foundry merges object-valued flags. A snapshot must explicitly remove keys
-// which no longer exist, or cleared claims and deleted records survive the
-// write. Keep these deletion markers inside the requested field so siblings,
-// ownership, and unrelated module flags remain untouched by the update.
-function replacementFlagValue(previous, next) {
-  if (!next || typeof next !== "object" || Array.isArray(next)) return next;
-  const prior =
-    previous && typeof previous === "object" && !Array.isArray(previous)
-      ? previous
-      : {};
-  return Object.fromEntries([
-    ...Object.entries(next).map(([key, value]) => [
-      key,
-      replacementFlagValue(
-        Object.hasOwn(prior, key) ? prior[key] : null,
-        value,
-      ),
-    ]),
-    ...Object.keys(prior)
-      .filter((key) => !Object.hasOwn(next, key))
-      .map((key) => [`-=${key}`, null]),
-  ]);
-}
-
 /**
  * Persist one or more private-state fields in one canonical Journal update.
  *
  * Optional guards let a caller implement a read/write/read-back fence around
  * moving state without weakening the default full-GM permission boundary.
  */
-export async function setPrivateStates(
+export async function setPrivateStates(updates, guards = {}) {
+  const generation = lifecycleGeneration;
+  const cleaned = cleanPrivateStateUpdates(updates);
+  const operation = privateWriteQueue.then(() => {
+    if (isFoundryEnvironment() && generation !== lifecycleGeneration) {
+      throw privateStateWriteFenceError("queued-write");
+    }
+    return persistPrivateStates(cleaned, guards);
+  });
+  privateWriteQueue = operation.catch(() => {});
+  return operation;
+}
+
+async function persistPrivateStates(
   updates,
   { beforeWrite = null, afterWrite = null } = {},
 ) {
@@ -1622,13 +1765,20 @@ export async function setPrivateStates(
     }
     throw privateStateWriteFenceError(context);
   }
-  await document.update(
-    Object.fromEntries(
-      Object.entries(cleaned).map(([key, value]) => [
-        `flags.${MODULE_ID}.${key}`,
-        replacementFlagValue(document.getFlag(MODULE_ID, key), value),
-      ]),
-    ),
+  await writePrivateVaultDocument(
+    document,
+    {
+      ...Object.fromEntries(
+        PRIVATE_STATE_KEYS.map((key) => [key, documentValue(document, key)]),
+      ),
+      ...cleaned,
+    },
+    PRIVATE_STATE_KEYS,
+    {
+      isCurrent: () => isLiveWriteFenceCurrent(fence),
+      beforeCommit: () =>
+        typeof beforeWrite !== "function" || beforeWrite() === true,
+    },
   );
   if (privateStateStatus.state === "blocked") {
     throw createPrivateStateUnavailableError(context);
@@ -1694,7 +1844,7 @@ function recoveryPayload(document) {
   return Object.fromEntries(
     PRIVATE_STATE_KEYS.map((key) => [
       key,
-      clone(document?.getFlag?.(MODULE_ID, key)),
+      clone(readPrivateFlag(document, key)),
     ]),
   );
 }
@@ -1703,7 +1853,7 @@ function recoveryPayloadState(document) {
   let incomplete = false;
   let invalid = false;
   for (const key of PRIVATE_STATE_KEYS) {
-    const raw = document?.getFlag?.(MODULE_ID, key);
+    const raw = readPrivateFlag(document, key);
     if (raw === undefined) incomplete = true;
     else if (!isValidValue(key, raw)) invalid = true;
   }
@@ -1729,10 +1879,7 @@ function recoveryCandidateDescriptor(document) {
   const id = String(document?.id ?? "").trim();
   const rawSchema = document?.getFlag?.(MODULE_ID, "schemaVersion");
   const classification = classifyStoreSchema(document);
-  const rawRecoverySource = document?.getFlag?.(
-    MODULE_ID,
-    RECOVERY_SOURCE_FLAG,
-  );
+  const rawRecoverySource = readPrivateFlag(document, RECOVERY_SOURCE_FLAG);
   const payload = recoveryPayload(document);
   return {
     id,
@@ -1759,7 +1906,7 @@ function recoveryCandidateDescriptor(document) {
       ownership: clone(document?.ownership),
       fields: Object.fromEntries(
         PRIVATE_STATE_KEYS.map((key) => {
-          const raw = document?.getFlag?.(MODULE_ID, key);
+          const raw = readPrivateFlag(document, key);
           return [key, { present: raw !== undefined, value: clone(raw) }];
         }),
       ),
@@ -1821,6 +1968,12 @@ function capturePrivateStateRecoveryState() {
 }
 
 function assertRecoveryAuthority() {
+  if (
+    !isPrivateVaultUnlocked() ||
+    getPrivateStateStatus().code.startsWith("vault-")
+  ) {
+    throw new Error("PrivateStateVaultUnlockRequired");
+  }
   if (!isFullGM() || !isAuthoritativeGM() || !hasCampaignTabLeadership()) {
     throw new Error("PrivateStateRecoveryAuthorityRequired");
   }

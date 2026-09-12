@@ -4,6 +4,9 @@ export function openInfinityPrimaryLauncher(bindings = {}) {
     return bindings.openPlayerLauncher?.() ?? null;
   }
   const status = bindings.getPrivateStateStatus?.();
+  if (String(status?.code ?? "").startsWith("vault-")) {
+    return bindings.openPrivateVault?.() ?? null;
+  }
   if (status?.state === "blocked") {
     return bindings.openCampaignRecovery?.() ?? null;
   }

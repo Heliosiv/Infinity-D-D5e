@@ -1,3 +1,4 @@
+import { unlockTestVault } from "./test-utils/foundry-vault.mjs";
 /** Additional journeys for audit-downtime-foundry.mjs's guarded disposable world. */
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -271,6 +272,7 @@ export async function runCraftingFoundryJourney({
   assert.equal(half.timber, before.timber);
   assert.equal(half.outputs.length, before.outputs.length);
   await gm.reload();
+  await unlockTestVault(gm);
   await gm.waitForFunction(() => game.ready);
   await gm.evaluate(() =>
     game.modules.get("infinity-dnd5e").api.openDowntimeWorkspace(),

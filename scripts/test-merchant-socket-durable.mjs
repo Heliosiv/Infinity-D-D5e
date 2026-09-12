@@ -1,3 +1,4 @@
+import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 
 import {
@@ -260,7 +261,7 @@ try {
   });
   const flags = {
     privateStateStore: true,
-    schemaVersion: 7,
+    schemaVersion: 8,
     merchants: ["p1", "p2", "p3", "p6", "p7", "p8", "p9"].map((userId) =>
       makeMerchant(`shop-${userId}`, userId, itemByUser[userId]),
     ),

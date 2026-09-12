@@ -1,3 +1,4 @@
+import { unlockTestVault } from "./test-utils/foundry-vault.mjs";
 /** Optional installed-Foundry gauntlet. Writes only to the named disposable world. */
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -64,6 +65,7 @@ async function join(userName) {
       timeout: 30_000,
     });
   }
+  await unlockTestVault(page);
   return page;
 }
 
@@ -741,6 +743,7 @@ try {
         before.wallets[1] + 400,
       ]);
       await gm.reload();
+      await unlockTestVault(gm);
       await readyGm();
       await gm.locator('[data-action="recoverBlock"]').click();
       const recovered = await waitCompleted();
