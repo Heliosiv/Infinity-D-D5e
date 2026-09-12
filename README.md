@@ -3,7 +3,7 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
-**Unreleased — Party Supplies:** Supply explanations survive player refreshes,
+**v0.3.38 — Party Supplies:** Supply explanations survive player refreshes,
 coverage thresholds stay conservative, and half-ration fractions carry across
 runs. Daily use previews charges and rejects stale inventory/rules; player
 foraging shows difficulty labels. Optional saved-run recovery requires a world

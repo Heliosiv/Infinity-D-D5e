@@ -16,3 +16,6 @@ output/
 # files are the tracked source of truth; the LevelDB dirs are build
 # artifacts (and their internal file names churn on every compile).
 packs/*/
+
+# Local conversation attachments are not module source.
+.codex-remote-attachments/
