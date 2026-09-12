@@ -1,5 +1,23 @@
 # Resource System Product Roadmap
 
+## Party Supplies source improvements (unreleased)
+
+Safe source summaries survive repeated player projection. Coverage uses exact
+ratios: below one day is Critical, one to below three is Low, and three or more
+is Ready. Display rounding never upgrades readiness. Include meaningful unit
+names in custom resource labels. Fractional and half-ration demand carry prepaid
+portions per consumer across completed runs, including reloads. Each initial
+charge still removes whole inventory items: two characters may each need one
+whole ration to prepay their first half-day. Shared-source coverage accounts
+for that allocation; prepaid portions stay with the original consumer. Daily previews show charges,
+availability and shortages, rejecting changed inventory, roster or rules.
+Player views show difficulty labels, distribution guidance and the last upkeep's
+selection, days and date. Inventory bursts keep a visibly stale safe snapshot
+while refreshing; permission/authority changes discard it. Scene hub text can
+retain last-known totals while no GM is online.
+
+Optional recovery is described below. This is source work, not a deployment.
+
 ## v0.3.2 interface quick start
 
 Open **Home → Track the Campaign → Quartermaster**. Start in Today, follow the recommended next action, and review visible safety or disabled-control reasons. **Recent Runs** remains read-only. Open **Setup & Rules** for the first-setup checklist, environments, roster, sources, and automation. Players use Home or `Shift+Q` for the permission-safe Party Supplies view. Offline and interrupted states state whether anything changed and whether to retry or wait for recovery.
@@ -105,7 +123,7 @@ status remains bounded by the release gates below.
   removed, reusable Waterskins are no longer disposable water, and customized
   matcher lists remain unchanged.
 - GM-only resource structure and moving run state are cached from flags on the
-  restricted private-state journal. Legacy world-setting copies are cleared
+  encrypted private-state vault. Legacy world-setting copies are cleared
   only after a successful private migration. New worlds never store those
   values in a player-synchronized setting.
 - Moving run-state writes carry a safe monotonic revision plus the current
@@ -134,21 +152,21 @@ status remains bounded by the release gates below.
 - The player Supplies surface and its synthetic responsive fixtures are
   implemented in source, but the milestone still needs installed-world,
   multi-client acceptance proof before it is treated as release-complete.
-- The environment catalog now supports safe custom-region creation, copying,
-  editing, ordering, and removal. Preset previews and versioned import/export
-  are not implemented yet.
-- Active forage runs live in client memory. A reload, GM handoff, or disconnect
-  can lose the pending run even though actor or world state remains.
-- The fixed Recent Runs history is inspection-only. It has no operation ledger,
-  retry, replay, rollback, filters, or proof that a suggested exhaustion change
-  was applied.
+- The environment catalog supports custom-region creation, copying, editing,
+  ordering, removal and versioned import/export with validation and a preview.
+  Export includes custom regions, excluding roster and run state.
+- With recovery disabled, pending forage runs remain in client memory and can
+  be lost on reload. Optional recovery persists prompts and inventory steps.
+- Recent Runs remains inspection-only, with no rollback or filters. In recovery
+  mode, exhaustion suggestions require manual sheet review; the ledger does not
+  apply or prove exhaustion changes.
 - A persisted active-run lease rejects automatic same-day replay and fences
   competing clients after a short propagation check. Foundry Journal updates do
   not provide a server-side compare-and-swap primitive, so this is not a proof
   of atomic mutual exclusion between same-user clients under every network
-  partition. There is also not yet a per-operation ledger that can prove or
-  automatically resume every individual Actor write after a mid-run failure;
-  an interrupted lease therefore fails closed and requires GM review.
+  partition. The optional v5 ledger reconciles inventory steps against canonical before/after
+  values. A third state stops for GM review. This is not a distributed database
+  transaction or a guarantee against every network race.
 - A forage result is bound to the exact prompted user and actor, and its
   Survival total must be a finite integer from -50 through 100 (or exactly zero
   for a skip). The total still originates on the player client and is not
@@ -162,11 +180,10 @@ status remains bounded by the release gates below.
   live-inventory conflict check runs immediately before the first write.
   Foundry still cannot make several Actor Item writes one atomic transaction,
   so a concurrent edit after that check can produce a reported partial run.
-- Foundry treats Assistant GMs as privileged document readers. The module gives
-  them the sanitized Supplies workflow and blocks its privileged actions, but a
-  restricted Journal cannot hide its flags from an Assistant using Foundry's
-  document tools. Tables that do not trust Assistants with GM data must not
-  assign that Foundry role.
+- GM-only records now use the encrypted vault. See the [vault guide](PRIVATE_VAULT.md)
+  for migration, access and recovery requirements. UI projection tests alone do
+  not establish transport confidentiality; previously exposed copies and old
+  backups remain outside the vault's protection.
 - When upgrading an old world that already stored resource details in world
   settings, launch once with players disconnected. Let the active full GM
   complete the verified private-state migration and clear the legacy settings
@@ -267,29 +284,42 @@ Manual upkeep must not be a separate calculation or write path.
 6. A private receipt records every per-forager assignment, both DCs, resolved
    channel outcomes, destination, applied totals, and deposit errors.
 
-### 6. Interrupted run
+### 6. Interrupted run (optional recovery)
 
-1. A player or GM reloads while a forage or upkeep run is active.
-2. The new authoritative GM reads the durable run.
-3. Each player resumes the prompt or result that belongs to an actor they own.
-4. The GM resumes from the last completed state transition.
-5. Completed deposits or consumption are recognized by their operation keys and
-   are not repeated.
-6. The run either completes or closes with an explicit partial-failure record.
+The source connects the v5 coordinator to daily upkeep, calendar upkeep and
+Forage Drive. Existing worlds remain on the v4 lease path until a full GM opens
+**Quartermaster → Setup & Rules → Enable recovery**, saves a world backup and
+confirms the upgrade. The confirmation checks that the reviewed state has not
+changed. No active run may be upgraded. Older module versions cannot read v5:
+restore the pre-upgrade world backup when rolling back the module.
+
+1. Recovery reads saved prompts and inventory plans on calendar/ready events.
+2. **Resume saved run** or **Check saved runs and deliveries** retries explicitly.
+3. Reconnection replays the same prompt identity to the assigned user.
+4. Canonical after-values count as completed writes; before-values can continue.
+5. Changed rules, roster or ambiguous inventory stop for GM review. Inspect the
+   affected sheets before clearing the run; clearing is not undo.
+6. Receipts and chat delivery use persisted identities to avoid duplicate reports.
+
+Exhaustion suggestions in recovery mode require manual review and application
+on character sheets. They are not automatically replayed. Node integration tests
+exercise production store/runtime bindings. Installed-world multi-client tests
+(reload, another GM, second tab and network interruption) remain a release gate.
+Source verification does not activate recovery in a live world.
 
 ## Canonical data ownership
 
 Every value must have one canonical owner. UI state and socket payloads are
 projections, not competing storage.
 
-| Data                                                                                                          | Canonical owner                                                     | Write authority  | Notes                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
-| Auto-run, player view, default environment, forage mode, water, half rations, catch-up cap, report audience   | Normal Foundry world settings                                       | Full GM          | These are visible rules. Quartermaster and Module Settings must edit the same keys.                            |
-| Resource definitions, matching rules, roster, consumer and stash mapping, environment catalog, forage timeout | Versioned `resourceConfig` flag in the restricted private journal   | Full GM          | Structural configuration only. It is never synchronized to player clients.                                     |
-| Last seen day, selected current environment, latest report, active lease, recent receipts                     | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Schema v4 retains 20 normalized GM-only receipts; players receive only the latest sanitized upkeep projection. |
-| Item quantities and exhaustion                                                                                | Foundry Actor and embedded Item documents                           | Authoritative GM | Actor documents remain the inventory source of truth.                                                          |
-| Quartermaster display                                                                                         | Live canonical reads                                                | None             | A privileged projection.                                                                                       |
-| Supplies display                                                                                              | Sanitized snapshot from authoritative GM                            | None             | Never persist a client copy as a second source of truth.                                                       |
+| Data                                                                                                          | Canonical owner                                                     | Write authority  | Notes                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| Auto-run, player view, default environment, forage mode, water, half rations, catch-up cap, report audience   | Normal Foundry world settings                                       | Full GM          | These are visible rules. Quartermaster and Module Settings must edit the same keys.                       |
+| Resource definitions, matching rules, roster, consumer and stash mapping, environment catalog, forage timeout | Versioned `resourceConfig` flag in the restricted private journal   | Full GM          | Structural configuration only. It is never synchronized to player clients.                                |
+| Last seen day, selected current environment, latest report, active lease, recent receipts                     | Versioned `resourceRunState` flag in the restricted private journal | Authoritative GM | Default v4 or opt-in v5; newest 20 GM receipts. V5 adds the durable active operation and delivery outbox. |
+| Item quantities and exhaustion                                                                                | Foundry Actor and embedded Item documents                           | Authoritative GM | Actor documents remain the inventory source of truth.                                                     |
+| Quartermaster display                                                                                         | Live canonical reads                                                | None             | A privileged projection.                                                                                  |
+| Supplies display                                                                                              | Sanitized snapshot from authoritative GM                            | None             | Never persist a client copy as a second source of truth.                                                  |
 
 ### Configuration versioning
 
@@ -444,10 +474,9 @@ They may not:
 - receive matching keywords, explicit item UUIDs, hidden items, or private
   history through the module's player APIs and UI.
 
-Foundry's own trust boundary is broader: Assistant GMs inherit GM document
-access and can inspect restricted Journal flags outside these module workflows.
-They must therefore be treated as trusted GM-data readers even though the
-resource automation treats them as players and denies privileged mutations.
+For confidentiality outside module workflows, follow the encrypted
+[vault guide](PRIVATE_VAULT.md). Do not rely on Journal ownership alone or treat
+sanitized UI evidence as proof that historical plaintext copies are protected.
 
 ### Transport and report privacy
 

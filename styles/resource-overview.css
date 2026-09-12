@@ -205,6 +205,8 @@
 }
 
 .infinity-resource-overview .ro-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   gap: 9px;

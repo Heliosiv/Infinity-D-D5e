@@ -22,10 +22,14 @@ import {
   normalizeResource,
   resetResourceRules,
   setResourceRule,
+  resourceRecoveryUpgradePreview,
+  enableResourceOperationRecovery,
 } from "./resource/store.js";
+import { recoverDurableResources } from "./resource/operation-runtime.js";
 import {
   actorItemSnapshots,
   advanceDayNow,
+  dailySupplyPreviewContext,
   describeForageDrive,
   discoverAllActors,
   discoverPartyActors,
@@ -112,6 +116,8 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       advanceDay: ResourceManagerApp._onAdvanceDay,
       forageDrive: ResourceManagerApp._onForageDrive,
       clearInterruptedRun: ResourceManagerApp._onClearInterruptedRun,
+      enableRecovery: ResourceManagerApp._onEnableRecovery,
+      resumeSupplies: ResourceManagerApp._onResumeSupplies,
       addResource: ResourceManagerApp._onAddResource,
       removeResource: ResourceManagerApp._onRemoveResource,
       addTag: ResourceManagerApp._onAddTag,
@@ -453,6 +459,12 @@ export class ResourceManagerApp extends GmWorkbenchApp {
 
     return {
       workbench: this.prepareWorkbenchContext?.() ?? null,
+      recoveryEnabled: state.operationMode === true,
+      canResumeSupplies:
+        state.operationMode === true &&
+        state.activeUpkeep?.phase !== "needs-review",
+      canClearSupplies:
+        !state.operationMode || state.activeUpkeep?.phase === "needs-review",
       resources,
       environments,
       currentEnvironment: currentEnv
@@ -846,6 +858,40 @@ export class ResourceManagerApp extends GmWorkbenchApp {
 
   /* -------------------- actions -------------------- */
 
+  static async _onEnableRecovery() {
+    if (!requireResourceWriteAuthority("enable supply recovery")) return;
+    try {
+      const expectedState = resourceRecoveryUpgradePreview();
+      if (!expectedState) return;
+      const confirmed = await confirmInfinityDialog({
+        window: { title: "Enable interrupted-run recovery?" },
+        content:
+          "<p>Back up your Foundry world before continuing. This upgrades supply run storage so unfinished rolls, inventory steps and reports can recover after reconnection. Older module versions cannot read the upgraded state; restoring the world backup is required to undo the upgrade.</p>",
+        yes: { label: "Backup saved — enable recovery" },
+        no: { label: "Cancel", default: true },
+      });
+      if (
+        !confirmed ||
+        !requireResourceWriteAuthority("enable supply recovery")
+      )
+        return;
+      await enableResourceOperationRecovery(expectedState);
+      this.render(false);
+    } catch (error) {
+      notify("warn", error.message);
+    }
+  }
+
+  static async _onResumeSupplies() {
+    if (!requireResourceWriteAuthority("resume supplies")) return;
+    try {
+      await recoverDurableResources();
+    } catch (error) {
+      notify("warn", `recovery stopped: ${error.message}`);
+    }
+    this.render(false);
+  }
+
   /** @this {ResourceManagerApp} */
   static async _onAdvanceDay(_event, target) {
     if (!requireResourceWriteAuthority("run daily upkeep")) return;
@@ -859,6 +905,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       // the service-level upkeep guard has already been released.
       const selection = await promptDailySupplies({
         config: loadResourceConfig(),
+        readContext: dailySupplyPreviewContext,
       });
       if (!selection?.resourceIds?.length) return;
       if (!requireResourceWriteAuthority("run daily upkeep")) return;

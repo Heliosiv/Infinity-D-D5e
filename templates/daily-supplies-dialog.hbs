@@ -1,12 +1,13 @@
 <div class="daily-supplies-dialog">
   {{#if rollover}}<p>The day has ended. Use supplies for the {{days}} completed day(s) before continuing?</p>
   {{else}}<p>Consume one day of supplies for the party?</p>{{/if}}
+  <p>{{consumerCount}} consuming character(s). Each checked row shows the total for {{days}} day(s), including the current half-ration rule. Available units include prepaid portions left from earlier uses.</p>
   <fieldset>
     <legend>Choose supplies for this use</legend>
     {{#each resources}}
       <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
         <input type="checkbox" name="dailyResource" value="{{id}}" checked />
-        <span>{{label}} — {{perDay}} per day {{#if isParty}}for the party{{else}}per character{{/if}}</span>
+        <span>{{label}} — {{required}} required · {{available}} available{{#if shortfall}} · {{shortfall}} short{{/if}}<br><small>Base rate: {{perDay}} per day {{#if isParty}}for the party{{else}}per character{{/if}}. Uncheck to skip this supply.</small></span>
       </label>
     {{/each}}
   </fieldset>

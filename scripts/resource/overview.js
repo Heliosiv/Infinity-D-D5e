@@ -9,6 +9,8 @@
 
 import { matchResourceItems } from "./consumption.js";
 import { classifyResourceOutcome, RESOURCE_OUTCOMES } from "./outcome.js";
+import { dailyResourceDemand, supplyCredit } from "./demand.js";
+import { publicForageEnvironment } from "./public-environment.js";
 
 export const RESOURCE_OVERVIEW_VERSION = 1;
 
@@ -29,6 +31,11 @@ export function buildResourceOverview({
   autoTrigger = true,
   generatedAt = null,
 } = {}) {
+  config = {
+    ...config,
+    supplyCredits:
+      state.lastUpkeepResult?.supplyCredits ?? config.supplyCredits,
+  };
   const members = normalizeOverviewRoster(roster);
   const consumers = members.filter((member) => member.consumes);
   const memberById = new Map(members.map((member) => [member.actorId, member]));
@@ -139,7 +146,9 @@ export function sanitizeResourceOverview(
     halfRations: source.halfRations === true,
     waterEnabled: source.waterEnabled !== false,
     environment: source.environment
-      ? projectEnvironment(source.environment)
+      ? publicForageEnvironment(source.environment, {
+          waterEnabled: source.waterEnabled !== false,
+        })
       : null,
     resources: (Array.isArray(source.resources) ? source.resources : []).map(
       (resource) => ({
@@ -153,6 +162,8 @@ export function sanitizeResourceOverview(
         coverageLabel: text(resource.coverageLabel),
         status: normalizeStatus(resource.status),
         statusLabel: STATUS_LABELS[normalizeStatus(resource.status)],
+        sourceCount: safeSourceCount(resource),
+        coverageBasis: resource.scope === "party" ? "pooled" : "lowest-source",
         sourceSummary: sanitizedSourceSummary(resource),
       }),
     ),
@@ -167,7 +178,7 @@ function buildPerCharacterResource({
   memberById,
   memberRowById,
 }) {
-  const demandPerMember = dailyDemand(resource, config);
+  const demandPerMember = dailyResourceDemand(resource, config);
   const groups = new Map();
   for (const member of consumers) {
     const requestedSourceId = member.drawFromId || member.actorId;
@@ -183,9 +194,30 @@ function buildPerCharacterResource({
   const sourceRows = [...groups.values()].map(
     ({ source, members: consumers }) => {
       const matches = matchResourceItems(source.items, resource);
-      const available = sumMatches(matches);
+      const available =
+        sumMatches(matches) +
+        consumers.reduce(
+          (sum, member) =>
+            sum + supplyCredit(resource, member.actorId, config.supplyCredits),
+          0,
+        );
       const dailyUse = demandPerMember * consumers.length;
-      const coverageDays = coverage(available, dailyUse);
+      // Whole units cannot be split between consumers during a charge. Allocate
+      // the remainder to the smallest prepaid balances before quoting coverage.
+      const balances = consumers
+        .map((member) =>
+          supplyCredit(resource, member.actorId, config.supplyCredits),
+        )
+        .sort((a, b) => a - b);
+      const wholeStock = Math.floor(sumMatches(matches));
+      const baseUnits = Math.floor(wholeStock / consumers.length);
+      const remainder = wholeStock % consumers.length;
+      const guaranteedPortions = baseUnits + (balances[remainder] ?? 0);
+      const coverageDays =
+        Number.isInteger(demandPerMember) &&
+        balances.every((amount) => amount === 0)
+          ? coverage(available, dailyUse)
+          : coverage(guaranteedPortions, demandPerMember);
       const status = coverageStatus(coverageDays, dailyUse, consumers.length);
       const detail = matchDetail(matches, resource.label);
       const row = {
@@ -266,7 +298,7 @@ function buildPartyResource({
   memberRows,
   consumerCount,
 }) {
-  const dailyUse = dailyDemand(resource, config);
+  const dailyUse = dailyResourceDemand(resource, config);
   const sourceRows = members.map((member) => {
     const matches = matchResourceItems(member.items, resource);
     return {
@@ -281,7 +313,9 @@ function buildPartyResource({
       matchDetail: matchDetail(matches, resource.label),
     };
   });
-  const available = sourceRows.reduce((sum, row) => sum + row.available, 0);
+  const available =
+    sourceRows.reduce((sum, row) => sum + row.available, 0) +
+    supplyCredit(resource, null, config.supplyCredits);
   const coverageDays = coverage(available, dailyUse);
   const status = coverageStatus(coverageDays, dailyUse, consumerCount);
   const detail = sourceRows
@@ -401,6 +435,9 @@ function buildLastUpkeep(result, resources) {
     environmentId: text(result.environmentId) || null,
     status: hasErrors ? "partial" : "complete",
     ranAt: finiteOrNull(result.ranAt),
+    selectedResources: Array.isArray(result.resourceSnapshot)
+      ? historicalResources.map(({ id, label }) => ({ id, label }))
+      : null,
     rows,
     partyShortages,
     outcome,
@@ -418,6 +455,14 @@ function sanitizeLastUpkeep(report, { visibleActorIds = null } = {}) {
     environmentId: text(report.environmentId) || null,
     status: report.status === "partial" ? "partial" : "complete",
     ranAt: finiteOrNull(report.ranAt),
+    selectedResources: Array.isArray(report.selectedResources)
+      ? report.selectedResources
+          .filter((entry) => entry && typeof entry === "object")
+          .map((entry) => ({
+            id: text(entry.id),
+            label: text(entry.label, entry.id),
+          }))
+      : null,
     rows: (Array.isArray(report.rows) ? report.rows : []).map((row) => {
       const shortages = (Array.isArray(row.shortages) ? row.shortages : []).map(
         (entry) => ({
@@ -474,12 +519,23 @@ function sanitizeLastUpkeep(report, { visibleActorIds = null } = {}) {
 }
 
 function sanitizedSourceSummary(resource) {
-  const count = Array.isArray(resource?.sources) ? resource.sources.length : 0;
+  const count = safeSourceCount(resource);
   if (resource?.scope === "party") {
     return count === 1 ? "1 supply source" : `${count} supply sources`;
   }
   if (count > 1) return `${count} supply sources; lowest coverage shown`;
   return count === 1 ? "1 supply source" : "Individual packs";
+}
+
+function safeSourceCount(resource) {
+  return Math.min(
+    5000,
+    nonNegativeInt(
+      Array.isArray(resource?.sources)
+        ? resource.sources.length
+        : resource?.sourceCount,
+    ),
+  );
 }
 
 function sanitizeForage(value) {
@@ -513,14 +569,6 @@ function normalizeOverviewRoster(roster) {
   return out;
 }
 
-function dailyDemand(resource, config) {
-  const base = nonNegativeNumber(resource?.perDay);
-  const isFood = resource?.id === "food" || resource?.forageYields === "food";
-  return isFood && config?.halfRations === true
-    ? Math.ceil(base / 2)
-    : Math.round(base);
-}
-
 function sumMatches(matches) {
   return (Array.isArray(matches) ? matches : []).reduce(
     (sum, match) => sum + nonNegativeNumber(match?.quantity),
@@ -537,7 +585,7 @@ function matchDetail(matches, label) {
 function coverage(available, dailyUse) {
   const use = nonNegativeNumber(dailyUse);
   if (use <= 0) return null;
-  return roundTo(nonNegativeNumber(available) / use, 2);
+  return nonNegativeNumber(available) / use;
 }
 
 function minFinite(values) {
@@ -567,7 +615,9 @@ export function formatCoverage(coverageDays, dailyUse, partySize = 1) {
   if (days <= 0) return "Empty";
   if (days < 1) return "<1 day";
   if (days >= 999) return "999+ days";
-  const rounded = roundTo(days, days < 10 ? 1 : 0);
+  // Never advertise a longer supply horizon than the stock can support.
+  const factor = days < 10 ? 10 : 1;
+  const rounded = Math.floor(days * factor) / factor;
   return `${rounded} ${rounded === 1 ? "day" : "days"}`;
 }
 
@@ -618,9 +668,4 @@ function finiteOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-}
-
-function roundTo(value, places) {
-  const factor = 10 ** Math.max(0, places);
-  return Math.round((Number(value) || 0) * factor) / factor;
 }

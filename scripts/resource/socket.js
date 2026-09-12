@@ -25,6 +25,7 @@ import {
   registerModuleSocketRoute,
 } from "../socket-router.js";
 import { hasCampaignTabLeadership } from "../campaign-tab-leadership.js";
+import { publicForageEnvironment } from "./public-environment.js";
 
 const MODULE_ID = "infinity-dnd5e";
 
@@ -250,6 +251,12 @@ export function emitResourceEvent(type, data = {}) {
     type,
     originUserId: globalThis.game?.user?.id ?? null,
   };
+  if (type === RESOURCE_EVENTS.DAY_PROMPT) {
+    payload.environment = publicForageEnvironment(data.environment);
+    delete payload.dc;
+    delete payload.foodDc;
+    delete payload.waterDc;
+  }
   const validation = validateResourcePayloadShape(payload);
   if (!validation.ok) {
     auditInvalidResourcePayload("outgoing", payload, validation.reason);

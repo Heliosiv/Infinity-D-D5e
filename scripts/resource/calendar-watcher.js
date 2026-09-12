@@ -13,6 +13,12 @@
 
 import { promptDailySupplies } from "../daily-supplies-dialog.js";
 import {
+  dailyResourceDemand,
+  normalizeSupplyCredits,
+  resourceCharge,
+  recordSupplyCredit,
+} from "./demand.js";
+import {
   computeAbsoluteDay,
   diffDays,
   clampElapsedForUpkeep,
@@ -26,7 +32,13 @@ import {
   claimUpkeepRun,
   completeUpkeepRun,
   setLastSeenDay,
+  resourceOperationMode,
 } from "./store.js";
+import {
+  startDurableResourceRun,
+  recoverDurableResources,
+  routeDurableResourceEvent,
+} from "./operation-runtime.js";
 import { findEnvironment, isForageable } from "./environment.js";
 import {
   buildForageRunReceipt,
@@ -97,10 +109,33 @@ export function registerResourceCalendarWatcher() {
 
   subscribe(RESOURCE_EVENTS.FORAGE_RESULT, (payload) => {
     if (!isAuthoritativeGM()) return;
+    if (resourceOperationMode()) {
+      void routeDurableResourceEvent(
+        RESOURCE_EVENTS.FORAGE_RESULT,
+        payload,
+      ).catch((error) =>
+        console.warn(`${MODULE_ID} | durable forage result rejected`, error),
+      );
+      return;
+    }
     handleForageResult(payload).catch((error) =>
       console.error(`${MODULE_ID} | forage-result handler`, error),
     );
   });
+
+  for (const type of [
+    RESOURCE_EVENTS.PROMPT_SYNC_REQUEST,
+    RESOURCE_EVENTS.ACK_DELIVERY_CONFIRM,
+  ]) {
+    subscribe(type, (payload) => {
+      void routeDurableResourceEvent(type, payload).catch((error) =>
+        console.warn(
+          `${MODULE_ID} | durable forage synchronization stopped`,
+          error,
+        ),
+      );
+    });
+  }
 
   try {
     Hooks.on("updateWorldTime", () => void onTimeMaybeChanged("core"));
@@ -181,6 +216,7 @@ function secondsPerDayFromSC(SC) {
 async function onTimeMaybeChanged(reason) {
   try {
     if (!isAuthoritativeGM() || upkeepInFlight) return;
+    if (resourceOperationMode()) await recoverDurableResources();
     const current = currentAbsoluteDay();
     if (current == null) return;
     const state = loadRunState();
@@ -202,7 +238,12 @@ async function onTimeMaybeChanged(reason) {
       const prompted = getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false;
       let selection = null;
       if (prompted) {
-        selection = await promptDailySupplies({ config, days, rollover: true });
+        selection = await promptDailySupplies({
+          config,
+          days,
+          rollover: true,
+          readContext: dailySupplyPreviewContext,
+        });
         // The clock, authority, or another GM client's baseline may have changed
         // while this dialog was open. Never apply or skip a stale day.
         if (
@@ -244,6 +285,26 @@ async function onTimeMaybeChanged(reason) {
  * Manual "Use Daily Supplies" — runs one day of upkeep immediately, independent of the
  * world clock and the auto-trigger setting. GM-only.
  */
+export function dailySupplyPreviewContext() {
+  const config = {
+    ...loadResourceConfig(),
+    supplyCredits: loadRunState().lastUpkeepResult?.supplyCredits,
+  };
+  return {
+    config,
+    roster: getPartyRoster(config).map(
+      ({ actor, isStash, consumes, drawFromId }) => ({
+        actorId: actor.id,
+        name: actor.name,
+        isStash,
+        consumes,
+        drawFromId,
+        items: actorItemSnapshots(actor),
+      }),
+    ),
+  };
+}
+
 export async function advanceDayNow({ resourceIds = null } = {}) {
   if (!isAuthoritativeGM()) {
     globalThis.ui?.notifications?.warn(
@@ -485,6 +546,15 @@ async function runForageDriveInner({
     operation: "forage drive",
   });
   if (conflict) return conflict;
+
+  if (resourceOperationMode()) {
+    return startDurableResourceRun({
+      kind: "forage",
+      day: currentAbsoluteDay(),
+      environment: driveEnv,
+      forageAssignments,
+    });
+  }
 
   const forageWindow = await runForagingWindow({
     env: driveEnv,
@@ -1414,6 +1484,16 @@ async function runDailyUpkeep({
   skipForaging = false,
 } = {}) {
   let cfg = config ?? loadResourceConfig();
+  if (resourceOperationMode()) {
+    return startDurableResourceRun({
+      kind: "upkeep",
+      manual,
+      day,
+      days: elapsedDays,
+      resourceIds,
+      skipForaging,
+    });
+  }
   if (
     resourceIds !== null &&
     (!Array.isArray(resourceIds) ||
@@ -1673,6 +1753,7 @@ async function runDailyUpkeep({
   // this run's selection only. Unselected shortages cannot suggest exhaustion.
   const consumptionConfig = {
     ...cfg,
+    supplyCredits: loadRunState().lastUpkeepResult?.supplyCredits,
     resources: runtimeResourceDefinitions(cfg).filter(
       (resource) => resourceIds === null || resourceIds.includes(resource.id),
     ),
@@ -1737,6 +1818,7 @@ async function runDailyUpkeep({
     })),
     perActor: report.perActor,
     party: report.party,
+    supplyCredits: report.supplyCredits,
     suggestions,
     status: hasErrors ? "partial" : "complete",
     hasErrors,
@@ -2156,24 +2238,22 @@ export async function applyConsumption({
     sourceForMember?.get(member.actor.id) ?? member.actor;
 
   const partyReport = {};
+  const supplyCredits = normalizeSupplyCredits(cfg.supplyCredits);
 
   for (const resource of cfg.resources) {
     if (resource.id === "water" && cfg.waterEnabled === false) continue;
     if (resource.forageYields === "water" && cfg.waterEnabled === false)
       continue;
 
-    const base = Math.max(0, resource.perDay * days);
-    // Half rations stretch food; savings accrue across multi-day advances.
-    const isFood = resource.forageYields === "food" || resource.id === "food";
-    const amount =
-      isFood && cfg.halfRations ? Math.ceil(base / 2) : Math.round(base);
-    if (amount <= 0) continue;
+    if (dailyResourceDemand(resource, cfg) <= 0) continue;
 
     if (resource.scope === "party") {
-      const res = await consumePartyResource(roster, resource, amount, {
+      const charge = resourceCharge(resource, cfg, days, null, supplyCredits);
+      const res = await consumePartyResource(roster, resource, charge.amount, {
         assertWriteAllowed,
       });
       partyReport[resource.id] = res;
+      recordSupplyCredit(supplyCredits, resource, null, charge, res);
     } else {
       // Each member draws from its nominated source (own sheet or a shared
       // stash). Sequential awaits mean members sharing a stash deplete it in
@@ -2182,6 +2262,13 @@ export async function applyConsumption({
       const knownAvailableBySource = new Map();
       const knownShortfallsByActor = new Map();
       for (const member of consumers) {
+        const { amount } = resourceCharge(
+          resource,
+          cfg,
+          days,
+          member.actor.id,
+          supplyCredits,
+        );
         const source = sourceFor(member);
         if (!knownAvailableBySource.has(source)) {
           const available = matchResourceItems(
@@ -2199,6 +2286,14 @@ export async function applyConsumption({
         );
       }
       for (const member of consumers) {
+        const charge = resourceCharge(
+          resource,
+          cfg,
+          days,
+          member.actor.id,
+          supplyCredits,
+        );
+        const { amount } = charge;
         const source = sourceFor(member);
         const blockedError = blockedSources.get(source) ?? "";
         const knownShortfall =
@@ -2217,6 +2312,13 @@ export async function applyConsumption({
         }
         const row = ensureRow(member);
         recordConsumptionAccounting(row, resource, res);
+        recordSupplyCredit(
+          supplyCredits,
+          resource,
+          member.actor.id,
+          charge,
+          res,
+        );
       }
     }
   }
@@ -2238,7 +2340,11 @@ export async function applyConsumption({
     }
   }
 
-  return { perActor: [...perActorMap.values()], party: partyReport };
+  return {
+    perActor: [...perActorMap.values()],
+    party: partyReport,
+    supplyCredits,
+  };
 }
 
 /**
@@ -2675,7 +2781,7 @@ function summarizeInventoryWriteFailures(failures) {
   return `${count} inventory write${count === 1 ? "" : "s"} need review: ${details}${remainder}`;
 }
 
-async function resolveResourceDepositTemplate(resourceDef) {
+export async function resolveResourceDepositTemplate(resourceDef) {
   const firstUuid = resourceDef?.matching?.itemUuids?.[0];
   if (firstUuid) {
     try {
@@ -2994,7 +3100,7 @@ function buildForageReportLabel(forage) {
   return ` · <span style="color:#6dd5a2;">${summary}</span>`;
 }
 
-function resolveReportWhisper(result) {
+export function resolveReportWhisper(result) {
   return resolveWhisperForActors(
     (result?.perActor ?? []).map((r) => r.actorId),
   );
@@ -3236,7 +3342,7 @@ export function actorItemSnapshots(actor) {
 }
 
 /** Evaluate a yield die formula ("1d6", "0", "2") to a number; 0 on failure. */
-async function rollDie(formula) {
+export async function rollDie(formula) {
   const f = String(formula ?? "0").trim();
   if (!f || f === "0") return 0;
   const Roll = globalThis.Roll;

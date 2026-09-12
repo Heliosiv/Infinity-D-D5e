@@ -20,6 +20,13 @@ import {
   normalizeResourceOperation,
 } from "./operation-ledger.js";
 
+import {
+  dailyResourceDemand,
+  normalizeSupplyCredits,
+  resourceCharge,
+  recordSupplyCredit,
+} from "./demand.js";
+
 const MODULE_ID = "infinity-dnd5e";
 const EMBEDDED_ID_LENGTH = 16;
 const ID_ALPHABET =
@@ -48,6 +55,7 @@ export async function buildResourceInventoryPlan({
   resources = [],
   days = 1,
   halfRations = false,
+  supplyCredits = null,
   waterEnabled = true,
   partyStashId = "",
   forage = null,
@@ -198,6 +206,7 @@ export async function buildResourceInventoryPlan({
   }
 
   const accounting = createAccounting(actors);
+  const credits = normalizeSupplyCredits(supplyCredits);
   if (includeConsumption !== false) {
     planConsumptionOperations({
       actors,
@@ -205,6 +214,7 @@ export async function buildResourceInventoryPlan({
       resources: normalizedResources,
       days,
       halfRations,
+      supplyCredits: credits,
       waterEnabled,
       accounting,
       append,
@@ -216,6 +226,7 @@ export async function buildResourceInventoryPlan({
     operations: [...operations],
     forage: foragePlan,
     accounting,
+    supplyCredits: credits,
   });
 }
 
@@ -232,6 +243,7 @@ export function summarizeResourceInventoryPlan({
   roster = [],
   resources = [],
   halfRations = false,
+  supplyCredits = null,
   waterEnabled = true,
 } = {}) {
   const current = normalizeResourceOperation(record);
@@ -239,6 +251,7 @@ export function summarizeResourceInventoryPlan({
   const partyStashId = persistedPartyStashId(current.context.snapshot);
   const actors = normalizeRoster(roster, partyStashId);
   const accounting = createAccounting(actors);
+  const credits = normalizeSupplyCredits(supplyCredits);
   const deposits = summarizeForageDepositPrefix(
     current,
     actors,
@@ -260,13 +273,17 @@ export function summarizeResourceInventoryPlan({
       ) {
         continue;
       }
-      const base = Math.max(0, Number(resource.perDay) * elapsedDays || 0);
-      const isFood = resource.id === "food" || resource.forageYields === "food";
-      const amount =
-        isFood && halfRations === true ? Math.ceil(base / 2) : Math.round(base);
-      if (amount <= 0) continue;
+      if (dailyResourceDemand(resource, { halfRations }) <= 0) continue;
 
       if (resource.scope === "party") {
+        const charge = resourceCharge(
+          resource,
+          { halfRations },
+          elapsedDays,
+          null,
+          credits,
+        );
+        const { amount } = charge;
         let remaining = amount;
         for (const actor of stashFirstActors(actors)) {
           if (remaining <= 0) break;
@@ -283,10 +300,25 @@ export function summarizeResourceInventoryPlan({
           shortfall: remaining,
           error: "",
         };
+        recordSupplyCredit(
+          credits,
+          resource,
+          null,
+          charge,
+          accounting.party[resource.id],
+        );
         continue;
       }
 
       for (const consumer of consumers) {
+        const charge = resourceCharge(
+          resource,
+          { halfRations },
+          elapsedDays,
+          consumer.actorId,
+          credits,
+        );
+        const { amount } = charge;
         const source =
           actorById.get(consumer.drawFromId) ??
           actorById.get(consumer.actorId) ??
@@ -303,6 +335,9 @@ export function summarizeResourceInventoryPlan({
         recordAccounting(row, resource, {
           consumed: consumed.amount,
           shortfall: amount - consumed.amount,
+        });
+        recordSupplyCredit(credits, resource, consumer.actorId, charge, {
+          consumed: consumed.amount,
         });
       }
     }
@@ -321,6 +356,7 @@ export function summarizeResourceInventoryPlan({
     deposits: deposits.byResource,
     forage: deposits.forage,
     accounting,
+    supplyCredits: credits,
   });
 }
 
@@ -495,6 +531,7 @@ function planConsumptionOperations({
   resources,
   days,
   halfRations,
+  supplyCredits,
   waterEnabled,
   accounting,
   append,
@@ -509,13 +546,17 @@ function planConsumptionOperations({
     ) {
       continue;
     }
-    const base = Math.max(0, Number(resource.perDay) * elapsedDays || 0);
-    const isFood = resource.id === "food" || resource.forageYields === "food";
-    const amount =
-      isFood && halfRations ? Math.ceil(base / 2) : Math.round(base);
-    if (amount <= 0) continue;
+    if (dailyResourceDemand(resource, { halfRations }) <= 0) continue;
 
     if (resource.scope === "party") {
+      const charge = resourceCharge(
+        resource,
+        { halfRations },
+        elapsedDays,
+        null,
+        supplyCredits,
+      );
+      const { amount } = charge;
       let remaining = amount;
       for (const actor of stashFirstActors(actors)) {
         if (remaining <= 0) break;
@@ -532,10 +573,25 @@ function planConsumptionOperations({
         shortfall: remaining,
         error: "",
       };
+      recordSupplyCredit(
+        supplyCredits,
+        resource,
+        null,
+        charge,
+        accounting.party[resource.id],
+      );
       continue;
     }
 
     for (const consumer of consumers) {
+      const charge = resourceCharge(
+        resource,
+        { halfRations },
+        elapsedDays,
+        consumer.actorId,
+        supplyCredits,
+      );
+      const { amount } = charge;
       const source =
         actorById.get(consumer.drawFromId) ??
         actorById.get(consumer.actorId) ??
@@ -545,6 +601,13 @@ function planConsumptionOperations({
         (entry) => entry.actorId === consumer.actorId,
       );
       recordAccounting(row, resource, result);
+      recordSupplyCredit(
+        supplyCredits,
+        resource,
+        consumer.actorId,
+        charge,
+        result,
+      );
     }
   }
 }

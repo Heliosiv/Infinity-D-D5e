@@ -187,9 +187,8 @@ function roster({ shared = false } = {}) {
     id: "rainforest",
     label: "Rainforest",
     forageable: true,
-    dc: 15,
-    foodDc: 10,
-    waterDc: 15,
+    foodDifficulty: "Easy",
+    waterDifficulty: "Moderate",
   });
 
   const legacy = buildResourceOverview({

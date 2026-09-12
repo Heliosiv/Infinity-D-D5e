@@ -28,6 +28,7 @@ import { forageTargetChannels, FORAGE_TARGETS } from "./resource/forage.js";
 import { bindFocusRestoration } from "./infinity-app.js";
 import { authoritativeGMId } from "./socket-authority.js";
 import { isFullGM } from "./permissions.js";
+import { forageDifficultyLabel } from "./resource/public-environment.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/forage-prompt.hbs`;
@@ -252,16 +253,13 @@ export class ForagePromptApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const passive = getSurvivalPassive(actor);
     const wisMod = actor ? getWisMod(actor) : 0;
     const channels = forageTargetChannels(this._forageTarget);
-    const foodDc = finiteDc(env.foodDc ?? env.dc);
-    const waterDc = finiteDc(env.waterDc ?? env.dc);
     const offline = !this._hasAuthoritativeGM;
     return {
       actorName: actor?.name ?? this._actorName ?? null,
       noActor: !actor,
       offline,
       environmentLabel: environmentDisplayLabel(env) || "the wild",
-      dc: env.dc ?? null,
-      dcLabel: forageDcLabel({ channels, foodDc, waterDc }),
+      dcLabel: forageDifficultyLabel(env, channels),
       passiveLabel:
         passive == null ? "" : `Your passive Survival is ${passive}`,
       wisLabel: actor ? `Wisdom ${wisMod >= 0 ? "+" : ""}${wisMod}` : "",
@@ -399,21 +397,6 @@ function environmentDisplayLabel(environment) {
   return (
     prettyEnvironment(environment.id) || environment.label || environment.id
   );
-}
-
-function finiteDc(value) {
-  const normalized = Number(value);
-  return Number.isFinite(normalized) ? normalized : null;
-}
-
-function forageDcLabel({ channels, foodDc, waterDc }) {
-  if (channels.food && channels.water) {
-    if (foodDc === null && waterDc === null) return "";
-    if (foodDc === waterDc) return `DC ${foodDc}`;
-    return `Food DC ${foodDc ?? "?"} · Water DC ${waterDc ?? "?"}`;
-  }
-  if (channels.food) return foodDc === null ? "" : `Food DC ${foodDc}`;
-  return waterDc === null ? "" : `Water DC ${waterDc}`;
 }
 
 /* ------------------------------------------------------------------ *

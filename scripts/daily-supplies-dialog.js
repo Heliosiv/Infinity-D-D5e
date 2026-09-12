@@ -1,4 +1,8 @@
 import { confirmInfinityDialog } from "./dialog-contract.js";
+import {
+  buildDailySupplyPreview,
+  dailySupplyContextFingerprint,
+} from "./resource/daily-preview.js";
 
 /** Per-run choices; never modify the campaign's saved resource rules. */
 export function dailySupplyChoices(config = {}) {
@@ -15,18 +19,28 @@ export async function promptDailySupplies({
   config,
   days = 1,
   rollover = false,
+  readContext = null,
 }) {
-  const resources = dailySupplyChoices(config);
   const renderer = globalThis.foundry?.applications?.handlebars?.renderTemplate;
   if (typeof renderer !== "function") return null;
   try {
+    const context =
+      typeof readContext === "function"
+        ? readContext()
+        : { config, roster: [] };
+    config = context.config;
+    const fingerprint = dailySupplyContextFingerprint(context);
+    const preview = await buildDailySupplyPreview({ ...context, days });
+    const resources = dailySupplyChoices(config);
     const content = await renderer(
       "modules/infinity-dnd5e/templates/daily-supplies-dialog.hbs",
       {
         resources: resources.map((r) => ({
           ...r,
           isParty: r.scope === "party",
+          ...preview.resources.find((entry) => entry.id === r.id),
         })),
+        consumerCount: preview.consumerCount,
         days,
         rollover,
         hasResources: resources.length > 0,
@@ -41,6 +55,15 @@ export async function promptDailySupplies({
           label: "Use selected supplies",
           default: false,
           callback: (_event, button) => {
+            if (
+              typeof readContext === "function" &&
+              dailySupplyContextFingerprint(readContext()) !== fingerprint
+            ) {
+              globalThis.ui?.notifications?.warn?.(
+                "Supplies or rules changed while this preview was open. Reopen Use Daily Supplies to review the new amounts. Nothing changed.",
+              );
+              return null;
+            }
             const form = button?.form;
             if (!form?.querySelectorAll) return null;
             const checked = new Set(

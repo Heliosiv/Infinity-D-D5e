@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  106,
+  108,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -1130,8 +1130,8 @@ assert.match(forageDriveDialog.html, /Water only/);
 
 const partySupplies = views.find((view) => view.id === "resource-overview");
 assert.ok(partySupplies, "harness includes the player Party Supplies view");
-assert.match(partySupplies.html, /Food DC 10/);
-assert.match(partySupplies.html, /Water DC 15/);
+assert.match(partySupplies.html, /Food: Easy/);
+assert.match(partySupplies.html, /Water: Moderate/);
 const partySuppliesFixture = buildHarnessViews().find(
   (view) => view.id === "resource-overview",
 );
@@ -1145,10 +1145,10 @@ const foodOnlySupplies = renderFixture(partySuppliesFixture, {
     waterDc: null,
     hasDc: true,
     dcsDiffer: false,
-    dcLabel: "Food DC 10",
+    dcLabel: "Food: Easy",
   },
 });
-assert.match(foodOnlySupplies, /Food DC 10/);
+assert.match(foodOnlySupplies, /Food: Easy/);
 assert.doesNotMatch(foodOnlySupplies, /Water DC/);
 
 // Availability edge states are not part of the visual gallery's normal-result

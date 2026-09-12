@@ -527,7 +527,7 @@ import {
   assert.equal(RESOURCE_RUN_STATE_VERSION, 4, "current run-state schema is v4");
   assert.equal(
     normalizeRunState({
-      version: RESOURCE_RUN_STATE_VERSION + 1,
+      version: RESOURCE_RUN_STATE_VERSION + 2,
       lastSeenDay: 8,
     }).lastSeenDay,
     8,
@@ -1225,7 +1225,7 @@ import {
     const currentRunState = structuredClone(flags.resourceRunState);
     await setPrivateState("resourceRunState", {
       ...currentRunState,
-      version: RESOURCE_RUN_STATE_VERSION + 1,
+      version: RESOURCE_RUN_STATE_VERSION + 2,
       futureOnly: { preserve: true },
     });
     const runStateWritesBeforeGuard = store.updateCalls.length;
@@ -1238,8 +1238,8 @@ import {
           code: "future-version",
           retryable: false,
           domain: "resource-run-state",
-          supportedVersion: RESOURCE_RUN_STATE_VERSION,
-          observedVersion: RESOURCE_RUN_STATE_VERSION + 1,
+          supportedVersion: RESOURCE_RUN_STATE_VERSION + 1,
+          observedVersion: RESOURCE_RUN_STATE_VERSION + 2,
         });
         return true;
       },
@@ -1268,7 +1268,7 @@ import {
     assert.equal(store.updateCalls.length, runStateWritesBeforeGuard);
     assert.equal(
       flags.resourceRunState.version,
-      RESOURCE_RUN_STATE_VERSION + 1,
+      RESOURCE_RUN_STATE_VERSION + 2,
     );
     assert.deepEqual(flags.resourceRunState.futureOnly, { preserve: true });
 

@@ -572,11 +572,36 @@ export function buildHarnessViews() {
       {
         rollover: true,
         days: 1,
+        consumerCount: 2,
         hasResources: true,
         resources: [
-          { id: "food", label: "Food (Rations)", perDay: 1, isParty: false },
-          { id: "water", label: "Water", perDay: 1, isParty: false },
-          { id: "light", label: "Light (Torches)", perDay: 6, isParty: true },
+          {
+            id: "food",
+            label: "Food (Rations)",
+            perDay: 1,
+            isParty: false,
+            required: 2,
+            available: 6,
+            shortfall: 0,
+          },
+          {
+            id: "water",
+            label: "Water",
+            perDay: 1,
+            isParty: false,
+            required: 2,
+            available: 8,
+            shortfall: 0,
+          },
+          {
+            id: "light",
+            label: "Light (Torches)",
+            perDay: 6,
+            isParty: true,
+            required: 6,
+            available: 1,
+            shortfall: 5,
+          },
         ],
       },
       { width: 500, height: 460, requiresActions: false },
@@ -604,6 +629,27 @@ export function buildHarnessViews() {
       "templates/resource-overview.hbs",
       resourceOverviewOfflineContext(),
       { width: 540, height: 420 },
+    ),
+    view(
+      "resource-overview-refreshing",
+      "Party Supplies (previous snapshot while refreshing)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      {
+        ...resourceOverviewContext(),
+        loading: true,
+        refreshing: true,
+        initialLoading: false,
+      },
+      { width: 540, height: 620, requiresActions: false },
+    ),
+    view(
+      "resource-overview-large",
+      "Party Supplies (large roster and long labels)",
+      "infinity-resource-overview",
+      "templates/resource-overview.hbs",
+      resourceOverviewLargeContext(),
+      { width: 320, height: 620 },
     ),
     view(
       "resource-overview-loading",
@@ -2855,6 +2901,9 @@ function resourceManagerContext() {
     },
   ];
   return {
+    recoveryEnabled: false,
+    canResumeSupplies: false,
+    canClearSupplies: true,
     isAuthoritative: true,
     canRunResourceWrites: true,
     canRunForageDrive: true,
@@ -3419,12 +3468,10 @@ function resourceOverviewContext() {
       id: "limited",
       label: "Limited",
       forageable: true,
-      dc: 15,
-      foodDc: 10,
-      waterDc: 15,
+      foodDifficulty: "Easy",
+      waterDifficulty: "Moderate",
       hasDc: true,
-      dcsDiffer: true,
-      dcLabel: "Food DC 10 · Water DC 15",
+      dcLabel: "Food: Easy · Water: Moderate",
     },
     hasResources: true,
     resources: [
@@ -3466,6 +3513,11 @@ function resourceOverviewContext() {
       },
     ],
     lastUpkeep: {
+      days: 3,
+      day: 42,
+      hasDay: true,
+      ranAtLabel: "Jul 25, 2026, 2:14 PM",
+      selectedLabel: "Food (Rations), Light (Torches)",
       status: "partial",
       outcome: "needs-review",
       outcomeLabel: "Needs review",
@@ -3544,8 +3596,39 @@ function resourceOverviewOfflineContext() {
   };
 }
 
+function resourceOverviewLargeContext() {
+  const context = resourceOverviewContext();
+  return {
+    ...context,
+    partySize: 40,
+    environment: {
+      ...context.environment,
+      label:
+        "The extraordinarily long-named northern wilderness and surrounding riverlands",
+    },
+    resources: Array.from({ length: 12 }, (_, index) => ({
+      ...context.resources[index % context.resources.length],
+      id: `custom-${index}`,
+      label: `Expedition ${index + 1}: preserved travel provisions and drinking-water containers`,
+      sourceSummary: "40 supply sources; lowest coverage shown",
+      distributionHint:
+        index === 0
+          ? "At least one assigned supply source cannot cover a full day. Ask the GM to review distribution."
+          : "",
+    })),
+    lastUpkeep: {
+      ...context.lastUpkeep,
+      rows: Array.from({ length: 40 }, (_, index) => ({
+        ...context.lastUpkeep.rows[index % 3],
+        name: `Traveller ${index + 1} of the Northern Expedition`,
+      })),
+    },
+  };
+}
+
 function resourceOverviewLoadingContext() {
   return {
+    initialLoading: true,
     ...resourceOverviewOfflineContext(),
     noGm: false,
     loading: true,

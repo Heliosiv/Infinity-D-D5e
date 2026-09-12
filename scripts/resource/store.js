@@ -74,6 +74,8 @@ import {
   confirmResourceOperationDeliveryV5,
   listPendingResourceOperationsV5,
   normalizeResourceRunStateV5,
+  migrateResourceRunStateV4ToV5,
+  clearReviewedResourceOperationV5,
   rebindEmptyResourceRunStateAuthorityV5,
 } from "./run-state-v5.js";
 
@@ -524,6 +526,32 @@ function normalizeActiveUpkeep(input) {
 /** Normalize the run-state. lastSeenDay null means "never processed". */
 export function normalizeRunState(input) {
   const raw = input && typeof input === "object" ? input : {};
+  if (raw.version === RESOURCE_RUN_STATE_V5_VERSION) {
+    const state = normalizeResourceRunStateV5(raw);
+    const operation = state.activeOperation;
+    return {
+      lastSeenDay: state.lastSeenDay,
+      currentEnvironmentId: state.currentEnvironmentId,
+      lastUpkeepResult: state.lastUpkeepResult,
+      recentRuns: state.recentRuns,
+      activeUpkeep: operation
+        ? {
+            runId: operation.runId,
+            trigger: operation.trigger,
+            day: operation.day,
+            days: operation.days,
+            startedAt: operation.timestamps.createdAt,
+            claimedAt: operation.timestamps.createdAt,
+            environment: operation.environment,
+            initiator: operation.initiator,
+            actors: operation.actors,
+            ...operation.guard,
+            phase: operation.phase,
+          }
+        : null,
+      operationMode: true,
+    };
+  }
   const lastSeenRaw = raw.lastSeenDay;
   const lastSeenDay =
     lastSeenRaw == null || !Number.isFinite(Number(lastSeenRaw))
@@ -667,6 +695,14 @@ export function isResourceAutomationReady() {
     return false;
   }
   const rawRunState = getPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE);
+  if (rawRunState?.version === RESOURCE_RUN_STATE_V5_VERSION) {
+    try {
+      readExactResourceRunStateV5();
+    } catch {
+      return false;
+    }
+    return isAuthoritativeGM() && resourceLeadership.hasLeadership() === true;
+  }
   const currentUserId = toStr(globalThis.game?.user?.id);
   const authority = observeResourceAuthorityTransition();
   const revisionIsCurrent = isAcceptedRunStateRevision(rawRunState);
@@ -789,6 +825,53 @@ export async function migrateResourceConfig() {
 
 export function loadRunState() {
   return normalizeRunState(readRawRunState());
+}
+
+export function resourceOperationMode() {
+  return readRawRunState()?.version === RESOURCE_RUN_STATE_V5_VERSION;
+}
+
+export function resourceRecoveryUpgradePreview() {
+  const raw = readRawRunState();
+  if (raw?.version === RESOURCE_RUN_STATE_V5_VERSION) return null;
+  if (!isPersistedRunState(raw) || raw.activeUpkeep)
+    throw new Error("Finish or review the active run before enabling recovery");
+  return clonePersistedRunState(raw);
+}
+
+/** Called only by the GM's explicit setup action, never by ready migration. */
+export function enableResourceOperationRecovery(expectedState) {
+  return enqueueRunStateOperation(async (fence) => {
+    const raw = readRawRunState();
+    if (
+      !rawRunStatesEqual(raw, expectedState) ||
+      !isPersistedRunState(raw) ||
+      raw.activeUpkeep
+    )
+      throw new Error("Supply state changed. Reopen recovery setup.");
+    const migrated = migrateResourceRunStateV4ToV5(raw);
+    const guard = guardForResourceRunStateV5(migrated, fence);
+    const next = normalizeResourceRunStateV5({
+      ...migrated,
+      revision: raw.revision + 1,
+      authorityId: guard.authorityId,
+      authorityEpoch: guard.authorityEpoch,
+    });
+    await setPrivateState(SETTING_KEYS.RESOURCE_RUNSTATE, next, {
+      beforeWrite: () =>
+        isRunStateAuthorityFenceCurrent(fence) &&
+        rawRunStatesEqual(readRawRunState(), raw),
+      afterWrite: () =>
+        isRunStateAuthorityFenceCurrent(fence) &&
+        rawRunStatesEqual(readRawRunState(), next),
+    });
+    assertRunStateAuthorityFence(fence);
+    if (!rawRunStatesEqual(readRawRunState(), next))
+      throw new Error("Resource recovery upgrade verification failed");
+    highestObservedRunStateV5Revision = next.revision;
+    lastAcceptedRunStateV5Snapshot = clonePersistedRunState(next);
+    return true;
+  });
 }
 
 let runStatePatchQueue = Promise.resolve();
@@ -1101,7 +1184,7 @@ function readRawRunState() {
   if (isFoundryEnvironment()) {
     assertSupportedPersistedVersion(raw?.version, {
       domain: "resource-run-state",
-      supportedVersion: RESOURCE_RUN_STATE_VERSION,
+      supportedVersion: RESOURCE_RUN_STATE_V5_VERSION,
       codePrefix: "RESOURCE_RUN_STATE",
     });
   }
@@ -1788,6 +1871,21 @@ async function ensurePersistedRunStateForAuthority(existingFence = null) {
   let fence = existingFence ?? (await ensureResourceWriteFence());
   assertRunStateAuthorityFence(fence);
   const raw = readRawRunState();
+  if (raw?.version === RESOURCE_RUN_STATE_V5_VERSION) {
+    const state = normalizeResourceRunStateV5(raw);
+    if (!state.activeOperation && !state.operationOutbox.length) {
+      const next = rebindEmptyResourceRunStateAuthorityV5(state, {
+        nextGuard: guardForResourceRunStateV5(state, fence),
+      });
+      if (!rawRunStatesEqual(next, state))
+        await commitResourceRunStateV5(next, {
+          fence,
+          expectedRaw: raw,
+          authorityMode: "adoption",
+        });
+    }
+    return false;
+  }
   const currentUserId = toStr(globalThis.game?.user?.id) || null;
   if (
     isPersistedRunState(raw) &&
@@ -1834,7 +1932,9 @@ async function ensurePersistedRunStateForAuthority(existingFence = null) {
   return true;
 }
 
-export function saveRunState(state) {
+export async function saveRunState(state) {
+  if (resourceOperationMode())
+    throw new Error("Use field-specific updates for durable resource state");
   const requested = cloneRunState(state);
   return enqueueRunStateOperation(async (fence) => {
     const expectedRaw = readRawRunState();
@@ -1848,6 +1948,29 @@ export function saveRunState(state) {
  * rejection so one failed write cannot poison later updates.
  */
 function updateRunState(updater, { stampActiveClaim = false } = {}) {
+  if (resourceOperationMode()) {
+    if (stampActiveClaim)
+      throw new Error("Legacy resource claims are disabled in recovery mode");
+    return enqueueResourceRunStateV5Update((state) => {
+      const view = normalizeRunState(state);
+      const beforeActive = structuredClone(view.activeUpkeep);
+      updater(view);
+      if (!persistedValuesEqual(beforeActive, view.activeUpkeep))
+        throw new Error(
+          "Use the durable operation store to change active runs",
+        );
+      return {
+        state: {
+          ...state,
+          revision: state.revision + 1,
+          lastSeenDay: view.lastSeenDay,
+          currentEnvironmentId: view.currentEnvironmentId,
+          lastUpkeepResult: view.lastUpkeepResult,
+        },
+        value: true,
+      };
+    });
+  }
   return enqueueRunStateOperation(async (fence) => {
     const expectedRaw = readRawRunState();
     const state = normalizeRunState(expectedRaw);
@@ -2050,6 +2173,24 @@ export async function clearUpkeepClaim(
   runId,
   { recordedAt = Date.now() } = {},
 ) {
+  if (resourceOperationMode()) {
+    return enqueueResourceRunStateV5Update(
+      (state, { guard }) => ({
+        state: {
+          ...clearReviewedResourceOperationV5(state, {
+            operationId: state.activeOperation?.operationId,
+            runId,
+            confirmed: true,
+            recordedAt,
+          }),
+          authorityId: guard.authorityId,
+          authorityEpoch: guard.authorityEpoch,
+        },
+        value: true,
+      }),
+      { authorityMode: "adoption" },
+    );
+  }
   const expectedRunId = toStr(runId);
   if (!expectedRunId) throw new Error("ResourceUpkeepClaimInvalid");
   return updateRunState((state) => {
@@ -2117,7 +2258,7 @@ function assertLiveResourceConfigWritable() {
   });
   assertSupportedPersistedVersion(rawRunState?.version, {
     domain: "resource-run-state",
-    supportedVersion: RESOURCE_RUN_STATE_VERSION,
+    supportedVersion: RESOURCE_RUN_STATE_V5_VERSION,
     codePrefix: "RESOURCE_RUN_STATE",
   });
   return true;

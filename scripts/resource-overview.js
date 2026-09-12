@@ -19,6 +19,11 @@ import { isFullGM } from "./permissions.js";
 import { authoritativeGMId } from "./socket-authority.js";
 import { SETTING_KEYS, getSetting } from "./settings.js";
 
+import {
+  publicForageEnvironment,
+  forageDifficultyLabel,
+} from "./resource/public-environment.js";
+
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/resource-overview.hbs`;
 const REQUEST_TIMEOUT_MS = 5000;
@@ -46,7 +51,7 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
   };
 
   static PARTS = {
-    body: { template: TEMPLATE_PATH },
+    body: { template: TEMPLATE_PATH, scrollable: [""] },
   };
 
   static open() {
@@ -63,15 +68,19 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       getSetting(SETTING_KEYS.RESOURCE_PLAYER_VIEW) !== false;
     this._requestId = null;
     this._requestTimer = null;
+    this._refreshQueued = false;
     this._lastFullGM = this._isFullGM;
     this._unsubs = [
       subscribe(RESOURCE_EVENTS.OVERVIEW_REPLY, (payload) =>
         this._onOverviewReply(payload),
       ),
-      subscribe(RESOURCE_EVENTS.STATE_UPDATE, () => this._onStateUpdate()),
+      subscribe(RESOURCE_EVENTS.STATE_UPDATE, (payload) =>
+        this._onStateUpdate(payload),
+      ),
     ];
     this._userConnectionHook =
       globalThis.Hooks?.on?.("userConnected", () => {
+        this._invalidateSnapshot();
         this._syncCurrentRole();
         this._loadOverview();
         if (this.rendered) this.render(false);
@@ -79,8 +88,8 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     this._userUpdateHook =
       globalThis.Hooks?.on?.("updateUser", (user) => {
         if (user?.id !== globalThis.game?.user?.id) return;
-        const transitioned = this._syncCurrentRole();
-        if (!transitioned) return;
+        this._syncCurrentRole();
+        this._invalidateSnapshot();
         // A demoted GM must not retain a privileged local preview while their
         // player request is in flight. Promotion similarly invalidates any
         // outstanding player request so a late reply cannot replace GM data.
@@ -94,7 +103,7 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
 
   _onClose(options) {
     super._onClose?.(options);
-    this._clearRequestTimer();
+    this._invalidateSnapshot();
     for (const unsubscribe of this._unsubs ?? []) {
       try {
         unsubscribe();
@@ -130,7 +139,7 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     return Boolean(authoritativeGMId());
   }
 
-  _loadOverview() {
+  _loadOverview({ background = false } = {}) {
     this._sharingEnabled =
       getSetting(SETTING_KEYS.RESOURCE_PLAYER_VIEW) !== false;
     if (this._isFullGM) {
@@ -155,12 +164,17 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       this._requestFailed = false;
       return;
     }
-    this._requestOverview();
+    this._requestOverview({ preserve: background });
   }
 
-  _requestOverview() {
+  _requestOverview({ preserve = false } = {}) {
+    if (preserve && this._requestId) {
+      this._refreshQueued = true;
+      return;
+    }
     this._clearRequestTimer();
-    this._overview = null;
+    if (!preserve) this._overview = null;
+    this._refreshQueued = false;
     this._loading = true;
     this._requestFailed = false;
     const userId = globalThis.game?.user?.id ?? "local";
@@ -202,17 +216,26 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     this._clearRequestTimer();
     this._requestId = null;
     this._sharingEnabled = payload.enabled !== false;
-    this._overview = payload.overview
-      ? sanitizeResourceOverview(payload.overview)
-      : null;
+    this._overview =
+      this._sharingEnabled && payload.overview
+        ? sanitizeResourceOverview(payload.overview)
+        : null;
     this._loading = false;
     this._requestFailed = this._sharingEnabled && !this._overview;
+    const refreshQueued = this._refreshQueued;
+    this._refreshQueued = false;
+    if (refreshQueued && this._sharingEnabled)
+      this._loadOverview({ background: true });
     if (this.rendered) this.render(false);
   }
 
-  _onStateUpdate() {
+  _onStateUpdate(payload) {
     if (!this.rendered) return;
-    this._loadOverview();
+    // Only inventory changes retain an explicitly stale, already-safe view.
+    // Permission, sharing, roster and authority changes discard it immediately.
+    const background = payload?.reason === "inventory";
+    if (!background) this._invalidateSnapshot();
+    this._loadOverview({ background });
     this.render(false);
   }
 
@@ -227,6 +250,14 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       isLow: resource.status === "low",
       isCritical: resource.status === "critical",
       isStable: resource.status === "stable",
+      distributionHint:
+        resource.coverageBasis === "lowest-source" &&
+        resource.sourceCount > 1 &&
+        resource.available > 0 &&
+        resource.coverageDays !== null &&
+        resource.coverageDays < 1
+          ? "At least one assigned supply source cannot cover a full day. Ask the GM to review distribution."
+          : "",
     }));
     const environment = presentEnvironment(overview?.environment, {
       waterEnabled: overview?.waterEnabled !== false,
@@ -234,6 +265,14 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     const lastUpkeep = overview?.lastUpkeep
       ? {
           ...overview.lastUpkeep,
+          ranAtLabel: formatUpdatedLabel(overview.lastUpkeep.ranAt),
+          selectedLabel:
+            overview.lastUpkeep.selectedResources
+              ?.map((resource) => resource.label)
+              .join(", ") ?? "",
+          hasDay:
+            overview.lastUpkeep.day !== null &&
+            overview.lastUpkeep.day !== undefined,
           outcomeLabel: overview.lastUpkeep.needsReview
             ? "Needs review"
             : overview.lastUpkeep.hasShortages
@@ -258,6 +297,8 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
       disabled,
       noGm,
       loading: this._loading && !noGm && !disabled,
+      refreshing: this._loading && Boolean(overview) && !noGm && !disabled,
+      initialLoading: this._loading && !overview && !noGm && !disabled,
       requestFailed: this._requestFailed && !noGm && !disabled,
       hasOverview: Boolean(overview),
       hasParty: (overview?.partySize ?? 0) > 0,
@@ -284,6 +325,13 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
     }
   }
 
+  _invalidateSnapshot() {
+    this._clearRequestTimer();
+    this._requestId = null;
+    this._refreshQueued = false;
+    this._overview = null;
+  }
+
   _syncCurrentRole() {
     const current = this._isFullGM;
     const transitioned = current !== this._lastFullGM;
@@ -297,40 +345,13 @@ export class ResourceOverviewApp extends HandlebarsApplicationMixin(
 }
 
 export function presentEnvironment(environment, { waterEnabled = true } = {}) {
-  if (!environment || typeof environment !== "object") return null;
-  const dc = finiteDisplayNumber(environment.dc);
-  const foodDc = finiteDisplayNumber(environment.foodDc) ?? dc;
-  const waterDc = waterEnabled
-    ? (finiteDisplayNumber(environment.waterDc) ?? dc)
-    : null;
-  const hasFoodDc = foodDc !== null;
-  const hasWaterDc = waterDc !== null;
-  const dcsDiffer = hasFoodDc && hasWaterDc && foodDc !== waterDc;
-  const commonDc = foodDc ?? waterDc ?? dc;
-  return {
-    id: String(environment.id ?? "").trim(),
-    label: String(environment.label ?? "Unknown").trim() || "Unknown",
-    forageable: environment.forageable !== false,
-    dc,
-    foodDc,
-    waterDc,
-    hasDc: commonDc !== null,
-    dcsDiffer,
-    dcLabel:
-      !waterEnabled && foodDc !== null
-        ? `Food DC ${foodDc}`
-        : dcsDiffer
-          ? `Food DC ${foodDc} · Water DC ${waterDc}`
-          : commonDc !== null
-            ? `DC ${commonDc}`
-            : "",
-  };
-}
-
-function finiteDisplayNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  const safe = publicForageEnvironment(environment, { waterEnabled });
+  if (!safe) return null;
+  const dcLabel = forageDifficultyLabel(safe, {
+    food: true,
+    water: waterEnabled,
+  });
+  return { ...safe, hasDc: Boolean(dcLabel), dcLabel };
 }
 
 function resourceIcon(id) {

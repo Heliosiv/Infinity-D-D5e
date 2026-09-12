@@ -87,6 +87,8 @@ try {
 
   const { ResourceOverviewApp, presentEnvironment } =
     await import("./resource-overview.js");
+  const { buildResourceOverview, sanitizeResourceOverview } =
+    await import("./resource/overview.js");
   assert.deepEqual(
     presentEnvironment({
       id: "rainforest",
@@ -101,18 +103,16 @@ try {
       id: "rainforest",
       label: "Rainforest",
       forageable: true,
-      dc: 15,
-      foodDc: 10,
-      waterDc: 15,
+      foodDifficulty: "Easy",
+      waterDifficulty: "Moderate",
       hasDc: true,
-      dcsDiffer: true,
-      dcLabel: "Food DC 10 · Water DC 15",
+      dcLabel: "Food: Easy · Water: Moderate",
     },
   );
   assert.equal(
     presentEnvironment({ dc: 0, foodDc: 0, waterDc: 0 }).dcLabel,
-    "DC 0",
-    "a valid zero DC is not hidden by Handlebars truthiness",
+    "Very easy",
+    "a valid zero DC becomes a safe difficulty label",
   );
   assert.equal(
     "yieldFood" in presentEnvironment({ dc: 15, yieldFood: "private-die" }),
@@ -128,14 +128,17 @@ try {
       id: "",
       label: "Unknown",
       forageable: true,
-      dc: 15,
-      foodDc: 10,
-      waterDc: null,
+      foodDifficulty: "Easy",
+      waterDifficulty: "",
       hasDc: true,
-      dcsDiffer: false,
-      dcLabel: "Food DC 10",
+      dcLabel: "Food: Easy",
     },
     "disabled water does not advertise an unavailable forage channel",
+  );
+  assert.deepEqual(
+    ResourceOverviewApp.PARTS.body.scrollable,
+    [""],
+    "preserve the actual scrolling part root",
   );
   const app = new ResourceOverviewApp();
   assert.ok(app._overview, "a full GM starts with a local sanitized preview");
@@ -200,6 +203,104 @@ try {
     app._overview.partySize,
     2,
     "a duplicate reply is ignored after the request is consumed",
+  );
+
+  const wireOverview = sanitizeResourceOverview(
+    buildResourceOverview({
+      config: {
+        resources: [
+          {
+            id: "food",
+            scope: "per-character",
+            perDay: 1,
+            matching: { nameKeywords: ["ration"] },
+          },
+          {
+            id: "light",
+            scope: "party",
+            perDay: 1,
+            matching: { nameKeywords: ["torch"] },
+          },
+        ],
+      },
+      roster: [
+        {
+          actorId: "a",
+          name: "Secret stash",
+          items: [{ id: "r", name: "Ration", system: { quantity: 10 } }],
+        },
+        { actorId: "b", name: "Hidden NPC", items: [] },
+      ],
+    }),
+  );
+  app._requestOverview();
+  app._onOverviewReply({
+    targetUserId: viewer.id,
+    requestId: app._requestId,
+    enabled: true,
+    overview: wireOverview,
+  });
+  assert.deepEqual(
+    app._overview,
+    wireOverview,
+    "the real player reply preserves safe projection through a second sanitization",
+  );
+  assert.equal(
+    app._overview.resources[0].sourceSummary,
+    "2 supply sources; lowest coverage shown",
+  );
+  assert.equal(app._overview.resources[1].sourceSummary, "2 supply sources");
+  assert.ok((await app._prepareContext()).resources[0].distributionHint);
+  assert.doesNotMatch(
+    JSON.stringify(app._overview),
+    /Secret stash|Hidden NPC|matching|itemUuids/,
+  );
+
+  const beforeRefresh = app._overview;
+  app._onStateUpdate({ reason: "inventory" });
+  const burstRequest = app._requestId;
+  const sentBeforeBurst = emitted.length;
+  for (let i = 0; i < 20; i++) app._onStateUpdate({ reason: "inventory" });
+  assert.equal(
+    app._overview,
+    beforeRefresh,
+    "background refresh retains the labelled stale view",
+  );
+  assert.equal((await app._prepareContext()).refreshing, true);
+  assert.equal(
+    app._requestId,
+    burstRequest,
+    "inventory bursts do not starve the active request",
+  );
+  assert.equal(emitted.length, sentBeforeBurst);
+  app._onOverviewReply({
+    targetUserId: viewer.id,
+    requestId: burstRequest,
+    enabled: true,
+    overview: wireOverview,
+  });
+  assert.equal(
+    emitted.length,
+    sentBeforeBurst + 1,
+    "one follow-up gets the final inventory state",
+  );
+  const staleRequest = app._requestId;
+  app._onStateUpdate({ reason: "actor" });
+  assert.equal(
+    app._overview,
+    null,
+    "permission changes immediately discard the old snapshot",
+  );
+  app._onOverviewReply({
+    targetUserId: viewer.id,
+    requestId: staleRequest,
+    enabled: true,
+    overview: wireOverview,
+  });
+  assert.equal(
+    app._overview,
+    null,
+    "a pre-permission-change reply cannot restore old data",
   );
 
   /* Promotion invalidates an in-flight player request and rejects its late reply. */

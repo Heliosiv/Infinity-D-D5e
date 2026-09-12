@@ -10,6 +10,21 @@ import {
 } from "./ui-harness.mjs";
 
 const SCENARIOS = [
+  // Opt-in stress width for supply views; other windows retain their own minima.
+  ...(process.env.INFINITY_UI_AUDIT_SCENARIO?.split(",").includes(
+    "supplies-320",
+  )
+    ? [
+        {
+          name: "supplies-320",
+          viewportWidth: 352,
+          appWidth: 320,
+          height: 740,
+          density: "comfortable",
+          targetSize: 44,
+        },
+      ]
+    : []),
   {
     name: "desktop-1920",
     viewportWidth: 1920,

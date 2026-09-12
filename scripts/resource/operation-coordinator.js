@@ -11,6 +11,7 @@
  */
 
 import {
+  createResourceOperationContext,
   decideResourceOperation,
   normalizeResourceOperation,
 } from "./operation-ledger.js";
@@ -163,6 +164,22 @@ async function driveActiveOperation(runtime, { reason, replayPrompts }) {
         runId: record.runId,
         operationId: decision.operationId,
       });
+    }
+
+    // Same-authority edits must be fenced just like authority adoption.
+    // Pin changed rules for GM review before prompts, planning or finalization.
+    const snapshot = await runtime.domain.captureCurrentContext(record);
+    if (
+      createResourceOperationContext(snapshot).fingerprint !==
+      record.context.fingerprint
+    ) {
+      await checkpointTransition(runtime, record, "needs-review", {
+        guard,
+        code: "RESOURCE_CONTEXT_CHANGED",
+        reason: "Supplies, roster or environment changed",
+        evidence: {},
+      });
+      continue;
     }
 
     if (decision.action === "prompt-or-plan") {

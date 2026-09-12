@@ -144,7 +144,7 @@ await listeners.get(RESOURCE_EVENTS.STATE_UPDATE)({ reason: "private-state" });
 assert.equal(drawing.text, "Party Supplies\nFood 8 days · Water 1.8 days");
 roster.pop();
 await listeners.get(RESOURCE_EVENTS.STATE_UPDATE)({ reason: "users" });
-assert.equal(drawing.text, "Party Supplies\nFood 10 days · Water 2.3 days");
+assert.equal(drawing.text, "Party Supplies\nFood 10 days · Water 2.2 days");
 config.waterEnabled = false;
 await listeners.get(RESOURCE_EVENTS.STATE_UPDATE)({ reason: "settings" });
 assert.equal(drawing.text, "Party Supplies\nFood 10 days · Water Not tracked");

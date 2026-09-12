@@ -15,7 +15,7 @@
       data-action="refresh"
       title="{{#if loading}}Refreshing party supplies{{else}}Refresh party supplies{{/if}}"
       aria-label="{{#if loading}}Refreshing party supplies{{else}}Refresh party supplies{{/if}}"
-      {{#if loading}}disabled{{/if}}
+      {{#if initialLoading}}disabled{{/if}}
     >
       <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
     </button>
@@ -27,6 +27,7 @@
       {{#if disabled}}ask the GM to enable Party Supplies sharing. No player snapshot is available while sharing is off.
       {{else if sharingDisabled}}this GM preview uses the player-safe snapshot. Enable sharing in Module Settings before players can request it.
       {{else if noGm}}reconnect, then refresh for the latest player-safe snapshot. Refresh never consumes supplies or changes the party record.
+      {{else if refreshing}}refreshing: the figures below are the previous snapshot and may be out of date.
       {{else if loading}}wait for the latest player-safe snapshot before relying on this outlook.
       {{else if requestFailed}}check your connection, then use Try again to request the same snapshot. No supplies changed.
       {{else if hasOverview}}review this player-safe snapshot. Refresh only requests newer information; it never changes party supplies.
@@ -60,10 +61,10 @@
     {{else if noGm}}
     <div class="ro-empty ro-empty--action">
       <i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i>
-      <div><strong>Party Supplies is offline</strong><span>No full GM is online. Nothing changed; supplies refresh automatically after reconnection.</span></div>
+      <div><strong>Party Supplies is offline</strong><span>No full GM is online. Nothing changed; supplies refresh automatically after reconnection. The hub button may still show the last known totals.</span></div>
       <button type="button" class="ro-retry" data-action="refresh">Try again</button>
     </div>
-    {{else if loading}}
+    {{else if initialLoading}}
     <p class="ro-empty">
       <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
       Loading the party's supplies...
@@ -104,6 +105,7 @@
       {{#if hasResources}}
       <section class="ro-resource-section" aria-labelledby="ro-resource-heading">
         <h3 id="ro-resource-heading">Supply outlook</h3>
+        <p class="ro-context__meta">Critical: less than 1 day. Low: less than 3 days. Ready: at least 3 days. Coverage follows the assigned supply sources.</p>
         <div class="ro-grid">
           {{#each resources}}
           <article class="ro-card ro-card--{{status}}">
@@ -129,6 +131,7 @@
                 <dd>{{coverageLabel}}</dd>
               </div>
             </dl>
+            {{#if distributionHint}}<p class="ro-warning">{{distributionHint}}</p>{{/if}}
           </article>
           {{/each}}
         </div>
@@ -143,6 +146,8 @@
           <h3 id="ro-last-heading">Last upkeep</h3>
           <span class="ro-run-status ro-run-status--{{lastUpkeep.outcome}}">{{lastUpkeep.outcomeLabel}}</span>
         </div>
+        <p class="ro-context__meta">{{lastUpkeep.days}} day(s) assessed{{#if lastUpkeep.hasDay}} · Campaign day {{lastUpkeep.day}}{{/if}}{{#if lastUpkeep.ranAtLabel}} · Recorded {{lastUpkeep.ranAtLabel}}{{/if}}.</p>
+        <p class="ro-context__meta">{{#if lastUpkeep.selectedLabel}}Supplies assessed: {{lastUpkeep.selectedLabel}}. Other supplies were not assessed.{{else}}The supplies selected for this older run were not recorded.{{/if}}</p>
         <ul class="ro-last__list">
           {{#each lastUpkeep.rows}}
           <li class="{{stateClass}}">
@@ -154,7 +159,7 @@
             {{#each shortages}}<span class="ro-shortage">{{label}} {{amount}}</span>{{/each}}
             {{/if}}
             {{else}}{{#if supplied}}
-            <span>Supplied</span>
+            <span>Supplied for assessed resources</span>
             {{else}}
             <span>Short:</span>
             {{#each shortages}}<span class="ro-shortage">{{label}} {{amount}}</span>{{/each}}

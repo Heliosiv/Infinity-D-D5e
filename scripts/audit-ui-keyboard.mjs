@@ -67,6 +67,25 @@ async function main() {
     await auditTabOrderAndButtonActivation(page);
     await auditDialogFocusRestoration(page, dialogContractUrl);
 
+    await openFixture(page, harnessUrl, "daily-supplies-dialog");
+    const dailySupply = page.locator('input[name="dailyResource"]').first();
+    await dailySupply.focus();
+    assert.equal(await dailySupply.isChecked(), true);
+    await page.keyboard.press("Space");
+    assert.equal(await dailySupply.isChecked(), false);
+    await page.keyboard.press("Space");
+    assert.equal(await dailySupply.isChecked(), true);
+    await openFixture(page, harnessUrl, "resource-overview-refreshing");
+    const supplyRefresh = page.locator('[data-action="refresh"]');
+    await supplyRefresh.focus();
+    assert.equal(
+      await supplyRefresh.evaluate(
+        (element) => element === document.activeElement,
+      ),
+      true,
+    );
+    await page.keyboard.press("Enter");
+
     await openFixture(page, harnessUrl, "per-encounter");
     await auditLootStudioTabJourney(page);
 

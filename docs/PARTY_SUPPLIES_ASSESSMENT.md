@@ -1,5 +1,40 @@
 # Party Supplies assessment and improvement backlog
 
+## Implementation follow-up (unreleased)
+
+The authorized follow-up implements PS-01 through PS-11 in source. PS-03 uses
+prepaid fractional portions, so daily and batched runs agree across reloads;
+PS-05 uses player difficulty labels. PS-04 is an explicit, backup-gated v5
+upgrade in Quartermaster, keeping existing worlds on the v4 path by default.
+The original findings below describe the pre-change baseline. Native Foundry
+multi-client acceptance remains pending; local integration tests do not
+constitute a deployment or live-world migration.
+
+Regression coverage includes repeated sanitization, threshold boundaries,
+fractional carry across reloads, guarded v4-to-v5 activation, interrupted writes,
+receipt delivery, prompt replay and burst refresh invalidation. The resource
+guide documents manual exhaustion review in recovery mode and rollback by
+restoring the pre-upgrade backup.
+
+Source verification for this follow-up:
+
+- `npm run check`: all 188 test files passed. The later daily-preview test and
+  final related changes passed in a 32-file focused rerun; the scroll-container
+  assertion and shared-stash/selection credit tests were rerun after final edits.
+- `npm run format:check`: passed.
+- Layout: seven relevant fixtures passed all 14 standard scenarios; four Supplies
+  fixtures also passed the opt-in `supplies-320` stress scenario.
+- `npm run ui:audit:a11y`: all 108 isolated fixtures passed after fixing the
+  refreshing view's keyboard focus target.
+- `npm run ui:audit:keyboard`: passed, including supply selection with Space and
+  the background-refresh button with Enter.
+
+The module consists of native ES modules; no runtime transpilation is required.
+No release package, push, installation, world migration or live inventory write
+was performed. Native Foundry multi-client acceptance remains outstanding.
+
+### Original assessment baseline
+
 Reviewed 2026-09-11 against source commit `b7f1ebb` (module 0.3.37), on
 `codex/downtime-expansion-assessment`. This is an assessment, not an implemented
 change or a live-world acceptance report. No campaign settings or inventory were

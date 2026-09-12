@@ -85,11 +85,14 @@
   {{#if hasActiveUpkeep}}
   <div class="rm-note rm-note--warn" role="alert">
     <p><i class="fa-solid fa-lock" aria-hidden="true"></i> <strong>Resource writes are safety-locked.</strong>
-      The {{activeUpkeep.triggerLabel}} run for {{activeUpkeep.dayLabel}} did not finish cleanly. Quartermaster will not replay it or change more inventory until you review the supplies.
+      {{#if canResumeSupplies}}A saved supply run is in progress. Resume checks the recorded steps before continuing.{{else}}The {{activeUpkeep.triggerLabel}} run for {{activeUpkeep.dayLabel}} did not finish cleanly. Quartermaster will not replay it or change more inventory until you review the supplies.{{/if}}
     </p>
+    {{#if canResumeSupplies}}<button type="button" class="mw-btn mw-btn--ghost" data-action="resumeSupplies" {{#unless isAuthoritative}}disabled{{/unless}}>Resume saved run</button>{{/if}}
+    {{#if canClearSupplies}}
     <button type="button" class="mw-btn mw-btn--ghost" data-action="clearInterruptedRun" title="{{#if isAuthoritative}}Record this run as interrupted after reviewing the party's supplies{{else}}Only the active GM client can clear an interrupted run{{/if}}" {{#unless isAuthoritative}}disabled aria-disabled="true"{{/unless}}>
       <i class="fa-solid fa-unlock" aria-hidden="true"></i> Clear after review
     </button>
+    {{/if}}
   </div>
   {{/if}}
 
@@ -308,6 +311,7 @@
       <small>Environment, resources, safety, and party roster</small>
     </summary>
     <div class="rm-setup__content" {{#unless isAuthoritative}}aria-disabled="true"{{/unless}}>
+      <p>{{#if recoveryEnabled}}Interrupted-run recovery is enabled. Uncertain writes still stop for GM review. Exhaustion suggestions require manual review on the character sheets. <button type="button" class="mw-btn mw-btn--ghost" data-action="resumeSupplies" {{#unless isAuthoritative}}disabled{{/unless}}>Check saved runs and deliveries</button>{{else}}Interrupted-run recovery is available after a world backup. <button type="button" class="mw-btn mw-btn--ghost" data-action="enableRecovery" {{#unless canRunResourceWrites}}disabled{{/unless}}>Enable recovery</button>{{/if}}</p>
       <section class="rm-setup-checklist" aria-labelledby="rm-setup-checklist-heading">
         <div>
           <p class="rm-workspace-section__eyebrow">First setup</p>
