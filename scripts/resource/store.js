@@ -1,3 +1,4 @@
+import { normalizeLiving } from "./living.js";
 /**
  * Infinity D&D5e — Resource store
  *
@@ -290,6 +291,12 @@ export function normalizeRosterEntry(raw) {
     consumes:
       raw.consumes === true ? true : raw.consumes === false ? false : null,
     drawFrom: toStr(raw.drawFrom) || DRAW_FROM_SELF,
+    ...(raw.living || raw.livingReason
+      ? {
+          living: normalizeLiving(raw.living),
+          livingReason: toStr(raw.livingReason).slice(0, 200),
+        }
+      : {}),
   };
 }
 
@@ -359,6 +366,7 @@ export function normalizeResourceConfig(input) {
     forageTimeoutSeconds: Math.max(0, toInt(raw.forageTimeoutSeconds, 120)),
     resources: resources.length > 0 ? resources : defaultResources(),
     roster: normalizeRoster(raw.roster),
+    ...(raw.dailyLiving === true ? { dailyLiving: true } : {}),
     // A single shared stash the WHOLE party draws every per-character supply
     // from — the quartermaster's pack. "" = each member draws from their own
     // sheet (or their per-row nomination). When set, it overrides per-member
@@ -457,6 +465,7 @@ export function serializeResourceConfig(input) {
     forageTimeoutSeconds: config.forageTimeoutSeconds,
     resources: config.resources,
     roster: config.roster,
+    ...(config.dailyLiving === true ? { dailyLiving: true } : {}),
     partyStashId: config.partyStashId,
     environments: config.environments,
   };

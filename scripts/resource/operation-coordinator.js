@@ -260,7 +260,20 @@ async function driveActiveOperation(runtime, { reason, replayPrompts }) {
     }
 
     if (decision.action === "finalize") {
-      const artifacts = await runtime.domain.buildTerminalArtifacts(record);
+      // Lifestyle-only upkeep has no Item operations, but Actor currency writes
+      // still require the persisted applying phase and its authority fence.
+      if (
+        record.kind === "upkeep" &&
+        record.context.snapshot.config?.dailyLiving &&
+        record.phase === "planned"
+      ) {
+        await checkpointTransition(runtime, record, "applying");
+        continue;
+      }
+      const artifacts = await runtime.domain.buildTerminalArtifacts(record, {
+        assertWriteAllowed: () =>
+          runtime.store.assertResourceOperationCurrent(record.runId, guard),
+      });
       assertPlainObject(artifacts, "terminal artifacts");
       const at = checkpointTime(runtime, record);
       const terminalRecord = runtime.delivery.prepareTerminalRecord(record, {

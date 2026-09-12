@@ -38,8 +38,8 @@
         <h3 id="rm-today-heading">Today</h3>
       </div>
       <div class="rm-today__actions">
-        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Consume one day of configured resources without foraging or moving the world clock{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
-          <i class="fa-solid fa-utensils" aria-hidden="true"></i> Use Daily Supplies
+        <button type="button" class="mw-btn mw-btn--primary" data-action="advanceDay" title="{{#if canRunResourceWrites}}Settle one day using saved living choices and selected supplies, without moving the world clock{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}" {{#unless canRunResourceWrites}}disabled aria-disabled="true" aria-describedby="rm-resource-write-reason"{{/unless}}>
+          <i class="fa-solid fa-utensils" aria-hidden="true"></i> {{#if dailyLiving}}Settle Daily Upkeep{{else}}Use Daily Supplies{{/if}}
         </button>
         <button type="button" class="mw-btn mw-btn--ghost" data-action="forageDrive" title="{{#if canRunForageDrive}}Choose what each character gathers and run their Survival checks (no day passes){{else}}{{#if canRunResourceWrites}}Foraging is closed in the current environment.{{else}}{{#unless isAuthoritative}}Another GM client is currently authoritative.{{else}}{{#if hasActiveUpkeep}}Review the interrupted run before changing more inventory.{{else}}Fix blocking resource conflicts in Setup &amp; Rules.{{/if}}{{/unless}}{{/if}}{{/if}}" {{#unless canRunForageDrive}}disabled aria-disabled="true" aria-describedby="{{#if canRunResourceWrites}}rm-forage-drive-reason{{else}}rm-resource-write-reason{{/if}}"{{/unless}}>
           <i class="fa-solid fa-wheat-awn" aria-hidden="true"></i> Forage Drive
@@ -250,6 +250,7 @@
                   {{#if hasRole}}<span>{{roleLabel}}</span>{{/if}}
                   {{#if hasForageTarget}}<span>{{forageTargetLabel}}</span>{{/if}}
                   {{#if hasForage}}<span>{{forageNote}}</span>{{/if}}
+                  {{#if livingSummary}}<span>{{livingSummary}}</span>{{/if}}
                 </div>
                 {{#if hasResources}}
                 <ul>
@@ -474,6 +475,8 @@
 
   <section class="rm-section rm-party">
     <h3>Party supplies</h3>
+    <label><input type="checkbox" data-config-path="dailyLiving" {{#if dailyLiving}}checked{{/if}} /> Automatically settle daily supplies or living costs</label>
+    <p class="rm-note">When enabled, each calendar day uses the saved choices below, even with Auto-run off. Food and water cannot be skipped. Set city residents to a paid lifestyle; switch back to supplies when they leave. Payment uses each character's own coins. GM-covered requires a reason. Other supplies keep their configured daily rates.</p>
     {{#if rosterIsImplicit}}
     <p class="rm-note">Auto-tracking every player-owned character. Mark a <strong>Stash</strong>, change <strong>Draws from</strong>, or add an inventory-only actor to start curating the roster.</p>
     {{/if}}
@@ -502,7 +505,12 @@
       <tbody>
         {{#each partyRows}}
         <tr>
-          <td>{{name}}</td>
+          <td>{{name}}
+            {{#if consumes}}{{#if @root.dailyLiving}}<div class="rm-living-controls">
+            <label>Daily living<select data-config-path="roster:{{actorId}}:living" aria-label="Daily living for {{name}}">{{#each livingOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <input type="text" data-config-path="roster:{{actorId}}:livingReason" value="{{livingReason}}" placeholder="Reason for GM-covered living" aria-label="GM-covered reason for {{name}}" maxlength="200" />
+            </div>{{/if}}{{/if}}
+          </td>
           {{#each counts}}<td class="rm-num" title="{{detail}}">{{total}}{{#if shared}}<small> shared</small>{{/if}}</td>{{/each}}
           <td class="rm-num">{{exhaustion}}</td>
           <td class="rm-num">

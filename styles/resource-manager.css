@@ -1335,3 +1335,22 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Keep living choices beneath the character name instead of widening the row. */
+.infinity-resource-manager .rm-living-controls {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 11rem;
+  max-width: 16rem;
+  margin-top: 0.4rem;
+  white-space: normal;
+}
+.infinity-resource-manager .rm-living-controls label {
+  display: grid;
+  gap: 0.2rem;
+}
+.infinity-resource-manager .rm-living-controls select,
+.infinity-resource-manager .rm-living-controls input {
+  width: 100%;
+  min-width: 0;
+}

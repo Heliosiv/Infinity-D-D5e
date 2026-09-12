@@ -1,3 +1,4 @@
+import { suppliesRequired } from "./living.js";
 /**
  * Infinity D&D5e - durable Quartermaster inventory planning/execution
  *
@@ -310,7 +311,9 @@ export function summarizeResourceInventoryPlan({
         continue;
       }
 
-      for (const consumer of consumers) {
+      for (const consumer of consumers.filter((member) =>
+        suppliesRequired(member, resource),
+      )) {
         const charge = resourceCharge(
           resource,
           { halfRations },
@@ -583,7 +586,9 @@ function planConsumptionOperations({
       continue;
     }
 
-    for (const consumer of consumers) {
+    for (const consumer of consumers.filter((member) =>
+      suppliesRequired(member, resource),
+    )) {
       const charge = resourceCharge(
         resource,
         { halfRations },
@@ -866,6 +871,7 @@ function normalizeRoster(roster, partyStashId) {
       name: String(entry?.name ?? actorId),
       isStash: entry?.isStash === true,
       consumes: entry?.consumes !== false,
+      living: entry?.living ?? "supplies",
       drawFromId: String(entry?.drawFromId ?? actorId).trim() || actorId,
       items,
     };

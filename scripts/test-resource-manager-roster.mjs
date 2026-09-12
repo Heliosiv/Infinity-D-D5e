@@ -356,6 +356,36 @@ try {
       "the label must not promise a narrower food/water-only scope",
     );
   }
+
+  {
+    setConfig();
+    await ResourceManagerApp.prototype._onConfigInput.call(fakeApp, {
+      type: "checkbox",
+      checked: true,
+      dataset: { configPath: "dailyLiving" },
+    });
+    const initial =
+      await ResourceManagerApp.prototype._prepareContext.call(fakeApp);
+    const id = initial.partyRows.find((row) => row.consumes).actorId;
+    await ResourceManagerApp.prototype._onConfigInput.call(fakeApp, {
+      type: "select-one",
+      value: "comfortable",
+      dataset: { configPath: `roster:${id}:living` },
+    });
+    const refreshed =
+      await ResourceManagerApp.prototype._prepareContext.call(fakeApp);
+    assert.equal(refreshed.dailyLiving, true);
+    assert.equal(
+      refreshed.partyRows
+        .find((r) => r.actorId === id)
+        .livingOptions.find((r) => r.selected).value,
+      "comfortable",
+    );
+    assert.match(
+      template(refreshed),
+      /Automatically settle daily supplies or living costs/,
+    );
+  }
 } finally {
   if (savedFoundry === undefined) delete globalThis.foundry;
   else globalThis.foundry = savedFoundry;

@@ -1,3 +1,4 @@
+import { livingRoster, settleLiving, livingPolicy } from "./living.js";
 /** Production bindings for the durable Resource coordinator. */
 import { createResourceOperationCoordinator } from "./operation-coordinator.js";
 import { createResourceOperationContext } from "./operation-ledger.js";
@@ -62,6 +63,7 @@ function liveContext() {
         consumes,
         isStash,
         drawFromId,
+        living: livingPolicy(config, actor.id).mode,
       }),
     ),
   };
@@ -106,7 +108,12 @@ export function createResourceOperationRuntime({
     record.context.snapshot.roster.map((member) => {
       const actor = actors()?.get?.(member.actorId);
       if (!actor) throw new Error("A supply actor is no longer available");
-      return { ...member, items: actorItemSnapshots(actor) };
+      return {
+        ...member,
+        living: livingPolicy(record.context.snapshot.config, member.actorId)
+          .mode,
+        items: actorItemSnapshots(actor),
+      };
     });
   const preflight = (record) => {
     assertContext(record);
@@ -290,13 +297,13 @@ export function createResourceOperationRuntime({
         },
       };
     },
-    buildTerminalArtifacts(record) {
+    async buildTerminalArtifacts(record, { assertWriteAllowed } = {}) {
       const { config, supplyCredits, roster, environment, forageAssignments } =
         record.context.snapshot;
       const resources = selectedResources(record);
       const summary = summarizeResourceInventoryPlan({
         record,
-        roster,
+        roster: livingRoster(roster, config),
         resources,
         halfRations: config.halfRations,
         supplyCredits,
@@ -328,6 +335,18 @@ export function createResourceOperationRuntime({
         status: "complete",
         hasErrors: false,
       };
+      if (record.kind === "upkeep") {
+        await settleLiving({
+          config,
+          rows: result.perActor,
+          runId: record.runId,
+          days: record.days,
+          actors: actors(),
+          assertWriteAllowed,
+        });
+        result.hasErrors = result.perActor.some((row) => row.errors?.length);
+        result.status = result.hasErrors ? "partial" : "complete";
+      }
       result.suggestions = suggestExhaustion({
         days: record.days,
         shortfalls: result.perActor.map((row) => ({

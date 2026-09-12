@@ -3,6 +3,12 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+**Daily living (source update):** Quartermaster can automatically settle each
+character's daily food and water through supplies, a paid lifestyle, or a
+GM-covered exception. Enable it under **Setup & Rules → Party supplies** and
+set each character's choice. Failed payments are flagged, and recorded dates
+cannot charge twice. See the [resource guide](docs/RESOURCE_SYSTEM.md).
+
 **v0.3.38 — Party Supplies:** Supply explanations survive player refreshes,
 coverage thresholds stay conservative, and half-ration fractions carry across
 runs. Daily use previews charges and rejects stale inventory/rules; player

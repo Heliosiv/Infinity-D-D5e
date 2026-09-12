@@ -1,4 +1,8 @@
 <div class="daily-supplies-dialog">
+  {{#if dailyLiving}}
+  <p>Settle each character's saved daily choice. Lifestyle payments replace food and water; other checked supplies still apply. Insufficient funds remain unresolved.</p>
+  <ul>{{#each livingRows}}<li><strong>{{name}}</strong>: {{label}} · {{cost}} gp for this use{{#if reason}} · {{reason}}{{/if}}</li>{{/each}}</ul>
+  {{/if}}
   {{#if rollover}}<p>The day has ended. Use supplies for the {{days}} completed day(s) before continuing?</p>
   {{else}}<p>Consume one day of supplies for the party?</p>{{/if}}
   <p>{{consumerCount}} consuming character(s). Each checked row shows the total for {{days}} day(s), including the current half-ration rule. Available units include prepaid portions left from earlier uses.</p>
@@ -6,11 +10,11 @@
     <legend>Choose supplies for this use</legend>
     {{#each resources}}
       <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
-        <input type="checkbox" name="dailyResource" value="{{id}}" checked />
-        <span>{{label}} — {{required}} required · {{available}} available{{#if shortfall}} · {{shortfall}} short{{/if}}<br><small>Base rate: {{perDay}} per day {{#if isParty}}for the party{{else}}per character{{/if}}. Uncheck to skip this supply.</small></span>
+        <input type="checkbox" name="dailyResource" value="{{id}}" checked {{#if mandatory}}disabled{{/if}} />
+        <span>{{label}} — {{required}} required · {{available}} available{{#if shortfall}} · {{shortfall}} short{{/if}}<br><small>Base rate: {{perDay}} per day {{#if isParty}}for the party{{else}}per character{{/if}}. {{#if mandatory}}Required for characters using supplies.{{else}}Uncheck to skip this supply.{{/if}}</small></span>
       </label>
     {{/each}}
   </fieldset>
   {{#unless hasResources}}<p>No daily supplies are enabled. Configure them in Quartermaster → Setup &amp; Rules.</p>{{/unless}}
-  <p>Only checked supplies are consumed, without foraging or changing the world clock. Unchecked supplies cause no shortages or exhaustion. Half-ration rules still apply.</p>
+  {{#unless dailyLiving}}<p>Only checked supplies are consumed, without foraging or changing the world clock. Unchecked supplies cause no shortages or exhaustion. Half-ration rules still apply.</p>{{/unless}}
 </div>

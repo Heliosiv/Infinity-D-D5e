@@ -1,3 +1,11 @@
+import {
+  livingRoster,
+  suppliesRequired,
+  settleLiving,
+  livingSummary,
+  livingPolicy,
+  isLivingResource,
+} from "./living.js";
 /**
  * Infinity D&D5e — Resource calendar watcher (GM-authoritative orchestrator)
  *
@@ -225,6 +233,7 @@ async function onTimeMaybeChanged(reason) {
       return;
     }
     const { elapsed, direction } = diffDays(state.lastSeenDay, current);
+    if (direction === "backward" && loadResourceConfig().dailyLiving) return;
     if (direction === "seed" || direction === "backward") {
       await setLastSeenDay(current);
       return;
@@ -233,9 +242,14 @@ async function onTimeMaybeChanged(reason) {
 
     const config = loadResourceConfig();
     const days = clampElapsedForUpkeep(elapsed, config.maxCatchUpDays);
+    const settlementDay = config.dailyLiving
+      ? state.lastSeenDay + days
+      : current;
     upkeepInFlight = true;
     try {
-      const prompted = getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false;
+      const prompted =
+        !config.dailyLiving &&
+        getSetting(SETTING_KEYS.RESOURCE_AUTO_TRIGGER) === false;
       let selection = null;
       if (prompted) {
         selection = await promptDailySupplies({
@@ -262,15 +276,19 @@ async function onTimeMaybeChanged(reason) {
       const result = await runDailyUpkeep({
         elapsedDays: days,
         config,
-        day: current,
+        day: settlementDay,
         resourceIds: selection?.resourceIds ?? null,
         skipForaging: prompted,
       });
       // A conflict is recoverable configuration work, not a completed upkeep
       // day. Keep the previous baseline so fixing the conflict can safely retry
       // the missed day instead of silently skipping it.
-      if (!result?.blocked && loadRunState().lastSeenDay !== current) {
-        await setLastSeenDay(current);
+      if (
+        result &&
+        !result.blocked &&
+        loadRunState().lastSeenDay !== settlementDay
+      ) {
+        await setLastSeenDay(settlementDay);
       }
     } finally {
       upkeepInFlight = false;
@@ -300,6 +318,8 @@ export function dailySupplyPreviewContext() {
         consumes,
         drawFromId,
         items: actorItemSnapshots(actor),
+        living: livingPolicy(config, actor.id).mode,
+        currency: actor.system?.currency,
       }),
     ),
   };
@@ -319,12 +339,26 @@ export async function advanceDayNow({ resourceIds = null } = {}) {
   if (upkeepInFlight) return null;
   upkeepInFlight = true;
   try {
-    return await runDailyUpkeep({
+    const config = loadResourceConfig();
+    const day = currentAbsoluteDay();
+    if (
+      config.dailyLiving &&
+      diffDays(loadRunState().lastSeenDay, day).elapsed > 1
+    ) {
+      globalThis.ui?.notifications?.warn?.(
+        "Multiple calendar days are pending. Allow automatic calendar upkeep to reconcile them before settling a manual day.",
+      );
+      return { blocked: true, reason: "pending-calendar-days" };
+    }
+    const result = await runDailyUpkeep({
       elapsedDays: 1,
       manual: true,
       resourceIds,
-      day: currentAbsoluteDay(),
+      day,
     });
+    if (config.dailyLiving && result && !result.blocked && result.day != null)
+      await setLastSeenDay(result.day);
+    return result;
   } finally {
     upkeepInFlight = false;
   }
@@ -1484,6 +1518,37 @@ async function runDailyUpkeep({
   skipForaging = false,
 } = {}) {
   let cfg = config ?? loadResourceConfig();
+  if (resourceIds !== null && !Array.isArray(resourceIds))
+    return { blocked: true, reason: "invalid-resource-selection" };
+  if (cfg.dailyLiving) {
+    if (day == null)
+      return { blocked: true, reason: "Daily upkeep requires a calendar date" };
+    const previous = loadRunState().lastUpkeepResult;
+    if (previous?.day != null && previous.day >= day) {
+      // A crash after the receipt but before the manual baseline write must
+      // not leave calendar reconciliation retrying an already settled date.
+      if (loadRunState().lastSeenDay < previous.day)
+        await setLastSeenDay(previous.day);
+      globalThis.ui?.notifications?.info?.(
+        "Daily upkeep is already recorded for this date. Review Quartermaster history.",
+      );
+      return { blocked: true, reason: "day-already-recorded" };
+    }
+    if (cfg.resources.some((r) => isLivingResource(r) && r.scope === "party")) {
+      globalThis.ui?.notifications?.warn?.(
+        "Daily living requires food and water to use per-character scope.",
+      );
+      return { blocked: true, reason: "living-party-scope" };
+    }
+    resourceIds = [
+      ...new Set([
+        ...(resourceIds ?? runtimeResourceDefinitions(cfg).map((r) => r.id)),
+        ...runtimeResourceDefinitions(cfg)
+          .filter(isLivingResource)
+          .map((r) => r.id),
+      ]),
+    ];
+  }
   if (resourceOperationMode()) {
     return startDurableResourceRun({
       kind: "upkeep",
@@ -1765,6 +1830,15 @@ async function runDailyUpkeep({
     sourceForMember,
     cfg: consumptionConfig,
     days,
+    assertWriteAllowed,
+  });
+
+  await settleLiving({
+    config: cfg,
+    rows: report.perActor,
+    runId,
+    days,
+    actors: globalThis.game?.actors,
     assertWriteAllowed,
   });
 
@@ -2261,7 +2335,9 @@ export async function applyConsumption({
       const blockedSources = new Map();
       const knownAvailableBySource = new Map();
       const knownShortfallsByActor = new Map();
-      for (const member of consumers) {
+      for (const member of consumers.filter((member) =>
+        suppliesRequired(member, resource),
+      )) {
         const { amount } = resourceCharge(
           resource,
           cfg,
@@ -2285,7 +2361,9 @@ export async function applyConsumption({
           Math.max(0, amount - planned),
         );
       }
-      for (const member of consumers) {
+      for (const member of consumers.filter((member) =>
+        suppliesRequired(member, resource),
+      )) {
         const charge = resourceCharge(
           resource,
           cfg,
@@ -2999,12 +3077,12 @@ export function buildUpkeepReportContent({
         : "";
     const forageLabel = buildForageReportLabel(row?.foraged);
     const errorLabel = hasErrors
-      ? ` · <span style="color:#f2bd61;">inventory write needs review</span>`
+      ? ` · <span style="color:#f2bd61;">${row.living?.covered === false ? "living needs review" : "inventory write needs review"}</span>`
       : "";
     return {
       hasErrors,
       hasShortages,
-      html: `<li><strong>${escapeHtml(row?.name ?? "Unknown")}</strong> — ${statusLabel}${knownShortage}${forageLabel}${errorLabel}</li>`,
+      html: `<li><strong>${escapeHtml(row?.name ?? "Unknown")}</strong> — ${statusLabel}${knownShortage}${forageLabel}${errorLabel}${row.living ? ` · ${escapeHtml(livingSummary(row.living))}` : ""}</li>`,
     };
   });
   const rows = actorReports.map((row) => row.html).join("");
@@ -3055,7 +3133,7 @@ export function buildUpkeepReportContent({
         ? "danger"
         : "success";
   const nextAction = hasErrors
-    ? "Open Quartermaster and review the flagged inventory writes."
+    ? "Open Quartermaster and review the flagged upkeep entries."
     : hasShortages
       ? "Review the shortages and follow the exhaustion prompt if one appears."
       : "No further action is needed.";
@@ -3280,7 +3358,7 @@ export function getPartyRoster(config = null) {
     }
   }
 
-  return entries;
+  return livingRoster(entries, cfg);
 }
 
 /** Tracked party actors (honors the curated roster). */

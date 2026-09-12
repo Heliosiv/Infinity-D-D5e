@@ -1,3 +1,4 @@
+import { LIVING_CHOICES, livingPolicy } from "./resource/living.js";
 /**
  * Infinity D&D5e — ResourceManagerApp (Quartermaster)
  *
@@ -380,6 +381,13 @@ export class ResourceManagerApp extends GmWorkbenchApp {
         canDrawFromStash: drawFromOptions.length > 1,
         exhaustion: Number(actor.system?.attributes?.exhaustion) || 0,
         counts,
+        livingOptions: LIVING_CHOICES.map((choice) => ({
+          ...choice,
+          selected: choice.value === livingPolicy(config, actor.id).mode,
+        })),
+        livingReason:
+          config.roster.find((entry) => entry.actorId === actor.id)
+            ?.livingReason ?? "",
       };
     });
     const onRoster = new Set(roster.map((r) => r.actor.id));
@@ -496,6 +504,7 @@ export class ResourceManagerApp extends GmWorkbenchApp {
         currentEnvFoodDc !== currentEnvWaterDc,
       forageMode: config.forageMode,
       forageModeEach: config.forageMode === "each",
+      dailyLiving: config.dailyLiving === true,
       halfRations: config.halfRations,
       waterEnabled: config.waterEnabled,
       maxCatchUpDays: config.maxCatchUpDays,
@@ -637,6 +646,8 @@ export class ResourceManagerApp extends GmWorkbenchApp {
       const [, id, field] = path.split(":");
       const res = config.resources.find((r) => r.id === id);
       if (res) applyResourceField(res, field, value);
+    } else if (path === "dailyLiving") {
+      config.dailyLiving = Boolean(value);
     } else if (path === "partyStashId") {
       // The single party stash for every per-character resource. References a
       // tracked actor (or "" to turn it off) — no roster seeding needed;
@@ -658,6 +669,9 @@ export class ResourceManagerApp extends GmWorkbenchApp {
           }
         } else if (field === "consumes") entry.consumes = Boolean(value);
         else if (field === "drawFrom") entry.drawFrom = String(value || "self");
+        else if (field === "living") entry.living = String(value);
+        else if (field === "livingReason")
+          entry.livingReason = String(value).slice(0, 200);
       }
     }
 

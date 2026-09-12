@@ -1,3 +1,4 @@
+import { livingRoster } from "./living.js";
 import { buildResourceInventoryPlan } from "./operation-inventory.js";
 import { buildResourceOverview } from "./overview.js";
 
@@ -10,7 +11,7 @@ export async function buildDailySupplyPreview({
   const overview = buildResourceOverview({ config, roster });
   const plan = await buildResourceInventoryPlan({
     runId: "daily-supply-preview",
-    roster,
+    roster: livingRoster(roster, config),
     resources: overview.partySize ? config.resources : [],
     days,
     halfRations: config.halfRations,

@@ -1,3 +1,4 @@
+import { livingSummary } from "./living.js";
 /**
  * Infinity D&D5e - private Quartermaster run receipts (pure)
  *
@@ -210,6 +211,9 @@ function normalizeActors(values) {
       resources: normalizeResourceRows(value.resources),
       forage: normalizeForage(value.forage),
       errors: strings(value.errors),
+      ...(value.livingSummary
+        ? { livingSummary: text(value.livingSummary, "", 500) }
+        : {}),
     });
   }
   return out;
@@ -471,6 +475,7 @@ export function buildUpkeepRunReceipt({
             ? null
             : row?.foraged,
         errors: row?.errors,
+        livingSummary: livingSummary(row?.living),
       }),
     ),
     partyResources: party

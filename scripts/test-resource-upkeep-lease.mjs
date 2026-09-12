@@ -655,6 +655,55 @@ try {
     (await advanceDayNow({ resourceIds: ["unknown"] })).blocked,
     true,
   );
+
+  // Enforced living settles on calendar changes even when legacy Auto-run is off.
+  const livingConfig = structuredClone(settings.get("resourceConfig"));
+  livingConfig.dailyLiving = true;
+  livingConfig.roster.find((r) => r.actorId === "hero").living = "modest";
+  settings.set("resourceConfig", livingConfig);
+  settings.set("resourceAutoTrigger", false);
+  hero.flags = {};
+  hero.system.currency = { gp: 10 };
+  let payments = 0;
+  hero.update = async (patch) => {
+    payments++;
+    if (patch["system.currency"])
+      hero.system.currency = structuredClone(patch["system.currency"]);
+    hero.flags["infinity-dnd5e"] = {
+      livingReceipt: structuredClone(
+        patch["flags.infinity-dnd5e.livingReceipt"],
+      ),
+    };
+    return hero;
+  };
+  globalThis.game.time.worldTime += 86400;
+  onWorldTime();
+  await waitFor(
+    () =>
+      settings.get("resourceRunState").lastUpkeepResult?.perActor?.[0]?.living,
+    "automatic living settlement completed",
+  );
+  assert.equal(hero.system.currency.gp, 9);
+  assert.equal(
+    ration.system.quantity,
+    0,
+    "living payment did not require rations",
+  );
+  const duplicate = await advanceDayNow();
+  assert.equal(duplicate.blocked, true);
+  assert.equal(payments, 1);
+  onWorldTime();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(payments, 1, "duplicate hooks do not charge again");
+  const settledDay = settings.get("resourceRunState").lastSeenDay;
+  globalThis.game.time.worldTime -= 86400;
+  onWorldTime();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    settings.get("resourceRunState").lastSeenDay,
+    settledDay,
+    "backward time preserves the settlement baseline",
+  );
 } finally {
   console.error = originalConsoleError;
   for (const [key, value] of Object.entries(saved)) {

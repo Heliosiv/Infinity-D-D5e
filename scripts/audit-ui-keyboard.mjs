@@ -67,6 +67,30 @@ async function main() {
     await auditTabOrderAndButtonActivation(page);
     await auditDialogFocusRestoration(page, dialogContractUrl);
 
+    await openFixture(page, harnessUrl, "resource-manager");
+    await page
+      .locator('[data-harness-window="resource-manager"] #rm-setup')
+      .evaluate((node) => {
+        node.open = true;
+      });
+    const livingChoice = page
+      .locator('[data-config-path="roster:a1:living"]')
+      .first();
+    await livingChoice.focus();
+    assert.equal(await livingChoice.inputValue(), "comfortable");
+    await livingChoice.press("Home");
+    await livingChoice.press("Enter");
+    assert.equal(await livingChoice.inputValue(), "supplies");
+    await livingChoice.selectOption("covered");
+    const livingReason = page
+      .locator('[data-config-path="roster:a1:livingReason"]')
+      .first();
+    await livingReason.fill("Hosted by the guild");
+    assert.equal(await livingReason.inputValue(), "Hosted by the guild");
+    await page
+      .locator('[data-harness-window="resource-manager"] .rm-party')
+      .screenshot({ path: path.join(outDir, "daily-living-controls.png") });
+
     await openFixture(page, harnessUrl, "daily-supplies-dialog");
     const dailySupply = page.locator('input[name="dailyResource"]').first();
     await dailySupply.focus();

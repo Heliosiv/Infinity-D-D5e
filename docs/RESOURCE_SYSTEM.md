@@ -220,6 +220,53 @@ status remains bounded by the release gates below.
 
 ### 3. Day change
 
+#### Automatic supplies or living costs
+
+In **Quartermaster → Setup & Rules → Party supplies**, enable **Automatically
+settle daily supplies or living costs**. This is off by default for existing
+worlds. Once enabled, calendar days settle automatically even when the older
+Auto-run setting is off. An authoritative full GM must be connected.
+
+For each consuming character, choose **Daily living**:
+
+- **Use supplies** consumes the configured daily food and water from their
+  normal draw source, including a shared stash and existing half-ration credits.
+- **Squalid / Poor / Modest / Comfortable / Wealthy / Aristocratic** pays
+  0.1 / 0.2 / 1 / 2 / 4 / 10 gp per day from that character's own currency.
+  Their food and water remain untouched. Other resources, including party
+  torches, retain their configured daily use.
+- **GM-covered** requires a reason, such as a host providing meals and lodging.
+  It charges neither food/water nor currency. Wretched living is not treated
+  as automatic nourishment; record any hardship decision explicitly with the GM.
+
+These are the [2014 Basic Rules lifestyle rates](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/equipment),
+using the 10 gp minimum for Aristocratic. The module does not automate edition-specific
+social or health consequences. The GM saves the choices; entering a town does
+not infer housing or change them. Select a paid lifestyle on arrival and switch
+back to supplies on departure. Change choices before advancing the calendar:
+catch-up days use the currently saved choices, not historical location tracking.
+
+Food and water must use **per-character** scope for this feature. A shared
+inventory is supported through the normal stash routing. Manual upkeep previews
+living costs and cannot uncheck required food or water. Cancel leaves the day
+unsettled. Other supply selections remain independent.
+
+Insufficient or invalid currency leaves living **unresolved**, without silently
+switching to supplies or creating debt. Review the report and recorded history
+and resolve that day's needs with the GM. Do not rerun a settled date to repair
+one character. Payments are saved with an Actor receipt in the same update;
+saved-run recovery recognizes that receipt and does not charge it again.
+Uncertain writes retain the run for review rather than claiming success.
+
+Duplicate calendar events and a second manual settlement cannot charge the
+same recorded date. Backward time preserves the settled baseline. Large calendar
+jumps retain days beyond the catch-up cap as pending; subsequent time events or
+reloads reconcile the next batch. The first clock sync seeds the baseline without
+retroactive charges. Inventory-only roster members are not charged.
+
+Turn the checkbox off to return to the existing selectable-supplies workflow.
+Turning it off does not refund prior payments or restore consumed inventory.
+
 With **Auto-run off**, each forward day rollover opens **Use daily supplies?**
 for the authoritative GM. Choose any combination of enabled food, water,
 light/torches, and custom daily resources, then **Use selected supplies**, or

@@ -1974,7 +1974,14 @@ function assertRecordInvariants(record) {
       "operation.appliedOperationIds",
     );
   }
-  if (record.phase === "applying" && record.plan.length < 1) {
+  if (
+    record.phase === "applying" &&
+    record.plan.length < 1 &&
+    !(
+      record.kind === "upkeep" &&
+      record.context.snapshot.config?.dailyLiving === true
+    )
+  ) {
     fail(
       "RESOURCE_OPERATION_MALFORMED",
       "Applying phase requires an inventory plan",

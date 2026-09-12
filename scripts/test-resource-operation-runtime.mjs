@@ -84,6 +84,7 @@ try {
     recentRuns: [],
   };
   let crashOnMarker = false;
+  let crashOnLivingCompletion = false;
   globalThis.game = {
     user: gm,
     users,
@@ -96,6 +97,13 @@ try {
       },
       async set(_module, key, value) {
         if (key === "resourceRunState") {
+          if (
+            crashOnLivingCompletion &&
+            value.lastUpkeepResult?.perActor?.[0]?.living
+          )
+            throw new Error(
+              "crash after living payment before terminal checkpoint",
+            );
           if (
             crashOnMarker &&
             value.activeOperation?.appliedOperationIds.length
@@ -229,6 +237,62 @@ try {
   );
   assert.match([...messages.values()].at(-1).content, /Hero/);
   assert.doesNotMatch([...messages.values()].at(-1).content, /no online owner/);
+  config.dailyLiving = true;
+  config.roster = [{ actorId: "hero", living: "comfortable" }];
+  actor.flags = {};
+  actor.system.currency = { gp: 10 };
+  let livingWrites = 0;
+  actor.update = async (patch) => {
+    livingWrites++;
+    if (patch["system.currency"])
+      actor.system.currency = structuredClone(patch["system.currency"]);
+    actor.flags["infinity-dnd5e"] = {
+      livingReceipt: structuredClone(
+        patch["flags.infinity-dnd5e.livingReceipt"],
+      ),
+    };
+    return actor;
+  };
+  crashOnLivingCompletion = true;
+  await assert.rejects(
+    createRuntime().start({ kind: "upkeep", manual: true, day: 3, days: 2 }),
+    /crash|checkpoint|candidate/i,
+  );
+  assert.equal(actor.system.currency.gp, 6);
+  assert.equal(livingWrites, 1);
+  crashOnLivingCompletion = false;
+  await createRuntime().coordinator.recover();
+  assert.equal(
+    livingWrites,
+    1,
+    "recovery after payment and before terminal checkpoint does not recharge",
+  );
+  assert.equal(actor.system.currency.gp, 6);
+  assert.equal(
+    item.system.quantity,
+    12,
+    "paid living leaves rations intact in durable mode",
+  );
+  assert.equal(state.lastUpkeepResult.perActor[0].living.covered, true);
+  await createRuntime().coordinator.recover();
+  assert.match(JSON.stringify(state.operationOutbox.at(-1)), /paid 4 gp/);
+  assert.equal(
+    livingWrites,
+    1,
+    "terminal recovery does not charge living again",
+  );
+  actor.system.currency = { gp: 0 };
+  await createRuntime().start({ kind: "upkeep", manual: true, day: 4 });
+  assert.equal(state.lastUpkeepResult.hasErrors, true);
+  assert.equal(item.system.quantity, 12);
+  await createRuntime().coordinator.recover();
+  assert.match(
+    JSON.stringify(state.operationOutbox.at(-1)),
+    /Living costs unresolved/,
+  );
+  delete config.dailyLiving;
+  delete config.roster;
+
   await createRuntime().start({
     kind: "forage",
     day: 2,

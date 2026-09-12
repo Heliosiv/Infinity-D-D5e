@@ -1,3 +1,8 @@
+import {
+  isLivingResource,
+  livingPolicy,
+  LIVING_CHOICES,
+} from "./resource/living.js";
 import { confirmInfinityDialog } from "./dialog-contract.js";
 import {
   buildDailySupplyPreview,
@@ -38,8 +43,26 @@ export async function promptDailySupplies({
         resources: resources.map((r) => ({
           ...r,
           isParty: r.scope === "party",
+          mandatory: config.dailyLiving && isLivingResource(r),
           ...preview.resources.find((entry) => entry.id === r.id),
         })),
+        dailyLiving: config.dailyLiving === true,
+        livingRows: config.dailyLiving
+          ? context.roster
+              .filter((r) => r.consumes !== false)
+              .map((r) => {
+                const policy = livingPolicy(config, r.actorId);
+                const choice = LIVING_CHOICES.find(
+                  (c) => c.value === policy.mode,
+                );
+                return {
+                  name: r.name,
+                  label: choice.label,
+                  cost: Math.round(choice.gp * days * 100) / 100,
+                  reason: policy.reason,
+                };
+              })
+          : [],
         consumerCount: preview.consumerCount,
         days,
         rollover,
@@ -48,11 +71,18 @@ export async function promptDailySupplies({
     );
     return await confirmInfinityDialog(
       {
-        window: { title: "Use daily supplies?", icon: "fa-solid fa-utensils" },
+        window: {
+          title: config.dailyLiving
+            ? "Settle daily upkeep?"
+            : "Use daily supplies?",
+          icon: "fa-solid fa-utensils",
+        },
         content,
         modal: rollover,
         yes: {
-          label: "Use selected supplies",
+          label: config.dailyLiving
+            ? "Settle daily upkeep"
+            : "Use selected supplies",
           default: false,
           callback: (_event, button) => {
             if (
@@ -72,7 +102,11 @@ export async function promptDailySupplies({
               ].map((input) => input.value),
             );
             const resourceIds = resources
-              .filter((r) => checked.has(r.id))
+              .filter(
+                (r) =>
+                  checked.has(r.id) ||
+                  (config.dailyLiving && isLivingResource(r)),
+              )
               .map((r) => r.id);
             if (!resourceIds.length) {
               globalThis.ui?.notifications?.warn?.(
@@ -83,7 +117,11 @@ export async function promptDailySupplies({
             return { resourceIds };
           },
         },
-        no: { label: "Skip supplies", default: true, callback: () => false },
+        no: {
+          label: config.dailyLiving ? "Cancel" : "Skip supplies",
+          default: true,
+          callback: () => (config.dailyLiving ? null : false),
+        },
         rejectClose: false,
       },
       { cancelValue: null },

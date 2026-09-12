@@ -1,3 +1,4 @@
+import { LIVING_CHOICES } from "./resource/living.js";
 import { CRITICAL_INJURY_TABLE_VERSION } from "./injury/table.js";
 import { buildCriticalInjuryTableReference } from "./injury/table-reference.js";
 import { readFileSync } from "node:fs";
@@ -537,7 +538,7 @@ export function buildHarnessViews() {
       "Quartermaster",
       "infinity-resource-manager",
       "templates/resource-manager.hbs",
-      resourceManagerContext(),
+      resourceManagerLivingContext(),
       { width: 880, height: 700 },
     ),
     view(
@@ -2838,6 +2839,22 @@ function shopPickerChooseActorContext() {
   }));
   context.hasPending = false;
   return context;
+}
+
+function resourceManagerLivingContext() {
+  const context = resourceManagerContext();
+  return {
+    ...context,
+    dailyLiving: true,
+    partyRows: context.partyRows.map((row, index) => ({
+      ...row,
+      livingOptions: LIVING_CHOICES.map((choice) => ({
+        ...choice,
+        selected: choice.value === (index ? "supplies" : "comfortable"),
+      })),
+      livingReason: "",
+    })),
+  };
 }
 
 function resourceManagerContext() {
