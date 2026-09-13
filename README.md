@@ -3,6 +3,9 @@
 Loot, commerce, downtime, party-resource, reputation, and critical-injury tools
 for D&D 5e on Foundry VTT.
 
+For current priorities, implemented foundations and the next bounded improvements,
+see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
+
 **Daily living (source update):** Quartermaster supports automatic or manual
 upkeep through supplies, a paid lifestyle, or a GM-covered exception. Set choices
 under **Setup & Rules → Party supplies**. Auto-run off asks the GM to settle or

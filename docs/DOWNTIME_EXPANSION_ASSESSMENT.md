@@ -1,5 +1,9 @@
 # Downtime expansion assessment
 
+**Historical assessment:** use the [current roadmap](ROADMAP.md) for delivery
+priorities. Crafting, personal training, report history and active hunting now
+have implementations; the findings below describe their earlier baseline.
+
 Assessed 2026-09-06 (America/Vancouver) against Infinity D&D5e v0.3.27, source commit 83cf956. This is an assessment and proposed plan, not an implemented expansion.
 
 Later source includes personal training, recipes and report history. See the
