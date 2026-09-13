@@ -46,8 +46,10 @@ campaign changes.
 | 4        | **Align injury recovery and enforcement.** Reduce surprise cures and manual combat bookkeeping.                  | Reproduce the four treatment-dependent expiry cases and present one explicit recovery policy per injury for campaign approval.                                  | New rules agree with displayed text; old injury records retain their intended version; expiry, treatment and calendar replay tests pass. Follow with a separate durable Bleeding damage slice covering temporary HP, disabled effects and GM handoff.                                                         | Medium per slice; campaign recovery decisions required before behavior changes.                       |
 | 5        | **Add one complete crafting family.** Give downtime another tangible reward.                                     | Propose Healing Potion and Antitoxin as the initial herbalism pair, reusing usable existing items and recipe infrastructure.                                    | Approved tools, access, time and cost are quoted; partial progress and held/lost materials balance; interrupted delivery cannot duplicate output; the journal explains progress and the next step.                                                                                                            | Medium–large; approve campaign recipe terms first. Gathering discounts can be a later separate slice. |
 
-Next: assess the four treatment-dependent injury expiry cases and propose one
-explicit recovery policy per injury for campaign approval. Private hunting/Research
+The four treatment-dependent injury expiry cases are now reproduced in both V2
+and V3; see the [recovery policy proposal](INJURY_RECOVERY_POLICY.md). Next:
+approve the four proposed cure rules, then implement them for new injuries while
+preserving saved V2/V3 behavior. Private hunting/Research
 continuity and the bounded daily-living native gate are complete locally; see
 [continuity acceptance](DOWNTIME_CONTINUITY.md). Release/install and live browser
 imports remain separate authorized actions.
