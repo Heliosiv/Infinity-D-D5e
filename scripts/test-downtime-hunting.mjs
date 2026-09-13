@@ -251,7 +251,7 @@ try {
       },
     }),
   });
-  const custom = secrets.saveHuntingRegion({
+  const custom = await secrets.saveHuntingRegion({
     ...forest,
     id: "custom-marsh",
     name: "Old Marsh",
@@ -480,7 +480,10 @@ try {
     /cannot be saved/,
   );
   assert.equal(dice, 1);
-  assert.throws(() => secrets.loadHuntingBlock(block.id), /GM browser/);
+  assert.ok(
+    secrets.loadHuntingBlock(block.id).seed,
+    "Vault records survive loss of browser storage",
+  );
   game.user = player;
   globalThis.localStorage = {
     getItem: (k) => beforeStore.get(k) ?? null,

@@ -198,6 +198,7 @@ function makeStoreData({
     flags: {
       [MODULE_ID]: {
         privateStateStore: true,
+        downtimeSecrets: {},
         schemaVersion,
         merchants,
         ...(includeMerchantAccess ? { merchantAccess } : {}),
@@ -406,6 +407,32 @@ try {
         [`flags.${MODULE_ID}.schemaVersion`]: CURRENT_SCHEMA,
       },
     ]);
+  }
+
+  // Schema 8 upgrades add private downtime storage without touching other records.
+  {
+    resetPrivateStateForTests();
+    activeJournal = makeJournal();
+    const source = makeStoreData({
+      schemaVersion: 8,
+      downtimeWorkflow: { history: [{ id: "preserved" }] },
+    });
+    delete source.flags[MODULE_ID].downtimeSecrets;
+    const prior = structuredClone(source.flags[MODULE_ID]);
+    const store = activeJournal.insert(source);
+    const gm = { id: "gm-a", isGM: true, role: 4, active: true };
+    configureGame({
+      user: gm,
+      users: makeUsers("gm-a", [gm]),
+      journal: activeJournal,
+      legacy: { privateStateStoreId: store.id },
+    });
+    assert.equal(await initializePrivateState(), true);
+    assert.deepEqual(getPrivateState("downtimeSecrets"), {});
+    for (const [key, value] of Object.entries(prior))
+      if (key !== "schemaVersion")
+        assert.deepEqual(store.getFlag(MODULE_ID, key), value);
+    assert.equal(store.getFlag(MODULE_ID, "schemaVersion"), CURRENT_SCHEMA);
   }
 
   // Related private fields share one Journal update and are accepted only

@@ -97,3 +97,11 @@ separate GM/player browser contexts, captures player WebSocket frames, and
 inspects raw records, initial data, settings, and browser storage rather than
 relying on the module's sanitized getters. Publication does not install or
 migrate an existing Forge world.
+
+## Private downtime continuity (development source)
+
+Schema 9 also encrypts private hunting rules/random seeds and Research libraries,
+cases and follow-ups. Existing browser records require the reviewed import in
+Downtime; unlocking does not silently import them. See the
+[continuity and import guide](DOWNTIME_CONTINUITY.md). Preserve the world backup
+and original browser records before any installation.

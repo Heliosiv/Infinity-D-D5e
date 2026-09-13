@@ -950,7 +950,7 @@ try {
   // Research supports curated open discovery and blocks unprepared canon until
   // the GM authors and approves the exact player dossier.
   {
-    researchStore.saveResearchSeed({
+    await researchStore.saveResearchSeed({
       id: "salt-stalker",
       title: "The Salt Stalker",
       category: "creature",
@@ -970,7 +970,7 @@ try {
       actionableDiscovery: "Flood its den before entering.",
       complicationText: "A rival collector notices the inquiry.",
     });
-    researchStore.saveResearchSeed({
+    await researchStore.saveResearchSeed({
       id: "ashen-knives",
       title: "The Ashen Knives",
       category: "faction",
@@ -984,7 +984,7 @@ try {
         { tier: 1, text: "Paid informants wear a loop of grey cord." },
       ],
     });
-    researchStore.saveResearchSeed({
+    await researchStore.saveResearchSeed({
       id: "sealed-ledger",
       title: "The Sealed Ledger",
       category: "event",
@@ -998,7 +998,7 @@ try {
         { tier: 1, text: "Its first page bears the reeve's cipher." },
       ],
     });
-    researchStore.saveResearchSeed({
+    await researchStore.saveResearchSeed({
       id: "sealed-lens",
       title: "The Sealed Lens",
       category: "object",

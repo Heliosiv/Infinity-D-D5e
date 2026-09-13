@@ -326,7 +326,8 @@ try {
   };
   const flags = {
     privateStateStore: true,
-    schemaVersion: 8,
+    schemaVersion: 9,
+    downtimeSecrets: {},
     merchants: [],
     merchantTransactions: {
       version: 1,

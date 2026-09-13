@@ -1,4 +1,8 @@
 import {
+  previewPrivateDowntimeImport,
+  applyPrivateDowntimeImport,
+} from "./private-records.js";
+import {
   FIELD_OUTPUT,
   fieldChoice,
   fieldResolution,
@@ -1304,10 +1308,10 @@ async function openGuidedDowntimeBlock({
       throw new Error(
         "Choose a wilderness hunting area before offering Hunting.",
       );
-    saveHuntingBlock(blockId, region);
+    await saveHuntingBlock(blockId, region);
   }
   if (templates.some(isResearchTemplate)) {
-    saveResearchBlock(blockId, {
+    await saveResearchBlock(blockId, {
       timeOfDay: normalizeDowntimeTimeOfDay(timeOfDay),
       locationName: blockLocationName,
     });
@@ -4420,7 +4424,7 @@ export async function cancelActiveDowntimeBlock(blockId) {
         (entry) => entry.id === String(blockId) && entry.state === "cancelled",
       );
       if (cancelled) {
-        deleteResearchBlockBestEffort(blockId);
+        await deleteResearchBlockBestEffort(blockId);
         return cancelled;
       }
       throw new Error("Block not found.");
@@ -4444,7 +4448,7 @@ export async function cancelActiveDowntimeBlock(blockId) {
       reason: "Cancelled by the GM without advancing campaign time.",
       at: now(),
     });
-    deleteResearchBlockBestEffort(block.id);
+    await deleteResearchBlockBestEffort(block.id);
     notifyServiceChanged("block-cancel");
     await broadcastCompletedState(cancelled);
     return cancelled;
@@ -5427,7 +5431,7 @@ async function submitGuidedDowntimeChoice({
   const research = allocation.some((entry) =>
     isResearchTemplate(entry.activity),
   )
-    ? prepareResearchAttempt(block, actor, canonicalQueue)
+    ? await prepareResearchAttempt(block, actor, canonicalQueue)
     : null;
   const first = allocation[0];
   const participants = block.participants.map((entry) =>
@@ -6168,34 +6172,45 @@ function title(value) {
 }
 
 export const downtimeWorkspaceAdapter = Object.freeze({
+  previewPrivateDowntimeImport: () => {
+    assertAuthority();
+    return previewPrivateDowntimeImport();
+  },
+  applyPrivateDowntimeImport: (payload) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = await applyPrivateDowntimeImport(payload);
+      notifyServiceChanged("private-records-imported");
+      return result;
+    }),
   subscribe: subscribeDowntimeService,
   getWorkspaceProjection,
   createBlock: openDowntimeBlock,
   saveHuntingRegion: (payload) =>
     runServiceMutation(async () => {
       assertAuthority();
-      const result = saveHuntingRegion(payload);
+      const result = await saveHuntingRegion(payload);
       notifyServiceChanged("hunting-area-saved");
       return result;
     }),
   saveResearchSeed: (payload) =>
     runServiceMutation(async () => {
       assertAuthority();
-      const result = saveResearchSeed(payload);
+      const result = await saveResearchSeed(payload);
       notifyServiceChanged("research-seed-saved");
       return result;
     }),
   deleteResearchSeed: ({ seedId }) =>
     runServiceMutation(async () => {
       assertAuthority();
-      const result = deleteResearchSeed(seedId);
+      const result = await deleteResearchSeed(seedId);
       notifyServiceChanged("research-seed-deleted");
       return result;
     }),
   completeResearchFollowUp: ({ blockId, actorId }) =>
     runServiceMutation(async () => {
       assertAuthority();
-      const result = completeResearchFollowUp(blockId, actorId);
+      const result = await completeResearchFollowUp(blockId, actorId);
       notifyServiceChanged("research-follow-up-completed");
       return result;
     }),
@@ -6221,9 +6236,9 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   saveGuidedTemplate: saveGuidedDowntimeTemplate,
 });
 
-function deleteResearchBlockBestEffort(blockId) {
+async function deleteResearchBlockBestEffort(blockId) {
   try {
-    deleteResearchBlock(blockId);
+    await deleteResearchBlock(blockId);
   } catch (error) {
     console.warn(
       `${MODULE_ID} | cancelled Research block cleanup needs manual review`,

@@ -208,6 +208,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       saveGuidedTemplate: DowntimeWorkspaceApp._onSaveGuidedTemplate,
       selectResearchSeed: DowntimeWorkspaceApp._onSelectResearchSeed,
       newResearchSeed: DowntimeWorkspaceApp._onNewResearchSeed,
+      importPrivateRecords: DowntimeWorkspaceApp._onImportPrivateRecords,
       saveResearchSeed: DowntimeWorkspaceApp._onSaveResearchSeed,
       deleteResearchSeed: DowntimeWorkspaceApp._onDeleteResearchSeed,
       completeResearchFollowUp:
@@ -1371,6 +1372,41 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this.render(false);
   }
 
+  static async _onImportPrivateRecords() {
+    if (this._busy) return;
+    const preview = await this._runCommand(
+      "previewPrivateDowntimeImport",
+      {},
+      {
+        pending: "Checking saved browser records...",
+        success: "Import preview ready.",
+      },
+    );
+    if (!preview) return;
+    if (preview.conflicts.length) {
+      this._errorMessage =
+        "Saved browser records conflict with vault records. Nothing was imported; GM recovery is required.";
+      this.render(false);
+      return;
+    }
+    const c = preview.counts;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Import saved browser records?" },
+      content: `<p>Add ${Number(c.huntingAreas)} hunting areas, ${Number(c.hunts)} hunts, ${Number(c.researchSeeds)} Research Seeds and ${Number(c.researchBlocks)} Research blocks to the encrypted vault?</p><p>Existing records must agree. Original browser copies will be retained.</p>`,
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "applyPrivateDowntimeImport",
+      { fingerprint: preview.fingerprint },
+      {
+        pending: "Importing saved records...",
+        success:
+          "Saved records imported into the vault. Original browser copies retained.",
+      },
+    );
+  }
+
   static async _onSaveResearchSeed() {
     if (this._busy) return;
     const form = this.element?.querySelector?.('[data-form="research-seed"]');
@@ -1381,7 +1417,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       this._researchSeedDraft,
       {
         pending: "Saving confidential Research Seed...",
-        success: "Research Seed saved in this GM browser.",
+        success: "Research Seed saved in the encrypted vault.",
         focus: '[data-form="research-seed"] input[name="title"]',
       },
     );
@@ -1398,7 +1434,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const confirmed = await confirmInfinityDialog({
       window: { title: "Delete this Research Seed?" },
       content:
-        "<p>This removes the seed from this GM browser. Already frozen research blocks keep their private snapshot.</p>",
+        "<p>This removes the seed from the encrypted vault. Already frozen research blocks keep their private snapshot.</p>",
       rejectClose: false,
     });
     if (!confirmed) return;

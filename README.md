@@ -11,7 +11,8 @@ subject or discover something new. GMs prepare seeds under **Downtime → Resear
 and approve dossiers before unprepared findings are delivered. New blocks offer
 **Research time: Day/Night**. Untouched stock activities upgrade; customized
 activities and existing block snapshots retain their rules. Private seeds and
-cases remain in the originating GM browser. See the
+cases use the encrypted GM vault. For older browser records, open Downtime and
+choose **Import saved browser records** on the original GM browser. See the
 [research guide](docs/DOWNTIME_RESEARCH_DESIGN.md) and
 [integration and acceptance record](docs/RESEARCH_RECONCILIATION.md).
 
@@ -69,7 +70,8 @@ animals, yields, risk and allowed activities, or save a custom area. Players cho
 four/eight hours, a ranged weapon and ammunition, roll Survival, then take one
 shot. Eight hours lowers the Survival DC by four; a miss ends the hunt. GM review
 delivers food and spends one ammunition per shot. Hidden hunting rules and saved
-areas currently belong to the GM browser that opened them; finish there.
+areas use the encrypted vault and survive an unlocked GM handoff. Import older
+browser records from their original GM browser before continuing those hunts.
 See [hunting rules and setup](docs/DOWNTIME_HUNTING_DESIGN.md).
 
 **v0.3.35 - Expanded GM injury table:** Open **Injuries → Injury table** to browse

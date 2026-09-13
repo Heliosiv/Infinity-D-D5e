@@ -1,34 +1,11 @@
-/** Exact DCs and hunting ACs never enter Foundry documents or sockets.
- * These versioned, world/user-scoped records belong to the originating GM browser.
- * Missing storage fails closed; switching GM browsers never substitutes defaults.
- */
-import { isFullGM } from "../permissions.js";
+/** Hunting rules and frozen rolls live in the encrypted GM vault. */
 import { defaultHuntingRegions, normalizeHuntingRegion } from "./hunting.js";
-function key() {
-  if (!isFullGM()) throw new Error("Only a full GM can access hunting rules.");
-  return `infinity-dnd5e.hunting.v1.${globalThis.game?.world?.id ?? "world"}.${globalThis.game?.user?.id}`;
-}
-function read() {
-  const storage = globalThis.localStorage;
-  if (!storage)
-    throw new Error(
-      "Hunting needs browser storage on the originating GM browser.",
-    );
-  const raw = storage.getItem(key());
-  if (!raw) return { version: 1, regions: {}, blocks: {} };
-  const data = JSON.parse(raw);
-  if (data.version !== 1 || !data.regions || !data.blocks)
-    throw new Error("The saved hunting rules need GM recovery.");
-  return data;
-}
-function write(data) {
-  const serialized = JSON.stringify(data);
-  globalThis.localStorage.setItem(key(), serialized);
-  if (globalThis.localStorage.getItem(key()) !== serialized)
-    throw new Error("Hunting rules could not be saved. No hunt was started.");
-}
+import {
+  readPrivateDowntimeFamily,
+  updatePrivateDowntimeFamily,
+} from "./private-records.js";
+const read = () => readPrivateDowntimeFamily("hunting");
 export function loadHuntingRegions() {
-  if (!globalThis.localStorage) return defaultHuntingRegions();
   const data = read();
   const regions = new Map(defaultHuntingRegions().map((r) => [r.id, r]));
   for (const raw of Object.values(data.regions)) {
@@ -38,28 +15,29 @@ export function loadHuntingRegions() {
   return [...regions.values()];
 }
 export function saveHuntingRegion(raw) {
-  const region = normalizeHuntingRegion(raw),
-    data = read();
-  data.regions[region.id] = region;
-  write(data);
-  return region;
+  return updatePrivateDowntimeFamily("hunting", (data) => {
+    const region = normalizeHuntingRegion(raw);
+    data.regions[region.id] = region;
+    return region;
+  });
 }
 export function saveHuntingBlock(blockId, region) {
-  const data = read();
-  const value = {
-    region: normalizeHuntingRegion(region),
-    seed: globalThis.crypto.randomUUID(),
-  };
-  if (data.blocks[blockId])
-    throw new Error("This hunt already has frozen rules.");
-  data.blocks[blockId] = value;
-  write(data);
+  return updatePrivateDowntimeFamily("hunting", (data) => {
+    const value = {
+      region: normalizeHuntingRegion(region),
+      seed: globalThis.crypto.randomUUID(),
+    };
+    if (data.blocks[blockId])
+      throw new Error("This hunt already has frozen rules.");
+    data.blocks[blockId] = value;
+    return value;
+  });
 }
 export function loadHuntingBlock(blockId) {
   const value = read().blocks[blockId];
   if (!value)
     throw new Error(
-      "Finish this hunt on the GM browser that opened it; its hidden rules are stored there.",
+      "This hunt has no vault record. Import saved browser records from the GM browser that opened it.",
     );
   return value;
 }

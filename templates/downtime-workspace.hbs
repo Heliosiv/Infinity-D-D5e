@@ -7,6 +7,7 @@
       <p>{{#if guided}}Assign downtime, let players choose and roll, then review their results and send reports.{{else}}Assign productive hours, collect each character's queue, then preview and apply one immutable plan.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
+      <button type="button" class="dt-button" data-action="importPrivateRecords" {{#if busy}}disabled{{/if}}>Import saved browser records</button>
       <span class="dt-phase dt-phase--{{workflowTone}}">{{workflowStatusLabel}}</span>
       <button type="button" class="dt-icon-button" data-action="refresh" title="Refresh downtime" aria-label="Refresh downtime" {{#if busy}}disabled{{/if}}>
         <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
@@ -309,7 +310,7 @@
           {{#if huntingEditor}}
           <details class="dt-field dt-field--wide">
             <summary>Hunting rules and custom area</summary>
-            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in this GM browser. Finish open hunts here. Each shot spends one ammunition, and a miss ends the hunt.</p>
+            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in the encrypted GM vault. Each shot spends one ammunition, and a miss ends the hunt.</p>
             <div class="dt-form-grid">
               <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingEditor.name}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
               <label class="dt-field"><span>Base Survival DC (GM only)</span><input name="huntingDc" aria-label="Base hunting Survival DC" type="number" min="4" max="40" step="1" value="{{huntingEditor.dc}}" required /></label>
@@ -332,7 +333,7 @@
               {{#each huntingActivityOptions}}<label class="dt-check"><input type="checkbox" name="huntingActivityIds" value="{{id}}" {{#if checked}}checked{{/if}} /> {{name}}</label>{{/each}}
             </fieldset>
             <button type="button" class="dt-button" data-action="saveHuntingRegion" {{#if busy}}disabled{{/if}}>Save area and activities</button>
-            <small>Open downtime uses the current hunting numbers. Save area also keeps these defaults for future blocks on this GM browser.</small>
+            <small>Open downtime uses the current hunting numbers. Save area also keeps these defaults for future blocks in this world.</small>
           </details>
           {{/if}}
           {{#if blockShopNames}}<p>Linked shops: {{blockShopNames}}</p>{{/if}}
@@ -662,7 +663,7 @@
           <input type="hidden" name="id" value="{{researchSeedEditor.id}}" />
           <div class="dt-form__head">
             <div><p class="dt-eyebrow">{{#if researchSeedEditor.editing}}Edit prepared discovery{{else}}Prepare a discovery{{/if}}</p><h3 id="dt-research-seed-edit-heading">{{#if researchSeedEditor.title}}{{researchSeedEditor.title}}{{else}}New Research Seed{{/if}}</h3></div>
-            <p>Saved only in this full GM's browser. Open blocks freeze a private copy so later edits cannot change an earned result.</p>
+            <p>Saved in the encrypted GM vault. Open blocks freeze a private copy so later edits cannot change an earned result.</p>
           </div>
           <div class="dt-form-grid">
             <label class="dt-field dt-field--wide"><span>Canonical subject</span><input type="text" name="title" value="{{researchSeedEditor.title}}" maxlength="160" required placeholder="The Glass-Eyed Stalker, Ashen Knives, Old North Aqueduct..." {{#if busy}}disabled{{/if}} /></label>

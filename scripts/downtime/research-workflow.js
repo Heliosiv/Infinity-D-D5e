@@ -25,7 +25,7 @@ export function researchQueueKey(queue) {
   );
 }
 
-export function prepareResearchAttempt(block, actor, queue) {
+export async function prepareResearchAttempt(block, actor, queue) {
   const entry = (queue ?? []).find(
     (candidate) => candidate.activityId === RESEARCH_ID,
   );
@@ -127,7 +127,7 @@ export function prepareResearchAttempt(block, actor, queue) {
     ...(result.prepared ? { approvedAt: Date.now() } : {}),
   };
   return publicResearchAttempt(
-    saveResearchCase(block.id, actor.id, researchCase),
+    await saveResearchCase(block.id, actor.id, researchCase),
   );
 }
 
@@ -142,7 +142,7 @@ export async function buildResearchOperation({
   let researchCase = loadResearchCase(block.id, actor.id);
   if (!researchCase)
     throw new Error(
-      "The confidential Research case is missing. Finish review on the GM browser that opened the block.",
+      "The confidential Research case is missing. Import saved browser records from the GM browser that opened the block.",
     );
   if (review) {
     researchCase = await reviewResearchCase({

@@ -77,10 +77,11 @@ consequence to the report without replacing the recorded result.
 ## Persistence and limits
 
 - Exact hunting DCs and hunting ACs are excluded from shared Foundry documents
-  and player projections. They and the frozen random seed live in versioned,
-  world/user-scoped storage in the originating GM browser. Custom hunting areas
-  also live there. Keep that browser's site data and finish the block there;
-  switching GM/browser or clearing site data cannot silently substitute defaults.
+  and player projections. They, the frozen random seed and custom hunting areas live in the encrypted
+  full-GM vault. A replacement GM unlocks the vault to continue the same hunt.
+  Import older records using **Import saved browser records** on the originating
+  GM browser; preserve its site data until verified. Missing or locked records
+  stop safely rather than substituting new rules. See [continuity](DOWNTIME_CONTINUITY.md).
 - Starting the hunt locks the whole allocation, duration, equipment and Survival
   result. Refreshing or retrying keeps the selected animal. Once rolled, the shot
   is cached on the player's browser and reused on retries. An interrupted roll

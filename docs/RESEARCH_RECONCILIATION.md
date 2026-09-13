@@ -80,3 +80,10 @@ new research blocks with older runtime code: finish/cancel test blocks first or
 restore the matching pre-install world backup. Browser research data is separate
 from that world backup and must be preserved separately. This task performs no
 installation, migration, push or publication.
+
+## Continuity follow-up (September 13, 2026)
+
+The browser-local statements above describe the integration commit `e69163d`.
+The next source slice moves hunting and Research private records into encrypted
+vault schema 9. See [continuity acceptance](DOWNTIME_CONTINUITY.md) for the import
+contract, native evidence and remaining acceptance boundaries.

@@ -100,6 +100,10 @@ globalThis.JournalEntry = {
 await assert.rejects(() => unlockPrivateVault("short"), /passphrase-too-short/);
 await unlockPrivateVault(phrase);
 const payload = {
+  downtimeSecrets: {
+    hunting: { blocks: { native: { seed: secret, dc: 17 } } },
+    research: { seeds: [secret] },
+  },
   downtimeConfig: { hidden: secret },
   downtimeWorkflow: { history: [secret] },
 };
@@ -321,7 +325,7 @@ assert.equal(
 assert.deepEqual(readPrivateFlag(duplicate, "downtimeConfig"), {
   hidden: secret,
 });
-assert.equal(legacy.getFlag(MODULE, "schemaVersion"), 8);
+assert.equal(legacy.getFlag(MODULE, "schemaVersion"), 9);
 assert.equal(legacy.getFlag(MODULE, "privateStateRecoverySource"), undefined);
 assert.deepEqual(readPrivateFlag(duplicate, "privateStateRecoverySource"), {
   sourceFingerprint: secret,

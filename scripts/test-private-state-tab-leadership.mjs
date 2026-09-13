@@ -136,6 +136,7 @@ function makeStoreData({
     flags: {
       [MODULE_ID]: {
         privateStateStore: true,
+        downtimeSecrets: {},
         schemaVersion,
         merchants: [],
         merchantAccess: {},

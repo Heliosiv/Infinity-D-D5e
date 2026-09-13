@@ -1126,7 +1126,7 @@ import {
     };
 
     await initializePrivateState();
-    assert.equal(flags.schemaVersion, 8);
+    assert.equal(flags.schemaVersion, 9);
     assert.deepEqual(flags.merchantTransactions, {
       version: 1,
       revision: 0,
@@ -1329,7 +1329,7 @@ import {
       false,
       "an old private-store schema cannot satisfy automation readiness",
     );
-    flags.schemaVersion = 8;
+    flags.schemaVersion = 9;
     assert.equal(isResourceAutomationReady(), true);
 
     const acceptedBeforeWrite = structuredClone(flags.resourceRunState);

@@ -39,7 +39,7 @@ import {
 const MODULE_ID = "infinity-dnd5e";
 const STORE_MARKER = "privateStateStore";
 const RECOVERY_SOURCE_FLAG = "privateStateRecoverySource";
-export const PRIVATE_STATE_SCHEMA_VERSION = 8;
+export const PRIVATE_STATE_SCHEMA_VERSION = 9;
 const STORE_SCHEMA = PRIVATE_STATE_SCHEMA_VERSION;
 const STORE_NAME = "[Infinity D&D5e] Private State";
 const STORE_WAIT_MS = 5000;
@@ -53,6 +53,7 @@ const EMPTY_MERCHANT_TRANSACTIONS = Object.freeze({
   records: Object.freeze([]),
 });
 const PRIVATE_STATE_FIELDS = Object.freeze({
+  downtimeSecrets: Object.freeze({ legacyKey: null, type: "object" }),
   merchants: Object.freeze({ legacyKey: "merchants", type: "array" }),
   merchantAccess: Object.freeze({ legacyKey: null, type: "object" }),
   merchantTransactions: Object.freeze({

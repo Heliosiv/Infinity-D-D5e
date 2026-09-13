@@ -30,7 +30,13 @@ try {
     DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, OBSERVER: 2, OWNER: 3 },
     USER_ROLES: { GAMEMASTER: 4 },
   };
+  const privateSettings = new Map();
   globalThis.game = {
+    settings: {
+      get: (_module, key) => privateSettings.get(key),
+      set: async (_module, key, value) =>
+        privateSettings.set(key, structuredClone(value)),
+    },
     user: gm,
     users,
     world: { id: "research-test-world" },
@@ -77,7 +83,7 @@ try {
     "open discovery ignores conflicting named-subject fields",
   );
 
-  const hiddenSeed = store.saveResearchSeed({
+  const hiddenSeed = await store.saveResearchSeed({
     id: "salt-stalker",
     title: "The Salt Stalker",
     category: "creature",
@@ -97,7 +103,7 @@ try {
     actionableDiscovery: "Flood its lair before entering.",
     complicationText: "A collector hears that the party is asking.",
   });
-  const knownSeed = store.saveResearchSeed({
+  const knownSeed = await store.saveResearchSeed({
     id: "ashen-knives",
     title: "The Ashen Knives",
     category: "faction",
@@ -109,7 +115,7 @@ try {
     skills: ["per", "ins"],
     factCards: [{ tier: 1, text: "They mark paid informants with grey cord" }],
   });
-  const closedKnownSeed = store.saveResearchSeed({
+  const closedKnownSeed = await store.saveResearchSeed({
     id: "sealed-ledger",
     title: "The Sealed Ledger",
     category: "event",
@@ -203,7 +209,7 @@ try {
     locationName: "Haven Archives",
     timeOfDay: "day",
   };
-  store.saveResearchBlock(block.id, block);
+  await store.saveResearchBlock(block.id, block);
   const openQueue = [
     {
       id: "research-choice-1",
@@ -218,7 +224,11 @@ try {
       guidedRoll: { total: 10, formula: "1d20 + 4" },
     },
   ];
-  const openAttempt = workflow.prepareResearchAttempt(block, actor, openQueue);
+  const openAttempt = await workflow.prepareResearchAttempt(
+    block,
+    actor,
+    openQueue,
+  );
   assert.equal(openAttempt.tier, 1);
   assert.equal(openAttempt.subject, "The Salt Stalker");
   assert.equal(openAttempt.revealedFactCards.length, 1);
@@ -249,7 +259,7 @@ try {
     /Fresh water|seedSnapshot|gmSummary/,
   );
 
-  const incompleteHiddenSeed = store.saveResearchSeed({
+  const incompleteHiddenSeed = await store.saveResearchSeed({
     id: "sealed-lens",
     title: "The Sealed Lens",
     category: "object",
@@ -267,7 +277,7 @@ try {
     ],
   });
   const incompleteBlock = { ...block, id: "research-block-private" };
-  store.saveResearchBlock(incompleteBlock.id, incompleteBlock);
+  await store.saveResearchBlock(incompleteBlock.id, incompleteBlock);
   const incompleteQueue = [
     {
       id: "research-choice-private",
@@ -281,7 +291,7 @@ try {
       guidedRoll: { total: 10, formula: "1d20 + 5" },
     },
   ];
-  const incompleteAttempt = workflow.prepareResearchAttempt(
+  const incompleteAttempt = await workflow.prepareResearchAttempt(
     incompleteBlock,
     actor,
     incompleteQueue,
@@ -314,7 +324,7 @@ try {
   );
   await assert.rejects(
     async () =>
-      workflow.prepareResearchAttempt(incompleteBlock, actor, [
+      await workflow.prepareResearchAttempt(incompleteBlock, actor, [
         {
           ...incompleteQueue[0],
           guidedRoll: { total: 11, formula: "1d20 + 6" },
@@ -573,7 +583,7 @@ try {
     id: "research-block-2",
     timeOfDay: "night",
   };
-  store.saveResearchBlock(customBlock.id, customBlock);
+  await store.saveResearchBlock(customBlock.id, customBlock);
   const customQueue = [
     {
       id: "research-choice-2",
@@ -588,7 +598,7 @@ try {
       guidedRoll: { total: 16, formula: "1d20 + 5" },
     },
   ];
-  const customAttempt = workflow.prepareResearchAttempt(
+  const customAttempt = await workflow.prepareResearchAttempt(
     customBlock,
     actor,
     customQueue,
@@ -643,7 +653,7 @@ try {
   assert.match(reviewedOperation.report, /ferryman named Cale/);
 
   const deadEndBlock = { ...block, id: "research-block-3" };
-  store.saveResearchBlock(deadEndBlock.id, deadEndBlock);
+  await store.saveResearchBlock(deadEndBlock.id, deadEndBlock);
   const deadEndQueue = [
     {
       id: "research-choice-3",
@@ -658,7 +668,7 @@ try {
       guidedRoll: { total: 1, formula: "1d20" },
     },
   ];
-  const deadEndAttempt = workflow.prepareResearchAttempt(
+  const deadEndAttempt = await workflow.prepareResearchAttempt(
     deadEndBlock,
     actor,
     deadEndQueue,
@@ -671,7 +681,10 @@ try {
       actor,
       operationId: "research-operation-3",
       createdAt: 300,
-      review: { subject: "The unsigned letter's courier" },
+      review: {
+        subject: "The unsigned letter's courier",
+        complicationText: "A clerk demands an explanation for the inquiry.",
+      },
     }),
     /useful player-facing dead-end dossier/,
   );
@@ -682,7 +695,10 @@ try {
     createdAt: 300,
     report:
       "The courier's name remains hidden, but the river customs ledger is the strongest next source.",
-    review: { subject: "The unsigned letter's courier" },
+    review: {
+      subject: "The unsigned letter's courier",
+      complicationText: "A clerk demands an explanation for the inquiry.",
+    },
   });
   assert.equal(approvedDeadEnd.researchApproved, true);
   assert.match(approvedDeadEnd.report, /river customs ledger/);
@@ -734,16 +750,22 @@ try {
     .find((entry) => entry.blockId === customBlock.id);
   assert.equal(followUp.needsWorldBuilding, true);
   assert.match(followUp.worldBuildingNotes, /tollhouse/);
-  const completedFollowUp = store.completeResearchFollowUp(
+  const completedFollowUp = await store.completeResearchFollowUp(
     customBlock.id,
     actor.id,
   );
   assert.equal(completedFollowUp.needsWorldBuilding, false);
   assert.ok(completedFollowUp.worldBuildingCompletedAt > 0);
   const cancelledPrivateBlock = { ...block, id: "research-block-cancelled" };
-  store.saveResearchBlock(cancelledPrivateBlock.id, cancelledPrivateBlock);
-  assert.equal(store.deleteResearchBlock(cancelledPrivateBlock.id), true);
-  assert.equal(store.deleteResearchBlock(cancelledPrivateBlock.id), false);
+  await store.saveResearchBlock(
+    cancelledPrivateBlock.id,
+    cancelledPrivateBlock,
+  );
+  assert.equal(await store.deleteResearchBlock(cancelledPrivateBlock.id), true);
+  assert.equal(
+    await store.deleteResearchBlock(cancelledPrivateBlock.id),
+    false,
+  );
   assert.throws(
     () => store.loadResearchBlock(cancelledPrivateBlock.id),
     /GM browser that opened it/,

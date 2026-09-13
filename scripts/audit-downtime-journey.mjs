@@ -211,6 +211,20 @@ try {
       ongoingProjects: state.ongoingProjects ?? [],
     });
     const gmAdapter = {
+      previewPrivateDowntimeImport: async () => ({
+        counts: {
+          huntingAreas: 1,
+          hunts: 1,
+          researchSeeds: 2,
+          researchBlocks: 1,
+        },
+        conflicts: [],
+        fingerprint: "fixture-preview",
+      }),
+      applyPrivateDowntimeImport: async (payload) => {
+        state.lastImport = payload;
+        return { preservedBrowserCopies: true };
+      },
       saveSettlement: async (payload) => {
         const saved = { ...payload, linkedMerchantIds: payload.merchantIds };
         state.settlements = [saved];
@@ -1773,6 +1787,22 @@ try {
   assert.equal(
     await page.evaluate(() => journey.state.lastResearchSeed.factCards[0].text),
     "A silver ward seals the lower stairs.",
+  );
+  await page.evaluate(() => {
+    foundry.applications.api.DialogV2 = {
+      confirm: async (options) => {
+        journey.state.importDialog = options.content;
+        return true;
+      },
+    };
+  });
+  await page.locator('[data-action="importPrivateRecords"]').click();
+  await page.waitForFunction(
+    () => journey.state.lastImport?.fingerprint === "fixture-preview",
+  );
+  assert.match(
+    await page.evaluate(() => journey.state.importDialog),
+    /1 hunting areas.*1 hunts.*2 Research Seeds.*1 Research blocks/,
   );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
