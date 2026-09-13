@@ -24,6 +24,9 @@
     <button type="button" data-action="setView" data-view="projects" {{#if viewProjects}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-diagram-project" aria-hidden="true"></i> Projects
     </button>
+    <button type="button" data-action="setView" data-view="research" {{#if viewResearch}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
+      <i class="fa-solid fa-book-open-reader" aria-hidden="true"></i> Research
+    </button>
     <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
       <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements
     </button>
@@ -193,7 +196,7 @@
           </div>
           <div class="dt-preview__warning">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
-            {{#if guided}}{{#if currentBlock.completed}}These results have been applied and the player reports delivered. Start the next block when the party is ready.{{else if currentBlock.canApply}}Choose a result for each character, then edit the report if needed. Apply results &amp; send reports saves your edits and delivers the results. Player checks are not rolled again.{{else}}These saved results are read-only while application or recovery is in progress.{{/if}}{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
+            {{#if guided}}{{#if currentBlock.completed}}These results have been applied and the player reports delivered. Start the next block when the party is ready.{{else if currentBlock.canReview}}Review each result and edit its report. Research tiers and player checks are frozen; any unprepared Research dossier must be authored and approved before Apply becomes available.{{else}}These saved results are read-only while application or recovery is in progress.{{/if}}{{else}}Hidden rolls and settlement DCs shown here are GM-only. Applying uses this exact saved plan and never rerolls.{{/if}}
           </div>
           <div class="dt-plan-list">
             {{#each currentBlock.planCharacters}}
@@ -207,7 +210,7 @@
                   {{#if workSummary}}<p class="dt-operation-cost" data-work-summary>{{workSummary}}</p>{{/if}}
                   {{#if benefitSummary}}<p class="dt-operation-cost" data-benefit-summary>{{benefitSummary}}</p>{{/if}}
                   {{#if hasOutcomeOptions}}
-                  {{#if ../../currentBlock.canApply}}
+                  {{#if ../../currentBlock.canReview}}
                   <div class="dt-chip-grid" data-operation-id="{{id}}" data-outcome-index="{{selectedOutcomeIndex}}" aria-label="Choose result for {{label}}">
                     {{#if needsBenefitTarget}}
                     <label class="dt-field dt-field--wide"><span>Patient and injury</span>
@@ -217,11 +220,47 @@
                       </select>
                     </label>
                     {{/if}}
+                    {{#if research}}
+                    <section class="dt-research-review" data-research-review data-research-approved="{{#if researchApproved}}true{{else}}false{{/if}}" aria-label="Research dossier review">
+                      <div class="dt-form__head">
+                        <div><p class="dt-eyebrow">Frozen research result</p><h5>{{researchCase.tierLabel}} · {{researchCase.difficulty}}</h5></div>
+                        <span class="dt-phase dt-phase--{{#if researchApproved}}success{{else}}warning{{/if}}">{{#if researchApproved}}Approved{{else}}Needs GM approval{{/if}}</span>
+                      </div>
+                      <dl class="dt-research-review__facts">
+                        <div><dt>Player request</dt><dd>{{researchCase.request.request}}</dd></div>
+                        <div><dt>Scope</dt><dd>{{researchCase.request.categoryLabel}} · {{researchCase.request.mode}}</dd></div>
+                        <div><dt>Approach</dt><dd>{{researchCase.skillLabel}} · {{researchCase.hours}}h · {{researchCase.timeOfDayLabel}}</dd></div>
+                        <div><dt>Check (GM only)</dt><dd>{{researchCase.rollTotal}} vs DC {{researchCase.dc}}{{#if researchCase.rollFormula}} ({{researchCase.rollFormula}}){{/if}}</dd></div>
+                        <div><dt>Complication</dt><dd>{{researchCase.risk}}% · {{#if researchCase.complication}}triggered{{else}}clear{{/if}}</dd></div>
+                      </dl>
+                      {{#unless researchApproved}}<p class="dt-notice dt-notice--warning">This tier and check are frozen. Choose or author canonical material below; the block cannot apply until this dossier is approved.</p>{{/unless}}
+                      <label class="dt-field dt-field--wide"><span>Frozen Research Seed</span><select name="researchSeedId" aria-label="Frozen Research Seed" {{#if ../../../busy}}disabled{{/if}}>{{#each researchSeedOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Only seeds frozen when this block opened are eligible. A custom subject creates no automatic canon.</small></label>
+                      <label class="dt-field dt-field--wide"><span>Canonical subject</span><input type="text" name="researchSubject" value="{{researchCase.subject}}" maxlength="160" required placeholder="Creature, person, place, faction, event, object, lead or hideout" {{#if ../../../busy}}disabled{{/if}} /></label>
+                      <details class="dt-research-facts" {{#unless researchApproved}}open{{/unless}}>
+                        <summary>Fact cards by result tier</summary>
+                        <p>Only cards at or below the frozen {{researchCase.tierLabel}} tier enter the player dossier. Higher-tier cards remain confidential.</p>
+                        {{#each researchCase.factCards}}
+                        <div class="dt-research-fact" data-research-review-fact data-fact-id="{{id}}">
+                          <label class="dt-field"><span>Fact {{number}} tier</span><select name="researchFactTier" aria-label="Fact {{number}} tier" {{#if ../../../busy}}disabled{{/if}}>{{#each tierOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                          <label class="dt-field dt-field--wide"><span>Fiction-first fact {{number}}</span><textarea name="researchFactText" rows="2" maxlength="800" aria-label="Research fact {{number}}" {{#if ../../../busy}}disabled{{/if}}>{{text}}</textarea></label>
+                        </div>
+                        {{/each}}
+                      </details>
+                      <label class="dt-field dt-field--wide"><span>Breakthrough action or lead</span><textarea name="researchActionableDiscovery" rows="2" maxlength="800" placeholder="What can the characters do with a breakthrough?" {{#if ../../../busy}}disabled{{/if}}>{{researchCase.actionableDiscovery}}</textarea></label>
+                      <label class="dt-field dt-field--wide"><span>Triggered complication</span><textarea name="researchComplicationText" rows="2" maxlength="800" placeholder="Required only when the frozen complication roll triggered" {{#if ../../../busy}}disabled{{/if}}>{{researchCase.complicationText}}</textarea></label>
+                      <label class="dt-field dt-field--wide"><span>Exact player-safe Actor or Journal UUID</span><input name="researchCanonicalUuid" list="dt-research-doc-{{id}}" value="{{researchCase.canonicalUuid}}" maxlength="300" placeholder="Actor... or JournalEntry..." {{#if ../../../busy}}disabled{{/if}} /><datalist id="dt-research-doc-{{id}}">{{#each researchCanonicalOptions}}<option value="{{uuid}}">{{label}}</option>{{/each}}</datalist><small>The module verifies Observer access for every owner before sharing this link.</small></label>
+                      <label class="dt-field dt-field--wide"><span>Player-facing link label</span><input name="researchCanonicalLabel" value="{{researchCase.canonicalLabel}}" maxlength="160" placeholder="Bestiary entry, witness profile, recovered map..." {{#if ../../../busy}}disabled{{/if}} /></label>
+                      <label class="dt-check"><input type="checkbox" name="researchShareCanonicalLink" {{#if researchCase.shareCanonicalLink}}checked{{/if}} {{#if ../../../busy}}disabled{{/if}} /> Share the verified Actor or Journal link with the player</label>
+                      <label class="dt-check"><input type="checkbox" name="researchNeedsWorldBuilding" {{#if researchCase.needsWorldBuilding}}checked{{/if}} {{#if ../../../busy}}disabled{{/if}} /> Track this discovery as needing world building</label>
+                      <label class="dt-field dt-field--wide"><span>Private world-building notes</span><textarea name="researchWorldBuildingNotes" rows="2" maxlength="1000" placeholder="Journal, map, encounter or faction work still needed" {{#if ../../../busy}}disabled{{/if}}>{{researchCase.worldBuildingNotes}}</textarea></label>
+                    </section>
+                    {{else}}
                     {{#each outcomeOptions}}
-                    <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
+                    <button type="button" class="dt-button {{#if selected}}dt-button--primary{{/if}}" data-action="chooseGuidedOutcome" data-operation-id="{{../id}}" data-outcome-index="{{index}}" title="{{report}}" {{#unless ../../../currentBlock.canReview}}disabled{{/unless}} {{#if ../../../busy}}disabled{{/if}} {{#if selected}}aria-pressed="true"{{else}}aria-pressed="false"{{/if}}>{{label}} · {{rewardLabel}}</button>
                     {{/each}}
-                    <label class="dt-field dt-field--wide"><span>Player report</span><textarea data-guided-report data-saved-report="{{savedReport}}" rows="3" maxlength="800" aria-label="Player report for {{label}}" {{#unless ../../currentBlock.canApply}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{report}}</textarea><small>Choosing another result loads its report. Edits are saved when you apply, or with Save report.</small></label>
-                    <button type="button" class="dt-button" data-action="saveGuidedReport" {{#unless ../../currentBlock.canApply}}disabled{{/unless}} {{#if ../../busy}}disabled{{/if}}>Save report</button>
+                    {{/if}}
+                    <label class="dt-field dt-field--wide"><span>{{#if research}}Final player dossier{{else}}Player report{{/if}}</span><textarea data-guided-report data-saved-report="{{savedReport}}" rows="{{#if research}}7{{else}}3{{/if}}" maxlength="{{#if research}}3000{{else}}800{{/if}}" aria-label="Player report for {{label}}" {{#unless ../../currentBlock.canReview}}readonly{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{report}}</textarea><small>{{#if research}}Only this dossier, earned fact cards, and an explicitly shared player-safe link are delivered.{{else}}Choosing another result loads its report. Edits are saved when you apply, or with Save report.{{/if}}</small></label>
+                    <button type="button" class="dt-button {{#if research}}{{#unless researchApproved}}dt-button--primary{{/unless}}{{/if}}" data-action="saveGuidedReport" {{#unless ../../currentBlock.canReview}}disabled{{/unless}} {{#if ../../busy}}disabled{{/if}}>{{#if research}}Approve dossier{{else}}Save report{{/if}}</button>
                   </div>
                   {{/if}}
                   {{/if}}
@@ -265,6 +304,7 @@
         {{/if}}
         <form class="dt-form" data-form="new-block">
           <label class="dt-field"><span>Settlement</span><select name="settlementId" aria-label="Downtime settlement" {{#if busy}}disabled{{/if}}><option value="">No saved settlement</option>{{#each blockSettlementOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>A saved settlement supplies its own allowed activities and linked shops.</small></label>
+          <label class="dt-field"><span>Research time</span><select name="timeOfDay" aria-label="Research time" {{#if busy}}disabled{{/if}}>{{#each researchBlockTimeOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Sets source availability and risk for Research &amp; Rumors.</small></label>
           <label class="dt-field"><span>Location preset</span><select name="locationPresetId" aria-label="Location preset" {{#if blockHasSettlement}}disabled{{/if}} {{#if busy}}disabled{{/if}}>{{#each locationPresetOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Choose a wilderness area for hunting. Saved areas control which activities are available.</small></label>
           {{#if huntingEditor}}
           <details class="dt-field dt-field--wide">
@@ -595,6 +635,86 @@
         <fieldset class="dt-fieldset"><legend>Applicable skills</legend><p>Players choose one for each contribution. Choose at least one if successes are required.</p><div class="dt-chip-grid">{{#each projectEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
         <footer class="dt-form__actions"><button type="button" class="dt-button dt-button--primary" data-action="saveGuidedProject" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{#if projectEditor.id}}Save changes{{else}}Add project{{/if}}</button></footer>
       </form>
+    </section>
+    {{/if}}
+
+    {{#if viewResearch}}
+    <section class="dt-settlement-layout dt-research-library" aria-labelledby="dt-research-heading">
+      <aside class="dt-rail">
+        <div class="dt-rail__head">
+          <div><p class="dt-eyebrow">Confidential campaign material</p><h3 id="dt-research-heading">Research Seeds</h3></div>
+          <button type="button" class="dt-icon-button" data-action="newResearchSeed" title="New Research Seed" aria-label="New Research Seed" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+        </div>
+        <p>Seeds curate what open-ended research can discover. Hidden seed names, numeric DCs and unrevealed facts never enter player choices.</p>
+        {{#if hasResearchSeeds}}
+        <ul class="dt-rail__list">
+          {{#each researchSeeds}}
+          <li><button type="button" data-action="selectResearchSeed" data-seed-id="{{id}}" {{#if selected}}class="is-selected" aria-current="true"{{/if}} {{#if ../busy}}disabled{{/if}}><strong>{{title}}</strong><span>{{categoryLabel}} · {{difficulty}} · {{risk}}%{{#if playerKnown}} · player-known{{/if}}</span></button></li>
+          {{/each}}
+        </ul>
+        {{else}}
+        <p class="dt-inline-empty">No seeds yet. Players can still submit questions; the result will wait for GM preparation.</p>
+        {{/if}}
+      </aside>
+
+      <div class="dt-editor dt-research-editor">
+        <form class="dt-form" data-form="research-seed" aria-labelledby="dt-research-seed-edit-heading">
+          <input type="hidden" name="id" value="{{researchSeedEditor.id}}" />
+          <div class="dt-form__head">
+            <div><p class="dt-eyebrow">{{#if researchSeedEditor.editing}}Edit prepared discovery{{else}}Prepare a discovery{{/if}}</p><h3 id="dt-research-seed-edit-heading">{{#if researchSeedEditor.title}}{{researchSeedEditor.title}}{{else}}New Research Seed{{/if}}</h3></div>
+            <p>Saved only in this full GM's browser. Open blocks freeze a private copy so later edits cannot change an earned result.</p>
+          </div>
+          <div class="dt-form-grid">
+            <label class="dt-field dt-field--wide"><span>Canonical subject</span><input type="text" name="title" value="{{researchSeedEditor.title}}" maxlength="160" required placeholder="The Glass-Eyed Stalker, Ashen Knives, Old North Aqueduct..." {{#if busy}}disabled{{/if}} /></label>
+            <label class="dt-field"><span>Category</span><select name="category" aria-label="Research Seed category" {{#if busy}}disabled{{/if}}>{{#each researchSeedEditor.categoryOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label class="dt-field"><span>Player difficulty label</span><input name="difficulty" value="{{researchSeedEditor.difficulty}}" maxlength="60" required {{#if busy}}disabled{{/if}} /></label>
+            <label class="dt-field"><span>Research DC (GM only)</span><input type="number" name="dc" value="{{researchSeedEditor.dc}}" min="5" max="40" step="1" required {{#if busy}}disabled{{/if}} /></label>
+            <label class="dt-field"><span>Base complication chance (%)</span><input type="number" name="risk" value="{{researchSeedEditor.risk}}" min="0" max="100" step="1" required {{#if busy}}disabled{{/if}} /></label>
+            <label class="dt-field dt-field--wide"><span>Private GM summary</span><textarea name="gmSummary" rows="3" maxlength="800" placeholder="Why this matters, where it points, and what must remain secret" {{#if busy}}disabled{{/if}}>{{researchSeedEditor.gmSummary}}</textarea></label>
+          </div>
+          <fieldset class="dt-fieldset"><legend>Discovery and visibility</legend>
+            <label class="dt-check"><input type="checkbox" name="discoverable" {{#if researchSeedEditor.discoverable}}checked{{/if}} {{#if busy}}disabled{{/if}} /> Eligible for open-ended discovery</label>
+            <label class="dt-check"><input type="checkbox" name="playerKnown" {{#if researchSeedEditor.playerKnown}}checked{{/if}} {{#if busy}}disabled{{/if}} /> Show this subject by name in player choices</label>
+            <small>Player-known exposes only the subject label, category, difficulty, complication percentage and valid approaches—not hidden facts or the numeric DC.</small>
+          </fieldset>
+          <fieldset class="dt-fieldset"><legend>Available time</legend><div class="dt-chip-grid">{{#each researchSeedEditor.timeOptions}}<label class="dt-chip"><input type="checkbox" name="times" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}}</span></label>{{/each}}</div></fieldset>
+          <fieldset class="dt-fieldset"><legend>Useful approaches</legend><div class="dt-chip-grid">{{#each researchSeedEditor.skillOptions}}<label class="dt-chip"><input type="checkbox" name="skills" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{label}} <small>{{source}}</small></span></label>{{/each}}</div></fieldset>
+          <details class="dt-research-facts" open>
+            <summary>Fact cards by earned tier</summary>
+            <p>Write concrete, fiction-first facts. An Interesting Thread earns tier 1; Meaningful Discovery earns tiers 1–2; Breakthrough earns tiers 1–3 plus the action below.</p>
+            {{#each researchSeedEditor.factCards}}
+            <div class="dt-research-fact" data-research-fact data-fact-id="{{id}}">
+              <label class="dt-field"><span>Fact {{number}} tier</span><select name="factTier" aria-label="Fact {{number}} tier" {{#if ../busy}}disabled{{/if}}>{{#each tierOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label class="dt-field dt-field--wide"><span>Fiction-first fact {{number}}</span><textarea name="factText" rows="2" maxlength="800" aria-label="Research Seed fact {{number}}" placeholder="Leave unused cards blank" {{#if ../busy}}disabled{{/if}}>{{text}}</textarea></label>
+            </div>
+            {{/each}}
+          </details>
+          <label class="dt-field dt-field--wide"><span>Breakthrough action or lead</span><textarea name="actionableDiscovery" rows="3" maxlength="800" placeholder="A route, weakness, contact, opportunity, hideout or next concrete action" {{#if busy}}disabled{{/if}}>{{researchSeedEditor.actionableDiscovery}}</textarea></label>
+          <label class="dt-field dt-field--wide"><span>Complication</span><textarea name="complicationText" rows="3" maxlength="800" placeholder="Attention attracted, false witness, owed favor, dangerous source..." {{#if busy}}disabled{{/if}}>{{researchSeedEditor.complicationText}}</textarea><small>Required for immediate delivery whenever this seed's complication roll triggers.</small></label>
+          <fieldset class="dt-fieldset"><legend>Optional canonical Foundry link</legend>
+            <label class="dt-field dt-field--wide"><span>Actor or Journal UUID</span><input name="canonicalUuid" list="dt-research-seed-docs" value="{{researchSeedEditor.canonicalUuid}}" maxlength="300" placeholder="Actor... or JournalEntry..." {{#if busy}}disabled{{/if}} /><datalist id="dt-research-seed-docs">{{#each researchSeedEditor.canonicalOptions}}<option value="{{uuid}}">{{label}}</option>{{/each}}</datalist></label>
+            <label class="dt-field dt-field--wide"><span>Player-facing link label</span><input name="canonicalLabel" value="{{researchSeedEditor.canonicalLabel}}" maxlength="160" placeholder="Bestiary entry, witness profile, recovered map..." {{#if busy}}disabled{{/if}} /></label>
+            <small>Saving a UUID does not share it. The GM chooses whether to share after seeing a character's frozen result, and the module verifies player permission first.</small>
+          </fieldset>
+          <footer class="dt-form__actions">
+            {{#if researchSeedEditor.editing}}<button type="button" class="dt-button dt-button--danger" data-action="deleteResearchSeed" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete seed</button>{{/if}}
+            <button type="button" class="dt-button dt-button--primary" data-action="saveResearchSeed" {{#if busy}}disabled{{/if}}><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> {{#if researchSeedEditor.editing}}Save seed{{else}}Add seed{{/if}}</button>
+          </footer>
+        </form>
+
+        <section class="dt-section dt-research-followups" aria-labelledby="dt-research-followups-heading">
+          <div class="dt-section__head"><div><p class="dt-eyebrow">Private preparation queue</p><h3 id="dt-research-followups-heading">Needs World Building</h3></div><span>{{researchCasesNeedingWork.length}} cases</span></div>
+          {{#if hasResearchCasesNeedingWork}}
+          <div class="dt-history__list">
+            {{#each researchCasesNeedingWork}}
+            <article><div><h4>{{actorName}} · {{subject}}</h4><p>{{tierLabel}} · {{locationName}} · {{timeOfDayLabel}}{{#if updatedAt}} · {{updatedAt}}{{/if}}</p><small>{{request}}{{#if worldBuildingNotes}} — {{worldBuildingNotes}}{{/if}}</small></div><span class="dt-phase dt-phase--{{#if approved}}warning{{else}}danger{{/if}}">{{statusLabel}}</span>{{#if canComplete}}<button type="button" class="dt-button dt-button--success" data-action="completeResearchFollowUp" data-block-id="{{blockId}}" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}>Mark world building complete</button>{{/if}}</article>
+            {{/each}}
+          </div>
+          {{else}}
+          <p class="dt-inline-empty">No research cases currently need preparation or world-building follow-up.</p>
+          {{/if}}
+        </section>
+      </div>
     </section>
     {{/if}}
 

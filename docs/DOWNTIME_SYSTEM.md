@@ -1,5 +1,9 @@
 # Downtime
 
+**Research & Rumors:** [Questions, discoveries and GM dossiers](DOWNTIME_RESEARCH_DESIGN.md)
+are available in the current source. The Research tab manages private seeds and
+follow-up preparation; new blocks include a Research time choice.
+
 **New field ammunition:** [Drakmor field ammunition v1](FIELD_AMMUNITION.md)
 adds a separate recipe picker, gathering credits, visible complication chances,
 and check-based crafting progress. Its house rules supersede the ordinary

@@ -510,13 +510,65 @@ try {
   const editorHtml = Handlebars.compile(workspaceTemplateSource)(editorContext);
   assert.match(editorHtml, /data-form="guided-template"/);
   assert.match(editorHtml, /Unsaved report text/);
-  assert.equal((editorHtml.match(/data-template-outcome/g) ?? []).length, 3);
+  assert.equal((editorHtml.match(/data-template-outcome/g) ?? []).length, 4);
   const newEditor = workspaceModule.normalizeWorkspaceProjection(
     { guidedTemplates: library },
     { view: "activities", creatingTemplate: true },
   );
   assert.equal(newEditor.templateEditor.id, "");
   assert.equal(newEditor.templateEditor.outcomes.length, 3);
+
+  const researchLibraryContext = workspaceModule.normalizeWorkspaceProjection(
+    {
+      researchSeeds: [
+        {
+          id: "salt-stalker",
+          title: "The Salt Stalker",
+          category: "creature",
+          difficulty: "Hard",
+          dc: 17,
+          risk: 15,
+          times: ["night"],
+          skills: ["inv", "nat"],
+          discoverable: true,
+          factCards: [{ tier: 1, text: "Its tracks crystallize." }],
+        },
+      ],
+      researchCases: [
+        {
+          id: "case-1",
+          blockId: "block-1",
+          actorId: "actor-1",
+          actorName: "Mira",
+          subject: "Old aqueduct",
+          tierLabel: "Interesting Thread",
+          request: { request: "Find a hidden place." },
+          approved: true,
+          needsWorldBuilding: true,
+          worldBuildingNotes: "Create the aqueduct journal.",
+        },
+      ],
+      researchCanonicalOptions: [
+        { uuid: "JournalEntry.aqueduct", label: "Journal — Old Aqueduct" },
+      ],
+    },
+    {
+      view: "research",
+      selectedResearchSeedId: "salt-stalker",
+      creatingResearchSeed: false,
+    },
+  );
+  assert.equal(researchLibraryContext.viewResearch, true);
+  assert.equal(researchLibraryContext.researchSeedEditor.dc, 17);
+  assert.equal(researchLibraryContext.researchCasesNeedingWork.length, 1);
+  const researchLibraryHtml = Handlebars.compile(workspaceTemplateSource)(
+    researchLibraryContext,
+  );
+  assert.match(researchLibraryHtml, /data-form="research-seed"/);
+  assert.match(researchLibraryHtml, /The Salt Stalker/);
+  assert.match(researchLibraryHtml, /Needs World Building/);
+  assert.match(researchLibraryHtml, /Create the aqueduct journal/);
+  assert.match(researchLibraryHtml, /data-action="completeResearchFollowUp"/);
 
   const previewWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
@@ -565,6 +617,90 @@ try {
     }),
     "block-2",
     "recovery should retain its active block target outside the Current Block tab",
+  );
+
+  const pendingResearchWorkspace = workspaceModule.normalizeWorkspaceProjection(
+    {
+      workflow: {
+        id: "research-block",
+        mode: "guided",
+        status: "planned",
+        canApply: false,
+        applyReason: "One Research dossier needs GM preparation.",
+        participants: [{ actorId: "ada", name: "Ada", submitted: true }],
+        plan: {
+          characters: [
+            {
+              actorId: "ada",
+              name: "Ada",
+              operations: [
+                {
+                  id: "research-operation",
+                  label: "Research & Rumors",
+                  research: true,
+                  researchApproved: false,
+                  selectedOutcomeIndex: 2,
+                  outcomeOptions: [
+                    { index: 2, label: "Meaningful Discovery", selected: true },
+                  ],
+                  researchSeedOptions: [
+                    { id: "seed-1", label: "Old Aqueduct · place" },
+                  ],
+                  researchCanonicalOptions: [],
+                  researchCase: {
+                    id: "case-1",
+                    request: {
+                      request: "What lies below the north gate?",
+                      category: "place",
+                      mode: "directed",
+                    },
+                    skill: "inv",
+                    hours: 8,
+                    timeOfDay: "day",
+                    tier: 2,
+                    tierLabel: "Meaningful Discovery",
+                    difficulty: "Hard",
+                    dc: 17,
+                    risk: 12,
+                    roll: { total: 18, formula: "1d20 + 5" },
+                    subject: "Old Aqueduct",
+                    factCards: [
+                      { tier: 2, text: "A ward seals the lower stairs." },
+                    ],
+                  },
+                  report: "The GM is preparing the complete finding.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    { view: "current" },
+  );
+  assert.equal(pendingResearchWorkspace.currentBlock.canReview, true);
+  assert.equal(pendingResearchWorkspace.currentBlock.canApply, false);
+  assert.equal(
+    pendingResearchWorkspace.currentBlock.planCharacters[0].operations[0]
+      .researchCase.dc,
+    17,
+  );
+  assert.equal(
+    pendingResearchWorkspace.currentBlock.planCharacters[0].operations[0]
+      .researchCase.skillLabel,
+    "Investigation",
+  );
+  const pendingResearchHtml = Handlebars.compile(workspaceTemplateSource)(
+    pendingResearchWorkspace,
+  );
+  assert.match(pendingResearchHtml, /data-research-review/);
+  assert.match(pendingResearchHtml, /Needs GM approval/);
+  assert.match(pendingResearchHtml, /Final player dossier/);
+  assert.match(pendingResearchHtml, /Investigation · 8h · Day/);
+  assert.match(pendingResearchHtml, /18 vs DC 17/);
+  assert.match(
+    pendingResearchHtml,
+    /One Research dossier needs GM preparation/,
   );
 
   const player = activitiesModule.normalizePlayerDowntimeProjection(

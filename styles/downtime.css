@@ -1487,6 +1487,90 @@
   padding: 14px;
 }
 
+.infinity-downtime-workspace .dt-research-editor {
+  display: grid;
+  gap: 14px;
+  overflow: visible;
+}
+
+.infinity-downtime-workspace .dt-research-review {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-workspace .dt-research-review h5 {
+  margin: 2px 0 0;
+  color: var(--dt-strong);
+  font-size: 0.9rem;
+}
+
+.infinity-downtime-workspace .dt-research-review__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.infinity-downtime-workspace .dt-research-review__facts div {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-research-review__facts dt {
+  color: var(--dt-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.infinity-downtime-workspace .dt-research-review__facts dd {
+  margin: 3px 0 0;
+  color: var(--dt-text);
+  overflow-wrap: anywhere;
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-research-facts {
+  padding: 10px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-surface);
+}
+
+:is(.infinity-downtime-workspace, .infinity-downtime-activities)
+  .dt-research-facts
+  > summary {
+  color: var(--dt-strong);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.infinity-downtime-workspace .dt-research-fact {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.infinity-downtime-workspace .dt-research-followups {
+  margin: 0;
+}
+
+.infinity-downtime-workspace .dt-research-library .dt-rail > p {
+  margin: 9px 5px;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .infinity-downtime-workspace .dt-editor__empty {
   display: flex;
   align-items: center;
@@ -1525,6 +1609,44 @@
   margin: 2px 0 0;
   color: var(--dt-muted);
   font-size: var(--lf-text-xs);
+}
+
+.infinity-downtime-activities .dt-research-request {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.infinity-downtime-activities .dt-research-request > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.infinity-downtime-activities .dt-research-history {
+  display: grid;
+  gap: 9px;
+}
+
+.infinity-downtime-activities .dt-research-history__entry {
+  padding: 10px;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  background: var(--dt-bg-alt);
+}
+
+.infinity-downtime-activities .dt-research-history__entry header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.infinity-downtime-activities .dt-research-history__entry p {
+  margin: 6px 0 0;
+  line-height: 1.45;
 }
 
 /* Player character, time, and heat summary. */
@@ -2161,6 +2283,11 @@
     grid-template-columns: 1fr;
   }
 
+  .infinity-downtime-workspace .dt-research-review__facts,
+  .infinity-downtime-workspace .dt-research-fact {
+    grid-template-columns: 1fr;
+  }
+
   .infinity-downtime-workspace .dt-field--wide {
     grid-column: auto;
   }
@@ -2287,6 +2414,14 @@
 
   .infinity-downtime-activities .dt-activity-fields {
     grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-activities .dt-research-request {
+    grid-template-columns: 1fr;
+  }
+
+  .infinity-downtime-activities .dt-research-history__entry header {
+    flex-direction: column;
   }
 
   .infinity-downtime-activities .dt-field--wide {

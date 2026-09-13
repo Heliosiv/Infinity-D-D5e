@@ -31,6 +31,16 @@ import {
   materialPickerOptions,
 } from "./downtime/material-options.js";
 import { DOWNTIME_BENEFITS } from "./downtime/benefit-rules.js";
+import {
+  RESEARCH_APPROACHES,
+  RESEARCH_CATEGORIES,
+  RESEARCH_RESULT_TIERS,
+} from "./downtime/research.js";
+import {
+  downtimeTimeOfDayLabel,
+  DOWNTIME_TIME_OF_DAY_OPTIONS,
+  normalizeDowntimeTimeOfDay,
+} from "./downtime/time-of-day.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
 
@@ -42,6 +52,7 @@ const WORKSPACE_VIEWS = new Set([
   "current",
   "activities",
   "projects",
+  "research",
   "settlements",
   "history",
 ]);
@@ -195,6 +206,12 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       selectGuidedTemplate: DowntimeWorkspaceApp._onSelectGuidedTemplate,
       newGuidedTemplate: DowntimeWorkspaceApp._onNewGuidedTemplate,
       saveGuidedTemplate: DowntimeWorkspaceApp._onSaveGuidedTemplate,
+      selectResearchSeed: DowntimeWorkspaceApp._onSelectResearchSeed,
+      newResearchSeed: DowntimeWorkspaceApp._onNewResearchSeed,
+      saveResearchSeed: DowntimeWorkspaceApp._onSaveResearchSeed,
+      deleteResearchSeed: DowntimeWorkspaceApp._onDeleteResearchSeed,
+      completeResearchFollowUp:
+        DowntimeWorkspaceApp._onCompleteResearchFollowUp,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
       openGmWorkbenchUtility: GmWorkbenchApp._onOpenUtility,
     },
@@ -265,12 +282,16 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._projectDraft = null;
     this._selectedProjectId = null;
     this._creatingProject = true;
+    this._selectedResearchSeedId = null;
+    this._creatingResearchSeed = true;
+    this._researchSeedDraft = null;
     this._busy = false;
     this._statusMessage = "";
     this._errorMessage = "";
     this._projectionErrorMessage = "";
     this._pendingFocus = null;
     this._guidedReportDrafts = new Map();
+    this._researchReviewDrafts = new Map();
     this._actorSelectorState = createActorSelectorState();
     this._unsubscribe = null;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
@@ -363,6 +384,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       projectDraft: this._projectDraft,
       selectedProjectId: this._selectedProjectId,
       creatingProject: this._creatingProject,
+      selectedResearchSeedId: this._selectedResearchSeedId,
+      creatingResearchSeed: this._creatingResearchSeed,
+      researchSeedDraft: this._researchSeedDraft,
       actorSelector: this._actorSelectorState,
     });
     if (dataAvailable) {
@@ -372,6 +396,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._selectedSettlementId = context.selectedSettlement?.id ?? null;
     this._selectedTemplateId = context.templateEditor?.id ?? null;
     this._selectedProjectId = context.projectEditor?.id ?? null;
+    this._selectedResearchSeedId = context.researchSeedEditor?.id ?? null;
     this._activeBlockId = cleanId(context.currentBlock?.id);
     this._guided = context.currentBlock?.guided ?? true;
     const reportKeys = new Set();
@@ -380,14 +405,19 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         const key = `${this._activeBlockId}:${operation.id}`;
         reportKeys.add(key);
         const draft = this._guidedReportDrafts?.get(key);
-        if (draft !== undefined && context.currentBlock.canApply)
+        if (draft !== undefined && context.currentBlock.canReview)
           operation.report = draft;
       }
     }
     if (dataAvailable && this._view === "current") {
-      for (const key of this._guidedReportDrafts?.keys() ?? []) {
-        if (!reportKeys.has(key) || !context.currentBlock?.canApply)
+      for (const key of new Set([
+        ...(this._guidedReportDrafts?.keys() ?? []),
+        ...(this._researchReviewDrafts?.keys() ?? []),
+      ])) {
+        if (!reportKeys.has(key) || !context.currentBlock?.canReview) {
           this._guidedReportDrafts.delete(key);
+          this._researchReviewDrafts?.delete(key);
+        }
       }
     }
 
@@ -511,6 +541,30 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         this._projectDraft = readGuidedProjectForm(projectForm);
       });
     }
+    const researchSeedForm = this.element?.querySelector?.(
+      '[data-form="research-seed"]',
+    );
+    for (const event of ["input", "change"]) {
+      researchSeedForm?.addEventListener(event, () => {
+        this._researchSeedDraft = readResearchSeedForm(researchSeedForm);
+      });
+    }
+    for (const review of this.element?.querySelectorAll?.(
+      "[data-research-review]",
+    ) ?? []) {
+      const card = review.closest("[data-operation-id]");
+      const operationId = cleanId(card?.dataset?.operationId);
+      if (!operationId) continue;
+      const key = `${this._activeBlockId}:${operationId}`;
+      const draft = this._researchReviewDrafts?.get(key);
+      if (draft) restoreResearchReviewForm(card, draft);
+      for (const event of ["input", "change"]) {
+        review.addEventListener(event, () => {
+          this._researchReviewDrafts ??= new Map();
+          this._researchReviewDrafts.set(key, readResearchReviewForm(card));
+        });
+      }
+    }
     for (const field of this.element?.querySelectorAll?.(
       "[data-guided-report]",
     ) ?? []) {
@@ -533,6 +587,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._newBlockDraft = {
       locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
       settlementId: cleanId(data.get("settlementId")),
+      timeOfDay: normalizeDowntimeTimeOfDay(data.get("timeOfDay")),
       locationName: String(data.get("locationName") ?? ""),
       huntingRules: readHuntingRules(form),
       hours: String(data.get("hours") ?? ""),
@@ -911,6 +966,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const payload = {
       settlementId: cleanId(data.get("settlementId")),
       locationPresetId: cleanId(data.get("locationPresetId")) || "wilderness",
+      timeOfDay: normalizeDowntimeTimeOfDay(data.get("timeOfDay")),
       locationName: String(data.get("locationName") ?? "").trim(),
       ...(huntingRules ? { huntingRules } : {}),
       hours: positiveInteger(data.get("hours"), 0),
@@ -1021,25 +1077,31 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       ...(this.element?.querySelectorAll?.("[data-guided-report]") ?? []),
     ]
       .filter((field) => {
-        const target = field
-          .closest("[data-operation-id]")
-          ?.querySelector("[data-benefit-target]");
+        const card = field.closest("[data-operation-id]");
+        const target = card?.querySelector("[data-benefit-target]");
+        const researchReview = card?.querySelector("[data-research-review]");
+        const operationId = cleanId(card?.dataset?.operationId);
+        const researchDraftKey = `${this._currentBlockId()}:${operationId}`;
         return (
+          (researchReview &&
+            researchReview.dataset.researchApproved !== "true") ||
+          (researchReview &&
+            this._researchReviewDrafts?.has(researchDraftKey)) ||
           field.value !== field.dataset.savedReport ||
           (target && target.value !== target.dataset.savedTarget)
         );
       })
-      .map((field) => ({
-        blockId: this._currentBlockId(),
-        operationId: field.closest("[data-operation-id]")?.dataset.operationId,
-        outcomeIndex: Number(
-          field.closest("[data-operation-id]")?.dataset.outcomeIndex,
-        ),
-        report: field.value,
-        benefitTarget: field
-          .closest("[data-operation-id]")
-          ?.querySelector("[data-benefit-target]")?.value,
-      }));
+      .map((field) => {
+        const card = field.closest("[data-operation-id]");
+        return {
+          blockId: this._currentBlockId(),
+          operationId: card?.dataset.operationId,
+          outcomeIndex: Number(card?.dataset.outcomeIndex),
+          report: field.value,
+          benefitTarget: card?.querySelector("[data-benefit-target]")?.value,
+          researchReview: readResearchReviewForm(card),
+        };
+      });
     for (const payload of reports) {
       const saved = await this._runCommand("chooseGuidedOutcome", payload, {
         pending: "Saving the player reports before applying...",
@@ -1047,6 +1109,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       });
       if (saved === null) return;
       this._guidedReportDrafts?.delete(
+        `${payload.blockId}:${payload.operationId}`,
+      );
+      this._researchReviewDrafts?.delete(
         `${payload.blockId}:${payload.operationId}`,
       );
     }
@@ -1130,6 +1195,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         outcomeIndex: Number(card.dataset.outcomeIndex),
         report: String(card.querySelector("[data-guided-report]")?.value ?? ""),
         benefitTarget: card.querySelector("[data-benefit-target]")?.value,
+        researchReview: readResearchReviewForm(card),
       },
       {
         pending: "Saving player report...",
@@ -1137,8 +1203,11 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         focus: `[data-operation-id="${cssEscape(operationId)}"] [data-guided-report]`,
       },
     );
-    if (result !== null)
+    if (result !== null) {
       this._guidedReportDrafts?.delete(`${blockId}:${operationId}`);
+      this._researchReviewDrafts?.delete(`${blockId}:${operationId}`);
+      if (this.rendered) this.render(false);
+    }
   }
 
   static async _onCancelBlock() {
@@ -1282,6 +1351,89 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
   }
 
+  static _onSelectResearchSeed(_event, target) {
+    if (this._busy) return;
+    const seedId = cleanId(target?.dataset?.seedId);
+    if (!seedId) return;
+    this._selectedResearchSeedId = seedId;
+    this._creatingResearchSeed = false;
+    this._researchSeedDraft = null;
+    this._pendingFocus = '[data-form="research-seed"] input[name="title"]';
+    this.render(false);
+  }
+
+  static _onNewResearchSeed() {
+    if (this._busy) return;
+    this._selectedResearchSeedId = null;
+    this._creatingResearchSeed = true;
+    this._researchSeedDraft = null;
+    this._pendingFocus = '[data-form="research-seed"] input[name="title"]';
+    this.render(false);
+  }
+
+  static async _onSaveResearchSeed() {
+    if (this._busy) return;
+    const form = this.element?.querySelector?.('[data-form="research-seed"]');
+    if (!form || form.reportValidity?.() === false) return;
+    this._researchSeedDraft = readResearchSeedForm(form);
+    const result = await this._runCommand(
+      "saveResearchSeed",
+      this._researchSeedDraft,
+      {
+        pending: "Saving confidential Research Seed...",
+        success: "Research Seed saved in this GM browser.",
+        focus: '[data-form="research-seed"] input[name="title"]',
+      },
+    );
+    if (result !== null) {
+      this._researchSeedDraft = null;
+      this._selectedResearchSeedId = result.id;
+      this._creatingResearchSeed = false;
+      if (this.rendered) this.render(false);
+    }
+  }
+
+  static async _onDeleteResearchSeed() {
+    if (this._busy || !this._selectedResearchSeedId) return;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Delete this Research Seed?" },
+      content:
+        "<p>This removes the seed from this GM browser. Already frozen research blocks keep their private snapshot.</p>",
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    const result = await this._runCommand(
+      "deleteResearchSeed",
+      { seedId: this._selectedResearchSeedId },
+      {
+        pending: "Deleting Research Seed...",
+        success: "Research Seed deleted. Frozen cases were retained.",
+        focus: '[data-action="newResearchSeed"]',
+      },
+    );
+    if (result !== null) {
+      this._selectedResearchSeedId = null;
+      this._creatingResearchSeed = true;
+      this._researchSeedDraft = null;
+      if (this.rendered) this.render(false);
+    }
+  }
+
+  static async _onCompleteResearchFollowUp(_event, target) {
+    const blockId = cleanId(target?.dataset?.blockId);
+    const actorId = cleanId(target?.dataset?.actorId);
+    if (!blockId || !actorId) return;
+    await this._runCommand(
+      "completeResearchFollowUp",
+      { blockId, actorId },
+      {
+        pending: "Marking the Research follow-up complete...",
+        success: "Research world-building follow-up completed.",
+        focus: "#dt-research-followups-heading",
+      },
+    );
+  }
+
   static _onSelectGuidedProject(_event, target) {
     if (this._busy) return;
     const projectId = cleanId(target?.dataset?.projectId);
@@ -1370,6 +1522,113 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         this.element?.querySelector?.("[data-block-id]")?.dataset?.blockId,
       ) || this._activeBlockId
     );
+  }
+}
+
+function readResearchSeedForm(form) {
+  const data = new FormData(form);
+  return {
+    id: cleanId(data.get("id")),
+    title: String(data.get("title") ?? ""),
+    category: cleanId(data.get("category")) || "anything",
+    gmSummary: String(data.get("gmSummary") ?? ""),
+    playerKnown: data.get("playerKnown") === "on",
+    discoverable: data.get("discoverable") === "on",
+    difficulty: String(data.get("difficulty") ?? ""),
+    dc: data.get("dc"),
+    risk: data.get("risk"),
+    times: data.getAll("times").map(cleanId).filter(Boolean),
+    skills: data.getAll("skills").map(cleanId).filter(Boolean),
+    factCards: [...form.querySelectorAll("[data-research-fact]")].map(
+      (row, index) => ({
+        id: cleanId(row.dataset.factId) || `fact-${index + 1}`,
+        tier: row.querySelector('[name="factTier"]')?.value,
+        text: String(row.querySelector('[name="factText"]')?.value ?? ""),
+      }),
+    ),
+    actionableDiscovery: String(data.get("actionableDiscovery") ?? ""),
+    complicationText: String(data.get("complicationText") ?? ""),
+    canonicalUuid: String(data.get("canonicalUuid") ?? ""),
+    canonicalLabel: String(data.get("canonicalLabel") ?? ""),
+  };
+}
+
+function readResearchReviewForm(card) {
+  const form = card?.querySelector?.("[data-research-review]");
+  if (!form) return null;
+  return {
+    seedId: cleanId(form.querySelector('[name="researchSeedId"]')?.value),
+    subject: String(
+      form.querySelector('[name="researchSubject"]')?.value ?? "",
+    ),
+    factCards: [...form.querySelectorAll("[data-research-review-fact]")].map(
+      (row, index) => ({
+        id: cleanId(row.dataset.factId) || `fact-${index + 1}`,
+        tier: row.querySelector('[name="researchFactTier"]')?.value,
+        text: String(
+          row.querySelector('[name="researchFactText"]')?.value ?? "",
+        ),
+      }),
+    ),
+    actionableDiscovery: String(
+      form.querySelector('[name="researchActionableDiscovery"]')?.value ?? "",
+    ),
+    complicationText: String(
+      form.querySelector('[name="researchComplicationText"]')?.value ?? "",
+    ),
+    canonicalUuid: String(
+      form.querySelector('[name="researchCanonicalUuid"]')?.value ?? "",
+    ),
+    canonicalLabel: String(
+      form.querySelector('[name="researchCanonicalLabel"]')?.value ?? "",
+    ),
+    shareCanonicalLink:
+      form.querySelector('[name="researchShareCanonicalLink"]')?.checked ===
+      true,
+    needsWorldBuilding:
+      form.querySelector('[name="researchNeedsWorldBuilding"]')?.checked ===
+      true,
+    worldBuildingNotes: String(
+      form.querySelector('[name="researchWorldBuildingNotes"]')?.value ?? "",
+    ),
+    playerDossier: String(
+      card.querySelector("[data-guided-report]")?.value ?? "",
+    ),
+  };
+}
+
+function restoreResearchReviewForm(card, draft) {
+  const form = card?.querySelector?.("[data-research-review]");
+  if (!form || !draft) return;
+  for (const [name, value] of [
+    ["researchSeedId", draft.seedId],
+    ["researchSubject", draft.subject],
+    ["researchActionableDiscovery", draft.actionableDiscovery],
+    ["researchComplicationText", draft.complicationText],
+    ["researchCanonicalUuid", draft.canonicalUuid],
+    ["researchCanonicalLabel", draft.canonicalLabel],
+    ["researchWorldBuildingNotes", draft.worldBuildingNotes],
+  ]) {
+    const field = form.querySelector(`[name="${name}"]`);
+    if (field && value !== undefined) field.value = String(value ?? "");
+  }
+  for (const [name, checked] of [
+    ["researchShareCanonicalLink", draft.shareCanonicalLink],
+    ["researchNeedsWorldBuilding", draft.needsWorldBuilding],
+  ]) {
+    const field = form.querySelector(`[name="${name}"]`);
+    if (field && checked !== undefined) field.checked = checked === true;
+  }
+  const facts = Array.isArray(draft.factCards) ? draft.factCards : [];
+  for (const [index, row] of [
+    ...form.querySelectorAll("[data-research-review-fact]"),
+  ].entries()) {
+    const fact = facts[index];
+    if (!fact) continue;
+    const tier = row.querySelector('[name="researchFactTier"]');
+    const text = row.querySelector('[name="researchFactText"]');
+    if (tier) tier.value = String(fact.tier ?? 1);
+    if (text) text.value = String(fact.text ?? "");
   }
 }
 
@@ -1701,6 +1960,121 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       checked: array(projectSource.skills).includes(id),
     })),
   };
+  const researchSeeds = array(source.researchSeeds)
+    .map((entry) => ({
+      id: cleanId(entry?.id),
+      title: String(entry?.title ?? "Research Seed"),
+      category: cleanId(entry?.category) || "anything",
+      categoryLabel:
+        RESEARCH_CATEGORIES.find((option) => option.id === entry?.category)
+          ?.label ?? "Anything",
+      difficulty: String(entry?.difficulty ?? "Challenging"),
+      risk: positiveInteger(entry?.risk, 0),
+      playerKnown: entry?.playerKnown === true,
+      discoverable: entry?.discoverable !== false,
+      source: entry,
+    }))
+    .filter((entry) => entry.id);
+  const selectedResearchSeedId = cleanId(uiState.selectedResearchSeedId);
+  const selectedResearchSeed = researchSeeds.find(
+    (entry) => entry.id === selectedResearchSeedId,
+  );
+  for (const seed of researchSeeds) {
+    seed.selected = seed.id === selectedResearchSeed?.id;
+  }
+  const researchSeedSource = uiState.researchSeedDraft ??
+    (uiState.creatingResearchSeed === false
+      ? selectedResearchSeed?.source
+      : null) ?? {
+      title: "",
+      category: "anything",
+      gmSummary: "",
+      playerKnown: false,
+      discoverable: true,
+      difficulty: "Challenging",
+      dc: 14,
+      risk: 10,
+      times: ["day", "night"],
+      skills: RESEARCH_APPROACHES.map(({ id }) => id),
+      factCards: [],
+      actionableDiscovery: "",
+      complicationText: "",
+      canonicalUuid: "",
+      canonicalLabel: "",
+    };
+  const researchSeedEditor = {
+    id:
+      uiState.creatingResearchSeed === false
+        ? cleanId(researchSeedSource.id ?? selectedResearchSeed?.id)
+        : "",
+    title: String(researchSeedSource.title ?? ""),
+    gmSummary: String(researchSeedSource.gmSummary ?? ""),
+    playerKnown: researchSeedSource.playerKnown === true,
+    discoverable: researchSeedSource.discoverable !== false,
+    difficulty: String(researchSeedSource.difficulty ?? "Challenging"),
+    dc: positiveInteger(researchSeedSource.dc, 14),
+    risk: positiveInteger(researchSeedSource.risk, 10),
+    categoryOptions: RESEARCH_CATEGORIES.map((option) => ({
+      ...option,
+      selected:
+        option.id === (cleanId(researchSeedSource.category) || "anything"),
+    })),
+    timeOptions: DOWNTIME_TIME_OF_DAY_OPTIONS.map((option) => ({
+      ...option,
+      checked: array(researchSeedSource.times).includes(option.id),
+    })),
+    skillOptions: RESEARCH_APPROACHES.map((option) => ({
+      ...option,
+      checked: array(researchSeedSource.skills).includes(option.id),
+    })),
+    factCards: Array.from({ length: 8 }, (_, index) => {
+      const card = array(researchSeedSource.factCards)[index] ?? {};
+      const tier = positiveInteger(card?.tier, Math.min(index + 1, 3));
+      return {
+        id: cleanId(card?.id) || `fact-${index + 1}`,
+        number: index + 1,
+        text: String(card?.text ?? ""),
+        tierOptions: [1, 2, 3].map((value) => ({
+          value,
+          label: RESEARCH_RESULT_TIERS[value]?.label ?? `Tier ${value}`,
+          selected: value === tier,
+        })),
+      };
+    }),
+    actionableDiscovery: String(researchSeedSource.actionableDiscovery ?? ""),
+    complicationText: String(researchSeedSource.complicationText ?? ""),
+    canonicalUuid: String(researchSeedSource.canonicalUuid ?? ""),
+    canonicalLabel: String(researchSeedSource.canonicalLabel ?? ""),
+    canonicalOptions: array(source.researchCanonicalOptions).map((option) => ({
+      uuid: String(option?.uuid ?? ""),
+      label: String(option?.label ?? option?.name ?? "Foundry document"),
+    })),
+    editing: Boolean(
+      uiState.creatingResearchSeed === false && selectedResearchSeed?.id,
+    ),
+  };
+  const researchCases = array(source.researchCases).map((entry) => ({
+    id: cleanId(entry?.id),
+    blockId: cleanId(entry?.blockId),
+    actorId: cleanId(entry?.actorId),
+    actorName: String(entry?.actorName ?? "Character"),
+    locationName: String(entry?.locationName ?? "Downtime"),
+    timeOfDayLabel: downtimeTimeOfDayLabel(entry?.timeOfDay),
+    subject: String(entry?.subject ?? "Unresolved lead"),
+    request: String(entry?.request?.request ?? "Open research"),
+    tierLabel: String(entry?.tierLabel ?? "Pending"),
+    approved: entry?.approved === true,
+    needsWorldBuilding: entry?.needsWorldBuilding === true,
+    canComplete: entry?.approved === true && entry?.needsWorldBuilding === true,
+    worldBuildingNotes: String(entry?.worldBuildingNotes ?? ""),
+    statusLabel:
+      entry?.approved === true
+        ? entry?.needsWorldBuilding === true
+          ? "World building needed"
+          : "Approved"
+        : "Needs GM preparation",
+    updatedAt: formatDate(entry?.updatedAt ?? entry?.createdAt),
+  }));
   let selectedSettlementId = cleanId(uiState.selectedSettlementId);
   if (!selectedSettlementId && !uiState.creatingSettlement) {
     selectedSettlementId = cleanId(
@@ -1842,6 +2216,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     viewCurrent: view === "current",
     viewActivities: view === "activities",
     viewProjects: view === "projects",
+    viewResearch: view === "research",
     viewSettlements: view === "settlements",
     viewHistory: view === "history",
     hasCurrentBlock: Boolean(currentBlock),
@@ -1875,6 +2250,22 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     newProjectHours: projectEditor.requiredHours,
     hasGuidedProjects: guidedProjects.length > 0,
     projectSkillOptions: projectEditor.skillOptions,
+    researchSeeds,
+    hasResearchSeeds: researchSeeds.length > 0,
+    researchSeedEditor,
+    researchBlockTimeOptions: DOWNTIME_TIME_OF_DAY_OPTIONS.map((option) => ({
+      ...option,
+      selected:
+        option.id ===
+        normalizeDowntimeTimeOfDay(uiState.newBlockDraft?.timeOfDay),
+    })),
+    researchCases,
+    researchCasesNeedingWork: researchCases.filter(
+      (entry) => !entry.approved || entry.needsWorldBuilding,
+    ),
+    hasResearchCasesNeedingWork: researchCases.some(
+      (entry) => !entry.approved || entry.needsWorldBuilding,
+    ),
     hasSettlements: settlements.length > 0,
     selectedSettlement,
     hasSelectedSettlement: Boolean(selectedSettlement),
@@ -2397,8 +2788,34 @@ function normalizeCurrentBlock(workflow, root) {
           selected: option?.selected === true,
         })),
         hasOutcomeOptions: array(operation?.outcomeOptions).length > 0,
-        report: String(operation?.report ?? ""),
-        savedReport: String(operation?.report ?? ""),
+        report: String(
+          operation?.research && operation?.researchApproved !== true
+            ? ""
+            : (operation?.report ?? ""),
+        ),
+        savedReport: String(
+          operation?.research && operation?.researchApproved !== true
+            ? ""
+            : (operation?.report ?? ""),
+        ),
+        research: operation?.research === true,
+        researchApproved: operation?.researchApproved === true,
+        researchCase: normalizeResearchWorkspaceCase(operation?.researchCase),
+        researchSeedOptions: [
+          { id: "", label: "Custom subject / no prepared seed" },
+          ...array(operation?.researchSeedOptions).map((option) => ({
+            id: cleanId(option?.id),
+            label: String(option?.label ?? "Research Seed"),
+            selected:
+              cleanId(option?.id) === cleanId(operation?.researchCase?.seedId),
+          })),
+        ],
+        researchCanonicalOptions: array(
+          operation?.researchCanonicalOptions,
+        ).map((option) => ({
+          uuid: String(option?.uuid ?? ""),
+          label: String(option?.label ?? "Foundry document"),
+        })),
       }),
     ),
   }));
@@ -2465,6 +2882,7 @@ function normalizeCurrentBlock(workflow, root) {
     canOpenForPlayers: workflow.canOpenForPlayers ?? status === "collecting",
     canLock: Boolean(canLock),
     canPlan: Boolean(canPlan),
+    canReview: status === "planned" && workflow.canReview !== false,
     canApply: Boolean(canApply),
     canCancel: Boolean(canCancel),
     canRecover: Boolean(canRecover),
@@ -2473,6 +2891,67 @@ function normalizeCurrentBlock(workflow, root) {
     planReason: String(workflow.planReason ?? ""),
     applyReason: String(workflow.applyReason ?? ""),
     cancelReason: String(workflow.cancelReason ?? ""),
+  };
+}
+
+function normalizeResearchWorkspaceCase(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const tier = positiveInteger(raw.tier, 0);
+  const factCards = array(raw.factCards);
+  return {
+    id: cleanId(raw.id),
+    request: {
+      request: String(raw.request?.request ?? "Open research"),
+      category: cleanId(raw.request?.category) || "anything",
+      categoryLabel:
+        RESEARCH_CATEGORIES.find(
+          (option) => option.id === cleanId(raw.request?.category),
+        )?.label ?? "Anything",
+      mode: cleanId(raw.request?.mode) || "browse",
+      subjectText: String(raw.request?.subjectText ?? ""),
+      discoverNew: raw.request?.discoverNew === true,
+    },
+    skill: cleanId(raw.skill),
+    skillLabel:
+      RESEARCH_APPROACHES.find((approach) => approach.id === cleanId(raw.skill))
+        ?.label ?? cleanId(raw.skill),
+    hours: positiveInteger(raw.hours, 4),
+    timeOfDayLabel: downtimeTimeOfDayLabel(raw.timeOfDay),
+    tier,
+    tierLabel:
+      String(raw.tierLabel ?? "") || RESEARCH_RESULT_TIERS[tier]?.label,
+    difficulty: String(raw.difficulty ?? "Challenging"),
+    dc: positiveInteger(raw.dc, 14),
+    risk: positiveInteger(raw.risk, 0),
+    rollTotal: Number(raw.roll?.total ?? 0),
+    rollFormula: String(raw.roll?.formula ?? ""),
+    complication: raw.complication === true,
+    seedId: cleanId(raw.seedId),
+    subject: String(raw.subject ?? ""),
+    factCards: Array.from({ length: 8 }, (_, index) => {
+      const card = factCards[index] ?? {};
+      const cardTier = positiveInteger(card?.tier, Math.max(1, tier));
+      return {
+        id: cleanId(card?.id) || `fact-${index + 1}`,
+        number: index + 1,
+        text: String(card?.text ?? ""),
+        tierOptions: [1, 2, 3].map((value) => ({
+          value,
+          label: RESEARCH_RESULT_TIERS[value]?.label ?? `Tier ${value}`,
+          selected: value === cardTier,
+        })),
+      };
+    }),
+    actionableDiscovery: String(raw.actionableDiscovery ?? ""),
+    complicationText: String(raw.complicationText ?? ""),
+    canonicalUuid: String(raw.canonicalUuid ?? ""),
+    canonicalLabel: String(raw.canonicalLabel ?? ""),
+    shareCanonicalLink: raw.shareCanonicalLink === true,
+    needsWorldBuilding: raw.needsWorldBuilding === true,
+    worldBuildingNotes: String(raw.worldBuildingNotes ?? ""),
+    prepared: raw.prepared === true,
+    approved: raw.approved === true,
+    playerDossier: String(raw.playerDossier ?? ""),
   };
 }
 

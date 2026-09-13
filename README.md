@@ -6,6 +6,15 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**Research & Rumors (source update):** Players can ask a question, select a known
+subject or discover something new. GMs prepare seeds under **Downtime → Research**
+and approve dossiers before unprepared findings are delivered. New blocks offer
+**Research time: Day/Night**. Untouched stock activities upgrade; customized
+activities and existing block snapshots retain their rules. Private seeds and
+cases remain in the originating GM browser. See the
+[research guide](docs/DOWNTIME_RESEARCH_DESIGN.md) and
+[integration and acceptance record](docs/RESEARCH_RECONCILIATION.md).
+
 **Daily living (source update):** Quartermaster supports automatic or manual
 upkeep through supplies, a paid lifestyle, or a GM-covered exception. Set choices
 under **Setup & Rules → Party supplies**. Auto-run off asks the GM to settle or

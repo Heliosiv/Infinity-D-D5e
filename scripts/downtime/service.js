@@ -20,6 +20,38 @@ import {
   buildHuntingOperation,
   huntingQueueKey,
 } from "./hunting-workflow.js";
+import {
+  RESEARCH_APPROACHES,
+  RESEARCH_CATEGORIES,
+  RESEARCH_ID,
+  isResearchTemplate,
+  RESEARCH_TIME_GUIDANCE,
+  normalizeResearchRequest,
+  publicResearchSubject,
+  researchPlayerProfiles,
+} from "./research.js";
+import {
+  completeResearchFollowUp,
+  deleteResearchBlock,
+  deleteResearchSeed,
+  listResearchCases,
+  loadResearchBlock,
+  loadResearchSeeds,
+  saveResearchBlock,
+  saveResearchSeed,
+} from "./research-store.js";
+import {
+  buildResearchOperation,
+  prepareResearchAttempt,
+  researchCaseForWorkspace,
+  researchQueueKey,
+  researchSummary,
+  researchUuidVisibleToUser,
+} from "./research-workflow.js";
+import {
+  downtimeTimeOfDayLabel,
+  normalizeDowntimeTimeOfDay,
+} from "./time-of-day.js";
 import { guidedRewardCp } from "./recipes.js";
 import { collectDowntimeJournal } from "./journal.js";
 import {
@@ -399,6 +431,80 @@ function ownerUsers(actor) {
 
 function ownerUserIds(actor) {
   return ownerUsers(actor).map((user) => String(user.id));
+}
+
+function playerResearchSubjectOptions({ block, user, actor }) {
+  const genericProfiles = researchPlayerProfiles({
+    timeOfDay: block.timeOfDay,
+  });
+  const genericSkills = RESEARCH_APPROACHES.map(({ id }) => id);
+  const knownSeeds = loadResearchBlock(block.id)
+    .seeds.map((seed) => publicResearchSubject(seed, block.timeOfDay))
+    .filter(Boolean);
+  const documents = [
+    ...actorsArray().map((document) => ({
+      document,
+      id: String(document.uuid ?? `Actor.${document.id}`),
+      label: String(document.name ?? "Known Actor"),
+      category: inferResearchActorCategory(document),
+      detail: "Player-visible Actor",
+      skills: genericSkills,
+      profiles: genericProfiles,
+    })),
+    ...collectionValues(globalThis.game?.journal).map((document) => ({
+      document,
+      id: String(document.uuid ?? `JournalEntry.${document.id}`),
+      label: String(document.name ?? "Known Journal"),
+      category: "anything",
+      detail: "Player-visible Journal",
+      skills: genericSkills,
+      profiles: genericProfiles,
+    })),
+  ]
+    .filter(({ document }) => documentVisibleToUser(document, user))
+    .map(({ document: _document, ...entry }) => entry);
+  const seen = new Set();
+  return [...knownSeeds, ...documents].filter((entry) => {
+    const key = `${entry.category}:${entry.label.toLocaleLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return entry.id && entry.label;
+  });
+}
+
+function gmResearchCanonicalOptions() {
+  return [
+    ...actorsArray().map((document) => ({
+      uuid: String(document.uuid ?? `Actor.${document.id}`),
+      label: `Actor — ${String(document.name ?? "Unnamed")}`,
+    })),
+    ...collectionValues(globalThis.game?.journal).map((document) => ({
+      uuid: String(document.uuid ?? `JournalEntry.${document.id}`),
+      label: `Journal — ${String(document.name ?? "Unnamed")}`,
+    })),
+  ].filter((entry) => entry.uuid && entry.label);
+}
+
+function documentVisibleToUser(document, user) {
+  if (!document || !user) return false;
+  if (isFullGM(user)) return true;
+  if (typeof document.testUserPermission === "function") {
+    return document.testUserPermission(user, "OBSERVER") === true;
+  }
+  const observer = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? 2;
+  const ownership = document.ownership ?? {};
+  const level = Object.hasOwn(ownership, user.id)
+    ? ownership[user.id]
+    : ownership.default;
+  return Number(level) >= observer;
+}
+
+function inferResearchActorCategory(document) {
+  if (document?.type === "character") return "person";
+  const type = String(
+    document?.system?.details?.type?.value ?? "",
+  ).toLowerCase();
+  return type.includes("humanoid") ? "person" : "creature";
 }
 
 function projectWorkspaceActor(actor) {
@@ -892,8 +998,10 @@ export async function saveGuidedDowntimeTemplate(payload = {}) {
           "That activity is no longer available. Refresh before saving.",
         );
       }
-      if (index >= 0) templates[index] = template;
-      else if (templates.length < GUIDED_DOWNTIME_TEMPLATE_LIMIT)
+      if (index >= 0) {
+        if (isResearchTemplate(templates[index])) template.researchVersion = 1;
+        templates[index] = template;
+      } else if (templates.length < GUIDED_DOWNTIME_TEMPLATE_LIMIT)
         templates.push(template);
       else
         throw new Error(
@@ -1021,6 +1129,7 @@ export async function saveGuidedDowntimeProject(payload = {}) {
 export async function openDowntimeBlock({
   settlementId,
   locationName,
+  timeOfDay = "day",
   hours,
   actorIds,
   mode = "",
@@ -1040,6 +1149,7 @@ export async function openDowntimeBlock({
         locationPresetId,
         huntingRules,
         locationName,
+        timeOfDay,
         hours,
         actorIds,
         templateIds,
@@ -1107,6 +1217,7 @@ async function openGuidedDowntimeBlock({
   locationPresetId,
   huntingRules,
   locationName,
+  timeOfDay = "day",
   hours,
   actorIds,
   templateIds,
@@ -1195,12 +1306,19 @@ async function openGuidedDowntimeBlock({
       );
     saveHuntingBlock(blockId, region);
   }
+  if (templates.some(isResearchTemplate)) {
+    saveResearchBlock(blockId, {
+      timeOfDay: normalizeDowntimeTimeOfDay(timeOfDay),
+      locationName: blockLocationName,
+    });
+  }
   const block = await createDowntimeBlock({
     id: blockId,
     ...(selectedIds.includes(HUNTING_ID)
       ? { huntingProfile: publicHuntingRegion(region) }
       : {}),
     mode: GUIDED_DOWNTIME_MODE,
+    timeOfDay: normalizeDowntimeTimeOfDay(timeOfDay),
     locationName: blockLocationName,
     settlementName: settlement?.name ?? blockLocationName,
     settlementId: settlement?.id ?? "guided-downtime",
@@ -1773,6 +1891,7 @@ export async function chooseGuidedDowntimeOutcome({
   operationId,
   outcomeIndex,
   report,
+  researchReview,
   benefitTarget,
 } = {}) {
   return runServiceMutation(async () => {
@@ -1806,6 +1925,10 @@ export async function chooseGuidedDowntimeOutcome({
           throw new Error(
             "Field ammunition results follow the saved check. Edit the narrative report instead.",
           );
+        if (operation.research && index !== operation.selectedOutcomeIndex)
+          throw new Error(
+            "The Research result tier is frozen by the submitted check and cannot be changed.",
+          );
         const actor = actorById(operation.actorId);
         if (!actor) throw new Error("That character is no longer available.");
         return buildGuidedDowntimeOperation({
@@ -1816,6 +1939,7 @@ export async function chooseGuidedDowntimeOutcome({
           skill: operation.check?.skill ?? "",
           targetId: operation.targetId,
           existingWork: operation.work,
+          researchReview,
           benefitTarget:
             benefitTarget === undefined
               ? operation.benefitTarget
@@ -1830,11 +1954,15 @@ export async function chooseGuidedDowntimeOutcome({
           operationId: operation.operationId,
           walletBeforeOverride: operation.walletBefore,
           reportOverride:
-            report === undefined
-              ? index === operation.selectedOutcomeIndex
-                ? operation.report
-                : ""
-              : cleanGuidedReport(report),
+            operation.research && researchReview
+              ? report === undefined
+                ? ""
+                : cleanResearchReport(report)
+              : report === undefined
+                ? index === operation.selectedOutcomeIndex
+                  ? operation.report
+                  : ""
+                : cleanGuidedReport(report),
           projectProgress: operation.project
             ? new Map([
                 [operation.project.id, operation.project.progressBeforeHours],
@@ -2246,10 +2374,21 @@ async function buildGuidedDowntimeOperation({
   projectSuccesses = null,
   targetId = "",
   existingWork = null,
+  researchReview,
   benefitTarget = "",
   walletBeforeOverride = null,
   gatheringTotal,
 }) {
+  if (isResearchTemplate(activity)) {
+    return buildResearchOperation({
+      block,
+      actor,
+      operationId,
+      createdAt,
+      report: reportOverride,
+      review: researchReview,
+    });
+  }
   if (activity.id === HUNTING_ID) {
     const wallet =
       walletBeforeOverride ?? readWalletStrict(actor.system?.currency).wallet;
@@ -2467,6 +2606,26 @@ function normalizeGuidedActivitySelection(raw, templates, projects) {
   };
 }
 
+function canonicalResearchRequest(raw, safeSubjectOptions) {
+  const request = normalizeResearchRequest(raw);
+  if (!request.subjectId) return request;
+  const subject = (
+    Array.isArray(safeSubjectOptions) ? safeSubjectOptions : []
+  ).find((option) => String(option?.id) === request.subjectId);
+  if (!subject)
+    throw new Error(
+      "That research subject is no longer player-visible. Choose another subject or type a description.",
+    );
+  return {
+    ...request,
+    ...(request.subjectId.startsWith("research-seed:")
+      ? {}
+      : {
+          subjectText: String(subject.label ?? "Known subject").slice(0, 200),
+        }),
+  };
+}
+
 function guidedActivityBlockHours(activity) {
   const value = Number(activity?.blockHours);
   return Number.isSafeInteger(value) && value >= 1 && value <= MAX_BLOCK_HOURS
@@ -2488,6 +2647,7 @@ function normalizeGuidedSubmittedQueue(block, rawQueue) {
         templateId: entry?.activityId,
         skill: entry?.skill,
         targetId: entry?.targetId,
+        research: entry?.research,
       },
       block.guidedTemplates,
       block.guidedProjects,
@@ -2505,6 +2665,13 @@ function normalizeGuidedSubmittedQueue(block, rawQueue) {
       throw new Error("Choose four or eight hours for Hunting.");
     if (activity?.id === HUNTING_ID && selection.skill !== "sur")
       throw new Error("Hunting requires Survival to find game.");
+    if (isResearchTemplate(activity) && ![4, 8].includes(hours))
+      throw new Error("Choose four or eight hours for Research & Rumors.");
+    if (
+      isResearchTemplate(activity) &&
+      !RESEARCH_APPROACHES.some(({ id }) => id === selection.skill)
+    )
+      throw new Error("Choose a valid Research & Rumors approach.");
     if (
       !selection ||
       !activity ||
@@ -2676,6 +2843,14 @@ function cleanGuidedReport(value) {
     .slice(0, 800);
 }
 
+function cleanResearchReport(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 3000);
+}
+
 export async function applyActiveDowntimeBlock(blockId) {
   return runServiceMutation(() => applyBlockInternal(blockId));
 }
@@ -2697,6 +2872,10 @@ async function applyBlockInternal(blockId) {
       const reviewedInjuries = new Set();
       const projectedWallets = new Map();
       for (const operation of block.plan.operations ?? []) {
+        if (operation.research && operation.researchApproved !== true)
+          throw new Error(
+            "Prepare and approve every Research dossier before applying results.",
+          );
         const actor = actorById(operation.actorId);
         if (!actor)
           throw new Error(
@@ -4240,7 +4419,10 @@ export async function cancelActiveDowntimeBlock(blockId) {
       const cancelled = loadDowntimeWorkflowStore().history.find(
         (entry) => entry.id === String(blockId) && entry.state === "cancelled",
       );
-      if (cancelled) return cancelled;
+      if (cancelled) {
+        deleteResearchBlockBestEffort(blockId);
+        return cancelled;
+      }
       throw new Error("Block not found.");
     }
     if (
@@ -4262,6 +4444,7 @@ export async function cancelActiveDowntimeBlock(blockId) {
       reason: "Cancelled by the GM without advancing campaign time.",
       at: now(),
     });
+    deleteResearchBlockBestEffort(block.id);
     notifyServiceChanged("block-cancel");
     await broadcastCompletedState(cancelled);
     return cancelled;
@@ -4284,6 +4467,9 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
   const projectSuccesses = guidedProjectSuccessesFromStore(store);
   return {
     huntingRegions: loadHuntingRegions(),
+    researchSeeds: loadResearchSeeds(),
+    researchCases: listResearchCases(),
+    researchCanonicalOptions: gmResearchCanonicalOptions(),
     workflowStatus: visibleBlock?.state ?? "idle",
     workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
@@ -4390,6 +4576,9 @@ function projectWorkspaceBlock(block) {
       participant.resolved !== true && participant.submitted === true,
   );
   const firstReadyActorId = readyParticipants[0]?.actorId ?? "";
+  const unapprovedResearch = (block.plan?.operations ?? []).filter(
+    (operation) => operation.research && operation.researchApproved !== true,
+  );
   return {
     ...block,
     guided: block.mode === GUIDED_DOWNTIME_MODE,
@@ -4456,6 +4645,22 @@ function projectWorkspaceBlock(block) {
                   ? operation.work.detail
                   : `${operation.report} ${block.state === "completed" ? guidedWorkReceipt(operation.work) : operation.work.detail}`
                 : "",
+              research: operation.research === true,
+              researchApproved: operation.researchApproved === true,
+              researchCase:
+                operation.research && block.state !== "cancelled"
+                  ? researchCaseForWorkspace(block.id, operation.actorId)
+                  : null,
+              researchSeedOptions:
+                operation.research && block.state !== "cancelled"
+                  ? loadResearchBlock(block.id).seeds.map((seed) => ({
+                      id: seed.id,
+                      label: `${seed.title} · ${seed.category}`,
+                    }))
+                  : [],
+              researchCanonicalOptions: operation.research
+                ? gmResearchCanonicalOptions()
+                : [],
               report: operation.report ?? "",
               hours: operation.hours,
               benefitSummary: operation.benefit?.detail ?? "",
@@ -4506,8 +4711,11 @@ function projectWorkspaceBlock(block) {
                       }))
                       .filter(
                         (option) =>
-                          !(operation.hunting || operation.work?.field) ||
-                          option.selected,
+                          !(
+                            operation.hunting ||
+                            operation.work?.field ||
+                            operation.research
+                          ) || option.selected,
                       )
                   : [],
             })),
@@ -4545,7 +4753,11 @@ function projectWorkspaceBlock(block) {
       ? block.planningDraft.reviewReason ||
         "A hidden roll was interrupted. Cancel this block; it cannot reroll that check."
       : "",
-    canApply: block.state === "planned",
+    canApply: block.state === "planned" && unapprovedResearch.length === 0,
+    applyReason:
+      unapprovedResearch.length > 0
+        ? `${unapprovedResearch.length} Research dossier${unapprovedResearch.length === 1 ? " needs" : "s need"} GM preparation and approval before results can be sent.`
+        : "",
     canCancel:
       resolvedCount === 0 &&
       ["collecting", "locked", "planned"].includes(block.state),
@@ -4593,6 +4805,18 @@ export async function getPlayerProjectionForUser({
     const individuallyResolved = selected.resolved === true;
     const projectProgress = guidedProjectProgressFromStore(store);
     const projectSuccesses = guidedProjectSuccessesFromStore(store);
+    const journalProjection = await playerJournalProjection(
+      store,
+      config,
+      actor.id,
+      user,
+    );
+    const receipt = await sanitizeResearchReceiptForUser(
+      active.individualReceipts?.[selected.actorId] ??
+        active.result?.playerReceipts?.[selected.actorId] ??
+        null,
+      user,
+    );
     return {
       status: individuallyResolved ? "completed" : active.state,
       mode: GUIDED_DOWNTIME_MODE,
@@ -4613,6 +4837,51 @@ export async function getPlayerProjectionForUser({
       remainingHours: Math.max(0, active.budgetHours - sumHours(queue)),
       activities: [
         ...active.guidedTemplates.map((template) => {
+          if (isResearchTemplate(template)) {
+            const subjects = playerResearchSubjectOptions({
+              block: active,
+              user,
+              actor,
+            });
+            const profiles = researchPlayerProfiles({
+              timeOfDay: active.timeOfDay,
+            });
+            return {
+              id: RESEARCH_ID,
+              label: template.name,
+              description: template.description,
+              category: "research",
+              icon: "fa-solid fa-book-open-reader",
+              available: active.budgetHours >= 4,
+              unavailableReason:
+                active.budgetHours < 4
+                  ? "Research & Rumors needs at least four hours."
+                  : "",
+              hourOptions: [4, 8]
+                .filter((value) => value <= active.budgetHours)
+                .map((value) => ({
+                  value,
+                  label:
+                    value === 8
+                      ? "8 hours — corroborate sources; improved odds"
+                      : "4 hours — one focused inquiry",
+                })),
+              skills: RESEARCH_APPROACHES.map(({ id, label }) => ({
+                id,
+                label,
+              })),
+              costLabel:
+                "Ask a precise question, explore a topic, or choose Discover something new. Structured fields are optional.",
+              limitLabel: `${downtimeTimeOfDayLabel(active.timeOfDay)} · The outlook below follows the selected time, hours, approach, and known subject. Open discovery shows a general outlook until its hidden subject is earned. Exact DCs remain GM-only. ${RESEARCH_TIME_GUIDANCE[normalizeDowntimeTimeOfDay(active.timeOfDay)]}`,
+              research: {
+                categories: RESEARCH_CATEGORIES.map((entry) => ({ ...entry })),
+                subjects,
+                profiles,
+                requestPlaceholder:
+                  "What are you trying to learn? You can also browse freely or ask the GM to surprise you.",
+              },
+            };
+          }
           if (template.id === HUNTING_ID) {
             const profile = active.huntingProfile;
             const targets = huntingEquipmentOptions(actor).map(
@@ -4711,13 +4980,19 @@ export async function getPlayerProjectionForUser({
         active.guidedTemplates,
         active.guidedProjects,
       ),
-      ...playerJournalProjection(store, config, actor.id),
+      ...journalProjection,
       rawQueue: queue,
       ...(selected.hunt
         ? {
             huntingLocked: true,
             huntingPending: selected.hunt.stage === "attack",
             huntingMessage: huntingSummary(selected.hunt),
+          }
+        : {}),
+      ...(selected.research
+        ? {
+            researchMessage: researchSummary(selected.research),
+            researchStatus: selected.research.status,
           }
         : {}),
       submitted: selected.submitted === true,
@@ -4727,14 +5002,12 @@ export async function getPlayerProjectionForUser({
         selected.submitted !== true,
       canRecall:
         !selected.hunt &&
+        !selected.research &&
         !individuallyResolved &&
         active.state === "collecting" &&
         selected.submitted === true,
       needsRecovery: active.state === "needs-review",
-      receipt:
-        active.individualReceipts?.[selected.actorId] ??
-        active.result?.playerReceipts?.[selected.actorId] ??
-        null,
+      receipt,
     };
   }
   const settlement = settlementForBlock(active, config);
@@ -5015,12 +5288,29 @@ async function submitGuidedDowntimeChoice({
 }) {
   const source = Array.isArray(queue) ? queue : [];
   const allocation = normalizeGuidedSubmittedQueue(block, source);
+  const researchSubjectOptions = allocation.some((entry) =>
+    isResearchTemplate(entry.activity),
+  )
+    ? playerResearchSubjectOptions({
+        block,
+        user: userById(userId),
+        actor,
+      })
+    : [];
   const canonicalQueue = allocation.map((entry, index) => ({
     id: `guided-choice-${index + 1}`,
     activityId: entry.activity.id,
     hours: entry.hours,
     skill: entry.selection.skill,
     ...(entry.selection.targetId ? { targetId: entry.selection.targetId } : {}),
+    ...(isResearchTemplate(entry.activity)
+      ? {
+          research: canonicalResearchRequest(
+            entry.selection.research,
+            researchSubjectOptions,
+          ),
+        }
+      : {}),
     guidedRoll: entry.selection.skill
       ? { total: entry.roll.total, formula: entry.roll.formula }
       : undefined,
@@ -5041,6 +5331,14 @@ async function submitGuidedDowntimeChoice({
   )?.hunt;
   if (existingHunt && existingHunt.queueKey !== huntingQueueKey(canonicalQueue))
     throw new Error("A started hunt cannot be edited or rerolled.");
+  const existingResearch = block.participants.find(
+    (participant) => participant.actorId === actor.id,
+  )?.research;
+  if (
+    existingResearch &&
+    existingResearch.queueKey !== researchQueueKey(canonicalQueue)
+  )
+    throw new Error("A started Research case cannot be edited or rerolled.");
   const digest = queueDigest(canonicalQueue);
   const prior = block.requests?.[requestId];
   if (prior) {
@@ -5126,12 +5424,18 @@ async function submitGuidedDowntimeChoice({
     await broadcastPlayerState(updated);
     return updated;
   }
+  const research = allocation.some((entry) =>
+    isResearchTemplate(entry.activity),
+  )
+    ? prepareResearchAttempt(block, actor, canonicalQueue)
+    : null;
   const first = allocation[0];
   const participants = block.participants.map((entry) =>
     entry.actorId === actor.id
       ? {
           ...entry,
           ...(hunt ? { hunt } : {}),
+          ...(research ? { research } : {}),
           guidedSelection: first.selection,
           guidedRoll: first.selection.skill
             ? { total: first.roll.total, formula: first.roll.formula }
@@ -5185,8 +5489,10 @@ export async function recallSubmissionAuthoritatively({
     if (!actor || !participant || !userOwnsDowntimeActor(user, actor)) {
       throw new Error("You do not own that eligible character.");
     }
-    if (participant.hunt)
-      throw new Error("A started hunt cannot be recalled or rerolled.");
+    if (participant.hunt || participant.research)
+      throw new Error(
+        "A started hunt or Research case cannot be recalled or rerolled.",
+      );
     if (participant.resolved === true) {
       throw new Error("This character's downtime has already been resolved.");
     }
@@ -5492,7 +5798,7 @@ async function broadcastCompletedState(completed) {
       sent.add(`${userId}:${participant.actorId}`);
       const projection =
         completed.state === "completed"
-          ? completedPlayerProjection(
+          ? await completedPlayerProjection(
               loadDowntimeWorkflowStore().history,
               userById(userId),
               participant.actorId,
@@ -5513,7 +5819,7 @@ async function broadcastCompletedState(completed) {
   }
 }
 
-function completedPlayerProjection(history, user, actorId) {
+async function completedPlayerProjection(history, user, actorId) {
   const blocks = [...(history ?? [])].reverse();
   const results = new Map();
   for (const block of blocks) {
@@ -5565,11 +5871,12 @@ function completedPlayerProjection(history, user, actorId) {
         img: actor.img,
         eligible: true,
       })),
-      ...playerJournalProjection(
+      ...(await playerJournalProjection(
         loadDowntimeWorkflowStore(),
         loadDowntimeConfig(),
         owned.id,
-      ),
+        user,
+      )),
     };
   }
   return {
@@ -5587,12 +5894,13 @@ function completedPlayerProjection(history, user, actorId) {
     settlementName: selected.block.settlementName,
     locationName: selected.block.locationName ?? selected.block.settlementName,
     hasSettlement: selected.block.hasSettlement !== false,
-    ...playerJournalProjection(
+    ...(await playerJournalProjection(
       loadDowntimeWorkflowStore(),
       loadDowntimeConfig(),
       selected.actor.id,
-    ),
-    receipt: selected.receipt,
+      user,
+    )),
+    receipt: await sanitizeResearchReceiptForUser(selected.receipt, user),
     completionMessage: selected.receipt.summary ?? "",
   };
 }
@@ -5611,6 +5919,9 @@ function buildCompletedResult(block) {
       tone: operation.check?.outcomeTier ?? "neutral",
       image: operation.activityImage ?? "",
       report: operation.report ?? "",
+      ...(operation.researchResult
+        ? { research: structuredClone(operation.researchResult) }
+        : {}),
       rewardLabel:
         (operation.benefit ? `${operation.benefit.detail} ` : "") +
         (operation.project
@@ -5619,9 +5930,13 @@ function buildCompletedResult(block) {
             ? guidedWorkReceipt(operation.work)
             : Number(operation.currencyDeltaCp) > 0
               ? `${formatCp(operation.currencyDeltaCp)} added to your character.`
-              : operation.benefit
-                ? ""
-                : "No currency was added."),
+              : operation.research
+                ? operation.researchResult?.status === "needs-world-building"
+                  ? "World-building follow-up tracked by the GM."
+                  : "Discovery recorded in research history."
+                : operation.benefit
+                  ? ""
+                  : "No currency was added."),
     }));
     playerReceipts[character.actorId] = {
       settlementName: block.locationName ?? block.settlementName,
@@ -5863,6 +6178,27 @@ export const downtimeWorkspaceAdapter = Object.freeze({
       notifyServiceChanged("hunting-area-saved");
       return result;
     }),
+  saveResearchSeed: (payload) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = saveResearchSeed(payload);
+      notifyServiceChanged("research-seed-saved");
+      return result;
+    }),
+  deleteResearchSeed: ({ seedId }) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = deleteResearchSeed(seedId);
+      notifyServiceChanged("research-seed-deleted");
+      return result;
+    }),
+  completeResearchFollowUp: ({ blockId, actorId }) =>
+    runServiceMutation(async () => {
+      assertAuthority();
+      const result = completeResearchFollowUp(blockId, actorId);
+      notifyServiceChanged("research-follow-up-completed");
+      return result;
+    }),
   openForPlayers: ({ blockId }) => openBlockForPlayers(blockId),
   prepareParticipant: (payload) => prepareGuidedDowntimeParticipant(payload),
   lockBlock: ({ blockId }) => lockActiveDowntimeBlock(blockId),
@@ -5885,8 +6221,47 @@ export const downtimeWorkspaceAdapter = Object.freeze({
   saveGuidedTemplate: saveGuidedDowntimeTemplate,
 });
 
-function playerJournalProjection(store, config, actorId) {
+function deleteResearchBlockBestEffort(blockId) {
+  try {
+    deleteResearchBlock(blockId);
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | cancelled Research block cleanup needs manual review`,
+      error,
+    );
+  }
+}
+
+async function playerJournalProjection(store, config, actorId, user) {
   const rows = collectDowntimeJournal(store)[actorId] ?? [];
+  let completedFollowUps = new Set();
+  try {
+    completedFollowUps = new Set(
+      listResearchCases()
+        .filter(
+          (researchCase) =>
+            researchCase.actorId === actorId &&
+            Number(researchCase.worldBuildingCompletedAt) > 0,
+        )
+        .map((researchCase) => researchCase.blockId),
+    );
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | Research follow-up status could not be projected`,
+      error,
+    );
+  }
+  const playerRows = await Promise.all(
+    rows.map(async (row) => {
+      const receipt = await sanitizeResearchReceiptForUser(row.receipt, user);
+      if (completedFollowUps.has(row.blockId)) {
+        for (const activity of receipt?.activities ?? []) {
+          if (activity.research) activity.research.needsWorldBuilding = false;
+        }
+      }
+      return { ...structuredClone(row), receipt };
+    }),
+  );
   const offeredProjects = new Set(
     [...(store.history ?? []), store.activeBlock]
       .filter((block) =>
@@ -5895,7 +6270,19 @@ function playerJournalProjection(store, config, actorId) {
       .flatMap((block) => (block.guidedProjects ?? []).map((p) => p.id)),
   );
   return {
-    pastReports: [...rows].reverse(),
+    pastReports: [...playerRows].reverse(),
+    researchHistory: [...playerRows].reverse().flatMap((row) =>
+      (row.receipt?.activities ?? [])
+        .filter((activity) => activity.research)
+        .map((activity) => ({
+          blockId: row.blockId,
+          locationName: row.locationName,
+          timeOfDayLabel: row.receipt?.timeOfDayLabel ?? "",
+          campaignDate: row.receipt?.campaignDate ?? "",
+          completedAt: row.receipt?.completedAt ?? null,
+          research: structuredClone(activity.research),
+        })),
+    ),
     ongoingProjects: config.guidedProjects
       .filter((p) =>
         p.scope === "personal"
@@ -5915,4 +6302,23 @@ function playerJournalProjection(store, config, actorId) {
         awardStatus: trainingAwardStatus(p),
       })),
   };
+}
+
+async function sanitizeResearchReceiptForUser(receipt, user) {
+  if (!receipt || typeof receipt !== "object") return receipt ?? null;
+  const safe = structuredClone(receipt);
+  await Promise.all(
+    (safe.activities ?? []).map(async (activity) => {
+      const research = activity?.research;
+      if (!research || typeof research !== "object") return;
+      if (
+        !research.canonicalUuid ||
+        !(await researchUuidVisibleToUser(research.canonicalUuid, user))
+      ) {
+        delete research.canonicalUuid;
+        delete research.canonicalLabel;
+      }
+    }),
+  );
+  return safe;
 }

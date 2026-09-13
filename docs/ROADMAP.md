@@ -6,6 +6,13 @@ This is the current planning entry point. Older assessments remain historical
 evidence; their proposed work must be checked against current source before use.
 This assessment does not certify the installed world or authorize a release.
 
+**Implementation follow-up, 2026-09-13:** Research & Rumors is now integrated
+locally, including its earlier safeguards and compatibility fixes. Daily-living
+source checks pass; native multi-client acceptance remains open because the
+disposable local test world is unavailable. See the
+[integration inventory and acceptance record](RESEARCH_RECONCILIATION.md).
+The assessment table below retains the starting-checkout findings.
+
 ## Assessment
 
 The module already has a substantial playable foundation. The best next work is
@@ -37,11 +44,10 @@ campaign changes.
 | 4        | **Align injury recovery and enforcement.** Reduce surprise cures and manual combat bookkeeping.                  | Reproduce the four treatment-dependent expiry cases and present one explicit recovery policy per injury for campaign approval.                                  | New rules agree with displayed text; old injury records retain their intended version; expiry, treatment and calendar replay tests pass. Follow with a separate durable Bleeding damage slice covering temporary HP, disabled effects and GM handoff.                                                         | Medium per slice; campaign recovery decisions required before behavior changes.                       |
 | 5        | **Add one complete crafting family.** Give downtime another tangible reward.                                     | Propose Healing Potion and Antitoxin as the initial herbalism pair, reusing usable existing items and recipe infrastructure.                                    | Approved tools, access, time and cost are quoted; partial progress and held/lost materials balance; interrupted delivery cannot duplicate output; the journal explains progress and the next step.                                                                                                            | Medium–large; approve campaign recipe terms first. Gathering discounts can be a later separate slice. |
 
-Recommended next implementation work: milestone 1, followed by the bounded
-reconciliation in milestone 2. Research is the strongest next player-facing
-expansion once the existing work is understood. If daily living already has
-current native acceptance evidence, attach that evidence and advance immediately
-instead of repeating it.
+Next gate: close native acceptance for daily living and integrated research in
+a disposable world. Then tackle private hunting/research continuity across GM
+browsers, preserving saved cases and rules. If current native acceptance
+evidence already exists, attach it instead of repeating the same checks.
 
 ## Campaign direction and deferred ideas
 

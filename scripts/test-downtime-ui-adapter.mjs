@@ -182,6 +182,44 @@ try {
   assert.equal(JSON.stringify(sanitized).includes("hiddenDc"), false);
   assert.equal(JSON.stringify(sanitized).includes("hiddenRoll"), false);
   assert.equal(JSON.stringify(sanitized).includes("secret purse"), false);
+  const sanitizedResearch = sanitizePlayerDowntimeSnapshot({
+    researchHistory: [
+      {
+        blockId: "research-block",
+        research: {
+          status: "approved",
+          tier: 1,
+          complication: false,
+          dossier: "Player-safe dossier",
+          factCards: [
+            { tier: 1, text: "Earned fact" },
+            { tier: 3, text: "Unearned secret" },
+          ],
+          actionableDiscovery: "Breakthrough-only secret",
+          complicationText: "Untriggered consequence",
+          canonicalUuid: "JournalEntry.safe",
+          canonicalLabel: "Safe journal",
+        },
+      },
+      {
+        blockId: "pending-research-block",
+        research: {
+          status: "needs-preparation",
+          tier: 2,
+          dossier: "Unapproved dossier",
+          factCards: [{ tier: 1, text: "Unapproved fact" }],
+          canonicalUuid: "JournalEntry.unapproved",
+          canonicalLabel: "Unapproved journal",
+        },
+      },
+    ],
+  });
+  assert.match(JSON.stringify(sanitizedResearch), /Earned fact|Safe journal/);
+  assert.doesNotMatch(
+    JSON.stringify(sanitizedResearch),
+    /Unearned secret|Breakthrough-only|Untriggered consequence|Unapproved dossier|Unapproved fact|Unapproved journal/,
+    "the client projection fails closed around Research tier, approval, complication and link fields",
+  );
   assert.equal(
     sanitized.activities.find((activity) => activity.id === "market-trading")
       .stakeValueGp,

@@ -1,4 +1,10 @@
 import { HUNTING_TEMPLATE, HUNTING_ID } from "./hunting.js";
+import {
+  RESEARCH_ID,
+  isResearchTemplate,
+  RESEARCH_TEMPLATE,
+  normalizeResearchRequest,
+} from "./research.js";
 import { DOWNTIME_RECIPES } from "./recipes.js";
 /**
  * The intentionally small, GM-guided downtime model.
@@ -81,31 +87,7 @@ const DEFAULT_TEMPLATES = Object.freeze([
       },
     ],
   },
-  {
-    id: "guided-research",
-    name: "Research & Rumors",
-    description:
-      "Follow a lead, study, or work a local network for useful information.",
-    image: "icons/sundries/books/book-red-exclamation.webp",
-    skills: ["arc", "his", "inv", "nat", "rel"],
-    outcomes: [
-      {
-        label: "Loose thread",
-        report: "You found a small clue worth keeping in your notes.",
-        rewardGp: 0,
-      },
-      {
-        label: "Useful lead",
-        report: "Your research produced a clear lead for the party to pursue.",
-        rewardGp: 0,
-      },
-      {
-        label: "Breakthrough",
-        report: "You uncovered a valuable connection the GM can build on.",
-        rewardGp: 0,
-      },
-    ],
-  },
+  RESEARCH_TEMPLATE,
   {
     id: "guided-thievery",
     name: "Thievery",
@@ -158,6 +140,7 @@ export function campaignDowntimeTemplates() {
   return [
     fieldTemplate(),
     ...DOWNTIME_RECIPES,
+    RESEARCH_TEMPLATE,
     HUNTING_TEMPLATE,
     {
       id: "guided-train-spar",
@@ -334,6 +317,32 @@ export function campaignDowntimeTemplates() {
   ];
 }
 
+const LEGACY_RESEARCH_TEMPLATE = {
+  id: "guided-research",
+  name: "Research & Rumors",
+  description:
+    "Follow a lead, study, or work a local network for useful information.",
+  image: "icons/sundries/books/book-red-exclamation.webp",
+  skills: ["arc", "his", "inv", "nat", "rel"],
+  outcomes: [
+    {
+      label: "Loose thread",
+      report: "You found a small clue worth keeping in your notes.",
+      rewardGp: 0,
+    },
+    {
+      label: "Useful lead",
+      report: "Your research produced a clear lead for the party to pursue.",
+      rewardGp: 0,
+    },
+    {
+      label: "Breakthrough",
+      report: "You uncovered a valuable connection the GM can build on.",
+      rewardGp: 0,
+    },
+  ],
+};
+
 /** Add missing campaign entries while retaining saved names, prose and recipes. */
 export function includeCampaignDowntimeTemplates(templates) {
   const result = structuredClone(templates);
@@ -384,6 +393,15 @@ export function includeCampaignDowntimeTemplates(templates) {
           (entry) => entry.id === existing.id,
         ).description;
       }
+      if (
+        existing.id === RESEARCH_ID &&
+        JSON.stringify(existing) ===
+          JSON.stringify(
+            normalizeGuidedDowntimeTemplate(LEGACY_RESEARCH_TEMPLATE),
+          )
+      ) {
+        Object.assign(existing, normalizeGuidedDowntimeTemplate(builtin));
+      }
       // Only supply the requested third-result benefit when not configured yet.
       if (
         builtin.outcomes[2].benefit &&
@@ -426,6 +444,9 @@ export function normalizeGuidedDowntimeTemplate(raw = {}) {
   return {
     id,
     name,
+    ...(raw.researchVersion === 1 && id === RESEARCH_ID
+      ? { researchVersion: 1 }
+      : {}),
     description: text(raw.description, 400),
     image: imagePath(raw.image),
     ...(raw.category
@@ -487,6 +508,9 @@ export function normalizeGuidedDowntimeSelection(raw = {}, templates = []) {
   return {
     templateId,
     skill: template.skills.length > 0 ? skill : "",
+    ...(isResearchTemplate(template)
+      ? { research: normalizeResearchRequest(raw.research) }
+      : {}),
     ...(template.id === HUNTING_ID ||
     ["scroll", "learn-spell", FIELD_OUTPUT].includes(template.work?.output)
       ? { targetId: idValue(raw.targetId) }

@@ -22,6 +22,11 @@ const REQUEST_FIELDS = new Set([
   "weaponId",
   "bundleId",
   "ammunitionType",
+  "researchRequest",
+  "researchCategory",
+  "researchSubjectId",
+  "researchSubjectText",
+  "researchDiscoverNew",
 ]);
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -549,6 +554,8 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
     guided,
     huntingPending: source.huntingPending === true,
     huntingMessage: String(source.huntingMessage ?? ""),
+    researchMessage: String(source.researchMessage ?? ""),
+    researchStatus: cleanId(source.researchStatus),
     requiresRoll: guided && queue.some((entry) => Boolean(entry.skill)),
     retrySubmission: source.retrySubmission === true,
     statusLabel: playerStatusLabel(status, submitted),
@@ -584,6 +591,22 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
       const choice = guided
         ? queue.find((entry) => entry.activityId === activity.id)
         : null;
+      const research = activity.research
+        ? {
+            ...activity.research,
+            request: String(choice?.research?.request ?? ""),
+            subjectText: String(choice?.research?.subjectText ?? ""),
+            discoverNew: choice?.research?.discoverNew === true,
+            categories: activity.research.categories.map((entry) => ({
+              ...entry,
+              selected: entry.id === (choice?.research?.category || "anything"),
+            })),
+            subjects: activity.research.subjects.map((entry) => ({
+              ...entry,
+              selected: entry.id === choice?.research?.subjectId,
+            })),
+          }
+        : null;
       return {
         ...activity,
         selected: Boolean(choice),
@@ -600,6 +623,7 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
               selected: skill.id === choice.skill,
             }))
           : activity.skills,
+        ...(research ? { research } : {}),
       };
     }),
     hasActivities: visibleActivities.length > 0,
@@ -641,6 +665,16 @@ export function normalizePlayerDowntimeProjection(raw, uiState = {}) {
       awardStatus: String(row.awardStatus ?? ""),
       prerequisites: String(row.prerequisites ?? ""),
     })),
+    researchHistory: array(source.researchHistory)
+      .map((row) => ({
+        blockId: cleanId(row?.blockId),
+        locationName: String(row?.locationName ?? ""),
+        timeOfDayLabel: String(row?.timeOfDayLabel ?? ""),
+        campaignDate: String(row?.campaignDate ?? ""),
+        completedAt: formatDate(row?.completedAt),
+        research: normalizeResearchResult(row?.research),
+      }))
+      .filter((row) => row.research),
     receipt,
     hasReceipt: Boolean(receipt),
     completionMessage: String(source.completionMessage ?? ""),
@@ -763,6 +797,37 @@ function normalizeActivity(activity) {
     costLabel: String(source.costLabel ?? ""),
     limitLabel: String(source.limitLabel ?? ""),
     fieldAmmunition: source.fieldAmmunition === true,
+    ...(source.research
+      ? {
+          research: {
+            categories: array(source.research.categories).map((entry) => ({
+              id: cleanId(entry?.id),
+              label: String(entry?.label ?? "Topic"),
+              selected: entry?.selected === true,
+            })),
+            subjects: array(source.research.subjects).map((entry) => ({
+              id: cleanId(entry?.id),
+              label: String(entry?.label ?? "Known subject"),
+              detail: String(entry?.detail ?? ""),
+              category: cleanId(entry?.category) || "anything",
+              skills: array(entry?.skills).map(cleanId).filter(Boolean),
+              skillIds: array(entry?.skills)
+                .map(cleanId)
+                .filter(Boolean)
+                .join(" "),
+              profiles: normalizeResearchProfiles(entry?.profiles),
+              selected: entry?.selected === true,
+            })),
+            profiles: normalizeResearchProfiles(source.research.profiles),
+            requestPlaceholder: String(
+              source.research.requestPlaceholder ?? "",
+            ),
+            request: String(source.research.request ?? ""),
+            subjectText: String(source.research.subjectText ?? ""),
+            discoverNew: source.research.discoverNew === true,
+          },
+        }
+      : {}),
   };
 }
 
@@ -777,6 +842,9 @@ function normalizeQueueEntry(entry, index, total) {
     icon: safeIcon(source.icon),
     hours: positiveInteger(source.hours, 0),
     detail: String(source.detail ?? source.summary ?? ""),
+    ...(source.research
+      ? { research: normalizeResearchRequest(source.research) }
+      : {}),
     canMoveUp: source.canMoveUp ?? index > 0,
     canMoveDown: source.canMoveDown ?? index < total - 1,
   };
@@ -795,6 +863,9 @@ function normalizeReceipt(receipt) {
       report: String(entry?.report ?? ""),
       hours: positiveInteger(entry?.hours, 0),
       rewardLabel: String(entry?.rewardLabel ?? ""),
+      ...(entry?.research
+        ? { research: normalizeResearchResult(entry.research) }
+        : {}),
     }),
   );
   return {
@@ -825,6 +896,15 @@ export function readAllowedActivityInputs(card) {
     } else if (field === "hours") result.hours = positiveInteger(raw, 0);
     else if (field === "stakeGp") {
       result.stakeGp = Math.max(0, Number(raw) || 0);
+    } else if (field === "researchDiscoverNew") {
+      result.researchDiscoverNew = input.checked === true;
+    } else if (["researchRequest", "researchSubjectText"].includes(field)) {
+      result[field] = cleanPlayerText(
+        raw,
+        field === "researchRequest" ? 500 : 200,
+      );
+    } else if (field === "researchSubjectId") {
+      result[field] = cleanPlayerText(raw, 220);
     } else {
       result[field] = cleanId(raw);
     }
@@ -841,6 +921,8 @@ export function restoreActivityInputDraft(card, draft) {
     if (field === "targetIds") {
       for (const option of input.options ?? [])
         option.selected = draft[field].includes(option.value);
+    } else if (input.type === "checkbox") {
+      input.checked = draft[field] === true;
     } else {
       const value = String(draft[field]);
       if (
@@ -859,6 +941,7 @@ export function updateActivityCardSummary(
   allocationQuotes,
   busy = false,
 ) {
+  updateResearchFields(card);
   const detail = card.querySelector?.("[data-target-detail]");
   if (detail)
     detail.textContent =
@@ -909,6 +992,139 @@ export function updateActivityCardSummary(
     const button = card.querySelector('[data-action="addActivity"]');
     if (button) button.disabled = busy || !quote?.available;
   }
+}
+
+function updateResearchFields(card) {
+  const category = card?.querySelector?.('[name="researchCategory"]')?.value;
+  const approach = card?.querySelector?.('[name="skill"]')?.value;
+  const subject = card?.querySelector?.('[name="researchSubjectId"]');
+  if (subject) {
+    let selectedVisible = false;
+    for (const option of subject.options ?? []) {
+      if (!option.value) continue;
+      const visible =
+        (!category ||
+          category === "anything" ||
+          option.dataset.researchCategory === category ||
+          option.dataset.researchCategory === "anything") &&
+        (!approach ||
+          !option.dataset.researchSkills ||
+          option.dataset.researchSkills.split(" ").includes(approach));
+      option.hidden = !visible;
+      option.disabled = !visible;
+      if (option.selected && visible) selectedVisible = true;
+    }
+    if (!selectedVisible && subject.value) subject.value = "";
+  }
+  const discover = card?.querySelector?.(
+    '[name="researchDiscoverNew"]',
+  )?.checked;
+  if (subject) subject.disabled = discover === true;
+  const typedSubject = card?.querySelector?.('[name="researchSubjectText"]');
+  if (typedSubject) typedSubject.disabled = discover === true;
+  const hours = positiveInteger(
+    card?.querySelector?.('[name="hours"]')?.value ?? card?.dataset?.fixedHours,
+    4,
+  );
+  const subjectId = discover ? "" : String(subject?.value ?? "");
+  const profiles = [
+    ...(card?.querySelectorAll?.("[data-research-profile]") ?? []),
+  ];
+  const profile =
+    profiles.find(
+      (entry) =>
+        entry.dataset.subjectId === subjectId &&
+        entry.dataset.skill === approach &&
+        Number(entry.dataset.hours) === hours,
+    ) ??
+    profiles.find(
+      (entry) =>
+        !entry.dataset.subjectId &&
+        entry.dataset.skill === approach &&
+        Number(entry.dataset.hours) === hours,
+    );
+  const outlook = card?.querySelector?.("[data-research-outlook]");
+  if (outlook && profile) {
+    outlook.textContent = `${profile.dataset.difficulty} difficulty · ${profile.dataset.risk}% complication`;
+  }
+}
+
+function normalizeResearchProfiles(raw) {
+  return array(raw)
+    .map((entry) => ({
+      skill: cleanId(entry?.skill),
+      hours: positiveInteger(entry?.hours, 4),
+      difficulty: String(entry?.difficulty ?? ""),
+      risk: Math.min(100, Math.max(0, positiveInteger(entry?.risk, 0))),
+    }))
+    .filter(
+      (entry) =>
+        entry.skill && [4, 8].includes(entry.hours) && entry.difficulty,
+    );
+}
+
+function normalizeResearchRequest(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    request: String(raw.request ?? ""),
+    category: cleanId(raw.category) || "anything",
+    subjectId: String(raw.subjectId ?? ""),
+    subjectText: String(raw.subjectText ?? ""),
+    discoverNew: raw.discoverNew === true,
+    mode: cleanId(raw.mode),
+  };
+}
+
+function normalizeResearchResult(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const tier = Math.min(3, positiveInteger(raw.tier, 0));
+  const status = cleanId(raw.status);
+  const approved = ["approved", "needs-world-building"].includes(status);
+  const complication = raw.complication === true;
+  const canonicalUuid = approved ? String(raw.canonicalUuid ?? "") : "";
+  const hasCanonicalLink =
+    /^(?:Actor|JournalEntry|Compendium)\.[A-Za-z0-9_.-]+(?:\.JournalEntryPage\.[A-Za-z0-9_-]+)?$/.test(
+      canonicalUuid,
+    );
+  return {
+    request: normalizeResearchRequest(raw.request) ?? {},
+    subject: String(raw.subject ?? ""),
+    category: cleanId(raw.category) || "anything",
+    categoryLabel: String(raw.categoryLabel ?? "Anything"),
+    tier,
+    tierId: cleanId(raw.tierId),
+    tierLabel: String(raw.tierLabel ?? ""),
+    difficulty: String(raw.difficulty ?? ""),
+    risk: positiveInteger(raw.risk, 0),
+    complication,
+    status,
+    dossier: approved ? String(raw.dossier ?? "") : "",
+    factCards: approved
+      ? array(raw.factCards)
+          .slice(0, 8)
+          .map((card) => ({
+            tier: positiveInteger(card?.tier, 1),
+            text: String(card?.text ?? ""),
+          }))
+          .filter((card) => card.text && card.tier <= tier)
+      : [],
+    actionableDiscovery:
+      approved && tier >= 3 ? String(raw.actionableDiscovery ?? "") : "",
+    complicationText:
+      approved && complication ? String(raw.complicationText ?? "") : "",
+    needsWorldBuilding: approved && raw.needsWorldBuilding === true,
+    canonicalUuid: hasCanonicalLink ? canonicalUuid : "",
+    canonicalLabel: hasCanonicalLink ? String(raw.canonicalLabel ?? "") : "",
+    hasCanonicalLink,
+  };
+}
+
+function cleanPlayerText(value, maximum) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximum);
 }
 
 function playerStatusLabel(status, submitted) {

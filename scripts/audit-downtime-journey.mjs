@@ -81,6 +81,8 @@ try {
       await import("/scripts/downtime/ui-adapter.js");
     const { defaultGuidedDowntimeTemplates } =
       await import("/scripts/downtime/dispatch.js");
+    const { RESEARCH_CATEGORIES, researchPlayerProfiles } =
+      await import("/scripts/downtime/research.js");
     const templates = defaultGuidedDowntimeTemplates();
     const actor = {
       id: "mira",
@@ -106,6 +108,42 @@ try {
       ],
       failSave: false,
       previewHeadingFocusCount: 0,
+      researchSeeds: [
+        {
+          id: "old-aqueduct",
+          title: "Old Aqueduct",
+          category: "place",
+          gmSummary: "The lower vault is still sealed.",
+          playerKnown: false,
+          discoverable: true,
+          difficulty: "Hard",
+          dc: 17,
+          risk: 12,
+          times: ["day", "night"],
+          skills: ["his", "inv"],
+          factCards: [
+            { id: "ward", tier: 2, text: "A ward seals the lower stairs." },
+          ],
+          actionableDiscovery: "Find the mason who cut the ward-stone.",
+          complicationText: "An archivist reports the inquiry.",
+          canonicalUuid: "JournalEntry.old-aqueduct",
+          canonicalLabel: "Old Aqueduct records",
+        },
+      ],
+      researchCases: [
+        {
+          id: "case-old-aqueduct",
+          blockId: "research-review-block",
+          actorId: actor.id,
+          actorName: "Mira",
+          subject: "Old Aqueduct",
+          tierLabel: "Meaningful Discovery",
+          request: { request: "What lies below the north gate?" },
+          needsWorldBuilding: true,
+          worldBuildingNotes: "Prepare the lower-vault map.",
+          approved: true,
+        },
+      ],
     };
     document.addEventListener("focusin", (event) => {
       if (event.target?.id === "dt-preview-heading") {
@@ -143,6 +181,28 @@ try {
         ),
         skills: template.skills.map((id) => ({ id, label: id })),
         category: template.category ?? "activities",
+        ...(template.id === "guided-research"
+          ? {
+              research: {
+                categories: RESEARCH_CATEGORIES,
+                subjects: [
+                  {
+                    id: "JournalEntry.known-place",
+                    label: "Known Place",
+                    category: "place",
+                    detail: "Player-visible Journal",
+                    skills: ["his"],
+                    profiles: researchPlayerProfiles({
+                      seed: { dc: 18, risk: 20, skills: ["his"] },
+                      timeOfDay: "day",
+                    }),
+                  },
+                ],
+                profiles: researchPlayerProfiles({ timeOfDay: "day" }),
+                requestPlaceholder: "What are you trying to learn?",
+              },
+            }
+          : {}),
         ...(template.id === "guided-craft-arrows" ? state.toolQuote : {}),
         ...(template.id === "guided-field-ammunition" ? state.fieldQuote : {}),
       })),
@@ -173,11 +233,40 @@ try {
         state.lastActivitySave = structuredClone(payload);
         return saved;
       },
+      saveResearchSeed: async (payload) => {
+        const saved = {
+          ...structuredClone(payload),
+          id: payload.id || "new-research-seed",
+        };
+        const index = state.researchSeeds.findIndex(
+          (seed) => seed.id === saved.id,
+        );
+        if (index >= 0) state.researchSeeds[index] = saved;
+        else state.researchSeeds.push(saved);
+        state.lastResearchSeed = structuredClone(saved);
+        return saved;
+      },
+      completeResearchFollowUp: async ({ blockId, actorId }) => {
+        const researchCase = state.researchCases.find(
+          (entry) => entry.blockId === blockId && entry.actorId === actorId,
+        );
+        if (!researchCase) throw new Error("Research follow-up not found");
+        researchCase.needsWorldBuilding = false;
+        return researchCase;
+      },
       getWorkspaceProjection: async () => ({
         actors: [actor],
         settlements: state.settlements,
         merchants: [{ id: "haven-shop", name: "Haven Supplies" }],
         guidedTemplates: templates,
+        researchSeeds: state.researchSeeds,
+        researchCases: state.researchCases,
+        researchCanonicalOptions: [
+          {
+            uuid: "JournalEntry.old-aqueduct",
+            label: "Journal — Old Aqueduct",
+          },
+        ],
         workflow: state.block,
         canCreateBlock: !state.block,
       }),
@@ -239,6 +328,18 @@ try {
         const operation = state.block.plan.characters[0].operations.find(
           (entry) => entry.id === payload.operationId,
         );
+        if (operation.research && payload.researchReview) {
+          operation.researchApproved = true;
+          operation.report = payload.report;
+          operation.researchCase = {
+            ...operation.researchCase,
+            ...structuredClone(payload.researchReview),
+            approved: true,
+          };
+          state.lastResearchReview = structuredClone(payload.researchReview);
+          state.saved.push(payload);
+          return state.block;
+        }
         const outcome = operation.outcomeOptions[payload.outcomeIndex];
         for (const option of operation.outcomeOptions)
           option.selected = option === outcome;
@@ -308,6 +409,7 @@ try {
         _actorId: actor.id,
         _busy: false,
         _guidedReportDrafts: new Map(),
+        _researchReviewDrafts: new Map(),
         _actorSelectorState: undefined,
         rendered: true,
         _statusMessage: "",
@@ -692,6 +794,16 @@ try {
     await page.locator('[data-form="new-block"]').innerText(),
     /Haven Supplies/,
   );
+  await page.locator('[name="timeOfDay"]').selectOption("night");
+  await page.evaluate(async () => {
+    await journey.app.render(false);
+    await journey.app.rendering;
+  });
+  assert.equal(
+    await page.locator('[name="timeOfDay"]').inputValue(),
+    "night",
+    "Research time survives a background refresh",
+  );
   await page
     .locator('[data-action="setView"][data-view="settlements"]')
     .first()
@@ -787,6 +899,81 @@ try {
     await page.locator('[data-action="submitQueue"]').isDisabled(),
     true,
   );
+  const researchCard = page.locator('[data-activity-id="guided-research"]');
+  assert.deepEqual(
+    await researchCard
+      .locator('[name="researchCategory"] option')
+      .evaluateAll((options) => options.map((option) => option.value)),
+    [
+      "anything",
+      "creature",
+      "person",
+      "place",
+      "faction",
+      "event",
+      "object",
+      "lead",
+      "hideout",
+    ],
+  );
+  for (const category of [
+    "creature",
+    "person",
+    "place",
+    "faction",
+    "event",
+    "object",
+    "lead",
+    "hideout",
+    "anything",
+  ]) {
+    await researchCard
+      .locator('[name="researchCategory"]')
+      .selectOption(category);
+  }
+  await page
+    .locator('[data-activity-id="guided-research"] [name="hours"]')
+    .selectOption("8");
+  assert.match(
+    await researchCard.locator("[data-research-outlook]").innerText(),
+    /Favorable difficulty · 8% complication/,
+  );
+  await researchCard.locator('[name="skill"]').selectOption("his");
+  await researchCard.locator('[name="researchCategory"]').selectOption("place");
+  await researchCard
+    .locator('[name="researchSubjectId"]')
+    .selectOption("JournalEntry.known-place");
+  assert.match(
+    await researchCard.locator("[data-research-outlook]").innerText(),
+    /Challenging difficulty · 14% complication/,
+    "known subjects use their own player-safe time, approach and duration outlook",
+  );
+  await researchCard.locator('[name="skill"]').selectOption("arc");
+  assert.equal(
+    await researchCard.locator('[name="researchSubjectId"]').inputValue(),
+    "",
+    "a known subject clears when its approach is no longer valid",
+  );
+  await researchCard
+    .locator('[name="researchSubjectText"]')
+    .fill("A creature described by salt-road witnesses");
+  await researchCard.locator('[name="researchDiscoverNew"]').check();
+  assert.equal(
+    await researchCard.locator('[name="researchSubjectId"]').isDisabled(),
+    true,
+  );
+  assert.equal(
+    await researchCard.locator('[name="researchSubjectText"]').isDisabled(),
+    true,
+  );
+  await researchCard.locator('[name="researchDiscoverNew"]').uncheck();
+  await researchCard.locator('[name="researchSubjectText"]').fill("");
+  await page
+    .locator('[data-activity-id="guided-research"] [name="researchRequest"]')
+    .fill("What hunts along the salt road?");
+  await page
+    .locator('[data-activity-id="guided-research"] [name="researchCategory"]')
+    .selectOption("creature");
   await page
     .locator('[data-activity-id="guided-research"] [data-action="addActivity"]')
     .click();
@@ -818,6 +1005,28 @@ try {
   assert.deepEqual(
     await page.evaluate(() => journey.state.queue.map((entry) => entry.hours)),
     [8, 1, 8],
+  );
+  assert.deepEqual(await page.evaluate(() => journey.state.queue[0].research), {
+    request: "What hunts along the salt road?",
+    category: "creature",
+    subjectId: "",
+    subjectText: "",
+    discoverNew: false,
+    mode: "",
+  });
+  await page.evaluate(async () => {
+    journey.playerAdapter.invalidate();
+    await journey.mount("activities");
+  });
+  assert.equal(
+    await page.locator('[data-action="submitQueue"]').count(),
+    0,
+    "a restored submitted Research queue cannot be submitted twice",
+  );
+  assert.match(
+    await page.locator(".dt-queue__list").innerText(),
+    /What hunts along the salt road/,
+    "the Research question survives player reload/resume",
   );
   await page.evaluate(() => journey.mount("workspace"));
   const plannedFocusCount = await page.evaluate(
@@ -1319,9 +1528,255 @@ try {
     0,
     "insufficient material quantity prevents crafting",
   );
+  await page.evaluate(async () => {
+    game.user = { id: "gm", isGM: true, role: 4 };
+    journey.state.block = {
+      id: "research-review-block",
+      mode: "guided",
+      status: "planned",
+      locationName: "Haven Archives",
+      timeOfDay: "night",
+      hours: 8,
+      canApply: true,
+      participants: [
+        {
+          actorId: "mira",
+          name: "Mira",
+          submitted: true,
+          resolved: false,
+          queue: [],
+        },
+      ],
+      plan: {
+        characters: [
+          {
+            actorId: "mira",
+            name: "Mira",
+            operations: [
+              {
+                id: "research-result",
+                label: "Research & Rumors",
+                hours: 8,
+                research: true,
+                researchApproved: true,
+                selectedOutcomeIndex: 2,
+                outcome: "Meaningful Discovery",
+                report: "The lower archive confirms a warded stair.",
+                outcomeOptions: [
+                  { index: 0, label: "Dead End", report: "", selected: false },
+                  {
+                    index: 1,
+                    label: "Interesting Thread",
+                    report: "",
+                    selected: false,
+                  },
+                  {
+                    index: 2,
+                    label: "Meaningful Discovery",
+                    report: "The lower archive confirms a warded stair.",
+                    selected: true,
+                  },
+                  {
+                    index: 3,
+                    label: "Breakthrough",
+                    report: "",
+                    selected: false,
+                  },
+                ],
+                researchSeedOptions: [
+                  { id: "old-aqueduct", label: "Old Aqueduct · place" },
+                ],
+                researchCanonicalOptions: [
+                  {
+                    uuid: "JournalEntry.old-aqueduct",
+                    label: "Journal — Old Aqueduct",
+                  },
+                ],
+                researchCase: {
+                  id: "case-old-aqueduct",
+                  request: {
+                    request: "What lies below the north gate?",
+                    category: "place",
+                    mode: "directed",
+                  },
+                  skill: "inv",
+                  hours: 8,
+                  timeOfDay: "night",
+                  tier: 2,
+                  tierLabel: "Meaningful Discovery",
+                  difficulty: "Hard",
+                  dc: 17,
+                  risk: 12,
+                  roll: { total: 18, formula: "1d20 + 5" },
+                  seedId: "old-aqueduct",
+                  subject: "Old Aqueduct",
+                  factCards: [
+                    {
+                      id: "ward",
+                      tier: 2,
+                      text: "A ward seals the lower stairs.",
+                    },
+                  ],
+                  approved: true,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await journey.mount("workspace");
+  });
+  assert.match(
+    await page.locator("[data-research-review]").innerText(),
+    /Investigation · 8h · Night/,
+  );
+  assert.match(
+    await page.locator("[data-research-review]").innerText(),
+    /18 vs DC 17/,
+  );
+  await page
+    .getByLabel("Canonical subject", { exact: true })
+    .fill("Old Aqueduct — revised draft");
+  await page.locator(".dt-research-facts summary").click();
+  await page
+    .getByLabel("Research fact 1")
+    .fill("A silver ward seals the stairs.");
+  await page.locator('[name="researchNeedsWorldBuilding"]').check();
+  await page
+    .locator('[name="researchWorldBuildingNotes"]')
+    .fill("Prepare the lower-vault map.");
+  await page.locator('[data-action="refresh"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Canonical subject", { exact: true }).inputValue(),
+    "Old Aqueduct — revised draft",
+    "GM Research review drafts survive a workspace refresh",
+  );
+  assert.equal(
+    await page.getByLabel("Research fact 1").inputValue(),
+    "A silver ward seals the stairs.",
+  );
+  assert.equal(
+    await page.locator('[name="researchNeedsWorldBuilding"]').isChecked(),
+    true,
+  );
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      ),
+      false,
+      `Research review fits ${width}px`,
+    );
+    const audit = await new AxeBuilder({ page })
+      .include("#app")
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    assert.deepEqual(
+      audit.violations,
+      [],
+      `Research review a11y at ${width}px`,
+    );
+    await page.screenshot({
+      path: path.join(out, `gm-research-review-${width}.png`),
+      fullPage: true,
+    });
+    await page
+      .locator("[data-research-review]")
+      .screenshot({ path: path.join(out, `gm-research-form-${width}.png`) });
+  }
+  await page.locator('[data-action="applyBlock"]').focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => journey.state.applied === 3);
+  assert.equal(
+    await page.evaluate(() => journey.state.lastResearchReview.subject),
+    "Old Aqueduct — revised draft",
+    "Apply saves an edited prepared dossier instead of discarding its review fields",
+  );
+  assert.equal(
+    await page.evaluate(
+      () => journey.state.lastResearchReview.worldBuildingNotes,
+    ),
+    "Prepare the lower-vault map.",
+  );
+  await page.locator('[data-action="setView"][data-view="research"]').click();
+  await page
+    .locator('[data-action="selectResearchSeed"][data-seed-id="old-aqueduct"]')
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.match(
+    await page.locator(".dt-research-library .dt-rail").innerText(),
+    /Hidden seed names, numeric DCs and unrevealed facts never enter player choices/,
+  );
+  assert.match(
+    await page
+      .getByRole("region", { name: "Needs World Building" })
+      .innerText(),
+    /Prepare the lower-vault map/,
+  );
+  await page.locator('[data-action="completeResearchFollowUp"]').click();
+  await page.waitForFunction(
+    () => journey.state.researchCases[0]?.needsWorldBuilding === false,
+  );
+  await page.evaluate(() => journey.app.rendering);
+  const completedFollowUpText = await page
+    .locator("#app .dt-research-followups")
+    .innerText();
+  assert.match(completedFollowUpText, /0 cases/);
+  assert.doesNotMatch(
+    completedFollowUpText,
+    /Mira · Old Aqueduct/,
+    "a completed world-building case leaves the current private follow-up queue",
+  );
+  await page.getByLabel("Research DC (GM only)").fill("19");
+  await page
+    .getByLabel("Research Seed fact 1")
+    .fill("A silver ward seals the lower stairs.");
+  await page.locator('[data-action="refresh"]').click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(
+    await page.getByLabel("Research DC (GM only)").inputValue(),
+    "19",
+    "confidential seed drafts survive workspace refresh",
+  );
+  assert.equal(
+    await page.getByLabel("Research Seed fact 1").inputValue(),
+    "A silver ward seals the lower stairs.",
+  );
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      ),
+      false,
+      `Research Seed editor fits ${width}px`,
+    );
+    const audit = await new AxeBuilder({ page })
+      .include("#app")
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    assert.deepEqual(
+      audit.violations,
+      [],
+      `Research Seed editor a11y at ${width}px`,
+    );
+    await page.screenshot({
+      path: path.join(out, `gm-research-seed-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.locator('[data-action="saveResearchSeed"]').click();
+  await page.waitForFunction(() => journey.state.lastResearchSeed?.dc === "19");
+  assert.equal(
+    await page.evaluate(() => journey.state.lastResearchSeed.factCards[0].text),
+    "A silver ward seals the lower stairs.",
+  );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "Downtime browser gauntlet passed: included crafting, benefit selector, patient selection and save-before-apply, project preset, setup, a three-entry split allocation with forfeited hours, individual GM review, draft refresh, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
+    "Downtime browser gauntlet passed: included Research question/category/known subject/open discovery, live outlooks, GM dossier draft refresh, save-before-apply and follow-up completion, crafting, benefit selector, patient selection, project preset, split allocation, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
   );
 } catch (error) {
   const page = browser.contexts()[0]?.pages()[0];

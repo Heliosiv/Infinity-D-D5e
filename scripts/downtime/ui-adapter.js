@@ -178,6 +178,65 @@ function sanitizeOption(raw) {
   };
 }
 
+function sanitizeResearchRequest(raw) {
+  if (!plainObject(raw)) return null;
+  return {
+    request: cleanText(raw.request, 500),
+    category: cleanId(raw.category) || "anything",
+    subjectId: cleanText(raw.subjectId, 220),
+    subjectText: cleanText(raw.subjectText, 200),
+    discoverNew: raw.discoverNew === true,
+    mode: cleanId(raw.mode),
+  };
+}
+
+function sanitizeResearchResult(raw) {
+  if (!plainObject(raw)) return null;
+  const tier = safeInteger(raw.tier, 0, 3);
+  const status = cleanId(raw.status);
+  const approved = ["approved", "needs-world-building"].includes(status);
+  const complication = raw.complication === true;
+  const canonicalUuid = approved ? cleanText(raw.canonicalUuid, 300) : "";
+  const hasCanonicalLink = researchUuidSyntaxAllowed(canonicalUuid);
+  return {
+    request: sanitizeResearchRequest(raw.request) ?? {},
+    subject: cleanText(raw.subject, 160),
+    category: cleanId(raw.category) || "anything",
+    categoryLabel: cleanText(raw.categoryLabel, 100),
+    tier,
+    tierId: cleanId(raw.tierId),
+    tierLabel: cleanText(raw.tierLabel, 100),
+    difficulty: cleanText(raw.difficulty, 100),
+    risk: safeInteger(raw.risk, 0, 100),
+    complication,
+    status,
+    dossier: approved ? cleanText(raw.dossier, 3000) : "",
+    factCards: approved
+      ? array(raw.factCards)
+          .slice(0, 8)
+          .map((card) => ({
+            tier: safeInteger(card?.tier, 1, 3),
+            text: cleanText(card?.text, 800),
+          }))
+          .filter((card) => card.text && card.tier <= tier)
+      : [],
+    actionableDiscovery:
+      approved && tier >= 3 ? cleanText(raw.actionableDiscovery, 800) : "",
+    complicationText:
+      approved && complication ? cleanText(raw.complicationText, 800) : "",
+    needsWorldBuilding: approved && raw.needsWorldBuilding === true,
+    canonicalUuid: hasCanonicalLink ? canonicalUuid : "",
+    canonicalLabel: hasCanonicalLink ? cleanText(raw.canonicalLabel, 160) : "",
+    hasCanonicalLink,
+  };
+}
+
+function researchUuidSyntaxAllowed(value) {
+  return /^(?:Actor|JournalEntry|Compendium)\.[A-Za-z0-9_.-]+(?:\.JournalEntryPage\.[A-Za-z0-9_-]+)?$/.test(
+    String(value ?? ""),
+  );
+}
+
 function sanitizeActivity(raw) {
   if (!plainObject(raw)) return null;
   const id = cleanId(raw.id ?? raw.activityId);
@@ -257,7 +316,44 @@ function sanitizeActivity(raw) {
     costLabel: cleanText(raw.costLabel, 1600),
     limitLabel: cleanText(raw.limitLabel, 300),
     ...(raw.fieldAmmunition === true ? { fieldAmmunition: true } : {}),
+    ...(plainObject(raw.research)
+      ? {
+          research: {
+            categories: array(raw.research.categories)
+              .map((entry) => ({
+                id: cleanId(entry?.id),
+                label: cleanText(entry?.label, 100),
+              }))
+              .filter((entry) => entry.id && entry.label),
+            subjects: array(raw.research.subjects)
+              .map((entry) => ({
+                ...sanitizeOption(entry),
+                category: cleanId(entry?.category) || "anything",
+                skills: array(entry?.skills).map(cleanId).filter(Boolean),
+                profiles: sanitizeResearchProfiles(entry?.profiles),
+              }))
+              .filter((entry) => entry.id && entry.label),
+            profiles: sanitizeResearchProfiles(raw.research.profiles),
+            requestPlaceholder: cleanText(raw.research.requestPlaceholder, 300),
+          },
+        }
+      : {}),
   };
+}
+
+function sanitizeResearchProfiles(raw) {
+  return array(raw)
+    .slice(0, 32)
+    .map((entry) => ({
+      skill: cleanId(entry?.skill),
+      hours: safeInteger(entry?.hours, 4, 8),
+      difficulty: cleanText(entry?.difficulty, 100),
+      risk: safeInteger(entry?.risk, 0, 100),
+    }))
+    .filter(
+      (entry) =>
+        entry.skill && [4, 8].includes(entry.hours) && entry.difficulty,
+    );
 }
 
 function sanitizeCanonicalEntry(raw, index = 0) {
@@ -293,6 +389,8 @@ function sanitizeCanonicalEntry(raw, index = 0) {
       ...sanitizeGuidedRoll(raw.guidedAttack),
       natural: raw.guidedAttack.natural,
     };
+  const research = sanitizeResearchRequest(raw.research);
+  if (research && activityId === "guided-research") entry.research = research;
   return entry;
 }
 
@@ -361,6 +459,9 @@ function sanitizeReceipt(raw) {
           ? { hours: safeInteger(entry.hours, 0, DOWNTIME_MAX_BLOCK_HOURS) }
           : {}),
         rewardLabel: cleanText(entry?.rewardLabel, 300),
+        ...(entry?.research
+          ? { research: sanitizeResearchResult(entry.research) }
+          : {}),
       })),
   };
 }
@@ -418,6 +519,8 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
     huntingLocked: source.huntingLocked === true,
     huntingPending: source.huntingPending === true,
     huntingMessage: cleanText(source.huntingMessage, 1000),
+    researchMessage: cleanText(source.researchMessage, 3000),
+    researchStatus: cleanId(source.researchStatus),
     canSubmit: source.canSubmit === true,
     canRecall: source.canRecall === true,
     needsRecovery: source.needsRecovery === true,
@@ -447,6 +550,21 @@ export function sanitizePlayerDowntimeSnapshot(raw) {
               prerequisites: cleanText(row?.prerequisites, 400),
               awardStatus: cleanText(row?.awardStatus, 200),
             })),
+        }
+      : {}),
+    ...(source.researchHistory
+      ? {
+          researchHistory: array(source.researchHistory)
+            .slice(0, 200)
+            .map((row) => ({
+              blockId: cleanId(row?.blockId),
+              locationName: cleanText(row?.locationName, 200),
+              timeOfDayLabel: cleanText(row?.timeOfDayLabel, 100),
+              campaignDate: cleanText(row?.campaignDate, 200),
+              completedAt: Number(row?.completedAt) || null,
+              research: sanitizeResearchResult(row?.research),
+            }))
+            .filter((row) => row.research),
         }
       : {}),
     completionMessage: cleanText(source.completionMessage, 1_000),
@@ -711,6 +829,15 @@ export class DowntimePlayerAdapter {
     if (targetId) entry.targetId = targetId;
     if (targetIds.length > 0) entry.targetIds = targetIds;
     if (stakeCp > 0) entry.stakeCp = stakeCp;
+    if (guided && activityId === "guided-research") {
+      entry.research = sanitizeResearchRequest({
+        request: payload.researchRequest,
+        category: payload.researchCategory,
+        subjectId: payload.researchSubjectId,
+        subjectText: payload.researchSubjectText,
+        discoverNew: payload.researchDiscoverNew === true,
+      });
+    }
     if (guided) {
       const existing = draft.queue.findIndex(
         (candidate) => candidate.activityId === activityId,
@@ -1256,6 +1383,22 @@ export class DowntimePlayerAdapter {
         detail.push(skill?.label || humanizeIdentifier(entry.skill));
       }
       if (entry.stakeCp) detail.push(stakeLabel(entry.stakeCp));
+      if (entry.research) {
+        const subject =
+          entry.research.subjectText ||
+          activity?.research?.subjects?.find(
+            (option) => option.id === entry.research.subjectId,
+          )?.label;
+        detail.push(
+          [
+            humanizeIdentifier(entry.research.category || "anything"),
+            subject,
+            entry.research.request,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        );
+      }
       if (entry.targetIds?.length > 0) {
         detail.push(selectedBundleLabel(activity, entry.targetIds));
       } else if (entry.targetId) {

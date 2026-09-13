@@ -523,6 +523,7 @@ try {
         settlementId: "haven",
         locationPresetId: "wilderness",
         locationName: "Ignored when settled",
+        timeOfDay: "day",
         hours: "16",
       },
       querySelectorAll: (selector) => {
@@ -557,6 +558,7 @@ try {
       settlementId: "haven",
       locationPresetId: "wilderness",
       locationName: "Ignored when settled",
+      timeOfDay: "day",
       hours: 16,
       mode: "guided",
       templateIds: [],

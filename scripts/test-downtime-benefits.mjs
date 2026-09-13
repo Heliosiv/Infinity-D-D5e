@@ -219,7 +219,7 @@ custom.name = "Train and Spar";
 delete custom.outcomes[2].benefit;
 custom.outcomes[2].report = "Keep my campaign report";
 const upgraded = includeCampaignDowntimeTemplates([custom]);
-assert.equal(upgraded.length, 19);
+assert.equal(upgraded.length, 20);
 assert.equal(upgraded[0].outcomes[2].report, "Keep my campaign report");
 assert.equal(upgraded[0].outcomes[2].benefit, "sparring");
 custom.outcomes[2].benefit = "";
@@ -247,7 +247,7 @@ settings.set("downtimeConfig", clone(oldConfig));
 resetDowntimeWorkflowStoreForTests();
 const migrated = loadDowntimeConfig();
 assert.equal(migrated.version, 11);
-assert.equal(migrated.guidedTemplates.length, 43);
+assert.equal(migrated.guidedTemplates.length, 44);
 assert.deepEqual(
   migrated.guidedTemplates.slice(0, 24).map((template) => {
     const { blockHours: _blockHours, ...historicalTemplate } = template;

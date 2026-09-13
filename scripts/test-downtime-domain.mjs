@@ -69,7 +69,7 @@ import {
     {
       ...Object.fromEntries(DOWNTIME_RECIPES.map((r) => [r.id, [0, 0, 0]])),
       "guided-labor": [1, 2, 4],
-      "guided-research": [0, 0, 0],
+      "guided-research": [0, 0, 0, 0],
       "guided-thievery": [0, 2, 6],
       "guided-performance": [0, 2, 4],
       "guided-training": [0, 0, 0],
@@ -610,3 +610,55 @@ import {
 }
 
 process.stdout.write("downtime-domain validation passed\n");
+
+// Library upgrades must not reinterpret customized or frozen legacy research.
+{
+  const legacy = {
+    id: "guided-research",
+    name: "Research & Rumors",
+    description:
+      "Follow a lead, study, or work a local network for useful information.",
+    image: "icons/sundries/books/book-red-exclamation.webp",
+    skills: ["arc", "his", "inv", "nat", "rel"],
+    outcomes: [
+      {
+        label: "Loose thread",
+        report: "You found a small clue worth keeping in your notes.",
+        rewardGp: 0,
+      },
+      {
+        label: "Useful lead",
+        report: "Your research produced a clear lead for the party to pursue.",
+        rewardGp: 0,
+      },
+      {
+        label: "Breakthrough",
+        report: "You uncovered a valuable connection the GM can build on.",
+        rewardGp: 0,
+      },
+    ],
+  };
+  const frozen = normalizeGuidedDowntimeTemplates([legacy])[0];
+  assert.equal(frozen.researchVersion, undefined);
+  const upgraded = normalizeGuidedDowntimeLibrary([legacy]).find(
+    (t) => t.id === legacy.id,
+  );
+  assert.equal(upgraded.researchVersion, 1);
+  assert.equal(upgraded.outcomes.length, 4);
+  assert.equal(
+    frozen.outcomes.length,
+    3,
+    "an existing block keeps its old results",
+  );
+  for (const edit of [
+    { name: "Our research" },
+    { blockHours: 2 },
+    { outcomes: legacy.outcomes.map((o) => ({ ...o, rewardGp: 7 })) },
+  ]) {
+    const custom = { ...legacy, ...edit };
+    assert.deepEqual(
+      normalizeGuidedDowntimeLibrary([custom]).find((t) => t.id === legacy.id),
+      normalizeGuidedDowntimeTemplates([custom])[0],
+    );
+  }
+}

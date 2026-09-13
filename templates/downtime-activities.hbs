@@ -34,6 +34,7 @@
   </p>
 
   {{#if huntingMessage}}<div class="dt-notice" role="status">{{huntingMessage}}{{#if huntingPending}} Use Take hunting shot below to finish.{{/if}}</div>{{/if}}
+  {{#if researchMessage}}<div class="dt-notice dt-research-notice" role="status"><i class="fa-solid fa-book-open-reader" aria-hidden="true"></i><span>{{researchMessage}}</span></div>{{/if}}
 
   {{#if hasError}}
   <div class="dt-notice dt-notice--danger" role="alert">
@@ -149,6 +150,43 @@
                       {{#each skills}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
                     </select>
                   </label>
+                  {{/if}}
+
+                  {{#if research}}
+                  <fieldset class="dt-fieldset dt-research-request">
+                    <legend>Research request</legend>
+                    <p>Ask a precise question, explore a broad topic, or leave the direction open. Only subjects already safe for you are offered below; you can also type a description or discover something new.</p>
+                    <label class="dt-field dt-field--wide">
+                      <span>What are you trying to learn?</span>
+                      <textarea name="researchRequest" data-activity-input rows="3" maxlength="500" placeholder="{{research.requestPlaceholder}}" aria-label="Research request">{{research.request}}</textarea>
+                    </label>
+                    <label class="dt-field">
+                      <span>Topic (optional)</span>
+                      <select name="researchCategory" data-activity-input aria-label="Research topic">
+                        {{#each research.categories}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                      </select>
+                    </label>
+                    <label class="dt-field">
+                      <span>Known subject (optional)</span>
+                      <select name="researchSubjectId" data-activity-input aria-label="Known player-safe research subject">
+                        <option value="">No named subject</option>
+                        {{#each research.subjects}}<option value="{{id}}" data-research-category="{{category}}" data-research-skills="{{skillIds}}" {{#if selected}}selected{{/if}}>{{label}}{{#if detail}} · {{detail}}{{/if}}</option>{{/each}}
+                      </select>
+                    </label>
+                    <label class="dt-field dt-field--wide">
+                      <span>Typed name or description (optional)</span>
+                      <input type="text" name="researchSubjectText" data-activity-input value="{{research.subjectText}}" maxlength="200" placeholder="A creature from the salt road, the Baron's advisor…" aria-label="Typed research subject" />
+                    </label>
+                    <label class="dt-check dt-field--wide">
+                      <input type="checkbox" name="researchDiscoverNew" data-activity-input {{#if research.discoverNew}}checked{{/if}} />
+                      <span><strong>Discover something new</strong><small>Let the GM select a campaign-curated subject you do not already know.</small></span>
+                    </label>
+                    <p class="dt-notice dt-field--wide" role="status">Current outlook: <strong data-research-outlook>Choose a time and approach</strong>. Exact DC remains GM-only.</p>
+                    <div hidden aria-hidden="true">
+                      {{#each research.profiles}}<span data-research-profile data-subject-id="" data-skill="{{skill}}" data-hours="{{hours}}" data-difficulty="{{difficulty}}" data-risk="{{risk}}"></span>{{/each}}
+                      {{#each research.subjects}}{{#each profiles}}<span data-research-profile data-subject-id="{{../id}}" data-skill="{{skill}}" data-hours="{{hours}}" data-difficulty="{{difficulty}}" data-risk="{{risk}}"></span>{{/each}}{{/each}}
+                    </div>
+                  </fieldset>
                   {{/if}}
 
                   {{#if hasTargets}}
@@ -288,6 +326,22 @@
 
   {{#if ongoingProjects}}
   <section class="dt-receipt" aria-label="Ongoing work"><h3>Ongoing work &amp; training</h3><p>Continue these goals when the GM includes them in your next downtime block.</p><ul>{{#each ongoingProjects}}<li><strong>{{name}}</strong><span>{{progressLabel}} · {{awardStatus}}</span>{{#if prerequisites}}<p>{{prerequisites}}</p>{{/if}}</li>{{/each}}</ul></section>
+  {{/if}}
+
+  {{#if researchHistory}}
+  <section class="dt-receipt dt-research-history" aria-label="Research history">
+    <h3>Research history</h3>
+    <p>Approved discoveries are retained here separately from unresolved GM preparation.</p>
+    {{#each researchHistory}}
+    <article class="dt-research-history__entry">
+      <header><strong>{{research.subject}}</strong><span>{{research.categoryLabel}} · {{research.tierLabel}} · {{research.difficulty}} · {{research.risk}}% complication chance{{#if campaignDate}} · {{campaignDate}}{{else if completedAt}} · {{completedAt}}{{/if}}</span></header>
+      <p>{{research.request.request}}</p>
+      <p>{{research.dossier}}</p>
+      {{#if research.hasCanonicalLink}}<a class="content-link" data-uuid="{{research.canonicalUuid}}"><i class="fa-solid fa-link" aria-hidden="true"></i> {{research.canonicalLabel}}</a>{{/if}}
+      {{#if research.needsWorldBuilding}}<small>Follow-up world detail is being prepared by the GM.</small>{{/if}}
+    </article>
+    {{/each}}
+  </section>
   {{/if}}
   {{#if pastReports}}
   <section class="dt-receipt" aria-label="Past downtime"><h3>Past downtime</h3><label class="dt-field"><span>Search your journal</span><input type="search" data-downtime-search="[data-journal-report]" aria-label="Search your journal" placeholder="Activity, reward or location…" /></label><p>Your latest 200 reports are retained separately from the recovery history.</p>

@@ -1619,6 +1619,17 @@ function guidedPlanIdentity(plan) {
       "benefitTarget",
     ])
       delete result[field];
+    if (operation.research) {
+      if (
+        !Number.isInteger(operation.researchResult?.tier) ||
+        operation.researchResult.tier !== operation.selectedOutcomeIndex ||
+        operation.researchResult.tier < 0 ||
+        operation.researchResult.tier > 3
+      )
+        throw new Error("DowntimeResearchReviewInvalid");
+      delete result.researchApproved;
+      delete result.researchResult;
+    }
     return result;
   };
   identity.operations = (identity.operations ?? []).map(retainIdentity);

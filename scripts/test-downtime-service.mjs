@@ -2,9 +2,15 @@ import "./test-utils/private-state-memory-transport.mjs";
 import assert from "node:assert/strict";
 
 const saved = Object.fromEntries(
-  ["game", "foundry", "CONST", "JournalEntry", "Hooks", "fromUuid"].map(
-    (key) => [key, globalThis[key]],
-  ),
+  [
+    "game",
+    "foundry",
+    "CONST",
+    "JournalEntry",
+    "Hooks",
+    "fromUuid",
+    "localStorage",
+  ].map((key) => [key, globalThis[key]]),
 );
 
 const MODULE_ID = "infinity-dnd5e";
@@ -118,6 +124,19 @@ try {
   const actor = makeActor();
   const actors = new Map([[actor.id, actor]]);
   const socketEmissions = [];
+  const browserStorage = new Map();
+
+  globalThis.localStorage = {
+    getItem(key) {
+      return browserStorage.get(String(key)) ?? null;
+    },
+    setItem(key, value) {
+      browserStorage.set(String(key), String(value));
+    },
+    removeItem(key) {
+      browserStorage.delete(String(key));
+    },
+  };
 
   globalThis.CONST = {
     ACTIVE_EFFECT_MODES: { ADD: 2 },
@@ -165,6 +184,7 @@ try {
   const targets = await import("./downtime/targets.js");
   const merchantStore = await import("./merchant/store.js");
   const factionStore = await import("./reputation/store.js");
+  const researchStore = await import("./downtime/research-store.js");
   privateState.resetPrivateStateForTests();
   workflow.resetDowntimeWorkflowStoreForTests();
 
@@ -863,7 +883,7 @@ try {
       locationName: "The Lantern District",
       hours: 24,
       actorIds: [allocationActor.id],
-      templateIds: ["guided-labor", "guided-research", "guided-reflection"],
+      templateIds: ["guided-labor", "guided-performance", "guided-reflection"],
     });
     await service.submitQueueAuthoritatively({
       userId: player.id,
@@ -879,11 +899,11 @@ try {
           guidedRoll: { total: 11, formula: "1d20 + 3" },
         },
         {
-          id: "research",
-          activityId: "guided-research",
+          id: "performance",
+          activityId: "guided-performance",
           hours: 8,
-          skill: "inv",
-          guidedRoll: { total: 20, formula: "1d20 + 5" },
+          skill: "prf",
+          guidedRoll: { total: 1, formula: "1d20" },
         },
         {
           id: "reflection",
@@ -925,6 +945,494 @@ try {
     assert.equal(allocationReceipt.receipt.activities.length, 3);
     assert.equal(allocationActor.system.currency.gp, 101);
     actors.delete(allocationActor.id);
+  }
+
+  // Research supports curated open discovery and blocks unprepared canon until
+  // the GM authors and approves the exact player dossier.
+  {
+    researchStore.saveResearchSeed({
+      id: "salt-stalker",
+      title: "The Salt Stalker",
+      category: "creature",
+      gmSummary: "Hidden homebrew creature notes.",
+      playerKnown: false,
+      discoverable: true,
+      difficulty: "Hard",
+      dc: 16,
+      risk: 0,
+      times: ["day", "night"],
+      skills: ["inv", "nat"],
+      factCards: [
+        { tier: 1, text: "Its tracks crystallize at dawn." },
+        { tier: 2, text: "It follows salt carried on the wind." },
+        { tier: 3, text: "Fresh water blinds it for a moment." },
+      ],
+      actionableDiscovery: "Flood its den before entering.",
+      complicationText: "A rival collector notices the inquiry.",
+    });
+    researchStore.saveResearchSeed({
+      id: "ashen-knives",
+      title: "The Ashen Knives",
+      category: "faction",
+      playerKnown: true,
+      discoverable: true,
+      dc: 14,
+      risk: 12,
+      times: ["day", "night"],
+      skills: ["ins"],
+      factCards: [
+        { tier: 1, text: "Paid informants wear a loop of grey cord." },
+      ],
+    });
+    researchStore.saveResearchSeed({
+      id: "sealed-ledger",
+      title: "The Sealed Ledger",
+      category: "event",
+      playerKnown: true,
+      discoverable: false,
+      dc: 14,
+      risk: 8,
+      times: ["night"],
+      skills: ["his"],
+      factCards: [
+        { tier: 1, text: "Its first page bears the reeve's cipher." },
+      ],
+    });
+    researchStore.saveResearchSeed({
+      id: "sealed-lens",
+      title: "The Sealed Lens",
+      category: "object",
+      gmSummary: "Hidden homebrew relic notes.",
+      playerKnown: false,
+      discoverable: true,
+      dc: 5,
+      risk: 0,
+      times: ["day"],
+      skills: ["arc"],
+      factCards: [
+        { tier: 1, text: "The brass rim is warm." },
+        { tier: 2, text: "The glass remembers faces." },
+        { tier: 3, text: "The lens opens the sealed observatory." },
+      ],
+    });
+    const researchActor = makeActor({ id: "guided-research-actor" });
+    actors.set(researchActor.id, researchActor);
+    let researchBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Haven Archives",
+      timeOfDay: "day",
+      hours: 8,
+      actorIds: [researchActor.id],
+      templateIds: ["guided-research"],
+    });
+    const beforeResearch = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: researchActor.id,
+    });
+    assert.doesNotMatch(
+      JSON.stringify(beforeResearch),
+      /Salt Stalker|crystallize|Hidden homebrew|"dc"/,
+      "hidden Research Seeds and exact DCs are absent from player choices",
+    );
+    const researchActivity = beforeResearch.activities.find(
+      (activity) => activity.id === "guided-research",
+    );
+    assert.equal(researchActivity.research.profiles.length, 14);
+    const knownFaction = researchActivity.research.subjects.find(
+      (subject) => subject.id === "research-seed:ashen-knives",
+    );
+    assert.equal(knownFaction.label, "The Ashen Knives");
+    assert.deepEqual(knownFaction.skills, ["ins"]);
+    assert.doesNotMatch(
+      JSON.stringify(knownFaction),
+      /grey cord|"dc"/,
+      "known-subject options contain only player-safe outlook data",
+    );
+    await assert.rejects(
+      service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: "guided-hidden-subject-tamper",
+        blockId: researchBlock.id,
+        actorId: researchActor.id,
+        queue: [
+          {
+            activityId: "guided-research",
+            hours: 8,
+            skill: "inv",
+            research: {
+              subjectId: "research-seed:salt-stalker",
+              category: "creature",
+            },
+            guidedRoll: { total: 10, formula: "1d20 + 4" },
+          },
+        ],
+      }),
+      /no longer player-visible/,
+      "a forged hidden seed id cannot cross the player submission boundary",
+    );
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-open-research",
+      blockId: researchBlock.id,
+      actorId: researchActor.id,
+      queue: [
+        {
+          activityId: "guided-research",
+          hours: 8,
+          skill: "inv",
+          research: {
+            request: "Find a creature we have overlooked.",
+            category: "creature",
+            discoverNew: true,
+          },
+          guidedRoll: { total: 10, formula: "1d20 + 4" },
+        },
+      ],
+    });
+    researchBlock = await service.prepareGuidedDowntimeParticipant({
+      blockId: researchBlock.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(researchBlock.plan.operations[0].researchApproved, true);
+    assert.equal(researchBlock.plan.operations[0].selectedOutcomeIndex, 1);
+    assert.doesNotMatch(
+      JSON.stringify(researchBlock.plan.operations[0]),
+      /Fresh water|seedSnapshot|Hidden homebrew/,
+    );
+    researchBlock = await service.applyActiveDowntimeBlock(researchBlock.id);
+    assert.equal(researchBlock.state, "completed");
+    const preparedReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: researchActor.id,
+    });
+    assert.match(
+      preparedReceipt.researchHistory[0].research.dossier,
+      /crystallize/,
+    );
+    assert.equal(
+      Object.hasOwn(preparedReceipt.researchHistory[0].research, "dc"),
+      false,
+      "numeric Research DC stays out of the raw player projection",
+    );
+
+    let closedKnownBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Night Records Office",
+      timeOfDay: "night",
+      hours: 4,
+      actorIds: [researchActor.id],
+      templateIds: ["guided-research"],
+    });
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-closed-known-research",
+      blockId: closedKnownBlock.id,
+      actorId: researchActor.id,
+      queue: [
+        {
+          activityId: "guided-research",
+          hours: 4,
+          skill: "his",
+          research: {
+            category: "event",
+            subjectId: "research-seed:sealed-ledger",
+          },
+          guidedRoll: { total: 16, formula: "1d20 + 5" },
+        },
+      ],
+    });
+    closedKnownBlock = await service.prepareGuidedDowntimeParticipant({
+      blockId: closedKnownBlock.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(
+      closedKnownBlock.plan.operations[0].researchResult.subject,
+      "The Sealed Ledger",
+      "a player-known subject remains usable when excluded from random discovery",
+    );
+    await service.cancelActiveDowntimeBlock(closedKnownBlock.id);
+    assert.throws(
+      () => researchStore.loadResearchBlock(closedKnownBlock.id),
+      /GM browser that opened it/,
+      "cancelling removes the abandoned confidential Research block",
+    );
+
+    let unpreparedHiddenBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Haven Archives",
+      timeOfDay: "day",
+      hours: 4,
+      actorIds: [researchActor.id],
+      templateIds: ["guided-research"],
+    });
+    unpreparedHiddenBlock = await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-unprepared-hidden-research",
+      blockId: unpreparedHiddenBlock.id,
+      actorId: researchActor.id,
+      queue: [
+        {
+          activityId: "guided-research",
+          hours: 4,
+          skill: "arc",
+          research: { category: "object", discoverNew: true },
+          guidedRoll: { total: 10, formula: "1d20 + 5" },
+        },
+      ],
+    });
+    assert.doesNotMatch(
+      JSON.stringify(unpreparedHiddenBlock),
+      /Sealed Lens|brass rim|remembers faces|sealed observatory|homebrew relic/,
+      "unprepared hidden material never enters the shared workflow block",
+    );
+    const unpreparedHiddenProjection = await service.getPlayerProjectionForUser(
+      {
+        userId: player.id,
+        actorId: researchActor.id,
+      },
+    );
+    assert.doesNotMatch(
+      JSON.stringify(unpreparedHiddenProjection),
+      /Sealed Lens|brass rim|remembers faces|sealed observatory|homebrew relic|"dc"/,
+      "unprepared hidden material never enters the raw player projection",
+    );
+    unpreparedHiddenBlock = await service.prepareGuidedDowntimeParticipant({
+      blockId: unpreparedHiddenBlock.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(
+      unpreparedHiddenBlock.plan.operations[0].researchApproved,
+      false,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(unpreparedHiddenBlock.plan.operations[0]),
+      /Sealed Lens|brass rim|remembers faces|sealed observatory|homebrew relic|"dc"/,
+      "the unapproved shared plan contains only the safe interim result",
+    );
+    const hiddenReviewWorkspace = await service.getWorkspaceProjection();
+    assert.equal(
+      hiddenReviewWorkspace.workflow.plan.characters[0].operations[0]
+        .researchCase.dc,
+      5,
+      "the GM workspace receives the exact frozen DC",
+    );
+    await service.cancelActiveDowntimeBlock(unpreparedHiddenBlock.id);
+    assert.throws(
+      () => researchStore.loadResearchBlock(unpreparedHiddenBlock.id),
+      /GM browser that opened it/,
+      "cancelling an unprepared dossier removes its confidential case",
+    );
+    const cancelledResearchWorkspace = await service.getWorkspaceProjection();
+    assert.equal(cancelledResearchWorkspace.workflow.state, "cancelled");
+    assert.equal(
+      cancelledResearchWorkspace.workflow.plan.characters[0].operations[0]
+        .researchCase,
+      null,
+      "a cancelled workspace does not reload its deleted confidential case",
+    );
+    assert.deepEqual(
+      cancelledResearchWorkspace.workflow.plan.characters[0].operations[0]
+        .researchSeedOptions,
+      [],
+      "a cancelled workspace does not reload its deleted seed snapshot",
+    );
+
+    let customResearchBlock = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Night Records Office",
+      timeOfDay: "night",
+      hours: 4,
+      actorIds: [researchActor.id],
+      templateIds: ["guided-research"],
+    });
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "guided-custom-research",
+      blockId: customResearchBlock.id,
+      actorId: researchActor.id,
+      queue: [
+        {
+          activityId: "guided-research",
+          hours: 4,
+          skill: "his",
+          research: {
+            request: "Who ordered the old bridge sealed?",
+            category: "event",
+            subjectText: "The sealing of the old bridge",
+          },
+          guidedRoll: { total: 16, formula: "1d20 + 5" },
+        },
+      ],
+    });
+    customResearchBlock = await service.prepareGuidedDowntimeParticipant({
+      blockId: customResearchBlock.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(
+      customResearchBlock.plan.operations[0].researchApproved,
+      false,
+    );
+    let researchWorkspace = await service.getWorkspaceProjection();
+    assert.equal(researchWorkspace.workflow.canApply, false);
+    assert.match(researchWorkspace.workflow.applyReason, /Research dossier/);
+    await assert.rejects(
+      service.applyActiveDowntimeBlock(customResearchBlock.id),
+      /Research dossier/i,
+    );
+    const researchResolverBefore = globalThis.fromUuid;
+    let researchLinkVisible = true;
+    globalThis.fromUuid = async (uuid) =>
+      uuid === "JournalEntry.old-bridge"
+        ? {
+            documentName: "JournalEntry",
+            testUserPermission: () => researchLinkVisible,
+          }
+        : null;
+    await service.chooseGuidedDowntimeOutcome({
+      blockId: customResearchBlock.id,
+      operationId: customResearchBlock.plan.operations[0].operationId,
+      outcomeIndex: customResearchBlock.plan.operations[0].selectedOutcomeIndex,
+      researchReview: {
+        subject: "The sealing of the old bridge",
+        factCards: [
+          { tier: 1, text: "The order used the reeve's private cipher." },
+          { tier: 2, text: "A ferryman named Cale witnessed the exchange." },
+        ],
+        complicationText: "A clerk copied the researcher's name.",
+        canonicalUuid: "JournalEntry.old-bridge",
+        canonicalLabel: "Old bridge records",
+        shareCanonicalLink: true,
+        needsWorldBuilding: true,
+        worldBuildingNotes: "Create Cale and the tollhouse journal.",
+      },
+    });
+    researchWorkspace = await service.getWorkspaceProjection();
+    assert.equal(researchWorkspace.workflow.canApply, true);
+    customResearchBlock = await service.applyActiveDowntimeBlock(
+      customResearchBlock.id,
+    );
+    assert.equal(customResearchBlock.state, "completed");
+    const customReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(customReceipt.researchHistory.length >= 2, true);
+    assert.match(
+      customReceipt.researchHistory[0].research.dossier,
+      /reeve's private cipher/,
+    );
+    assert.equal(
+      customReceipt.researchHistory[0].research.needsWorldBuilding,
+      true,
+    );
+    assert.equal(
+      Object.hasOwn(customReceipt.researchHistory[0].research, "dc"),
+      false,
+      "reviewed Research history stays player-safe before UI sanitization",
+    );
+    assert.equal(
+      customReceipt.researchHistory[0].research.canonicalUuid,
+      "JournalEntry.old-bridge",
+    );
+    researchLinkVisible = false;
+    const revokedLinkReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(
+      Object.hasOwn(
+        revokedLinkReceipt.researchHistory[0].research,
+        "canonicalUuid",
+      ),
+      false,
+      "revoked document permission removes a saved Research link from player history",
+    );
+    await service.downtimeWorkspaceAdapter.completeResearchFollowUp({
+      blockId: customResearchBlock.id,
+      actorId: researchActor.id,
+    });
+    const completedFollowUpReceipt = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: researchActor.id,
+    });
+    assert.equal(
+      completedFollowUpReceipt.researchHistory[0].research.needsWorldBuilding,
+      false,
+      "completed world building is reflected in player Research history",
+    );
+    globalThis.fromUuid = researchResolverBefore;
+    actors.delete(researchActor.id);
+  }
+
+  // A customized pre-expansion Research activity retains its original workflow.
+  {
+    const before = workflow.loadDowntimeConfig();
+    const custom = {
+      id: "guided-research",
+      name: "Our Research",
+      blockHours: 2,
+      description:
+        "Follow a lead, study, or work a local network for useful information.",
+      skills: ["his"],
+      outcomes: [0, 1, 2].map((i) => ({
+        label: `Custom ${i}`,
+        report: `Our finding ${i}`,
+        rewardGp: i,
+      })),
+    };
+    await workflow.updateDowntimeConfig((current) => ({
+      ...current,
+      guidedTemplates: current.guidedTemplates.map((t) =>
+        t.id === custom.id ? custom : t,
+      ),
+    }));
+    const legacyActor = makeActor({ id: "legacy-research-actor" });
+    actors.set(legacyActor.id, legacyActor);
+    let block = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Study",
+      hours: 2,
+      actorIds: [legacyActor.id],
+      templateIds: [custom.id],
+    });
+    assert.equal(block.guidedTemplates[0].researchVersion, undefined);
+    assert.throws(
+      () => researchStore.loadResearchBlock(block.id),
+      /GM browser/,
+    );
+    const projected = await service.getPlayerProjectionForUser({
+      userId: player.id,
+      actorId: legacyActor.id,
+    });
+    assert.equal(
+      projected.activities.find((t) => t.id === custom.id).research,
+      undefined,
+    );
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "legacy-research",
+      blockId: block.id,
+      actorId: legacyActor.id,
+      queue: [
+        {
+          activityId: custom.id,
+          hours: 2,
+          skill: "his",
+          guidedRoll: { total: 15, formula: "1d20 + 4" },
+        },
+      ],
+    });
+    block = await service.prepareGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: legacyActor.id,
+    });
+    assert.equal(block.plan.operations[0].research, undefined);
+    await service.applyActiveDowntimeBlock(block.id);
+    await workflow.updateDowntimeConfig((current) => ({
+      ...current,
+      guidedTemplates: before.guidedTemplates,
+    }));
+    actors.delete(legacyActor.id);
   }
 
   // Guided benefit review uses the real service, ledger, and player receipt.
