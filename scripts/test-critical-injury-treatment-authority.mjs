@@ -770,6 +770,165 @@ try {
     expectedTreatmentFailures >= 1,
     "the simulated handoff or ambiguous effect writes exercise recovery",
   );
+
+  // V4 methods share the real authority, inventory and durable receipt path.
+  const { getCriticalInjuryDefinition } = await import("./injury/table.js");
+  const { planDowntimeCare } = await import("./injury/downtime-care.js");
+  game.user = gmA;
+  users.activeGM = gmA;
+  actor.ownership[player.id] = 3;
+  const cureKit = createKit("cure-kit", 50, { applyThenThrow: true });
+  actor.items.contents = [cureKit];
+  const cases = [
+    ["internal-bleeding", "kit", 18, true, 3],
+    ["internal-bleeding", "kit", 2, false, 3],
+    ["internal-bleeding", "magic", 0, true, 0],
+    ["deep-cut", "kit", 0, true, 1],
+    ["deep-cut", "rest", 18, true, 0],
+    ["deep-cut", "rest", 2, false, 0],
+    ["infection", "kit", 0, true, 2],
+    ["nightmares", "kit", 0, true, 4],
+    ["nightmares", "magic", 0, true, 0],
+    ["infection", "kit", 0, false, 0],
+  ];
+  for (const [
+    index,
+    [key, method, total, passed, charges],
+  ] of cases.entries()) {
+    if (index === 9) actor.items.contents = [];
+    const def = getCriticalInjuryDefinition(key, 4);
+    const pendingId = `cure-${index}`;
+    const raw = service.buildInjuryFromResolution(pendingId, actor, {
+      injuryId: pendingId,
+      injuryKey: key,
+      injuryRoll: def.min,
+      tableVersion: 4,
+      recoveryDays: 0,
+      recoveryFormula: "Requires treatment",
+      recoveryDueTs: null,
+      recoveryStartTs: 900000,
+      resolvedAt: 900000,
+      resolvedBy: gmA.id,
+      requestedBy: player.id,
+      detailTotal: key === "deep-cut" ? 4 : null,
+    });
+    if (key === "infection") raw.infectionHpLoss = 3;
+    const data = effects.buildCriticalInjuryEffectData(raw, {
+      startTime: 900000,
+    });
+    const injury = effects.getCriticalInjuryData(data);
+    assert.equal(data.duration.seconds, undefined);
+    assert.equal(injury.recoveryDueTs, null);
+    assert.equal(injury.treatmentDc, 0, "Actor transport omits treatment DC");
+    assert.doesNotMatch(injury.recoveryRule, /DC \d/);
+    const effect = createEffect(`cure-effect-${index}`, actor, data);
+    effect.delete = async () => {
+      actor.effects.splice(actor.effects.indexOf(effect), 1);
+      throw new Error("simulated lost delete reply");
+    };
+    actor.effects.push(effect);
+    await seedCompletedInjuryWorkflow(workflow, injury, effect.id);
+    assert.throws(
+      () => planDowntimeCare(`${actor.id}|${injury.id}`, "care"),
+      /timed injury/,
+    );
+    await service.processExpiredCriticalInjuries();
+    assert.ok(
+      actor.effects.includes(effect),
+      "untreated V4 survives calendar time",
+    );
+    let methodPrompts = 0;
+    foundry.applications.api.DialogV2.prompt = async (options) => {
+      methodPrompts++;
+      if (options.content.includes('name="method"')) return method;
+      if (method === "rest") assert.match(options.content, /full hour of rest/);
+      if (method === "magic") assert.match(options.content, /GM confirms/);
+      return actor.id;
+    };
+    let rolls = 0;
+    actor.rollSkill = async () => {
+      rolls++;
+      return { total };
+    };
+    const beforeCharges = cureKit.system.uses.value;
+    const hp = actor.system.attributes.hp.value;
+    const treatmentId = `treat-${pendingId}`;
+    const request = treatmentRequest(socket, {
+      actorId: actor.id,
+      injuryId: injury.id,
+      treatmentId,
+      targetUserId: gmA.id,
+      sender: player,
+    });
+    const originalSet = game.settings.set;
+    let completionInterrupted = false;
+    if (index === 0)
+      game.settings.set = async (moduleId, settingKey, value) => {
+        if (
+          !completionInterrupted &&
+          findTreatment(value, treatmentId)?.state === "completed"
+        ) {
+          completionInterrupted = true;
+          throw new Error("simulated failed completion after effect deletion");
+        }
+        return originalSet(moduleId, settingKey, value);
+      };
+    const resultPromise = waitForTreatmentResult(
+      socket,
+      treatmentId,
+      player.id,
+    );
+    socket.receiveCriticalInjuryPayload(request, player.id);
+    let result = await resultPromise;
+    game.settings.set = originalSet;
+    if (index === 0) {
+      assert.equal(completionInterrupted, true);
+      assert.equal(result.retryable, true);
+      assert.equal(actor.effects.includes(effect), false);
+      await nextTasks(3);
+      game.user = gmB;
+      users.activeGM = gmB;
+      const resumed = waitForTreatmentResult(socket, treatmentId, gmB.id);
+      await service.resumeUnresolvedInjuryCures();
+      result = await resumed;
+      game.user = gmA;
+      users.activeGM = gmA;
+    }
+    assert.equal(result.success, passed, JSON.stringify(result));
+    assert.equal(cureKit.system.uses.value, beforeCharges - charges);
+    assert.equal(actor.effects.includes(effect), !passed);
+    assert.equal(
+      actor.system.attributes.hp.value,
+      hp,
+      "curing grants no current HP",
+    );
+    assert.equal(
+      rolls,
+      method === "rest" || (key === "internal-bleeding" && method === "kit")
+        ? 1
+        : 0,
+    );
+    const receipt = workflow.getCriticalInjuryTreatmentRecord(
+      pendingId,
+      treatmentId,
+    );
+    if (index === 9) {
+      assert.equal(receipt.resolution, null);
+      assert.equal(
+        methodPrompts,
+        0,
+        "unaffordable treatment never reaches approval or a roll",
+      );
+    } else assert.equal(receipt.resolution.treatmentMethod, method);
+    assert.equal(receipt.state, "completed");
+    const promptSnapshot = methodPrompts;
+    await nextTasks(3);
+    const replay = waitForTreatmentResult(socket, treatmentId, player.id);
+    socket.receiveCriticalInjuryPayload(request, player.id);
+    assert.equal((await replay).success, passed);
+    assert.equal(methodPrompts, promptSnapshot);
+    assert.equal(cureKit.system.uses.value, beforeCharges - charges);
+  }
 } finally {
   console.error = originalConsoleError;
   console.warn = originalConsoleWarn;

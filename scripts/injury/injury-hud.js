@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 /** Persistent player-facing body silhouette for active Critical Injuries. */
 
 import { SETTING_KEYS, getSetting } from "../settings.js";
@@ -364,7 +365,10 @@ function buildHudInjuryView(actor, effect, { offline = false } = {}) {
     effect: String(injury.effect ?? ""),
     recoveryLabel: injuryRecoveryLabel(injury),
     dueLabel:
-      !permanent && Number.isFinite(Number(injury.recoveryDueTs))
+      !requiresInjuryTreatment(injury) &&
+      !permanent &&
+      injury.recoveryDueTs != null &&
+      Number.isFinite(Number(injury.recoveryDueTs))
         ? formatInjuryTimestamp(injury.recoveryDueTs)
         : "",
     locationLabel: location.locationLabel,

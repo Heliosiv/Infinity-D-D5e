@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 /** A reviewed day of care changes the existing injury and its calendar note. */
 import {
   getActorCriticalInjuryEffects,
@@ -24,6 +25,7 @@ const actorById = (id) => globalThis.game?.actors?.get?.(id);
 function eligible(injury, now) {
   return Boolean(
     injury?.id &&
+    !requiresInjuryTreatment(injury) &&
     !injury.permanent &&
     !(injury.canBecomePermanent && !injury.stabilized) &&
     Number.isFinite(injury.recoveryDueTs) &&

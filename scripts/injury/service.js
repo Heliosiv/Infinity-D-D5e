@@ -1,3 +1,8 @@
+import {
+  requiresInjuryTreatment,
+  injuryTreatmentMethods,
+  treatmentMethodLabel,
+} from "./recovery-policy.js";
 /**
  * Authoritative Critical Injury workflow.
  *
@@ -169,6 +174,7 @@ function requestCriticalInjuryStartupMaintenance() {
       await processExpiredCriticalInjuries();
       await discoverUnprocessedInfectionRests();
       await resumeUnresolvedInfectionRests();
+      await resumeUnresolvedInjuryCures();
     } catch (error) {
       if (
         !isAuthoritativeGM() ||
@@ -185,6 +191,28 @@ function requestCriticalInjuryStartupMaintenance() {
       );
     }
   })();
+}
+
+/** Resume only already-approved cures; never prompt or invent another treatment. */
+export async function resumeUnresolvedInjuryCures() {
+  if (!isAuthoritativeGM() || !criticalInjuriesEnabled()) return;
+  for (const parent of loadCriticalInjuryWorkflowStore().records) {
+    for (const attempt of parent.treatments ?? []) {
+      if (
+        attempt.state === "completed" ||
+        attempt.resolution?.injuryAfter?.curedAtTs == null ||
+        !requiresInjuryTreatment(attempt.resolution.injuryAfter)
+      )
+        continue;
+      await handleCriticalInjuryTreatmentRequest({
+        actorId: parent.actorId,
+        injuryId: parent.resolution.injuryId,
+        treatmentId: attempt.treatmentId,
+        originUserId: authoritativeGMId(),
+        targetUserId: authoritativeGMId(),
+      });
+    }
+  }
 }
 
 export function getActorPendingCriticalInjuries(actor) {
@@ -877,9 +905,10 @@ async function rollAndPersistCriticalInjuryResolution({
   const definition = findCriticalInjuryByRoll(injuryRoll);
   if (!definition) throw new Error("CriticalInjuryDefinitionNotFound");
   const recoveryFormula = getCriticalInjuryRecoveryFormula(definition);
-  const recoveryDays = definition.permanent
-    ? 0
-    : await evaluateFormulaTotal(recoveryFormula);
+  const recoveryDays =
+    definition.permanent || definition.recoveryMode === "treatment"
+      ? 0
+      : await evaluateFormulaTotal(recoveryFormula);
   await renewCriticalInjuryApplicationLease(
     workflow.pendingId,
     applicationLeaseId,
@@ -904,9 +933,10 @@ async function rollAndPersistCriticalInjuryResolution({
       recoveryDays,
       detailTotal,
       recoveryStartTs,
-      recoveryDueTs: definition.permanent
-        ? null
-        : addInjuryCalendarDays(recoveryStartTs, recoveryDays),
+      recoveryDueTs:
+        definition.permanent || definition.recoveryMode === "treatment"
+          ? null
+          : addInjuryCalendarDays(recoveryStartTs, recoveryDays),
       requestedBy: String(requestedBy ?? ""),
       resolvedBy: String(authoritativeGMId() ?? ""),
       resolvedAt: Date.now(),
@@ -949,7 +979,10 @@ export function buildInjuryFromResolution(pendingId, actor, resolution) {
     permanent: Boolean(definition.permanent),
     stabilized: false,
     kitCharges: Math.max(0, Number(definition.kitCharges ?? 0)),
-    treatmentDc: Math.max(0, Number(definition.treatmentDc ?? 0)),
+    treatmentDc:
+      definition.recoveryMode === "treatment"
+        ? 0
+        : Math.max(0, Number(definition.treatmentDc ?? 0)),
     treatmentSkill: String(definition.treatmentSkill ?? ""),
     canBecomePermanent: Boolean(definition.canBecomePermanent),
     downgradeTo: String(definition.downgradeTo ?? ""),
@@ -1007,7 +1040,7 @@ async function removeVerifiedCriticalInjuryNote(actor, injury, entryId) {
 async function completeInjuryCalendarEvent(
   actor,
   injury,
-  { recovered = true } = {},
+  { recovered = true, completionTimestamp = null } = {},
 ) {
   if (!injury.calendarEntryId || !isSimpleCalendarAvailable()) return true;
   if (!criticalInjuryHasPrivateReceipt(actor, injury)) return false;
@@ -1016,6 +1049,7 @@ async function completeInjuryCalendarEvent(
     injury,
     completed: true,
     recovered,
+    completionTimestamp,
     startTimestamp:
       getCriticalInjuryWorkflowRecord(injury.pendingId)?.resolution
         ?.recoveryStartTs ?? injury.recoveryStartTs,
@@ -1171,9 +1205,34 @@ async function handleCriticalInjuryTreatmentRequest(payload) {
       return;
     }
 
-    const effect = findActorCriticalInjuryEffect(actor, payload.injuryId);
-    const initial = getCriticalInjuryData(effect);
+    let effect = findActorCriticalInjuryEffect(actor, payload.injuryId);
     const persistedTreatmentResolution = existingAttempt?.resolution ?? null;
+    // A cure can delete its effect before a completion write/reply is lost.
+    // Resume only the already-approved durable cure, never a fresh request.
+    if (
+      !effect &&
+      persistedTreatmentResolution?.injuryAfter?.curedAtTs != null &&
+      requiresInjuryTreatment(persistedTreatmentResolution.injuryAfter)
+    ) {
+      const collision = Array.from(
+        actor.effects?.contents ?? actor.effects ?? [],
+      ).some(
+        (entry) =>
+          String(entry.id ?? entry._id) ===
+          persistedTreatmentResolution.effectId,
+      );
+      if (collision) throw new Error("CriticalInjuryCureDocumentConflict");
+      effect = {
+        id: persistedTreatmentResolution.effectId,
+        flags: {
+          [MODULE_ID]: {
+            criticalInjury: persistedTreatmentResolution.injuryBefore,
+          },
+        },
+        async delete() {},
+      };
+    }
+    const initial = getCriticalInjuryData(effect);
     const effectMatchesTreatmentResolution = Boolean(
       persistedTreatmentResolution &&
       String(persistedTreatmentResolution.effectId ?? "") ===
@@ -1336,10 +1395,15 @@ async function handleCriticalInjuryTreatmentRequest(payload) {
       applicationLeaseId,
     );
     const persistedPlan = hydrateCriticalInjuryTreatmentPlan(resolution);
-    const consumed = await applyPersistedHealersKitPlan(persistedPlan, {
-      treatmentId,
-      receiptToken: resolution.receiptToken,
-    });
+    const consumed =
+      resolution.kitRequired === 0 &&
+      resolution.treatmentMethod &&
+      resolution.treatmentMethod !== "kit"
+        ? { ok: true, consumed: 0, details: [] }
+        : await applyPersistedHealersKitPlan(persistedPlan, {
+            treatmentId,
+            receiptToken: resolution.receiptToken,
+          });
     consumedCharges = Math.max(0, Number(consumed.consumed ?? 0));
     if (!consumed.ok) {
       const error = new Error(
@@ -1366,12 +1430,16 @@ async function handleCriticalInjuryTreatmentRequest(payload) {
 
     const injury = application.injury;
     const success = resolution.passed === true;
-    const checkDetail = resolution.treatmentDc
-      ? ` (roll ${resolution.checkTotal} vs DC ${resolution.treatmentDc})`
-      : "";
-    const message = success
-      ? `Treatment succeeded${checkDetail}. ${consumed.consumed} Healer's Kit charge(s) consumed; recovery is due ${formatInjuryTimestamp(injury.recoveryDueTs)}.`
-      : `Treatment failed${checkDetail} after consuming ${consumed.consumed} Healer's Kit charge(s).`;
+    const checkDetail =
+      !requiresInjuryTreatment(injury) && resolution.treatmentDc
+        ? ` (roll ${resolution.checkTotal} vs DC ${resolution.treatmentDc})`
+        : "";
+    const message =
+      success && injury.curedAtTs != null
+        ? `Treatment succeeded. The injury is cured. ${consumed.consumed} Healer's Kit charge(s) consumed.`
+        : success
+          ? `Treatment succeeded${checkDetail}. ${consumed.consumed} Healer's Kit charge(s) consumed; recovery is due ${formatInjuryTimestamp(injury.recoveryDueTs)}.`
+          : `Treatment failed${checkDetail} after consuming ${consumed.consumed} Healer's Kit charge(s).`;
     const result = buildStoredTreatmentResult({
       treatmentId,
       injuryId: payload.injuryId,
@@ -1380,7 +1448,7 @@ async function handleCriticalInjuryTreatmentRequest(payload) {
       outcome: success ? "succeeded" : "failed-check",
       message,
       rollTotal: resolution.checkTotal,
-      dc: resolution.treatmentDc,
+      dc: requiresInjuryTreatment(injury) ? null : resolution.treatmentDc,
       consumed: consumed.consumed,
       consumptionDetails: consumed.details,
       result: sanitizeInjuryForClient(injury, {
@@ -1462,8 +1530,36 @@ async function prepareCriticalInjuryTreatmentResolution({
     initial.injuryKey,
     initial.tableVersion ?? 2,
   );
-  const requiredCharges = Math.max(0, Number(definition?.kitCharges ?? 0));
-  if (!definition || requiredCharges <= 0) {
+  const methods = injuryTreatmentMethods(initial);
+  let method = "kit";
+  if (methods.length > 1) {
+    method = await promptInfinityDialog({
+      window: {
+        title: `Choose treatment for ${actor.name}'s ${initial.injuryName}`,
+      },
+      content: `<label>Treatment method<select name="method">${methods.map((value) => `<option value="${value}">${escapeHtml(treatmentMethodLabel(value, initial))}</option>`).join("")}</select></label>`,
+      ok: {
+        label: "Review treatment",
+        callback: (_event, button) =>
+          button?.form?.elements?.method?.value ?? null,
+      },
+    });
+    await renewCriticalInjuryTreatmentLease(
+      parent.pendingId,
+      payload.treatmentId,
+      applicationLeaseId,
+    );
+    if (!methods.includes(method))
+      return {
+        terminal: {
+          outcome: "declined",
+          message: "The GM cancelled treatment.",
+        },
+      };
+  }
+  const requiredCharges =
+    method === "kit" ? Math.max(0, Number(definition?.kitCharges ?? 0)) : 0;
+  if (!definition || (method === "kit" && requiredCharges <= 0)) {
     return {
       terminal: {
         outcome: "not-treatable",
@@ -1474,6 +1570,8 @@ async function prepareCriticalInjuryTreatmentResolution({
 
   const treatmentNow = getCurrentInjuryTimestamp();
   if (
+    !requiresInjuryTreatment(initial) &&
+    initial.recoveryDueTs != null &&
     Number.isFinite(Number(initial.recoveryDueTs)) &&
     Number(initial.recoveryDueTs) <= treatmentNow
   ) {
@@ -1500,11 +1598,14 @@ async function prepareCriticalInjuryTreatmentResolution({
     Math.floor(Number(initial.infectionHpLoss) || 0),
   );
   const partyActors = listPlayerCharacters();
-  const previewPlan = buildHealersKitConsumptionPlan({
-    actors: partyActors,
-    preferredActorIds: [actor.id],
-    requiredCharges,
-  });
+  const previewPlan =
+    requiredCharges === 0
+      ? { ok: true, steps: [] }
+      : buildHealersKitConsumptionPlan({
+          actors: partyActors,
+          preferredActorIds: [actor.id],
+          requiredCharges,
+        });
   if (!previewPlan.ok) {
     return {
       terminal: {
@@ -1517,8 +1618,19 @@ async function prepareCriticalInjuryTreatmentResolution({
   const previewInjury = {
     ...cloneCriticalInjuryTreatmentSnapshot(canonicalInjury),
     kitCharges: requiredCharges,
-    treatmentDc: Math.max(0, Number(definition.treatmentDc ?? 0)),
-    treatmentSkill: String(definition.treatmentSkill ?? ""),
+    treatmentDc:
+      method === "rest"
+        ? 13
+        : method === "magic"
+          ? 0
+          : Math.max(0, Number(definition.treatmentDc ?? 0)),
+    treatmentSkill:
+      method === "rest"
+        ? "med"
+        : method === "magic"
+          ? ""
+          : String(definition.treatmentSkill ?? ""),
+    treatmentMethod: method,
   };
   const healer = await promptGmForTreatmentHealer({
     actor,
@@ -1540,11 +1652,14 @@ async function prepareCriticalInjuryTreatmentResolution({
     };
   }
 
-  const plan = buildHealersKitConsumptionPlan({
-    actors: partyActors,
-    preferredActorIds: [actor.id, healer.id],
-    requiredCharges,
-  });
+  const plan =
+    requiredCharges === 0
+      ? { ok: true, steps: [] }
+      : buildHealersKitConsumptionPlan({
+          actors: partyActors,
+          preferredActorIds: [actor.id, healer.id],
+          requiredCharges,
+        });
   if (!plan.ok) {
     return {
       terminal: {
@@ -1566,13 +1681,16 @@ async function prepareCriticalInjuryTreatmentResolution({
     payload.treatmentId,
     applicationLeaseId,
   );
+  const resolvedTreatmentNow = requiresInjuryTreatment(initial)
+    ? getCurrentInjuryTimestamp()
+    : treatmentNow;
   const injuryBefore = cloneCriticalInjuryTreatmentSnapshot(initial);
   const injuryAfter = buildCriticalInjuryTreatmentOutcome(
     injuryBefore,
     canonicalInjury,
     {
       passed: check.passed,
-      treatmentNow,
+      treatmentNow: resolvedTreatmentNow,
     },
   );
   const persisted = await persistCriticalInjuryTreatmentResolution(
@@ -1583,7 +1701,8 @@ async function prepareCriticalInjuryTreatmentResolution({
       healerActorId: String(healer.id ?? ""),
       injuryKey: String(initial.injuryKey ?? ""),
       tableVersion: Number(parent.resolution.tableVersion),
-      treatmentStartTs: treatmentNow,
+      treatmentStartTs: resolvedTreatmentNow,
+      treatmentMethod: method,
       treatmentDc: previewInjury.treatmentDc,
       treatmentSkill: previewInjury.treatmentSkill,
       checkTotal: check.total,
@@ -1627,6 +1746,12 @@ function buildCriticalInjuryTreatmentOutcome(
   }
 
   const injury = cloneCriticalInjuryTreatmentSnapshot(canonicalInjury);
+  if (requiresInjuryTreatment(injury)) {
+    injury.curedAtTs = treatmentNow;
+    injury.recoveryDueTs = null;
+    injury.remainingDays = 0;
+    return injury;
+  }
   injury.stabilized = true;
   const elapsedRemaining = getRemainingInjuryCalendarDays(
     injury.recoveryDueTs,
@@ -1694,6 +1819,31 @@ async function applyPersistedCriticalInjuryTreatment({
     previousEntryId: "",
   };
   if (!changesEffect) return { injury, calendar };
+  if (requiresInjuryTreatment(injury) && injury.curedAtTs != null) {
+    if (!persistedValuesEqual(getCriticalInjuryData(effect), injuryBefore))
+      throw new Error("CriticalInjuryTreatmentEffectConflict");
+    if (injury.calendarEntryId && !isSimpleCalendarAvailable())
+      throw new Error("CriticalInjuryCureCalendarUnavailable");
+    if (
+      !(await completeInjuryCalendarEvent(actor, injury, {
+        completionTimestamp: injury.curedAtTs,
+      }))
+    )
+      throw new Error("CriticalInjuryCureCalendarWriteFailed");
+    await renewCriticalInjuryTreatmentLease(
+      pendingId,
+      treatmentId,
+      applicationLeaseId,
+    );
+    try {
+      await effect.delete({ [`${MODULE_ID}.injuryRecovered`]: true });
+    } catch (error) {
+      if (findActorCriticalInjuryEffect(actor, injury.id)) throw error;
+    }
+    if (findActorCriticalInjuryEffect(actor, injury.id))
+      throw new Error("CriticalInjuryCureDeletionUnverified");
+    return { injury, calendar };
+  }
 
   const current = getCriticalInjuryData(effect);
   const afterIgnoringCalendar = injuryDataMatchesExceptCalendar(
@@ -2446,7 +2596,14 @@ export async function processExpiredCriticalInjuries() {
     for (const effect of getActorCriticalInjuryEffects(actor)) {
       const injury = { ...getCriticalInjuryData(effect) };
       const due = Number(injury.recoveryDueTs);
-      if (injury.permanent || !Number.isFinite(due) || due > now) continue;
+      if (
+        requiresInjuryTreatment(injury) ||
+        injury.permanent ||
+        injury.recoveryDueTs == null ||
+        !Number.isFinite(due) ||
+        due > now
+      )
+        continue;
       processed += 1;
       if (injury.canBecomePermanent && !injury.stabilized) {
         injury.permanent = true;
@@ -2590,7 +2747,7 @@ async function promptGmForTreatmentHealer({ actor, injury, actors, plan }) {
     },
     content: `
         <div class="infinity-dnd5e">
-          <p>This treatment consumes <strong>${injury.kitCharges}</strong> Healer's Kit charge(s), even if the check fails.</p>
+          <p>${injury.treatmentMethod === "rest" ? "By treating, the GM confirms a full hour of rest has been completed for this attempt. No kit charges are spent." : injury.treatmentMethod === "magic" ? `By treating, the GM confirms ${injury.injuryKey === "nightmares" ? "Remove Curse" : "suitable magical healing"} has been applied. No kit charges are spent.` : `This treatment consumes <strong>${injury.kitCharges}</strong> Healer's Kit charge(s), even if the check fails.`}</p>
           <p>${sources}</p>
           <p><strong>${escapeHtml(check)}</strong></p>
           <label style="display:grid;gap:4px;"><span>Healer</span><select name="healerId">${options}</select></label>
@@ -2727,9 +2884,11 @@ async function postCriticalInjuryChat(actor, injury, ownerUserId) {
   const detail = injury.detail?.label
     ? `<li><strong>Detail:</strong> ${escapeHtml(injury.detail.label)}</li>`
     : "";
-  const recovery = injury.permanent
-    ? "Permanent"
-    : `${injury.remainingDays} day(s), due ${formatInjuryTimestamp(injury.recoveryDueTs)}`;
+  const recovery = requiresInjuryTreatment(injury)
+    ? "Requires treatment"
+    : injury.permanent
+      ? "Permanent"
+      : `${injury.remainingDays} day(s), due ${formatInjuryTimestamp(injury.recoveryDueTs)}`;
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker?.({ actor, alias: "Critical Injuries" }),
     whisper: whisperRecipients(ownerUserId),
@@ -2780,6 +2939,8 @@ function whisperRecipients(ownerUserId) {
 function sanitizeInjuryForClient(injury, extras = {}) {
   return {
     id: injury.id,
+    tableVersion: injury.tableVersion,
+    ...(injury.curedAtTs != null ? { curedAtTs: injury.curedAtTs } : {}),
     injuryKey: injury.injuryKey,
     injuryName: injury.injuryName,
     injuryRoll: injury.injuryRoll,

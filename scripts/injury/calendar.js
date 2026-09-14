@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 /** Simple Calendar adapter for Critical Injury recovery notes. */
 
 const MODULE_ID = "infinity-dnd5e";
@@ -159,7 +160,7 @@ export async function synchronizeCriticalInjuryNoteRange({
       ? data.startDate
       : toCalendarDate(api, Number(startTimestamp));
   let endDate =
-    !completed && injury?.permanent
+    !completed && (injury?.permanent || requiresInjuryTreatment(injury))
       ? startDate
       : endTimestamp == null
         ? null
@@ -212,6 +213,8 @@ export async function synchronizeCriticalInjuryNoteRange({
 }
 
 export function injuryRecoveryLabel(injury) {
+  if (requiresInjuryTreatment(injury))
+    return injury?.curedAtTs != null ? "Recovered" : "Requires treatment";
   if (injury?.permanent) return "Permanent";
   const days =
     injury?.recoveryDueTs == null
@@ -310,10 +313,12 @@ export async function scheduleCriticalInjuryNote({
 
   const injuryName = String(injury?.injuryName ?? "Critical Injury");
   const actorName = String(actor?.name ?? "Unknown Character");
-  const recovery = injury?.permanent
-    ? "Permanent"
-    : `${Math.max(0, Number(injury?.remainingDays) || 0)} recovery day(s)`;
-  const title = `${actorName} — ${injuryName}${injury?.permanent ? " (Permanent)" : ""}`;
+  const recovery = requiresInjuryTreatment(injury)
+    ? "Requires treatment"
+    : injury?.permanent
+      ? "Permanent"
+      : `${Math.max(0, Number(injury?.remainingDays) || 0)} recovery day(s)`;
+  const title = `${actorName} — ${injuryName}${injury?.permanent ? " (Permanent)" : requiresInjuryTreatment(injury) ? " (Requires treatment)" : ""}`;
   const content = [
     `<p><strong>${escapeHtml(actorName)}</strong>: ${escapeHtml(injuryName)}</p>`,
     `<p>${escapeHtml(String(injury?.effect ?? ""))}</p>`,

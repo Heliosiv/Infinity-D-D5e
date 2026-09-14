@@ -198,7 +198,7 @@ try {
   assert.equal(tableContext.tableRows.length, 30);
   assert.equal(tableContext.showTable, true);
   const tableHtml = render(tableContext);
-  assert.match(tableHtml, /Critical Injury Table V3/);
+  assert.match(tableHtml, /Critical Injury Table V4/);
   assert.match(tableHtml, /Soul-Shaken/);
   assert.match(
     tableHtml,

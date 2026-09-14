@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 /**
  * GM-only persistence for approved and resolved Critical Injury rolls.
  *
@@ -135,7 +136,11 @@ function normalizeResolution(raw) {
     !recoveryFormula ||
     recoveryFormula.length > 100 ||
     tableVersion == null ||
-    tableVersion < 1
+    tableVersion < 1 ||
+    (requiresInjuryTreatment({ tableVersion, injuryKey }) &&
+      (recoveryDays !== 0 ||
+        recoveryDueTs !== null ||
+        recoveryFormula !== "Requires treatment"))
   ) {
     return null;
   }
@@ -393,6 +398,8 @@ function normalizeTreatmentResolution(raw) {
   const treatmentSkill = String(raw.treatmentSkill ?? "").trim();
   const checkWasProvided = raw.checkTotal != null;
   const checkTotal = checkWasProvided ? finiteInteger(raw.checkTotal) : null;
+  const treatmentMethod = String(raw.treatmentMethod ?? "kit");
+  if (!["kit", "rest", "magic"].includes(treatmentMethod)) return null;
   const kitRequired = nonNegativeInteger(raw.kitRequired);
   const receiptToken = toId(raw.receiptToken);
   const injuryBefore = normalizePersistedObject(raw.injuryBefore, {
@@ -453,6 +460,7 @@ function normalizeTreatmentResolution(raw) {
     checkTotal,
     passed: raw.passed,
     kitRequired,
+    ...(raw.treatmentMethod != null ? { treatmentMethod } : {}),
     receiptToken,
     consumptionSteps,
     injuryBefore,

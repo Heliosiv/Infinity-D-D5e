@@ -1,7 +1,7 @@
 # Treatment-dependent recovery proposal
 
-Status: assessed locally on 2026-09-13 against `a92e1fa`; proposed rules await
-campaign approval. This document changes no runtime rules or saved injuries.
+Status: campaign policies approved on 2026-09-13 and implemented locally as V4.
+Existing V2/V3 injuries are preserved. No live installation or migration.
 
 ## Reproduced behavior
 
@@ -34,22 +34,22 @@ end-to-end treatment reproduction. The audit is deliberately separate from the
 desired-behavior regression suite: update or retire its expectations when the
 approved policy is implemented.
 
-Local validation passed: the eight-case audit, injury table, expansion, effects,
+Initial assessment validation passed: the eight-case audit, injury table, expansion, effects,
 treatment-authority and calendar-range suites, plus formatting and diff checks.
-No runtime code changed, so no module build or native UI acceptance was run.
+That assessment changed no runtime code and did not run a build or native acceptance.
 
-## Recommended campaign policy
+## Approved campaign policy
 
 For newly resolved injuries under a new rules version, all four persist until
 their specified treatment succeeds. Time, ordinary rest and Tend the Sick do
 not cure or shorten them. They are treatable conditions, not permanent injuries.
 
-| Injury            | Proposed cure                                                                                                                                                                                                                             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Internal Bleeding | Spend 3 kit charges and succeed on DC 15 Medicine, or obtain GM-confirmed suitable magical healing. Either success cures immediately. A failed kit attempt spends its charges and leaves the injury active.                               |
-| Deep Cut          | Spend 1 kit charge with no check, **or** complete 1 hour of rest and succeed on DC 13 Medicine. Either success cures immediately. Failed rest treatment leaves the injury active and consumes no kit charges.                             |
-| Infection         | Spend 2 kit charges with no check to cure immediately. Remove the injury's accumulated maximum-HP penalty. Its existing long-rest checks continue while untreated.                                                                        |
-| Nightmares        | Remove Curse or 4 kit charges cures immediately, with no Medicine check. This deliberately interprets “ease the mental symptoms” as a full cure; it needs campaign approval because the current wording does not settle that distinction. |
+| Injury            | Proposed cure                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Internal Bleeding | Spend 3 kit charges and succeed on DC 15 Medicine, or obtain GM-confirmed suitable magical healing. Either success cures immediately. A failed kit attempt spends its charges and leaves the injury active.   |
+| Deep Cut          | Spend 1 kit charge with no check, **or** complete 1 hour of rest and succeed on DC 13 Medicine. Either success cures immediately. Failed rest treatment leaves the injury active and consumes no kit charges. |
+| Infection         | Spend 2 kit charges with no check to cure immediately. Remove the injury's accumulated maximum-HP penalty. Its existing long-rest checks continue while untreated.                                            |
+| Nightmares        | Remove Curse or 4 kit charges cures immediately, with no Medicine check. This deliberately interprets “ease the mental symptoms” as a full cure; the campaign approved this interpretation.                   |
 
 Removing a maximum-HP penalty does not grant current HP. Magical treatment must
 be explicitly confirmed by the GM; an arbitrary healing event is not proof of
@@ -57,10 +57,10 @@ suitable magic or Remove Curse. For Deep Cut, the GM confirms the hour of rest
 and the selected treating character makes Medicine. No automatic new retry
 limit is proposed; each rest attempt requires its own completed hour.
 
-Approval requested: adopt these four policies for new injuries, including the
-Nightmares full-cure interpretation, while preserving existing V2/V3 injuries.
+Approved: these four policies apply to new injuries, including the Nightmares
+full-cure interpretation, while preserving existing V2/V3 injuries.
 
-## Implementation boundary after approval
+## Implementation and acceptance boundary
 
 1. Add a new table/rules version with explicit treatment-dependent recovery.
    Preserve V2/V3 definitions, saved resolutions, treatment receipts and replay
@@ -93,3 +93,33 @@ Deferred: durable Bleeding damage with temporary HP and disabled-effect handling
 Nightmares mechanical enforcement, Nerve Damage permanence wording, Broken Arm
 recovery arithmetic, crafting, release and live installation. These are separate
 roadmap slices, not implied by approving this recovery policy.
+
+## V4 implementation evidence (2026-09-13)
+
+- Source: the full suite ran 192 checks; 190 passed initially and two expected
+  current-table version assertions needed updating from V3 to V4. Both then
+  passed, followed by all 24 injury suites. The legacy characterization audit
+  still reproduces all eight V2/V3 cases without changing their rules.
+- Treatment authority: ten V4 method/outcome cases cover kit, rest and magic,
+  failed Medicine, insufficient kit charges, exact charges, no current-HP grants and duplicate requests.
+  Simulated lost kit/delete replies and a failed completion after deletion
+  resume without another roll or spend, including replacement-GM recovery.
+  Player confirmation remains available after effect removal.
+- Calendar source fixture: untreated V4 notes have no predicted cure date;
+  failed completion and lost-reply readback preserve the original cure time.
+- Native: `node scripts/audit-injury-recovery-foundry.mjs --test-world=downtime-gauntlet`
+  exercises real player requests and GM dialogs for Deep Cut/rest, Internal
+  Bleeding/magic, Nightmares/kit and Infection/kit in Foundry 13.351 with D&D5e
+  5.3.3. Requests work by keyboard, cures survive GM/player reload, and the
+  authenticated player's Actor data carries no numeric treatment DC. Only the
+  rest die is deterministic; authority, documents and receipts are native.
+  Evidence and screenshots: `output/playwright/injury-recovery/`.
+
+Native acceptance used the disposable localhost world with canvas disabled and
+unlinked calendar notes. Calendar failure/retry evidence is from the source
+fixture, not installed Simple Calendar or Times Up. No campaign world was
+modified. Build and UI verification are recorded in the completion report.
+
+UI layout passed all 14 scenarios across eight injury fixtures, including narrow
+layouts, zoom, reduced motion and forced colors. Formatting and the local ZIP
+build passed. The package remains a local development artifact, not a release.

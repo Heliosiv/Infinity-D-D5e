@@ -171,14 +171,20 @@ export function buildCriticalInjuryTableReference() {
       detailFormula: definition.detailRoll?.formula ?? "",
       treatment:
         definition.kitCharges > 0
-          ? `${definition.kitCharges} kit charge(s)${definition.treatmentDc ? ` + DC ${definition.treatmentDc} ${treatmentSkillLabel(definition.treatmentSkill)}` : ""}; stabilizes recovery`
+          ? `${definition.kitCharges} kit charge(s)${definition.treatmentDc ? ` + DC ${definition.treatmentDc} ${treatmentSkillLabel(definition.treatmentSkill)}` : ""}; ${definition.recoveryMode === "treatment" ? "cures immediately" : "stabilizes recovery"}`
           : "No kit treatment",
       status: audit?.status ?? "manual",
       statusLabel: STATUS_LABELS[audit?.status] ?? "Needs audit",
       automatic:
         audit?.automatic ?? "Automation has not been reviewed for this entry.",
-      manual: audit?.manual ?? "GM review required.",
-      recoveryNote: audit?.recoveryNote ?? "",
+      manual:
+        definition.key === "deep-cut"
+          ? "The GM confirms a completed hour of rest before the Medicine alternative."
+          : (audit?.manual ?? "GM review required."),
+      recoveryNote:
+        definition.recoveryMode === "treatment"
+          ? "Requires successful treatment; no automatic expiry. Saved V2/V3 injuries retain their original timers."
+          : (audit?.recoveryNote ?? ""),
       requiresMidi: audit?.midi === true,
     };
   });

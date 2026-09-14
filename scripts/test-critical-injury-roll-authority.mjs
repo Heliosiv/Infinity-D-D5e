@@ -328,11 +328,11 @@ try {
   assert.equal(
     workflow.getCriticalInjuryWorkflowRecord("pending-1").resolution
       .tableVersion,
-    3,
+    4,
   );
   assert.equal(
     effects.getCriticalInjuryData(actorOne.effects.contents[0]).tableVersion,
-    3,
+    4,
   );
   assert.equal(
     effects.getCriticalInjuryData(actorOne.effects.contents[0]).createdBy,
@@ -552,7 +552,7 @@ try {
   assert.equal(gmPayload.targetUserId, gm.id);
   assert.equal(gmPayload.result.injuryKey, "winded");
   const newInjuryEffect = actorThree.effects.contents[0];
-  assert.equal(effects.getCriticalInjuryData(newInjuryEffect).tableVersion, 3);
+  assert.equal(effects.getCriticalInjuryData(newInjuryEffect).tableVersion, 4);
   assert.equal(effects.getCriticalInjuryData(newInjuryEffect).remainingDays, 2);
   assert.deepEqual(newInjuryEffect.changes, [
     {

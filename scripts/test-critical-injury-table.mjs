@@ -14,7 +14,7 @@ import {
   effectiveRecoveryCalendarDays,
 } from "./injury/effects.js";
 
-assert.equal(CRITICAL_INJURY_TABLE_VERSION, 3);
+assert.equal(CRITICAL_INJURY_TABLE_VERSION, 4);
 assert.equal(CRITICAL_INJURY_ROLL_FORMULA, "1d100");
 assert.equal(CRITICAL_INJURY_TABLE.length, 30);
 

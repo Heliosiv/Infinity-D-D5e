@@ -1,7 +1,8 @@
 /** Versioned campaign injury tables and pure effect rules. */
 import { LEGACY_CRITICAL_INJURY_TABLE } from "./table-v2.js";
 import { EXPANDED_CRITICAL_INJURIES } from "./table-v3.js";
-export const CRITICAL_INJURY_TABLE_VERSION = 3;
+import { TREATMENT_RECOVERY } from "./recovery-policy.js";
+export const CRITICAL_INJURY_TABLE_VERSION = 4;
 export const CRITICAL_INJURY_ROLL_FORMULA = "1d100";
 
 const EXPANDED_BANDS = {
@@ -16,7 +17,7 @@ const EXPANDED_BANDS = {
   "minor-injury": [61, 63],
   "psychic-trauma": [81, 85],
 };
-export const CRITICAL_INJURY_TABLE = Object.freeze(
+const V3_CRITICAL_INJURY_TABLE = Object.freeze(
   [
     ...LEGACY_CRITICAL_INJURY_TABLE.map((entry) => {
       const band = EXPANDED_BANDS[entry.key];
@@ -28,10 +29,29 @@ export const CRITICAL_INJURY_TABLE = Object.freeze(
   ].sort((a, b) => a.min - b.min),
 );
 
+export const CRITICAL_INJURY_TABLE = Object.freeze(
+  V3_CRITICAL_INJURY_TABLE.map((entry) => {
+    const policy = TREATMENT_RECOVERY[entry.key];
+    return policy
+      ? Object.freeze({
+          ...entry,
+          recovery: policy.recovery,
+          recoveryFormula: "Requires treatment",
+          dayMin: 0,
+          dayMax: 0,
+          recoveryMode: "treatment",
+          treatmentDc: policy.dc,
+          treatmentSkill: policy.dc ? "med" : "",
+        })
+      : entry;
+  }),
+);
+
 export function getCriticalInjuryTable(
   version = CRITICAL_INJURY_TABLE_VERSION,
 ) {
   if (Number(version) === 2) return LEGACY_CRITICAL_INJURY_TABLE;
+  if (Number(version) === 3) return V3_CRITICAL_INJURY_TABLE;
   if (Number(version) === CRITICAL_INJURY_TABLE_VERSION)
     return CRITICAL_INJURY_TABLE;
   return [];

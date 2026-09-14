@@ -59,7 +59,10 @@ function resolve(tableVersion, injuryRoll) {
       recoveryFormula: getCriticalInjuryRecoveryFormula(definition),
       recoveryDays: definition.permanent ? 0 : definition.dayMax,
       recoveryStartTs: 1000,
-      recoveryDueTs: 1000 + definition.dayMax * 86400,
+      recoveryDueTs:
+        definition.recoveryMode === "treatment"
+          ? null
+          : 1000 + definition.dayMax * 86400,
       resolvedAt: 1000,
       resolvedBy: "gm",
       requestedBy: "player",
@@ -67,7 +70,7 @@ function resolve(tableVersion, injuryRoll) {
   );
 }
 
-for (const version of [2, 3]) {
+for (const version of [2, 3, 4]) {
   const table = getCriticalInjuryTable(version);
   assert.equal(table.length, version === 2 ? 18 : 30);
   assert.equal(new Set(table.map((r) => r.key)).size, table.length);
@@ -83,7 +86,7 @@ for (const version of [2, 3]) {
   }
 }
 for (const legacy of getCriticalInjuryTable(2)) {
-  const current = getCriticalInjuryDefinition(legacy.key);
+  const current = getCriticalInjuryDefinition(legacy.key, 3);
   const { min, max, ...rules } = current;
   const { min: legacyMin, max: legacyMax, ...legacyRules } = legacy;
   assert.deepEqual(
@@ -170,5 +173,5 @@ assert.throws(
   /TableVersionUnsupported/,
 );
 console.log(
-  "Injury expansion: all 200 versioned rolls, legacy rules, permanent odds, 12 modifiers, durations, body locations and version guards passed.",
+  "Injury expansion: all 300 versioned rolls, legacy rules, permanent odds, 12 modifiers, durations, body locations and version guards passed.",
 );

@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 /** Active Effect persistence for versioned Critical Injuries. */
 
 import {
@@ -60,7 +61,7 @@ export function findActorCriticalInjuryEffect(actor, injuryId) {
 }
 
 export function effectiveRecoveryCalendarDays(injury) {
-  if (injury?.permanent) return 0;
+  if (injury?.permanent || requiresInjuryTreatment(injury)) return 0;
   const remaining = Math.max(0, Math.ceil(Number(injury?.remainingDays) || 0));
   if (remaining <= 0) return 0;
   return Math.max(1, Math.ceil(remaining / (injury?.stabilized ? 2 : 1)));
@@ -78,7 +79,8 @@ export function buildCriticalInjuryEffectData(
     injury?.definition ??
     null;
   const permanent = Boolean(injury?.permanent || definition?.permanent);
-  const due = Number(dueTimestamp ?? injury?.recoveryDueTs);
+  const rawDue = dueTimestamp ?? injury?.recoveryDueTs;
+  const due = rawDue == null ? NaN : Number(rawDue);
   const start = Number(startTime) || 0;
   const seconds = Number.isFinite(due) ? Math.max(1, due - start) : null;
   const detail = injury?.detail ?? null;
@@ -89,9 +91,11 @@ export function buildCriticalInjuryEffectData(
     injury?.recoveryRule ?? definition?.recovery ?? "",
   );
   const remaining = Math.max(0, Number(injury?.remainingDays) || 0);
-  const recoveryLabel = permanent
-    ? "Permanent"
-    : `${remaining} recovery day(s)${injury?.stabilized ? " (stabilized)" : ""}`;
+  const recoveryLabel = requiresInjuryTreatment(injury)
+    ? "Requires treatment"
+    : permanent
+      ? "Permanent"
+      : `${remaining} recovery day(s)${injury?.stabilized ? " (stabilized)" : ""}`;
   const description = [effectText, `Recovery: ${recoveryLabel}`, recoveryRule]
     .filter(Boolean)
     .join(" | ");
@@ -108,7 +112,12 @@ export function buildCriticalInjuryEffectData(
   // Untreated knee/nerve injuries convert to permanent at their deadline.
   // Keep those effects alive until the authoritative service performs that
   // transition; Times Up must not delete them as ordinary expiring effects.
-  if (!permanent && !injury?.canBecomePermanent && seconds != null) {
+  if (
+    !requiresInjuryTreatment(injury) &&
+    !permanent &&
+    !injury?.canBecomePermanent &&
+    seconds != null
+  ) {
     duration.seconds = seconds;
   }
 
@@ -136,7 +145,12 @@ export function buildCriticalInjuryEffectData(
           permanent,
           effect: effectText,
           recoveryRule,
-          recoveryDueTs: permanent ? null : due,
+          recoveryDueTs:
+            permanent ||
+            requiresInjuryTreatment(injury) ||
+            !Number.isFinite(due)
+              ? null
+              : due,
         },
       },
       dae: {

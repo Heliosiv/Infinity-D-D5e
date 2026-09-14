@@ -549,12 +549,12 @@ boundaries.
 
 ### Critical injuries
 
-Enable or disable **Critical Injury Table V3** in module settings. When an owned
+Enable or disable **Critical Injury Table V4** in module settings. When an owned
 player character recovers from 0 HP or a dead/unconscious state, the active full
 GM gets a Yes/No approval prompt. Approval pushes a d100 button to the assigned
 or owning player. Clicking it sends an authenticated request only to the active
 GM. The GM verifies the restricted approval record, rolls and persists the d100,
-injury detail, and exact V2 recovery formula, then applies the Actor effect,
+injury detail, and versioned recovery rule, then applies the Actor effect,
 whispers the result, and creates a Simple Calendar recovery interval when that
 module is active. Safe retries reuse the same stored dice and completed result;
 a redundant private checkpoint, server-clock application lease claimed before
@@ -563,6 +563,12 @@ those receipts and external changes during an active-GM handoff. The active GM
 can roll any approved result as a fallback. Invalid legacy buttons are cleared
 with a GM warning, and failed or duplicate roll requests return an immediate
 status to the requester instead of silently timing out.
+
+New V4 Internal Bleeding, Deep Cut, Infection and Nightmares persist until their
+approved treatment succeeds. Select **Request treatment**; the GM reviews a kit,
+completed-rest or magical method as applicable. Successful treatment cures these
+injuries immediately; restoring maximum HP does not grant current HP. Existing
+V2/V3 injuries keep their saved rules. See [recovery policies](docs/INJURY_RECOVERY_POLICY.md).
 
 The player window lists every active injury and can request rules-based
 Healer's Kit treatment. The GM chooses the healer, sees the inventory charges

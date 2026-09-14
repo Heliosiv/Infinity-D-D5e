@@ -30,6 +30,12 @@ let transportRegistered = false;
 /**
  * Return the current immutable presentation snapshot for one injury.
  */
+export function getActorCriticalInjuryTreatmentStates(actorId) {
+  return [...treatmentStates.values()]
+    .filter((state) => state.actorId === actorId)
+    .map(treatmentStateSnapshot);
+}
+
 export function getCriticalInjuryTreatmentState(actorId, injuryId) {
   const state = treatmentStates.get(treatmentStateKey(actorId, injuryId));
   return state ? treatmentStateSnapshot(state) : null;
@@ -59,13 +65,17 @@ export function requestCriticalInjuryTreatment({ actorId, injuryId } = {}) {
   const actor = globalThis.game?.actors?.get?.(normalizedActorId) ?? null;
   const effect = findActorCriticalInjuryEffect(actor, normalizedInjuryId);
   const injury = getCriticalInjuryData(effect);
+  const resuming = treatmentStates.get(
+    treatmentStateKey(normalizedActorId, normalizedInjuryId),
+  )?.treatmentId;
   if (
     !actor ||
     !normalizedInjuryId ||
-    !injury ||
-    injury.permanent ||
-    injury.stabilized ||
-    Number(injury.kitCharges) <= 0
+    (!resuming &&
+      (!injury ||
+        injury.permanent ||
+        injury.stabilized ||
+        Number(injury.kitCharges) <= 0))
   ) {
     return { ok: false, reason: "injury-not-treatable", state: null };
   }

@@ -1,4 +1,4 @@
-# Critical Injuries and Table V3
+# Critical Injuries and Table V4
 
 ## View the complete table
 
@@ -10,10 +10,30 @@ another Workbench section preserves this view.
 
 The table is **not fully automatic**. See the
 [2026-09-07 automation audit and expansion proposal](INJURY_TABLE_AUDIT.md).
-New rolls now use the [expanded V3 chart](INJURY_TABLE_EXPANSION.md): 30 outcomes,
+New rolls use V4, retaining the [expanded chart](INJURY_TABLE_EXPANSION.md): 30 outcomes,
 including 12 new temporary injuries with automatic numeric penalties. Permanent
-injury odds are unchanged. Existing V2 injuries and saved roll receipts keep
+injury odds are unchanged. Existing V2/V3 injuries and saved roll receipts keep
 their original rules. The viewer itself remains read-only.
+
+## Treatment-dependent recovery (V4)
+
+Internal Bleeding, Deep Cut, Infection and Nightmares show **Requires treatment**.
+Time and Tend the Sick cannot end these injuries. In **View & treat**, choose
+**Request treatment**. The GM chooses a method, confirms any completed hour of rest
+or suitable magic, selects the treating character and approves the reviewed action.
+Internal Bleeding uses 3 kit charges and DC 15 Medicine, or suitable magic. Deep
+Cut uses 1 kit charge without a check, or a completed hour of rest and DC 13
+Medicine. Infection uses 2 kit charges without a check. Nightmares uses 4 kit
+charges without a check, or Remove Curse. Success cures immediately. Failed
+Medicine leaves the injury active; failed kit attempts still spend their charges.
+Player recovery text shows difficulty without numeric treatment DCs.
+
+Removing a maximum-HP penalty does not restore current HP. The untreated calendar
+note marks the injury's start and says **Requires treatment**, without predicting
+a cure date. Confirmed treatment closes it at the saved cure time. If completion
+is interrupted after the effect disappears, use **Treatment confirmation** to
+resume the same saved attempt. A returning authoritative GM also resumes saved
+cures. Saved V2/V3 injuries and resolutions are not converted.
 
 ## Injury board, canvas badges, and saved log
 

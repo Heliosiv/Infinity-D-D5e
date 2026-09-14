@@ -191,6 +191,49 @@ assert.equal(
   true,
   "healing without a calendar link is allowed",
 );
+const treatment = {
+  ...injury,
+  id: "v4",
+  tableVersion: 4,
+  injuryKey: "deep-cut",
+  injuryName: "Deep Cut",
+  recoveryDueTs: null,
+  remainingDays: 0,
+  calendarEntryId: "",
+};
+treatment.calendarEntryId = (
+  await scheduleCriticalInjuryNote({ actor, injury: treatment })
+).entryId;
+const treatmentNote = notes.at(-1);
+assert.match(treatmentNote.name, /Requires treatment/);
+assert.deepEqual(
+  treatmentNote.flags[scope].noteData.startDate,
+  treatmentNote.flags[scope].noteData.endDate,
+);
+assert.equal(await sync({ injury: treatment }), true);
+rejectWrite = true;
+assert.equal(
+  await sync({ injury: treatment, completed: true, completionTimestamp: 1000 }),
+  false,
+);
+rejectWrite = false;
+loseReply = true;
+assert.equal(
+  await sync({ injury: treatment, completed: true, completionTimestamp: 1000 }),
+  true,
+);
+loseReply = false;
+assert.match(treatmentNote.name, /Recovered/);
+assert.equal(
+  treatmentNote.flags[moduleId].criticalInjuryCalendar.completedAtTs,
+  1000,
+);
+const cureWrites = writes;
+assert.equal(
+  await sync({ injury: treatment, completed: true, completionTimestamp: 1200 }),
+  true,
+);
+assert.equal(writes, cureWrites);
 console.log(
   "Injury calendar ranges: original date, custom months, dynamic end, completed history, permissions, and replay passed",
 );

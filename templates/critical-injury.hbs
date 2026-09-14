@@ -150,25 +150,39 @@
 
             {{#if detailLabel}}<p><strong>{{detailLabel}}</strong></p>{{/if}}
             <p>{{effect}}</p>
-            <p class="ci-recovery"><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{recoveryLabel}}{{#if dueLabel}} · {{dueLabel}}{{/if}}</p>
-            <div class="ci-injury-calendar"><span class="ci-triage-muted">{{#if calendarLinked}}Calendar linked{{else}}Calendar entry needed — ask the GM to sync injuries{{/if}}</span>{{#if calendarActive}}<button type="button" data-action="openCalendar" data-injury-id="{{id}}" aria-label="View calendar for {{name}}">View calendar</button>{{/if}}</div>
-            <details class="ci-rule-details"><summary>Recovery rules &amp; penalties</summary><dl class="ci-facts">
-              <div>
-                <dt>Rule</dt>
-                <dd>{{recoveryRule}}</dd>
-              </div>
-              {{#if automatedChanges}}
+            <p class="ci-recovery"><i
+                class="fa-regular fa-calendar"
+                aria-hidden="true"
+              ></i>
+              {{recoveryLabel}}{{#if dueLabel}} · {{dueLabel}}{{/if}}</p>
+            <div class="ci-injury-calendar"><span class="ci-triage-muted">{{#if
+                  calendarLinked
+                }}Calendar linked{{else}}Calendar entry needed — ask the GM to
+                  sync injuries{{/if}}</span>{{#if calendarActive}}<button
+                  type="button"
+                  data-action="openCalendar"
+                  data-injury-id="{{id}}"
+                  aria-label="View calendar for {{name}}"
+                >View calendar</button>{{/if}}</div>
+            <details class="ci-rule-details"><summary>Recovery rules &amp;
+                penalties</summary><dl class="ci-facts">
                 <div>
-                  <dt>Automation</dt>
-                  <dd>{{automatedChanges}} character penalty change(s)</dd>
+                  <dt>Rule</dt>
+                  <dd>{{recoveryRule}}</dd>
                 </div>
-              {{/if}}
-            </dl></details>
+                {{#if automatedChanges}}
+                  <div>
+                    <dt>Automation</dt>
+                    <dd>{{automatedChanges}} character penalty change(s)</dd>
+                  </div>
+                {{/if}}
+              </dl></details>
 
             {{#if canTreat}}
               <div class="ci-treatment" aria-busy="{{treating}}">
                 <div>
-                  <strong>Healer's Kit: {{kitCharges}} charge(s)</strong>
+                  {{#if confirmationOnly}}<strong>Saved treatment result</strong>{{else}}<strong
+                    >Healer's Kit: {{kitCharges}} charge(s)</strong>{{/if}}
                   <span>{{treatmentCheck}}</span>
                 </div>
                 <button
@@ -188,7 +202,8 @@
                     Waiting…
                   {{else}}
                     <i class="fa-solid fa-kit-medical" aria-hidden="true"></i>
-                    Request treatment
+                    {{#if confirmationOnly}}Retry confirmation{{else}}Request
+                      treatment{{/if}}
                   {{/if}}
                 </button>
               </div>
@@ -201,12 +216,26 @@
       {{else}}
         <div class="ci-empty">
           <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
-          <p>No automated critical injuries.{{#if recordedInjuries}} See recorded injuries below.{{else}} No action is needed.{{/if}}</p>
+          <p>No automated critical injuries.{{#if recordedInjuries}}
+              See recorded injuries below.{{else}}
+              No action is needed.{{/if}}</p>
         </div>
       {{/if}}
     </section>
-    {{#if recordedInjuries}}<section class="ci-active-list" aria-label="Recorded injuries and history"><h3>Recorded injuries &amp; history</h3>{{#each recordedInjuries}}<article class="ci-injury"><h4>{{name}}</h4><p class="ci-recovery">{{recovery}}</p><p>{{notes}}</p></article>{{/each}}</section>{{/if}}
-    {{#unless integrations.automationReady}}<details class="ci-rule-details"><summary>Automation availability</summary><p>Midi-QOL and DAE enable automatic penalties. Injury records and recovery still work without them.</p></details>{{/unless}}
+    {{#if recordedInjuries}}<section
+        class="ci-active-list"
+        aria-label="Recorded injuries and history"
+      ><h3>Recorded injuries &amp; history</h3>{{#each
+          recordedInjuries
+        }}<article class="ci-injury"><h4>{{name}}</h4><p
+              class="ci-recovery"
+            >{{recovery}}</p><p
+            >{{notes}}</p></article>{{/each}}</section>{{/if}}
+    {{#unless integrations.automationReady}}<details
+        class="ci-rule-details"
+      ><summary>Automation availability</summary><p>Midi-QOL and DAE enable
+          automatic penalties. Injury records and recovery still work without
+          them.</p></details>{{/unless}}
   {{/if}}
 
   <footer class="ci-footer">

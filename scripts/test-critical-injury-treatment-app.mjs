@@ -426,6 +426,62 @@ try {
     reopenedContext.statusMessage,
     /controller-only treatment ended/i,
   );
+  const cureRequest = requestCriticalInjuryTreatment({
+    actorId: actor.id,
+    injuryId: injury.id,
+  });
+  actor.effects.contents = [];
+  handleCriticalInjuryTreatmentResult({
+    actorId: actor.id,
+    injuryId: injury.id,
+    treatmentId: cureRequest.treatmentId,
+    retryable: true,
+    success: false,
+    message: "Completion interrupted after cure.",
+  });
+  const missingContext = await reopened._prepareContext();
+  assert.equal(
+    missingContext.activeInjuries.length,
+    1,
+    "a removed effect retains its confirmation action",
+  );
+  assert.equal(missingContext.activeInjuries[0].canTreat, true);
+  const retryCure = requestCriticalInjuryTreatment({
+    actorId: actor.id,
+    injuryId: injury.id,
+  });
+  assert.equal(retryCure.ok, true);
+  assert.equal(retryCure.treatmentId, cureRequest.treatmentId);
+  handleCriticalInjuryTreatmentResult({
+    actorId: actor.id,
+    injuryId: injury.id,
+    treatmentId: cureRequest.treatmentId,
+    retryable: false,
+    success: true,
+    message: "Cured.",
+  });
+  assert.equal((await reopened._prepareContext()).activeInjuries.length, 0);
+  assert.equal(
+    requestCriticalInjuryTreatment({ actorId: actor.id, injuryId: injury.id })
+      .ok,
+    false,
+    "a removed injury cannot start a fresh treatment",
+  );
+  reopened._latestResult = {
+    ...injury,
+    tableVersion: 4,
+    injuryKey: "deep-cut",
+    remainingDays: 0,
+    recoveryDueTs: null,
+  };
+  const v4Result = (await reopened._prepareContext()).latestResult;
+  assert.equal(v4Result.recoveryLabel, "Requires treatment");
+  assert.equal(v4Result.dueLabel, "");
+  reopened._latestResult.curedAtTs = 123;
+  assert.equal(
+    (await reopened._prepareContext()).latestResult.recoveryLabel,
+    "Recovered",
+  );
   assert.ok(renderCount > 0);
 } finally {
   for (const [key, value] of Object.entries(saved)) {

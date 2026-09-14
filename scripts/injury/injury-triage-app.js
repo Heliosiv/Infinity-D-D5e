@@ -1,3 +1,4 @@
+import { requiresInjuryTreatment } from "./recovery-policy.js";
 import { CRITICAL_INJURY_TABLE_VERSION } from "./table.js";
 /** GM-only Critical Injury review and party-status workspace. */
 
@@ -201,9 +202,10 @@ export class CriticalInjuryTriageApp extends GmWorkbenchApp {
           .map((injury) => ({
             name: String(injury.injuryName ?? "Critical injury"),
             recovery: injuryRecoveryLabel(injury),
-            dueLabel: injury.permanent
-              ? ""
-              : formatInjuryTimestamp(injury.recoveryDueTs),
+            dueLabel:
+              requiresInjuryTreatment(injury) || injury.permanent
+                ? ""
+                : formatInjuryTimestamp(injury.recoveryDueTs),
             calendarLinked: Boolean(injury.calendarEntryId),
             effect: injury.effect,
           })),
@@ -484,9 +486,11 @@ function buildTriageRow(record) {
     .map((injury) => ({
       name: String(injury.injuryName ?? "Critical injury"),
       permanent: injury.permanent === true,
-      recovery: injury.permanent
-        ? "Permanent"
-        : `${Math.max(0, Number(injury.remainingDays) || 0)} day(s) remaining${injury.recoveryDueTs ? ` · due ${formatInjuryTimestamp(injury.recoveryDueTs)}` : ""}`,
+      recovery: requiresInjuryTreatment(injury)
+        ? "Requires treatment"
+        : injury.permanent
+          ? "Permanent"
+          : `${Math.max(0, Number(injury.remainingDays) || 0)} day(s) remaining${injury.recoveryDueTs ? ` · due ${formatInjuryTimestamp(injury.recoveryDueTs)}` : ""}`,
     }));
   return {
     actorId: record.actorId,

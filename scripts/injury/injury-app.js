@@ -1,3 +1,8 @@
+import {
+  requiresInjuryTreatment,
+  injuryTreatmentMethods,
+  treatmentMethodLabel,
+} from "./recovery-policy.js";
 /** Player-facing Critical Injury roll, status, and treatment window. */
 
 import { SETTING_KEYS, getSetting } from "../settings.js";
@@ -31,6 +36,7 @@ import { treatmentSkillLabel } from "./table.js";
 import { bindFocusRestoration } from "../infinity-app.js";
 import {
   getCriticalInjuryTreatmentState,
+  getActorCriticalInjuryTreatmentStates,
   handleCriticalInjuryTreatmentResult,
   requestCriticalInjuryTreatment,
   subscribeCriticalInjuryTreatmentState,
@@ -285,13 +291,9 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       null;
     if (pending && !this._pendingId) this._pendingId = pending.id;
 
-    const treatmentStates = actorEffects
-      .map((effect) => {
-        const injuryId = String(getCriticalInjuryData(effect)?.id ?? "");
-        return getCriticalInjuryTreatmentState(this._actorId, injuryId);
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    const treatmentStates = getActorCriticalInjuryTreatmentStates(
+      this._actorId,
+    ).sort((a, b) => b.updatedAt - a.updatedAt);
     const activeInjuries = actorEffects
       .map((effect) => {
         const injuryId = String(getCriticalInjuryData(effect)?.id ?? "");
@@ -321,6 +323,31 @@ export class CriticalInjuryApp extends HandlebarsApplicationMixin(
       injury.treatmentActionLabel = injury.treating
         ? `Waiting for treatment of ${injury.name}`
         : `Request treatment for ${injury.name}`;
+    }
+    for (const state of treatmentStates) {
+      if (
+        !state.treatmentId ||
+        activeInjuries.some((injury) => injury.id === state.injuryId)
+      )
+        continue;
+      activeInjuries.push({
+        id: state.injuryId,
+        name: "Treatment confirmation",
+        confirmationOnly: true,
+        headingId: `ci-confirm-${state.injuryId}`,
+        recoveryLabel: "Treatment confirmation pending",
+        effect:
+          "Retry to retrieve the saved result. This will not spend treatment resources again.",
+        canTreat: true,
+        treatmentMessage: state.message,
+        treating: state.busy,
+        treatmentDisabled: state.busy || offline,
+        treatmentDisabledAttribute: state.busy || offline ? "disabled" : "",
+        treatmentActionLabel: "Retry treatment confirmation",
+        treatmentActionTitle: "Retrieve the saved result",
+        treatmentCheck: "Resume the same approved attempt",
+        kitCharges: 0,
+      });
     }
     const treatmentBusy = treatmentStates.some((state) => state.busy === true);
     const treatmentUncertain = treatmentStates.some(
@@ -935,7 +962,10 @@ function buildInjuryView(effect, treatmentState) {
     calendarLinked: Boolean(injury.calendarEntryId),
     calendarActive: isSimpleCalendarAvailable(),
     dueLabel:
-      !injury.permanent && Number.isFinite(Number(injury.recoveryDueTs))
+      !requiresInjuryTreatment(injury) &&
+      !injury.permanent &&
+      injury.recoveryDueTs != null &&
+      Number.isFinite(Number(injury.recoveryDueTs))
         ? formatInjuryTimestamp(injury.recoveryDueTs)
         : "",
     detailLabel: injury.detail?.label ?? "",
@@ -945,7 +975,11 @@ function buildInjuryView(effect, treatmentState) {
     permanentClass: injury.permanent ? "ci-injury--permanent" : "",
     stabilized: Boolean(injury.stabilized),
     kitCharges: Math.max(0, Number(injury.kitCharges ?? 0)),
-    treatmentCheck,
+    treatmentCheck: requiresInjuryTreatment(injury)
+      ? injuryTreatmentMethods(injury)
+          .map((method) => treatmentMethodLabel(method, injury))
+          .join(" or ")
+      : treatmentCheck,
     canTreat:
       !injury.permanent && !injury.stabilized && Number(injury.kitCharges) > 0,
     treating: Boolean(treatmentState?.busy),
@@ -959,11 +993,19 @@ function buildInjuryView(effect, treatmentState) {
 function buildResultView(result) {
   return {
     ...result,
-    recoveryLabel: result.permanent
-      ? "Permanent"
-      : `${result.remainingDays} recovery day(s)`,
+    recoveryLabel:
+      result.curedAtTs != null
+        ? "Recovered"
+        : requiresInjuryTreatment(result)
+          ? "Requires treatment"
+          : result.permanent
+            ? "Permanent"
+            : `${result.remainingDays} recovery day(s)`,
     dueLabel:
-      !result.permanent && Number.isFinite(Number(result.recoveryDueTs))
+      !requiresInjuryTreatment(result) &&
+      !result.permanent &&
+      result.recoveryDueTs != null &&
+      Number.isFinite(Number(result.recoveryDueTs))
         ? formatInjuryTimestamp(result.recoveryDueTs)
         : "",
     detailLabel: result.detail?.label ?? "",
