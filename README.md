@@ -70,6 +70,11 @@ percentages, and roll gathering before crafting. Drakmor house rules preserve
 half progress on near misses and lose the attempt's materials on failure by 5+.
 See [field ammunition rules and setup](docs/FIELD_AMMUNITION.md).
 
+**Varied hunting:** Ten terrain tables with eight animals each,
+editable animal rows and meat-yield ranges. The GM can adjust a successful hunt's
+meat quantity and player report before delivery. Existing saved areas and open
+hunts retain their settings. See the [hunting guide](docs/DOWNTIME_HUNTING_DESIGN.md).
+
 **v0.3.36 — active hunting:** Open guided downtime in Forest, Swamp or
 another wilderness area. Under **Hunting rules and custom area**, edit the DC,
 animals, yields, risk and allowed activities, or save a custom area. Players choose

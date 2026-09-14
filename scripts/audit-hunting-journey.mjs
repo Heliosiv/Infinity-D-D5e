@@ -71,6 +71,30 @@ try {
     .getByText("Hunting rules and custom area", { exact: true })
     .click();
   await page.getByLabel("Hunting area name", { exact: true }).fill("Old Marsh");
+  await page.getByRole("button", { name: "Add animal", exact: true }).click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(await page.locator("[data-hunting-game]").count(), 9);
+  await page
+    .getByLabel("Animal for game entry 8", { exact: true })
+    .fill("Woodland elk");
+  await page
+    .getByLabel("Minimum meat portions from New animal", { exact: true })
+    .fill("12");
+  await page
+    .getByLabel("Maximum meat portions from New animal", { exact: true })
+    .fill("30");
+  await page
+    .getByRole("button", { name: "Remove animal New animal", exact: true })
+    .click();
+  await page.evaluate(() => journey.app.rendering);
+  assert.equal(await page.locator("[data-hunting-game]").count(), 8);
+  await page
+    .getByLabel("Minimum meat portions from Red deer", { exact: true })
+    .fill("14");
+  await page
+    .getByLabel("Maximum meat portions from Red deer", { exact: true })
+    .fill("35");
+  await page.getByLabel("Hunting area name", { exact: true }).fill("Old Marsh");
   await page.getByLabel("Base hunting Survival DC", { exact: true }).fill("10");
   await page
     .getByLabel("Hunting difficulty label", { exact: true })
@@ -205,7 +229,77 @@ try {
       blockId: id,
       actorId: "mira",
     });
-    await journey.service.applyActiveDowntimeBlock(id);
+    await journey.mount("workspace");
+  });
+  const meat = page.getByLabel("Meat portions to deliver for Hunting", {
+    exact: true,
+  });
+  const report = page.getByLabel("Player report for Hunting", { exact: true });
+  await meat.fill("31");
+  await report.fill("A clean shot brings meat back to camp.");
+  await page.evaluate(() => journey.app.render());
+  assert.equal(await meat.inputValue(), "31");
+  assert.equal(
+    await report.inputValue(),
+    "A clean shot brings meat back to camp.",
+  );
+  await page.getByRole("button", { name: "Save report", exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      journey.store.getActiveDowntimeBlock().plan.operations[0].work
+        .outputQuantity === 31,
+  );
+  await page.evaluate(() => journey.app.rendering);
+  for (const width of [1040, 720, 380]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const audit = await new AxeBuilder({ page })
+      .include("#app")
+      .disableRules(["color-contrast"])
+      .analyze();
+    assert.equal(
+      audit.violations.length,
+      0,
+      JSON.stringify(audit.violations.map((v) => v.id)),
+    );
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    );
+    await meat.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: path.join(out, `hunting-review-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await meat.fill("-1");
+  await page
+    .getByRole("button", { name: "Apply results & send reports", exact: true })
+    .click();
+  await page.waitForFunction(() =>
+    journey.app._errorMessage.includes("meat portions"),
+  );
+  assert.equal(
+    await page.evaluate(
+      () => journey.actor.items.get("arrows").system.quantity,
+    ),
+    5,
+  );
+  assert.equal(
+    await page.evaluate(() => journey.store.getActiveDowntimeBlock().state),
+    "planned",
+  );
+  await meat.fill("8");
+  await page
+    .getByRole("button", { name: "Apply results & send reports", exact: true })
+    .click();
+  await page.waitForFunction(() =>
+    [...journey.actor.items.values()].some(
+      (i) =>
+        i.flags?.["infinity-dnd5e"]?.downtimeCraft && i.system.quantity === 8,
+    ),
+  );
+  await page.evaluate(async () => {
     await journey.mount("activities", { freshPlayer: true });
   });
   assert.equal(
@@ -214,7 +308,11 @@ try {
     ),
     4,
   );
-  assert.match(await page.locator("#app").innerText(), /secured/);
+  assert.match(
+    await page.locator("#app").innerText(),
+    /A clean shot brings meat back to camp/,
+  );
+  assert.match(await page.locator("#app").innerText(), /8 food portions/);
   await page.screenshot({
     path: path.join(out, "hunting-report.png"),
     fullPage: true,

@@ -183,6 +183,8 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       restoreActorDefaults: DowntimeWorkspaceApp._onRestoreActorDefaults,
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
+      addHuntingAnimal: DowntimeWorkspaceApp._onAddHuntingAnimal,
+      removeHuntingAnimal: DowntimeWorkspaceApp._onRemoveHuntingAnimal,
       saveHuntingRegion: DowntimeWorkspaceApp._onSaveHuntingRegion,
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
       prepareParticipant: DowntimeWorkspaceApp._onPrepareParticipant,
@@ -293,6 +295,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._pendingFocus = null;
     this._guidedReportDrafts = new Map();
     this._researchReviewDrafts = new Map();
+    this._huntingFoodDrafts = new Map();
     this._actorSelectorState = createActorSelectorState();
     this._unsubscribe = null;
     this._unbindFullGmWindowGuard = bindFullGmWindowGuard(this);
@@ -405,20 +408,25 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       for (const operation of character.operations) {
         const key = `${this._activeBlockId}:${operation.id}`;
         reportKeys.add(key);
+        if (this._huntingFoodDrafts?.has(key) && context.currentBlock.canReview)
+          operation.huntingFood = this._huntingFoodDrafts.get(key);
         const draft = this._guidedReportDrafts?.get(key);
         if (draft !== undefined && context.currentBlock.canReview)
           operation.report = draft;
       }
     }
     if (dataAvailable && this._view === "current") {
-      for (const key of new Set([
-        ...(this._guidedReportDrafts?.keys() ?? []),
-        ...(this._researchReviewDrafts?.keys() ?? []),
-      ])) {
-        if (!reportKeys.has(key) || !context.currentBlock?.canReview) {
+      for (const key of this._guidedReportDrafts?.keys() ?? []) {
+        if (!reportKeys.has(key) || !context.currentBlock?.canReview)
           this._guidedReportDrafts.delete(key);
-          this._researchReviewDrafts?.delete(key);
-        }
+      }
+      for (const key of this._researchReviewDrafts?.keys() ?? []) {
+        if (!reportKeys.has(key) || !context.currentBlock?.canReview)
+          this._researchReviewDrafts.delete(key);
+      }
+      for (const key of this._huntingFoodDrafts?.keys() ?? []) {
+        if (!reportKeys.has(key) || !context.currentBlock?.canReview)
+          this._huntingFoodDrafts?.delete(key);
       }
     }
 
@@ -579,6 +587,24 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
           field.value,
         );
       });
+    }
+    for (const field of this.element?.querySelectorAll?.(
+      "[data-hunting-food]",
+    ) ?? []) {
+      field.addEventListener("input", () => {
+        const id = field.closest("[data-operation-id]")?.dataset.operationId;
+        if (id) {
+          this._huntingFoodDrafts ??= new Map();
+          this._huntingFoodDrafts.set(
+            `${this._activeBlockId}:${id}`,
+            field.value,
+          );
+        }
+      });
+    }
+    if (this._huntingEditorOpen) {
+      const editor = this.element?.querySelector("[data-hunting-editor]");
+      if (editor) editor.open = true;
     }
     this._restoreFocus();
   }
@@ -934,6 +960,47 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     this._applyActorSelector();
   }
 
+  static _onAddHuntingAnimal() {
+    if (this._busy) return;
+    const form = this.element?.querySelector('[data-form="new-block"]');
+    if (!form) return;
+    this._captureNewBlockDraft(form);
+    const rules = this._newBlockDraft.huntingRules;
+    if (!rules || rules.game.length >= 20) return;
+    this._huntingEditorOpen = true;
+    rules.game.push({
+      name: "New animal",
+      size: "Small",
+      ac: 13,
+      foodMin: 1,
+      foodMax: 3,
+      ordinary: 0,
+      exceptional: 0,
+    });
+    this._pendingFocus = `[data-hunting-game]:last-of-type input`;
+    this.render(false);
+  }
+
+  static _onRemoveHuntingAnimal(_event, target) {
+    if (this._busy) return;
+    const form = this.element?.querySelector('[data-form="new-block"]');
+    if (!form) return;
+    this._captureNewBlockDraft(form);
+    const rules = this._newBlockDraft.huntingRules;
+    const index = Number(target?.dataset?.gameIndex);
+    if (
+      !rules ||
+      rules.game.length <= 1 ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= rules.game.length
+    )
+      return;
+    this._huntingEditorOpen = true;
+    rules.game.splice(index, 1);
+    this.render(false);
+  }
+
   static async _onSaveHuntingRegion() {
     const form = this.element?.querySelector('[data-form="new-block"]');
     if (!form) return;
@@ -1089,6 +1156,12 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
           (researchReview &&
             this._researchReviewDrafts?.has(researchDraftKey)) ||
           field.value !== field.dataset.savedReport ||
+          (() => {
+            const food = field
+              .closest("[data-operation-id]")
+              ?.querySelector("[data-hunting-food]");
+            return food && food.value !== food.dataset.savedFood;
+          })() ||
           (target && target.value !== target.dataset.savedTarget)
         );
       })
@@ -1099,6 +1172,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
           operationId: card?.dataset.operationId,
           outcomeIndex: Number(card?.dataset.outcomeIndex),
           report: field.value,
+          foodQuantity: card?.querySelector("[data-hunting-food]")?.value,
           benefitTarget: card?.querySelector("[data-benefit-target]")?.value,
           researchReview: readResearchReviewForm(card),
         };
@@ -1109,6 +1183,9 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         success: "Player report saved.",
       });
       if (saved === null) return;
+      this._huntingFoodDrafts?.delete(
+        `${payload.blockId}:${payload.operationId}`,
+      );
       this._guidedReportDrafts?.delete(
         `${payload.blockId}:${payload.operationId}`,
       );
@@ -1195,6 +1272,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         operationId,
         outcomeIndex: Number(card.dataset.outcomeIndex),
         report: String(card.querySelector("[data-guided-report]")?.value ?? ""),
+        foodQuantity: card.querySelector("[data-hunting-food]")?.value,
         benefitTarget: card.querySelector("[data-benefit-target]")?.value,
         researchReview: readResearchReviewForm(card),
       },
@@ -1207,6 +1285,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     if (result !== null) {
       this._guidedReportDrafts?.delete(`${blockId}:${operationId}`);
       this._researchReviewDrafts?.delete(`${blockId}:${operationId}`);
+      this._huntingFoodDrafts?.delete(`${blockId}:${operationId}`);
       if (this.rendered) this.render(false);
     }
   }
@@ -1812,6 +1891,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     };
   const templateEditor = {
     ...templateSource,
+    isHunting: templateSource.id === "guided-hunting",
     blockHours: String(templateSource.blockHours ?? 8),
     work: {
       gpPerBlock: 0,
@@ -2214,6 +2294,9 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
   return {
     dataAvailable: source.dataAvailable !== false,
     guided,
+    huntingOriginalName:
+      array(source.huntingRegions).find((r) => r.id === locationPresetId)
+        ?.name ?? "",
     huntingEditor:
       uiState.newBlockDraft?.huntingRules ??
       array(source.huntingRegions).find((r) => r.id === locationPresetId),
@@ -2852,6 +2935,12 @@ function normalizeCurrentBlock(workflow, root) {
           uuid: String(option?.uuid ?? ""),
           label: String(option?.label ?? "Foundry document"),
         })),
+        hunting: operation?.hunting === true,
+        canEditHuntingFood: operation?.canEditHuntingFood === true,
+        huntingFood: operation?.huntingFood ?? 0,
+        savedHuntingFood: operation?.huntingFood ?? 0,
+        huntingAnimal: String(operation?.huntingAnimal ?? ""),
+        huntingSuggestedFood: operation?.huntingSuggestedFood ?? 0,
       }),
     ),
   }));
@@ -3267,7 +3356,15 @@ function readHuntingRules(form) {
     activityIds: data.getAll("huntingActivityIds").map(String),
     game: [...form.querySelectorAll("[data-hunting-game]")].map((row) =>
       Object.fromEntries(
-        ["name", "size", "ac", "food", "ordinary", "exceptional"].map((k) => [
+        [
+          "name",
+          "size",
+          "ac",
+          "foodMin",
+          "foodMax",
+          "ordinary",
+          "exceptional",
+        ].map((k) => [
           k,
           row.querySelector('[data-hunting-field="' + k + '"]')?.value,
         ]),

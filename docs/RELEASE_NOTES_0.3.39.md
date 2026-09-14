@@ -26,6 +26,10 @@ code.
 - Research Seeds, cases, follow-ups, hunting areas, frozen rules, and random seeds
   now persist with the world for replacement-GM continuity. Older browser records
   remain untouched until a GM reviews **Import saved browser records** in Downtime.
+- Hunting areas can use ten terrain tables with eight animals each. GMs can edit
+  the animal rows and meat ranges, then adjust a successful hunt's delivered meat
+  and player report during review. Existing areas and open hunts keep their saved
+  rules.
 - Daily upkeep uses either party supplies or a character's selected lifestyle,
   never both. GM-covered exceptions, manual settlement, skip, pause, large-jump
   review, insufficient-funds handling, and replay-safe receipts are included.
