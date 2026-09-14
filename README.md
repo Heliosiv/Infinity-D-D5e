@@ -6,7 +6,12 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
-**Research & Rumors (source update):** Players can ask a question, select a known
+**v0.3.39 — Campaign continuity, daily living, Research and injury rules:** This
+release brings every reviewed change since v0.3.38 into one upgrade. Before
+installing, create a complete world backup. Because campaign records advance to
+schema 9, rollback requires restoring that backup together with v0.3.38.
+
+**Research & Rumors:** Players can ask a question, select a known
 subject or discover something new. GMs prepare seeds under **Downtime → Research**
 and approve dossiers before unprepared findings are delivered. New blocks offer
 **Research time: Day/Night**. Untouched stock activities upgrade; customized
@@ -16,7 +21,7 @@ choose **Import saved browser records** on the original GM browser. See the
 [research guide](docs/DOWNTIME_RESEARCH_DESIGN.md) and
 [integration and acceptance record](docs/RESEARCH_RECONCILIATION.md).
 
-**Daily living (source update):** Quartermaster supports automatic or manual
+**Daily living:** Quartermaster supports automatic or manual
 upkeep through supplies, a paid lifestyle, or a GM-covered exception. Set choices
 under **Setup & Rules → Party supplies**. Auto-run off asks the GM to settle or
 skip; **Skip elapsed upkeep** ignores a pending interval, and **Pause calendar
@@ -31,7 +36,7 @@ foraging shows difficulty labels. Optional saved-run recovery requires a world
 backup and explicit activation in Quartermaster. See the
 [resource guide](docs/RESOURCE_SYSTEM.md) for use and recovery limits.
 
-**Trusted-table campaign records (source update):** Full GMs no longer create,
+**Trusted-table campaign records:** Full GMs no longer create,
 save, or repeatedly enter a campaign-record passphrase. The module opens its
 world record store automatically, including during the first migration while
 players are connected. GM-only controls and safe player projections remain, but
@@ -681,7 +686,7 @@ npm run verify
 
 Live generation uses the installed Codex image CLI at `C:\Users\Kyle\.codex\skills\.system\imagegen\scripts\image_gen.py` with `gpt-image-2`, `quality=high`, `size=1024x1024`, `output_format=webp`, and `background=opaque`. `OPENAI_API_KEY` must be set before the live generation commands. If a batch partially fails, run `npm run art:jobs:missing` and rerun the matching generation command.
 
-`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:changed` selects only the fixtures and risk viewports touched since the previous commit; shared UI foundations deliberately use the full audit. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source:fast` runs formatting, deterministic checks, and the changed UI audit. `npm run verify:source` remains the full UI, accessibility, and keyboard gate; `npm run verify:release-source` also requires an exact release-version tag. `npm run verify` adds release construction and verifies the actual ZIP root, manifest references, release URLs, and SHA-256; `npm run release` invokes that same strict complete gate and build.
+`npm run ui:harness` writes a static Foundry-window preview to `tmp/playwright/ui-harness.html`. `npm run ui:audit` checks every fixture at independent 1040, 720, 520, and 380px application widths across comfortable and compact density, coarse pointers, short heights, reduced motion, forced colours, and 200% zoom. `npm run ui:audit:changed` selects only the fixtures and risk viewports touched since the previous commit; shared UI foundations deliberately use the full audit. `npm run ui:audit:a11y` isolates each fixture and fails on serious Axe findings plus duplicate IDs, unnamed controls, broken labels, invalid tabs, inaccessible live states, and AA contrast. `npm run ui:audit:keyboard` scripts Tab and Shift+Tab focus order, Enter and Space activation, arrow-key/Home/End tabs, safe dialog focus restoration, Escape dismissal, and keyboard queue reordering. `npm run verify:source:fast` runs formatting, deterministic checks, and the changed UI audit. `npm run verify:source` remains the full UI, accessibility, and keyboard gate; `npm run verify:release-source` also requires an exact release-version tag. `npm run verify` adds release construction and verifies the actual ZIP root, manifest references, release URLs, and SHA-256; `npm run release` invokes that same strict complete gate and build. When `docs/RELEASE_NOTES_<version>.md` exists, the builder copies it into the release artifacts for the GitHub draft; otherwise it uses the short local-build note.
 
 Layout audits keep each run's HTML, screenshots, and summary in its own
 `tmp/playwright/ui-layout-*` directory. Parallel runs cannot overwrite each

@@ -353,14 +353,22 @@ async function writeManifestCopy(manifest) {
 
 async function writeNotes(manifest) {
   const version = String(manifest?.version ?? "0.0.0");
+  const versionedNotesPath = path.join(
+    repoRoot,
+    "docs",
+    `RELEASE_NOTES_${version}.md`,
+  );
+  const notes = (await pathExists(versionedNotesPath))
+    ? await readFile(versionedNotesPath, "utf8")
+    : [
+        `# Infinity D&D5e — v${version}`,
+        "",
+        "Local build. See README.md for install instructions.",
+        "",
+      ].join("\n");
   await writeFile(
     notesPath,
-    [
-      `# Infinity D&D5e — v${version}`,
-      "",
-      "Local build. See README.md for install instructions.",
-      "",
-    ].join("\n"),
+    notes.endsWith("\n") ? notes : `${notes}\n`,
     "utf8",
   );
   await writeFile(

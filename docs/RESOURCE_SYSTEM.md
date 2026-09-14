@@ -1,6 +1,6 @@
 # Resource System Product Roadmap
 
-## Party Supplies source improvements (unreleased)
+## Party Supplies improvements (v0.3.38)
 
 Safe source summaries survive repeated player projection. Coverage uses exact
 ratios: below one day is Critical, one to below three is Low, and three or more
@@ -16,7 +16,8 @@ selection, days and date. Inventory bursts keep a visibly stale safe snapshot
 while refreshing; permission/authority changes discard it. Scene hub text can
 retain last-known totals while no GM is online.
 
-Optional recovery is described below. This is source work, not a deployment.
+Optional recovery is described below. Updating does not automatically enable it
+or consume supplies.
 
 ## v0.3.2 interface quick start
 

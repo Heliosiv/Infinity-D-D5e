@@ -604,7 +604,7 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-**Trusted-table campaign records (source update):** Complete private-state payloads
+**Trusted-table campaign records (v0.3.39):** Complete private-state payloads
 remain in authenticated envelopes, and full GMs open the store automatically.
 There is no new passphrase, refresh unlock, or player-disconnect requirement.
 Normal module UI and socket projections still withhold GM-only values, but the
