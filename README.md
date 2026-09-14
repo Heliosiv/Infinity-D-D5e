@@ -11,7 +11,7 @@ subject or discover something new. GMs prepare seeds under **Downtime → Resear
 and approve dossiers before unprepared findings are delivered. New blocks offer
 **Research time: Day/Night**. Untouched stock activities upgrade; customized
 activities and existing block snapshots retain their rules. Private seeds and
-cases use the encrypted GM vault. For older browser records, open Downtime and
+cases use the shared campaign record store. For older browser records, open Downtime and
 choose **Import saved browser records** on the original GM browser. See the
 [research guide](docs/DOWNTIME_RESEARCH_DESIGN.md) and
 [integration and acceptance record](docs/RESEARCH_RECONCILIATION.md).
@@ -31,13 +31,14 @@ foraging shows difficulty labels. Optional saved-run recovery requires a world
 backup and explicit activation in Quartermaster. See the
 [resource guide](docs/RESOURCE_SYSTEM.md) for use and recovery limits.
 
-**v0.3.37 — Encrypted GM vault:** Hidden campaign records now use authenticated
-encryption instead of readable Journal flags. Each full GM enters the shared
-vault passphrase locally when opening or refreshing a tab. Before the first
-migration, back up the world, disconnect players, and save the new passphrase in
-a password manager. Press **Shift+I** to set up or unlock. Forgotten passphrases
-cannot be recovered. Old backups and previously received plaintext remain
-outside this protection. See the [vault setup and recovery guide](docs/PRIVATE_VAULT.md).
+**Trusted-table campaign records (source update):** Full GMs no longer create,
+save, or repeatedly enter a campaign-record passphrase. The module opens its
+world record store automatically, including during the first migration while
+players are connected. GM-only controls and safe player projections remain, but
+the automatic key is not a confidentiality boundary against a player deliberately
+inspecting Foundry traffic. Existing worlds that already used a custom v0.3.37
+passphrase retain a legacy unlock path so their records are not replaced. See the
+[campaign record storage guide](docs/PRIVATE_VAULT.md).
 
 **v0.3.37 — Plague Scholar UI:** All module windows share warm manuscript
 surfaces, anatomical undead marginalia, worn bookbinding, brass emblems, and
@@ -70,7 +71,7 @@ animals, yields, risk and allowed activities, or save a custom area. Players cho
 four/eight hours, a ranged weapon and ammunition, roll Survival, then take one
 shot. Eight hours lowers the Survival DC by four; a miss ends the hunt. GM review
 delivers food and spends one ammunition per shot. Hidden hunting rules and saved
-areas use the encrypted vault and survive an unlocked GM handoff. Import older
+areas use the shared campaign record store and survive a GM handoff. Import older
 browser records from their original GM browser before continuing those hunts.
 See [hunting rules and setup](docs/DOWNTIME_HUNTING_DESIGN.md).
 

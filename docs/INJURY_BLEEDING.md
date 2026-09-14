@@ -2,7 +2,7 @@
 
 Implemented locally on 2026-09-13. No campaign installation or release.
 
-The authoritative GM vault must be unlocked when combat starts.
+The authoritative GM's campaign records open automatically when the world loads.
 At combat start, enabled and unsuppressed Internal Bleeding injuries roll 1d6;
 on a 1, they deal 1d4 damage. Temporary HP absorbs damage first, then current HP
 falls to a minimum of zero. Each injury rolls once per Combat document. Repeated
@@ -25,7 +25,7 @@ unchanged by this work.
 
 ## Interrupted work
 
-Reloading/reconnecting the authoritative GM with the vault unlocked resumes
+Reloading/reconnecting the authoritative GM resumes
 saved plans. A same-GM session lease can delay recovery for up to one minute.
 Missing Actors or conflicting current HP stop an unapplied event; the system
 does not overwrite newer HP or reroll its saved dice.

@@ -604,12 +604,13 @@ private state before acknowledging them.
 
 ## Permissions and privacy
 
-**v0.3.37 adds encrypted storage:** Complete private-state payloads are sealed
-before any Journal create/update request. Full GMs unlock locally; players receive
-ciphertext. First-run migration, passphrase recovery requirements, and remaining
-trust boundaries are in [Private Vault](PRIVATE_VAULT.md). A world is protected
-only after its GM completes setup and migration. Existing plaintext downloads
-and pre-migration backups are not revoked.
+**Trusted-table campaign records (source update):** Complete private-state payloads
+remain in authenticated envelopes, and full GMs open the store automatically.
+There is no new passphrase, refresh unlock, or player-disconnect requirement.
+Normal module UI and socket projections still withhold GM-only values, but the
+automatic key can be reproduced from public module code and the world ID. It is
+therefore not a confidentiality boundary against a player deliberately inspecting
+Foundry data. See [Campaign record storage](PRIVATE_VAULT.md).
 
 **Historical transport finding (before vault migration), observed 2026-09-03
 and reconfirmed 2026-09-05:** Foundry 13.351
@@ -626,8 +627,9 @@ This predates the downtime UI changes and affects the shared private-state
 storage design. The write guards and GM approval flow were enforced by the module, but before
 vault migration campaign secrets must not rely on Journal ownership for
 confidentiality.
-The v0.3.37 vault addresses this storage design for migrated records. Journal
-ownership alone remains insufficient.
+The v0.3.37 custom-passphrase vault addressed this storage design for migrated
+records. The current trusted-table source intentionally relaxes that transport
+privacy boundary; Journal ownership alone remains insufficient.
 
 Only the active full GM can optionally configure settlements, create projects,
 create or transition a block, roll hidden checks, or apply results. A player can

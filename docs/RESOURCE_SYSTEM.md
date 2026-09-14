@@ -180,14 +180,13 @@ status remains bounded by the release gates below.
   live-inventory conflict check runs immediately before the first write.
   Foundry still cannot make several Actor Item writes one atomic transaction,
   so a concurrent edit after that check can produce a reported partial run.
-- GM-only records now use the encrypted vault. See the [vault guide](PRIVATE_VAULT.md)
-  for migration, access and recovery requirements. UI projection tests alone do
-  not establish transport confidentiality; previously exposed copies and old
-  backups remain outside the vault's protection.
-- When upgrading an old world that already stored resource details in world
-  settings, launch once with players disconnected. Let the active full GM
-  complete the verified private-state migration and clear the legacy settings
-  before players reconnect.
+- GM-only records use the automatic [campaign record store](PRIVATE_VAULT.md).
+  Normal player projections remain restricted, but this trusted-table mode does
+  not provide confidentiality from a player deliberately inspecting Foundry
+  traffic or module code.
+- When upgrading an old world that stored resource details in world settings,
+  the active full GM completes the verified migration and clears the legacy
+  settings automatically. Players do not need to disconnect.
 - The pure test suite is strong, but the resource flow still needs a real
   multi-client Foundry test and release-artifact proof.
 

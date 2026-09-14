@@ -19,7 +19,7 @@ No whole-branch merge or blind cherry-pick was used.
 | Time helper and research source availability                      | Required dependency                         | Added Day/Night as **Research time** on new blocks. It affects research only; it does not move the calendar.                                                                        |
 | Thievery/shop-stock and hunting reward changes preceding research | Separate work                               | Excluded. Current thievery, hunting yields and ammunition behavior are preserved.                                                                                                   |
 | Newer field ammunition and UI draft fixes                         | Already present; conflicting source context | Retained while adding research controls and draft handling.                                                                                                                         |
-| Current encrypted private-state vault                             | Already present                             | Research shared workflow uses the existing campaign store. Private research seeds/cases retain their original browser-local boundary; no vault migration.                           |
+| Current campaign record store                                     | Already present                             | Research shared workflow uses the existing campaign store. Private research seeds/cases retain their original browser-local boundary; no record migration.                          |
 | Legacy Research template upgrade                                  | Unsafe original matching rule               | Replaced description-only matching with exact normalized stock matching. Added `researchVersion: 1` to new templates so old/custom activity snapshots keep their original workflow. |
 
 ## Daily living
@@ -70,7 +70,7 @@ world alongside the vault acceptance checks.
   not be confused with the installed 0.3.38 build.
 
 Research seed and case records remain in the originating GM browser. Preserve
-that site's data and finish pending cases there. Browser-to-vault migration and
+that site's data and finish pending cases there. Browser-to-store migration and
 cross-browser recovery remain a later continuity milestone, together with hunting.
 
 ## Rollback

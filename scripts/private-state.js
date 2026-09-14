@@ -5,8 +5,9 @@
  * `config:false`. Merchant economy and unrevealed faction records therefore
  * live on a JournalEntry with default NONE ownership. This module hydrates its
  * cache only for full GMs and returns typed empty defaults to other roles.
- * Ownership controls writes. An authenticated encrypted vault protects the
- * payload on transport; its key is entered locally by each full GM.
+ * Ownership controls writes. Campaign records use authenticated envelopes and
+ * an automatic trusted-table key; this is not a confidentiality boundary from
+ * authenticated players deliberately inspecting replicated Foundry data.
  * Legacy settings are migrated once and then cleared.
  */
 
@@ -20,6 +21,7 @@ import {
   preparePrivateVaultDocument,
   privateVaultDocumentReady,
   readPrivateFlag,
+  unlockTrustedTableRecords,
   writePrivateVaultDocument,
 } from "./private-vault.js";
 import {
@@ -1295,10 +1297,6 @@ export function initializePrivateState() {
     return Promise.resolve(false);
   }
   if (isLiveFoundry()) registerRoleHook();
-  if (isFullGM() && !isPrivateVaultUnlocked()) {
-    blockPrivateVault("locked");
-    return Promise.resolve(false);
-  }
   if (initialization) {
     const leadership = getCampaignTabLeadershipStatus();
     const needsWriterFinalization = Boolean(
@@ -1335,6 +1333,15 @@ export function initializePrivateState() {
         retryable: false,
       });
       return true;
+    }
+
+    if (!isPrivateVaultUnlocked()) {
+      try {
+        await unlockTrustedTableRecords(findStoreDocuments());
+      } catch {
+        blockPrivateVault("legacy-passphrase-required");
+        return false;
+      }
     }
 
     registerSyncHooks();
@@ -1383,17 +1390,6 @@ export function initializePrivateState() {
         unsupported,
         classifyStoreSchema(unsupported),
       );
-    }
-    if (
-      authoritative &&
-      (unsealed.length ||
-        PRIVATE_STATE_KEYS.some((key) =>
-          legacyNeedsClearing(key, legacyState[key]),
-        )) &&
-      globalThis.game?.users?.some?.((user) => user.active && !isFullGM(user))
-    ) {
-      blockPrivateVault("migration-players-connected");
-      return false;
     }
     let document = findStoreDocument();
     if (storeQuarantineStatus) {

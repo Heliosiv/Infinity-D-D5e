@@ -1,12 +1,14 @@
-/** Authenticated encryption for records which Foundry replicates to players.
- * Keys and decrypted records exist only in the full GM's JavaScript context.
- * There is deliberately no persistent browser key or plaintext fallback.
+/** Authenticated envelopes for records which Foundry replicates to players.
+ * Decrypted records exist only in the full GM's normal module context, but the
+ * trusted-table key is intentionally reproducible and is not a player privacy
+ * boundary. Legacy custom-passphrase records retain their old unlock path.
  */
 import { isFullGM } from "./permissions.js";
 
 const MODULE = "infinity-dnd5e";
 export const VAULT_FLAG = "privateVault";
 const ITERATIONS = 600000;
+const TRUSTED_TABLE_KEY_PREFIX = "Infinity D&D5e trusted-table records v1";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 let unlocked = null;
@@ -326,6 +328,23 @@ export async function unlockPrivateVault(passphrase, documents = []) {
   for (const [document, raw, payload] of values)
     remember(document, raw, payload);
   return true;
+}
+
+/**
+ * Open campaign records without asking the GM for a passphrase.
+ *
+ * This intentionally favors a trusted-table workflow: the key material is
+ * derivable from public module code and the current world id, so it must not be
+ * described as protection from an authenticated player inspecting Foundry's
+ * replicated data. The encrypted envelope and authenticated writes remain in
+ * place to preserve the existing storage, tamper detection, and migration
+ * machinery.
+ */
+export function unlockTrustedTableRecords(documents = []) {
+  return unlockPrivateVault(
+    `${TRUSTED_TABLE_KEY_PREFIX}:${worldId()}`,
+    documents,
+  );
 }
 
 export async function preparePrivateVaultDocument(document) {

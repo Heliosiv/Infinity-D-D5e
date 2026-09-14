@@ -1,4 +1,4 @@
-/** Actual player transport test. Restricted to the disposable local world. */
+/** Actual campaign-record wire test. Restricted to the disposable local world. */
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -62,44 +62,63 @@ try {
   console.log("Joining GM");
   gm = await join("Gamemaster");
   console.log("GM ready");
-  await gm.waitForFunction(
+  await gm.waitForFunction(() => {
+    const status = globalThis.game?.modules
+      ?.get("infinity-dnd5e")
+      ?.api?.getPrivateStateStatus();
+    return (
+      status?.state === "ready" ||
+      status?.code === "vault-legacy-passphrase-required"
+    );
+  });
+  const legacy = await gm.evaluate(
     () =>
-      globalThis.game?.modules
-        ?.get("infinity-dnd5e")
-        ?.api?.getPrivateStateStatus().code === "vault-locked",
+      game.modules.get("infinity-dnd5e").api.getPrivateStateStatus().code ===
+      "vault-legacy-passphrase-required",
   );
-  await gm.locator("#infinity-private-vault").waitFor();
-  const accessibility = await new AxeBuilder({ page: gm })
-    .include("#infinity-private-vault")
-    .withTags(["wcag2a", "wcag2aa"])
-    .analyze();
-  assert.deepEqual(
-    accessibility.violations.map((v) => v.id),
-    [],
-  );
-  mkdirSync("output/playwright/private-vault", { recursive: true });
-  await gm
-    .locator("#infinity-private-vault")
-    .screenshot({ path: "output/playwright/private-vault/unlock.png" });
-  report.checks.push(
-    "native vault dialog has labeled controls and passes WCAG A/AA axe checks",
-  );
-  const before = await gm.evaluate(() =>
-    JSON.stringify(game.journal.map((entry) => entry.toObject())),
-  );
-  await gm
-    .locator('[name="vaultPassphrase"]')
-    .fill("deliberately wrong synthetic phrase");
-  await gm.locator('#infinity-private-vault button[data-action="ok"]').click();
-  await gm.locator("#infinity-private-vault").waitFor({ state: "hidden" });
-  assert.equal(
-    await gm.evaluate(() =>
+  if (legacy) {
+    await gm.locator("#infinity-private-vault").waitFor();
+    const accessibility = await new AxeBuilder({ page: gm })
+      .include("#infinity-private-vault")
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    assert.deepEqual(
+      accessibility.violations.map((v) => v.id),
+      [],
+    );
+    mkdirSync("output/playwright/private-vault", { recursive: true });
+    await gm
+      .locator("#infinity-private-vault")
+      .screenshot({ path: "output/playwright/private-vault/unlock.png" });
+    report.checks.push(
+      "legacy record dialog has labeled controls and passes WCAG A/AA axe checks",
+    );
+    const before = await gm.evaluate(() =>
       JSON.stringify(game.journal.map((entry) => entry.toObject())),
-    ),
-    before,
-  );
-  console.log("Checkpoint", report.checks.length + 1);
-  report.checks.push("wrong passphrase leaves existing records unchanged");
+    );
+    await gm
+      .locator('[name="vaultPassphrase"]')
+      .fill("deliberately wrong synthetic phrase");
+    await gm
+      .locator('#infinity-private-vault button[data-action="ok"]')
+      .click();
+    await gm.locator("#infinity-private-vault").waitFor({ state: "hidden" });
+    assert.equal(
+      await gm.evaluate(() =>
+        JSON.stringify(game.journal.map((entry) => entry.toObject())),
+      ),
+      before,
+    );
+    console.log("Checkpoint", report.checks.length + 1);
+    report.checks.push(
+      "wrong legacy passphrase leaves existing records unchanged",
+    );
+  } else {
+    assert.equal(await gm.locator("#infinity-private-vault").count(), 0);
+    report.checks.push(
+      "trusted-table campaign records open without a passphrase dialog",
+    );
+  }
   console.log("Unlocking GM");
   await unlockTestVault(gm);
   console.log("GM unlocked");
@@ -133,7 +152,7 @@ try {
   );
   console.log("Checkpoint", report.checks.length + 1);
   report.checks.push(
-    "fresh player receives ciphertext, with no private canary or key in raw documents, initial data, settings or browser storage",
+    "fresh player receives an envelope with no plaintext canary or legacy passphrase in raw documents, initial data, settings or browser storage",
   );
   await gm.evaluate(
     async ({ secret, templateId }) => {
@@ -162,7 +181,7 @@ try {
   assert.equal(report.keyExposed, false);
   console.log("Checkpoint", report.checks.length + 1);
   report.checks.push(
-    "live update delivers changed ciphertext; captured player WebSocket frames contain neither private canary nor vault passphrase",
+    "live update delivers a changed envelope; captured player WebSocket frames contain neither the plaintext canary nor legacy passphrase",
   );
   const savedConfigCipher = () => {
     const id = game.settings.get("infinity-dnd5e", "privateStateStoreId");
@@ -178,7 +197,11 @@ try {
     () =>
       globalThis.game?.modules
         ?.get("infinity-dnd5e")
-        ?.api?.getPrivateStateStatus().code === "vault-locked",
+        ?.api?.getPrivateStateStatus().state === "ready" ||
+      globalThis.game?.modules
+        ?.get("infinity-dnd5e")
+        ?.api?.getPrivateStateStatus().code ===
+        "vault-legacy-passphrase-required",
   );
   assert.equal(await gm.evaluate(savedConfigCipher), afterUpdate);
   console.log("Unlocking GM");
@@ -197,7 +220,9 @@ try {
   );
   console.log("Checkpoint", report.checks.length + 1);
   report.checks.push(
-    "GM reload requires local unlock and restores exact durable state without plaintext persistence",
+    legacy
+      ? "legacy GM reload restores exact durable state after its existing unlock"
+      : "GM reload automatically restores exact durable state without a passphrase prompt",
   );
   await gm.evaluate(async ({ templateId, originalReport }) => {
     const store =
@@ -216,7 +241,7 @@ try {
   }));
   report.passed = true;
   console.log(
-    `Installed private-vault transport passed ${report.checks.length} scenarios (${report.playerFrames} player WebSocket frames).`,
+    `Installed campaign-record transport passed ${report.checks.length} scenarios (${report.playerFrames} player WebSocket frames).`,
   );
 } catch (error) {
   report.failure = String(error.stack ?? error);

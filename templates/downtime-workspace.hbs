@@ -310,7 +310,7 @@
           {{#if huntingEditor}}
           <details class="dt-field dt-field--wide">
             <summary>Hunting rules and custom area</summary>
-            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in the encrypted GM vault. Each shot spends one ammunition, and a miss ends the hunt.</p>
+            <p>Four hours uses the base Survival DC; eight hours reduces it by four. Exact DCs and hunting ACs stay in GM-only campaign records. Each shot spends one ammunition, and a miss ends the hunt.</p>
             <div class="dt-form-grid">
               <label class="dt-field"><span>Area name</span><input name="huntingName" aria-label="Hunting area name" value="{{huntingEditor.name}}" data-original-name="{{huntingEditor.name}}" maxlength="100" required /><small>Changing the name and saving creates a custom area.</small></label>
               <label class="dt-field"><span>Base Survival DC (GM only)</span><input name="huntingDc" aria-label="Base hunting Survival DC" type="number" min="4" max="40" step="1" value="{{huntingEditor.dc}}" required /></label>
@@ -663,7 +663,7 @@
           <input type="hidden" name="id" value="{{researchSeedEditor.id}}" />
           <div class="dt-form__head">
             <div><p class="dt-eyebrow">{{#if researchSeedEditor.editing}}Edit prepared discovery{{else}}Prepare a discovery{{/if}}</p><h3 id="dt-research-seed-edit-heading">{{#if researchSeedEditor.title}}{{researchSeedEditor.title}}{{else}}New Research Seed{{/if}}</h3></div>
-            <p>Saved in the encrypted GM vault. Open blocks freeze a private copy so later edits cannot change an earned result.</p>
+            <p>Saved in GM-only campaign records. Open blocks freeze a private copy so later edits cannot change an earned result.</p>
           </div>
           <div class="dt-form-grid">
             <label class="dt-field dt-field--wide"><span>Canonical subject</span><input type="text" name="title" value="{{researchSeedEditor.title}}" maxlength="160" required placeholder="The Glass-Eyed Stalker, Ashen Knives, Old North Aqueduct..." {{#if busy}}disabled{{/if}} /></label>

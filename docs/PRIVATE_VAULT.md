@@ -1,107 +1,87 @@
-# GM vault
+# Campaign record storage
 
-Version 0.3.37 encrypts merchant records and transaction recovery, unrevealed
-factions, party-resource configuration and automation state, injury workflows,
-downtime configuration, workflows, checkpoints, and recovery fingerprints before saving them to
-Foundry. Hiding a Journal was insufficient: Foundry 13.351 sends its raw flags
-to player browsers. The new Journal payload is authenticated ciphertext.
+Infinity D&D5e stores merchant records and transaction recovery, unrevealed
+factions, party-resource configuration, injury workflows, downtime rules,
+checkpoints, Research Seeds, and hunting state in a restricted JournalEntry.
+GM-only controls and permission-scoped player projections remain unchanged.
 
-## First setup
+## Trusted-table access
 
-1. Back up the world before updating. Keep that backup private; it contains the
-   old readable records. Stop using older GM tabs and disconnect players.
-2. Open the updated world as a full GM. Press **Shift+I** if the vault dialog is
-   not already open. Choose a unique passphrase of at least 16 characters;
-   several randomly chosen words are preferable to a short predictable phrase.
-3. Save the passphrase in a password manager and confirm it in the dialog.
-   Share it securely with other trusted full GMs, never in a player-visible
-   journal, world setting, chat, or macro.
-4. Select **Protect and unlock**. The migration preserves canonical records,
-   seals duplicate recovery copies, verifies the result, and clears legacy
-   plaintext flags and migrated settings. Players must be disconnected while
-   existing readable records are migrated. Resolve any reported problem before
-   inviting them back.
+Campaign records now open automatically for every full GM. There is no first-run
+passphrase, password-manager step, refresh unlock, or requirement to disconnect
+players before migrating older readable records. A second GM tab still follows
+the existing single-tab write-leadership rules.
 
-Each GM enters the same passphrase after opening or refreshing a browser tab.
-The key is kept only in that tab's memory; it is not saved in browser storage,
-world settings, Journal flags, sockets, or the module package. Closing the
-dialog leaves campaign services locked. **Shift+I** or the module API
-`game.modules.get("infinity-dnd5e").api.openPrivateVault()` opens it again.
-The passphrase is entered in the dialog, not passed to a console command.
+The store retains authenticated AES-GCM envelopes and verified writes so the
+existing durable storage and tamper checks do not need to be replaced. Its key is
+derived automatically from public module code and the world ID. This is a
+trusted-table convenience layer, not protection from an authenticated player who
+deliberately inspects Foundry data or module code. Foundry 13.351 replicates raw
+restricted-Journal flags to player browsers even when ownership is set to NONE.
 
-Normal player actions, GM approval, and record recovery remain the same after
-unlock. A second GM tab needs its own unlock and retains the existing single-tab
-write-leadership rules. The vault does not make a second tab a writer.
+Players continue to receive only the module's intended safe projections through
+normal UI and socket APIs. The relaxed boundary matters only to someone using
+browser developer tools or another script to inspect or decode replicated data.
+
+## Existing custom-passphrase worlds
+
+The v0.3.37 and v0.3.38 releases used a custom GM passphrase. A world that already
+completed that setup cannot be opened with the new automatic key. The module
+therefore shows **Unlock legacy campaign records** for that world and accepts its
+existing passphrase without replacing data. Keep the matching world backup and
+passphrase until those legacy records have been migrated by a future explicit
+conversion tool.
+
+A wrong legacy passphrase, altered ciphertext, or unavailable key leaves stored
+records intact and campaign services unavailable. These conditions never create
+an empty replacement store.
 
 ## Recovery and rollback
 
-A wrong passphrase, altered ciphertext, or an unavailable key must leave the
-stored records intact and campaign services unavailable. These conditions must
-never suggest or automatically create an empty replacement world store.
-Verify the passphrase first. If a saved record is damaged, retain the damaged
-world for investigation and restore a known-good world backup with its matching
-passphrase. Keep both a tested world backup and the passphrase securely.
+Back up the world before installing source changes. If a saved record is damaged,
+retain the damaged world for investigation and restore a known-good complete
+world backup with its matching module version. Installing an older module alone
+does not undo record migrations or later currency, inventory, injury, resource,
+or downtime changes.
 
-There is no forgotten-passphrase reset that preserves encrypted data. Module
-authors and Foundry administrators cannot reconstruct it. Passphrase rotation
-is not provided in this release.
+World and Journal IDs remain part of envelope authentication. Renaming a world ID
+or copying a campaign-record Journal to another document ID can invalidate an
+existing envelope.
 
-The private-store schema advances to 8. Older module versions must not operate
-on the migrated store. To roll back across this migration, restore the complete
-pre-migration world backup together with the previous module package while the
-server is stopped. Reinstalling the old module alone does not undo the migration
-or any later currency, inventory, or activity changes.
+## Technical boundary
 
-## Protection and limits
+The envelope uses Web Crypto AES-256-GCM, a fresh random nonce on every write,
+PBKDF2-HMAC-SHA-256, a random salt, and world/document/field binding. Related
+fields are replaced in one Journal update, unchanged fields are not retransmitted,
+and modified envelopes fail authentication before a campaign write.
 
-The envelope uses Web Crypto AES-256-GCM with a fresh random 96-bit nonce on
-every write. A non-extractable key is derived with PBKDF2-HMAC-SHA-256, 600,000
-iterations, and a random 128-bit salt. Authentication binds the ciphertext to
-the module, envelope version, world ID, and Journal ID. Each field is authenticated separately, including its field name. Related fields
-are replaced in one atomic Journal update; unmodified encrypted fields are
-preserved and are not retransmitted. Wrong keys and modified
-envelopes fail authentication before any campaign write. Use HTTPS or localhost;
-ordinary insecure HTTP origins may not provide Web Crypto.
-
-Players can still observe the encrypted Journal's existence, size, and update
-timing, and the safe projections intentionally sent to them. A weak passphrase
-can be guessed offline from ciphertext. Previously received plaintext, old
-backups, chat receipts, and separately authored public documents are not erased
-by this migration. Trusted full GMs and scripts running in an unlocked GM's
-browser can access its decrypted records. This does not defend against a
-compromised GM device, malicious module code, or a server that alters the code
-delivered to the GM. Existing cross-device write-concurrency limits also remain.
-
-Renaming a world ID or copying an encrypted Journal to a different ID invalidates
-authentication. Restore backups under their original world and document IDs.
+Those properties detect accidental corruption and unsanctioned envelope changes,
+but the automatic key is reproducible by any authenticated player with the module
+source and world ID. Previously received plaintext, backups, chat receipts, and
+separately authored public documents are also outside the store's controls.
 
 ## Verification
 
-`node scripts/test-private-vault.mjs` exercises the real encrypted transport and
-private-state lifecycle: plaintext-free writes, wrong keys, ciphertext tampering,
-world/document binding, role and write fences, preservation of old settings and
-duplicate recovery copies, locked recovery, and durable unlock after reload.
-Existing business and lifecycle tests explicitly inject an in-memory transport;
-they do not claim to verify encryption.
+`node scripts/test-private-vault.mjs` exercises automatic trusted-table opening,
+reload, authenticated writes, tampering, world/document binding, role and write
+fences, old settings, duplicate recovery copies, and the legacy custom-passphrase
+boundary. Existing business tests inject an in-memory transport and do not by
+themselves establish player privacy.
 
-For an isolated localhost Foundry world named `downtime-gauntlet`, run:
+For the isolated localhost world named `downtime-gauntlet`, the Foundry journey
+commands remain:
 
 ```powershell
 npm run ui:audit:vault:foundry -- --test-world=downtime-gauntlet
 npm run ui:audit:downtime:foundry -- --test-world downtime-gauntlet
 ```
 
-The synthetic passphrase in the test helper is public and is only for that
-disposable world. Never use it in a real campaign. The transport audit uses
-separate GM/player browser contexts, captures player WebSocket frames, and
-inspects raw records, initial data, settings, and browser storage rather than
-relying on the module's sanitized getters. Publication does not install or
-migrate an existing Forge world.
+These commands can write synthetic records and must not be run against a campaign
+world. Publication does not install or migrate an existing Forge world.
 
-## Private downtime continuity (development source)
+## Private downtime continuity
 
-Schema 9 also encrypts private hunting rules/random seeds and Research libraries,
-cases and follow-ups. Existing browser records require the reviewed import in
-Downtime; unlocking does not silently import them. See the
-[continuity and import guide](DOWNTIME_CONTINUITY.md). Preserve the world backup
-and original browser records before any installation.
+Schema 9 stores hunting rules/random seeds and Research libraries, cases, and
+follow-ups with the world. Older browser-local records still require the reviewed
+**Import saved browser records** action in Downtime; automatic record access does
+not silently import them. See the [continuity and import guide](DOWNTIME_CONTINUITY.md).

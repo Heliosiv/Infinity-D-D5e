@@ -5,11 +5,12 @@ This is a local development change, not an installed or published release.
 
 ## What changes
 
-Encrypted vault schema 9 adds `downtimeSecrets`. Hunting areas, frozen hunting
+Campaign record schema 9 adds `downtimeSecrets`. Hunting areas, frozen hunting
 rules and random seeds, Research Seeds, frozen libraries, cases and follow-up
-state now persist with the world. A replacement full GM unlocks the same vault
-and resumes the same records. Writes require the authoritative full GM and the
-existing vault tab-leadership fence. Players receive only existing safe projections.
+state now persist with the world. A replacement full GM automatically opens and
+resumes the same records. Writes require the authoritative full GM and the
+existing campaign tab-leadership fence. Players receive only existing safe projections
+through the normal module interface.
 
 All private writes are awaited before a dependent workflow update or success
 message. Locked or missing records stop the operation; a missing old record does
@@ -17,22 +18,21 @@ not silently substitute new rules or generate a replacement roll.
 
 ## Import older browser records
 
-1. Unlock the vault on the original GM account and browser, in the same world.
+1. Open the world on the original GM account and browser.
 2. Open Downtime and select **Import saved browser records**.
 3. Review the hunting area/hunt/Research Seed/block counts and confirm.
 4. Verify the records, then test an unlocked replacement GM before relying on it.
 
 Import is additive and preserves the exact frozen rules, seeds and cases. A
 conflicting ID or changed preview stops the entire import. A fingerprint binds
-the preview to the canonical vault and source browser data. The write uses the
-vault's existing authority, encryption and read-back checks. Original browser
+the preview to the canonical campaign store and source browser data. The write uses
+the store's existing authority, authenticated-envelope, and read-back checks. Original browser
 copies remain intact. An import ledger prevents an old preserved copy from
 resurrecting deleted seeds or replacing newer cases. A changed already-imported
 browser copy requires GM recovery rather than a forced overwrite.
 
-Repeat for each originating GM/browser. A world backup includes encrypted records;
-the vault passphrase must be retained separately. The world cannot reconstruct
-browser records that were deleted before import.
+Repeat for each originating GM/browser. A world backup includes campaign records.
+The world cannot reconstruct browser records that were deleted before import.
 
 ## Acceptance
 
@@ -89,6 +89,7 @@ published or installed release.
 
 Use `git revert <continuity-commit>` to undo source changes locally. An older
 runtime cannot read schema 9 or recover post-import progress from preserved old
-browser copies. Before any installation, retain a matching world backup and
-vault passphrase; restoring an older runtime requires its matching backup.
+browser copies. Before any installation, retain a matching world backup.
+Restoring an older runtime requires its matching backup; a world that previously
+completed v0.3.37 custom-passphrase setup also needs that legacy passphrase.
 No deployment or campaign import is included in this task.

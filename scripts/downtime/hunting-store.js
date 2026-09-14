@@ -1,4 +1,4 @@
-/** Hunting rules and frozen rolls live in the encrypted GM vault. */
+/** Hunting rules and frozen rolls live in the shared GM campaign store. */
 import { defaultHuntingRegions, normalizeHuntingRegion } from "./hunting.js";
 import {
   readPrivateDowntimeFamily,
@@ -37,7 +37,7 @@ export function loadHuntingBlock(blockId) {
   const value = read().blocks[blockId];
   if (!value)
     throw new Error(
-      "This hunt has no vault record. Import saved browser records from the GM browser that opened it.",
+      "This hunt has no campaign record. Import saved browser records from the GM browser that opened it.",
     );
   return value;
 }

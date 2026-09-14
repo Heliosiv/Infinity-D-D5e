@@ -7,6 +7,7 @@ import {
   lockPrivateVault,
   preparePrivateVaultDocument,
   readPrivateFlag,
+  unlockTrustedTableRecords,
   unlockPrivateVault,
   writePrivateVaultDocument,
 } from "./private-vault.js";
@@ -206,6 +207,11 @@ await assert.rejects(
 );
 assert.equal(isPrivateVaultUnlocked(), false);
 assert.equal(JSON.stringify(doc.flags), beforeWrong);
+await assert.rejects(
+  () => unlockTrustedTableRecords([doc]),
+  /authentication-failed/,
+  "an existing custom-passphrase vault remains on the explicit legacy path",
+);
 await unlockPrivateVault(phrase, [doc]);
 assert.deepEqual(
   readPrivateFlag(doc, "downtimeWorkflow"),
@@ -293,21 +299,15 @@ settings.set("merchants", [{ id: "obsolete legacy setting" }]);
 settings.set("factions", []);
 settings.set("resourceConfig", { saved: secret });
 settings.set("resourceRunState", {});
-assert.equal(await initializePrivateState(), false);
-assert.equal(getPrivateStateStatus().code, "vault-locked");
-assert.equal((await getPrivateStateRecoveryOverview()).canCreateEmpty, false);
-assert.equal(
-  wire.length,
-  0,
-  "locked initialization never migrates or replaces data",
-);
-await unlockPrivateVault(phrase, journal);
 player.active = true;
-assert.equal(await initializePrivateState(), false);
-assert.equal(getPrivateStateStatus().code, "vault-migration-players-connected");
-assert.equal(wire.length, 0);
+assert.equal(
+  await initializePrivateState(),
+  true,
+  "trusted-table records initialize automatically while players are connected",
+);
+assert.equal(getPrivateStateStatus().code, "ready");
+assert.equal((await getPrivateStateRecoveryOverview()).canCreateEmpty, false);
 player.active = false;
-assert.equal(await initializePrivateState(), true);
 assert.deepEqual(getPrivateState("downtimeWorkflow"), { history: [secret] });
 assert.deepEqual(getPrivateState("resourceConfig"), { saved: secret });
 assert.deepEqual(settings.get("resourceConfig"), {});
@@ -362,19 +362,16 @@ assert.deepEqual(
   "old-state preconditions are not incorrectly rerun after the accepted write",
 );
 
-// A reload with no key is closed. Unlock restores durable data, not defaults.
+// A reload restores durable data automatically, without a passphrase prompt.
 resetPrivateStateForTests();
 lockPrivateVault();
 count = wire.length;
-assert.equal(await initializePrivateState(), false);
-assert.equal(wire.length, count);
-await unlockPrivateVault(phrase, journal);
 assert.equal(await initializePrivateState(), true);
 assert.deepEqual(getPrivateState("downtimeConfig"), { replaced: secret });
 assert.equal(
   wire.length,
   count,
-  "unlocking an intact migrated world is read-only",
+  "automatically opening an intact migrated world is read-only",
 );
 game.user = player;
 assert.deepEqual(
@@ -385,7 +382,7 @@ assert.deepEqual(
 game.user = gm;
 
 console.log(
-  "Private vault: wire secrecy, authenticated reload, wrong key, tampering, world/document binding, role/write fences, legacy preservation, duplicate sealing and locked recovery passed.",
+  "Campaign records: automatic trusted-table reload, wire obfuscation, tamper detection, world/document binding, role/write fences, legacy preservation and duplicate sealing passed.",
 );
 resetPrivateStateForTests();
 lockPrivateVault();

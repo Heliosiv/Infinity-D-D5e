@@ -1,4 +1,4 @@
-/** Confidential seeds and cases live in the encrypted GM vault. */
+/** GM-only seeds and cases live in the shared campaign record store. */
 import { normalizeResearchSeed } from "./research.js";
 import {
   readPrivateDowntimeFamily,
@@ -66,7 +66,7 @@ export function loadResearchBlock(blockId) {
   const block = read().blocks[cleanId(blockId)];
   if (!block)
     throw new Error(
-      "This Research block has no vault record. Import saved browser records from the GM browser that opened it.",
+      "This Research block has no campaign record. Import saved browser records from the GM browser that opened it.",
     );
   return structuredClone(block);
 }
@@ -94,7 +94,7 @@ export function saveResearchCase(blockId, actorId, researchCase) {
     const block = data.blocks[blockKey];
     if (!block)
       throw new Error(
-        "This Research block has no vault record. Import saved browser records from the GM browser that opened it.",
+        "This Research block has no campaign record. Import saved browser records from the GM browser that opened it.",
       );
     const previous = block.cases?.[actorKey];
     if (previous && previous.queueKey !== researchCase.queueKey)

@@ -23,6 +23,21 @@ export async function unlockTestVault(page) {
   await page.evaluate(() => {
     void game.modules.get("infinity-dnd5e").api.openPrivateVault();
   });
+  await page.waitForFunction(
+    () =>
+      game.modules.get("infinity-dnd5e").api.getPrivateStateStatus().state ===
+        "ready" || document.querySelector("#infinity-private-vault"),
+    null,
+    { timeout: 30000 },
+  );
+  if (
+    await page.evaluate(
+      () =>
+        game.modules.get("infinity-dnd5e").api.getPrivateStateStatus().state ===
+        "ready",
+    )
+  )
+    return;
   const dialog = page.locator("#infinity-private-vault");
   await dialog.locator('[name="vaultPassphrase"]').fill(TEST_VAULT_PASSPHRASE);
   if (await dialog.locator('[name="vaultConfirm"]').count()) {

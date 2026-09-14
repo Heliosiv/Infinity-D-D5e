@@ -96,9 +96,9 @@ requests. **Show this subject by name in player choices** exposes only its safe
 label, category, difficulty, risk, and approaches. It never exposes the numeric
 DC, private summary, fact cards, complication, or linked document.
 
-Seeds are stored in the encrypted full-GM vault. Opening a Research
+Seeds are stored in the GM-only campaign record store. Opening a Research
 block freezes a private copy of the current library. Later seed edits cannot
-change that block's eligible discoveries or earned facts. A replacement full GM can unlock the vault and continue the same case.
+change that block's eligible discoveries or earned facts. A replacement full GM can automatically open the store and continue the same case.
 
 No default seed is campaign canon. If no seed matches, the system creates an
 unprepared case instead of generating an answer.
@@ -161,12 +161,12 @@ document UUIDs are excluded.
 
 Foundry can send raw flags from hidden world Journals to authenticated clients.
 Confidential Research Seeds, frozen libraries and unrevealed cases therefore use
-the encrypted vault; the ordinary downtime receipt includes only revealed material.
-Unlock the vault before preparing or continuing Research. For older records, open
+the campaign record store; the ordinary downtime receipt includes only revealed material.
+Open the world as a full GM before preparing or continuing Research. For older records, open
 Downtime on the original full GM browser and choose **Import saved browser records**.
 Review the counts before applying. Conflicts and changed previews stop the import;
 original browser copies remain untouched. Repeat this for each originating GM/browser.
-Imported copies never overwrite newer vault records or resurrect deleted seeds.
+Imported copies never overwrite newer campaign records or resurrect deleted seeds.
 
 The GM selects **Research time** when opening a new block; this does not advance
 the calendar or change hunting/thievery rules. New enhanced templates carry a

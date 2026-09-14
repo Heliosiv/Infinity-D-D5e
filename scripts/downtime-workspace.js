@@ -1385,14 +1385,14 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     if (!preview) return;
     if (preview.conflicts.length) {
       this._errorMessage =
-        "Saved browser records conflict with vault records. Nothing was imported; GM recovery is required.";
+        "Saved browser records conflict with campaign records. Nothing was imported; GM recovery is required.";
       this.render(false);
       return;
     }
     const c = preview.counts;
     const confirmed = await confirmInfinityDialog({
       window: { title: "Import saved browser records?" },
-      content: `<p>Add ${Number(c.huntingAreas)} hunting areas, ${Number(c.hunts)} hunts, ${Number(c.researchSeeds)} Research Seeds and ${Number(c.researchBlocks)} Research blocks to the encrypted vault?</p><p>Existing records must agree. Original browser copies will be retained.</p>`,
+      content: `<p>Add ${Number(c.huntingAreas)} hunting areas, ${Number(c.hunts)} hunts, ${Number(c.researchSeeds)} Research Seeds and ${Number(c.researchBlocks)} Research blocks to the campaign record store?</p><p>Existing records must agree. Original browser copies will be retained.</p>`,
       rejectClose: false,
     });
     if (!confirmed) return;
@@ -1402,7 +1402,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       {
         pending: "Importing saved records...",
         success:
-          "Saved records imported into the vault. Original browser copies retained.",
+          "Saved records imported into campaign records. Original browser copies retained.",
       },
     );
   }
@@ -1417,7 +1417,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       this._researchSeedDraft,
       {
         pending: "Saving confidential Research Seed...",
-        success: "Research Seed saved in the encrypted vault.",
+        success: "Research Seed saved in GM-only campaign records.",
         focus: '[data-form="research-seed"] input[name="title"]',
       },
     );
@@ -1434,7 +1434,7 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     const confirmed = await confirmInfinityDialog({
       window: { title: "Delete this Research Seed?" },
       content:
-        "<p>This removes the seed from the encrypted vault. Already frozen research blocks keep their private snapshot.</p>",
+        "<p>This removes the seed from campaign records. Already frozen research blocks keep their private snapshot.</p>",
       rejectClose: false,
     });
     if (!confirmed) return;
