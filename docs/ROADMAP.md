@@ -48,8 +48,10 @@ campaign changes.
 
 The four treatment-dependent recovery policies are approved and implemented
 locally as V4, preserving saved V2/V3 behavior; see the
-[recovery policy and acceptance](INJURY_RECOVERY_POLICY.md). Next: the separate
-durable Bleeding damage slice for temporary HP, disabled effects and GM handoff.
+[recovery policy and acceptance](INJURY_RECOVERY_POLICY.md). Durable Bleeding
+damage now uses temporary HP, skips disabled effects and resumes after GM
+handoff; see [Bleeding acceptance](INJURY_BLEEDING.md). Next: define campaign
+terms for the first crafting family (Healing Potion and Antitoxin).
 Private hunting/Research
 continuity and the bounded daily-living native gate are complete locally; see
 [continuity acceptance](DOWNTIME_CONTINUITY.md). Release/install and live browser

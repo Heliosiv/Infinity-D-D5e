@@ -59,9 +59,9 @@ export const INJURY_AUTOMATION_AUDIT = Object.freeze({
   "internal-bleeding": {
     status: "automated",
     automatic:
-      "Combat start rolls 1d6; on a 1, rolls 1d4 and subtracts it from current HP.",
+      "Combat start rolls 1d6; on a 1, rolls 1d4 damage, using temporary HP first. Disabled or suppressed injuries are skipped.",
     manual:
-      "Damage bypasses temporary HP and the system damage workflow. Combat duplicate protection lasts only for the current GM session.",
+      "Saved GM receipts prevent repeated damage after reload or handoff. HP conflicts stop for GM review. This direct HP update does not run third-party damage reactions.",
     recoveryNote:
       "Automatically expires after 3 days even though the written rule requires treatment or magic.",
   },

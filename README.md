@@ -570,6 +570,10 @@ completed-rest or magical method as applicable. Successful treatment cures these
 injuries immediately; restoring maximum HP does not grant current HP. Existing
 V2/V3 injuries keep their saved rules. See [recovery policies](docs/INJURY_RECOVERY_POLICY.md).
 
+Internal Bleeding now spends temporary HP first and skips disabled or suppressed
+injuries. Saved GM receipts protect combat-start damage across reloads and GM
+handoff. See [Bleeding recovery](docs/INJURY_BLEEDING.md).
+
 The player window lists every active injury and can request rules-based
 Healer's Kit treatment. The GM chooses the healer, sees the inventory charges
 that will be consumed, and resolves any Medicine, Insight, or Constitution

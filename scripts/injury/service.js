@@ -1,3 +1,4 @@
+import { processCombatBleeding } from "./bleeding.js";
 import {
   requiresInjuryTreatment,
   injuryTreatmentMethods,
@@ -119,7 +120,6 @@ const treatmentInFlight = new Set();
 const restInFlight = new Set();
 const restRetryTimers = new Map();
 const recentRecovery = new Map();
-const processedCombats = new Set();
 
 export function registerCriticalInjuryService() {
   registerCriticalInjuryWorkflowObserver();
@@ -147,9 +147,6 @@ export function registerCriticalInjuryService() {
   hooks.on("updateActiveEffect", onUpdateActiveEffect);
   hooks.on("updateCombatant", onUpdateCombatant);
   hooks.on("combatStart", (combat) => void processCombatStartInjuries(combat));
-  hooks.on("deleteCombat", (combat) =>
-    processedCombats.delete(String(combat?.id)),
-  );
   hooks.on("updateUser", requestCriticalInjuryStartupMaintenance);
   hooks.on("userConnected", requestCriticalInjuryStartupMaintenance);
   hooks.on("updateWorldTime", () => void processExpiredCriticalInjuries());
@@ -175,6 +172,8 @@ function requestCriticalInjuryStartupMaintenance() {
       await discoverUnprocessedInfectionRests();
       await resumeUnresolvedInfectionRests();
       await resumeUnresolvedInjuryCures();
+      for (const combat of game.combats?.contents ?? [])
+        await processCombatStartInjuries(combat, false);
     } catch (error) {
       if (
         !isAuthoritativeGM() ||
@@ -2656,46 +2655,16 @@ export async function processExpiredCriticalInjuries() {
   return processed;
 }
 
-async function processCombatStartInjuries(combat) {
+async function processCombatStartInjuries(combat, start = true) {
   if (!isAuthoritativeGM() || !criticalInjuriesEnabled()) return;
-  const combatId = String(combat?.id ?? "");
-  if (!combatId || processedCombats.has(combatId)) return;
-  processedCombats.add(combatId);
-  const actorIds = new Set(
-    Array.from(combat?.combatants ?? [])
-      .map((combatant) => String(combatant?.actor?.id ?? ""))
-      .filter(Boolean),
-  );
-  for (const actorId of actorIds) {
-    const actor = game.actors?.get?.(actorId);
-    if (!actor) continue;
-    const bleeding = getActorCriticalInjuryEffects(actor).filter(
-      (effect) =>
-        getCriticalInjuryData(effect)?.injuryKey === "internal-bleeding",
+  try {
+    await processCombatBleeding(combat, { roll: evaluateFormula, start });
+  } catch (error) {
+    if (!isAuthoritativeGM()) return;
+    console.error(`${MODULE_ID} | Bleeding damage needs recovery`, error);
+    ui.notifications?.warn?.(
+      "Bleeding damage is pending. Review the character's HP, then reconnect the GM to resume the saved combat receipt.",
     );
-    for (const effect of bleeding) {
-      const check = await evaluateFormula("1d6", {
-        flavor: `${actor.name}: Internal Bleeding`,
-        speaker: actor,
-        chatMessage: true,
-      });
-      if (Number(check.total) !== 1) continue;
-      const damage = await evaluateFormula("1d4", {
-        flavor: `${actor.name}: Internal Bleeding damage`,
-        speaker: actor,
-        chatMessage: true,
-      });
-      const currentHp = Number(actor.system?.attributes?.hp?.value) || 0;
-      await actor.update(
-        {
-          "system.attributes.hp.value": Math.max(
-            0,
-            currentHp - Math.max(0, Number(damage.total) || 0),
-          ),
-        },
-        { [`${MODULE_ID}.criticalInjuryDamage`]: true },
-      );
-    }
   }
 }
 

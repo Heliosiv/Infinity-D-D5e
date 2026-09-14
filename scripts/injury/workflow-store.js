@@ -691,6 +691,20 @@ export function normalizeCriticalInjuryWorkflowStore(raw) {
   // Version-2 envelopes predate Infection rest receipts. Omitting an empty
   // collection preserves their exact normalized shape for replica validation.
   if (restEvents.length > 0) normalized.restEvents = restEvents;
+  if (source.bleedingCombats != null) {
+    const bleeding = normalizePersistedObject(source.bleedingCombats, {
+      exact: true,
+    });
+    if (
+      !bleeding ||
+      Array.isArray(bleeding) ||
+      Object.values(bleeding).some(
+        (entry) => entry?.version !== 1 || !Array.isArray(entry.events),
+      )
+    )
+      throw new Error("CriticalInjuryBleedingReceiptInvalid");
+    if (Object.keys(bleeding).length) normalized.bleedingCombats = bleeding;
+  }
   return normalized;
 }
 
@@ -1104,6 +1118,8 @@ function serializeEnvelope(store, { revision, authorityId, authorityEpoch }) {
     ...identity,
     records: normalized.records,
   };
+  if (normalized.bleedingCombats)
+    envelope.bleedingCombats = normalized.bleedingCombats;
   if (normalized.restEvents?.length > 0) {
     envelope.restEvents = normalized.restEvents;
   }
@@ -1856,10 +1872,12 @@ async function mutateStore(mutator) {
     const currentPayload = {
       records: current.records,
       restEvents: current.restEvents ?? [],
+      bleedingCombats: current.bleedingCombats ?? {},
     };
     const nextPayload = {
       records: next.records,
       restEvents: next.restEvents ?? [],
+      bleedingCombats: next.bleedingCombats ?? {},
     };
     const persisted = persistedValuesEqual(currentPayload, nextPayload)
       ? ensured
@@ -2800,4 +2818,25 @@ export function resetCriticalInjuryWorkflowStoreForTests() {
   reconciliationInFlight = null;
   reconciliationRequested = false;
   retiredAuthorityEpochs.clear();
+}
+
+export function readCriticalInjuryBleeding(combatId) {
+  return clone(
+    loadCriticalInjuryWorkflowStore().bleedingCombats?.[combatId] ?? null,
+  );
+}
+
+export async function writeCriticalInjuryBleeding(combatId, next, expected) {
+  if (!toId(combatId)) throw new Error("CriticalInjuryBleedingCombatInvalid");
+  return mutateStore((store) => {
+    const current = store.bleedingCombats?.[combatId] ?? null;
+    if (!persistedValuesEqual(current, expected ?? null))
+      throw new Error("CriticalInjuryBleedingStaleWrite");
+    store.bleedingCombats ??= {};
+    store.bleedingCombats[combatId] = clone(next);
+    return {
+      store,
+      mapResult: (_record, saved) => clone(saved.bleedingCombats[combatId]),
+    };
+  });
 }

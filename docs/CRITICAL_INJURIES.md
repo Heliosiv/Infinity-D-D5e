@@ -371,3 +371,17 @@ are display data that an owner can edit, so no privileged treatment or healing
 action trusts these historical records.
 
 Recorded-injury calendar links use persistent HTML data attributes because Foundry removes HTML comments. An exact, uniquely matching partial record from preview.9 can be recovered in its explicitly selected calendar note without creating a duplicate.
+
+## Internal Bleeding at combat start
+
+Enabled, unsuppressed Internal Bleeding injuries roll once per Combat document:
+1d6, then 1d4 damage on a 1. Damage consumes temporary HP before current HP.
+Duplicate combatants representing the same Actor are processed once; unlinked
+Token Actors remain separate. Restarting the same Combat does not reroll it.
+
+Dice, damage plans and completed outcomes live in the encrypted GM ledger.
+The Actor receives HP changes and a matching receipt in one update. Reload or
+GM handoff resumes saved work without repeating applied damage. A cured or
+disabled injury is skipped before unapplied damage. Results appear in chat.
+HP changes during an interrupted application stop it for GM review; see
+[Bleeding recovery and verification](INJURY_BLEEDING.md).
