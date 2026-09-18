@@ -6,6 +6,12 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**v0.3.40 — Crafted-scroll recovery:** Foundry's generated effect timestamps and
+version bookkeeping no longer leave an already-delivered crafted scroll in an
+uncertain state. Recovery still fails closed if the effect identity, duration,
+mechanics, payment, quantity, or provenance changed. This release also retains
+the complete v0.3.39 campaign-continuity release described below.
+
 **v0.3.39 — Campaign continuity, daily living, Research and injury rules:** This
 release brings every reviewed change since v0.3.38 into one upgrade. Before
 installing, create a complete world backup. Because campaign records advance to

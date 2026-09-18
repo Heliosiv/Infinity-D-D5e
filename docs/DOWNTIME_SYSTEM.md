@@ -297,6 +297,10 @@ again. If application has already started, use **Verify and recover**. Recovery
 checks saved operations before retrying work confirmed not to have happened;
 it does not repeat verified rewards. Completed reports stay visible in the GM
 workspace until **Start next block**.
+Foundry's generated version and timestamp metadata on a crafted item's effects
+does not count as changed gameplay data. Recovery still verifies the payment,
+quantity, effect identity, provenance, duration, and mechanical changes before
+accepting an existing delivery without charging or creating it again.
 After application or recovery, keyboard focus moves to the saved reports;
 an interrupted application instead points to **Verify and recover**.
 

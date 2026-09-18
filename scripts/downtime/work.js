@@ -309,6 +309,26 @@ export function identity(item) {
   return JSON.stringify(stable(source));
 }
 
+function deliveredItemIdentity(item) {
+  const source = clone(sourceOf(item) ?? {});
+  // Foundry rewrites embedded ActiveEffect bookkeeping when an Item is
+  // created. Ignore only that generated bookkeeping for delivered-item
+  // recovery; gameplay-relevant effect data must still match exactly.
+  for (const effect of source.effects ?? []) {
+    if (!effect?._stats) continue;
+    for (const key of [
+      "coreVersion",
+      "systemId",
+      "systemVersion",
+      "createdTime",
+      "modifiedTime",
+      "lastModifiedBy",
+    ])
+      delete effect._stats[key];
+  }
+  return identity(source);
+}
+
 export function matchMaterial(actor, name, excluded = new Set()) {
   return collectionValues(actor?.items)
     .filter(
@@ -902,7 +922,7 @@ function componentStates(actor, operation) {
       item &&
       item.name === expected.name &&
       item.type === expected.type &&
-      identity(item) === identity(expected) &&
+      deliveredItemIdentity(item) === deliveredItemIdentity(expected) &&
       sourceOf(item).flags?.[MODULE_ID]?.downtimeCraft?.operationId ===
         operation.operationId &&
       (expected.type === "spell" ||

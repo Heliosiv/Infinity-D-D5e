@@ -676,6 +676,88 @@ try {
     true,
     "Foundry HTML escaping does not masquerade as an altered item",
   );
+  // Foundry rewrites an Item's embedded effect bookkeeping on creation. A
+  // paid delivery with only those generated changes is complete, while any
+  // mechanical or identity change must remain uncertain for GM review.
+  const effectSource = {
+    ...clone(snapshot),
+    effects: [
+      {
+        _id: "effect0000000001",
+        name: "Crafted effect",
+        duration: { rounds: 10 },
+        changes: [{ key: "system.attributes.ac.bonus", mode: 2, value: "1" }],
+        _stats: {
+          compendiumSource: null,
+          duplicateSource: null,
+          exportSource: null,
+          coreVersion: "13.351",
+          systemId: "dnd5e",
+          systemVersion: "4.4.4",
+          createdTime: null,
+          modifiedTime: null,
+          lastModifiedBy: null,
+        },
+      },
+    ],
+  };
+  globalThis.fromUuid = async () => clone(effectSource);
+  const effectActor = actor();
+  const effectPlan = await operation(args(effectActor, arrow));
+  const createEffect = effectActor.createEmbeddedDocuments;
+  effectActor.createEmbeddedDocuments = async function (type, sources) {
+    const created = await createEffect.call(this, type, sources);
+    const stats = created[0].effects[0]._stats;
+    stats.systemVersion = "5.3.3";
+    delete stats.createdTime;
+    delete stats.modifiedTime;
+    return created;
+  };
+  assert.equal(
+    (await applyGuidedWork(effectActor, effectPlan, authorized)).ok,
+    true,
+  );
+  const completedWrites = effectActor.writes;
+  assert.equal(
+    await recoverGuidedWork(effectActor, effectPlan, authorized),
+    true,
+  );
+  assert.equal(inspectGuidedWork(effectActor, effectPlan), "applied");
+  assert.equal(
+    effectActor.writes,
+    completedWrites,
+    "recovery accepts the paid delivery without charging or creating again",
+  );
+  const deliveredEffect = effectActor.items.get(effectPlan.work.delivery.itemId)
+    .effects[0];
+  const originalEffect = clone(deliveredEffect);
+  for (const mutate of [
+    (effect) => {
+      effect.duration.rounds = 11;
+    },
+    (effect) => {
+      effect.changes[0].value = "2";
+    },
+    (effect) => {
+      effect._id = "effect0000000002";
+    },
+    (effect) => {
+      effect._stats.compendiumSource = "Compendium.changed.effect";
+    },
+  ]) {
+    Object.assign(deliveredEffect, clone(originalEffect));
+    mutate(deliveredEffect);
+    assert.equal(inspectGuidedWork(effectActor, effectPlan), "uncertain");
+    assert.equal(
+      await recoverGuidedWork(effectActor, effectPlan, authorized),
+      false,
+    );
+    assert.equal(
+      effectActor.writes,
+      completedWrites,
+      "recovery preserves changed effects for review",
+    );
+  }
   globalThis.fromUuid = async () => clone(snapshot);
   material(altered, "iron", 5);
   const alteredPlan = await operation(args(altered, charged));
