@@ -4,7 +4,7 @@
  * Static DialogV2 helpers differ slightly across supported Foundry releases:
  * closing can reject, and focus is not always returned to the control that
  * opened the dialog. These wrappers keep the native callback result intact
- * while making cancellation and focus behavior predictable.
+ * while making cancellation, window precedence, and focus predictable.
  */
 
 export const INFINITY_DIALOG_CLASSES = Object.freeze([
@@ -22,13 +22,18 @@ export function isInfinityDialogAvailable(method = null) {
 
 /**
  * Clone DialogV2 options and add the module's root classes. Caller-owned
- * objects are never mutated, and an explicit rejectClose value is preserved.
+ * objects are never mutated. Confirmations and prompts use Foundry's modal
+ * top layer by default so a workbench cannot cover them; explicit modal and
+ * rejectClose values are preserved.
  */
 export function applyInfinityDialogContract(options = {}) {
   const source = isPlainObject(options) ? options : {};
   const classes = mergeClassNames(source.classes, INFINITY_DIALOG_CLASSES);
   const contracted = { ...source, classes };
   if (isPlainObject(source.window)) contracted.window = { ...source.window };
+  if (!Object.prototype.hasOwnProperty.call(source, "modal")) {
+    contracted.modal = true;
+  }
   if (!Object.prototype.hasOwnProperty.call(source, "rejectClose")) {
     contracted.rejectClose = false;
   }

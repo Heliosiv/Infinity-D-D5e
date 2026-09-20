@@ -337,7 +337,7 @@ async function auditDialogFocusRestoration(page, dialogContractUrl) {
         api: {
           DialogV2: {
             async confirm(options) {
-              return options.rejectClose === false;
+              return options.modal === true && options.rejectClose === false;
             },
           },
         },

@@ -34,6 +34,7 @@ try {
     ...INFINITY_DIALOG_CLASSES,
   ]);
   assert.equal(contracted.rejectClose, false);
+  assert.equal(contracted.modal, true);
   assert.notEqual(contracted, sourceOptions);
   assert.notEqual(contracted.window, sourceOptions.window);
   assert.equal(
@@ -45,6 +46,11 @@ try {
     applyInfinityDialogContract({ rejectClose: true }).rejectClose,
     true,
     "an explicit close policy is preserved",
+  );
+  assert.equal(
+    applyInfinityDialogContract({ modal: false }).modal,
+    false,
+    "an explicit non-modal choice is preserved",
   );
 
   let receivedOptions = null;
@@ -71,6 +77,7 @@ try {
   assert.equal(await confirmInfinityDialog({ yes }), marker);
   assert.equal(receivedOptions.yes, yes, "button definitions remain intact");
   assert.ok(receivedOptions.classes.includes("infinity-dialog"));
+  assert.equal(receivedOptions.modal, true);
 
   for (const value of [false, 0, "", null, undefined]) {
     const callback = () => value;

@@ -141,7 +141,9 @@ try {
             },
             HandlebarsApplicationMixin: (Base) => class extends Base {},
             DialogV2: {
-              confirm: async () => {
+              confirm: async (options) => {
+                if (options.modal !== true)
+                  throw new Error("Workbench confirmation must be modal");
                 state.confirmationCount = (state.confirmationCount ?? 0) + 1;
                 if (state.autoConfirm) return true;
                 state.confirmPending = true;

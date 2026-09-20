@@ -13,6 +13,11 @@ Supplies refresh; it clears when the response arrives or the existing
 offline/timeout state takes over. It does not represent a percentage, and
 respects reduced-motion and high-contrast settings.
 
+**Confirmation windows:** Module confirmations and prompts open above other
+Foundry windows and hold focus until answered or dismissed. Cancel and Escape
+still leave the underlying operation unchanged, then return focus to its
+opening control.
+
 **v0.3.40 — Crafted-scroll recovery:** Foundry's generated effect timestamps and
 version bookkeeping no longer leave an already-delivered crafted scroll in an
 uncertain state. Recovery still fails closed if the effect identity, duration,

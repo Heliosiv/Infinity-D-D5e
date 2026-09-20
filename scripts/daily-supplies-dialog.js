@@ -81,7 +81,6 @@ export async function promptDailySupplies({
           icon: "fa-solid fa-utensils",
         },
         content,
-        modal: rollover,
         yes: {
           label: config.dailyLiving
             ? "Settle daily upkeep"
