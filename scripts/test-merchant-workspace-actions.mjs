@@ -164,6 +164,23 @@ await check("market preset save failure", async () => {
     "failed preset edits must remain available for retry",
   );
 });
+await check("stock value preset save failure", async () => {
+  const app = fixture();
+  const inputs = { poolCount: { value: "16" }, poolBudgetGp: { value: "" } };
+  app.element = {
+    querySelector: () => ({
+      querySelector: (selector) => inputs[selector.match(/name="([^"]+)"/)[1]],
+    }),
+  };
+  await MerchantWorkspaceApp.DEFAULT_OPTIONS.actions.stockValuePreset.call(
+    app,
+    null,
+    { dataset: { budget: "5000" } },
+  );
+  assert.equal(inputs.poolCount.value, "", "preset removes the old item cap");
+  assert.equal(inputs.poolBudgetGp.value, "5000");
+  assert.equal(app.renders, 0, "failed preset edits remain ready to retry");
+});
 await check("art save failure", async () => {
   const app = fixture();
   const input = { value: "old.webp" };

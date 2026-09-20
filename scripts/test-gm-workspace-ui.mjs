@@ -88,6 +88,7 @@ assertActions(
     "duplicateMerchant",
     "addFromPack",
     "marketTier",
+    "stockValuePreset",
     "generateStock",
     "regenerateStock",
     "copyStockToBuyFilter",

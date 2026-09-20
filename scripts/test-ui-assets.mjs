@@ -10,8 +10,8 @@ const css = readFileSync("styles/atlas.css", "utf8");
 const assets = [...css.matchAll(/url\("(\.\.\/assets\/ui\/[^"]+)"\)/g)];
 assert.equal(
   assets.length,
-  11,
-  "Manuscript, bookbinding and nine emblems must ship",
+  12,
+  "Manuscript, bookbinding, nine emblems and the loading track must ship",
 );
 const harness = buildUiHarnessDocument();
 let totalBytes = 0;
@@ -27,7 +27,12 @@ for (const [, relativePath] of assets) {
   );
   if (asset.endsWith(".svg")) {
     const source = bytes.toString("utf8");
-    assert.match(source, /viewBox="0 0 64 64"/);
+    assert.match(
+      source,
+      asset.endsWith("undead-loading-track.svg")
+        ? /viewBox="0 0 440 48"/
+        : /viewBox="0 0 64 64"/,
+    );
     assert.doesNotMatch(
       source,
       /<script|<foreignObject|\bon\w+=|(?:href|src)=/i,

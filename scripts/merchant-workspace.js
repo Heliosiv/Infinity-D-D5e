@@ -159,6 +159,7 @@ const MERCHANT_WRITE_ACTIONS = new Set([
   "duplicateMerchant",
   "addFromPack",
   "marketTier",
+  "stockValuePreset",
   "generateStock",
   "regenerateStock",
   "copyStockToBuyFilter",
@@ -284,6 +285,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       ),
       marketTier: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onMarketTier,
+      ),
+      stockValuePreset: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onStockValuePreset,
       ),
       generateStock: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onGenerateStock,
@@ -1798,6 +1802,23 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this.render(false);
   }
 
+  static async _onStockValuePreset(_event, target) {
+    if (!this._selectedId) return;
+    const merchantId = this._selectedId;
+    const form = this.element?.querySelector?.('[data-form="merchant-edit"]');
+    if (!form) return;
+    const budget = Number(target?.dataset?.budget);
+    if (![250, 1000, 5000].includes(budget)) return;
+    const countInput = form.querySelector('[name="poolCount"]');
+    const budgetInput = form.querySelector('[name="poolBudgetGp"]');
+    if (!countInput || !budgetInput) return;
+    countInput.value = "";
+    budgetInput.value = String(budget);
+    if (!(await saveBeforeMerchantAction(this, merchantId))) return;
+    playModuleSound(SOUND_EVENTS.PRESET_APPLY);
+    this.render(false);
+  }
+
   static async _onGenerateStock() {
     return this._generateStock({ replace: false });
   }
@@ -1882,6 +1903,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     ui.notifications?.info(
       `${replace ? "Re-stocked" : "Generated"} ${rows.length} item(s) for ${merchant.name}.`,
     );
+    const budgetWarning = warnings.find((message) =>
+      /budget undershot|over the .*budget/i.test(message),
+    );
+    if (budgetWarning) ui.notifications?.warn(budgetWarning);
     this.render(false);
   }
 

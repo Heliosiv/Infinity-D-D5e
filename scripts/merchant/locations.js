@@ -56,7 +56,7 @@ export const LOCATION_TEMPLATES = Object.freeze([
     id: "village",
     name: "Village — 3 everyday shops",
     shops: ["general", "smith", "herbalist"],
-    count: 8,
+    stockValueGp: 250,
     gold: 250,
     maxGp: 100,
     rarities: ["common", "uncommon"],
@@ -65,7 +65,7 @@ export const LOCATION_TEMPLATES = Object.freeze([
     id: "town",
     name: "Town — 5 shops",
     shops: ["general", "smith", "herbalist", "potions", "outfitter"],
-    count: 12,
+    stockValueGp: 1000,
     gold: 1000,
     maxGp: 1000,
     rarities: ["common", "uncommon"],
@@ -82,7 +82,7 @@ export const LOCATION_TEMPLATES = Object.freeze([
       "arcane",
       "jeweller",
     ],
-    count: 16,
+    stockValueGp: 5000,
     gold: 5000,
     maxGp: 5000,
     rarities: ["common", "uncommon", "rare"],
@@ -152,7 +152,10 @@ export function templateMerchant(
     pool: {
       lootTypes: template.types,
       rarities: size.rarities,
-      count: size.count,
+      // Template shelves target a value, not an arbitrary number of rows.
+      // The merchant's purchasing purse is a separate setting.
+      count: 0,
+      budgetGp: size.stockValueGp,
       maxGp: size.maxGp,
     },
   });

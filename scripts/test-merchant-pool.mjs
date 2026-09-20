@@ -60,6 +60,52 @@ const ITEMS = [
 }
 
 /* ------------------------------------------------------------------ *
+ * Repeated stock quantities use the item's recommended count and stock budget
+ * ------------------------------------------------------------------ */
+{
+  const potion = mkItem("healing-potion-stack", "loot.potion", "common", {
+    system: { rarity: "common", price: { value: 50, denomination: "gp" } },
+    flags: {
+      "infinity-dnd5e": {
+        lootType: "loot.potion",
+        rarityNormalized: "common",
+        maxRecommendedQty: 4,
+        gpValue: 50,
+      },
+    },
+  });
+  const pool = { lootTypes: ["loot.potion"], rarities: [], count: 1 };
+  assert.equal(
+    rollMerchantStock(pool, [potion], { rng: () => 0 }).rows[0].qty,
+    1,
+    "a potion can still stock as a single bottle",
+  );
+  const multiple = rollMerchantStock(pool, [potion], { rng: () => 0.99 });
+  assert.equal(multiple.rows.length, 1, "repeated potions share one shelf row");
+  assert.equal(
+    multiple.rows[0].qty,
+    4,
+    "a potion can stock up to its recommended quantity",
+  );
+  assert.equal(multiple.rows[0].startingQty, 4);
+
+  const budgeted = rollMerchantStock(
+    { ...pool, count: 0, budgetGp: 200 },
+    [potion],
+    { rng: () => 0 },
+  );
+  assert.equal(
+    budgeted.rows[0].qty,
+    4,
+    "budget fill can draw the same potion repeatedly",
+  );
+  const capped = rollMerchantStock({ ...pool, budgetGp: 100 }, [potion], {
+    rng: () => 0.99,
+  });
+  assert.equal(capped.rows[0].qty, 2, "the stock budget caps repeated bottles");
+}
+
+/* ------------------------------------------------------------------ *
  * Rarity filter
  * ------------------------------------------------------------------ */
 {
@@ -172,11 +218,21 @@ const ITEMS = [
         type: { value: "ammo" },
         price: { value: 1, denomination: "gp" },
       },
+      flags: {
+        "infinity-dnd5e": {
+          lootType: "consumable",
+          gpValue: 1,
+          maxRecommendedQty: 8,
+        },
+      },
     }),
     mkItem("bolts", "consumable", "common", {
       system: {
         type: { value: "ammo" },
         price: { value: 1, denomination: "gp" },
+      },
+      flags: {
+        "infinity-dnd5e": { lootType: "consumable", gpValue: 1 },
       },
     }),
   ];
@@ -187,9 +243,26 @@ const ITEMS = [
   );
   assert.ok(rows.length >= 1, "rolled ammo");
   for (const row of rows) {
-    assert.equal(row.qty, 20, "ammo qty is a full stack of 20");
-    assert.equal(row.startingQty, 20, "ammo startingQty is a full stack of 20");
+    assert.equal(row.qty % 20, 0, "ammo stocks in full 20-piece stacks");
+    assert.equal(row.startingQty, row.qty, "restock retains all drawn stacks");
   }
+  const multipleStacks = rollMerchantStock(
+    { lootTypes: ["consumable"], rarities: [], count: 1 },
+    [ammo[0]],
+    { rng: () => 0.99 },
+  );
+  assert.equal(
+    multipleStacks.rows[0].qty,
+    160,
+    "ammunition can draw eight full stacks",
+  );
+  const budgeted = rollMerchantStock(
+    { lootTypes: ["consumable"], rarities: [], count: 0, budgetGp: 25 },
+    ammo,
+    { rng: mulberry32(99) },
+  );
+  assert.equal(budgeted.rows.length, 1, "a 25 gp target fits one 20 gp quiver");
+  assert.equal(budgeted.rows[0].qty, 20);
 }
 
 /* ------------------------------------------------------------------ *
@@ -366,6 +439,22 @@ const ITEMS = [
     "fallback warning when neither count nor budget is set",
   );
   assert.ok(fallback.rows.length >= 1, "fallback still produces stock");
+
+  // Value-based shelves must not inherit the general loot roller's 40-line
+  // safety default (nor the old city template's 16-line count).
+  const largePool = Array.from({ length: 80 }, (_, i) =>
+    priced(`large-${i}`, 1),
+  );
+  const large = rollMerchantStock(
+    { lootTypes: ["gem"], rarities: ["common"], count: 0, budgetGp: 70 },
+    largePool,
+    { rng: mulberry32(7) },
+  );
+  assert.ok(
+    large.rows.length > 40,
+    "value target can stock more than 40 types",
+  );
+  assert.ok(large.rows.length <= 70, "value target stays within the budget");
 }
 
 process.stdout.write("merchant-pool validation passed\n");

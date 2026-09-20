@@ -5,13 +5,13 @@
 Open **Shops** from the GM Workbench or the Landing Page. The left side lists
 cities and locations. Select one to see all of its merchants and five controls:
 
-| Control | Result for the selected location |
-| --- | --- |
-| **Open All** | Makes every merchant available to its allowed players. Players enter and trade automatically. Other locations can remain open. |
-| **Close All** | Closes only these shops and their player windows. |
-| **Restock All** | Resets existing item quantities to their starting quantities and restores each merchant's restock gold. |
-| **Generate All** | Replaces every shop's shelves from its saved stock settings and restores its restock gold. |
-| **Clear All Inventory** | Removes every stock row and restores each merchant's restock gold. |
+| Control                 | Result for the selected location                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Open All**            | Makes every merchant available to its allowed players. Players enter and trade automatically. Other locations can remain open. |
+| **Close All**           | Closes only these shops and their player windows.                                                                              |
+| **Restock All**         | Resets existing item quantities to their starting quantities and restores each merchant's restock gold.                        |
+| **Generate All**        | Replaces every shop's shelves from its saved stock settings and restores its restock gold.                                     |
+| **Clear All Inventory** | Removes every stock row and restores each merchant's restock gold.                                                             |
 
 Generate and Clear ask once before replacing a whole location's inventories.
 Opening, closing, and restocking need no extra prompt. Stock changes are prepared
@@ -34,6 +34,17 @@ stocked template or an empty **Custom Merchant** inside the selected location.
 Opening a location makes shops available in the players' Shops menu; it does not
 force a separate window for every merchant onto every player's screen.
 
+Template stock targets are 250 gp per village shop, 1,000 gp per town shop,
+and 5,000 gp per city shop. These are stock-value targets, not 8/12/16-item
+limits, and are separate from the merchant's purchasing gold. In a merchant's
+**Advanced → Stock generation settings**, use a standard value button or enter
+any custom **Target stock value (gp)**; leave **Max item types** blank to let the
+number of distinct items float. Alternatively, clear the value and enter a
+maximum item count. Both fields can be set to enforce both limits. Existing
+shops retain their saved stock settings until you change them. A value target
+may undershoot when eligible items reach their recommended quantity limits;
+repeated draws add to one inventory row rather than creating duplicate rows.
+
 Click a merchant for four tabs:
 
 - **Setup:** name, art, description, location, and **Gold after restock**. Blank gold
@@ -48,6 +59,12 @@ Click a merchant for four tabs:
 
 Edits save automatically. **Save now** retries a failed save. Left/Right arrows and
 Home/End move between tabs; multiple merchant windows can remain open.
+
+Generated stock can contain several of the same item in one inventory row.
+The item library's recommended quantity limits bound each draw: common healing
+potions can appear in multiple bottles, and ammunition appears in 20-piece
+stacks. Stock value targets count the full quantity, and **Restock** restores
+that generated starting quantity.
 
 ## Organize and clean up shops
 

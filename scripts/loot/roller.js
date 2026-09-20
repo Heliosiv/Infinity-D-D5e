@@ -170,6 +170,9 @@ export function filterCandidates(items, filter = {}) {
  * @param {number} [opts.categoryRepeatPenalty=1] - multiplier for each prior category hit.
  * @param {Record<string, number>} [opts.initialCategoryCounts] - categories already in the bundle.
  * @param {number} [opts.maxAttempts] - safety cap to prevent infinite loops; default 600
+ * @param {(item: object) => number} [opts.fixedQuantityForItem] - optional per-item quantity for stock-style rolls
+ * @param {boolean} [opts.uniqueItems] - do not repeat ammunition or variable art within a roll
+ * @param {boolean} [opts.repeatableItems] - allow repeated draws of any item up to its recommended draw count
  * @param {boolean} [opts.artVariants] - generate specific art-object names and appraisal notes
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
  * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number, displayName?: string, valueLabel?: string, variant?: object|null, itemData?: object|null }>,
@@ -204,6 +207,14 @@ export function rollLoot(candidates, opts = {}) {
   );
   const rng = typeof opts.rng === "function" ? opts.rng : Math.random;
   const artVariants = opts.artVariants === true;
+  const fixedQuantityForItem =
+    typeof opts.fixedQuantityForItem === "function"
+      ? opts.fixedQuantityForItem
+      : null;
+  const uniqueItems = opts.uniqueItems === true;
+  const repeatableItems = opts.repeatableItems === true;
+  const itemCost = (item) =>
+    getItemGpValue(item) * (fixedQuantityForItem?.(item) ?? 1);
 
   const warnings = [];
   if (pool.length === 0) {
@@ -235,7 +246,7 @@ export function rollLoot(candidates, opts = {}) {
   // here keeps picks honest in the common case; the fallback below preserves
   // the one-item-over-budget safety when nothing affordable exists.
   const affordablePool = budgetEnforced
-    ? pool.filter((item) => getItemGpValue(item) <= budgetCeil)
+    ? pool.filter((item) => itemCost(item) <= budgetCeil)
     : pool;
   const drawPool = affordablePool.length > 0 ? affordablePool : pool;
   const identityByItem = new Map(
@@ -255,7 +266,8 @@ export function rollLoot(candidates, opts = {}) {
   let attempts = 0;
   let skippedForBudget = 0;
   let stoppedForBudget = false;
-  while (resultLineCount < hardCap && attempts < maxAttempts) {
+  while (attempts < maxAttempts) {
+    if (resultLineCount >= hardCap && !(repeatableItems && fillBudget)) break;
     attempts += 1;
     const activePool = drawPool.filter((item) =>
       canDrawItem(item, {
@@ -263,6 +275,10 @@ export function rollLoot(candidates, opts = {}) {
         identityByItem,
         picked,
         runningTotal,
+        itemCost,
+        uniqueItems,
+        repeatableItems,
+        allowNew: resultLineCount < hardCap,
       }),
     );
     if (activePool.length === 0) {
@@ -274,6 +290,10 @@ export function rollLoot(candidates, opts = {}) {
             identityByItem,
             picked,
             runningTotal,
+            itemCost,
+            uniqueItems,
+            repeatableItems,
+            allowNew: resultLineCount < hardCap,
           }),
         );
       break;
@@ -299,19 +319,39 @@ export function rollLoot(candidates, opts = {}) {
     const gpValue = getItemGpValue(item);
 
     if (!picked.has(id)) {
-      const initialQuantity = rollInitialQuantity(item, {
-        budgetCeil,
-        gpValue,
-        rng,
-        runningTotal,
-      });
+      const perDrawQuantity = fixedQuantityForItem
+        ? Math.max(1, Math.floor(Number(fixedQuantityForItem(item)) || 1))
+        : 1;
+      const drawCost = gpValue * perDrawQuantity;
+      const affordableDraws =
+        Number.isFinite(budgetCeil) && drawCost > 0
+          ? Math.max(1, Math.floor((budgetCeil - runningTotal) / drawCost))
+          : getItemMaxQty(item);
+      const maxInitialDraws = Math.max(
+        1,
+        Math.min(getItemMaxQty(item), affordableDraws),
+      );
+      const initialDraws = repeatableItems
+        ? Math.floor(rng() * maxInitialDraws) + 1
+        : 1;
+      const initialQuantity = repeatableItems
+        ? perDrawQuantity * initialDraws
+        : fixedQuantityForItem
+          ? perDrawQuantity
+          : rollInitialQuantity(item, {
+              budgetCeil,
+              gpValue,
+              rng,
+              runningTotal,
+            });
       const initialGpTotal = gpValue * initialQuantity;
       if (picked.size > 0 && runningTotal + initialGpTotal > budgetCeil) {
         skippedForBudget += 1;
         continue;
       }
-      picked.set(id, { item, quantity: initialQuantity });
-      resultLineCount += isVariableArtItem(item) ? initialQuantity : 1;
+      picked.set(id, { item, quantity: initialQuantity, draws: initialDraws });
+      resultLineCount +=
+        isVariableArtItem(item) && !repeatableItems ? initialQuantity : 1;
       const category = getItemRollCategory(item);
       if (category) {
         categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
@@ -321,11 +361,17 @@ export function rollLoot(candidates, opts = {}) {
       continue;
     }
     const existing = picked.get(id);
-    const maxQty = isRepeatableRollItem(item) ? getItemMaxQty(item) : 1;
-    if (existing.quantity < maxQty && runningTotal + gpValue <= budgetCeil) {
-      existing.quantity += 1;
-      runningTotal += gpValue;
-      if (isVariableArtItem(item)) {
+    const increment = fixedQuantityForItem
+      ? Math.max(1, Math.floor(Number(fixedQuantityForItem(item)) || 1))
+      : 1;
+    const belowLimit = repeatableItems
+      ? existing.draws < getItemMaxQty(item)
+      : existing.quantity < getItemMaxQty(item);
+    if (belowLimit && runningTotal + gpValue * increment <= budgetCeil) {
+      existing.quantity += increment;
+      existing.draws += 1;
+      runningTotal += gpValue * increment;
+      if (isVariableArtItem(item) && !repeatableItems) {
         resultLineCount += 1;
         const category = getItemRollCategory(item);
         if (category) {
@@ -841,20 +887,35 @@ function weightedPick(picker, rng) {
 
 function canDrawItem(
   item,
-  { budgetCeil, identityByItem, picked, runningTotal },
+  {
+    budgetCeil,
+    identityByItem,
+    picked,
+    runningTotal,
+    itemCost,
+    uniqueItems,
+    repeatableItems,
+    allowNew,
+  },
 ) {
   const id = identityByItem.get(item);
   const existing = picked.get(id);
-  const gpValue = getItemGpValue(item);
+  const gpValue = itemCost(item);
   const remainingBudget = budgetCeil - runningTotal;
 
   if (!existing) {
+    if (!allowNew) return false;
     // The first result retains the documented one-item-over-budget fallback
     // when the complete pool contains nothing affordable.
     return picked.size === 0 || gpValue <= remainingBudget;
   }
-  if (!isRepeatableRollItem(item)) return false;
-  if (existing.quantity >= getItemMaxQty(item)) return false;
+  if (uniqueItems || (!repeatableItems && !isRepeatableRollItem(item)))
+    return false;
+  if (
+    (repeatableItems ? existing.draws : existing.quantity) >=
+    getItemMaxQty(item)
+  )
+    return false;
   return gpValue <= remainingBudget;
 }
 

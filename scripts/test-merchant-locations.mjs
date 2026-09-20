@@ -102,6 +102,8 @@ for (const template of LOCATION_TEMPLATES) {
   );
   assert.equal(shops.length, template.shops.length);
   for (const shop of shops) {
+    assert.equal(shop.pool.count, 0, "template stock has no line cap");
+    assert.equal(shop.pool.budgetGp, template.stockValueGp);
     assert.ok(
       shop.items.length > 0,
       `${shop.name} must stock real shipped items`,

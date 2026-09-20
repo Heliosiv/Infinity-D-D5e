@@ -350,7 +350,7 @@
 <details class="mw-advanced" data-merchant-disclosure="stock-generation"><summary>Stock generation settings</summary>
         <fieldset class="mw-fieldset">
           <legend>Random Stock <small>auto-generated inventory</small></legend>
-          <p class="mw-hint">Generate adds stock. Re-Generate replaces it. Ammunition comes in stacks of 20.</p>
+          <p class="mw-hint">Generate adds stock. Re-Generate replaces it. Template shops start with a stock-value target, not a fixed number of items. Set a custom value below, or clear it and enter a maximum item count. Ammunition comes in stacks of 20.</p>
           <div class="mw-pool">
             <div class="mw-pool__col">
               <span class="mw-field__label">Item Types</span>
@@ -418,11 +418,11 @@
           </div>
           <div class="mw-pool__foot">
             <label class="mw-field mw-field--inline">
-              <span class="mw-field__label">Max items <small>(blank = fill value)</small></span>
-              <input class="mw-input mw-input--num" type="number" name="poolCount" min="0" max="50" step="1" value="{{poolCount}}" placeholder="Auto" />
+              <span class="mw-field__label">Max item types <small>(blank = no count cap)</small></span>
+              <input class="mw-input mw-input--num" type="number" name="poolCount" min="0" max="50" step="1" value="{{poolCount}}" placeholder="No count cap" />
             </label>
             <label class="mw-field mw-field--inline">
-              <span class="mw-field__label">Stock value (gp) <small>(0 = none)</small></span>
+              <span class="mw-field__label">Target stock value (gp) <small>(blank = count only)</small></span>
               <input class="mw-input mw-input--num" type="number" name="poolBudgetGp" min="0" step="50" value="{{poolBudgetGp}}" placeholder="0" aria-label="Stock value budget in gold pieces" />
             </label>
             <button type="button" class="mw-btn mw-btn--primary" data-action="generateStock">
@@ -431,6 +431,11 @@
             <button type="button" class="mw-btn" data-action="regenerateStock" title="Clear all stock, then roll a fresh batch from the pool">
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Re-Generate
             </button>
+          </div>
+          <div class="mw-market__tiers" aria-label="Standard stock value targets">
+            <button type="button" class="mw-market__tier" data-action="stockValuePreset" data-budget="250">Village · 250 gp</button>
+            <button type="button" class="mw-market__tier" data-action="stockValuePreset" data-budget="1000">Town · 1,000 gp</button>
+            <button type="button" class="mw-market__tier" data-action="stockValuePreset" data-budget="5000">City · 5,000 gp</button>
           </div>
         </fieldset>
 

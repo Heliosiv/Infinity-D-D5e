@@ -106,6 +106,16 @@ export function rollMerchantStock(pool, items, opts = {}) {
   const rolled = rollLoot(candidates, {
     count, // 0 = fill toward budgetGp; > 0 = unique-line cap
     budgetGp, // 0 = no budget
+    // A merchant shelf can legitimately need more than the loot roller's
+    // 40-line auto default. The distinct eligible pool is the natural limit.
+    ...(count === 0 && budgetGp > 0
+      ? {
+          maxCap: candidates.length,
+          maxAttempts: Math.max(600, candidates.length + 1),
+        }
+      : {}),
+    fixedQuantityForItem: (item) => resolveStockQty(item, 1),
+    repeatableItems: true,
     ...getLootBundleBalanceOptions({
       profileId: LOOT_BALANCE_PROFILE_IDS.MERCHANT,
       lootTypes,
@@ -124,9 +134,12 @@ export function rollMerchantStock(pool, items, opts = {}) {
     if (key && seenNames.has(key)) continue;
     seen.add(uuid);
     if (key) seenNames.add(key);
-    // Ammo always stocks as a full stack of 20; the roller's random
-    // ammo quantity is right for loot drops, not a shop shelf.
-    const qty = resolveStockQty(item, entry.quantity ?? 1);
+    // Each ammunition draw is a full 20-piece stack. Keep the sum when the
+    // same item is drawn more than once, while retaining one shelf row.
+    const qty = Math.max(
+      resolveStockQty(item, 1),
+      Math.floor(Number(entry.quantity) || 1),
+    );
     rows.push(createInventoryRow(uuid, { qty, startingQty: qty }));
   }
   for (const w of rolled.warnings ?? []) warnings.push(w);

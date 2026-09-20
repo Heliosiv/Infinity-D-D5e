@@ -18,6 +18,14 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.41 — Merchant stock and workspace:** Merchant editors keep **What this
+merchant buys** open while you select item types and rarities. Stock generation
+can draw multiple potions and other eligible items in one row, with ammunition
+counted in 20-piece stacks. Village, town, and city presets target stock values
+of 250, 1,000, and 5,000 gp; the editor also offers a custom value. Player
+loading bars and confirmation-window layering are included. See the
+[release notes](docs/RELEASE_NOTES_0.3.41.md) for upgrade checks.
+
 **v0.3.40 — Crafted-scroll recovery:** Foundry's generated effect timestamps and
 version bookkeeping no longer leave an already-delivered crafted scroll in an
 uncertain state. Recovery still fails closed if the effect identity, duration,
