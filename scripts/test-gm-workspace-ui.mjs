@@ -139,6 +139,8 @@ assert.match(
   "secondary full GMs see an explicit read-only Merchant notice",
 );
 assert.match(merchantTemplate, /Transactions needing review/);
+assert.match(merchantTemplate, /Current recovery findings/);
+assert.match(merchantTemplate, /Actor, last check/);
 assert.match(merchantTemplate, /Actor wallet, saved/);
 assert.match(merchantTemplate, /Merchant stock, saved/);
 assert.match(merchantTemplate, /data-action="recheckTransaction"/);

@@ -12,6 +12,7 @@ import {
   compactMerchantTransactionLedger,
   compareMerchantCommitIds,
   createMerchantTransactionLedger,
+  describeMerchantTransactionReviewMismatch,
   findMerchantTransactionRecord,
   formatMerchantCommitId,
   isPinnedMerchantTransaction,
@@ -514,6 +515,15 @@ function expectCode(code, operation) {
   assert.equal(unsafe.action, "stay-review");
   assert.equal(unsafe.reason, "unsafe-checkpoint-combination");
   assert.equal(unsafe.manualCorrectionRequired, true);
+  assert.deepEqual(
+    describeMerchantTransactionReviewMismatch(review, {
+      actor: prepared.actor.before,
+      merchant: prepared.merchant.after,
+    }),
+    [
+      "The Actor and Merchant each match a saved boundary, but their combination is in an unsafe order.",
+    ],
+  );
   const third = classifyMerchantTransactionReviewRecovery(review, {
     actor: { wallet: wallet(77), item: null },
     merchant: prepared.merchant.before,
@@ -521,6 +531,39 @@ function expectCode(code, operation) {
   assert.equal(third.action, "stay-review");
   assert.equal(third.actorState, "third-state");
   assert.equal(third.reason, "canonical-state-mismatch");
+  assert.deepEqual(
+    describeMerchantTransactionReviewMismatch(review, {
+      actor: prepared.actor.after,
+      merchant: {
+        ...prepared.merchant.before,
+        name: "Edited while recovery was pending",
+      },
+    }),
+    ["Merchant differs from saved before at name."],
+  );
+  assert.deepEqual(
+    describeMerchantTransactionReviewMismatch(review, {
+      actor: null,
+      merchant: prepared.merchant.before,
+    }),
+    ["The Actor or Merchant cannot currently be read safely."],
+  );
+  const changedItem = structuredClone(prepared.actor.after);
+  changedItem.item.system.uses = { spent: 1 };
+  assert.equal(
+    classifyMerchantTransactionReviewRecovery(review, {
+      actor: changedItem,
+      merchant: prepared.merchant.before,
+    }).action,
+    "stay-review",
+  );
+  assert.deepEqual(
+    describeMerchantTransactionReviewMismatch(review, {
+      actor: changedItem,
+      merchant: prepared.merchant.before,
+    }),
+    ["Actor item differs from saved after at system.uses."],
+  );
 
   const assessment = classifyMerchantTransactionReviewRecovery(review, {
     actor: prepared.actor.after,

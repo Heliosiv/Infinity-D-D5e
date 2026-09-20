@@ -384,6 +384,47 @@ export function buildHarnessViews() {
       { width: 1000, height: 720 },
     ),
     view(
+      "merchant-workspace-review",
+      "Merchant Workspace (pinned trade)",
+      "infinity-merchant-workspace",
+      "templates/merchant-workspace.hbs",
+      {
+        ...merchantWorkspaceContext(),
+        hasTransactionReviews: true,
+        transactionReviews: [
+          {
+            actionId: "review-0",
+            sideLabel: "Purchase",
+            qty: 1,
+            itemName: "Test Pouch",
+            merchantLabel: "Sample Shop",
+            actorLabel: "Sample Hero",
+            totalGp: "56.25",
+            playerLabel: "Player",
+            reasonLabel:
+              "The canonical Actor or Merchant data could not be read safely.",
+            actorStateLabel: "not verified at last check",
+            merchantStateLabel: "not verified at last check",
+            checkedAtLabel: "Sample date",
+            currentRecoveryLabel:
+              "The full current records still do not prove a safe checkpoint.",
+            currentMismatchHints: [
+              "Actor item differs from saved after at system.uses.spent.",
+              "Merchant differs from saved before at pool.typeShares.",
+            ],
+            actorWalletPlanLabel: "77 gp, 8 ep, 8 cp → 21 gp, 7 ep, 3 sp, 3 cp",
+            actorItemPlanLabel: "item absent → item present (qty 1)",
+            actorCurrentLabel: "21 gp, 7 ep, 3 sp, 3 cp; item present (qty 1)",
+            merchantGoldPlanLabel: "5000 gp → 5056.25 gp",
+            merchantStockPlanLabel: "stock qty 3 → stock qty 2",
+            merchantCurrentLabel: "5000 gp; stock qty 3",
+            canRecheck: true,
+          },
+        ],
+      },
+      { width: 760, height: 720 },
+    ),
+    view(
       "merchant-workspace-closed",
       "Merchant Workspace (globally closed)",
       "infinity-merchant-workspace",

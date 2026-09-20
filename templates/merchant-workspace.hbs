@@ -63,10 +63,16 @@
         </div>
         <p class="mw-review-card__reason">{{reasonLabel}}</p>
         <dl class="mw-review-card__states">
-          <div><dt>Actor</dt><dd>{{actorStateLabel}}</dd></div>
-          <div><dt>Merchant</dt><dd>{{merchantStateLabel}}</dd></div>
-          <div><dt>Last checked</dt><dd>{{checkedAtLabel}}</dd></div>
+          <div><dt>Actor, last check</dt><dd>{{actorStateLabel}}</dd></div>
+          <div><dt>Merchant, last check</dt><dd>{{merchantStateLabel}}</dd></div>
+          <div><dt>Pinned at</dt><dd>{{checkedAtLabel}}</dd></div>
         </dl>
+        <p class="mw-review-card__current">{{currentRecoveryLabel}}</p>
+        {{#if currentMismatchHints.length}}
+        <ul class="mw-review-card__differences" aria-label="Current recovery findings">
+          {{#each currentMismatchHints}}<li>{{this}}</li>{{/each}}
+        </ul>
+        {{/if}}
         <dl class="mw-review-card__checkpoints">
           <div><dt>Actor wallet, saved</dt><dd>{{actorWalletPlanLabel}}</dd></div>
           <div><dt>Actor item, saved</dt><dd>{{actorItemPlanLabel}}</dd></div>

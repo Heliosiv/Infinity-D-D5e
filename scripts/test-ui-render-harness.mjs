@@ -31,7 +31,7 @@ assert.throws(
 );
 assert.equal(
   views.length,
-  108,
+  109,
   "harness covers all UI windows, overlays, merchant tabs, resource states, and downtime states",
 );
 
@@ -437,6 +437,14 @@ assert.ok(
 assert.match(merchantWorkspaceView.html, /Drakmor/);
 assert.match(merchantWorkspaceView.html, /data-operation="close"/);
 assert.match(merchantWorkspaceView.html, /data-action="openPricingMacros"/);
+
+const merchantReviewView = views.find(
+  (view) => view.id === "merchant-workspace-review",
+);
+assert.ok(merchantReviewView, "harness includes a pinned merchant trade");
+assert.match(merchantReviewView.html, /Current recovery findings/);
+assert.match(merchantReviewView.html, /system\.uses\.spent/);
+assert.match(merchantReviewView.html, /data-action="recheckTransaction"/);
 
 const merchantPricingView = views.find(
   (view) => view.id === "merchant-pricing",

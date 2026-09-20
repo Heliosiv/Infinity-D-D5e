@@ -1080,7 +1080,9 @@ try {
     )?.stage,
     "needs-review",
   );
-  assert.ok(notices.some((message) => message.includes("shop-p3")));
+  const reviewNotice = notices.find((message) => message.includes("shop-p3"));
+  assert.match(reviewNotice, /Transactions needing review/);
+  assert.doesNotMatch(reviewNotice, /Compendium\./);
   const beforeProtectedEdit = clone(getPrivateState("merchants"));
   await assert.rejects(
     commitMerchantWrite("shop-p3", (merchant) => ({

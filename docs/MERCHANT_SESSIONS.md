@@ -170,6 +170,12 @@ before-to-after values for the Actor wallet/item and Merchant gold/stock. The
 current values appear beside those checkpoints. Secondary GM windows can read
 the cards but cannot run recovery.
 
+The card separates the historical reason and states from a fresh, read-only
+comparison. When the displayed wallet, quantity, gold, and stock look right but
+the full checkpoint does not, it names up to three differing field paths per
+Actor wallet, Actor item, or Merchant record. These hints show paths, not a
+license to overwrite data: other item details or shop settings may have changed.
+
 After correcting campaign data to one exact saved checkpoint, choose
 **Recheck**. The active Merchant tab reacquires its authority fence and the
 merchant/Actor lock, reads both documents again, and resumes the normal durable

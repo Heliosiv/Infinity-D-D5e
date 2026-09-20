@@ -778,6 +778,93 @@ export function classifyMerchantTransactionReviewRecovery(
   );
 }
 
+/** Read-only hints for the GM card; never relax the exact recovery classifier. */
+export function describeMerchantTransactionReviewMismatch(
+  record,
+  { actor: observedActor, merchant: observedMerchant } = {},
+) {
+  const current = normalizeMerchantTransactionRecord(record);
+  if (current.stage !== "needs-review") return [];
+  let actor;
+  let merchant;
+  try {
+    actor = normalizeActorBoundary(
+      observedActor,
+      "observed.actor",
+      createJsonBudget(),
+    );
+    merchant = cloneJson(observedMerchant, "observed.merchant");
+  } catch {
+    return ["The Actor or Merchant cannot currently be read safely."];
+  }
+
+  const hints = [];
+  for (const [label, actual, before, after] of [
+    [
+      "Actor wallet",
+      actor.wallet,
+      current.actor.before.wallet,
+      current.actor.after.wallet,
+    ],
+    [
+      "Actor item",
+      actor.item,
+      current.actor.before.item,
+      current.actor.after.item,
+    ],
+    ["Merchant", merchant, current.merchant.before, current.merchant.after],
+  ]) {
+    if (classifyExpectedState(actual, before, after) !== "third-state")
+      continue;
+    const beforePaths = firstDifferentPaths(actual, before);
+    const afterPaths = firstDifferentPaths(actual, after);
+    const useAfter =
+      (before === null && actual !== null) ||
+      afterPaths.length < beforePaths.length;
+    const paths = useAfter ? afterPaths : beforePaths;
+    hints.push(
+      `${label} differs from saved ${useAfter ? "after" : "before"} at ${paths.join(", ")}.`,
+    );
+  }
+  if (hints.length === 0) {
+    const assessment = classifyMerchantTransactionReviewRecovery(current, {
+      actor,
+      merchant,
+    });
+    if (assessment.reason === "unsafe-checkpoint-combination") {
+      hints.push(
+        "The Actor and Merchant each match a saved boundary, but their combination is in an unsafe order.",
+      );
+    }
+  }
+  return hints;
+}
+
+function firstDifferentPaths(actual, expected, path = "", result = []) {
+  if (result.length >= 3 || jsonValuesEqual(actual, expected)) return result;
+  if (
+    actual === null ||
+    expected === null ||
+    typeof actual !== "object" ||
+    typeof expected !== "object" ||
+    Array.isArray(actual) !== Array.isArray(expected)
+  ) {
+    result.push(path || "value");
+    return result;
+  }
+  const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+  for (const key of keys) {
+    if (result.length >= 3) break;
+    firstDifferentPaths(
+      actual[key],
+      expected[key],
+      path ? `${path}.${key}` : key,
+      result,
+    );
+  }
+  return result;
+}
+
 /**
  * Construct the exact forward checkpoint proven by a review recheck.
  * Generic transitions deliberately continue to reject `needs-review` -> live.

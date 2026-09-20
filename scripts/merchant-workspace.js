@@ -75,6 +75,10 @@ import {
 } from "./merchant/transaction-coordinator.js";
 import { listSessions } from "./merchant/session-state.js";
 import { readMerchantActorBoundary } from "./merchant/transaction.js";
+import {
+  classifyMerchantTransactionReviewRecovery,
+  describeMerchantTransactionReviewMismatch,
+} from "./merchant/transaction-ledger.js";
 import { loadMerchantAccessState } from "./merchant/global-access.js";
 import {
   SHOP_TEMPLATES,
@@ -668,6 +672,14 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         const actor = globalThis.game?.actors?.get?.(record.actor.actorId);
         const currentMerchant = findMerchant(record.merchant.merchantId);
         const actorRead = readMerchantActorBoundary(actor, record.actor.itemId);
+        const observation = {
+          actor: actorRead?.ok ? actorRead.boundary : null,
+          merchant: currentMerchant,
+        };
+        const currentAssessment = classifyMerchantTransactionReviewRecovery(
+          record,
+          observation,
+        );
         const merchantName =
           currentMerchant?.name ??
           record.merchant.before?.name ??
@@ -682,11 +694,23 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
           actorLabel: actor?.name ?? record.actor.actorId,
           merchantLabel: merchantName,
           reasonLabel: merchantReviewReasonLabel(record.review.reason),
-          actorStateLabel: merchantReviewStateLabel(record.review.actorState),
-          merchantStateLabel: merchantReviewStateLabel(
-            record.review.merchantState,
-          ),
+          actorStateLabel:
+            record.review.reason === "malformed-observation"
+              ? "not verified at last check"
+              : merchantReviewStateLabel(record.review.actorState),
+          merchantStateLabel:
+            record.review.reason === "malformed-observation"
+              ? "not verified at last check"
+              : merchantReviewStateLabel(record.review.merchantState),
           checkedAtLabel: formatReviewTimestamp(record.review.at),
+          currentRecoveryLabel:
+            currentAssessment.action === "recover"
+              ? "A safe checkpoint is visible now. Recheck will verify it under lock before continuing."
+              : "The full current records still do not prove a safe checkpoint.",
+          currentMismatchHints: describeMerchantTransactionReviewMismatch(
+            record,
+            observation,
+          ),
           actorWalletPlanLabel: `${formatReviewWallet(record.actor.before.wallet)} → ${formatReviewWallet(record.actor.after.wallet)}`,
           actorItemPlanLabel: `${formatReviewItem(record.actor.before.item)} → ${formatReviewItem(record.actor.after.item)}`,
           actorCurrentLabel: actorRead?.ok

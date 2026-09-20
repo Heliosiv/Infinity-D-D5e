@@ -1077,12 +1077,16 @@
 .mw-review-card__reason,
 .mw-review-card__states,
 .mw-review-card__checkpoints,
+.mw-review-card__current,
+.mw-review-card__differences,
 .mw-review-card__guidance {
   grid-column: 1;
 }
 .mw-review-card__summary span,
 .mw-review-card__reason,
 .mw-review-card__guidance,
+.mw-review-card__current,
+.mw-review-card__differences,
 .mw-review-card__states,
 .mw-review-card__checkpoints {
   color: var(--lf-muted);
@@ -1113,9 +1117,18 @@
   margin: 1px 0 0;
   overflow-wrap: anywhere;
 }
+.mw-review-card__current {
+  margin: 0;
+  font-weight: 700;
+}
+.mw-review-card__differences {
+  margin: 0;
+  padding-left: 1.2rem;
+  overflow-wrap: anywhere;
+}
 .mw-review-card > .mw-btn {
   grid-column: 2;
-  grid-row: 1 / span 5;
+  grid-row: 1 / span 7;
 }
 
 /* Animation toggle parity with loot-forge */
