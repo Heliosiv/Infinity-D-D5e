@@ -637,6 +637,49 @@ function makeHarness({
   assert.deepEqual(harness.state.merchants[0], plan.merchant.after);
 }
 
+/* A pinned purchase settles with only additive Item defaults and stock mix. */
+{
+  const harness = makeHarness();
+  const plan = buyPlan(28);
+  plan.actor.after.item.flags["infinity-dnd5e"] = {
+    purchasedFromMerchant: {
+      merchantId: plan.merchant.merchantId,
+      pricePaidGp: plan.request.totalGp,
+      operationId: "buy-28",
+    },
+  };
+  plan.merchant.before.pool = { lootTypes: ["consumable"] };
+  plan.merchant.after.pool = { lootTypes: ["consumable"] };
+  harness.addPlanState(plan);
+  await harness.coordinator.register();
+  harness.seedRecord(
+    transitionMerchantTransaction(plan, "needs-review", {
+      updatedAt: 12000,
+      reason: "canonical-state-mismatch",
+      actorState: "third-state",
+      merchantState: "third-state",
+    }),
+  );
+  const actual = structuredClone(plan.actor.after);
+  actual.item.system.uses = { spent: 0 };
+  harness.actors.get(plan.actor.actorId).boundary = actual;
+  harness.state.merchants[0].pool.typeShares = { consumable: 100 };
+  const outcome = await harness.coordinator.recheck(plan);
+  assert.equal(outcome.status, "terminal");
+  assert.equal(
+    harness.state.merchants[0].goldOnHand,
+    plan.merchant.after.goldOnHand,
+  );
+  assert.equal(
+    harness.state.merchants[0].items[0].qty,
+    plan.merchant.after.items[0].qty,
+  );
+  assert.deepEqual(harness.state.merchants[0].pool.typeShares, {
+    consumable: 100,
+  });
+  assert.deepEqual(harness.actors.get(plan.actor.actorId).boundary, actual);
+}
+
 /* Rechecks fail closed on stale canonical data or lost authority. */
 {
   const stale = makeHarness();

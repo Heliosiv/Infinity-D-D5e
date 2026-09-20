@@ -23,6 +23,8 @@ import {
   classifyMerchantTransactionReviewRecovery,
   compactMerchantTransactionLedger,
   lookupMerchantTransactionReplay,
+  merchantTransactionActorAfterMatches,
+  merchantTransactionCheckpointMatches,
   normalizeMerchantTransactionLedger,
   normalizeMerchantTransactionRecord,
   recoverMerchantTransactionFromReview,
@@ -949,7 +951,10 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       let merchants = current.merchants;
       let nextRecord;
       if (fresh.action === "apply" && fresh.target === "merchant") {
-        if (!merchant || !jsonValuesEqual(merchant, record.merchant.before)) {
+        if (
+          !merchant ||
+          !merchantTransactionCheckpointMatches(record, merchant, "before")
+        ) {
           outcomeOnly({
             status: "needs-review",
             reason: "merchant-before-mismatch",
@@ -995,8 +1000,7 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
         merchants,
         ledger,
         outcome,
-        authorizeWrite: () =>
-          actorBoundaryMatches(bindings, record.actor, record.actor.after),
+        authorizeWrite: () => actorAfterMatches(bindings, record),
       };
     });
   }
@@ -1312,7 +1316,17 @@ function replaceMerchantSnapshot(merchants, merchantId, replacement) {
     );
   }
   const next = cloneValue(merchants);
-  next[index] = cloneValue(replacement);
+  const candidate = cloneValue(replacement);
+  const oldPool = next[index]?.pool;
+  if (
+    oldPool &&
+    Object.hasOwn(oldPool, "typeShares") &&
+    candidate.pool &&
+    !Object.hasOwn(candidate.pool, "typeShares")
+  ) {
+    candidate.pool.typeShares = cloneValue(oldPool.typeShares);
+  }
+  next[index] = candidate;
   return next;
 }
 
@@ -1334,6 +1348,17 @@ function actorBoundaryMatches(bindings, actorPlan, expected) {
   const actor = bindings.resolveActor(actorPlan.actorId);
   const observed = bindings.readActorBoundary(actor, actorPlan.itemId);
   return Boolean(observed?.ok && jsonValuesEqual(observed.boundary, expected));
+}
+
+function actorAfterMatches(bindings, record) {
+  const actor = bindings.resolveActor(record.actor.actorId);
+  const observed = bindings.readActorBoundary(actor, record.actor.itemId);
+  if (!observed?.ok) return false;
+  try {
+    return merchantTransactionActorAfterMatches(record, observed.boundary);
+  } catch {
+    return false;
+  }
 }
 
 function actorStateFromComponentStates(walletState, itemState) {

@@ -176,16 +176,20 @@ the full checkpoint does not, it names up to three differing field paths per
 Actor wallet, Actor item, or Merchant record. These hints show paths, not a
 license to overwrite data: other item details or shop settings may have changed.
 
-After correcting campaign data to one exact saved checkpoint, choose
-**Recheck**. The active Merchant tab reacquires its authority fence and the
-merchant/Actor lock, reads both documents again, and resumes the normal durable
-flow only for these exact safe mappings:
+Choose **Recheck** after correcting campaign data to a saved checkpoint. The
+active Merchant tab reacquires its authority fence and the merchant/Actor lock,
+then reads both documents again. A bought item may have extra Foundry-generated
+default fields if every planned item field, quantity, ID, and purchase marker
+is unchanged; changed planned values still require GM review. A merchant's
+newer stock-mix setting may also be absent from an older transaction plan; it
+is preserved when the merchant update is applied. Recovery resumes only for
+these order-safe mappings:
 
 - Actor before or partly applied with Merchant before/unchanged;
 - Actor after with Merchant before; or
 - Actor after with Merchant after/unchanged.
 
-Any third state or unsafe order stays pinned. Recheck never resets, deletes,
+Any other third state or unsafe order stays pinned. Recheck never resets, deletes,
 rolls back, or force-completes a record. If the player was offline when a safe
 recheck completed, their saved review sends a status-only fingerprint probe on
 reconnect and moves to the receipt outbox only when the exact terminal result

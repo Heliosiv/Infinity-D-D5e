@@ -6,6 +6,8 @@
  * returned v1 envelope and execute only the action selected by reconciliation.
  */
 
+import { isAdditivePurchaseItemAfter } from "./purchase-item-checkpoint.js";
+
 export const MERCHANT_TRANSACTION_LEDGER_VERSION = 1;
 export const MERCHANT_TRANSACTION_RECORD_VERSION = 1;
 export const MERCHANT_TRANSACTION_STAGES = Object.freeze([
@@ -575,10 +577,11 @@ export function classifyMerchantTransactionReconciliation(
     actor,
     current.actor.before,
     current.actor.after,
+    current,
   );
   const actorState = actorComponents.state;
   const merchantState = classifyExpectedState(
-    merchant,
+    comparableMerchant(current, merchant),
     current.merchant.before,
     current.merchant.after,
   );
@@ -748,10 +751,11 @@ export function classifyMerchantTransactionReviewRecovery(
     actor,
     current.actor.before,
     current.actor.after,
+    current,
   );
   const actorState = actorComponents.state;
   const merchantState = classifyExpectedState(
-    merchant,
+    comparableMerchant(current, merchant),
     current.merchant.before,
     current.merchant.after,
   );
@@ -812,8 +816,19 @@ export function describeMerchantTransactionReviewMismatch(
       current.actor.before.item,
       current.actor.after.item,
     ],
-    ["Merchant", merchant, current.merchant.before, current.merchant.after],
+    [
+      "Merchant",
+      comparableMerchant(current, merchant),
+      current.merchant.before,
+      current.merchant.after,
+    ],
   ]) {
+    if (
+      label === "Actor item" &&
+      provenAdditiveBuyItem(current, actual, after)
+    ) {
+      continue;
+    }
     if (classifyExpectedState(actual, before, after) !== "third-state")
       continue;
     const beforePaths = firstDifferentPaths(actual, before);
@@ -1506,17 +1521,80 @@ function classifyExpectedState(observed, before, after) {
   return "third-state";
 }
 
-function classifyActorComponents(observed, before, after) {
+/** The stock-mix setting was added after older durable checkpoints existed. */
+function comparableMerchant(record, observed) {
+  if (
+    !observed?.pool ||
+    !Object.hasOwn(observed.pool, "typeShares") ||
+    !record?.merchant?.before?.pool ||
+    !record?.merchant?.after?.pool ||
+    Object.hasOwn(record.merchant.before.pool, "typeShares") ||
+    Object.hasOwn(record.merchant.after.pool, "typeShares")
+  ) {
+    return observed;
+  }
+  const pool = { ...observed.pool };
+  delete pool.typeShares;
+  return { ...observed, pool };
+}
+
+/** Accept only Foundry-added Item defaults, never changed planned fields. */
+function provenAdditiveBuyItem(record, observed, expected) {
+  return Boolean(
+    record?.side === "buy" &&
+    record.actor.before.item === null &&
+    isAdditivePurchaseItemAfter(observed, expected, {
+      itemId: record.actor.itemId,
+      merchantId: record.merchant.merchantId,
+      totalGp: record.request.totalGp,
+      qty: record.request.qty,
+    }),
+  );
+}
+
+/** Compare a merchant to a checkpoint without erasing post-upgrade stock mix. */
+export function merchantTransactionCheckpointMatches(
+  record,
+  observed,
+  boundary,
+) {
+  const current = normalizeMerchantTransactionRecord(record);
+  if (boundary !== "before" && boundary !== "after") return false;
+  const expected = current.merchant[boundary];
+  return jsonValuesEqual(comparableMerchant(current, observed), expected);
+}
+
+export function merchantTransactionActorAfterMatches(record, observed) {
+  const current = normalizeMerchantTransactionRecord(record);
+  if (!observed) return false;
+  const actor = normalizeActorBoundary(
+    observed,
+    "observed.actor",
+    createJsonBudget(),
+  );
+  return (
+    classifyActorComponents(
+      actor,
+      current.actor.before,
+      current.actor.after,
+      current,
+    ).state === "after"
+  );
+}
+
+function classifyActorComponents(observed, before, after, record = null) {
   const walletState = classifyExpectedState(
     observed.wallet,
     before.wallet,
     after.wallet,
   );
-  const itemState = classifyExpectedState(
-    observed.item,
-    before.item,
-    after.item,
-  );
+  let itemState = classifyExpectedState(observed.item, before.item, after.item);
+  if (
+    itemState === "third-state" &&
+    provenAdditiveBuyItem(record, observed.item, after.item)
+  ) {
+    itemState = "after";
+  }
   if (walletState === "third-state" || itemState === "third-state") {
     return {
       state: "third-state",

@@ -604,6 +604,64 @@ function expectCode(code, operation) {
   );
 }
 
+/* A delivered buy item may gain Foundry defaults, but no planned value may drift. */
+{
+  const prepared = planBuy(57, {
+    merchantBefore: {
+      ...merchant("merchant-1", { gold: 10, qty: 3 }),
+      pool: { lootTypes: ["consumable"] },
+    },
+    merchantAfter: {
+      ...merchant("merchant-1", { gold: 11, qty: 2 }),
+      pool: { lootTypes: ["consumable"] },
+    },
+  });
+  const marked = structuredClone(prepared);
+  marked.actor.after.item.flags["infinity-dnd5e"] = {
+    purchasedFromMerchant: {
+      merchantId: marked.merchant.merchantId,
+      pricePaidGp: marked.request.totalGp,
+      operationId: "buy-57",
+    },
+  };
+  const review = transitionMerchantTransaction(marked, "needs-review", {
+    updatedAt: 3200,
+    reason: "canonical-state-mismatch",
+    actorState: "third-state",
+    merchantState: "third-state",
+  });
+  const actor = structuredClone(marked.actor.after);
+  actor.item.system.uses = { spent: 0 };
+  const currentMerchant = structuredClone(marked.merchant.before);
+  currentMerchant.pool.typeShares = { consumable: 100 };
+  const assessment = classifyMerchantTransactionReviewRecovery(review, {
+    actor,
+    merchant: currentMerchant,
+  });
+  assert.equal(assessment.action, "recover");
+  assert.equal(assessment.nextStage, "actor-applied");
+  assert.equal(assessment.actorItemState, "after");
+  assert.equal(assessment.merchantState, "before");
+  const changedItem = structuredClone(actor);
+  changedItem.item.system.quantity = 2;
+  assert.equal(
+    classifyMerchantTransactionReviewRecovery(review, {
+      actor: changedItem,
+      merchant: currentMerchant,
+    }).action,
+    "stay-review",
+  );
+  const changedStock = structuredClone(currentMerchant);
+  changedStock.items[0].qty = 1;
+  assert.equal(
+    classifyMerchantTransactionReviewRecovery(review, {
+      actor,
+      merchant: changedStock,
+    }).action,
+    "stay-review",
+  );
+}
+
 /* Reconciliation covers every crash boundary and rejects hybrid third states. */
 {
   const prepared = planBuy(6);

@@ -19,6 +19,7 @@ import {
   roundGp,
 } from "./store.js";
 import { itemMatchesBuyFilter } from "./buy-filter.js";
+import { isAdditivePurchaseItemAfter } from "./purchase-item-checkpoint.js";
 import {
   deductCurrency,
   ensureCurrency,
@@ -694,12 +695,26 @@ function durableActorPlanSide(beforeItem, afterItem) {
 }
 
 function classifyDurableActorComponents(plan, boundary) {
+  let itemState = classifyDurableActorComponent(
+    boundary.item,
+    plan.before.item,
+    plan.after.item,
+  );
+  if (itemState === "third-state" && plan.before.item === null) {
+    const marker = plan.after.item?.flags?.[MODULE_ID]?.purchasedFromMerchant;
+    if (
+      isAdditivePurchaseItemAfter(boundary.item, plan.after.item, {
+        itemId: plan.itemId,
+        merchantId: marker?.merchantId,
+        totalGp: marker?.pricePaidGp,
+        qty: plan.after.item?.system?.quantity,
+      })
+    ) {
+      itemState = "after";
+    }
+  }
   return {
-    itemState: classifyDurableActorComponent(
-      boundary.item,
-      plan.before.item,
-      plan.after.item,
-    ),
+    itemState,
     walletState: classifyDurableActorComponent(
       boundary.wallet,
       plan.before.wallet,

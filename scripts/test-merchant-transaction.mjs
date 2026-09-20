@@ -1007,6 +1007,29 @@ for (const [label, firstWrite] of [
   assert.equal(actor._calls.currencyWrites.length, 1);
 }
 
+/* Buy: an Item with added Foundry defaults still receives its remaining wallet write. */
+{
+  const actor = makeActor();
+  const plan = makeDurableBuyPlan(actor, {
+    operationId: "durable-buy-added-defaults",
+  });
+  const item = clone(plan.actor.after.item);
+  item.system.foundryDefault = { value: false };
+  setDurableBoundary(actor, {
+    wallet: plan.actor.before.wallet,
+    item,
+  });
+  const result = await applyDurableMerchantActorPlan(actor, plan);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.writes, ["wallet"]);
+  assert.equal(actor._calls.creates.length, 0);
+  assert.equal(actor._calls.currencyWrites.length, 1);
+  assert.deepEqual(
+    readMerchantActorBoundary(actor, plan.actor.itemId).boundary.item,
+    item,
+  );
+}
+
 /* Buy: wallet-after hybrid creates only the deterministic item. */
 {
   const actor = makeActor();

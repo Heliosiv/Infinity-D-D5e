@@ -18,6 +18,14 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.43 — Merchant recovery and workspace:** Pinned purchases can be
+rechecked when Foundry added only default fields to the delivered item, while
+the purchase marker and all planned fields remain unchanged. Older pending
+trades also tolerate the new stock-mix field without discarding its current
+setting. Merchant windows preserve their scroll position during refreshes and
+review cards show current mismatch paths. See the
+[release notes](docs/RELEASE_NOTES_0.3.43.md).
+
 **v0.3.42 — Merchant stock mix:** In **Stock generation settings**, assign
 percentages to selected item types; the percentages always total 100 and
 split the GP stock target. Budget rolls prefer different eligible items before
