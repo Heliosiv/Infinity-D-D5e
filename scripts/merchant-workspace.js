@@ -146,6 +146,9 @@ const SELF_SERVICE_LABELS = {
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
+  { key: "directory", selector: ".mw-shell--directory" },
+  { key: "locations", selector: ".mw-location-rail" },
+  { key: "locationContent", selector: ".mw-location-content" },
   { key: "list", selector: ".mw-list" },
   { key: "edit", selector: ".mw-tab-content" },
 ];
@@ -910,10 +913,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     // edit a row, generate stock…) so the view never snaps to the top.
     const root = this.element;
     if (root) {
+      restoreScroll(root, SCROLL_TARGETS, this._scroll, { settleMs: 50 });
       bindScrollTracking(root, SCROLL_TARGETS, () => {
         this._scroll = captureScroll(root, SCROLL_TARGETS);
       });
-      restoreScroll(root, SCROLL_TARGETS, this._scroll);
     }
   }
 

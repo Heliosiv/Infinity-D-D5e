@@ -10,8 +10,8 @@
  * Usage in an app:
  *   const TARGETS = [{ key: "rows", selector: ".ms-rows" }];
  *   // in _onRender(), after super:
- *   bindScrollTracking(root, TARGETS, () => { this._scroll = captureScroll(root, TARGETS); });
  *   restoreScroll(root, TARGETS, this._scroll);
+ *   bindScrollTracking(root, TARGETS, () => { this._scroll = captureScroll(root, TARGETS); });
  */
 
 /** Snapshot scrollTop/scrollLeft for each present target. Null if none. */
@@ -36,6 +36,7 @@ export function captureScroll(root, targets) {
 export function restoreScroll(root, targets, state, options = {}) {
   if (!root || !state || !Array.isArray(targets)) return;
   const selectorByKey = new Map(targets.map((t) => [t.key, t.selector]));
+  const restored = new Map();
   const apply = () => {
     for (const entry of state.entries ?? []) {
       const selector = selectorByKey.get(entry.key);
@@ -43,8 +44,31 @@ export function restoreScroll(root, targets, state, options = {}) {
       if (!el) continue;
       const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
       const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
-      el.scrollTop = Math.min(entry.top, maxTop);
-      el.scrollLeft = Math.min(entry.left, maxLeft);
+      const previous = restored.get(entry.key);
+      if (previous?.element !== undefined && previous.element !== el) continue;
+      // A later user scroll wins over a queued layout retry. Also avoid
+      // clamping a saved position to zero while the new pane is still sizing.
+      const movedTop =
+        previous?.movedTop || (previous && el.scrollTop !== previous.top);
+      const movedLeft =
+        previous?.movedLeft || (previous && el.scrollLeft !== previous.left);
+      if (!movedTop) {
+        if (maxTop >= entry.top || maxTop > 0) {
+          el.scrollTop = Math.min(entry.top, maxTop);
+        }
+      }
+      if (!movedLeft) {
+        if (maxLeft >= entry.left || maxLeft > 0) {
+          el.scrollLeft = Math.min(entry.left, maxLeft);
+        }
+      }
+      restored.set(entry.key, {
+        element: el,
+        top: el.scrollTop,
+        left: el.scrollLeft,
+        movedTop,
+        movedLeft,
+      });
     }
   };
   apply();

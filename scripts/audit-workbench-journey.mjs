@@ -319,6 +319,32 @@ try {
     });
     const directory = page.locator("#app");
     assert.equal(await directory.locator('input[name="name"]').count(), 0);
+    // A session opening refreshes Shops while the GM may be deep in its
+    // directory. The directory shell itself scrolls, outside the shop list.
+    const scrollStyle = await page.addStyleTag({
+      content: ".mw-shell--directory { max-height: 220px; }",
+    });
+    const directoryScroll = await directory
+      .locator(".mw-shell--directory")
+      .evaluate((element) => {
+        element.scrollTop = 180;
+        return element.scrollTop;
+      });
+    assert.ok(directoryScroll > 0, "the Shops directory is scrollable");
+    await page.waitForFunction(() =>
+      journey.app._scroll?.entries?.some(
+        (entry) => entry.key === "directory" && entry.top > 0,
+      ),
+    );
+    await page.evaluate(() => journey.app.render(false));
+    assert.equal(
+      await directory
+        .locator(".mw-shell--directory")
+        .evaluate((element) => element.scrollTop),
+      directoryScroll,
+      "a Shops refresh retains the GM directory position",
+    );
+    await scrollStyle.evaluate((element) => element.remove());
     await directory
       .locator('[data-action="selectMerchant"][data-merchant-id="a"]')
       .click();
@@ -327,6 +353,39 @@ try {
     const selectTab = async (key) => {
       await editor.locator(`[data-merchant-tab="${key}"]`).click();
     };
+    await selectTab("advanced");
+    const editorScroll = await editor
+      .locator(".mw-tab-content")
+      .evaluate((element) => {
+        element.scrollTop = 180;
+        return element.scrollTop;
+      });
+    assert.ok(editorScroll > 0, "the merchant editor is scrollable");
+    await page.waitForFunction(() =>
+      journey.MerchantWorkspaceApp._editors
+        .get("a")
+        ?._scroll?.entries?.some(
+          (entry) => entry.key === "edit" && entry.top > 0,
+        ),
+    );
+    await page.evaluate(async () => {
+      const { emitMerchantEvent, MERCHANT_EVENTS } =
+        await import("/scripts/merchant/socket.js");
+      emitMerchantEvent(
+        MERCHANT_EVENTS.SESSION_OPEN,
+        { sessionId: "scroll-regression", targetUserId: "player" },
+        { emitSocket: false },
+      );
+      await journey.MerchantWorkspaceApp._editors.get("a").rendering;
+    });
+    assert.equal(
+      await editor
+        .locator(".mw-tab-content")
+        .evaluate((element) => element.scrollTop),
+      editorScroll,
+      "an incoming session opening retains the GM merchant position",
+    );
+    await selectTab("basics");
     const clickAction = async (action) => {
       const count = await page.evaluate(() => journey.state.actions.length);
       if (

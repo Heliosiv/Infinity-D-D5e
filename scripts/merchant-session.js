@@ -103,6 +103,7 @@ let preferredMerchantActorId = "";
 
 /** Scroll panes whose position survives action re-renders. */
 const SCROLL_TARGETS = [
+  { key: "shell", selector: ".ms-shell" },
   { key: "rows", selector: ".ms-rows" },
   { key: "log", selector: ".ms-log" },
 ];
@@ -1071,10 +1072,10 @@ export class MerchantSessionApp extends HandlebarsApplicationMixin(
 
     // Preserve scroll position across action re-renders (buy, bargain, tab…).
     if (root) {
+      restoreScroll(root, SCROLL_TARGETS, this._scroll, { settleMs: 50 });
       bindScrollTracking(root, SCROLL_TARGETS, () => {
         this._scroll = captureScroll(root, SCROLL_TARGETS);
       });
-      restoreScroll(root, SCROLL_TARGETS, this._scroll);
     }
   }
 

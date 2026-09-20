@@ -97,6 +97,8 @@ See the [reconciled candidate report](docs/UI_CANDIDATE_0.3.37.md) for coverage 
 
 **Merchant editor:** Advanced sections, including **What this merchant buys**,
 stay open while choosing item types and rarities and through merchant refreshes.
+Shops and merchant windows keep their scroll position when a shopping session
+opens or a window refreshes, including the outer page on smaller screens.
 
 **v0.3.37 — Field ammunition:** Include **Craft Field Ammunition** in a
 downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
