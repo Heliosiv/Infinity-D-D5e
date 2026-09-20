@@ -18,6 +18,12 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.44 — Complete pending update:** Includes the merchant stock mix, scroll
+preservation, and guarded recovery changes below, plus a usable four-hour
+guided downtime setup. Short blocks now show which activities fit and stop
+before opening if none do. See the
+[release notes](docs/RELEASE_NOTES_0.3.44.md).
+
 **v0.3.43 — Merchant recovery and workspace:** Pinned purchases can be
 rechecked when Foundry added only default fields to the delivered item, while
 the purchase marker and all planned fields remain unchanged. Older pending
