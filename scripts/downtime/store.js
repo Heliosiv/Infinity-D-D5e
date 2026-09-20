@@ -50,6 +50,7 @@ const PRE_EXPANSION_DOWNTIME_CONFIG_VERSION = 10;
 const BLOCK_SCHEMA = 1;
 const PLANNING_DRAFT_VERSION = 1;
 const MAX_HISTORY = 100;
+export const MAX_REQUEST_RECEIPTS = 200;
 const MAX_ID_LENGTH = 160;
 const OPERATION_STATES = new Set([
   "pending",
@@ -1821,6 +1822,107 @@ export async function updateCollectingDowntimeBlock(
       updatedBy: fence.userId,
     });
     if (!next) throw new Error("DowntimeWorkflowCollectingUpdateInvalid");
+    store.activeBlock = next;
+    return { store, mapResult: (committed) => committed.activeBlock };
+  });
+}
+
+// A guided review freezes only the character in its plan. Other characters
+// may keep submitting while the GM edits or applies that fixed result.
+export async function updateGuidedDowntimeParticipantDuringReview(
+  blockId,
+  actorId,
+  participantPatch,
+  { expectedRevision = null, requestId = "", requestRecord = null } = {},
+) {
+  const id = toId(blockId);
+  const targetId = toId(actorId);
+  if (!id || !targetId || !isPlainObject(participantPatch)) {
+    throw new Error("DowntimeWorkflowParticipantUpdateInvalid");
+  }
+  return mutateWorkflow((store, fence) => {
+    if (
+      expectedRevision !== null &&
+      nonNegativeInteger(expectedRevision, -1) !== store.revision
+    ) {
+      throw new Error("DowntimeWorkflowRevisionMismatch");
+    }
+    const current = store.activeBlock;
+    if (!current || current.id !== id)
+      throw new Error("DowntimeWorkflowBlockNotFound");
+    if (
+      current.mode !== "guided" ||
+      !["locked", "planned", "applying"].includes(current.state) ||
+      current.planningDraft?.state === "needs-review" ||
+      current.plan?.characters?.some((entry) => entry.actorId === targetId) ||
+      current.planningDraft?.manifest?.participants?.some(
+        (entry) => entry.actorId === targetId,
+      )
+    ) {
+      throw new Error("DowntimeWorkflowSubmissionsClosed");
+    }
+    const index = current.participants?.findIndex(
+      (entry) => entry.actorId === targetId,
+    );
+    if (index == null || index < 0 || current.participants[index].resolved) {
+      throw new Error("DowntimeWorkflowSubmissionsClosed");
+    }
+    const participant = sanitizeJson(participantPatch);
+    const prior = current.participants[index];
+    const mutableFields = new Set([
+      "queue",
+      "hunt",
+      "research",
+      "guidedSelection",
+      "guidedRoll",
+      "submitted",
+      "submittedAt",
+      "submittedBy",
+    ]);
+    if (
+      participant.actorId !== targetId ||
+      (participant.submitted !== prior.submitted && !requestRecord) ||
+      Object.keys({ ...prior, ...participant }).some(
+        (key) =>
+          !mutableFields.has(key) &&
+          !persistedValuesEqual(prior[key], participant[key]),
+      )
+    ) {
+      throw new Error("DowntimeWorkflowParticipantUpdateInvalid");
+    }
+    const receiptId = requestId ? toId(requestId) : "";
+    if (
+      requestRecord &&
+      (!receiptId ||
+        !isPlainObject(requestRecord) ||
+        requestRecord.actorId !== targetId ||
+        !["submit", "recall"].includes(requestRecord.kind) ||
+        (requestRecord.kind === "submit" && participant.submitted !== true) ||
+        (requestRecord.kind === "recall" && participant.submitted !== false))
+    ) {
+      throw new Error("DowntimeWorkflowParticipantUpdateInvalid");
+    }
+    if (receiptId && Object.hasOwn(current.requests ?? {}, receiptId)) {
+      throw new Error("DowntimeWorkflowRequestAlreadyUsed");
+    }
+    const requests = requestRecord
+      ? Object.fromEntries(
+          [
+            ...Object.entries(current.requests ?? {}),
+            [receiptId, sanitizeJson(requestRecord)],
+          ].slice(-MAX_REQUEST_RECEIPTS),
+        )
+      : current.requests;
+    const next = normalizeDowntimeBlock({
+      ...current,
+      participants: current.participants.map((entry, at) =>
+        at === index ? participant : entry,
+      ),
+      requests,
+      updatedAt: currentTimestamp(),
+      updatedBy: fence.userId,
+    });
+    if (!next) throw new Error("DowntimeWorkflowParticipantUpdateInvalid");
     store.activeBlock = next;
     return { store, mapResult: (committed) => committed.activeBlock };
   });

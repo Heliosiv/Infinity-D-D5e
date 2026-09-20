@@ -3,6 +3,8 @@
 This is the complete pending-work update from the live v0.3.41 installation.
 It includes v0.3.42 merchant stock allocation, the v0.3.43 guarded merchant
 recovery and scroll-preservation changes, and four-hour guided downtime setup.
+Guided review also keeps other players' submissions open while the GM resolves
+one character.
 
 ## What changed
 
@@ -16,6 +18,10 @@ recovery and scroll-preservation changes, and four-hour guided downtime setup.
 - The GM can choose a four-hour guided downtime block. The setup deselects
   activities and projects needing more time, explains when none fit, and the
   service rejects an impossible block before writing campaign data.
+- During guided review, unresolved characters can submit or recall their own
+  choices, and the GM can reopen the player window for late participants. The
+  character under review keeps its submitted roll fixed until its result is
+  applied. A started Hunt or Research case still cannot be rerolled.
 
 ## Upgrade check
 
@@ -24,4 +30,7 @@ after the Forge restart. In the GM Merchant Workspace, inspect each pinned
 trade's wallet, item, gold, stock, and mismatch hints before using Recheck.
 Confirm stock percentages and scroll position survive an editor refresh. In
 Downtime, choose **4 hours** and confirm only activities that fit can be
-selected. Do not retry a pinned player purchase or reset its review record.
+selected. Have one character submit, open that GM review, then verify another
+character can submit and recall while the first roll stays fixed. Apply the
+first report and confirm the second character's state is still available. Do
+not retry a pinned player purchase or reset its review record.

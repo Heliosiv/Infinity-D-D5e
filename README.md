@@ -21,7 +21,8 @@ opening control.
 **v0.3.44 — Complete pending update:** Includes the merchant stock mix, scroll
 preservation, and guarded recovery changes below, plus a usable four-hour
 guided downtime setup. Short blocks now show which activities fit and stop
-before opening if none do. See the
+before opening if none do. Other players can still submit while the GM reviews
+one character. See the
 [release notes](docs/RELEASE_NOTES_0.3.44.md).
 
 **v0.3.43 — Merchant recovery and workspace:** Pinned purchases can be
@@ -546,8 +547,9 @@ and project time blocks, then clicks **Roll & submit**. Unallocated hours are
 forfeited, and each skill-based allocation makes one character roll. As soon as any character
 submits, the GM can click **Review** for that character, choose the outcome,
 edit the report, and click **Apply results & send report**. That character gets
-the receipt immediately and the same block reopens for everyone still
-outstanding. **Finish without waiting** closes the block after at least one
+the receipt immediately. Other unresolved characters can still submit or recall
+while the GM reviews and applies that result; the GM can use **Open for players**
+again to bring in late players. **Finish without waiting** closes the block after at least one
 result is resolved and no submitted character is awaiting review. Report edits
 save before application, and **Save report** can save them separately. See the
 [downtime guide](docs/DOWNTIME_SYSTEM.md) for projects, existing city-action

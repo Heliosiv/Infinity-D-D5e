@@ -146,6 +146,7 @@ import {
   initializeDowntimePlanningDraft,
   loadDowntimeConfig,
   loadDowntimeWorkflowStore,
+  MAX_REQUEST_RECEIPTS,
   lockDowntimeBlock,
   markDowntimeNeedsReview,
   markDowntimePlanningDraftNeedsReview,
@@ -158,6 +159,7 @@ import {
   claimDowntimePlanningRoll,
   updateDowntimeConfig,
   updateCollectingDowntimeBlock,
+  updateGuidedDowntimeParticipantDuringReview,
   updateGuidedDowntimePlan,
 } from "./store.js";
 import {
@@ -261,7 +263,6 @@ import {
 } from "./socket.js";
 
 const MODULE_ID = "infinity-dnd5e";
-const MAX_REQUEST_RECEIPTS = 200;
 const CHECKED_ACTIVITIES = new Set([
   DOWNTIME_ACTIVITY_IDS.MARKET_TRADING,
   DOWNTIME_ACTIVITY_IDS.PICKPOCKET,
@@ -1370,12 +1371,25 @@ async function openGuidedDowntimeBlock({
 export async function openBlockForPlayers(blockId) {
   assertAuthority();
   const block = getActiveDowntimeBlock();
-  if (!block || block.id !== String(blockId) || block.state !== "collecting") {
+  if (
+    !block ||
+    block.id !== String(blockId) ||
+    !(block.participants ?? []).some((participant) =>
+      block.mode === GUIDED_DOWNTIME_MODE
+        ? guidedParticipantCanEdit(block, participant)
+        : block.state === "collecting" && participant.resolved !== true,
+    )
+  ) {
     throw new Error("That downtime block is not collecting submissions.");
   }
   const sent = new Set();
   for (const participant of block.participants ?? []) {
-    if (participant.resolved === true) continue;
+    if (
+      block.mode === GUIDED_DOWNTIME_MODE
+        ? !guidedParticipantCanEdit(block, participant)
+        : participant.resolved === true
+    )
+      continue;
     for (const userId of participant.userIds ?? []) {
       if (
         sent.has(userId) ||
@@ -4589,6 +4603,65 @@ function projectSettlementForWorkspace(settlement) {
   };
 }
 
+function guidedParticipantUnderReview(block, actorId) {
+  return (
+    block.plan?.characters?.some((entry) => entry.actorId === actorId) ||
+    block.planningDraft?.manifest?.participants?.some(
+      (entry) => entry.actorId === actorId,
+    ) ||
+    false
+  );
+}
+
+function guidedParticipantCanEdit(block, participant) {
+  if (
+    block.mode !== GUIDED_DOWNTIME_MODE ||
+    !participant ||
+    participant.resolved === true
+  )
+    return false;
+  if (block.state === "collecting") return true;
+  return (
+    ["locked", "planned", "applying"].includes(block.state) &&
+    block.planningDraft?.state !== "needs-review" &&
+    !guidedParticipantUnderReview(block, participant.actorId)
+  );
+}
+
+async function updateGuidedParticipantSubmission(
+  block,
+  participant,
+  { revision, requestId = "", requestRecord = null } = {},
+) {
+  if (block.state === "collecting") {
+    const participants = block.participants.map((entry) =>
+      entry.actorId === participant.actorId ? participant : entry,
+    );
+    return updateCollectingDowntimeBlock(
+      block.id,
+      {
+        participants,
+        ...(requestRecord
+          ? {
+              requests: boundedRequests(
+                block.requests,
+                requestId,
+                requestRecord,
+              ),
+            }
+          : {}),
+      },
+      { expectedRevision: revision },
+    );
+  }
+  return updateGuidedDowntimeParticipantDuringReview(
+    block.id,
+    participant.actorId,
+    participant,
+    { expectedRevision: revision, requestId, requestRecord },
+  );
+}
+
 function projectWorkspaceBlock(block) {
   const byActor = new Map(
     (block.plan?.characters ?? []).map((character) => [
@@ -4603,7 +4676,9 @@ function projectWorkspaceBlock(block) {
   ).length;
   const readyParticipants = (block.participants ?? []).filter(
     (participant) =>
-      participant.resolved !== true && participant.submitted === true,
+      participant.resolved !== true &&
+      participant.submitted === true &&
+      !guidedParticipantUnderReview(block, participant.actorId),
   );
   const firstReadyActorId = readyParticipants[0]?.actorId ?? "";
   const unapprovedResearch = (block.plan?.operations ?? []).filter(
@@ -4629,9 +4704,11 @@ function projectWorkspaceBlock(block) {
           !resolved,
         resolutionLabel: resolved
           ? "Resolved"
-          : participant.submitted
-            ? "Ready for GM review"
-            : "Waiting for player",
+          : guidedParticipantUnderReview(block, participant.actorId)
+            ? "Under GM review"
+            : participant.submitted
+              ? "Ready for GM review"
+              : "Waiting for player",
         budgetHours: block.budgetHours,
         usedHours: sumHours(participant.queue),
         queue:
@@ -4806,7 +4883,11 @@ function projectWorkspaceBlock(block) {
       resolvedCount === 0 &&
       ["collecting", "locked", "planned"].includes(block.state),
     canRecover: ["applying", "needs-review"].includes(block.state),
-    canOpenForPlayers: block.state === "collecting",
+    canOpenForPlayers: (block.participants ?? []).some((participant) =>
+      block.mode === GUIDED_DOWNTIME_MODE
+        ? guidedParticipantCanEdit(block, participant)
+        : block.state === "collecting" && participant.resolved !== true,
+    ),
   };
 }
 
@@ -4847,6 +4928,7 @@ export async function getPlayerProjectionForUser({
   if (active.mode === GUIDED_DOWNTIME_MODE) {
     const queue = selected.queue ?? [];
     const individuallyResolved = selected.resolved === true;
+    const canEdit = guidedParticipantCanEdit(active, selected);
     const projectProgress = guidedProjectProgressFromStore(store);
     const projectSuccesses = guidedProjectSuccessesFromStore(store);
     const journalProjection = await playerJournalProjection(
@@ -4862,7 +4944,11 @@ export async function getPlayerProjectionForUser({
       user,
     );
     return {
-      status: individuallyResolved ? "completed" : active.state,
+      status: individuallyResolved
+        ? "completed"
+        : canEdit
+          ? "collecting"
+          : active.state,
       mode: GUIDED_DOWNTIME_MODE,
       hasActiveBlock: true,
       settlementName: active.locationName,
@@ -5042,15 +5128,11 @@ export async function getPlayerProjectionForUser({
           }
         : {}),
       submitted: selected.submitted === true,
-      canSubmit:
-        !individuallyResolved &&
-        active.state === "collecting" &&
-        selected.submitted !== true,
+      canSubmit: canEdit && selected.submitted !== true,
       canRecall:
         !selected.hunt &&
         !selected.research &&
-        !individuallyResolved &&
-        active.state === "collecting" &&
+        canEdit &&
         selected.submitted === true,
       needsRecovery: active.state === "needs-review",
       receipt,
@@ -5205,11 +5287,7 @@ export async function submitQueueAuthoritatively({
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const revision = getDowntimeWorkflowRevision();
       const block = getActiveDowntimeBlock();
-      if (
-        !block ||
-        block.id !== String(blockId) ||
-        block.state !== "collecting"
-      ) {
+      if (!block || block.id !== String(blockId)) {
         throw new Error("Downtime submissions are closed.");
       }
       const actor = actorById(actorId);
@@ -5219,6 +5297,11 @@ export async function submitQueueAuthoritatively({
         throw new Error("You do not own that eligible character.");
       }
       if (block.mode === GUIDED_DOWNTIME_MODE) {
+        if (!guidedParticipantCanEdit(block, participant)) {
+          throw new Error(
+            "Downtime submissions are closed for this character.",
+          );
+        }
         return submitGuidedDowntimeChoice({
           block,
           actor,
@@ -5227,6 +5310,9 @@ export async function submitQueueAuthoritatively({
           queue,
           revision,
         });
+      }
+      if (block.state !== "collecting") {
+        throw new Error("Downtime submissions are closed.");
       }
       const canonical = canonicalizeDowntimeQueueSubmission(queue);
       if (!canonical.ok) {
@@ -5457,14 +5543,11 @@ async function submitGuidedDowntimeChoice({
   }
   const hunt = prepareHuntingAttempt(block, actor, canonicalQueue);
   if (hunt?.stage === "attack") {
-    const updated = await updateCollectingDowntimeBlock(
-      block.id,
-      {
-        participants: block.participants.map((p) =>
-          p.actorId === actor.id ? { ...p, queue: canonicalQueue, hunt } : p,
-        ),
-      },
-      { expectedRevision: revision },
+    const participant = block.participants.find((p) => p.actorId === actor.id);
+    const updated = await updateGuidedParticipantSubmission(
+      block,
+      { ...participant, queue: canonicalQueue, hunt },
+      { revision },
     );
     notifyServiceChanged("hunting-game-found");
     await broadcastPlayerState(updated);
@@ -5476,36 +5559,35 @@ async function submitGuidedDowntimeChoice({
     ? await prepareResearchAttempt(block, actor, canonicalQueue)
     : null;
   const first = allocation[0];
-  const participants = block.participants.map((entry) =>
-    entry.actorId === actor.id
-      ? {
-          ...entry,
-          ...(hunt ? { hunt } : {}),
-          ...(research ? { research } : {}),
-          guidedSelection: first.selection,
-          guidedRoll: first.selection.skill
-            ? { total: first.roll.total, formula: first.roll.formula }
-            : null,
-          queue: canonicalQueue,
-          submitted: true,
-          submittedAt: now(),
-          submittedBy: userId,
-        }
-      : entry,
+  const participant = block.participants.find(
+    (entry) => entry.actorId === actor.id,
   );
-  const updated = await updateCollectingDowntimeBlock(
-    block.id,
+  const updated = await updateGuidedParticipantSubmission(
+    block,
     {
-      participants,
-      requests: boundedRequests(block.requests, requestId, {
+      ...participant,
+      ...(hunt ? { hunt } : {}),
+      ...(research ? { research } : {}),
+      guidedSelection: first.selection,
+      guidedRoll: first.selection.skill
+        ? { total: first.roll.total, formula: first.roll.formula }
+        : null,
+      queue: canonicalQueue,
+      submitted: true,
+      submittedAt: now(),
+      submittedBy: userId,
+    },
+    {
+      revision,
+      requestId,
+      requestRecord: {
         actorId: actor.id,
         userId,
         digest,
         kind: "submit",
         at: now(),
-      }),
+      },
     },
-    { expectedRevision: revision },
   );
   notifyServiceChanged("guided-choice-submit");
   await broadcastPlayerState(updated);
@@ -5522,11 +5604,7 @@ export async function recallSubmissionAuthoritatively({
     assertAuthority();
     const revision = getDowntimeWorkflowRevision();
     const block = getActiveDowntimeBlock();
-    if (
-      !block ||
-      block.id !== String(blockId) ||
-      block.state !== "collecting"
-    ) {
+    if (!block || block.id !== String(blockId)) {
       throw new Error("Downtime submissions are closed.");
     }
     const actor = actorById(actorId);
@@ -5534,6 +5612,13 @@ export async function recallSubmissionAuthoritatively({
     const participant = participantFor(block, actorId);
     if (!actor || !participant || !userOwnsDowntimeActor(user, actor)) {
       throw new Error("You do not own that eligible character.");
+    }
+    if (
+      block.mode === GUIDED_DOWNTIME_MODE
+        ? !guidedParticipantCanEdit(block, participant)
+        : block.state !== "collecting"
+    ) {
+      throw new Error("Downtime submissions are closed for this character.");
     }
     if (participant.hunt || participant.research)
       throw new Error(
@@ -5556,30 +5641,36 @@ export async function recallSubmissionAuthoritatively({
       }
       return block;
     }
-    const participants = block.participants.map((entry) =>
-      entry.actorId === actor.id
-        ? {
-            ...entry,
-            submitted: false,
-            submittedAt: 0,
-            submittedBy: null,
-          }
-        : entry,
-    );
-    const updated = await updateCollectingDowntimeBlock(
-      block.id,
-      {
-        participants,
-        requests: boundedRequests(block.requests, requestId, {
-          actorId: actor.id,
-          userId,
-          digest: "recall",
-          kind: "recall",
-          at: now(),
-        }),
-      },
-      { expectedRevision: revision },
-    );
+    const changed = {
+      ...participant,
+      submitted: false,
+      submittedAt: 0,
+      submittedBy: null,
+    };
+    const record = {
+      actorId: actor.id,
+      userId,
+      digest: "recall",
+      kind: "recall",
+      at: now(),
+    };
+    const updated =
+      block.mode === GUIDED_DOWNTIME_MODE
+        ? await updateGuidedParticipantSubmission(block, changed, {
+            revision,
+            requestId,
+            requestRecord: record,
+          })
+        : await updateCollectingDowntimeBlock(
+            block.id,
+            {
+              participants: block.participants.map((entry) =>
+                entry.actorId === actor.id ? changed : entry,
+              ),
+              requests: boundedRequests(block.requests, requestId, record),
+            },
+            { expectedRevision: revision },
+          );
     notifyServiceChanged("queue-recall");
     await broadcastPlayerState(updated);
     return updated;

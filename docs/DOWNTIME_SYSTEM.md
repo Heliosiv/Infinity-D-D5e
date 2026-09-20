@@ -64,11 +64,14 @@ If the GM goes offline, the current window keeps and displays the player's
 last choice with submissions disabled. Refresh after the GM returns to continue.
 
 As soon as one character has submitted, the GM can click **Review** for that
-character. This briefly closes submissions while the exact result is prepared.
+character. That character's submitted roll is fixed for review; other
+unresolved characters can still choose, submit, or recall their own downtime
+while the GM reviews and applies the result. A started Hunt or Research case
+still cannot be recalled or rerolled.
 The GM lands on that report, chooses from the possible outcomes, can rewrite the
 player report, then clicks **Apply results & send report**. That character gets
-the receipt immediately and the same block reopens for every unresolved
-character. Late players can submit afterward. **Finish without waiting** closes
+the receipt immediately and the same block remains available to every unresolved
+character. Late players can submit at any point during review. **Finish without waiting** closes
 the block when at least one result is resolved and no submitted character is
 still awaiting review. Changing an outcome loads its matching report.
 **Save report** saves an edit separately; applying also saves any visible report

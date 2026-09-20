@@ -2287,7 +2287,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       ],
       prepareParticipant: [
         "Review next submission",
-        "Prepare one character now; the block will reopen for everyone else after you apply it.",
+        "Prepare one character now; other players can keep submitting during review.",
       ],
       lockBlock: [
         "Review results",

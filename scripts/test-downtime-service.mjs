@@ -2129,6 +2129,102 @@ try {
     projectBlock.plan.characters.map((row) => row.actorId),
     [actor.id],
   );
+  const frozenReviewPlan = clone(projectBlock.plan);
+  const waitingPlayer = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: projectPartner.id,
+  });
+  assert.equal(waitingPlayer.status, "collecting");
+  assert.equal(waitingPlayer.canSubmit, true);
+  const workspaceDuringReview = (await service.getWorkspaceProjection())
+    .workflow;
+  assert.equal(
+    workspaceDuringReview.canOpenForPlayers,
+    true,
+    "the GM can reopen the player window for late participants during review",
+  );
+  assert.equal(
+    workspaceDuringReview.participants.find(
+      (entry) => entry.actorId === actor.id,
+    ).resolutionLabel,
+    "Under GM review",
+  );
+  assert.ok((await service.openBlockForPlayers(projectBlock.id)).sent >= 1);
+  assert.equal(
+    (
+      await service.getPlayerProjectionForUser({
+        userId: player.id,
+        actorId: actor.id,
+      })
+    ).canRecall,
+    false,
+    "the character in the GM review cannot replace its saved roll",
+  );
+  await assert.rejects(
+    service.recallSubmissionAuthoritatively({
+      userId: player.id,
+      requestId: "reviewed-recall-rejected",
+      blockId: projectBlock.id,
+      actorId: actor.id,
+    }),
+    /closed for this character/,
+  );
+  const partnerChoice = [
+    {
+      id: "guided-choice",
+      activityId: languageProject.id,
+      hours: 8,
+      skill: "arc",
+      guidedRoll: { total: 15, formula: "1d20 + 4" },
+    },
+  ];
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "partner-during-review",
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
+    queue: partnerChoice,
+  });
+  let partnerDuringReview = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: projectPartner.id,
+  });
+  assert.equal(partnerDuringReview.status, "collecting");
+  assert.equal(partnerDuringReview.submitted, true);
+  assert.equal(partnerDuringReview.canRecall, true);
+  assert.equal(workflow.getActiveDowntimeBlock().state, "planned");
+  assert.deepEqual(workflow.getActiveDowntimeBlock().plan, frozenReviewPlan);
+  await assert.rejects(
+    workflow.updateGuidedDowntimeParticipantDuringReview(
+      projectBlock.id,
+      actor.id,
+      workflow.getActiveDowntimeBlock().participants[0],
+    ),
+    /SubmissionsClosed/,
+    "the store also protects the participant whose plan is being reviewed",
+  );
+  await assert.rejects(
+    workflow.updateGuidedDowntimeParticipantDuringReview(
+      projectBlock.id,
+      projectPartner.id,
+      { ...workflow.getActiveDowntimeBlock().participants[1], resolved: true },
+    ),
+    /ParticipantUpdateInvalid/,
+    "review-time submissions cannot change resolution state",
+  );
+  await service.recallSubmissionAuthoritatively({
+    userId: player.id,
+    requestId: "partner-recall-during-review",
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
+  });
+  partnerDuringReview = await service.getPlayerProjectionForUser({
+    userId: player.id,
+    actorId: projectPartner.id,
+  });
+  assert.equal(partnerDuringReview.canSubmit, true);
+  assert.equal(partnerDuringReview.submitted, false);
+  assert.deepEqual(workflow.getActiveDowntimeBlock().plan, frozenReviewPlan);
   assert.deepEqual(projectBlock.plan.operations[0].project, {
     id: languageProject.id,
     name: "Learn Draconic",
@@ -2145,6 +2241,23 @@ try {
     successfulCheck: false,
     costCp: 100,
     completed: false,
+  });
+  projectBlock = await workflow.beginDowntimeApplication(projectBlock.id);
+  assert.equal(projectBlock.state, "applying");
+  await service.submitQueueAuthoritatively({
+    userId: player.id,
+    requestId: "partner-during-apply",
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
+    queue: partnerChoice,
+  });
+  assert.equal(workflow.getActiveDowntimeBlock().state, "applying");
+  assert.deepEqual(workflow.getActiveDowntimeBlock().plan, frozenReviewPlan);
+  await service.recallSubmissionAuthoritatively({
+    userId: player.id,
+    requestId: "partner-recall-during-apply",
+    blockId: projectBlock.id,
+    actorId: projectPartner.id,
   });
   projectBlock = await service.applyActiveDowntimeBlock(projectBlock.id);
   assert.equal(
