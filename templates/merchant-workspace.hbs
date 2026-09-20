@@ -288,7 +288,7 @@
 </section>
 <section data-merchant-panel="advanced" id="{{merchantPanels.advanced.panelId}}" role="tabpanel" aria-labelledby="{{merchantPanels.advanced.tabId}}" class="mw-workspace-section" tabindex="0" {{#unless merchantPanels.advanced.active}}hidden{{/unless}}>
 <p class="mw-hint">Ready-to-use defaults are already set. Change these only when a merchant needs something special.</p>
-<details class="mw-advanced"><summary>Prices</summary>
+<details class="mw-advanced" data-merchant-disclosure="prices"><summary>Prices</summary>
 <div class="mw-form__grid">
           <label class="mw-field">
             <span class="mw-field__label">Buy price ×</span>
@@ -300,7 +300,7 @@
           </label>
 
 </div>        </details>
-<details class="mw-advanced"><summary>Bargaining</summary>
+<details class="mw-advanced" data-merchant-disclosure="bargaining"><summary>Bargaining</summary>
 <div class="mw-form__grid">
           <label class="mw-field">
             <span class="mw-field__label">Bargain DC</span>
@@ -331,7 +331,7 @@
         </fieldset>
 
         </details>
-<details class="mw-advanced"><summary>Charm</summary>
+<details class="mw-advanced" data-merchant-disclosure="charm"><summary>Charm</summary>
 <div class="mw-form__grid">
           <label class="mw-field mw-field--toggle">
             <span class="mw-field__label">Charm affects prices</span>
@@ -347,7 +347,7 @@
           </label>
 </div>
         </details>
-<details class="mw-advanced"><summary>Stock generation settings</summary>
+<details class="mw-advanced" data-merchant-disclosure="stock-generation"><summary>Stock generation settings</summary>
         <fieldset class="mw-fieldset">
           <legend>Random Stock <small>auto-generated inventory</small></legend>
           <p class="mw-hint">Generate adds stock. Re-Generate replaces it. Ammunition comes in stacks of 20.</p>
@@ -436,7 +436,7 @@
 
 
         </details>
-<details class="mw-advanced"><summary>What this merchant buys</summary>
+<details class="mw-advanced" data-merchant-disclosure="buy-filter"><summary>What this merchant buys</summary>
         <fieldset class="mw-fieldset">
           <legend>Buys From Players <small>what this merchant will purchase</small></legend>
           <p class="mw-hint">Pick the item types and/or rarities this merchant buys back from players. Leave everything unchecked to buy anything sellable.{{#if buysAnything}} <strong>Currently buys anything.</strong>{{/if}}</p>
@@ -473,7 +473,7 @@
 
 
         </details>
-<details class="mw-advanced"><summary>Player windows</summary>
+<details class="mw-advanced" data-merchant-disclosure="player-windows"><summary>Player windows</summary>
         <div class="mw-form__foot">
           <div class="mw-form__foot-right">
             <button type="button" class="mw-btn" data-action="previewSession" title="Open a sandbox shop window to see how buying, selling, and bargaining work — nothing real changes">
@@ -510,7 +510,7 @@
         <p class="mw-empty mw-empty--session">No live sessions for this merchant. Preview does not change campaign data.</p>
         {{/if}}
         </details>
-<details class="mw-advanced"><summary>Duplicate or delete merchant</summary>
+<details class="mw-advanced" data-merchant-disclosure="merchant-actions"><summary>Duplicate or delete merchant</summary>
           <div class="mw-form__foot">
             <button type="button" class="mw-btn" data-action="duplicateMerchant" title="Create a copy of this merchant with an empty inventory">
               <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate

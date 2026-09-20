@@ -387,6 +387,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     this._locationBusy = false;
     this._saveStatus = "All changes saved";
     this._formSaveDepth = 0;
+    this._expandedDisclosures = new Set();
     this._reviewIdentities = new Map();
     this._itemCache = new Map(); // uuid → resolved item snapshot
     // Re-render on stock changes AND on session open/close so the "Active
@@ -848,6 +849,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     // Honor the existing animation + rarity-glow client settings.
     applyVisualPrefs(this.element, "mw-");
     bindMerchantTabKeys(this.element, (key) => this._selectMerchantTab(key));
+    this._restoreMerchantDisclosures();
     this._wireMerchantSearch();
     this.element
       ?.querySelector?.("[data-location-form]")
@@ -898,6 +900,20 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         this._scroll = captureScroll(root, SCROLL_TARGETS);
       });
       restoreScroll(root, SCROLL_TARGETS, this._scroll);
+    }
+  }
+
+  _restoreMerchantDisclosures() {
+    const expanded = (this._expandedDisclosures ??= new Set());
+    for (const details of this.element?.querySelectorAll?.(
+      '[data-form="merchant-edit"] details[data-merchant-disclosure]',
+    ) ?? []) {
+      const key = details.dataset.merchantDisclosure;
+      details.open = expanded.has(key);
+      details.addEventListener("toggle", () => {
+        if (details.open) expanded.add(key);
+        else expanded.delete(key);
+      });
     }
   }
 

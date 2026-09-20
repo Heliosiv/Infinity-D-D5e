@@ -393,6 +393,40 @@ try {
       ["loot.weapon.mundane"],
     );
 
+    // Each buy-filter checkbox auto-saves. A later merchant refresh must keep
+    // its disclosure open so the GM can continue choosing types and rarities.
+    await selectTab("advanced");
+    const buyFilter = editor.locator('[data-merchant-disclosure="buy-filter"]');
+    if ((await buyFilter.getAttribute("open")) === null)
+      await buyFilter.locator("summary").click();
+    assert.equal(await buyFilter.getAttribute("open"), "");
+    const firstType = buyFilter
+      .locator('input[name="buyFilterLootTypes"]')
+      .first();
+    const firstRarity = buyFilter
+      .locator('input[name="buyFilterRarities"]')
+      .first();
+    const typeWasChecked = await firstType.isChecked();
+    const rarityWasChecked = await firstRarity.isChecked();
+    await firstType.locator("xpath=..").click();
+    await page.waitForFunction(
+      () => journey.MerchantWorkspaceApp._editors.get("a")._formSaveDepth === 0,
+    );
+    await page.evaluate(() =>
+      journey.MerchantWorkspaceApp._editors.get("a").render(false),
+    );
+    assert.equal(await buyFilter.getAttribute("open"), "");
+    await firstRarity.locator("xpath=..").click();
+    await page.waitForFunction(
+      () => journey.MerchantWorkspaceApp._editors.get("a")._formSaveDepth === 0,
+    );
+    await page.evaluate(() =>
+      journey.MerchantWorkspaceApp._editors.get("a").render(false),
+    );
+    assert.equal(await buyFilter.getAttribute("open"), "");
+    assert.equal(await firstType.isChecked(), !typeWasChecked);
+    assert.equal(await firstRarity.isChecked(), !rarityWasChecked);
+
     // Auto-saving a stock-generation number must not rebuild the editor that
     // initiated the write. Rebuilding collapses the disclosure, drops focus,
     // and forces the GM to find their place after every spinner/key change.

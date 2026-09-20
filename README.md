@@ -69,6 +69,9 @@ failed saves and edits made during a save remain available. Player activity card
 also retain allocation hours, skill and source selections through refreshes.
 See the [reconciled candidate report](docs/UI_CANDIDATE_0.3.37.md) for coverage and limits.
 
+**Merchant editor:** Advanced sections, including **What this merchant buys**,
+stay open while choosing item types and rarities and through merchant refreshes.
+
 **v0.3.37 — Field ammunition:** Include **Craft Field Ammunition** in a
 downtime block for arrows, crossbow bolts, blowgun needles, and sling bullets.
 Players choose hours and materials, see difficulty labels and complication
