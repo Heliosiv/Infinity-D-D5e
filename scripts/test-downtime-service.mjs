@@ -1732,6 +1732,17 @@ try {
     ),
     savedActivity,
   );
+  await assert.rejects(
+    service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Community garden",
+      hours: 4,
+      actorIds: [actor.id],
+      templateIds: ["guided-labor"],
+    }),
+    /activity or project with a time block of 4 hours or less/,
+    "a four-hour block cannot leave every player with only eight-hour choices",
+  );
   const customBlock = await service.openDowntimeBlock({
     mode: "guided",
     locationName: "Community garden",

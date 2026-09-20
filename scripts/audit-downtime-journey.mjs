@@ -1804,6 +1804,57 @@ try {
     await page.evaluate(() => journey.state.importDialog),
     /1 hunting areas.*1 hunts.*2 Research Seeds.*1 Research blocks/,
   );
+  await page.evaluate(async () => {
+    journey.state.block = null;
+    await journey.mount("workspace");
+  });
+  await page
+    .getByLabel("Location preset", { exact: true })
+    .selectOption("custom");
+  await page.locator('[data-action="setHourPreset"][data-hours="4"]').click();
+  assert.equal(
+    await page.locator('[data-form="new-block"] [name="hours"]').inputValue(),
+    "4",
+  );
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-labor"]')
+      .isDisabled(),
+    true,
+    "eight-hour activities cannot be offered in a four-hour block",
+  );
+  assert.equal(
+    await page
+      .locator('[name="templateIds"][value="guided-research"]')
+      .isChecked(),
+    true,
+  );
+  while (await page.locator('[name="templateIds"]:checked').count()) {
+    await page.locator('[name="templateIds"]:checked').first().uncheck();
+  }
+  assert.equal(
+    await page.locator('[data-action="createBlock"]').isDisabled(),
+    true,
+  );
+  assert.match(
+    await page.locator("[data-hour-availability]").innerText(),
+    /time block of 4 hours or less/,
+  );
+  await page.locator('[name="templateIds"][value="guided-research"]').check();
+  await page.locator('[data-action="createBlock"]').click();
+  await page.waitForFunction(() => journey.state.block?.hours === 4);
+  assert.equal(
+    await page.evaluate(() =>
+      journey.state.block.templateIds.includes("guided-labor"),
+    ),
+    false,
+  );
+  assert.equal(
+    await page.evaluate(() =>
+      journey.state.block.templateIds.includes("guided-research"),
+    ),
+    true,
+  );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
     "Downtime browser gauntlet passed: included Research question/category/known subject/open discovery, live outlooks, GM dossier draft refresh, save-before-apply and follow-up completion, crafting, benefit selector, patient selection, project preset, split allocation, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",

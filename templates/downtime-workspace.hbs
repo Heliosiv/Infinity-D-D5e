@@ -351,11 +351,12 @@
             <span id="dt-new-block-hours-label">Productive hours per character</span>
             <div class="dt-hours-row">
               <input type="number" name="hours" min="1" max="240" step="1" value="{{newBlockHours}}" required aria-labelledby="dt-new-block-hours-label" {{#if busy}}disabled{{/if}} />
+              <button type="button" data-action="setHourPreset" data-hours="4" {{#if busy}}disabled{{/if}}>4 hours</button>
               <button type="button" data-action="setHourPreset" data-hours="8" {{#if busy}}disabled{{/if}}>1 day</button>
               <button type="button" data-action="setHourPreset" data-hours="16" {{#if busy}}disabled{{/if}}>2 days</button>
               <button type="button" data-action="setHourPreset" data-hours="40" {{#if busy}}disabled{{/if}}>5 days</button>
             </div>
-            <small>Day presets use 8 productive hours per day.</small>
+            <small>Day presets use 8 productive hours per day. Activities needing a longer time block are deselected when you choose fewer hours.</small>
           </div>
           <fieldset class="dt-fieldset dt-actor-selector" data-actor-selector aria-describedby="dt-actor-selector-help">
             <legend>Characters for this block</legend>
@@ -472,7 +473,7 @@
             {{#if hasGuidedTemplates}}
             <div class="dt-chip-grid">
               {{#each guidedTemplates}}
-              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if unavailable}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}}{{#if unavailable}} — unavailable here{{/if}}</span></label>
+              <label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" data-min-hours="{{blockHours}}" data-unavailable="{{#if unavailable}}true{{else}}false{{/if}}" {{#if checked}}checked{{/if}} {{#if unavailable}}disabled{{/if}} {{#if tooLong}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}}{{#if unavailable}} — unavailable here{{/if}}<span data-hour-warning>{{#if tooLong}} — needs {{blockHours}} hours{{/if}}</span></span></label>
               {{/each}}
             </div>
             {{else}}
@@ -486,8 +487,8 @@
             <div class="dt-chip-grid">
               {{#each guidedProjects}}
               <label class="dt-chip {{#if complete}}is-disabled{{/if}}" title="{{progressLabel}}">
-                <input type="checkbox" name="projectIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if complete}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} />
-                <span>{{name}} <small>{{progressLabel}}</small></span>
+                <input type="checkbox" name="projectIds" value="{{id}}" data-min-hours="{{blockHours}}" data-unavailable="{{#if complete}}true{{else}}false{{/if}}" {{#if checked}}checked{{/if}} {{#if complete}}disabled{{/if}} {{#if tooLong}}disabled{{/if}} {{#if ../busy}}disabled{{/if}} />
+                <span>{{name}} <small>{{progressLabel}}</small><span data-hour-warning>{{#if tooLong}} — needs {{blockHours}} hours{{/if}}</span></span>
               </label>
               {{/each}}
             </div>
@@ -495,6 +496,7 @@
             <p class="dt-inline-empty">No long-term projects yet. Create one in the Projects tab.</p>
             {{/if}}
           </fieldset>
+          <p data-hour-availability role="status" aria-live="polite"></p>
           {{#if createBlockReason}}<p class="dt-form-reason">{{createBlockReason}}</p>{{/if}}
           <footer class="dt-form__actions">
             <button type="button" class="dt-button" data-action="setView" data-view="settlements" {{#if busy}}disabled{{/if}}>

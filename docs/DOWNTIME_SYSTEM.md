@@ -21,6 +21,11 @@ Wilderness camp, Village, Town/city, or Custom. Presets select applicable activi
 and disable unavailable ones; wilderness and adventuring exclude crowd performance
 and paid work. Custom lets the GM choose any saved activity. Enter an optional
 location/report name and productive-hour budget, then choose the characters.
+Use the **4 hours** preset for a half workday. The setup form deselects activities
+and projects whose saved time block is longer than the budget, and shows the
+minimum hours beside them. Choose at least one activity or project that fits;
+the block cannot open with only longer choices. Increasing the budget makes
+those choices available again, but you must select them explicitly.
 
 Alternatively select a saved **Settlement**. Its saved activity list replaces the
 preset restrictions. In **Manage settlements**, start from a preset, customize the

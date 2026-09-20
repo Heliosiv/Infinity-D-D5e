@@ -1297,6 +1297,15 @@ async function openGuidedDowntimeBlock({
     );
   if (templates.length === 0 && projects.length === 0)
     throw new Error("Choose at least one activity template.");
+  if (
+    ![...templates, ...projects].some(
+      (activity) => Number(activity.blockHours ?? 8) <= budgetHours,
+    )
+  ) {
+    throw new Error(
+      `Choose an activity or project with a time block of ${budgetHours} hours or less.`,
+    );
+  }
   const eligible = [...new Set(Array.isArray(actorIds) ? actorIds : [])]
     .map(actorById)
     .filter((actor) => actor?.type === "character");

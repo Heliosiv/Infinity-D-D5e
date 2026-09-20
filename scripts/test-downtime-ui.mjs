@@ -262,6 +262,42 @@ try {
   assert.equal(campWorkspace.canCreateBlock, true);
   assert.equal(campWorkspace.createBlockReason, "");
 
+  const fourHourWorkspace = workspaceModule.normalizeWorkspaceProjection(
+    {
+      actors: [{ id: "ada", name: "Ada", playerOwned: true }],
+      guidedTemplates: [
+        { id: "guided-labor", name: "Paid Work", blockHours: 8 },
+        { id: "guided-research", name: "Research", blockHours: 4 },
+        { id: "guided-reflection", name: "Rest & Reflect", blockHours: 1 },
+      ],
+      guidedProjects: [
+        { id: "long-project", name: "Long project", blockHours: 8 },
+      ],
+    },
+    {
+      newBlockDraft: {
+        locationPresetId: "custom",
+        hours: "4",
+        projectIds: ["long-project"],
+      },
+    },
+  );
+  assert.equal(fourHourWorkspace.newBlockHours, "4");
+  assert.deepEqual(
+    fourHourWorkspace.guidedTemplates.map(({ id, checked, tooLong }) => ({
+      id,
+      checked,
+      tooLong,
+    })),
+    [
+      { id: "guided-labor", checked: false, tooLong: true },
+      { id: "guided-research", checked: true, tooLong: false },
+      { id: "guided-reflection", checked: true, tooLong: false },
+    ],
+  );
+  assert.equal(fourHourWorkspace.guidedProjects[0].checked, false);
+  assert.equal(fourHourWorkspace.guidedProjects[0].tooLong, true);
+
   const projectsWorkspace = workspaceModule.normalizeWorkspaceProjection(
     {
       guidedProjects: [

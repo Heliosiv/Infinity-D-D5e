@@ -464,8 +464,14 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     }
     const setup = this.element?.querySelector?.('[data-form="new-block"]');
     for (const event of ["input", "change"]) {
-      setup?.addEventListener(event, () => this._captureNewBlockDraft(setup));
+      setup?.addEventListener(event, () => {
+        updateNewBlockHourChoices(setup);
+        this._captureNewBlockDraft(setup);
+        this._applyActorSelector();
+      });
     }
+    updateNewBlockHourChoices(setup);
+    this._applyActorSelector();
     setup?.addEventListener("change", (event) => {
       if (!["settlementId", "locationPresetId"].includes(event.target?.name))
         return;
@@ -796,11 +802,15 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
     if (create) {
       const baseEnabled = create.dataset.createEnabled === "true";
       const busy = create.dataset.createBusy === "true";
-      create.disabled = busy || !baseEnabled || selectedCount === 0;
+      const hasTimeChoice = create.dataset.hasTimeChoice !== "false";
+      create.disabled =
+        busy || !baseEnabled || selectedCount === 0 || !hasTimeChoice;
       create.title =
         !busy && baseEnabled && selectedCount === 0
           ? "Select at least one character."
-          : String(create.dataset.baseTitle ?? "");
+          : !busy && baseEnabled && !hasTimeChoice
+            ? "Choose an activity or project that fits the assigned hours."
+            : String(create.dataset.baseTitle ?? "");
     }
   }
 
@@ -1854,15 +1864,21 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     blockSettlement,
     array(source.huntingRegions),
   );
+  const newBlockHours = Number(uiState.newBlockDraft?.hours ?? 8);
   const guidedTemplates = array(source.guidedTemplates)
     .map((template) => ({
       id: cleanId(template?.id),
       name: String(template?.name ?? "Activity"),
       description: String(template?.description ?? ""),
       image: String(template?.image ?? "icons/svg/d20.svg"),
+      blockHours: positiveInteger(template?.blockHours, 8) || 8,
       unavailable: !locationAllowed.includes(template?.id),
+      tooLong:
+        newBlockHours > 0 &&
+        newBlockHours < (positiveInteger(template?.blockHours, 8) || 8),
       checked:
         locationAllowed.includes(template?.id) &&
+        newBlockHours >= (positiveInteger(template?.blockHours, 8) || 8) &&
         (Array.isArray(uiState.newBlockDraft?.templateIds)
           ? uiState.newBlockDraft.templateIds.includes(template?.id)
           : true),
@@ -1980,7 +1996,10 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       name: String(project?.name ?? "Project"),
       description: String(project?.description ?? ""),
       requiredHours: positiveInteger(project?.requiredHours, 1),
-      blockHours: positiveInteger(project?.blockHours, 1),
+      blockHours: positiveInteger(project?.blockHours, 8) || 8,
+      tooLong:
+        newBlockHours > 0 &&
+        newBlockHours < (positiveInteger(project?.blockHours, 8) || 8),
       requiredGp: Number(project?.requiredGp ?? 0),
       requiredSuccesses: positiveInteger(project?.requiredSuccesses, 0),
       checkDc: positiveInteger(project?.checkDc, 15),
@@ -1995,6 +2014,7 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
       complete: project?.complete === true,
       checked:
         project?.complete !== true &&
+        newBlockHours >= (positiveInteger(project?.blockHours, 8) || 8) &&
         array(uiState.newBlockDraft?.projectIds).includes(project?.id),
       source: project,
     }))
@@ -3300,6 +3320,39 @@ async function confirmSettlementDelete() {
 function positiveInteger(value, fallback = 0) {
   const numeric = Math.floor(Number(value));
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
+function updateNewBlockHourChoices(form) {
+  if (!form) return;
+  const hours = Number(form.querySelector('[name="hours"]')?.value);
+  const validHours = Number.isSafeInteger(hours) && hours >= 1 && hours <= 240;
+  const create = form.querySelector('[data-action="createBlock"]');
+  const busy = create?.dataset.createBusy === "true";
+  for (const input of form.querySelectorAll(
+    'input[name="templateIds"], input[name="projectIds"]',
+  )) {
+    const minimum = Number(input.dataset.minHours) || 8;
+    const tooLong = validHours && minimum > hours;
+    const unavailable = input.dataset.unavailable === "true";
+    input.disabled = unavailable || tooLong || busy;
+    if (unavailable || tooLong) input.checked = false;
+    const warning = input
+      .closest("label")
+      ?.querySelector("[data-hour-warning]");
+    if (warning)
+      warning.textContent = tooLong ? ` — needs ${minimum} hours` : "";
+  }
+  const chosen = form.querySelectorAll(
+    'input[name="templateIds"]:checked, input[name="projectIds"]:checked',
+  ).length;
+  if (create) create.dataset.hasTimeChoice = String(!validHours || chosen > 0);
+  const status = form.querySelector("[data-hour-availability]");
+  if (status) {
+    status.textContent =
+      validHours && chosen === 0
+        ? `Choose an activity or project with a time block of ${hours} hours or less.`
+        : "";
+  }
 }
 
 function createActorSelectorState() {
