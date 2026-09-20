@@ -17,6 +17,7 @@ import {
   resolveRarityWeights,
 } from "../loot/rarity-balance.js";
 import { isAmmunitionItem } from "../loot/tag-vocabulary.js";
+import { normalizeStockTypeShares } from "./stock-split.js";
 import { normalizeInfinityItemUuid } from "../item-uuid-compat.js";
 import {
   createPrivateStateUnavailableError,
@@ -356,6 +357,7 @@ export function mergeStockRows(rows) {
  */
 export function normalizeStockPool(raw) {
   const p = raw && typeof raw === "object" ? raw : {};
+  const lootTypes = toStrArray(p.lootTypes);
   const rarityBalance = normalizeRarityBalanceKey(
     p.rarityBalance ??
       (p.rarityWeights
@@ -363,7 +365,8 @@ export function normalizeStockPool(raw) {
         : RARITY_BALANCE_DEFAULT_KEY),
   );
   return {
-    lootTypes: toStrArray(p.lootTypes),
+    lootTypes,
+    typeShares: normalizeStockTypeShares(lootTypes, p.typeShares),
     rarities: toStrArray(p.rarities),
     // 0 = no line cap (an explicit blank "How many" → fill toward budgetGp).
     // A missing field still defaults to DEFAULT_POOL_COUNT for back-compat.

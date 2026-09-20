@@ -16,6 +16,12 @@ import {
 } from "../loot/category-balance.js";
 import { valueFilterSpec } from "../loot/value-filter.js";
 import { createInventoryRow, resolveStockQty } from "./store.js";
+import { allocateStockUnits, normalizeStockTypeShares } from "./stock-split.js";
+import {
+  getItemLootCategories,
+  getItemRollCategory,
+} from "../loot/item-categories.js";
+import { getItemGpValue } from "../loot/tag-vocabulary.js";
 
 /** Default line count when neither a line cap nor a stock budget is set. */
 const DEFAULT_FALLBACK_COUNT = 6;
@@ -39,7 +45,7 @@ function nameKey(name) {
  * dropped, and the candidate pool is collapsed to one entry per name, so two
  * different library items sharing a name can never land as separate rows.
  *
- * @param {{lootTypes?: string[], rarities?: string[], count?: number, budgetGp?: number, rarityWeights?: Record<string, number>}} pool
+ * @param {{lootTypes?: string[], typeShares?: Record<string, number>, rarities?: string[], count?: number, budgetGp?: number, rarityWeights?: Record<string, number>}} pool
  * @param {Array<object>} items - candidate item snapshots (loadCompendiumItems output)
  * @param {object} [opts]
  * @param {Set<string>|string[]} [opts.exclude] - uuids already stocked; skipped
@@ -103,30 +109,78 @@ export function rollMerchantStock(pool, items, opts = {}) {
     return { rows: [], warnings };
   }
 
-  const rolled = rollLoot(candidates, {
-    count, // 0 = fill toward budgetGp; > 0 = unique-line cap
-    budgetGp, // 0 = no budget
-    // A merchant shelf can legitimately need more than the loot roller's
-    // 40-line auto default. The distinct eligible pool is the natural limit.
-    ...(count === 0 && budgetGp > 0
-      ? {
-          maxCap: candidates.length,
-          maxAttempts: Math.max(600, candidates.length + 1),
-        }
-      : {}),
-    fixedQuantityForItem: (item) => resolveStockQty(item, 1),
-    repeatableItems: true,
-    ...getLootBundleBalanceOptions({
-      profileId: LOOT_BALANCE_PROFILE_IDS.MERCHANT,
-      lootTypes,
-      rarityWeights: pool?.rarityWeights,
-    }),
-    rng: opts.rng,
-  });
+  const splitTypes = [...new Set(lootTypes)];
+  const split = budgetGp > 0 && splitTypes.length > 1;
+  const shares = normalizeStockTypeShares(splitTypes, pool?.typeShares);
+  const budgetUnits = split
+    ? allocateStockUnits(Math.round(budgetGp * 100), splitTypes, shares)
+    : {};
+  const lineCaps =
+    split && count ? allocateStockUnits(count, splitTypes, shares) : {};
+  const groups = new Map(splitTypes.map((type) => [type, []]));
+  if (split)
+    for (const item of candidates) {
+      const categories = getItemLootCategories(item);
+      const owner = groups.has(getItemRollCategory(item))
+        ? getItemRollCategory(item)
+        : splitTypes.find((type) => categories.has(type));
+      if (owner) groups.get(owner).push(item);
+    }
+  const rollGroup = (group, groupCount, groupBudget) =>
+    rollLoot(group, {
+      count: groupCount, // 0 = fill toward budget; > 0 = unique-line cap
+      budgetGp: groupBudget,
+      // A merchant shelf can legitimately need more than the loot roller's
+      // 40-line auto default. The distinct eligible pool is the natural limit.
+      ...(groupCount === 0 && groupBudget > 0
+        ? {
+            maxCap: group.length,
+            maxAttempts: Math.max(600, group.length + 1),
+            preferDistinctItems: true,
+            budgetHighFrac: 1,
+          }
+        : {}),
+      ...(split ? { budgetHighFrac: 1 } : {}),
+      fixedQuantityForItem: (item) => resolveStockQty(item, 1),
+      repeatableItems: true,
+      ...getLootBundleBalanceOptions({
+        profileId: LOOT_BALANCE_PROFILE_IDS.MERCHANT,
+        lootTypes,
+        rarityWeights: pool?.rarityWeights,
+      }),
+      rng: opts.rng,
+    });
+  const rolledGroups = split
+    ? splitTypes
+        .filter(
+          (type) => budgetUnits[type] > 0 && (!count || lineCaps[type] > 0),
+        )
+        .map((type) => {
+          const quota = budgetUnits[type] / 100;
+          const affordable = groups
+            .get(type)
+            .filter(
+              (item) =>
+                getItemGpValue(item) * resolveStockQty(item, 1) <= quota,
+            );
+          if (!affordable.length) {
+            warnings.push(
+              `${type} has no item affordable within its ${quota} gp share. Adjust the split or item value range.`,
+            );
+            return { items: [], warnings: [] };
+          }
+          if (affordable.length === 1 && groups.get(type).length > 1) {
+            warnings.push(
+              `${type} can only fit ${affordable[0].name} within its ${quota} gp share. Increase this type's percentage for more variety.`,
+            );
+          }
+          return rollGroup(affordable, count ? lineCaps[type] : 0, quota);
+        })
+    : [rollGroup(candidates, count, budgetGp)];
   const seen = new Set();
   const seenNames = new Set();
   const rows = [];
-  for (const entry of rolled.items ?? []) {
+  for (const entry of rolledGroups.flatMap((result) => result.items ?? [])) {
     const item = entry?.item;
     const uuid = item?.uuid;
     if (!uuid || seen.has(uuid)) continue;
@@ -142,6 +196,7 @@ export function rollMerchantStock(pool, items, opts = {}) {
     );
     rows.push(createInventoryRow(uuid, { qty, startingQty: qty }));
   }
-  for (const w of rolled.warnings ?? []) warnings.push(w);
+  for (const result of rolledGroups)
+    for (const w of result.warnings ?? []) warnings.push(w);
   return { rows, warnings };
 }

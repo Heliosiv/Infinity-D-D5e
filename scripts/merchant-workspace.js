@@ -29,6 +29,10 @@ import {
   upsertMerchant,
 } from "./merchant/store.js";
 import { rollMerchantStock } from "./merchant/pool.js";
+import {
+  editStockTypeShare,
+  normalizeStockTypeShares,
+} from "./merchant/stock-split.js";
 import { MerchantSessionApp } from "./merchant-session.js";
 import { MerchantPricingApp } from "./merchant/pricing-app.js";
 import {
@@ -600,11 +604,16 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       pool.rarityWeights,
     );
     const poolLootTypeSet = new Set(pool.lootTypes);
+    const poolTypeShares = normalizeStockTypeShares(
+      pool.lootTypes,
+      pool.typeShares,
+    );
     const poolRaritySet = new Set(pool.rarities);
     const poolLootTypeOptions = LOOT_TYPES.map((value) => ({
       value,
       label: prettyLootType(value),
       checked: poolLootTypeSet.has(value),
+      share: poolTypeShares[value] ?? 0,
     }));
     const poolRarityOptions = RARITIES.map((value) => ({
       value,
@@ -865,6 +874,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         control.disabled = true;
 
     if (context?.canManageMerchants) {
+      this._wireStockTypeShares();
       this._wireFormChange();
       this._wireInventoryInputs();
       this._wireDropZone();
@@ -950,6 +960,75 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         );
       }
     });
+  }
+
+  _wireStockTypeShares() {
+    const form = this.element?.querySelector?.('[data-form="merchant-edit"]');
+    if (!form) return;
+    const inputs = [...form.querySelectorAll('[name="poolLootTypes"]')];
+    const rows = [...form.querySelectorAll("[data-stock-type-share]")];
+    const selected = () =>
+      inputs.filter((input) => input.checked).map((input) => input.value);
+    const read = () =>
+      Object.fromEntries(
+        rows.map((row) => [
+          row.dataset.stockTypeShare,
+          Number(row.querySelector("input").value),
+        ]),
+      );
+    const update = (shares) => {
+      for (const row of rows) {
+        const input = row.querySelector("input");
+        const checked = selected().includes(row.dataset.stockTypeShare);
+        row.hidden = !checked;
+        input.disabled = !checked;
+        if (checked)
+          input.value = String(shares[row.dataset.stockTypeShare] ?? 0);
+      }
+      const panel = form.querySelector("[data-stock-type-split]");
+      if (panel) panel.hidden = selected().length < 2;
+      const target = Math.max(
+        0,
+        Number(form.querySelector('[name="poolBudgetGp"]')?.value) || 0,
+      );
+      for (const row of rows) {
+        const amount = row.querySelector("[data-stock-share-gp]");
+        if (amount)
+          amount.textContent =
+            target > 0
+              ? `≈ ${((target * (shares[row.dataset.stockTypeShare] ?? 0)) / 100).toLocaleString()} gp`
+              : "";
+      }
+    };
+    for (const chip of inputs)
+      chip.addEventListener("change", () =>
+        update(normalizeStockTypeShares(selected(), read())),
+      );
+    for (const row of rows) {
+      const input = row.querySelector("input");
+      input.addEventListener("input", () =>
+        update(
+          editStockTypeShare(
+            selected(),
+            read(),
+            row.dataset.stockTypeShare,
+            input.value,
+          ),
+        ),
+      );
+    }
+    form
+      .querySelector('[name="poolBudgetGp"]')
+      ?.addEventListener("input", () => update(read()));
+    form
+      .querySelector("[data-stock-split-even]")
+      ?.addEventListener("click", () => {
+        update(normalizeStockTypeShares(selected(), {}));
+        form
+          .querySelector('[name="poolTypeShare.' + selected()[0] + '"]')
+          ?.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    update(normalizeStockTypeShares(selected(), read()));
   }
 
   _wireMerchantSearch() {
@@ -1303,6 +1382,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
                   ),
               pool: {
                 lootTypes: data.poolLootTypes,
+                typeShares: data.poolTypeShares,
                 rarities: data.poolRarities,
                 // Blank "Max lines" → 0 (no cap, fill toward the budget instead).
                 count: data.poolCount === "" ? 0 : Number(data.poolCount ?? 6),
@@ -1904,7 +1984,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       `${replace ? "Re-stocked" : "Generated"} ${rows.length} item(s) for ${merchant.name}.`,
     );
     const budgetWarning = warnings.find((message) =>
-      /budget undershot|over the .*budget/i.test(message),
+      /budget undershot|over the .*budget|no item affordable|can only fit/i.test(
+        message,
+      ),
     );
     if (budgetWarning) ui.notifications?.warn(budgetWarning);
     this.render(false);
@@ -2289,6 +2371,10 @@ function readFormFields(form) {
     else if (!Array.isArray(out[arrayKey])) out[arrayKey] = [out[arrayKey]];
   }
   out.poolRarityBalance = normalizeRarityBalanceKey(out.poolRarityBalance);
+  out.poolTypeShares = normalizeStockTypeShares(
+    out.poolLootTypes,
+    readPrefixedFields(out, "poolTypeShare."),
+  );
   out.poolRarityWeights = resolveRarityWeights(
     out.poolRarityBalance,
     readPrefixedFields(out, "poolRarityWeight."),

@@ -584,6 +584,44 @@
   gap: 4px;
   min-width: 0;
 }
+.mw-stock-split {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--lf-border, #786f65);
+  border-radius: 8px;
+}
+.mw-stock-split[hidden],
+.mw-stock-split__row[hidden] {
+  display: none;
+}
+.mw-stock-split__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mw-stock-split__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+}
+.mw-stock-split__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.mw-stock-split__row > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.mw-stock-split__row input {
+  width: 56px;
+}
+.mw-stock-split__row small {
+  min-width: 66px;
+  text-align: right;
+}
 .mw-rarity-balance {
   display: grid;
   grid-template-columns: minmax(160px, 220px) 1fr;

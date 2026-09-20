@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
 import { rollMerchantStock } from "./merchant/pool.js";
+import {
+  allocateStockUnits,
+  editStockTypeShare,
+  normalizeStockTypeShares,
+} from "./merchant/stock-split.js";
 
 /* Deterministic PRNG so the weighted draw is repeatable in tests. */
 function mulberry32(seed) {
@@ -32,6 +37,164 @@ const ITEMS = [
   mkItem("gem1", "gem", "common"),
   mkItem("gem2", "gem", "common"),
 ];
+
+/* The editor keeps selected types at 100%, including uneven edits and additions. */
+{
+  const types = ["loot.equipment.magic", "loot.scroll"];
+  assert.deepEqual(normalizeStockTypeShares(types), {
+    "loot.equipment.magic": 50,
+    "loot.scroll": 50,
+  });
+  assert.deepEqual(
+    editStockTypeShare(types, normalizeStockTypeShares(types), types[0], 10),
+    {
+      "loot.equipment.magic": 10,
+      "loot.scroll": 90,
+    },
+  );
+  assert.deepEqual(
+    allocateStockUnits(600000, types, {
+      "loot.equipment.magic": 10,
+      "loot.scroll": 90,
+    }),
+    {
+      "loot.equipment.magic": 60000,
+      "loot.scroll": 540000,
+    },
+  );
+  const all = [...types, "loot.ammunition", "loot.potion", "loot.art"];
+  assert.equal(
+    Object.values(normalizeStockTypeShares(all)).reduce((a, b) => a + b),
+    100,
+  );
+  const adjusted = editStockTypeShare(
+    all,
+    normalizeStockTypeShares(all),
+    "loot.scroll",
+    65,
+  );
+  assert.equal(adjusted["loot.scroll"], 65);
+  assert.equal(
+    Object.values(adjusted).reduce((a, b) => a + b),
+    100,
+  );
+}
+
+/* Budget quotas are per type, and overlapping consumable/ammunition belongs to ammo. */
+{
+  const magic = ["helm", "ring", "stone", "cloak", "boots", "hat"].map((id) =>
+    mkItem(id, "loot.equipment.magic", "uncommon", {
+      flags: {
+        "infinity-dnd5e": {
+          lootType: "loot.equipment.magic",
+          maxRecommendedQty: 2,
+          gpValue: 300,
+        },
+      },
+    }),
+  );
+  const scrolls = Array.from({ length: 20 }, (_, i) =>
+    mkItem(`scroll-${i}`, "loot.scroll", "common", {
+      flags: {
+        "infinity-dnd5e": {
+          lootType: "loot.scroll",
+          maxRecommendedQty: 2,
+          gpValue: 300,
+        },
+      },
+    }),
+  );
+  const rowsFor = (seed) =>
+    rollMerchantStock(
+      {
+        lootTypes: ["loot.equipment.magic", "loot.scroll"],
+        typeShares: { "loot.equipment.magic": 10, "loot.scroll": 90 },
+        count: 0,
+        budgetGp: 6000,
+      },
+      [...magic, ...scrolls],
+      { rng: mulberry32(seed) },
+    ).rows;
+  for (let seed = 1; seed <= 20; seed++) {
+    const rows = rowsFor(seed);
+    const equipment = rows.filter((row) =>
+      magic.some((item) => item.uuid === row.uuid),
+    );
+    const selectedScrolls = rows.filter((row) =>
+      scrolls.some((item) => item.uuid === row.uuid),
+    );
+    assert.ok(equipment.reduce((sum, row) => sum + row.qty * 300, 0) <= 600);
+    assert.ok(
+      selectedScrolls.reduce((sum, row) => sum + row.qty * 300, 0) <= 5400,
+    );
+    assert.equal(
+      equipment.length,
+      2,
+      "unique magic items fill the 600 gp allowance",
+    );
+    assert.ok(
+      selectedScrolls.length >= 16 && selectedScrolls.length <= 18,
+      "scrolls approach their allowance",
+    );
+    assert.ok(
+      rows.every((row) => row.qty === 1),
+      "distinct candidates precede repeats",
+    );
+  }
+  assert.notDeepEqual(
+    rowsFor(1).map((row) => row.uuid),
+    rowsFor(2).map((row) => row.uuid),
+    "regeneration varies the selected items",
+  );
+  const cramped = rollMerchantStock(
+    {
+      lootTypes: ["loot.equipment.magic", "loot.scroll"],
+      typeShares: { "loot.equipment.magic": 10, "loot.scroll": 90 },
+      count: 0,
+      budgetGp: 6000,
+    },
+    [
+      magic[0],
+      {
+        ...magic[1],
+        flags: {
+          "infinity-dnd5e": { lootType: "loot.equipment.magic", gpValue: 1000 },
+        },
+      },
+      ...scrolls,
+    ],
+    { rng: mulberry32(3) },
+  );
+  assert.match(cramped.warnings.join(" "), /can only fit helm.*600 gp share/i);
+}
+
+{
+  const ammo = mkItem("arrows", "loot.consumable", "common", {
+    system: {
+      type: { value: "ammo" },
+      price: { value: 1, denomination: "gp" },
+    },
+  });
+  const potion = mkItem("healing", "loot.consumable", "common", {
+    system: { price: { value: 20, denomination: "gp" } },
+  });
+  const result = rollMerchantStock(
+    {
+      lootTypes: ["loot.consumable", "loot.ammunition"],
+      typeShares: { "loot.consumable": 50, "loot.ammunition": 50 },
+      count: 0,
+      budgetGp: 40,
+    },
+    [ammo, potion],
+    { rng: mulberry32(1) },
+  );
+  assert.equal(
+    result.rows.length,
+    2,
+    "overlapping ammunition is owned by its specific type",
+  );
+  assert.equal(result.rows.find((row) => row.uuid === ammo.uuid).qty, 20);
+}
 
 /* ------------------------------------------------------------------ *
  * Filter is respected, count is bounded

@@ -375,6 +375,22 @@
               </div>
             </div>
           </div>
+          <div class="mw-stock-split" data-stock-type-split>
+            <div class="mw-stock-split__head">
+              <span class="mw-field__label">Stock value by item type</span>
+              <input type="button" class="mw-btn" data-stock-split-even value="Split evenly" />
+            </div>
+            <p class="mw-hint">Set one percentage; the other selected types adjust to total 100%. Each type gets this share of the target stock value. Some shares may undershoot if no eligible item fits.</p>
+            <div class="mw-stock-split__grid">
+              {{#each poolLootTypeOptions}}
+              <label class="mw-stock-split__row" data-stock-type-share="{{value}}" {{#unless checked}}hidden{{/unless}}>
+                <span>{{label}}</span>
+                <input class="mw-input mw-input--num" type="number" name="poolTypeShare.{{value}}" min="0" max="100" step="1" value="{{share}}" {{#unless checked}}disabled{{/unless}} />
+                <span>%</span><small data-stock-share-gp></small>
+              </label>
+              {{/each}}
+            </div>
+          </div>
           <div class="mw-rarity-balance">
             <label class="mw-field mw-rarity-balance__preset">
               <span class="mw-field__label">Rarity Balance</span>

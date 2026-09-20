@@ -332,6 +332,7 @@ import {
   // normalizeStockPool: defaults, dedupe, count clamp
   assert.deepEqual(normalizeStockPool(undefined), {
     lootTypes: [],
+    typeShares: {},
     rarities: [],
     count: 6,
     budgetGp: 0,
@@ -360,6 +361,15 @@ import {
     "loot types deduped",
   );
   assert.deepEqual(pool.rarities, ["common"]);
+  assert.deepEqual(pool.typeShares, { "weapon-magic": 50, gem: 50 });
+  assert.deepEqual(
+    normalizeStockPool({
+      lootTypes: ["loot.equipment.magic", "loot.scroll"],
+      typeShares: { "loot.equipment.magic": 10, "loot.scroll": 90, rogue: 100 },
+    }).typeShares,
+    { "loot.equipment.magic": 10, "loot.scroll": 90 },
+    "a saved allocation survives normalization without retaining deselected types",
+  );
   assert.equal(pool.count, 50, "count clamped to 50");
   assert.equal(pool.rarityBalance, "custom");
   assert.equal(pool.rarityWeights.common, 2);
@@ -405,6 +415,7 @@ import {
   assert.equal(m.pool.count, 3);
   assert.deepEqual(normalizeMerchant({}).pool, {
     lootTypes: [],
+    typeShares: {},
     rarities: [],
     count: 6,
     budgetGp: 0,

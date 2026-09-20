@@ -173,6 +173,7 @@ export function filterCandidates(items, filter = {}) {
  * @param {(item: object) => number} [opts.fixedQuantityForItem] - optional per-item quantity for stock-style rolls
  * @param {boolean} [opts.uniqueItems] - do not repeat ammunition or variable art within a roll
  * @param {boolean} [opts.repeatableItems] - allow repeated draws of any item up to its recommended draw count
+ * @param {boolean} [opts.preferDistinctItems] - try every affordable distinct item before increasing quantities
  * @param {boolean} [opts.artVariants] - generate specific art-object names and appraisal notes
  * @param {() => number} [opts.rng] - injectable RNG (returns [0, 1)). Default Math.random.
  * @returns {{ items: Array<{ item: object, quantity: number, gpValue: number, gpTotal: number, displayName?: string, valueLabel?: string, variant?: object|null, itemData?: object|null }>,
@@ -213,6 +214,7 @@ export function rollLoot(candidates, opts = {}) {
       : null;
   const uniqueItems = opts.uniqueItems === true;
   const repeatableItems = opts.repeatableItems === true;
+  const preferDistinctItems = opts.preferDistinctItems === true;
   const itemCost = (item) =>
     getItemGpValue(item) * (fixedQuantityForItem?.(item) ?? 1);
 
@@ -298,14 +300,19 @@ export function rollLoot(candidates, opts = {}) {
         );
       break;
     }
+    const distinctPool =
+      preferDistinctItems &&
+      activePool.some((item) => !picked.has(identityByItem.get(item)))
+        ? activePool.filter((item) => !picked.has(identityByItem.get(item)))
+        : activePool;
     const picker = categoryFirst
       ? buildCategoryWeightedPicker(
-          activePool,
+          distinctPool,
           categoryWeights,
           magicBias,
           rarityWeights,
         )
-      : buildWeightedPicker(activePool, magicBias, rarityWeights);
+      : buildWeightedPicker(distinctPool, magicBias, rarityWeights);
     const item = categoryFirst
       ? categoryWeightedPick(picker, {
           categoryCaps,
@@ -331,9 +338,10 @@ export function rollLoot(candidates, opts = {}) {
         1,
         Math.min(getItemMaxQty(item), affordableDraws),
       );
-      const initialDraws = repeatableItems
-        ? Math.floor(rng() * maxInitialDraws) + 1
-        : 1;
+      const initialDraws =
+        repeatableItems && !preferDistinctItems
+          ? Math.floor(rng() * maxInitialDraws) + 1
+          : 1;
       const initialQuantity = repeatableItems
         ? perDrawQuantity * initialDraws
         : fixedQuantityForItem

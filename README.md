@@ -18,6 +18,12 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.42 — Merchant stock mix:** In **Stock generation settings**, assign
+percentages to selected item types; the percentages always total 100 and
+split the GP stock target. Budget rolls prefer different eligible items before
+adding permitted copies, and warn when an item type's share can afford only
+one choice. See the [release notes](docs/RELEASE_NOTES_0.3.42.md).
+
 **v0.3.41 — Merchant stock and workspace:** Merchant editors keep **What this
 merchant buys** open while you select item types and rarities. Stock generation
 can draw multiple potions and other eligible items in one row, with ammunition

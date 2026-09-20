@@ -44,6 +44,13 @@ maximum item count. Both fields can be set to enforce both limits. Existing
 shops retain their saved stock settings until you change them. A value target
 may undershoot when eligible items reach their recommended quantity limits;
 repeated draws add to one inventory row rather than creating duplicate rows.
+With two or more item types selected, **Stock value by item type** assigns each
+type a share of the target value. Change one percentage and the others adjust
+to total 100%; **Split evenly** resets the allocation. For example, 10% Magic
+Equipment and 90% Scrolls on a 6,000 gp target assigns up to 600 gp and
+5,400 gp respectively. The allocation applies when a value target is set;
+selected types with no affordable item may undershoot their share. Budget
+generation tries distinct items before increasing permitted quantities.
 
 Click a merchant for four tabs:
 

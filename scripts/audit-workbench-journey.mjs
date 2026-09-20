@@ -478,6 +478,66 @@ try {
       true,
       "stock-generation autosave preserves the editor viewpoint",
     );
+    // A two-type value split edits in place, saves, and survives a refresh.
+    await stockGeneration
+      .locator('[name="poolLootTypes"][value="loot.equipment.magic"]')
+      .locator("xpath=..")
+      .click();
+    await stockGeneration
+      .locator('[name="poolLootTypes"][value="loot.scroll"]')
+      .locator("xpath=..")
+      .click();
+    await stockGeneration
+      .locator('[name="poolLootTypes"][value="loot.weapon.mundane"]')
+      .locator("xpath=..")
+      .click();
+    await stockGeneration.locator('[name="poolBudgetGp"]').fill("6000");
+    const equipmentShare = stockGeneration.locator(
+      '[name="poolTypeShare.loot.equipment.magic"]',
+    );
+    const scrollShare = stockGeneration.locator(
+      '[name="poolTypeShare.loot.scroll"]',
+    );
+    assert.equal(await equipmentShare.inputValue(), "50");
+    await equipmentShare.fill("10");
+    await equipmentShare.dispatchEvent("change");
+    await page.waitForFunction(
+      () =>
+        journey.findMerchant("a").pool.typeShares["loot.equipment.magic"] ===
+        10,
+    );
+    assert.equal(await scrollShare.inputValue(), "90");
+    assert.equal(
+      await stockGeneration
+        .locator(
+          '[data-stock-type-share="loot.equipment.magic"] [data-stock-share-gp]',
+        )
+        .textContent(),
+      "≈ 600 gp",
+    );
+    if (width === 380) {
+      await equipmentShare.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(out, "merchant-stock-split-380.png"),
+      });
+    }
+    assert.equal(
+      await equipmentShare.evaluate((el) => document.activeElement === el),
+      true,
+    );
+    await page.evaluate(() =>
+      journey.MerchantWorkspaceApp._editors.get("a").render(false),
+    );
+    assert.equal(await stockGeneration.getAttribute("open"), "");
+    assert.equal(await equipmentShare.inputValue(), "10");
+    assert.equal(await scrollShare.inputValue(), "90");
+    await stockGeneration.locator("[data-stock-split-even]").click();
+    await page.waitForFunction(
+      () =>
+        journey.findMerchant("a").pool.typeShares["loot.equipment.magic"] ===
+        50,
+    );
+    assert.equal(await scrollShare.inputValue(), "50");
     const beforePrompt = await page.evaluate(() =>
       JSON.stringify(journey.settings.get("merchants")),
     );

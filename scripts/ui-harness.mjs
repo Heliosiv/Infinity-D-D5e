@@ -2267,13 +2267,19 @@ function merchantWorkspaceContext() {
       },
     ],
     poolLootTypeOptions: [
-      { value: "loot.weapon.magic", label: "Magic Weapons", checked: true },
+      {
+        value: "loot.weapon.magic",
+        label: "Magic Weapons",
+        checked: true,
+        share: 25,
+      },
       {
         value: "loot.consumable",
         label: "Potions & Consumables",
         checked: false,
+        share: 0,
       },
-      { value: "loot.gem", label: "Gems", checked: true },
+      { value: "loot.gem", label: "Gems", checked: true, share: 75 },
     ],
     poolRarityOptions: [
       { value: "common", label: "Common", checked: true },
