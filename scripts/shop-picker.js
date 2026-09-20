@@ -270,6 +270,12 @@ export class ShopPickerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       shops,
       hasShops: shops.length > 0,
       hasPending: shops.some((shop) => shop.pending),
+      showPendingLoader:
+        !this._loading &&
+        !noGm &&
+        !this._requestFailed &&
+        !this._globallyClosed &&
+        shops.some((shop) => shop.pending),
       actorName: actor?.name ?? "No character selected",
       hasActor: Boolean(actor),
       needsActorChoice: !actor && controlledActors.length > 1,

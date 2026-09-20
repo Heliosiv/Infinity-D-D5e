@@ -35,6 +35,86 @@
   --lf-font-heading: var(--atlas-heading);
 }
 
+/* Indeterminate, illustrated wait state: a bone-bound rail with a moving
+   lantern glow. It never claims a percentage for socket replies. */
+.infinity-dnd5e .infinity-loading-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+
+.infinity-dnd5e .infinity-loading-state strong {
+  color: var(--lf-text-strong);
+}
+
+.infinity-dnd5e.infinity-shop-picker .sp-empty.infinity-loading-state {
+  grid-template-columns: minmax(0, 1fr);
+  text-align: center;
+}
+
+.infinity-dnd5e .infinity-undead-loader {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  inline-size: min(100%, 23rem);
+  block-size: 3rem;
+  flex: 0 0 auto;
+  background: url("../assets/ui/undead-loading-track.svg") center / 100% 100%
+    no-repeat;
+}
+
+.infinity-dnd5e .infinity-undead-loader::after {
+  position: absolute;
+  inset: 1.1rem 3rem;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #c69b65 38%,
+    #f7d9a3 50%,
+    #c69b65 62%,
+    transparent
+  );
+  opacity: 0.75;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 5px #e4b873);
+  animation: infinity-undead-glow 1.7s ease-in-out infinite;
+}
+
+.infinity-dnd5e .infinity-undead-loader--inline {
+  margin: 0.25rem auto 0.75rem;
+}
+
+@keyframes infinity-undead-glow {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infinity-dnd5e .infinity-undead-loader::after {
+    animation: none;
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .infinity-dnd5e .infinity-undead-loader {
+    background: Canvas;
+    border: 2px solid CanvasText;
+    border-radius: 0.5rem;
+  }
+
+  .infinity-dnd5e .infinity-undead-loader::after {
+    background: Highlight;
+    filter: none;
+  }
+}
+
 /* A common silhouette language, independent of Foundry's icon font. */
 .infinity-dnd5e .infinity-emblem {
   display: inline-block;

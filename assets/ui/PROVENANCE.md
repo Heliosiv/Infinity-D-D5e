@@ -1,5 +1,10 @@
 # Campaign Atlas UI assets
 
+`undead-loading-track.svg` is an original, hand-authored bone-bound progress
+rail for the player-safe Shops, Party Supplies, and Reputation waits. It is
+decorative; adjacent text announces the real loading state. CSS animates a
+lantern glow only while a request is pending and stops for reduced motion.
+
 ## Plague Scholar revision — 2026-09-11
 
 The active theme uses two original images generated with the built-in OpenAI

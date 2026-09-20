@@ -36,6 +36,8 @@
     </span>
   </p>
 
+  {{#if refreshing}}<div class="infinity-undead-loader infinity-undead-loader--inline" aria-hidden="true"></div>{{/if}}
+
   {{#if sharingDisabled}}
   <p class="ro-notice ro-notice--warn">
     <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
@@ -65,10 +67,10 @@
       <button type="button" class="ro-retry" data-action="refresh">Try again</button>
     </div>
     {{else if initialLoading}}
-    <p class="ro-empty">
-      <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
-      Loading the party's supplies...
-    </p>
+    <div class="ro-empty infinity-loading-state">
+      <strong>Loading the party's supplies...</strong>
+      <div class="infinity-undead-loader" aria-hidden="true"></div>
+    </div>
     {{else if requestFailed}}
     <div class="ro-empty ro-empty--warn ro-empty--action" role="alert">
       <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>

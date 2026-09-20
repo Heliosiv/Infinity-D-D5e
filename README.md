@@ -6,6 +6,13 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**Player loading screens:** Shops, Party Supplies, and Reputation show a
+bone-bound, indeterminate loading bar while waiting for the GM's player-safe
+response or a requested shop session. The bar also appears during a Party
+Supplies refresh; it clears when the response arrives or the existing
+offline/timeout state takes over. It does not represent a percentage, and
+respects reduced-motion and high-contrast settings.
+
 **v0.3.40 — Crafted-scroll recovery:** Foundry's generated effect timestamps and
 version bookkeeping no longer leave an already-delivered crafted scroll in an
 uncertain state. Recovery still fails closed if the effect identity, duration,

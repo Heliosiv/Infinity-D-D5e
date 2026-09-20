@@ -73,6 +73,8 @@
     {{#if noGm}}Shops are offline. Nothing changed. Retry after a GM reconnects.{{else if loading}}Loading open shops.{{else if requestFailed}}{{else if globallyClosed}}All shops are temporarily closed.{{else if hasPending}}A shop request is waiting for the GM.{{else}}{{shops.length}} shops are available.{{/if}}
   </p>
 
+  {{#if showPendingLoader}}<div class="infinity-undead-loader infinity-undead-loader--inline" aria-hidden="true"></div>{{/if}}
+
   {{#if noGm}}
     <div class="sp-empty sp-empty--state">
       <i class="fa-solid fa-moon" aria-hidden="true"></i>
@@ -81,9 +83,9 @@
     </div>
   {{else}}
     {{#if loading}}
-      <div class="sp-empty sp-empty--state">
-        <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+      <div class="sp-empty sp-empty--state infinity-loading-state">
         <div><strong>Looking for open shops</strong><span>Waiting for the GM's player-safe shop list.</span></div>
+        <div class="infinity-undead-loader" aria-hidden="true"></div>
       </div>
     {{else}}
       {{#if requestFailed}}

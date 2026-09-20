@@ -2719,6 +2719,7 @@ function shopPickerContext() {
     globallyClosed: false,
     hasShops: true,
     hasPending: true,
+    showPendingLoader: true,
     actorName: "Aric the Ranger",
     hasActor: true,
     canSwitchActor: true,

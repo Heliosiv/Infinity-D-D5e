@@ -36,7 +36,10 @@
   {{#if noGm}}
     <div class="rv-empty rv-empty--action"><i class="fa-solid fa-plug-circle-xmark" aria-hidden="true"></i><div><strong>Reputation is offline</strong><span>No full GM is online. Nothing changed; standings reload automatically after reconnection.</span></div><button type="button" data-action="refresh">Try again</button></div>
   {{else if loading}}
-    <p class="rv-empty"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Loading reputations…</p>
+    <div class="rv-empty infinity-loading-state">
+      <strong>Loading reputations…</strong>
+      <div class="infinity-undead-loader" aria-hidden="true"></div>
+    </div>
   {{else if requestFailed}}
     <div class="rv-empty rv-empty--action rv-empty--warning" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><div><strong>The standings did not arrive</strong><span>Nothing changed. Check your connection, then retry the same refresh.</span></div><button type="button" data-action="refresh">Try again</button></div>
   {{else if hasFactions}}
