@@ -18,6 +18,13 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.45 — Flexible guided downtime:** Four-hour setup accepts every saved
+activity or project that fits. GMs can revise an open block, adjust or remove
+unresolved characters, return them for a new choice, and reverse applied simple
+coin or project results after a guarded state check. Completed blocks can be
+reopened for corrections when they are the latest block. See the
+[release notes](docs/RELEASE_NOTES_0.3.45.md).
+
 **v0.3.44 — Complete pending update:** Includes the merchant stock mix, scroll
 preservation, and guarded recovery changes below, plus a usable four-hour
 guided downtime setup. Short blocks now show which activities fit and stop
