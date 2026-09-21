@@ -183,11 +183,18 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
       restoreActorDefaults: DowntimeWorkspaceApp._onRestoreActorDefaults,
       beginNextBlock: DowntimeWorkspaceApp._onBeginNextBlock,
       createBlock: DowntimeWorkspaceApp._onCreateBlock,
+      reviseBlockSetup: DowntimeWorkspaceApp._onReviseBlockSetup,
       addHuntingAnimal: DowntimeWorkspaceApp._onAddHuntingAnimal,
       removeHuntingAnimal: DowntimeWorkspaceApp._onRemoveHuntingAnimal,
       saveHuntingRegion: DowntimeWorkspaceApp._onSaveHuntingRegion,
       openForPlayers: DowntimeWorkspaceApp._onOpenForPlayers,
       prepareParticipant: DowntimeWorkspaceApp._onPrepareParticipant,
+      saveParticipantHours: DowntimeWorkspaceApp._onSaveParticipantHours,
+      resetParticipant: DowntimeWorkspaceApp._onResetParticipant,
+      removeParticipant: DowntimeWorkspaceApp._onRemoveParticipant,
+      reverseParticipant: DowntimeWorkspaceApp._onReverseParticipant,
+      reopenGuidedForCorrections:
+        DowntimeWorkspaceApp._onReopenGuidedForCorrections,
       lockBlock: DowntimeWorkspaceApp._onLockBlock,
       planBlock: DowntimeWorkspaceApp._onPlanBlock,
       chooseGuidedOutcome: DowntimeWorkspaceApp._onChooseGuidedOutcome,
@@ -1111,6 +1118,121 @@ export class DowntimeWorkspaceApp extends GmWorkbenchApp {
         pending: "Preparing this character's saved result...",
         success: "Result ready. Review the report, then apply it.",
         focus: "#dt-preview-heading",
+      },
+    );
+  }
+
+  static async _onReviseBlockSetup(_event, target) {
+    const form = target?.closest?.('[data-form="edit-block-setup"]');
+    if (!form || form.reportValidity?.() === false) return;
+    const data = new FormData(form);
+    await this._runCommand(
+      "reviseBlockSetup",
+      {
+        blockId: this._currentBlockId(),
+        hours: Number(data.get("hours")),
+        templateIds: data.getAll("templateIds"),
+        projectIds: data.getAll("projectIds"),
+        addActorIds: data.getAll("addActorIds"),
+      },
+      {
+        pending: "Saving downtime block setup...",
+        success:
+          "Block setup updated. Players can use the revised hours and activities.",
+        focus: "#dt-current-heading",
+      },
+    );
+  }
+
+  static async _onSaveParticipantHours(_event, target) {
+    const form = target?.closest?.("[data-participant-hours]");
+    const actorId = cleanId(form?.dataset?.actorId);
+    if (!actorId) return;
+    const hours = [...(form?.querySelectorAll?.('[name="hours"]') ?? [])].map(
+      (input) => Number(input.value),
+    );
+    await this._runCommand(
+      "correctParticipant",
+      { blockId: this._currentBlockId(), actorId, action: "hours", hours },
+      {
+        pending: "Saving this character's corrected hours...",
+        success: "Character hours updated. Their saved rolls remain the same.",
+        focus: `[data-participant-id="${cssEscape(actorId)}"] summary`,
+      },
+    );
+  }
+
+  static async _onResetParticipant(_event, target) {
+    const actorId = cleanId(target?.dataset?.actorId);
+    if (!actorId) return;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Return this character for edits?" },
+      content:
+        "<p>This clears the character's saved choice and rolls so they can submit again. Other characters keep their downtime.</p>",
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "correctParticipant",
+      { blockId: this._currentBlockId(), actorId, action: "reset" },
+      {
+        pending: "Returning this character for edits...",
+        success: "Character choice cleared. They can choose and roll again.",
+        focus: `[data-participant-id="${cssEscape(actorId)}"] summary`,
+      },
+    );
+  }
+
+  static async _onRemoveParticipant(_event, target) {
+    const actorId = cleanId(target?.dataset?.actorId);
+    if (!actorId) return;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Remove this character from downtime?" },
+      content:
+        "<p>This removes the character's pending downtime and notifies their player. Other characters keep their submissions and reports.</p>",
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "correctParticipant",
+      { blockId: this._currentBlockId(), actorId, action: "remove" },
+      {
+        pending: "Removing this character from the block...",
+        success: "Character removed. Other downtime remains available.",
+        focus: "#dt-submissions-heading",
+      },
+    );
+  }
+
+  static async _onReverseParticipant(_event, target) {
+    const actorId = cleanId(target?.dataset?.actorId);
+    if (!actorId) return;
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Reverse this applied downtime result?" },
+      content:
+        "<p>This checks the saved wallet and project progress, restores the character's earlier wallet, archives the applied report, and returns the character for a new choice. The reversal can be retried if a write is interrupted.</p>",
+      rejectClose: false,
+    });
+    if (!confirmed) return;
+    await this._runCommand(
+      "reverseParticipant",
+      { blockId: this._currentBlockId(), actorId },
+      {
+        pending: "Reversing this character's applied result...",
+        success: "Result reversed. The character can choose downtime again.",
+        focus: `[data-participant-id="${cssEscape(actorId)}"] summary`,
+      },
+    );
+  }
+
+  static async _onReopenGuidedForCorrections() {
+    await this._runCommand(
+      "reopenGuidedForCorrections",
+      { blockId: this._currentBlockId() },
+      {
+        pending: "Reopening the completed block for corrections...",
+        success: "Block reopened. Choose a character to reverse or correct.",
+        focus: "#dt-submissions-heading",
       },
     );
   }
@@ -2853,6 +2975,12 @@ function normalizeCurrentBlock(workflow, root) {
       img: String(row?.img ?? "icons/svg/mystery-man.svg"),
       submitted: row?.submitted === true,
       resolved: row?.resolved === true,
+      canCorrect: row?.canCorrect === true,
+      canEditHours: row?.canEditHours === true,
+      canRemove: row?.canRemove === true,
+      canReverse: row?.canReverse === true,
+      reversalPending: row?.reversalPending === true,
+      reversalReason: String(row?.reversalReason ?? ""),
       canPrepare: row?.canPrepare === true,
       resolutionLabel: String(
         row?.resolutionLabel ??
@@ -2977,6 +3105,24 @@ function normalizeCurrentBlock(workflow, root) {
   return {
     id: cleanId(workflow.id ?? workflow.blockId),
     guided: workflow.guided === true || workflow.mode === "guided",
+    canEditSetup: workflow.canEditSetup === true,
+    canReopenForCorrections: workflow.canReopenForCorrections === true,
+    setupTemplates: array(workflow.setupTemplates).map((entry) => ({
+      id: cleanId(entry?.id),
+      name: String(entry?.name ?? "Activity"),
+      checked: entry?.checked === true,
+      blockHours: positiveInteger(entry?.blockHours, 8),
+    })),
+    setupProjects: array(workflow.setupProjects).map((entry) => ({
+      id: cleanId(entry?.id),
+      name: String(entry?.name ?? "Project"),
+      checked: entry?.checked === true,
+      blockHours: positiveInteger(entry?.blockHours, 8),
+    })),
+    setupActors: array(workflow.setupActors).map((entry) => ({
+      id: cleanId(entry?.id),
+      name: String(entry?.name ?? "Character"),
+    })),
     status,
     statusLabel: workflowLabel(status),
     statusTone: workflowTone(status),

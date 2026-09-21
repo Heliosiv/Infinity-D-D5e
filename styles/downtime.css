@@ -791,6 +791,82 @@
   padding: 0 0 0 22px;
 }
 
+.infinity-downtime-workspace .dt-block-setup {
+  margin: 10px 0;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+  padding: 9px;
+  background: var(--dt-surface);
+}
+
+.infinity-downtime-workspace .dt-block-setup summary {
+  color: var(--dt-accent);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.infinity-downtime-workspace .dt-block-setup form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.infinity-downtime-workspace .dt-block-setup fieldset {
+  min-width: 0;
+  border: 1px solid var(--dt-border);
+  border-radius: var(--dt-radius-sm);
+}
+
+.infinity-downtime-workspace .dt-block-setup form > p {
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: var(--lf-text-xs);
+}
+
+.infinity-downtime-workspace .dt-participant__corrections {
+  margin-top: 10px;
+  border-top: 1px solid var(--dt-border);
+  padding-top: 8px;
+}
+
+.infinity-downtime-workspace .dt-participant__corrections summary {
+  color: var(--dt-accent);
+  cursor: pointer;
+  font-size: var(--lf-text-xs);
+  font-weight: 700;
+}
+
+.infinity-downtime-workspace .dt-participant__corrections form {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.infinity-downtime-workspace .dt-participant__corrections form p {
+  margin: 0;
+  color: var(--dt-muted);
+  font-size: var(--lf-text-xs);
+}
+
+.infinity-downtime-workspace .dt-participant__corrections label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--lf-text-xs);
+}
+
+.infinity-downtime-workspace .dt-participant__corrections input {
+  width: 5.5rem;
+}
+
+.infinity-downtime-workspace .dt-participant__correction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .infinity-downtime-workspace .dt-compact-list li {
   display: flex;
   align-items: baseline;

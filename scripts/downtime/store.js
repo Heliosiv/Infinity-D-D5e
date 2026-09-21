@@ -1673,7 +1673,11 @@ function guidedPlanIdentity(plan) {
 function assertImmutablePlan(
   before,
   nextStore,
-  { allowGuidedReview = false, allowGuidedContinuation = false } = {},
+  {
+    allowGuidedReview = false,
+    allowGuidedContinuation = false,
+    allowGuidedReviewReset = false,
+  } = {},
 ) {
   if (!before?.plan) return;
   const after =
@@ -1715,9 +1719,78 @@ function assertImmutablePlan(
     )
   )
     return;
+  const voidedReview = after?.voidedReviews?.at?.(-1);
+  if (
+    allowGuidedReviewReset &&
+    before.mode === "guided" &&
+    before.state === "planned" &&
+    after?.mode === "guided" &&
+    after.state === "collecting" &&
+    after.plan === null &&
+    Object.keys(after.operationLedger ?? {}).length === 0 &&
+    Object.values(before.operationLedger ?? {}).every(
+      (record) => record.state === "pending",
+    ) &&
+    persistedValuesEqual(voidedReview?.plan, before.plan) &&
+    persistedValuesEqual(voidedReview?.operationLedger, before.operationLedger)
+  )
+    return;
   if (!after || !persistedValuesEqual(before.plan, after.plan)) {
     throw new Error("DowntimeWorkflowPlanImmutable");
   }
+}
+
+/** Preserve a prepared guided review for audit, then let the GM correct it. */
+export async function returnGuidedReviewToCollecting(
+  blockId,
+  { reason = "GM correction" } = {},
+) {
+  const id = toId(blockId);
+  if (!id) throw new Error("DowntimeWorkflowBlockIdInvalid");
+  return mutateWorkflow(
+    (store, fence) => {
+      const current = store.activeBlock;
+      if (!current || current.id !== id)
+        throw new Error("DowntimeWorkflowBlockNotFound");
+      if (
+        current.mode !== "guided" ||
+        current.state !== "planned" ||
+        !current.plan ||
+        Object.values(current.operationLedger ?? {}).some(
+          (record) => record.state !== "pending",
+        )
+      ) {
+        throw new Error("DowntimeGuidedReviewAlreadyApplying");
+      }
+      const at = currentTimestamp();
+      const next = normalizeDowntimeBlock({
+        ...current,
+        state: "collecting",
+        plan: null,
+        operationLedger: {},
+        voidedReviews: [
+          ...(Array.isArray(current.voidedReviews)
+            ? current.voidedReviews
+            : []),
+          {
+            plan: current.plan,
+            operationLedger: current.operationLedger,
+            reason: String(reason).trim().slice(0, 500),
+            at,
+            by: fence.userId,
+          },
+        ].slice(-MAX_HISTORY),
+        updatedAt: at,
+        updatedBy: fence.userId,
+      });
+      if (!next) throw new Error("DowntimeGuidedReviewResetInvalid");
+      for (const key of ["planningDraft", "lockedAt", "plannedAt"])
+        delete next[key];
+      store.activeBlock = next;
+      return { store, mapResult: (committed) => committed.activeBlock };
+    },
+    { allowGuidedReviewReset: true },
+  );
 }
 
 async function mutateWorkflow(mutator, options = {}) {
@@ -1740,6 +1813,9 @@ async function mutateWorkflow(mutator, options = {}) {
     const working = normalizeDowntimeWorkflowStore(ensured);
     const beforeStore = clone(working);
     const beforeBlock = clone(working.activeBlock);
+    if (beforeBlock?.pendingReversal && !options.allowGuidedReversal) {
+      throw new Error("DowntimeGuidedReversalNeedsRecovery");
+    }
     const outcome = await mutator(working, fence);
     const nextStore = normalizeDowntimeWorkflowStore(outcome?.store ?? working);
     assertImmutablePlan(beforeBlock, nextStore, options);
@@ -1923,6 +1999,345 @@ export async function updateGuidedDowntimeParticipantDuringReview(
       updatedBy: fence.userId,
     });
     if (!next) throw new Error("DowntimeWorkflowParticipantUpdateInvalid");
+    store.activeBlock = next;
+    return { store, mapResult: (committed) => committed.activeBlock };
+  });
+}
+
+/** Freeze the block before changing an applied Actor wallet. Repeating the
+ * claim after a process interruption resumes the same exact correction. */
+export async function claimGuidedDowntimeReversal(blockId, actorId) {
+  const id = toId(blockId);
+  const targetId = toId(actorId);
+  if (!id || !targetId) throw new Error("DowntimeGuidedReversalInvalid");
+  return mutateWorkflow(
+    (store, fence) => {
+      const block = store.activeBlock;
+      if (
+        !block ||
+        block.id !== id ||
+        block.mode !== "guided" ||
+        block.state !== "collecting"
+      )
+        throw new Error("DowntimeGuidedReversalClosed");
+      if (block.pendingReversal) {
+        if (block.pendingReversal.actorId !== targetId)
+          throw new Error("DowntimeGuidedReversalNeedsRecovery");
+        return { store, result: block };
+      }
+      const participant = block.participants?.find(
+        (entry) => entry.actorId === targetId,
+      );
+      const segmentIndex = block.resolvedSegments?.findIndex((segment) =>
+        segment.plan?.characters?.some((entry) => entry.actorId === targetId),
+      );
+      if (!participant?.resolved || segmentIndex < 0)
+        throw new Error("DowntimeGuidedReversalNotFound");
+      const segment = block.resolvedSegments[segmentIndex];
+      if (
+        segment.plan?.characters?.length !== 1 ||
+        segment.plan.characters[0].actorId !== targetId ||
+        !segment.plan?.operations?.length ||
+        segment.plan.operations.some(
+          (operation) =>
+            operation.actorId !== targetId ||
+            !["currency", "noop"].includes(operation.kind) ||
+            (operation.benefit && operation.benefit.type !== "none") ||
+            operation.work ||
+            operation.hunting ||
+            operation.research ||
+            operation.consequences ||
+            segment.operationLedger?.[operation.operationId]?.state !==
+              "applied",
+        )
+      )
+        throw new Error("DowntimeGuidedReversalNeedsManualEffectReview");
+      const projectedHours = { ...store.projectProgress };
+      const projectedSuccesses = { ...store.projectSuccesses };
+      for (const operation of [...segment.plan.operations].reverse()) {
+        const project = operation.project;
+        if (!project) continue;
+        const projectId = toId(project.id);
+        if (
+          nonNegativeInteger(projectedHours[projectId] ?? 0) !==
+            nonNegativeInteger(project.progressAfterHours) ||
+          nonNegativeInteger(projectedSuccesses[projectId] ?? 0) !==
+            nonNegativeInteger(project.successesAfter)
+        )
+          throw new Error("DowntimeGuidedReversalProjectProgressDrift");
+        projectedHours[projectId] = project.progressBeforeHours;
+        projectedSuccesses[projectId] = project.successesBefore;
+      }
+      block.pendingReversal = {
+        actorId: targetId,
+        segmentIndex,
+        at: currentTimestamp(),
+        by: fence.userId,
+      };
+      block.updatedAt = currentTimestamp();
+      block.updatedBy = fence.userId;
+      return { store, mapResult: (committed) => committed.activeBlock };
+    },
+    { allowGuidedReversal: true },
+  );
+}
+
+/** Move the latest completed guided block back to collecting for corrections. */
+export async function reopenCompletedGuidedDowntimeBlock(blockId) {
+  const id = toId(blockId);
+  if (!id) throw new Error("DowntimeGuidedReopenInvalid");
+  return mutateWorkflow((store, fence) => {
+    if (store.activeBlock)
+      throw new Error(
+        "Finish the current block before reopening an older result.",
+      );
+    const completed = store.history.at(-1);
+    if (
+      !completed ||
+      completed.id !== id ||
+      completed.mode !== "guided" ||
+      completed.state !== "completed"
+    )
+      throw new Error(
+        "Only the latest completed guided block can be reopened.",
+      );
+    const finalSegment = completed.plan?.operations?.length
+      ? [
+          {
+            completedAt: completed.completedAt,
+            plan: completed.plan,
+            operationLedger: completed.operationLedger,
+            result: completed.result,
+          },
+        ]
+      : [];
+    const segments = [...(completed.resolvedSegments ?? []), ...finalSegment];
+    if (!segments.length)
+      throw new Error("This block has no applied character results.");
+    const resolvedIds = new Set(
+      segments.flatMap((segment) =>
+        (segment.plan?.characters ?? []).map((entry) => entry.actorId),
+      ),
+    );
+    const at = currentTimestamp();
+    const reopened = normalizeDowntimeBlock({
+      ...completed,
+      state: "collecting",
+      plan: null,
+      operationLedger: {},
+      participants: (completed.participants ?? []).map((entry) => ({
+        ...entry,
+        resolved: resolvedIds.has(entry.actorId),
+      })),
+      resolvedSegments: segments,
+      individualReceipts: {
+        ...(completed.individualReceipts ?? {}),
+        ...(completed.result?.playerReceipts ?? {}),
+      },
+      result: null,
+      reopenedAt: at,
+      reopenedBy: fence.userId,
+      updatedAt: at,
+      updatedBy: fence.userId,
+    });
+    if (!reopened) throw new Error("DowntimeGuidedReopenInvalid");
+    for (const field of ["completedAt", "applyingAt", "plannedAt", "lockedAt"])
+      delete reopened[field];
+    store.history.pop();
+    store.activeBlock = reopened;
+    return { store, mapResult: (committed) => committed.activeBlock };
+  });
+}
+
+/** Archive an undone result and clear its receipt only after Actor readback. */
+export async function finishGuidedDowntimeReversal(
+  blockId,
+  actorId,
+  { reason = "GM correction" } = {},
+) {
+  const id = toId(blockId);
+  const targetId = toId(actorId);
+  if (!id || !targetId) throw new Error("DowntimeGuidedReversalInvalid");
+  return mutateWorkflow(
+    (store, fence) => {
+      const block = store.activeBlock;
+      const pending = block?.pendingReversal;
+      if (!block || block.id !== id || pending?.actorId !== targetId)
+        throw new Error("DowntimeGuidedReversalNotClaimed");
+      const segment = block.resolvedSegments?.[pending.segmentIndex];
+      if (
+        !segment?.plan?.characters?.some((entry) => entry.actorId === targetId)
+      )
+        throw new Error("DowntimeGuidedReversalChanged");
+      for (const operation of [...(segment.plan.operations ?? [])].reverse()) {
+        const project = operation.project;
+        if (!project) continue;
+        const projectId = toId(project.id);
+        if (
+          nonNegativeInteger(store.projectProgress?.[projectId] ?? 0) !==
+            nonNegativeInteger(project.progressAfterHours) ||
+          nonNegativeInteger(store.projectSuccesses?.[projectId] ?? 0) !==
+            nonNegativeInteger(project.successesAfter)
+        )
+          throw new Error("Later project progress must be reversed first.");
+        store.projectProgress[projectId] = nonNegativeInteger(
+          project.progressBeforeHours,
+        );
+        store.projectSuccesses[projectId] = nonNegativeInteger(
+          project.successesBefore,
+        );
+      }
+      const at = currentTimestamp();
+      const priorReceipt = block.individualReceipts?.[targetId] ?? null;
+      const next = normalizeDowntimeBlock({
+        ...block,
+        participants: block.participants.map((entry) =>
+          entry.actorId === targetId
+            ? {
+                ...entry,
+                queue: [],
+                submitted: false,
+                submittedAt: 0,
+                submittedBy: null,
+                guidedSelection: null,
+                guidedRoll: null,
+                hunt: null,
+                research: null,
+                resolved: false,
+                resolvedAt: 0,
+              }
+            : entry,
+        ),
+        individualReceipts: Object.fromEntries(
+          Object.entries(block.individualReceipts ?? {}).filter(
+            ([key]) => key !== targetId,
+          ),
+        ),
+        resolvedSegments: block.resolvedSegments.filter(
+          (_, index) => index !== pending.segmentIndex,
+        ),
+        reversedSegments: [
+          ...(Array.isArray(block.reversedSegments)
+            ? block.reversedSegments
+            : []),
+          {
+            segment,
+            receipt: priorReceipt,
+            reason: String(reason).trim().slice(0, 500),
+            at,
+            by: fence.userId,
+          },
+        ].slice(-MAX_HISTORY),
+        pendingReversal: null,
+        updatedAt: at,
+        updatedBy: fence.userId,
+      });
+      if (!next) throw new Error("DowntimeGuidedReversalInvalid");
+      store.activeBlock = next;
+      if (isPlainObject(store.journal))
+        store.journal[targetId] = (store.journal[targetId] ?? []).filter(
+          (row) => row.blockId !== id,
+        );
+      return { store, mapResult: (committed) => committed.activeBlock };
+    },
+    { allowGuidedReversal: true },
+  );
+}
+
+/** GM edits to one unresolved character leave another character's plan intact. */
+export async function reviseGuidedDowntimeParticipant(
+  blockId,
+  actorId,
+  {
+    participant = null,
+    remove = false,
+    reason = "GM correction",
+    expectedRevision = null,
+  } = {},
+) {
+  const id = toId(blockId);
+  const targetId = toId(actorId);
+  if (
+    !id ||
+    !targetId ||
+    (remove ? participant : !isPlainObject(participant))
+  ) {
+    throw new Error("DowntimeGuidedParticipantRevisionInvalid");
+  }
+  return mutateWorkflow((store, fence) => {
+    if (
+      expectedRevision !== null &&
+      nonNegativeInteger(expectedRevision, -1) !== store.revision
+    ) {
+      throw new Error("DowntimeWorkflowRevisionMismatch");
+    }
+    const current = store.activeBlock;
+    if (!current || current.id !== id)
+      throw new Error("DowntimeWorkflowBlockNotFound");
+    if (
+      current.mode !== "guided" ||
+      !["collecting", "planned"].includes(current.state) ||
+      current.plan?.characters?.some((entry) => entry.actorId === targetId) ||
+      current.planningDraft?.manifest?.participants?.some(
+        (entry) => entry.actorId === targetId,
+      )
+    ) {
+      throw new Error("DowntimeGuidedParticipantRevisionClosed");
+    }
+    const index = current.participants?.findIndex(
+      (entry) => entry.actorId === targetId,
+    );
+    const before = index >= 0 ? current.participants[index] : null;
+    if (
+      !before ||
+      before.resolved === true ||
+      (remove && current.participants.length < 2)
+    ) {
+      throw new Error("DowntimeGuidedParticipantRevisionClosed");
+    }
+    const nextParticipant = remove ? null : sanitizeJson(participant);
+    if (
+      nextParticipant &&
+      (nextParticipant.actorId !== targetId ||
+        Object.keys({ ...before, ...nextParticipant }).some(
+          (key) =>
+            ![
+              "queue",
+              "hunt",
+              "research",
+              "guidedSelection",
+              "guidedRoll",
+              "submitted",
+              "submittedAt",
+              "submittedBy",
+            ].includes(key) &&
+            !persistedValuesEqual(before[key], nextParticipant[key]),
+        ))
+    ) {
+      throw new Error("DowntimeGuidedParticipantRevisionInvalid");
+    }
+    const at = currentTimestamp();
+    const next = normalizeDowntimeBlock({
+      ...current,
+      participants: current.participants.flatMap((entry, position) =>
+        position === index ? (remove ? [] : [nextParticipant]) : [entry],
+      ),
+      corrections: [
+        ...(Array.isArray(current.corrections) ? current.corrections : []),
+        {
+          actorId: targetId,
+          action: remove ? "remove" : "edit",
+          before,
+          after: nextParticipant,
+          reason: String(reason).trim().slice(0, 500),
+          at,
+          by: fence.userId,
+        },
+      ].slice(-MAX_REQUEST_RECEIPTS),
+      updatedAt: at,
+      updatedBy: fence.userId,
+    });
+    if (!next) throw new Error("DowntimeGuidedParticipantRevisionInvalid");
     store.activeBlock = next;
     return { store, mapResult: (committed) => committed.activeBlock };
   });

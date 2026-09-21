@@ -38,6 +38,7 @@ import {
   completeResearchFollowUp,
   deleteResearchBlock,
   deleteResearchSeed,
+  voidResearchCase,
   listResearchCases,
   loadResearchBlock,
   loadResearchSeeds,
@@ -137,10 +138,12 @@ import {
   beginDowntimeApplication,
   cancelDowntimeBlock,
   claimDowntimeOperation,
+  claimGuidedDowntimeReversal,
   completeDowntimeBlock,
   continueGuidedDowntimeBlock,
   createDowntimeBlock,
   ensureDowntimeWorkflowAuthority,
+  finishGuidedDowntimeReversal,
   getActiveDowntimeBlock,
   getDowntimeWorkflowRevision,
   initializeDowntimePlanningDraft,
@@ -152,6 +155,9 @@ import {
   markDowntimePlanningDraftNeedsReview,
   persistDowntimePlan,
   registerDowntimeWorkflowObserver,
+  reopenCompletedGuidedDowntimeBlock,
+  returnGuidedReviewToCollecting,
+  reviseGuidedDowntimeParticipant,
   resolveDowntimeOperation,
   resolveRecoveredDowntimeOperation,
   resolveDowntimePlanningRoll,
@@ -1466,6 +1472,436 @@ export async function prepareGuidedDowntimeParticipant({
       preparedPlan,
     });
     return planned;
+  });
+}
+
+/** Correct one character without cancelling the rest of the downtime block. */
+export async function correctGuidedDowntimeParticipant({
+  blockId,
+  actorId,
+  action,
+  hours = [],
+  reason = "",
+} = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    let block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      !["collecting", "planned"].includes(block.state)
+    ) {
+      throw new Error(
+        "This character cannot be edited while downtime is applying or recovering.",
+      );
+    }
+    const participant = participantFor(block, actorId);
+    if (!participant || participant.resolved === true) {
+      throw new Error("Choose an unresolved character from this block.");
+    }
+    const correction = String(action ?? "");
+    if (!["reset", "remove", "hours"].includes(correction)) {
+      throw new Error("Choose Reset, Remove, or Edit hours.");
+    }
+    if (correction === "remove" && block.participants.length < 2) {
+      throw new Error(
+        "Keep at least one character in the block, or cancel the entire block.",
+      );
+    }
+    let changed = null;
+    if (correction === "hours") {
+      if (participant.hunt || participant.research) {
+        throw new Error(
+          "Reset this started Hunt or Research choice before changing its hours.",
+        );
+      }
+      if (
+        !Array.isArray(hours) ||
+        hours.length !== participant.queue?.length ||
+        !hours.length
+      ) {
+        throw new Error("Provide hours for every saved activity.");
+      }
+      const queue = participant.queue.map((entry, index) => ({
+        ...entry,
+        hours: Number(hours[index]),
+      }));
+      normalizeGuidedSubmittedQueue(block, queue);
+      changed = { ...participant, queue };
+    } else if (correction === "reset") {
+      changed = {
+        ...participant,
+        queue: [],
+        submitted: false,
+        submittedAt: 0,
+        submittedBy: null,
+        guidedSelection: null,
+        guidedRoll: null,
+      };
+      delete changed.hunt;
+      delete changed.research;
+    }
+    if (
+      block.state === "planned" &&
+      guidedParticipantUnderReview(block, actorId)
+    ) {
+      block = await returnGuidedReviewToCollecting(block.id, {
+        reason: reason || `${correction} ${participant.actorName}`,
+      });
+    }
+    const revised = await reviseGuidedDowntimeParticipant(block.id, actorId, {
+      participant: changed,
+      remove: correction === "remove",
+      reason: reason || `${correction} ${participant.actorName}`,
+      expectedRevision: getDowntimeWorkflowRevision(),
+    });
+    if (
+      (correction === "reset" || correction === "remove") &&
+      block.guidedTemplates?.some(isResearchTemplate)
+    ) {
+      await voidResearchCase(block.id, actorId);
+    }
+    notifyServiceChanged("guided-participant-corrected");
+    await broadcastPlayerState(revised);
+    if (correction === "remove") {
+      await broadcastFormerParticipant(participant);
+    }
+    return revised;
+  });
+}
+
+/** Revise an unapplied block's hours, offered activities, and assigned characters. */
+export async function reviseGuidedDowntimeBlockSetup({
+  blockId,
+  hours,
+  templateIds = [],
+  projectIds = [],
+  addActorIds = [],
+} = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    let block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      !["collecting", "planned"].includes(block.state) ||
+      block.participants?.some((entry) => entry.resolved)
+    ) {
+      throw new Error(
+        "Block setup can be edited before any character result is applied.",
+      );
+    }
+    const budgetHours = Number(hours);
+    if (
+      !Number.isSafeInteger(budgetHours) ||
+      budgetHours < 1 ||
+      budgetHours > MAX_BLOCK_HOURS
+    )
+      throw new Error(
+        `Enter a whole number of hours from 1 to ${MAX_BLOCK_HOURS}.`,
+      );
+    const config = loadDowntimeConfig();
+    const library = normalizeGuidedDowntimeLibrary(config.guidedTemplates);
+    const currentTemplates = new Map(
+      block.guidedTemplates.map((entry) => [entry.id, entry]),
+    );
+    const currentProjects = new Map(
+      block.guidedProjects.map((entry) => [entry.id, entry]),
+    );
+    const selectedTemplateIds = [
+      ...new Set((Array.isArray(templateIds) ? templateIds : []).map(String)),
+    ];
+    const selectedProjectIds = [
+      ...new Set((Array.isArray(projectIds) ? projectIds : []).map(String)),
+    ];
+    const allowedIds = downtimeLocationActivityIds(
+      library,
+      block.settlementSnapshot?.locationPresetId ?? "custom",
+      config.settlements.find((entry) => entry.id === block.settlementId),
+      loadHuntingRegions(),
+    );
+    const templates = selectedTemplateIds.map((id) => {
+      const template =
+        currentTemplates.get(id) ?? guidedTemplateById(library, id);
+      if (!template || (!currentTemplates.has(id) && !allowedIds.includes(id)))
+        throw new Error(`Activity ${id} is unavailable here.`);
+      if (id === HUNTING_ID && !currentTemplates.has(id))
+        throw new Error(
+          "Add Hunting through a new block with a saved hunting area.",
+        );
+      return template;
+    });
+    const projects = selectedProjectIds.map((id) => {
+      const project =
+        currentProjects.get(id) ?? guidedProjectById(config.guidedProjects, id);
+      if (!project) throw new Error(`Project ${id} is unavailable.`);
+      if (!currentProjects.has(id)) {
+        const store = loadDowntimeWorkflowStore();
+        if (
+          guidedProjectIsComplete(
+            project,
+            projectProgressHours(guidedProjectProgressFromStore(store), id),
+            projectProgressSuccesses(
+              guidedProjectSuccessesFromStore(store),
+              id,
+            ),
+          )
+        )
+          throw new Error(`Project ${id} is already complete.`);
+      }
+      return project;
+    });
+    if (!templates.length && !projects.length)
+      throw new Error("Offer at least one activity or project.");
+    if (
+      ![...templates, ...projects].some(
+        (entry) => Number(entry.blockHours ?? 8) <= budgetHours,
+      )
+    )
+      throw new Error(
+        "The block needs at least one activity that fits its hours.",
+      );
+    const usedIds = new Set(
+      block.participants.flatMap((entry) =>
+        (entry.queue ?? []).map((choice) => choice.activityId),
+      ),
+    );
+    const selectedIds = new Set([
+      ...selectedTemplateIds,
+      ...selectedProjectIds,
+    ]);
+    if ([...usedIds].some((id) => !selectedIds.has(id)))
+      throw new Error(
+        "Return a character's saved choice for edits before removing its activity.",
+      );
+    const candidate = {
+      ...block,
+      budgetHours,
+      hours: budgetHours,
+      guidedTemplates: templates,
+      guidedProjects: projects,
+    };
+    for (const participant of block.participants) {
+      if (participant.queue?.length)
+        normalizeGuidedSubmittedQueue(candidate, participant.queue);
+    }
+    const existingIds = new Set(
+      block.participants.map((entry) => entry.actorId),
+    );
+    const added = [
+      ...new Set((Array.isArray(addActorIds) ? addActorIds : []).map(String)),
+    ]
+      .filter((id) => !existingIds.has(id))
+      .map((id) => {
+        const actor = actorById(id);
+        if (actor?.type !== "character")
+          throw new Error("Choose an available character to add.");
+        return actor;
+      });
+    if (templates.some(isResearchTemplate)) {
+      try {
+        loadResearchBlock(block.id);
+      } catch (error) {
+        if (!String(error?.message).includes("has no campaign record"))
+          throw error;
+        await saveResearchBlock(block.id, {
+          timeOfDay: block.timeOfDay,
+          locationName: block.locationName,
+        });
+      }
+    }
+    if (block.state === "planned")
+      block = await returnGuidedReviewToCollecting(block.id, {
+        reason: "Block setup edited",
+      });
+    const participants = [
+      ...block.participants.map((entry) => ({ ...entry, budgetHours })),
+      ...added.map((actor) => ({
+        actorId: String(actor.id),
+        actorName: String(actor.name ?? "Character"),
+        actorImg: String(actor.img ?? "icons/svg/mystery-man.svg"),
+        userIds: ownerUserIds(actor),
+        budgetHours,
+        queue: [],
+        submitted: false,
+        submittedAt: 0,
+        submittedBy: null,
+      })),
+    ];
+    const revised = await updateCollectingDowntimeBlock(
+      block.id,
+      {
+        budgetHours,
+        hours: budgetHours,
+        guidedTemplates: templates,
+        guidedProjects: projects,
+        participants,
+        setupCorrections: [
+          ...(block.setupCorrections ?? []),
+          {
+            at: now(),
+            by: globalThis.game?.user?.id,
+            before: {
+              budgetHours: block.budgetHours,
+              templateIds: block.guidedTemplates.map((entry) => entry.id),
+              projectIds: block.guidedProjects.map((entry) => entry.id),
+              actorIds: block.participants.map((entry) => entry.actorId),
+            },
+            after: {
+              budgetHours,
+              templateIds: selectedTemplateIds,
+              projectIds: selectedProjectIds,
+              actorIds: participants.map((entry) => entry.actorId),
+            },
+          },
+        ].slice(-MAX_REQUEST_RECEIPTS),
+      },
+      { expectedRevision: getDowntimeWorkflowRevision() },
+    );
+    notifyServiceChanged("guided-block-setup-revised");
+    await broadcastPlayerState(revised);
+    return revised;
+  });
+}
+
+function guidedReversalPlan(block, actorId, savedStore = null) {
+  const segment = block.resolvedSegments?.find((entry) =>
+    entry.plan?.characters?.some((character) => character.actorId === actorId),
+  );
+  if (!segment)
+    throw new Error("No applied result was found for this character.");
+  const operations = segment.plan?.operations ?? [];
+  if (
+    segment.plan?.characters?.length !== 1 ||
+    operations.some((operation) => operation.actorId !== actorId) ||
+    !operations.length ||
+    operations.some(
+      (operation) =>
+        !["currency", "noop"].includes(operation.kind) ||
+        (operation.benefit && operation.benefit.type !== "none") ||
+        operation.work ||
+        operation.hunting ||
+        operation.research ||
+        operation.consequences ||
+        segment.operationLedger?.[operation.operationId]?.state !== "applied",
+    )
+  ) {
+    throw new Error(
+      "This result changed items, benefits, injuries, or research. It needs a manual effect review before its report can be reversed.",
+    );
+  }
+  const store = savedStore ?? loadDowntimeWorkflowStore();
+  const progress = { ...store.projectProgress };
+  const successes = { ...store.projectSuccesses };
+  for (const operation of [...operations].reverse()) {
+    if (!operation.project) continue;
+    const project = operation.project;
+    if (
+      (progress[project.id] ?? 0) !== project.progressAfterHours ||
+      (successes[project.id] ?? 0) !== project.successesAfter
+    ) {
+      throw new Error(
+        "A later project contribution depends on this result. Reverse the later contribution first.",
+      );
+    }
+    progress[project.id] = project.progressBeforeHours;
+    successes[project.id] = project.successesBefore;
+  }
+  return { operations, segment };
+}
+
+/** Undo an exact, applied guided result and return its character to collecting. */
+export async function reverseGuidedDowntimeParticipant({
+  blockId,
+  actorId,
+  reason = "GM correction",
+} = {}) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const block = getActiveDowntimeBlock();
+    if (
+      !block ||
+      block.id !== String(blockId) ||
+      block.mode !== GUIDED_DOWNTIME_MODE ||
+      block.state !== "collecting"
+    )
+      throw new Error(
+        "An applied character result can be reversed while this block is collecting.",
+      );
+    const participant = participantFor(block, actorId);
+    if (!participant?.resolved)
+      throw new Error("This character has no applied result to reverse.");
+    if (block.pendingReversal && block.pendingReversal.actorId !== actorId)
+      throw new Error(
+        "Finish the pending reversal before changing another character.",
+      );
+    const { operations } = guidedReversalPlan(block, actorId);
+    const actor = actorById(actorId);
+    if (!actor) throw new Error("The character is no longer available.");
+    const firstWallet = operations[0].walletBefore;
+    const lastWallet = operations.at(-1).walletAfter;
+    if (!firstWallet || !lastWallet)
+      throw new Error("The saved wallet evidence is incomplete.");
+    const beforeClaimWallet = readWalletStrict(actor.system?.currency);
+    if (
+      !beforeClaimWallet.ok ||
+      (!walletsEqual(beforeClaimWallet.wallet, firstWallet) &&
+        !walletsEqual(beforeClaimWallet.wallet, lastWallet))
+    )
+      throw new Error(
+        "The character wallet changed after downtime. Resolve that change before starting the reversal.",
+      );
+    await claimGuidedDowntimeReversal(block.id, actorId);
+    const claimState = loadDowntimeWorkflowStore();
+    const claimToken = {
+      userId: claimState.authorityId,
+      authorityEpoch: claimState.authorityEpoch,
+    };
+    const authorizeReversal = () =>
+      hasCurrentDowntimeWriteAuthority(claimToken) &&
+      getActiveDowntimeBlock()?.pendingReversal?.actorId === actorId;
+    const walletResult = await runWithActorMutex(actorId, async () => {
+      const current = readWalletStrict(actor.system?.currency);
+      if (!current.ok)
+        throw new Error("The character wallet cannot be verified.");
+      if (walletsEqual(current.wallet, firstWallet)) return { ok: true };
+      if (!walletsEqual(current.wallet, lastWallet))
+        throw new Error(
+          "The character wallet changed after downtime. Resolve that change before retrying the reversal.",
+        );
+      if (!authorizeReversal())
+        throw new Error("Downtime write authority changed.");
+      return updateCurrencyVerified(actor, firstWallet, {
+        authorizeWrite: authorizeReversal,
+      });
+    });
+    if (!walletResult?.ok)
+      throw new Error(
+        `Wallet reversal needs review: ${walletResult?.reason ?? "unknown error"}.`,
+      );
+    const readback = readWalletStrict(actor.system?.currency);
+    if (!readback.ok || !walletsEqual(readback.wallet, firstWallet))
+      throw new Error(
+        "Wallet reversal could not be verified. Retry the reversal to recover.",
+      );
+    const revised = await finishGuidedDowntimeReversal(block.id, actorId, {
+      reason,
+    });
+    notifyServiceChanged("guided-result-reversed");
+    await broadcastPlayerState(revised);
+    return revised;
+  });
+}
+
+export async function reopenGuidedDowntimeForCorrections(blockId) {
+  return runServiceMutation(async () => {
+    assertAuthority();
+    const reopened = await reopenCompletedGuidedDowntimeBlock(blockId);
+    notifyServiceChanged("guided-block-reopened");
+    await broadcastPlayerState(reopened);
+    return reopened;
   });
 }
 
@@ -4515,7 +4951,9 @@ export async function getWorkspaceProjection({ settlementId = "" } = {}) {
     researchCases: listResearchCases(),
     researchCanonicalOptions: gmResearchCanonicalOptions(),
     workflowStatus: visibleBlock?.state ?? "idle",
-    workflow: visibleBlock ? projectWorkspaceBlock(visibleBlock) : null,
+    workflow: visibleBlock
+      ? projectWorkspaceBlock(visibleBlock, config, !active, store)
+      : null,
     settlements: config.settlements.map(projectSettlementForWorkspace),
     guidedTemplates: normalizeGuidedDowntimeLibrary(config.guidedTemplates),
     guidedProjects: config.guidedProjects.map((project) => {
@@ -4616,6 +5054,7 @@ function guidedParticipantUnderReview(block, actorId) {
 function guidedParticipantCanEdit(block, participant) {
   if (
     block.mode !== GUIDED_DOWNTIME_MODE ||
+    block.pendingReversal ||
     !participant ||
     participant.resolved === true
   )
@@ -4662,7 +5101,12 @@ async function updateGuidedParticipantSubmission(
   );
 }
 
-function projectWorkspaceBlock(block) {
+function projectWorkspaceBlock(
+  block,
+  config = null,
+  isLatestHistory = false,
+  savedStore = null,
+) {
   const byActor = new Map(
     (block.plan?.characters ?? []).map((character) => [
       character.actorId,
@@ -4676,29 +5120,150 @@ function projectWorkspaceBlock(block) {
   ).length;
   const readyParticipants = (block.participants ?? []).filter(
     (participant) =>
+      !block.pendingReversal &&
       participant.resolved !== true &&
       participant.submitted === true &&
       !guidedParticipantUnderReview(block, participant.actorId),
   );
   const firstReadyActorId = readyParticipants[0]?.actorId ?? "";
+  const canEditSetup =
+    block.mode === GUIDED_DOWNTIME_MODE &&
+    ["collecting", "planned"].includes(block.state) &&
+    !block.pendingReversal &&
+    !(block.participants ?? []).some((entry) => entry.resolved);
+  const currentTemplateIds = new Set(
+    (block.guidedTemplates ?? []).map((entry) => entry.id),
+  );
+  const currentProjectIds = new Set(
+    (block.guidedProjects ?? []).map((entry) => entry.id),
+  );
+  const progressStore = savedStore ?? loadDowntimeWorkflowStore();
+  const setupProjectProgress = guidedProjectProgressFromStore(progressStore);
+  const setupProjectSuccesses = guidedProjectSuccessesFromStore(progressStore);
+  const availableTemplateIds = new Set(
+    downtimeLocationActivityIds(
+      normalizeGuidedDowntimeLibrary(config?.guidedTemplates),
+      block.settlementSnapshot?.locationPresetId ?? "custom",
+      config?.settlements?.find((entry) => entry.id === block.settlementId),
+      loadHuntingRegions(),
+    ),
+  );
+  const setupTemplates = [
+    ...new Map(
+      [
+        ...normalizeGuidedDowntimeLibrary(config?.guidedTemplates).filter(
+          (entry) =>
+            availableTemplateIds.has(entry.id) && entry.id !== HUNTING_ID,
+        ),
+        ...(block.guidedTemplates ?? []),
+      ].map((entry) => [entry.id, entry]),
+    ).values(),
+  ].map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    checked: currentTemplateIds.has(entry.id),
+    blockHours: entry.blockHours,
+  }));
+  const setupProjects = [
+    ...new Map(
+      [...(config?.guidedProjects ?? []), ...(block.guidedProjects ?? [])].map(
+        (entry) => [entry.id, entry],
+      ),
+    ).values(),
+  ]
+    .filter((entry) => {
+      if (currentProjectIds.has(entry.id)) return true;
+      return !guidedProjectIsComplete(
+        entry,
+        projectProgressHours(setupProjectProgress, entry.id),
+        projectProgressSuccesses(setupProjectSuccesses, entry.id),
+      );
+    })
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      checked: currentProjectIds.has(entry.id),
+      blockHours: entry.blockHours,
+    }));
+  const assignedIds = new Set(
+    (block.participants ?? []).map((entry) => entry.actorId),
+  );
+  const setupActors = actorsArray()
+    .filter(
+      (actor) => actor?.type === "character" && !assignedIds.has(actor.id),
+    )
+    .map((actor) => ({ id: actor.id, name: actor.name ?? "Character" }));
   const unapprovedResearch = (block.plan?.operations ?? []).filter(
     (operation) => operation.research && operation.researchApproved !== true,
   );
   return {
     ...block,
     guided: block.mode === GUIDED_DOWNTIME_MODE,
+    canReopenForCorrections:
+      isLatestHistory &&
+      block.mode === GUIDED_DOWNTIME_MODE &&
+      block.state === "completed" &&
+      ((block.resolvedSegments?.length ?? 0) > 0 ||
+        (block.plan?.operations?.length ?? 0) > 0),
+    canEditSetup,
+    setupTemplates,
+    setupProjects,
+    setupActors,
     status: block.state,
     participants: (block.participants ?? []).map((participant) => {
       const plan = byActor.get(participant.actorId);
       const resolved = participant.resolved === true;
+      let reversalReason = "";
+      if (
+        resolved &&
+        block.mode === GUIDED_DOWNTIME_MODE &&
+        block.state === "collecting"
+      ) {
+        try {
+          guidedReversalPlan(block, participant.actorId, progressStore);
+        } catch (error) {
+          reversalReason = String(
+            error?.message ?? "This result cannot be reversed automatically.",
+          );
+        }
+      }
       return {
         actorId: participant.actorId,
         name: participant.actorName,
         img: participant.actorImg,
         submitted: participant.submitted,
         resolved,
+        canCorrect:
+          block.mode === GUIDED_DOWNTIME_MODE &&
+          !block.pendingReversal &&
+          !resolved &&
+          ["collecting", "planned"].includes(block.state),
+        canEditHours:
+          block.mode === GUIDED_DOWNTIME_MODE &&
+          !block.pendingReversal &&
+          !resolved &&
+          ["collecting", "planned"].includes(block.state) &&
+          !participant.hunt &&
+          !participant.research &&
+          (participant.queue?.length ?? 0) > 0,
+        canRemove:
+          block.mode === GUIDED_DOWNTIME_MODE &&
+          !block.pendingReversal &&
+          !resolved &&
+          ["collecting", "planned"].includes(block.state) &&
+          (block.participants?.length ?? 0) > 1,
+        canReverse:
+          block.mode === GUIDED_DOWNTIME_MODE &&
+          resolved &&
+          block.state === "collecting" &&
+          !reversalReason &&
+          (!block.pendingReversal ||
+            block.pendingReversal.actorId === participant.actorId),
+        reversalPending: block.pendingReversal?.actorId === participant.actorId,
+        reversalReason,
         canPrepare:
           block.mode === GUIDED_DOWNTIME_MODE &&
+          !block.pendingReversal &&
           block.state === "collecting" &&
           participant.submitted === true &&
           !resolved,
@@ -4852,10 +5417,12 @@ function projectWorkspaceBlock(block) {
     firstReadyActorId,
     canPrepareAny:
       block.mode === GUIDED_DOWNTIME_MODE &&
+      !block.pendingReversal &&
       block.state === "collecting" &&
       readyParticipants.length > 0,
     canFinish:
       block.mode === GUIDED_DOWNTIME_MODE &&
+      !block.pendingReversal &&
       block.state === "collecting" &&
       resolvedCount > 0 &&
       readyParticipants.length === 0,
@@ -4880,6 +5447,7 @@ function projectWorkspaceBlock(block) {
         ? `${unapprovedResearch.length} Research dossier${unapprovedResearch.length === 1 ? " needs" : "s need"} GM preparation and approval before results can be sent.`
         : "",
     canCancel:
+      !block.pendingReversal &&
       resolvedCount === 0 &&
       ["collecting", "locked", "planned"].includes(block.state),
     canRecover: ["applying", "needs-review"].includes(block.state),
@@ -5484,6 +6052,15 @@ async function submitGuidedDowntimeChoice({
         "That request ID was already used for another submission.",
       );
     }
+    const currentChoice = participantFor(block, actor.id);
+    if (
+      currentChoice?.submitted !== true ||
+      queueDigest(currentChoice.queue ?? []) !== digest
+    ) {
+      throw new Error(
+        "This submission was changed by the GM. Refresh before trying again.",
+      );
+    }
     return block;
   }
   if (
@@ -5639,6 +6216,10 @@ export async function recallSubmissionAuthoritatively({
           "That request ID was already used for another request.",
         );
       }
+      if (participant.submitted === true)
+        throw new Error(
+          "This submission changed after the recall. Refresh before trying again.",
+        );
       return block;
     }
     const changed = {
@@ -5918,6 +6499,23 @@ async function broadcastPlayerState(block = getActiveDowntimeBlock()) {
         projection,
       });
     }
+  }
+}
+
+async function broadcastFormerParticipant(participant) {
+  if (!isAuthoritativeGM()) return;
+  for (const userId of participant.userIds ?? []) {
+    if (
+      !userOwnsDowntimeActor(userById(userId), actorById(participant.actorId))
+    )
+      continue;
+    emitDowntimeEvent(DOWNTIME_EVENTS.STATE_UPDATE, {
+      targetUserId: userId,
+      projection: await getPlayerProjectionForUser({
+        userId,
+        actorId: participant.actorId,
+      }),
+    });
   }
 }
 
@@ -6349,6 +6947,11 @@ export const downtimeWorkspaceAdapter = Object.freeze({
     }),
   openForPlayers: ({ blockId }) => openBlockForPlayers(blockId),
   prepareParticipant: (payload) => prepareGuidedDowntimeParticipant(payload),
+  correctParticipant: (payload) => correctGuidedDowntimeParticipant(payload),
+  reviseBlockSetup: (payload) => reviseGuidedDowntimeBlockSetup(payload),
+  reverseParticipant: (payload) => reverseGuidedDowntimeParticipant(payload),
+  reopenGuidedForCorrections: (payload) =>
+    reopenGuidedDowntimeForCorrections(payload.blockId),
   lockBlock: ({ blockId }) => lockActiveDowntimeBlock(blockId),
   planBlock: ({ blockId }) => planActiveDowntimeBlock(blockId),
   chooseGuidedOutcome: (payload) => chooseGuidedDowntimeOutcome(payload),

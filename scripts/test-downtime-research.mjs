@@ -756,6 +756,14 @@ try {
   );
   assert.equal(completedFollowUp.needsWorldBuilding, false);
   assert.ok(completedFollowUp.worldBuildingCompletedAt > 0);
+  const originalPrivateCase = store.loadResearchCase(block.id, actor.id);
+  assert.equal(await store.voidResearchCase(block.id, actor.id), true);
+  assert.equal(store.loadResearchCase(block.id, actor.id), null);
+  assert.deepEqual(
+    store.loadResearchBlock(block.id).voidedCases[0].case,
+    originalPrivateCase,
+  );
+  assert.equal(await store.voidResearchCase(block.id, actor.id), false);
   const cancelledPrivateBlock = { ...block, id: "research-block-cancelled" };
   await store.saveResearchBlock(
     cancelledPrivateBlock.id,

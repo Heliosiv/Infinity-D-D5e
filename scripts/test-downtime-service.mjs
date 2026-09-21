@@ -871,6 +871,184 @@ try {
   );
   delete actor.rollSkill;
 
+  // GM corrections keep other characters open, archive voided reviews, and
+  // reverse exact applied wallet results without leaving a stale receipt.
+  {
+    const correctionActor = makeActor({
+      id: "correction-actor",
+      currency: { pp: 0, gp: 10, ep: 0, sp: 0, cp: 0 },
+    });
+    const otherActor = makeActor({ id: "correction-other" });
+    actors.set(correctionActor.id, correctionActor);
+    actors.set(otherActor.id, otherActor);
+    let block = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Correction Test",
+      hours: 8,
+      actorIds: [correctionActor.id],
+      templateIds: ["guided-labor"],
+    });
+    block = await service.reviseGuidedDowntimeBlockSetup({
+      blockId: block.id,
+      hours: 16,
+      templateIds: ["guided-labor", "guided-reflection"],
+      addActorIds: [otherActor.id],
+    });
+    assert.equal(block.budgetHours, 16);
+    assert.equal(block.participants.length, 2);
+    const choice = [
+      {
+        id: "work",
+        activityId: "guided-labor",
+        hours: 8,
+        skill: "ath",
+        guidedRoll: { total: 14, formula: "1d20 + 4" },
+      },
+    ];
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "correction-first",
+      blockId: block.id,
+      actorId: correctionActor.id,
+      queue: choice,
+    });
+    block = await service.correctGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: correctionActor.id,
+      action: "hours",
+      hours: [16],
+    });
+    assert.equal(block.participants[0].queue[0].hours, 16);
+    block = await service.prepareGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: correctionActor.id,
+    });
+    assert.equal(block.state, "planned");
+    const preservedPlan = clone(block.plan);
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "correction-other-choice",
+      blockId: block.id,
+      actorId: otherActor.id,
+      queue: choice,
+    });
+    block = await service.correctGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: otherActor.id,
+      action: "hours",
+      hours: [16],
+    });
+    assert.deepEqual(block.plan, preservedPlan);
+    block = await service.correctGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: otherActor.id,
+      action: "reset",
+    });
+    assert.deepEqual(block.plan, preservedPlan);
+    block = await service.correctGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: correctionActor.id,
+      action: "reset",
+    });
+    assert.equal(block.state, "collecting");
+    assert.equal(block.participants[0].submitted, false);
+    assert.equal(block.voidedReviews.length, 1);
+    await assert.rejects(
+      service.submitQueueAuthoritatively({
+        userId: player.id,
+        requestId: "correction-first",
+        blockId: block.id,
+        actorId: correctionActor.id,
+        queue: choice,
+      }),
+      /changed by the GM/,
+    );
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "correction-second",
+      blockId: block.id,
+      actorId: correctionActor.id,
+      queue: choice,
+    });
+    block = await service.prepareGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: correctionActor.id,
+    });
+    const walletBefore = clone(correctionActor.system.currency);
+    block = await service.applyActiveDowntimeBlock(block.id);
+    assert.equal(block.state, "collecting");
+    assert.equal(block.participants[0].resolved, true);
+    assert.notDeepEqual(correctionActor.system.currency, walletBefore);
+    await workflow.claimGuidedDowntimeReversal(block.id, correctionActor.id);
+    await assert.rejects(
+      service.correctGuidedDowntimeParticipant({
+        blockId: block.id,
+        actorId: otherActor.id,
+        action: "reset",
+      }),
+      /ReversalNeedsRecovery/,
+    );
+    block = await service.reverseGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: correctionActor.id,
+    });
+    assert.deepEqual(correctionActor.system.currency, walletBefore);
+    assert.equal(block.participants[0].resolved, false);
+    assert.equal(block.resolvedSegments.length, 0);
+    assert.equal(block.reversedSegments.length, 1);
+    assert.equal(block.individualReceipts?.[correctionActor.id], undefined);
+    block = await service.correctGuidedDowntimeParticipant({
+      blockId: block.id,
+      actorId: otherActor.id,
+      action: "remove",
+    });
+    assert.equal(block.participants.length, 1);
+    await assert.rejects(
+      service.correctGuidedDowntimeParticipant({
+        blockId: block.id,
+        actorId: correctionActor.id,
+        action: "remove",
+      }),
+      /at least one character/,
+    );
+    await service.cancelActiveDowntimeBlock(block.id);
+
+    let finished = await service.openDowntimeBlock({
+      mode: "guided",
+      locationName: "Finished correction",
+      hours: 8,
+      actorIds: [correctionActor.id],
+      templateIds: ["guided-labor"],
+    });
+    await service.submitQueueAuthoritatively({
+      userId: player.id,
+      requestId: "correction-finished",
+      blockId: finished.id,
+      actorId: correctionActor.id,
+      queue: choice,
+    });
+    finished = await service.prepareGuidedDowntimeParticipant({
+      blockId: finished.id,
+      actorId: correctionActor.id,
+    });
+    finished = await service.applyActiveDowntimeBlock(finished.id);
+    assert.equal(finished.state, "completed");
+    const reopened = await service.reopenGuidedDowntimeForCorrections(
+      finished.id,
+    );
+    assert.equal(reopened.state, "collecting");
+    assert.equal(reopened.participants[0].resolved, true);
+    await workflow.claimGuidedDowntimeReversal(finished.id, correctionActor.id);
+    correctionActor.system.currency = clone(walletBefore);
+    const undone = await service.reverseGuidedDowntimeParticipant({
+      blockId: finished.id,
+      actorId: correctionActor.id,
+    });
+    assert.equal(undone.participants[0].resolved, false);
+    assert.equal(undone.individualReceipts?.[correctionActor.id], undefined);
+    await service.cancelActiveDowntimeBlock(finished.id);
+  }
+
   // Guided players may divide their personal budget into activity-sized blocks.
   {
     const allocationActor = makeActor({

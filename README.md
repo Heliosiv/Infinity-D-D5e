@@ -551,7 +551,12 @@ the receipt immediately. Other unresolved characters can still submit or recall
 while the GM reviews and applies that result; the GM can use **Open for players**
 again to bring in late players. **Finish without waiting** closes the block after at least one
 result is resolved and no submitted character is awaiting review. Report edits
-save before application, and **Save report** can save them separately. See the
+save before application, and **Save report** can save them separately. The GM
+can adjust block hours and activities before applying results, add characters,
+or correct one unresolved character without cancelling everyone else. Applied
+coin and project results can be reversed when the saved wallet and project
+progress still match. The latest completed block can be reopened for this
+correction when no block is active; more complex effects require GM review. See the
 [downtime guide](docs/DOWNTIME_SYSTEM.md) for projects, existing city-action
 blocks, and the repeatable `npm run ui:audit:downtime` browser gauntlet.
 

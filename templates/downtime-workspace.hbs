@@ -110,6 +110,26 @@
           <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
         </div>
 
+        {{#if currentBlock.canEditSetup}}
+        <details class="dt-block-setup">
+          <summary>Edit block hours, activities, or add characters</summary>
+          <form data-form="edit-block-setup">
+            <label>Hours per character <input type="number" name="hours" min="1" max="240" step="1" required value="{{currentBlock.hours}}" {{#if busy}}disabled{{/if}} /></label>
+            <fieldset><legend>Offered activities</legend>
+              <div class="dt-chip-grid">{{#each currentBlock.setupTemplates}}<label class="dt-chip"><input type="checkbox" name="templateIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}} · {{blockHours}}h</span></label>{{/each}}</div>
+            </fieldset>
+            <fieldset><legend>Projects</legend>
+              <div class="dt-chip-grid">{{#each currentBlock.setupProjects}}<label class="dt-chip"><input type="checkbox" name="projectIds" value="{{id}}" {{#if checked}}checked{{/if}} {{#if ../busy}}disabled{{/if}} /><span>{{name}} · {{blockHours}}h</span></label>{{/each}}</div>
+            </fieldset>
+            {{#if currentBlock.setupActors.length}}<fieldset><legend>Add characters</legend>
+              <div class="dt-chip-grid">{{#each currentBlock.setupActors}}<label class="dt-chip"><input type="checkbox" name="addActorIds" value="{{id}}" {{#if ../busy}}disabled{{/if}} /><span>{{name}}</span></label>{{/each}}</div>
+            </fieldset>{{/if}}
+            <p>Saved choices must still fit the revised hours and offered activities. Return a character for edits before removing an activity they chose.</p>
+            <button type="button" class="dt-button dt-button--primary" data-action="reviseBlockSetup" {{#if busy}}disabled{{/if}}>Save block setup</button>
+          </form>
+        </details>
+        {{/if}}
+
         <div class="dt-command-bar" aria-label="Downtime workflow actions">
           <button type="button" class="dt-button {{#if primaryAction.openForPlayers}}dt-button--primary dt-button--next{{/if}}" data-action="openForPlayers" {{#if guided}}{{#unless currentBlock.canOpenForPlayers}}hidden{{/unless}}{{/if}} {{#if primaryAction.openForPlayers}}aria-describedby="dt-next-action"{{/if}} {{#unless currentBlock.canOpenForPlayers}}disabled{{/unless}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i> Open for players
@@ -137,6 +157,7 @@
           </button>
           {{/if}}
           {{#if currentBlock.canStartNext}}
+          {{#if currentBlock.canReopenForCorrections}}<button type="button" class="dt-button" data-action="reopenGuidedForCorrections" {{#if busy}}disabled{{/if}}>Reopen for corrections</button>{{/if}}
           <button type="button" class="dt-button {{#if primaryAction.beginNextBlock}}dt-button--primary dt-button--next{{/if}}" data-action="beginNextBlock" {{#if primaryAction.beginNextBlock}}aria-describedby="dt-next-action"{{/if}} {{#if busy}}disabled{{/if}}>
             <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Start next block
           </button>
@@ -155,7 +176,7 @@
           {{#if currentBlock.hasParticipants}}
           <div class="dt-participant-grid">
             {{#each currentBlock.participants}}
-            <article class="dt-participant {{#if submitted}}is-submitted{{/if}} {{#if resolved}}is-resolved{{/if}}">
+            <article class="dt-participant {{#if submitted}}is-submitted{{/if}} {{#if resolved}}is-resolved{{/if}}" data-participant-id="{{actorId}}">
               <header>
                 <img src="{{img}}" alt="" />
                 <div>
@@ -177,7 +198,29 @@
               <p class="dt-inline-empty">No activities queued.</p>
               {{/if}}
               {{#if hasReceipt}}<p class="dt-receipt-summary">{{receipt}}</p>{{/if}}
+              {{#if canReverse}}<button type="button" class="dt-button dt-button--danger" data-action="reverseParticipant" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}>{{#if reversalPending}}Resume reversal{{else}}Reverse applied result{{/if}}</button>{{/if}}
+              {{#if reversalReason}}<p class="dt-inline-empty">Reversal needs GM review: {{reversalReason}}</p>{{/if}}
               {{#if canPrepare}}<button type="button" class="dt-button dt-button--primary" data-action="prepareParticipant" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}><i class="fa-solid fa-user-check" aria-hidden="true"></i> Review {{name}}</button>{{/if}}
+              {{#if canCorrect}}
+              <details class="dt-participant__corrections">
+                <summary>Correct downtime for {{name}}</summary>
+                {{#if canEditHours}}
+                <form data-participant-hours data-actor-id="{{actorId}}">
+                  <p>Adjust saved hours. Existing rolls stay attached to their activities.</p>
+                  {{#each queue}}
+                  <label>{{label}} hours
+                    <input type="number" name="hours" min="1" max="{{../budgetHours}}" step="1" required value="{{hours}}" {{#if ../../busy}}disabled{{/if}} />
+                  </label>
+                  {{/each}}
+                  <button type="button" class="dt-button" data-action="saveParticipantHours" {{#if ../busy}}disabled{{/if}}>Save hours</button>
+                </form>
+                {{/if}}
+                <div class="dt-participant__correction-actions">
+                  <button type="button" class="dt-button" data-action="resetParticipant" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}>Return for edits</button>
+                  {{#if canRemove}}<button type="button" class="dt-button dt-button--danger" data-action="removeParticipant" data-actor-id="{{actorId}}" {{#if ../busy}}disabled{{/if}}>Remove character</button>{{/if}}
+                </div>
+              </details>
+              {{/if}}
             </article>
             {{/each}}
           </div>

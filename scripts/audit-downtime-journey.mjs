@@ -294,6 +294,18 @@ try {
         };
         return state.block;
       },
+      reviseBlockSetup: async (payload) => {
+        state.lastSetupCorrection = payload;
+        state.block.hours = payload.hours;
+        return state.block;
+      },
+      correctParticipant: async (payload) => {
+        state.lastParticipantCorrection = payload;
+        if (payload.action === "hours") {
+          state.block.participants[0].queue[0].hours = payload.hours[0];
+        }
+        return state.block;
+      },
       openForPlayers: async () => true,
       lockBlock: async () => {
         state.block.status = "locked";
@@ -1855,9 +1867,74 @@ try {
     ),
     true,
   );
+  await page.evaluate(async () => {
+    journey.state.block = {
+      id: "correction-ui-block",
+      mode: "guided",
+      status: "collecting",
+      locationName: "Haven",
+      hours: 16,
+      canEditSetup: true,
+      setupTemplates: [
+        { id: "guided-labor", name: "Paid Work", checked: true, blockHours: 8 },
+      ],
+      setupProjects: [],
+      setupActors: [{ id: "other", name: "Other character" }],
+      participants: [
+        {
+          actorId: "mira",
+          name: "Mira",
+          submitted: true,
+          canCorrect: true,
+          canEditHours: true,
+          canRemove: true,
+          queue: [{ id: "work", label: "Paid Work", hours: 8 }],
+        },
+      ],
+    };
+    await journey.mount("workspace");
+  });
+  await page.locator(".dt-block-setup summary").click();
+  await page
+    .locator('[data-form="edit-block-setup"] [name="hours"]')
+    .fill("24");
+  await page.locator('[name="addActorIds"][value="other"]').check();
+  await page.locator('[data-action="reviseBlockSetup"]').click();
+  await page.waitForFunction(
+    () => journey.state.lastSetupCorrection?.hours === 24,
+  );
+  assert.deepEqual(
+    await page.evaluate(() => journey.state.lastSetupCorrection.addActorIds),
+    ["other"],
+  );
+  await page.locator(".dt-participant__corrections summary").click();
+  await page.locator('[data-participant-hours] [name="hours"]').fill("16");
+  await page.locator('[data-action="saveParticipantHours"]').click();
+  await page.waitForFunction(
+    () => journey.state.lastParticipantCorrection?.action === "hours",
+  );
+  assert.deepEqual(
+    await page.evaluate(() => journey.state.lastParticipantCorrection.hours),
+    [16],
+  );
+  await page.setViewportSize({ width: 380, height: 900 });
+  await page.evaluate(() => journey.mount("workspace"));
+  await page.locator(".dt-block-setup summary").click();
+  await page.locator(".dt-participant__corrections summary").click();
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+    true,
+    "correction controls fit a narrow window",
+  );
+  await page.screenshot({
+    path: path.join(out, "gm-corrections-380.png"),
+    fullPage: true,
+  });
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "Downtime browser gauntlet passed: included Research question/category/known subject/open discovery, live outlooks, GM dossier draft refresh, save-before-apply and follow-up completion, crafting, benefit selector, patient selection, project preset, split allocation, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
+    "Downtime browser gauntlet passed: included Research question/category/known subject/open discovery, live outlooks, GM dossier draft refresh, save-before-apply and follow-up completion, crafting, benefit selector, patient selection, project preset, split allocation, block setup and character hour corrections, failed-save stop, apply and receipt; 3 responsive/accessibility sizes.",
   );
 } catch (error) {
   const page = browser.contexts()[0]?.pages()[0];

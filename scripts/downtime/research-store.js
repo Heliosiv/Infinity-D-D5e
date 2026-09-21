@@ -75,6 +75,22 @@ export function loadResearchCase(blockId, actorId) {
   return loadResearchBlock(blockId).cases?.[cleanId(actorId)] ?? null;
 }
 
+/** A GM correction may invalidate one un-applied case without touching others. */
+export function voidResearchCase(blockId, actorId) {
+  return updatePrivateDowntimeFamily("research", (data) => {
+    const block = data.blocks[cleanId(blockId)];
+    const key = cleanId(actorId);
+    if (!block || !key) throw new Error("Research case is unavailable.");
+    if (!block.cases?.[key]) return false;
+    block.voidedCases = [
+      ...(Array.isArray(block.voidedCases) ? block.voidedCases : []),
+      { actorId: key, case: block.cases[key], voidedAt: Date.now() },
+    ].slice(-100);
+    delete block.cases[key];
+    return true;
+  });
+}
+
 export function deleteResearchBlock(blockId) {
   return updatePrivateDowntimeFamily("research", (data) => {
     const blockKey = cleanId(blockId);

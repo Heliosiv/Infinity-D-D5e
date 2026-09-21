@@ -71,13 +71,28 @@ still cannot be recalled or rerolled.
 The GM lands on that report, chooses from the possible outcomes, can rewrite the
 player report, then clicks **Apply results & send report**. That character gets
 the receipt immediately and the same block remains available to every unresolved
-character. Late players can submit at any point during review. **Finish without waiting** closes
+character. Late players can submit at any point during review. The GM can open
+**Edit block hours, activities, or add characters** before any result is
+applied. A saved choice must still fit the new hours and activity list. Each
+unresolved character card has **Correct downtime** controls to change saved
+hours, return that character for a fresh choice and roll, or remove the
+character. Returning the character currently under review archives that
+prepared review and reopens the block; it does not alter other submissions.
+**Finish without waiting** closes
 the block when at least one result is resolved and no submitted character is
 still awaiting review. Changing an outcome loads its matching report.
 **Save report** saves an edit separately; applying also saves any visible report
 edits first and stops if a report cannot be saved. Unsaved report edits survive
-an in-window refresh. Player rolls and project hours stay fixed, and results
-cannot be changed after application begins. A configured coin reward is deposited
+an in-window refresh. Player rolls and project hours stay fixed during
+application. Once a character's simple coin or project result has been applied,
+**Reverse applied result** checks the saved wallet and cumulative project
+progress, restores the earlier wallet, archives the original plan and receipt,
+and returns that character for a new choice. A completed guided block can be
+**Reopened for corrections** if it is the latest block and no other block is
+active. Retry the same reversal after an
+interrupted write. Results involving items, benefits, injuries, hunting, or
+private research require GM effect review and cannot be reversed automatically.
+A configured coin reward is deposited
 into the character's currency and verified before the player receives an
 updated Downtime Activities report with the activity art, narrative, and award.
 Players who own multiple participating characters can use the character tabs
