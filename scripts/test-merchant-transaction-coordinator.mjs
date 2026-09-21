@@ -1012,6 +1012,43 @@ function makeHarness({
   assert.deepEqual(harness.state.merchants, originalMerchant);
 }
 
+/* A recovered same-GM tab leader can discard after an in-flight fence loss. */
+{
+  const harness = makeHarness();
+  const plan = buyPlan(32);
+  harness.addPlanState(plan);
+  await harness.coordinator.register();
+  const review = transitionMerchantTransaction(plan, "needs-review", {
+    updatedAt: plan.updatedAt + 1,
+  });
+  harness.seedRecord(review);
+  harness.actors.get(plan.actor.actorId).boundary = structuredClone(
+    plan.actor.before,
+  );
+  const originalActor = structuredClone(harness.actors.get(plan.actor.actorId));
+  const originalMerchant = structuredClone(harness.state.merchants);
+  const identity = { ...plan, expectedReviewAt: review.review.at };
+
+  harness.faults.beforeNextPrivateMutation = () => {
+    harness.setTabLeader(false);
+  };
+  const interrupted = await harness.coordinator.recheck(review);
+  assert.equal(interrupted.status, "authority-lost");
+  assert.equal(
+    lookupMerchantTransactionReplay(harness.state.merchantTransactions, plan)
+      .record.stage,
+    "needs-review",
+  );
+
+  harness.setTabLeader(true);
+  const discarded = await harness.coordinator.abandon(identity);
+  assert.equal(discarded.status, "abandoned");
+  assert.equal(discarded.result.reason, "transaction-manually-settled");
+  assert.deepEqual(harness.actors.get(plan.actor.actorId), originalActor);
+  assert.deepEqual(harness.state.merchants, originalMerchant);
+  assert.deepEqual(harness.actorWrites, []);
+}
+
 /* Reconciliation compacts terminal receipts while local hooks do not recurse. */
 {
   const harness = makeHarness({ terminalCap: 1 });

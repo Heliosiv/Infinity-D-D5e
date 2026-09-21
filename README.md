@@ -6,6 +6,12 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**v0.3.48 — Shop recovery fix:** A full GM window that regains campaign-write
+control can safely reclaim the durable merchant ledger and discard an exact
+manually settled review. The discard still changes no Actor or merchant economy
+values, keeps its replay-denial receipt, and unlocks the affected shop controls.
+See the [release notes](docs/RELEASE_NOTES_0.3.48.md).
+
 **v0.3.47 — Shops and Downtime workspaces:** Both GM surfaces now open with a concise
 workspace guide and at-a-glance status. Shops can find a location by either its
 name or one of its merchants, filter merchants that need attention, and show

@@ -358,6 +358,12 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     if ((await bindings.ensureTabLeadership()) !== true) {
       return authorityLost("tab-leadership-unavailable");
     }
+    // A transient same-GM tab handoff can invalidate an in-flight fence while
+    // leaving the elected Foundry user unchanged. Once this tab has leadership
+    // again, start a fresh authority epoch and reclaim the durable ledger from
+    // canonical state. Keeping `lost` sticky until a full reload strands review
+    // records and prevents their explicit, zero-economy abandon path.
+    if (authority.barrier === "lost") resetAuthority();
     const context = ensureLocalAuthority();
     if (!context) return authorityLost("not-authoritative");
     const snapshot = readSnapshot();
@@ -369,10 +375,6 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       authority.barrier = "lost";
       return authorityLost("authority-barrier-lost");
     }
-    if (authority.barrier === "lost") {
-      return authorityLost("authority-barrier-lost");
-    }
-
     const claimed = await performPrivateMutation(
       (current) => ({
         merchants: current.merchants,
