@@ -899,6 +899,9 @@ function handleDurableCommitStatusRequest(payload) {
     commitId: payload.commitId,
     requestFingerprint: payload.requestFingerprint,
   });
+  if (outcome.status === "abandoned") {
+    return deliverDurableMerchantAbandonedResult(outcome);
+  }
   if (outcome.status !== "terminal") return false;
   void deliverDurableMerchantTerminalResult(outcome);
   return true;
@@ -936,6 +939,9 @@ async function resolveDurableCommitOutcome(
   if (!outcome || outcome.status === "missing") return false;
   if (outcome.status === "terminal") {
     return deliverDurableMerchantTerminalResult(outcome);
+  }
+  if (outcome.status === "abandoned") {
+    return deliverDurableMerchantAbandonedResult(outcome);
   }
   if (outcome.status === "conflict") {
     emitMerchantEvent(
@@ -996,6 +1002,13 @@ export async function deliverDurableMerchantTerminalResult(outcome) {
   if (outcome.merchant) {
     await broadcastStateBestEffort(outcome.merchant, "durable transaction");
   }
+  emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, outcome.result);
+  return true;
+}
+
+/** Tell a connected shopper that a GM discarded their manually settled trade. */
+export function deliverDurableMerchantAbandonedResult(outcome) {
+  if (outcome?.status !== "abandoned" || !outcome.result) return false;
   emitMerchantEvent(MERCHANT_EVENTS.COMMIT_RESULT, outcome.result);
   return true;
 }

@@ -81,10 +81,15 @@
           <div><dt>Merchant stock, saved</dt><dd>{{merchantStockPlanLabel}}</dd></div>
           <div><dt>Merchant now</dt><dd>{{merchantCurrentLabel}}</dd></div>
         </dl>
-        <p class="mw-review-card__guidance">If either state does not match a checkpoint, correct the campaign data manually. Do not reset, delete, or force-complete this record.</p>
-        <button type="button" class="mw-btn mw-btn--primary" data-action="recheckTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Read the Actor and Merchant again, then continue only from an exact safe checkpoint">
-          <i class="fa-solid fa-rotate" aria-hidden="true"></i> Recheck
-        </button>
+        <p class="mw-review-card__guidance">If this trade was handled manually, discard its recovery plan without changing the campaign values. Otherwise correct the data to an exact checkpoint before Recheck.</p>
+        <div class="mw-review-card__actions">
+          <button type="button" class="mw-btn mw-btn--primary" data-action="recheckTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Read the Actor and Merchant again, then continue only from an exact safe checkpoint">
+            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Recheck
+          </button>
+          <button type="button" class="mw-btn" data-action="abandonTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Discard only after you have settled this trade manually; no campaign values will be changed">
+            Discard manually settled trade
+          </button>
+        </div>
       </article>
       {{/each}}
     </div>

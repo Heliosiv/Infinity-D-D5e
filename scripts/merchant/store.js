@@ -28,7 +28,10 @@ import {
 } from "../private-state.js";
 import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
 import { isAuthoritativeGM } from "../socket-authority.js";
-import { normalizeMerchantTransactionLedger } from "./transaction-ledger.js";
+import {
+  isPinnedMerchantTransaction,
+  normalizeMerchantTransactionLedger,
+} from "./transaction-ledger.js";
 import {
   ensureMerchantTabLeadership,
   hasMerchantTabLeadership,
@@ -1017,7 +1020,8 @@ export function assertMerchantsEditable(ids) {
   const wanted = new Set(ids);
   const pending = normalizeMerchantTransactionLedger(raw).records.find(
     (record) =>
-      record.stage !== "terminal" && wanted.has(record.merchant.merchantId),
+      isPinnedMerchantTransaction(record) &&
+      wanted.has(record.merchant.merchantId),
   );
   if (pending) {
     const merchant = findMerchant(pending.merchant.merchantId);

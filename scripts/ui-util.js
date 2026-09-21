@@ -183,6 +183,8 @@ export const TRANSACTION_ERROR_MESSAGES = Object.freeze({
   "not-stackable": "That item can only be purchased one at a time.",
   "commit-id-conflict":
     "That transaction ID was already used for a different request.",
+  "transaction-manually-settled":
+    "The GM marked this earlier trade as handled manually. No coins, items, or stock were changed by this result.",
   "invalid-commit-id":
     "That saved transaction request is invalid. Close and reopen the shop before trying again.",
   "rate-limited":

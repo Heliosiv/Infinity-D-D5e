@@ -876,6 +876,70 @@ for (const [label, prepared] of [
   );
 }
 
+/* Manual settlement drops the actionable plan but retains an exact denial receipt. */
+{
+  const plan = planBuy(9);
+  const review = transitionMerchantTransaction(plan, "needs-review", {
+    updatedAt: plan.updatedAt + 1,
+  });
+  let ledger = addMerchantTransactionRecord(
+    createMerchantTransactionLedger(),
+    review,
+  );
+  const abandoned = transitionMerchantTransaction(review, "abandoned", {
+    updatedAt: review.updatedAt + 1,
+  });
+  ledger = replaceMerchantTransactionRecord(ledger, abandoned);
+  assert.deepEqual(
+    Object.keys(abandoned).sort(),
+    [
+      "abandonReason",
+      "commitId",
+      "createdAt",
+      "key",
+      "originUserId",
+      "result",
+      "requestFingerprint",
+      "side",
+      "stage",
+      "updatedAt",
+      "version",
+    ].sort(),
+    "the actionable plan and economy checkpoints are removed",
+  );
+  assert.equal(isPinnedMerchantTransaction(abandoned), false);
+  assert.equal(
+    lookupMerchantTransactionReplay(ledger, plan).status,
+    "abandoned",
+  );
+  assert.equal(
+    lookupMerchantTransactionReplay(ledger, plan).result.reason,
+    "transaction-manually-settled",
+  );
+  assert.equal(
+    lookupMerchantTransactionReplay(ledger, {
+      ...plan,
+      requestFingerprint: "different-request",
+    }).status,
+    "conflict",
+  );
+  assert.deepEqual(
+    compactMerchantTransactionLedger(ledger, { terminalCap: 0 }).records,
+    [],
+  );
+  assert.equal(
+    lookupMerchantTransactionReplay(
+      compactMerchantTransactionLedger(ledger, { terminalCap: 0 }),
+      plan,
+    ).status,
+    "compacted",
+    "an expired receipt still blocks old request ids",
+  );
+  expectCode("MERCHANT_TRANSACTION_INVALID_TRANSITION", () =>
+    transitionMerchantTransaction(plan, "abandoned"),
+  );
+}
+
 /* Terminal caps advance per-user replay floors; unresolved work stays pinned. */
 {
   let ledger = createMerchantTransactionLedger();

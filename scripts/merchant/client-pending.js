@@ -1274,10 +1274,15 @@ export function settleMerchantPendingCommitResult(
           review: cloneJsonValue(stored.review),
         };
       }
-      // A later status-only probe may prove that this exact durable request is
-      // now terminal after a GM recheck. Only an exact successful terminal
-      // identity may leave review; unrelated failures never rewrite it.
-      if (result.ok !== true || result.reason !== "") {
+      // A later exact GM reply may finish a recheck or explicitly discard a
+      // manually settled trade. Other failures never rewrite review state.
+      if (
+        !(result.ok === true && result.reason === "") &&
+        !(
+          result.ok === false &&
+          result.reason === "transaction-manually-settled"
+        )
+      ) {
         return { status: "mismatch", record: cloneJsonValue(record) };
       }
     }

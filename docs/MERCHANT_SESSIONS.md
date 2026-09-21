@@ -195,6 +195,23 @@ recheck completed, their saved review sends a status-only fingerprint probe on
 reconnect and moves to the receipt outbox only when the exact terminal result
 returns.
 
+### Discard a trade already settled manually
+
+If the GM and players have already handled an unfinished trade outside the
+module, use **Discard manually settled trade** on that exact review card. Read
+the character and shop values first, then confirm the action in the active GM
+Merchant workspace. It removes the actionable recovery plan and unlocks shop
+edits; it does **not** pay, refund, grant, remove, or restock anything. A small
+denial receipt remains so the original player request cannot be replayed as a
+new purchase or sale. This is not an automatic reconciliation of the manual
+work. Do not use **Recheck** for a trade already settled by hand, because
+Recheck may safely finish remaining planned writes if the checkpoints match.
+
+The player receives an exact manually-settled result if connected. Their saved
+review warning also probes that receipt on reconnect and clears after the
+result is presented. A stale card or lost GM authority makes the discard fail
+without changing the ledger; refresh and inspect it again.
+
 Players can always see saved review warnings in **Shops** (`Shift+O`), including
 old-history uncertainty. **Reviewed with GM…** requires confirmation and only
 removes that exact warning from the current device after verified read-back. It

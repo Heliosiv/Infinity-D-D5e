@@ -15,6 +15,7 @@ export const MERCHANT_TRANSACTION_STAGES = Object.freeze([
   "actor-applied",
   "merchant-applied",
   "terminal",
+  "abandoned",
   "needs-review",
 ]);
 
@@ -302,16 +303,18 @@ export function normalizeMerchantTransactionRecord(raw, options = {}) {
   const expectedKeys =
     stage === "terminal"
       ? [...COMMON_RECORD_KEYS, "result"]
-      : stage === "needs-review"
-        ? [
-            ...COMMON_RECORD_KEYS,
-            "request",
-            "actor",
-            "merchant",
-            "receipt",
-            "review",
-          ]
-        : [...COMMON_RECORD_KEYS, "request", "actor", "merchant", "receipt"];
+      : stage === "abandoned"
+        ? [...COMMON_RECORD_KEYS, "abandonReason", "result"]
+        : stage === "needs-review"
+          ? [
+              ...COMMON_RECORD_KEYS,
+              "request",
+              "actor",
+              "merchant",
+              "receipt",
+              "review",
+            ]
+          : [...COMMON_RECORD_KEYS, "request", "actor", "merchant", "receipt"];
   assertExactKeys(raw, expectedKeys, path);
 
   const originUserId = strictId(raw.originUserId, `${path}.originUserId`);
@@ -355,6 +358,18 @@ export function normalizeMerchantTransactionRecord(raw, options = {}) {
       `${path}.result`,
     );
     return { ...common, result };
+  }
+  if (stage === "abandoned") {
+    return {
+      ...common,
+      abandonReason: strictString(raw.abandonReason, `${path}.abandonReason`, {
+        max: 128,
+        pattern: /^manually-settled$/,
+      }),
+      result: normalizeTerminalResult(raw.result, common, `${path}.result`, {
+        abandoned: true,
+      }),
+    };
   }
 
   const request = normalizeRequest(raw.request, `${path}.request`);
@@ -438,7 +453,7 @@ function planMerchantTransaction(side, input = {}) {
 
 export function projectTerminalMerchantCommitResult(record) {
   const normalized = normalizeMerchantTransactionRecord(record);
-  if (normalized.stage === "terminal")
+  if (normalized.stage === "terminal" || normalized.stage === "abandoned")
     return cloneJson(normalized.result, "result");
   return {
     targetUserId: normalized.originUserId,
@@ -461,6 +476,7 @@ export function canTransitionMerchantTransaction(fromStage, toStage) {
     return MERCHANT_TRANSACTION_STAGES.includes(fromStage);
   if (toStage === "needs-review")
     return UNRESOLVED_STAGES.has(fromStage) && fromStage !== "needs-review";
+  if (toStage === "abandoned") return fromStage === "needs-review";
   return (
     (fromStage === "prepared" && toStage === "actor-applied") ||
     (fromStage === "actor-applied" && toStage === "merchant-applied") ||
@@ -500,6 +516,19 @@ export function transitionMerchantTransaction(record, nextStage, options = {}) {
       result,
     });
   }
+  if (target === "abandoned") {
+    return normalizeMerchantTransactionRecord({
+      ...pickCommon(current),
+      stage: target,
+      updatedAt,
+      abandonReason: "manually-settled",
+      result: {
+        ...projectTerminalMerchantCommitResult(current),
+        ok: false,
+        reason: "transaction-manually-settled",
+      },
+    });
+  }
   if (target === "needs-review") {
     const review = {
       reason: options.reason ?? "canonical-state-mismatch",
@@ -533,6 +562,16 @@ export function classifyMerchantTransactionReconciliation(
   { actor: observedActor, merchant: observedMerchant } = {},
 ) {
   const current = normalizeMerchantTransactionRecord(record);
+  if (current.stage === "abandoned") {
+    return reconciliation(
+      "needs-review",
+      null,
+      null,
+      "transaction-manually-settled",
+      null,
+      null,
+    );
+  }
   if (current.stage === "terminal") {
     return reconciliation(
       "replay",
@@ -557,11 +596,7 @@ export function classifyMerchantTransactionReconciliation(
   let actor;
   let merchant;
   try {
-    actor = normalizeActorBoundary(
-      observedActor,
-      "observed.actor",
-      createJsonBudget(),
-    );
+    actor = normalizeObservedActorBoundary(current, observedActor);
     merchant = cloneJson(observedMerchant, "observed.merchant");
   } catch {
     return reconciliation(
@@ -730,11 +765,7 @@ export function classifyMerchantTransactionReviewRecovery(
   let actor;
   let merchant;
   try {
-    actor = normalizeActorBoundary(
-      observedActor,
-      "observed.actor",
-      createJsonBudget(),
-    );
+    actor = normalizeObservedActorBoundary(current, observedActor);
     merchant = cloneJson(observedMerchant, "observed.merchant");
   } catch {
     return reviewRecovery(
@@ -792,11 +823,7 @@ export function describeMerchantTransactionReviewMismatch(
   let actor;
   let merchant;
   try {
-    actor = normalizeActorBoundary(
-      observedActor,
-      "observed.actor",
-      createJsonBudget(),
-    );
+    actor = normalizeObservedActorBoundary(current, observedActor);
     merchant = cloneJson(observedMerchant, "observed.merchant");
   } catch {
     return ["The Actor or Merchant cannot currently be read safely."];
@@ -1015,6 +1042,13 @@ export function lookupMerchantTransactionReplay(
         result: cloneJson(record.result, "result"),
       };
     }
+    if (record.stage === "abandoned") {
+      return {
+        status: "abandoned",
+        record,
+        result: cloneJson(record.result, "result"),
+      };
+    }
     return { status: "pending", record, result: null };
   }
   const floor = normalized.replayFloors.find(
@@ -1113,7 +1147,7 @@ export function replaceMerchantTransactionRecord(ledger, record) {
   });
 }
 
-/** Compact terminal plans, cap replay receipts, and never evict unresolved work. */
+/** Compact settled receipts, cap replay history, and never evict unresolved work. */
 export function compactMerchantTransactionLedger(
   ledger,
   {
@@ -1133,7 +1167,7 @@ export function compactMerchantTransactionLedger(
   const evicted = new Set();
   const oldestUnresolvedByUser = new Map();
   for (const record of current.records) {
-    if (record.stage === "terminal") continue;
+    if (record.stage === "terminal" || record.stage === "abandoned") continue;
     const prior = oldestUnresolvedByUser.get(record.originUserId);
     if (!prior || compareMerchantCommitIds(record.commitId, prior) < 0) {
       oldestUnresolvedByUser.set(record.originUserId, record.commitId);
@@ -1148,7 +1182,7 @@ export function compactMerchantTransactionLedger(
   };
   const terminalsByUser = new Map();
   for (const record of current.records) {
-    if (record.stage !== "terminal") continue;
+    if (record.stage !== "terminal" && record.stage !== "abandoned") continue;
     const list = terminalsByUser.get(record.originUserId) ?? [];
     list.push(record);
     terminalsByUser.set(record.originUserId, list);
@@ -1170,7 +1204,8 @@ export function compactMerchantTransactionLedger(
     const removable = kept
       .filter(
         (record) =>
-          record.stage === "terminal" && canAdvanceReplayFloorThrough(record),
+          (record.stage === "terminal" || record.stage === "abandoned") &&
+          canAdvanceReplayFloorThrough(record),
       )
       .sort((left, right) => {
         const byCommit = compareMerchantCommitIds(
@@ -1383,7 +1418,12 @@ function normalizeReview(raw, path) {
   };
 }
 
-function normalizeTerminalResult(raw, common, path) {
+function normalizeTerminalResult(
+  raw,
+  common,
+  path,
+  { abandoned = false } = {},
+) {
   assertPlainObject(raw, path);
   assertExactKeys(
     raw,
@@ -1425,7 +1465,12 @@ function normalizeTerminalResult(raw, common, path) {
     }),
     sealId: nullableId(raw.sealId, `${path}.sealId`),
   };
-  if (result.ok !== true || result.reason !== "") {
+  if (
+    (abandoned &&
+      (result.ok !== false ||
+        result.reason !== "transaction-manually-settled")) ||
+    (!abandoned && (result.ok !== true || result.reason !== ""))
+  ) {
     fail(
       "MERCHANT_TRANSACTION_MALFORMED",
       "Durable terminal results must be successful",
@@ -1552,6 +1597,27 @@ function provenAdditiveBuyItem(record, observed, expected) {
   );
 }
 
+/**
+ * Prove the complete planned purchase projection before discarding only
+ * additive Foundry defaults that cannot be represented in strict JSON.
+ */
+function normalizeObservedActorBoundary(record, observed) {
+  assertPlainObject(observed, "observed.actor");
+  assertExactKeys(observed, ["wallet", "item"], "observed.actor");
+  const item = provenAdditiveBuyItem(
+    record,
+    observed.item,
+    record.actor.after.item,
+  )
+    ? record.actor.after.item
+    : observed.item;
+  return normalizeActorBoundary(
+    { wallet: observed.wallet, item },
+    "observed.actor",
+    createJsonBudget(),
+  );
+}
+
 /** Compare a merchant to a checkpoint without erasing post-upgrade stock mix. */
 export function merchantTransactionCheckpointMatches(
   record,
@@ -1567,11 +1633,7 @@ export function merchantTransactionCheckpointMatches(
 export function merchantTransactionActorAfterMatches(record, observed) {
   const current = normalizeMerchantTransactionRecord(record);
   if (!observed) return false;
-  const actor = normalizeActorBoundary(
-    observed,
-    "observed.actor",
-    createJsonBudget(),
-  );
+  const actor = normalizeObservedActorBoundary(current, observed);
   return (
     classifyActorComponents(
       actor,
@@ -1693,6 +1755,23 @@ function pickCommon(record) {
 }
 
 function replacementPreservesPlan(existing, replacement) {
+  if (existing.stage === "abandoned") {
+    return (
+      replacement.stage === "abandoned" &&
+      jsonValuesEqual(existing, replacement)
+    );
+  }
+  if (replacement.stage === "abandoned") {
+    return (
+      existing.stage === "needs-review" &&
+      replacement.abandonReason === "manually-settled" &&
+      jsonValuesEqual(replacement.result, {
+        ...projectTerminalMerchantCommitResult(existing),
+        ok: false,
+        reason: "transaction-manually-settled",
+      })
+    );
+  }
   if (existing.stage === "terminal") {
     return (
       replacement.stage === "terminal" && jsonValuesEqual(existing, replacement)

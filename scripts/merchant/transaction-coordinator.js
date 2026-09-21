@@ -22,6 +22,7 @@ import {
   classifyMerchantTransactionReconciliation,
   classifyMerchantTransactionReviewRecovery,
   compactMerchantTransactionLedger,
+  isPinnedMerchantTransaction,
   lookupMerchantTransactionReplay,
   merchantTransactionActorAfterMatches,
   merchantTransactionCheckpointMatches,
@@ -558,7 +559,7 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       }
       const originUnresolved = availableLedger.records.filter(
         (candidate) =>
-          candidate.stage !== "terminal" &&
+          isPinnedMerchantTransaction(candidate) &&
           candidate.originUserId === record.originUserId,
       ).length;
       if (originUnresolved >= bindings.maxUnresolvedPerOrigin) {
@@ -673,6 +674,62 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       durable.record.merchant.merchantId,
       durable.record.actor.actorId,
       () => recheckLocked(parsed),
+    );
+  }
+
+  /** Explicit GM disposal after the trade has been settled outside the module. */
+  async function abandon(identity) {
+    const parsed = normalizeIdentity(identity);
+    if (!parsed.ok) return parsed;
+    const expectedReviewAt = identity?.expectedReviewAt;
+    if (!Number.isSafeInteger(expectedReviewAt) || expectedReviewAt < 0) {
+      return { status: "stale", reason: "missing-review-checkpoint" };
+    }
+    const durable = lookup(parsed);
+    if (durable.status !== "pending") return durable;
+    if (
+      durable.record.stage !== "needs-review" ||
+      durable.record.review.at !== expectedReviewAt
+    ) {
+      return { status: "stale", reason: "review-changed" };
+    }
+    const barrier = await ensureBarrier();
+    if (barrier.status !== "ready") return barrier;
+    return bindings.runWithMerchantActorMutex(
+      durable.record.merchant.merchantId,
+      durable.record.actor.actorId,
+      async () => {
+        const written = await performPrivateMutation((current) => {
+          const replay = lookupMerchantTransactionReplay(
+            current.ledger,
+            parsed,
+          );
+          if (replay.status !== "pending") outcomeOnly(replay);
+          const record = replay.record;
+          if (
+            record.stage !== "needs-review" ||
+            record.review.at !== expectedReviewAt
+          ) {
+            outcomeOnly({ status: "stale", reason: "review-changed" });
+          }
+          const abandoned = transitionMerchantTransaction(record, "abandoned", {
+            updatedAt: transitionTime(record),
+          });
+          return {
+            merchants: current.merchants,
+            ledger: replaceMerchantTransactionRecord(current.ledger, abandoned),
+            outcome: {
+              status: "abandoned",
+              record: abandoned,
+              result: abandoned.result,
+            },
+          };
+        });
+        return written.status === "written" ||
+          (written.status === "unchanged" && written.outcome)
+          ? written.outcome
+          : written;
+      },
     );
   }
 
@@ -1101,7 +1158,8 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       if (!initial.ok) return initial;
       const results = [];
       for (const record of initial.ledger.records) {
-        if (record.stage === "terminal") continue;
+        if (record.stage === "terminal" || record.stage === "abandoned")
+          continue;
         results.push(
           await (record.stage === "needs-review"
             ? recheck(record)
@@ -1200,6 +1258,7 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     drive,
     drivePendingLocked,
     recheck,
+    abandon,
     reconcile: reconcilePending,
     reconcilePending,
     schedule,
@@ -1332,7 +1391,7 @@ function replaceMerchantSnapshot(merchants, merchantId, replacement) {
 
 function findUnresolvedCollision(ledger, record) {
   for (const candidate of ledger.records) {
-    if (candidate.key === record.key || candidate.stage === "terminal")
+    if (candidate.key === record.key || !isPinnedMerchantTransaction(candidate))
       continue;
     if (
       candidate.actor?.actorId === record.actor.actorId ||
@@ -1575,6 +1634,10 @@ export function submitDurableMerchantTransaction(record) {
 
 export function recheckDurableMerchantTransaction(identity) {
   return merchantTransactionCoordinator.recheck(identity);
+}
+
+export function abandonDurableMerchantTransaction(identity) {
+  return merchantTransactionCoordinator.abandon(identity);
 }
 
 export function listDurableMerchantTransactionsNeedingReview() {

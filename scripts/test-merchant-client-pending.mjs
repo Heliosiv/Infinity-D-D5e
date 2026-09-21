@@ -761,6 +761,31 @@ function settingGame(
   assert.deepEqual(harness.stored().records, []);
 }
 
+/* An exact GM abandonment resolves the player's saved review without a retry. */
+{
+  const pending = record({ index: 86 });
+  const review = storedReview(pending, "transaction-needs-review", 200_020);
+  const harness = settingGame({ version: 3, records: [review] });
+  const discarded = terminalResult(pending, {
+    ok: false,
+    reason: "transaction-manually-settled",
+    itemName: pending.context.itemName,
+    qty: pending.context.qty,
+    unitGp: pending.context.unitGp,
+    totalGp: pending.context.totalGp,
+    sealId: null,
+  });
+  const result = await settleMerchantPendingCommitResult(discarded, {
+    gameInstance: harness.gameInstance,
+    now: 200_021,
+  });
+  assert.equal(result.status, "terminal-outbox");
+  assert.deepEqual(
+    listMerchantPendingReviews({ gameInstance: harness.gameInstance }),
+    [],
+  );
+}
+
 /* An exact later success moves review evidence to the terminal outbox. */
 {
   const pending = record({ index: 85 });

@@ -18,12 +18,24 @@ Foundry windows and hold focus until answered or dismissed. Cancel and Escape
 still leave the underlying operation unchanged, then return focus to its
 opening control.
 
+**v0.3.46 — Manually settled trade cleanup:** A GM can discard a pinned trade
+that the table already handled manually without changing any campaign values.
+The retained receipt prevents the original request from replaying, and exact
+purchases now recover through additive non-JSON Foundry item defaults. See the
+[release notes](docs/RELEASE_NOTES_0.3.46.md).
+
 **v0.3.45 — Flexible guided downtime:** Four-hour setup accepts every saved
 activity or project that fits. GMs can revise an open block, adjust or remove
 unresolved characters, return them for a new choice, and reverse applied simple
 coin or project results after a guarded state check. Completed blocks can be
 reopened for corrections when they are the latest block. See the
 [release notes](docs/RELEASE_NOTES_0.3.45.md).
+
+**Manually settled shop trades:** In the GM Merchant workspace, a pinned trade
+that was completed outside the module can be discarded after confirmation.
+This removes its recovery plan without changing character or shop values and
+retains a small receipt that blocks replay. See the
+[merchant guide](docs/MERCHANT_SESSIONS.md).
 
 **v0.3.44 — Complete pending update:** Includes the merchant stock mix, scroll
 preservation, and guarded recovery changes below, plus a usable four-hour

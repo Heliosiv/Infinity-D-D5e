@@ -661,7 +661,7 @@ function makeHarness({
     }),
   );
   const actual = structuredClone(plan.actor.after);
-  actual.item.system.uses = { spent: 0 };
+  actual.item.system.uses = { spent: 0, runtimeDefault: Number.NaN };
   harness.actors.get(plan.actor.actorId).boundary = actual;
   harness.state.merchants[0].pool.typeShares = { consumable: 100 };
   const outcome = await harness.coordinator.recheck(plan);
@@ -962,6 +962,54 @@ function makeHarness({
     harness.actorWrites.map((write) => write.component),
     ["item", "wallet"],
   );
+}
+
+/* Explicit manual settlement discards plans without any campaign economy write. */
+{
+  const harness = makeHarness();
+  const plan = buyPlan(31);
+  harness.addPlanState(plan);
+  await harness.coordinator.register();
+  const review = transitionMerchantTransaction(plan, "needs-review", {
+    updatedAt: plan.updatedAt + 1,
+  });
+  harness.seedRecord(review);
+  const originalActor = structuredClone(harness.actors.get(plan.actor.actorId));
+  const originalMerchant = structuredClone(harness.state.merchants);
+  const identity = { ...plan, expectedReviewAt: review.review.at };
+  const stale = await harness.coordinator.abandon({
+    ...identity,
+    expectedReviewAt: review.review.at + 1,
+  });
+  assert.equal(stale.status, "stale");
+  assert.equal(
+    lookupMerchantTransactionReplay(harness.state.merchantTransactions, plan)
+      .status,
+    "pending",
+  );
+
+  const discarded = await harness.coordinator.abandon(identity);
+  assert.equal(discarded.status, "abandoned");
+  assert.equal(discarded.result.ok, false);
+  assert.equal(discarded.result.reason, "transaction-manually-settled");
+  assert.equal(
+    lookupMerchantTransactionReplay(harness.state.merchantTransactions, plan)
+      .status,
+    "abandoned",
+  );
+  assert.deepEqual(harness.actors.get(plan.actor.actorId), originalActor);
+  assert.deepEqual(harness.state.merchants, originalMerchant);
+  assert.deepEqual(harness.actorWrites, []);
+  assert.equal(
+    (await harness.coordinator.abandon(identity)).status,
+    "abandoned",
+  );
+  assert.equal((await harness.coordinator.submit(plan)).status, "abandoned");
+  assert.equal(
+    (await harness.coordinator.reconcilePending()).status,
+    "reconciled",
+  );
+  assert.deepEqual(harness.state.merchants, originalMerchant);
 }
 
 /* Reconciliation compacts terminal receipts while local hooks do not recurse. */

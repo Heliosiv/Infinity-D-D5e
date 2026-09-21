@@ -60,6 +60,7 @@ import {
 } from "./ui-util.js";
 import {
   commitMerchantWrite,
+  deliverDurableMerchantAbandonedResult,
   deliverDurableMerchantTerminalResult,
   MERCHANT_EVENTS,
   pushCloseAllSessionsFor,
@@ -70,6 +71,7 @@ import {
   subscribe,
 } from "./merchant/socket.js";
 import {
+  abandonDurableMerchantTransaction,
   listDurableMerchantTransactionsNeedingReview,
   recheckDurableMerchantTransaction,
 } from "./merchant/transaction-coordinator.js";
@@ -181,6 +183,7 @@ const MERCHANT_WRITE_ACTIONS = new Set([
   "closeSession",
   "invRemove",
   "recheckTransaction",
+  "abandonTransaction",
 ]);
 
 function requireMerchantWriteAuthority(action) {
@@ -327,6 +330,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       openInventoryItem: MerchantWorkspaceApp._onOpenInventoryItem,
       recheckTransaction: requireMerchantWriteAuthority(
         MerchantWorkspaceApp._onRecheckTransaction,
+      ),
+      abandonTransaction: requireMerchantWriteAuthority(
+        MerchantWorkspaceApp._onAbandonTransaction,
       ),
       selectSection: MerchantWorkspaceApp._onSelectSection,
       navigateGmWorkbench: GmWorkbenchApp._onNavigate,
@@ -668,6 +674,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
           originUserId: record.originUserId,
           commitId: record.commitId,
           requestFingerprint: record.requestFingerprint,
+          expectedReviewAt: record.review.at,
+          itemName: record.receipt.itemName,
+          qty: record.receipt.qty,
         });
         const actor = globalThis.game?.actors?.get?.(record.actor.actorId);
         const currentMerchant = findMerchant(record.merchant.merchantId);
@@ -1774,6 +1783,43 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       notify(
         "warn",
         "The transaction could not be safely rechecked yet. Its review record remains pinned.",
+      );
+    }
+    this.render(false);
+  }
+
+  static async _onAbandonTransaction(_event, target) {
+    const identity = this._reviewIdentities.get(
+      String(target?.dataset?.reviewActionId ?? ""),
+    );
+    if (!identity) {
+      notify("warn", "That trade card changed. Reopen the Merchant workspace.");
+      this.render(false);
+      return;
+    }
+    const confirmed = await confirmInfinityDialog({
+      window: { title: "Discard manually settled trade?" },
+      content: `<p>Discard the unfinished ${identity.qty}x ${escapeHtml(identity.itemName)} transaction only if you have already handled it manually.</p><p>This permanently removes its recovery plan and unlocks the shop. It does <strong>not</strong> change character coins or items, merchant gold or stock. The old request will be rejected if a player retries it.</p>`,
+      yes: { label: "Discard trade record" },
+      defaultYes: false,
+    });
+    if (
+      !confirmed ||
+      !canContinueWorkbenchAction(this) ||
+      !(await confirmMerchantWriteAuthority(this))
+    )
+      return;
+    const outcome = await abandonDurableMerchantTransaction(identity);
+    if (outcome?.status === "abandoned" && outcome.result) {
+      deliverDurableMerchantAbandonedResult(outcome);
+      notify(
+        "info",
+        "The manually settled trade was discarded. Campaign values were not changed.",
+      );
+    } else {
+      notify(
+        "warn",
+        "The trade changed or could not be discarded safely. Refresh and review it again.",
       );
     }
     this.render(false);
