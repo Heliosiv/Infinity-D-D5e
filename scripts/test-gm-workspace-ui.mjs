@@ -130,7 +130,11 @@ for (const field of [
   );
 }
 assert.match(merchantTemplate, /data-save-status/);
-assert.doesNotMatch(merchantTemplate, /Workspace guide:/);
+assert.match(merchantTemplate, /Workspace guide:/);
+assert.match(merchantTemplate, /class="mw-overview"/);
+assert.match(merchantTemplate, /value="attention">Needs attention/);
+assert.match(merchantTemplate, /data-location-search-text=/);
+assert.match(merchantTemplate, /class="mw-location-summary"/);
 assert.match(merchantTemplate, /role="tablist"/);
 assert.match(merchantTemplate, /Open Session is unavailable:/);
 assert.match(
@@ -326,6 +330,10 @@ assert.match(
   /dt-next-action infinity-workspace-context/,
   "Downtime keeps its lifecycle next action as the shared workspace guide",
 );
+assert.match(downtimeTemplate, /Workspace guide:/);
+assert.match(downtimeTemplate, /class="dt-view-guide"/);
+assert.match(downtimeTemplate, /class="dt-tab-count/);
+assert.match(downtimeTemplate, /class="dt-block-overview"/);
 assert.match(settingsTemplate, /Settings state:/);
 assert.match(settingsTemplate, /hasPartialSaveError/);
 assert.match(

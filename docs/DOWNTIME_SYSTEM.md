@@ -11,6 +11,15 @@ crafting descriptions below only for **Craft Field Ammunition**.
 
 ## Guided downtime (default)
 
+The workspace is split into **Run** and **Prepare** navigation. Stay on
+**Current Block** for the live table workflow; Activities, Projects, Research,
+Settlements, and History are preparation or reference areas. Count badges show
+the size of each library, while Current Block and Research surface work that is
+ready for GM attention. An active block also summarizes Characters, Waiting,
+Ready for review, and Resolved above the participant cards. These are read-only
+projections of authoritative downtime state and do not change the activity
+rules or advance campaign time.
+
 The Activities, Projects, and Settlements panels sit beside their editors in a
 wide window. In a narrow window they move above the editor, with the heading and
 presets kept visible. Long saved lists scroll inside the panel; scroll the main

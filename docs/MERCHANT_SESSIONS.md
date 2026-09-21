@@ -5,6 +5,13 @@
 Open **Shops** from the GM Workbench or the Landing Page. The left side lists
 cities and locations. Select one to see all of its merchants and five controls:
 
+The command-center summary shows the number of saved locations and shops,
+currently open shops, empty shelves, and active shoppers. **Find anywhere**
+matches either a location name or a shop inside it, so you can reach a merchant
+without remembering its city. A selected location has its own Open, Closed,
+Empty, and Shopping now summary. Use **Show → Needs attention** to isolate shops
+that are closed or have no inventory.
+
 | Control                 | Result for the selected location                                                                                               |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | **Open All**            | Makes every merchant available to its allowed players. Players enter and trade automatically. Other locations can remain open. |
@@ -75,7 +82,8 @@ that generated starting quantity.
 
 ## Organize and clean up shops
 
-- **Find a location** searches the location list, which is alphabetized with
+- **Find anywhere** searches location and merchant names, while the location
+  list remains alphabetized with
   **Unassigned shops** first. The **Location name** field directly below the heading
   and **Rename** button change a location's
   name without touching its shops or prices, including recovered imported locations.
@@ -83,8 +91,9 @@ that generated starting quantity.
   **Name location**. This creates a real named location and moves all currently
   unassigned shops into it, preserving their stock, gold, and access settings.
   New unassigned shops can still appear separately in the future.
-- **Find a merchant** searches the selected location. **Show** filters All, Open,
-  Closed, or Empty inventory (no stock rows). **Sort** offers Name A–Z, Name Z–A,
+- **Find a merchant** searches the selected location. **Show** filters All,
+  Needs attention (closed or empty), Open, Closed, or Empty inventory (no stock
+  rows). **Sort** offers Name A–Z, Name Z–A,
   Open first, and Most item types. Filters and sorting survive shop refreshes while
   this directory is open. They do not change the saved merchant order.
 - Check one or more shops, or use **Select shown**, then choose a destination and

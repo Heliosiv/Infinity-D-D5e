@@ -232,7 +232,9 @@ export function filterDirectoryShops(
             ? row.status === "Closed"
             : filter === "empty"
               ? row.itemCount === 0
-              : true),
+              : filter === "attention"
+                ? row.needsAttention === true
+                : true),
     )
     .sort((a, b) =>
       sort === "name-desc"

@@ -230,8 +230,20 @@ assert.ok(
 );
 
 const rows = [
-  { id: "b", name: "Shop 10", status: "Closed", itemCount: 0 },
-  { id: "a", name: "Shop 2", status: "Open", itemCount: 4 },
+  {
+    id: "b",
+    name: "Shop 10",
+    status: "Closed",
+    itemCount: 0,
+    needsAttention: true,
+  },
+  {
+    id: "a",
+    name: "Shop 2",
+    status: "Open",
+    itemCount: 4,
+    needsAttention: false,
+  },
 ];
 assert.deepEqual(
   filterDirectoryShops(rows).map((row) => row.id),
@@ -246,6 +258,10 @@ assert.deepEqual(
     (row) => row.id,
   ),
   ["a"],
+);
+assert.deepEqual(
+  filterDirectoryShops(rows, { filter: "attention" }).map((row) => row.id),
+  ["b"],
 );
 assert.deepEqual(
   filterDirectoryShops(rows, { sort: "name-desc" }).map((row) => row.id),

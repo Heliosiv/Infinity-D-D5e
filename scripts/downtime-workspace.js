@@ -43,6 +43,7 @@ import {
 } from "./downtime/time-of-day.js";
 import { runAsFullGM } from "./permissions.js";
 import { dismissQuickStart, getUiPreferences } from "./ui-preferences.js";
+import { buildDowntimeWorkspaceOverview } from "./downtime/workspace-overview.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/downtime-workspace.hbs`;
@@ -2432,6 +2433,17 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     source.actors ?? source.actorOptions,
     uiState.actorSelector,
   );
+  const workspaceOverview = buildDowntimeWorkspaceOverview({
+    view,
+    currentBlock,
+    guidedTemplates,
+    guidedProjects,
+    researchSeeds,
+    researchCases,
+    settlements,
+    history,
+    needsRecovery,
+  });
 
   return {
     dataAvailable: source.dataAvailable !== false,
@@ -2480,6 +2492,9 @@ export function normalizeWorkspaceProjection(raw, uiState = {}) {
     viewResearch: view === "research",
     viewSettlements: view === "settlements",
     viewHistory: view === "history",
+    viewGuide: workspaceOverview.guide,
+    workspaceNavigation: workspaceOverview.navigation,
+    blockOverview: workspaceOverview.block,
     hasCurrentBlock: Boolean(currentBlock),
     currentBlock,
     workflowStatus,

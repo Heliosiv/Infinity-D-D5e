@@ -2,9 +2,9 @@
 <div class="dt-shell dt-shell--workspace {{#if guided}}dt-shell--guided{{/if}}" aria-busy="{{#if busy}}true{{else}}false{{/if}}">
   <header class="dt-head">
     <div class="dt-head__copy">
-      <p class="dt-eyebrow">City actions and personal projects</p>
-      <h2><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Downtime Workspace</h2>
-      <p>{{#if guided}}Assign downtime, let players choose and roll, then review their results and send reports.{{else}}Assign productive hours, collect each character's queue, then preview and apply one immutable plan.{{/if}}</p>
+      <p class="dt-eyebrow">Campaign time between adventures</p>
+      <h2><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Downtime</h2>
+      <p>{{#if guided}}Run the current block first; prepare activities, projects, research, and settlements only when the campaign needs them.{{else}}Assign productive hours, collect each character's queue, then preview and apply one immutable plan.{{/if}}</p>
     </div>
     <div class="dt-head__actions">
       <button type="button" class="dt-button" data-action="importPrivateRecords" {{#if busy}}disabled{{/if}}>Import saved browser records</button>
@@ -15,26 +15,40 @@
     </div>
   </header>
 
+  <p class="infinity-workspace-context dt-workspace-guide" role="note">
+    <i class="fa-solid fa-compass" aria-hidden="true"></i>
+    <span><strong>Workspace guide:</strong> stay on Current Block while players choose and roll. The highlighted next action is authoritative; the other tabs prepare reusable choices for future blocks.</span>
+  </p>
+
   <nav class="dt-tabs" aria-label="Downtime workspace views">
+    <span class="dt-tabs__group" aria-hidden="true">Run</span>
     <button type="button" data-action="setView" data-view="current" {{#if viewCurrent}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block
+      <i class="fa-solid fa-hourglass-start" aria-hidden="true"></i> Current Block <span class="dt-tab-count is-{{workspaceNavigation.current.tone}}">{{workspaceNavigation.current.count}}</span>
     </button>
+    <span class="dt-tabs__group" aria-hidden="true">Prepare</span>
     <button type="button" data-action="setView" data-view="activities" {{#if viewActivities}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Activities
+      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Activities <span class="dt-tab-count">{{workspaceNavigation.activities.count}}</span>
     </button>
     <button type="button" data-action="setView" data-view="projects" {{#if viewProjects}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-diagram-project" aria-hidden="true"></i> Projects
+      <i class="fa-solid fa-diagram-project" aria-hidden="true"></i> Projects <span class="dt-tab-count">{{workspaceNavigation.projects.count}}</span>
     </button>
     <button type="button" data-action="setView" data-view="research" {{#if viewResearch}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-book-open-reader" aria-hidden="true"></i> Research
+      <i class="fa-solid fa-book-open-reader" aria-hidden="true"></i> Research <span class="dt-tab-count is-{{workspaceNavigation.research.tone}}">{{workspaceNavigation.research.count}}</span>
     </button>
     <button type="button" data-action="setView" data-view="settlements" {{#if viewSettlements}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements
+      <i class="fa-solid fa-city" aria-hidden="true"></i> Settlements <span class="dt-tab-count">{{workspaceNavigation.settlements.count}}</span>
     </button>
     <button type="button" data-action="setView" data-view="history" {{#if viewHistory}}class="is-active" aria-current="page"{{/if}} {{#unless dataAvailable}}disabled{{/unless}}>
-      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> History
+      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> History <span class="dt-tab-count">{{workspaceNavigation.history.count}}</span>
     </button>
   </nav>
+
+  {{#if dataAvailable}}
+  <section class="dt-view-guide" aria-labelledby="dt-view-guide-heading">
+    <span class="dt-view-guide__icon" aria-hidden="true"><i class="fa-solid {{viewGuide.icon}}"></i></span>
+    <div><p class="dt-eyebrow">{{viewGuide.eyebrow}}</p><h3 id="dt-view-guide-heading">{{viewGuide.title}}</h3><p>{{viewGuide.description}}</p></div>
+  </section>
+  {{/if}}
 
   <p class="dt-sr-status" role="status" aria-live="polite" aria-atomic="true">
     {{#if busy}}{{statusMessage}}{{else}}{{#unless hasError}}{{statusMessage}}{{/unless}}{{/if}}
@@ -109,6 +123,12 @@
           </div>
           <span class="dt-phase dt-phase--{{currentBlock.statusTone}}">{{currentBlock.statusLabel}}</span>
         </div>
+        <dl class="dt-block-overview" aria-label="Current downtime participation">
+          <div><dt>Characters</dt><dd>{{blockOverview.participantCount}}</dd></div>
+          <div><dt>Waiting</dt><dd>{{blockOverview.waitingCount}}</dd></div>
+          <div class="{{#if blockOverview.hasReady}}is-ready{{/if}}"><dt>Ready for review</dt><dd>{{blockOverview.readyCount}}</dd></div>
+          <div><dt>Resolved</dt><dd>{{blockOverview.resolvedCount}}</dd></div>
+        </dl>
 
         {{#if currentBlock.canEditSetup}}
         <details class="dt-block-setup">

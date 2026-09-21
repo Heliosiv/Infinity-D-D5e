@@ -20,6 +20,8 @@ import {
   defaultGuidedDowntimeTemplates,
   GUIDED_DOWNTIME_SKILLS,
 } from "./downtime/dispatch.js";
+import { buildMerchantWorkspaceOverview } from "./merchant/workspace-overview.js";
+import { buildDowntimeWorkspaceOverview } from "./downtime/workspace-overview.js";
 
 /** Market-filter context (mirrors BaseLootApp._marketContext) for the harness. */
 function marketContext(minItemGp = 0, maxItemGp = 0) {
@@ -2397,7 +2399,9 @@ function merchantWorkspaceContext() {
         outOfStock: true,
       },
     ],
-    activeSessions: [{ sessionId: "s-1", userLabel: "Alice" }],
+    activeSessions: [
+      { sessionId: "s-1", merchantId: "m-curios", userLabel: "Alice" },
+    ],
     canManageMerchants: true,
     merchantAuthorityReason: "",
     merchantAccessClosed: false,
@@ -2413,10 +2417,22 @@ function merchantWorkspaceContext() {
   };
   context.locationMerchants = context.merchants.map((row) => ({
     ...row,
+    locationId: "city",
     status: "Open",
+    statusTone: "open",
+    needsAttention: false,
     purseLabel: "320 gp",
     accessLabel: "All players",
   }));
+  const overview = buildMerchantWorkspaceOverview({
+    merchants: context.locationMerchants,
+    locations: context.locations,
+    sessions: context.activeSessions,
+    selectedLocationId: context.selectedLocation.id,
+  });
+  context.locations = overview.locations;
+  context.selectedLocation = overview.selectedLocation;
+  context.shopOverview = overview.stats;
   return context;
 }
 
@@ -4166,9 +4182,26 @@ function downtimeWorkspaceBaseContext(overrides = {}) {
     hasError: false,
     ...overrides,
   };
-  return {
+  const decorated = {
     ...context,
     ...downtimeLifecycleFixture(context),
+  };
+  const overview = buildDowntimeWorkspaceOverview({
+    view: decorated.view,
+    currentBlock: decorated.currentBlock,
+    guidedTemplates: decorated.guidedTemplates,
+    guidedProjects: decorated.guidedProjects,
+    researchSeeds: decorated.researchSeeds,
+    researchCases: decorated.researchCases,
+    settlements: decorated.settlements,
+    history: decorated.history,
+    needsRecovery: decorated.needsRecovery,
+  });
+  return {
+    ...decorated,
+    viewGuide: overview.guide,
+    workspaceNavigation: overview.navigation,
+    blockOverview: overview.block,
   };
 }
 

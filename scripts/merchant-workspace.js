@@ -136,6 +136,7 @@ import {
   selectMerchantTab,
   bindMerchantTabKeys,
 } from "./merchant/editor-tabs.js";
+import { buildMerchantWorkspaceOverview } from "./merchant/workspace-overview.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/merchant-workspace.hbs`;
@@ -547,29 +548,34 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       this._isMerchantEditor && selected ? [selected] : [],
     );
 
-    const merchantList = merchants.map((m) => ({
-      id: m.id,
-      name: m.name,
-      art: m.art || FALLBACK_ART,
-      itemCount: m.items.length,
-      itemCountIsOne: m.items.length === 1,
-      allowedCount: m.allowedUserIds.length,
-      allowedCountIsOne: m.allowedUserIds.length === 1,
-      locationId: m.shop?.locationId ?? "",
-      accessLabel:
-        m.shop?.access === "all"
-          ? "All players"
-          : `${m.allowedUserIds.length} allowed players`,
-      status:
+    const merchantList = merchants.map((m) => {
+      const status =
         !merchantAccess.closed &&
         shopSetup(m).open &&
         m.selfServiceMode !== "off"
           ? "Open"
-          : "Closed",
-      purseLabel:
-        m.goldOnHand == null ? "Unlimited gold" : `${m.goldOnHand} gp`,
-      selected: m.id === this._selectedId,
-    }));
+          : "Closed";
+      return {
+        id: m.id,
+        name: m.name,
+        art: m.art || FALLBACK_ART,
+        itemCount: m.items.length,
+        itemCountIsOne: m.items.length === 1,
+        allowedCount: m.allowedUserIds.length,
+        allowedCountIsOne: m.allowedUserIds.length === 1,
+        locationId: m.shop?.locationId ?? "",
+        accessLabel:
+          m.shop?.access === "all"
+            ? "All players"
+            : `${m.allowedUserIds.length} allowed players`,
+        status,
+        statusTone: status === "Open" ? "open" : "closed",
+        needsAttention: status !== "Open" || m.items.length === 0,
+        purseLabel:
+          m.goldOnHand == null ? "Unlimited gold" : `${m.goldOnHand} gp`,
+        selected: m.id === this._selectedId,
+      };
+    });
 
     const players = listActivePlayerUsers();
     const skillOptions = Object.entries(BARGAIN_SKILLS).map(([id, label]) => ({
@@ -733,6 +739,14 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
           canRecheck: canManageMerchants,
         };
       });
+    const workspaceOverview = buildMerchantWorkspaceOverview({
+      merchants: merchantList,
+      locations,
+      sessions: allActiveSessions,
+      transactionReviewCount: transactionReviews.length,
+      selectedLocationId: this._selectedLocationId,
+      accessClosed: merchantAccess.closed,
+    });
     return {
       workbench: this._isMerchantEditor
         ? null
@@ -742,12 +756,10 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       moduleId: MODULE_ID,
       hasMerchants: merchants.length > 0,
       merchants: merchantList,
-      locations: locations.map((location) => ({
-        ...location,
-        selected: location.id === this._selectedLocationId,
-      })),
+      locations: workspaceOverview.locations,
       hasLocations: locations.length > 0,
-      selectedLocation,
+      selectedLocation: workspaceOverview.selectedLocation ?? selectedLocation,
+      shopOverview: workspaceOverview.stats,
       locationMerchants: merchantList.filter(
         (merchant) => merchant.locationId === this._selectedLocationId,
       ),
@@ -1078,9 +1090,12 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
         const query = locationSearch.value.trim().toLocaleLowerCase();
         let count = 0;
         for (const row of this.element.querySelectorAll(".mw-location")) {
-          row.hidden = !row
-            .querySelector("strong")
-            .textContent.toLocaleLowerCase()
+          row.hidden = !String(
+            row.dataset.locationSearchText ??
+              row.querySelector("strong")?.textContent ??
+              "",
+          )
+            .toLocaleLowerCase()
             .includes(query);
           if (!row.hidden) count++;
         }
@@ -1110,6 +1125,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
           name: row.querySelector(".mw-list__name").textContent,
           status: row.dataset.shopStatus,
           itemCount: Number(row.dataset.itemCount),
+          needsAttention: row.dataset.needsAttention === "true",
         })),
         {
           query: this._merchantSearch,

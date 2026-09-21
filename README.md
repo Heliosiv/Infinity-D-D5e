@@ -6,6 +6,13 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**Shops and Downtime workspaces:** Both GM surfaces now open with a concise
+workspace guide and at-a-glance status. Shops can find a location by either its
+name or one of its merchants, filter merchants that need attention, and show
+open/closed/empty/session counts. Downtime separates the live Run view from
+Prepare libraries, adds navigation counts, and summarizes who is waiting,
+ready for review, or resolved. Stored campaign rules and records are unchanged.
+
 **Player loading screens:** Shops, Party Supplies, and Reputation show a
 bone-bound, indeterminate loading bar while waiting for the GM's player-safe
 response or a requested shop session. The bar also appears during a Party
