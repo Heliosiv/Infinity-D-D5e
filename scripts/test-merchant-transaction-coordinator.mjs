@@ -220,6 +220,29 @@ function makeHarness({
     };
   }
 
+  async function updateLedger(mutation, { authorizeWrite } = {}) {
+    const before = clone(state);
+    const beforeMutation = faults.beforeNextPrivateMutation;
+    faults.beforeNextPrivateMutation = null;
+    await beforeMutation?.();
+    const proposal = await mutation(clone(state.merchantTransactions));
+    if (proposal == null) return null;
+    if (authorizeWrite?.() !== true)
+      throw new Error("MerchantWriteAuthorityLost");
+    state.merchantTransactions = clone(proposal.merchantTransactions);
+    const after = clone(state);
+    privateWrites.push({ before, after });
+    for (const callback of privateSubscribers) {
+      callback({ keys: ["merchantTransactions"], reason: "local-write" });
+    }
+    if (authorizeWrite?.() !== true)
+      throw new Error("MerchantWriteAuthorityLost");
+    return {
+      merchantTransactions: clone(state.merchantTransactions),
+      result: proposal.result,
+    };
+  }
+
   function readActorBoundary(actor, itemId) {
     if (!actor || actor.id == null) {
       return { ok: false, reason: "no-actor", boundary: null };
@@ -338,6 +361,7 @@ function makeHarness({
     readMerchants,
     isPrivateReady: () => ready,
     updateMerchantPrivateState: updatePrivate,
+    updateMerchantTransactionLedger: updateLedger,
     authoritativeGMId: () => (authoritative ? "gm-1" : null),
     isAuthoritativeGM: () => authoritative,
     ensureTabLeadership: async () => tabLeader,
@@ -623,7 +647,7 @@ function makeHarness({
   assert.equal(reviewWhileThird.manualCorrectionRequired, true);
   assert.match(
     reviewWhileThird.guidance,
-    /Do not reset, delete, or force-complete/,
+    /dismiss this reminder; shop controls and new trades remain available/i,
   );
   assert.equal(harness.privateWrites.length, writesAfterQuarantine);
   assert.equal(harness.actorWrites.length, 0);
@@ -793,6 +817,37 @@ function makeHarness({
   assert.equal(atCap.status, "blocked");
   assert.equal(atCap.reason, "unresolved-origin-cap");
   assert.equal(capped.privateWrites.length, capWrites);
+}
+
+/* Advisory reviews neither collide with nor consume capacity for fresh work. */
+{
+  const collision = makeHarness({ maxUnresolvedPerOrigin: 1 });
+  const oldPlan = buyPlan(34, {
+    originUserId: "returning-player",
+    merchantId: "shared-review-shop",
+  });
+  const freshPlan = buyPlan(35, {
+    originUserId: "returning-player",
+    actorId: "fresh-actor",
+    merchantId: "shared-review-shop",
+  });
+  collision.addPlanState(oldPlan);
+  collision.addPlanState(freshPlan);
+  await collision.coordinator.register();
+  const review = transitionMerchantTransaction(oldPlan, "needs-review", {
+    updatedAt: oldPlan.updatedAt + 1,
+  });
+  collision.seedRecord(review);
+
+  const admitted = await collision.coordinator.persistPrepared(freshPlan);
+  assert.equal(admitted.status, "prepared");
+  assert.equal(
+    lookupMerchantTransactionReplay(
+      collision.state.merchantTransactions,
+      oldPlan,
+    ).record.stage,
+    "needs-review",
+  );
 }
 
 /* Concurrent duplicate preparation persists exactly one prepared record. */
@@ -1083,6 +1138,37 @@ function makeHarness({
       .status,
     "abandoned",
   );
+}
+
+/* Dismissing a reminder does not read Merchants or acquire the economy mutex. */
+{
+  let merchantReadsBroken = false;
+  const harness = makeHarness({
+    normalizeMerchantView: (merchants) => {
+      if (merchantReadsBroken) throw new Error("SimulatedMerchantReadFailure");
+      return merchants;
+    },
+  });
+  const plan = buyPlan(36);
+  harness.addPlanState(plan);
+  await harness.coordinator.register();
+  const review = transitionMerchantTransaction(plan, "needs-review", {
+    updatedAt: plan.updatedAt + 1,
+  });
+  harness.seedRecord(review);
+  const beforeMerchant = structuredClone(harness.state.merchants);
+  const beforeActor = structuredClone(harness.actors.get(plan.actor.actorId));
+  const mutexCount = harness.mutexEntries.length;
+  merchantReadsBroken = true;
+
+  const dismissed = await harness.coordinator.abandon({
+    ...plan,
+    expectedReviewAt: review.review.at,
+  });
+  assert.equal(dismissed.status, "abandoned");
+  assert.deepEqual(harness.state.merchants, beforeMerchant);
+  assert.deepEqual(harness.actors.get(plan.actor.actorId), beforeActor);
+  assert.equal(harness.mutexEntries.length, mutexCount);
 }
 
 /* Reconciliation compacts terminal receipts while local hooks do not recurse. */

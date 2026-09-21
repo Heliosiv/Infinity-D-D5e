@@ -29,6 +29,11 @@ const FULL_STAGES = new Set([
   "needs-review",
 ]);
 const UNRESOLVED_STAGES = new Set(FULL_STAGES);
+const BLOCKING_STAGES = new Set([
+  "prepared",
+  "actor-applied",
+  "merchant-applied",
+]);
 const SIDES = new Set(["buy", "sell"]);
 const ACTOR_STATE_LABELS = new Set([
   "before",
@@ -1257,6 +1262,16 @@ export function isPinnedMerchantTransaction(record) {
   return UNRESOLVED_STAGES.has(
     normalizeMerchantTransactionRecord(record).stage,
   );
+}
+
+/**
+ * Whether a transaction is actively applying campaign values and therefore
+ * must exclude overlapping Merchant or Actor writes. A needs-review record is
+ * deliberately not blocking: it is an advisory recovery receipt whose exact
+ * request remains replay-safe while ordinary shop work continues.
+ */
+export function isBlockingMerchantTransaction(record) {
+  return BLOCKING_STAGES.has(normalizeMerchantTransactionRecord(record).stage);
 }
 
 function normalizeReplayFloor(raw, path) {

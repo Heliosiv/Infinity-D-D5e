@@ -15,6 +15,7 @@ import {
   describeMerchantTransactionReviewMismatch,
   findMerchantTransactionRecord,
   formatMerchantCommitId,
+  isBlockingMerchantTransaction,
   isPinnedMerchantTransaction,
   lookupMerchantTransactionReplay,
   merchantCommitRequestFingerprint,
@@ -438,6 +439,7 @@ function expectCode(code, operation) {
   );
   assert.deepEqual(projectTerminalMerchantCommitResult(done), done.result);
   assert.equal(isPinnedMerchantTransaction(done), false);
+  assert.equal(isBlockingMerchantTransaction(done), false);
 
   const review = transitionMerchantTransaction(prepared, "needs-review", {
     updatedAt: 2000,
@@ -447,6 +449,10 @@ function expectCode(code, operation) {
   });
   assert.equal(review.review.reason, "wallet-diverged");
   assert.equal(isPinnedMerchantTransaction(review), true);
+  assert.equal(isBlockingMerchantTransaction(review), false);
+  assert.equal(isBlockingMerchantTransaction(prepared), true);
+  assert.equal(isBlockingMerchantTransaction(actorApplied), true);
+  assert.equal(isBlockingMerchantTransaction(merchantApplied), true);
   expectCode("MERCHANT_TRANSACTION_INVALID_TRANSITION", () =>
     transitionMerchantTransaction(review, "terminal"),
   );

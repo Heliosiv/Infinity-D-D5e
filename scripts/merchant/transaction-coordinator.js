@@ -22,7 +22,7 @@ import {
   classifyMerchantTransactionReconciliation,
   classifyMerchantTransactionReviewRecovery,
   compactMerchantTransactionLedger,
-  isPinnedMerchantTransaction,
+  isBlockingMerchantTransaction,
   lookupMerchantTransactionReplay,
   merchantTransactionActorAfterMatches,
   merchantTransactionCheckpointMatches,
@@ -34,7 +34,11 @@ import {
   transitionMerchantTransaction,
 } from "./transaction-ledger.js";
 import { runWithMerchantActorMutex } from "./session-state.js";
-import { loadMerchants, updateMerchantPrivateState } from "./store.js";
+import {
+  loadMerchants,
+  updateMerchantPrivateState,
+  updateMerchantTransactionLedger,
+} from "./store.js";
 import {
   ensureMerchantTabLeadership,
   hasMerchantTabLeadership,
@@ -109,6 +113,37 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       return {
         ok: true,
         merchants: cloneValue(merchants),
+        ledger: normalizeMerchantTransactionLedger(rawLedger),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: "needs-review",
+        reason: "malformed-ledger",
+        errorCode: error?.code ?? "MERCHANT_LEDGER_MALFORMED",
+      };
+    }
+  }
+
+  function readLedgerSnapshot() {
+    if (bindings.isPrivateReady() !== true) {
+      return {
+        ok: false,
+        status: "unavailable",
+        reason: "private-state-not-ready",
+      };
+    }
+    const rawLedger = bindings.getPrivateState("merchantTransactions");
+    if (rawLedger == null) {
+      return {
+        ok: false,
+        status: "unavailable",
+        reason: "private-state-not-ready",
+      };
+    }
+    try {
+      return {
+        ok: true,
         ledger: normalizeMerchantTransactionLedger(rawLedger),
       };
     } catch (error) {
@@ -237,6 +272,17 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     }
   }
 
+  function ledgerWriteFenceCurrent(fence) {
+    if (!fence || !authorityContextCurrent(fence.context)) return false;
+    const snapshot = readLedgerSnapshot();
+    if (!snapshot.ok) return false;
+    const observed = ledgerIdentity(snapshot.ledger);
+    return (
+      identitiesEqual(observed, fence.base) ||
+      (fence.next && identitiesEqual(observed, fence.next))
+    );
+  }
+
   function stampLedger(ledger, baseLedger, context) {
     if (baseLedger.revision >= Number.MAX_SAFE_INTEGER) {
       throw new MerchantTransactionCoordinatorError(
@@ -357,6 +403,87 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
         reason: "private-write-failed",
         error,
       };
+    } finally {
+      localWriteDepth -= 1;
+    }
+  }
+
+  async function performLedgerMutation(mutation) {
+    if ((await bindings.ensureTabLeadership()) !== true) {
+      return authorityLost("tab-leadership-unavailable");
+    }
+    const context = ensureLocalAuthority();
+    if (!context) return authorityLost("not-authoritative");
+    let fence = null;
+    let outcome = null;
+    let expectedLedger = null;
+    localWriteDepth += 1;
+    try {
+      const persisted = await bindings.updateMerchantTransactionLedger(
+        async (rawLedger) => {
+          const current = normalizeMerchantTransactionLedger(rawLedger);
+          if (!authorityContextCurrent(context)) throw authorityFenceError();
+          fence = {
+            context,
+            base: ledgerIdentity(current),
+            next: null,
+          };
+          if (!ledgerWriteFenceCurrent(fence)) throw authorityFenceError();
+          const proposal = await mutation(current);
+          if (proposal == null) return null;
+          if (!proposal?.ledger) {
+            throw new MerchantTransactionCoordinatorError(
+              "MERCHANT_COORDINATOR_PROPOSAL_INVALID",
+              "Coordinator ledger mutation returned an invalid proposal",
+            );
+          }
+          expectedLedger = stampLedger(
+            normalizeMerchantTransactionLedger(proposal.ledger),
+            current,
+            context,
+          );
+          fence.next = ledgerIdentity(expectedLedger);
+          outcome = proposal.outcome ?? null;
+          return {
+            merchantTransactions: expectedLedger,
+            result: outcome,
+          };
+        },
+        { authorizeWrite: () => ledgerWriteFenceCurrent(fence) },
+      );
+      if (persisted == null) {
+        return { status: "unchanged", written: false, outcome };
+      }
+      const after = readLedgerSnapshot();
+      if (
+        !after.ok ||
+        !expectedLedger ||
+        !identitiesEqual(
+          ledgerIdentity(after.ledger),
+          ledgerIdentity(expectedLedger),
+        ) ||
+        !authorityContextCurrent(context)
+      ) {
+        return authorityLost("write-readback-fence-lost");
+      }
+      return {
+        status: "written",
+        written: true,
+        outcome,
+        ledger: after.ledger,
+      };
+    } catch (error) {
+      if (error?.code === "MERCHANT_COORDINATOR_OUTCOME_ONLY") {
+        return {
+          status: "unchanged",
+          written: false,
+          outcome: error.outcome ?? null,
+        };
+      }
+      if (!authorityContextCurrent(context) || isAuthorityFenceError(error)) {
+        return authorityLost("authority-lost", error);
+      }
+      return { status: "error", reason: "ledger-write-failed", error };
     } finally {
       localWriteDepth -= 1;
     }
@@ -569,7 +696,7 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
       }
       const originUnresolved = availableLedger.records.filter(
         (candidate) =>
-          isPinnedMerchantTransaction(candidate) &&
+          isBlockingMerchantTransaction(candidate) &&
           candidate.originUserId === record.originUserId,
       ).length;
       if (originUnresolved >= bindings.maxUnresolvedPerOrigin) {
@@ -687,7 +814,7 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     );
   }
 
-  /** Explicit GM disposal after the trade has been settled outside the module. */
+  /** Dismiss an advisory recovery receipt without touching campaign values. */
   async function abandon(identity) {
     const parsed = normalizeIdentity(identity);
     if (!parsed.ok) return parsed;
@@ -695,7 +822,9 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     if (!Number.isSafeInteger(expectedReviewAt) || expectedReviewAt < 0) {
       return { status: "stale", reason: "missing-review-checkpoint" };
     }
-    const durable = lookup(parsed);
+    const snapshot = readLedgerSnapshot();
+    if (!snapshot.ok) return snapshot;
+    const durable = lookupMerchantTransactionReplay(snapshot.ledger, parsed);
     if (durable.status !== "pending") return durable;
     if (
       durable.record.stage !== "needs-review" ||
@@ -703,44 +832,32 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
     ) {
       return { status: "stale", reason: "review-changed" };
     }
-    const barrier = await ensureBarrier();
-    if (barrier.status !== "ready") return barrier;
-    return bindings.runWithMerchantActorMutex(
-      durable.record.merchant.merchantId,
-      durable.record.actor.actorId,
-      async () => {
-        const written = await performPrivateMutation((current) => {
-          const replay = lookupMerchantTransactionReplay(
-            current.ledger,
-            parsed,
-          );
-          if (replay.status !== "pending") outcomeOnly(replay);
-          const record = replay.record;
-          if (
-            record.stage !== "needs-review" ||
-            record.review.at !== expectedReviewAt
-          ) {
-            outcomeOnly({ status: "stale", reason: "review-changed" });
-          }
-          const abandoned = transitionMerchantTransaction(record, "abandoned", {
-            updatedAt: transitionTime(record),
-          });
-          return {
-            merchants: current.merchants,
-            ledger: replaceMerchantTransactionRecord(current.ledger, abandoned),
-            outcome: {
-              status: "abandoned",
-              record: abandoned,
-              result: abandoned.result,
-            },
-          };
-        });
-        return written.status === "written" ||
-          (written.status === "unchanged" && written.outcome)
-          ? written.outcome
-          : written;
-      },
-    );
+    const written = await performLedgerMutation((ledger) => {
+      const replay = lookupMerchantTransactionReplay(ledger, parsed);
+      if (replay.status !== "pending") outcomeOnly(replay);
+      const record = replay.record;
+      if (
+        record.stage !== "needs-review" ||
+        record.review.at !== expectedReviewAt
+      ) {
+        outcomeOnly({ status: "stale", reason: "review-changed" });
+      }
+      const abandoned = transitionMerchantTransaction(record, "abandoned", {
+        updatedAt: transitionTime(record),
+      });
+      return {
+        ledger: replaceMerchantTransactionRecord(ledger, abandoned),
+        outcome: {
+          status: "abandoned",
+          record: abandoned,
+          result: abandoned.result,
+        },
+      };
+    });
+    return written.status === "written" ||
+      (written.status === "unchanged" && written.outcome)
+      ? written.outcome
+      : written;
   }
 
   async function recheckLocked(identity) {
@@ -1370,7 +1487,7 @@ function pinnedReviewOutcome(record, assessment) {
     pinned: true,
     manualCorrectionRequired: true,
     guidance:
-      "Correct the Actor or Merchant to an exact planned before/after checkpoint, then recheck. Do not reset, delete, or force-complete the transaction.",
+      "Safe recovery requires an exact saved checkpoint. You may instead dismiss this reminder; shop controls and new trades remain available either way.",
   };
 }
 
@@ -1401,7 +1518,10 @@ function replaceMerchantSnapshot(merchants, merchantId, replacement) {
 
 function findUnresolvedCollision(ledger, record) {
   for (const candidate of ledger.records) {
-    if (candidate.key === record.key || !isPinnedMerchantTransaction(candidate))
+    if (
+      candidate.key === record.key ||
+      !isBlockingMerchantTransaction(candidate)
+    )
       continue;
     if (
       candidate.actor?.actorId === record.actor.actorId ||
@@ -1558,6 +1678,7 @@ const PRODUCTION_BINDINGS = Object.freeze({
   readMerchants: loadMerchants,
   isPrivateReady: isPrivilegedPrivateStateReady,
   updateMerchantPrivateState,
+  updateMerchantTransactionLedger,
   authoritativeGMId,
   isAuthoritativeGM,
   ensureTabLeadership: ensureMerchantTabLeadership,
@@ -1583,6 +1704,7 @@ function assertBindings(bindings) {
     "getPrivateState",
     "isPrivateReady",
     "updateMerchantPrivateState",
+    "updateMerchantTransactionLedger",
     "authoritativeGMId",
     "isAuthoritativeGM",
     "ensureTabLeadership",

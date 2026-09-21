@@ -26,11 +26,7 @@ import {
   merchantCommitRequestFingerprint,
 } from "./merchant/transaction-ledger.js";
 import { normalizeMerchant } from "./merchant/store.js";
-import { applyLocationOperation } from "./merchant/locations.js";
-import {
-  deleteDirectoryShops,
-  moveDirectoryShops,
-} from "./merchant/directory.js";
+import { deleteDirectoryShops } from "./merchant/directory.js";
 
 const MODULE_ID = "infinity-dnd5e";
 const saved = {
@@ -351,7 +347,9 @@ try {
   globalThis.ui = {
     notifications: {
       info() {},
-      warn() {},
+      warn(message) {
+        notices.push(String(message));
+      },
       error(message) {
         notices.push(String(message));
       },
@@ -1081,63 +1079,32 @@ try {
     "needs-review",
   );
   const reviewNotice = notices.find((message) => message.includes("shop-p3"));
-  assert.match(reviewNotice, /Transactions needing review/);
+  assert.match(reviewNotice, /needs review/);
+  assert.match(reviewNotice, /Shop controls and new trades remain available/);
   assert.doesNotMatch(reviewNotice, /Compendium\./);
   const beforeProtectedEdit = clone(getPrivateState("merchants"));
-  await assert.rejects(
-    commitMerchantWrite("shop-p3", (merchant) => ({
-      ...merchant,
-      goldOnHand: 999,
-    })),
-    /unfinished trade/,
-  );
-  await assert.rejects(
-    applyLocationOperation({
-      locationId: "",
-      operation: "clear",
-      expectedIds: beforeProtectedEdit
-        .filter((merchant) => !merchant.shop?.locationId)
-        .map((merchant) => merchant.id),
-    }),
-    /unfinished trade/,
-  );
-  assert.deepEqual(
-    getPrivateState("merchants"),
-    beforeProtectedEdit,
-    "bulk and individual edits cannot erase recovery checkpoints",
-  );
-  const protectedShop = beforeProtectedEdit.find((row) => row.id === "shop-p3");
-  await assert.rejects(
-    deleteDirectoryShops([protectedShop]),
-    /unfinished trade/,
-  );
-  await assert.rejects(
-    moveDirectoryShops({ expectedShops: [protectedShop], destination: "" }),
-    /unfinished trade/,
-  );
-  assert.deepEqual(
-    getPrivateState("merchants"),
-    beforeProtectedEdit,
-    "directory deletion and moving preserve unfinished trade checkpoints",
-  );
-
-  const p3BlockedSession = openSession({
-    merchantId: "shop-p3",
-    viewerUserId: "p3",
-  });
-  const p3BlockedFrame = makeFrame({
-    userId: "p3",
-    sessionId: p3BlockedSession.sessionId,
-    itemUuid: itemByUser.p3,
-    id: commitId(4),
-  });
-  const p3CreatesBeforeBlocked = p3Actor.createCalls;
-  await receiveMerchantPayload(p3BlockedFrame, "p3");
-  assert.equal(results.at(-1)?.reason, "unresolved-transaction-collision");
+  await commitMerchantWrite("shop-p3", (merchant) => ({
+    ...merchant,
+    shop: { ...merchant.shop, open: false },
+  }));
   assert.equal(
-    p3Actor.createCalls,
-    p3CreatesBeforeBlocked,
-    "a blocked plan performs no Actor write",
+    getPrivateState("merchants").find((row) => row.id === "shop-p3").shop.open,
+    false,
+    "an advisory review does not block closing its shop",
+  );
+  await setPrivateState("merchants", beforeProtectedEdit);
+  const protectedShop = beforeProtectedEdit.find((row) => row.id === "shop-p3");
+  await deleteDirectoryShops([protectedShop]);
+  assert.equal(
+    getPrivateState("merchants").some((row) => row.id === "shop-p3"),
+    false,
+    "an advisory review does not block deleting its shop",
+  );
+  await setPrivateState("merchants", beforeProtectedEdit);
+  assert.deepEqual(
+    getPrivateState("merchants"),
+    beforeProtectedEdit,
+    "the test restores the exact merchant checkpoint before safe recovery",
   );
 
   // A GM may finish a safe recheck while the player is offline. The inert
@@ -1189,6 +1156,14 @@ try {
       (record) => record.commitId === p6Frame.commitId,
     )?.stage,
     "prepared",
+  );
+  await assert.rejects(
+    commitMerchantWrite("shop-p6", (merchant) => ({
+      ...merchant,
+      shop: { ...merchant.shop, open: false },
+    })),
+    /unfinished trade/,
+    "an actively applying transaction still protects its shop",
   );
   const collisionLedger = getPrivateState("merchantTransactions");
   const p6Record = collisionLedger.records.find(

@@ -925,9 +925,8 @@ function notifyDurableMerchantReview(outcome) {
   if (durableReviewNotices.has(record.key)) return;
   durableReviewNotices.add(record.key);
   const merchantId = record.merchant?.merchantId ?? "unknown merchant";
-  globalThis.ui?.notifications?.error?.(
-    `Merchant ${merchantId} has a pinned trade. GM: open Merchant Workspace → Transactions needing review and Recheck. Do not retry or edit the trade first.`,
-    { permanent: true },
+  globalThis.ui?.notifications?.warn?.(
+    `A trade at Merchant ${merchantId} needs review. Shop controls and new trades remain available; the exact old request will not retry.`,
   );
 }
 

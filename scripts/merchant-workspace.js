@@ -720,8 +720,8 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
           checkedAtLabel: formatReviewTimestamp(record.review.at),
           currentRecoveryLabel:
             currentAssessment.action === "recover"
-              ? "A safe checkpoint is visible now. Recheck will verify it under lock before continuing."
-              : "The full current records still do not prove a safe checkpoint.",
+              ? "A safe checkpoint is visible now. Safe recovery will verify it under lock before continuing."
+              : "The current records do not prove a safe recovery checkpoint. This reminder is advisory and the shop remains usable.",
           currentMismatchHints: describeMerchantTransactionReviewMismatch(
             record,
             observation,
@@ -1788,7 +1788,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       notify(
         "warn",
         outcome.guidance ??
-          "The canonical data still does not match a safe checkpoint. Correct it manually, then Recheck again.",
+          "The canonical data still does not match a safe checkpoint. The reminder remains, but the shop is not blocked.",
       );
     } else if (outcome?.status === "authority-lost") {
       notify(
@@ -1798,7 +1798,7 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
     } else {
       notify(
         "warn",
-        "The transaction could not be safely rechecked yet. Its review record remains pinned.",
+        "Safe recovery could not complete. The reminder remains, but the shop is not blocked.",
       );
     }
     this.render(false);
@@ -1814,9 +1814,9 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       return;
     }
     const confirmed = await confirmInfinityDialog({
-      window: { title: "Discard manually settled trade?" },
-      content: `<p>Discard the unfinished ${identity.qty}x ${escapeHtml(identity.itemName)} transaction only if you have already handled it manually.</p><p>This permanently removes its recovery plan and unlocks the shop. It does <strong>not</strong> change character coins or items, merchant gold or stock. The old request will be rejected if a player retries it.</p>`,
-      yes: { label: "Discard trade record" },
+      window: { title: "Dismiss recovery warning?" },
+      content: `<p>Remove the recovery reminder for the old ${identity.qty}x ${escapeHtml(identity.itemName)} transaction?</p><p>This removes only its recovery plan. It does <strong>not</strong> change character coins or items, merchant gold or stock. The shop stays usable either way, and the exact old request will still be rejected if retried.</p>`,
+      yes: { label: "Dismiss warning" },
       defaultYes: false,
     });
     if (
@@ -1830,12 +1830,12 @@ export class MerchantWorkspaceApp extends GmWorkbenchApp {
       deliverDurableMerchantAbandonedResult(outcome);
       notify(
         "info",
-        "The manually settled trade was discarded. Campaign values were not changed.",
+        "The recovery warning was dismissed. Campaign values were not changed.",
       );
     } else {
       notify(
         "warn",
-        "The trade changed or could not be discarded safely. Refresh and review it again.",
+        "The warning changed or could not be dismissed safely. Refresh and review it again; the shop remains usable.",
       );
     }
     this.render(false);
@@ -2389,7 +2389,7 @@ function merchantReviewReasonLabel(reason) {
         "The Actor no longer matches the checkpoint already recorded.",
       "malformed-observation":
         "The canonical Actor or Merchant data could not be read safely.",
-    }[reason] ?? `Recovery is pinned: ${String(reason || "unknown reason")}.`
+    }[reason] ?? `Recovery needs review: ${String(reason || "unknown reason")}.`
   );
 }
 

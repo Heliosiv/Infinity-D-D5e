@@ -1675,8 +1675,8 @@ function merchantReviewWarning(record, review) {
   const prefix =
     review?.reason === "transaction-history-expired"
       ? "The GM's detailed history no longer proves whether this old trade completed"
-      : "This trade may have partially completed and is pinned for GM review";
-  return `${prefix}: ${merchantReviewDetail(record)}. The exact request is saved for review and will not be retried. Do not repeat it.`;
+      : "This trade may have partially completed and needs GM review";
+  return `${prefix}: ${merchantReviewDetail(record)}. The exact old request will not be retried. Shops remain available, and any new trade starts from current campaign values.`;
 }
 
 function exactCommitApp(record) {

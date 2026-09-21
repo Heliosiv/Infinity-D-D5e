@@ -507,7 +507,9 @@ try {
   assert.ok(
     warnings.some(
       (message) =>
-        /pinned for GM review/i.test(message) && /Trail Rations/i.test(message),
+        /needs GM review/i.test(message) &&
+        /Shops remain available/i.test(message) &&
+        /Trail Rations/i.test(message),
     ),
   );
   const statusFramesBefore = socketFrames.length;

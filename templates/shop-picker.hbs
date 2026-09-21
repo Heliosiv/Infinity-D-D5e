@@ -33,7 +33,7 @@
   <p class="infinity-session-context" role="status">
     <i class="fa-solid fa-compass" aria-hidden="true"></i>
     <span><strong>Safe next step:</strong>
-      {{#if hasSavedTradeReviews}}review the saved trade warning with the GM before starting another trade for the same character.
+      {{#if hasSavedTradeReviews}}you may keep shopping. The saved warning applies only to its exact old request; review it with the GM when convenient.
       {{else if loading}}wait for the player-safe shop list to finish loading.
       {{else if noGm}}reconnect, then refresh this list; no shop request was sent.
       {{else if requestFailed}}check your connection, then retry the same list refresh; no shop session was opened.
@@ -51,7 +51,7 @@
       <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
       <div>
         <h3 id="sp-review-heading">Saved trade warnings</h3>
-        <p>These exact trades are not being retried. Keep each warning until you have reviewed it with the GM.</p>
+        <p>These exact old requests will not retry. They do not block open shops or new trades.</p>
       </div>
     </div>
     <ul class="sp-review__list">

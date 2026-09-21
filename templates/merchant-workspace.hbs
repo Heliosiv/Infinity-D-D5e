@@ -62,10 +62,10 @@
   <section class="mw-review-panel" aria-labelledby="mw-review-heading">
     <div class="mw-review-panel__head">
       <div>
-        <p class="mw-workspace-section__eyebrow">Protected recovery</p>
-        <h3 id="mw-review-heading">Transactions needing review</h3>
+        <p class="mw-workspace-section__eyebrow">Optional recovery</p>
+        <h3 id="mw-review-heading">Trade recovery reminders</h3>
       </div>
-      <p>These trades remain pinned until exact campaign data proves a safe checkpoint.</p>
+      <p>Recovery reminders never block shop controls or new trades.</p>
     </div>
     <div class="mw-review-list">
       {{#each transactionReviews}}
@@ -78,7 +78,7 @@
         <dl class="mw-review-card__states">
           <div><dt>Actor, last check</dt><dd>{{actorStateLabel}}</dd></div>
           <div><dt>Merchant, last check</dt><dd>{{merchantStateLabel}}</dd></div>
-          <div><dt>Pinned at</dt><dd>{{checkedAtLabel}}</dd></div>
+          <div><dt>Saved at</dt><dd>{{checkedAtLabel}}</dd></div>
         </dl>
         <p class="mw-review-card__current">{{currentRecoveryLabel}}</p>
         {{#if currentMismatchHints.length}}
@@ -94,13 +94,13 @@
           <div><dt>Merchant stock, saved</dt><dd>{{merchantStockPlanLabel}}</dd></div>
           <div><dt>Merchant now</dt><dd>{{merchantCurrentLabel}}</dd></div>
         </dl>
-        <p class="mw-review-card__guidance">If this trade was handled manually, discard its recovery plan without changing the campaign values. Otherwise correct the data to an exact checkpoint before Recheck.</p>
+        <p class="mw-review-card__guidance">Try safe recovery only when the current values match a saved checkpoint. Otherwise dismiss this reminder after reviewing the current values. Either way, the shop stays usable.</p>
         <div class="mw-review-card__actions">
           <button type="button" class="mw-btn mw-btn--primary" data-action="recheckTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Read the Actor and Merchant again, then continue only from an exact safe checkpoint">
-            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Recheck
+            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Try safe recovery
           </button>
-          <button type="button" class="mw-btn" data-action="abandonTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Discard only after you have settled this trade manually; no campaign values will be changed">
-            Discard manually settled trade
+          <button type="button" class="mw-btn" data-action="abandonTransaction" data-review-action-id="{{actionId}}" {{#unless canRecheck}}disabled{{/unless}} title="Remove this reminder without changing campaign values">
+            Dismiss warning
           </button>
         </div>
       </article>

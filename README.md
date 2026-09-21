@@ -6,6 +6,13 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**v0.3.50 — Non-blocking Shop recovery:** A trade that is actively applying
+campaign values still protects its Actor and merchant, but a trade already
+quarantined for review is now an advisory recovery reminder. Shop controls,
+deletion, and fresh trades remain available; dismissing a reminder writes only
+the durable ledger and does not depend on readable merchant data.
+See the [release notes](docs/RELEASE_NOTES_0.3.50.md).
+
 **v0.3.49 — Legacy Shop recovery fix:** Recovery fencing now compares the same
 normalized merchant snapshot used by the canonical write lane. Older merchant
 records with schema defaults no longer look like a concurrent edit, so Recheck

@@ -450,7 +450,7 @@ function formatSavedReviewTime(timestamp) {
 function savedReviewReason(reason) {
   return reason === "transaction-history-expired"
     ? "The GM's retained history can no longer prove whether this old trade completed."
-    : "The GM pinned this trade because it may have partially completed.";
+    : "This old trade may have partially completed. Its warning does not block shops or new trades.";
 }
 
 /** Resolve only a character this user may legitimately act through. Foundry's

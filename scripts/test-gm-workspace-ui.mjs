@@ -142,7 +142,8 @@ assert.match(
   /unless canManageMerchants[\s\S]*?merchantAuthorityReason/,
   "secondary full GMs see an explicit read-only Merchant notice",
 );
-assert.match(merchantTemplate, /Transactions needing review/);
+assert.match(merchantTemplate, /Trade recovery reminders/);
+assert.match(merchantTemplate, /never block shop controls or new trades/);
 assert.match(merchantTemplate, /Current recovery findings/);
 assert.match(merchantTemplate, /Actor, last check/);
 assert.match(merchantTemplate, /Actor wallet, saved/);

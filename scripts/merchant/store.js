@@ -29,7 +29,7 @@ import {
 import { assertSupportedPersistedVersion } from "../utils/persisted-data.js";
 import { isAuthoritativeGM } from "../socket-authority.js";
 import {
-  isPinnedMerchantTransaction,
+  isBlockingMerchantTransaction,
   normalizeMerchantTransactionLedger,
 } from "./transaction-ledger.js";
 import {
@@ -853,6 +853,14 @@ function assertLiveMerchantPrivateStateWritable() {
   );
 }
 
+function assertLiveMerchantTransactionPrivateStateWritable() {
+  return (
+    (!isFoundryEnvironment() ||
+      (isAuthoritativeGM() && hasMerchantTabLeadership())) &&
+    assertLiveMerchantTransactionStoreWritable() === true
+  );
+}
+
 /** Look up a merchant by id. */
 export function findMerchant(id) {
   const want = toStr(id);
@@ -945,6 +953,72 @@ export function updateMerchantPrivateState(
   });
 }
 
+/**
+ * Mutate only the durable transaction ledger inside the shared Merchant write
+ * lane. Review dismissal uses this path so a missing or malformed Merchant
+ * record can never trap the GM behind its own recovery reminder.
+ */
+export function updateMerchantTransactionLedger(
+  mutation,
+  { authorizeWrite = null } = {},
+) {
+  if (typeof mutation !== "function") return Promise.resolve(null);
+  return runStoreWrite(async () => {
+    if (
+      isFoundryEnvironment() &&
+      (await ensureMerchantTabLeadership()) !== true
+    ) {
+      throw new Error("MerchantTabAuthorityUnavailable");
+    }
+    if (isFoundryEnvironment() && !isAuthoritativeGM()) {
+      throw new Error("MerchantWriteAuthorityLost");
+    }
+    if (assertLiveMerchantTransactionPrivateStateWritable() !== true) {
+      throw createPrivateStateUnavailableError("merchantTransactions");
+    }
+    const raw = getPrivateState("merchantTransactions");
+    if (raw === undefined) {
+      throw createPrivateStateUnavailableError("merchantTransactions");
+    }
+    const current = normalizeMerchantTransactionLedger(cloneStoreValue(raw));
+    const proposal = await mutation(cloneStoreValue(current));
+    if (proposal == null) return null;
+    if (
+      typeof proposal !== "object" ||
+      Array.isArray(proposal) ||
+      !proposal.merchantTransactions ||
+      typeof proposal.merchantTransactions !== "object" ||
+      Array.isArray(proposal.merchantTransactions)
+    ) {
+      throw new TypeError(
+        "Merchant transaction mutation must return merchantTransactions",
+      );
+    }
+    const merchantTransactions = normalizeMerchantTransactionLedger(
+      cloneStoreValue(proposal.merchantTransactions),
+    );
+    const writeAuthorized = () => {
+      if (assertLiveMerchantTransactionPrivateStateWritable() !== true) {
+        return false;
+      }
+      if (typeof authorizeWrite !== "function") return true;
+      return authorizeWrite() === true;
+    };
+    if (writeAuthorized() !== true) {
+      throw new Error("MerchantWriteAuthorityLost");
+    }
+    const persisted = await setPrivateState(
+      "merchantTransactions",
+      merchantTransactions,
+      { beforeWrite: writeAuthorized, afterWrite: writeAuthorized },
+    );
+    return {
+      merchantTransactions: persisted,
+      result: proposal.result,
+    };
+  });
+}
+
 async function writeMerchants(merchants, { authorizeWrite = null } = {}) {
   if (
     isFoundryEnvironment() &&
@@ -1013,14 +1087,14 @@ export function saveMerchants(merchants) {
   return runStoreWrite(() => writeMerchants(merchants));
 }
 
-/** A GM edit must never erase the merchant checkpoint of an unfinished trade. */
+/** Only an actively applying trade may temporarily exclude Merchant edits. */
 export function assertMerchantsEditable(ids) {
   const raw = getPrivateState("merchantTransactions");
   if (raw === undefined && !isFoundryEnvironment()) return;
   const wanted = new Set(ids);
   const pending = normalizeMerchantTransactionLedger(raw).records.find(
     (record) =>
-      isPinnedMerchantTransaction(record) &&
+      isBlockingMerchantTransaction(record) &&
       wanted.has(record.merchant.merchantId),
   );
   if (pending) {
