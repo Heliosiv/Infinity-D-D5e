@@ -34,7 +34,7 @@ import {
   transitionMerchantTransaction,
 } from "./transaction-ledger.js";
 import { runWithMerchantActorMutex } from "./session-state.js";
-import { updateMerchantPrivateState } from "./store.js";
+import { loadMerchants, updateMerchantPrivateState } from "./store.js";
 import {
   ensureMerchantTabLeadership,
   hasMerchantTabLeadership,
@@ -88,7 +88,15 @@ export function createMerchantTransactionCoordinator(overrides = {}) {
         reason: "private-state-not-ready",
       };
     }
-    const merchants = bindings.getPrivateState("merchants");
+    // The write lane supplies `loadMerchants()` output to its mutation callback.
+    // Compare fences against that same canonical view in production. Reading the
+    // raw private envelope here can differ from the normalized merchant objects
+    // (for example after a schema/default migration), which makes a healthy
+    // write look concurrent and permanently strands every recovery action.
+    const merchants =
+      typeof bindings.readMerchants === "function"
+        ? bindings.readMerchants()
+        : bindings.getPrivateState("merchants");
     const rawLedger = bindings.getPrivateState("merchantTransactions");
     if (!Array.isArray(merchants) || rawLedger == null) {
       return {
@@ -1547,6 +1555,7 @@ function defaultSubscribeAuthority(callback) {
 
 const PRODUCTION_BINDINGS = Object.freeze({
   getPrivateState,
+  readMerchants: loadMerchants,
   isPrivateReady: isPrivilegedPrivateStateReady,
   updateMerchantPrivateState,
   authoritativeGMId,

@@ -141,6 +141,7 @@ function makeHarness({
   terminalCap = 250,
   maxRecords = 5000,
   maxUnresolvedPerOrigin = 25,
+  normalizeMerchantView = null,
 } = {}) {
   const state = {
     merchants: [],
@@ -177,13 +178,20 @@ function makeHarness({
     return clone(state[key]);
   }
 
+  function readMerchants() {
+    const merchants = clone(state.merchants);
+    return typeof normalizeMerchantView === "function"
+      ? normalizeMerchantView(merchants)
+      : merchants;
+  }
+
   async function updatePrivate(mutation, { authorizeWrite } = {}) {
     const before = clone(state);
     const beforeMutation = faults.beforeNextPrivateMutation;
     faults.beforeNextPrivateMutation = null;
     await beforeMutation?.();
     const proposal = await mutation({
-      merchants: clone(state.merchants),
+      merchants: readMerchants(),
       merchantTransactions: clone(state.merchantTransactions),
     });
     if (proposal == null) return null;
@@ -327,6 +335,7 @@ function makeHarness({
 
   const bindings = {
     getPrivateState,
+    readMerchants,
     isPrivateReady: () => ready,
     updateMerchantPrivateState: updatePrivate,
     authoritativeGMId: () => (authoritative ? "gm-1" : null),
@@ -1047,6 +1056,33 @@ function makeHarness({
   assert.deepEqual(harness.actors.get(plan.actor.actorId), originalActor);
   assert.deepEqual(harness.state.merchants, originalMerchant);
   assert.deepEqual(harness.actorWrites, []);
+}
+
+/* Recovery fences use the same normalized Merchant view as the write lane. */
+{
+  const harness = makeHarness({
+    normalizeMerchantView: (merchants) =>
+      merchants.map((merchant) => ({ ...merchant, normalizedDefault: true })),
+  });
+  const plan = buyPlan(33);
+  harness.addPlanState(plan);
+  await harness.coordinator.register();
+  const review = transitionMerchantTransaction(plan, "needs-review", {
+    updatedAt: plan.updatedAt + 1,
+  });
+  harness.seedRecord(review);
+
+  const discarded = await harness.coordinator.abandon({
+    ...plan,
+    expectedReviewAt: review.review.at,
+  });
+  assert.equal(discarded.status, "abandoned");
+  assert.equal(discarded.result.reason, "transaction-manually-settled");
+  assert.equal(
+    lookupMerchantTransactionReplay(harness.state.merchantTransactions, plan)
+      .status,
+    "abandoned",
+  );
 }
 
 /* Reconciliation compacts terminal receipts while local hooks do not recurse. */

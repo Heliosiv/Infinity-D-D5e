@@ -6,6 +6,12 @@ for D&D 5e on Foundry VTT.
 For current priorities, implemented foundations and the next bounded improvements,
 see the [improvement roadmap](docs/ROADMAP.md) (assessed September 13, 2026).
 
+**v0.3.49 — Legacy Shop recovery fix:** Recovery fencing now compares the same
+normalized merchant snapshot used by the canonical write lane. Older merchant
+records with schema defaults no longer look like a concurrent edit, so Recheck
+and Discard can complete without weakening the no-force safety checks.
+See the [release notes](docs/RELEASE_NOTES_0.3.49.md).
+
 **v0.3.48 — Shop recovery fix:** A full GM window that regains campaign-write
 control can safely reclaim the durable merchant ledger and discard an exact
 manually settled review. The discard still changes no Actor or merchant economy
